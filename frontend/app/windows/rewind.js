@@ -21,7 +21,9 @@
       '<p class="set-about">A snapshot of the exact workspace or authorized project <b>' + esc(nm) + '</b> is changing is auto-saved <b>before every command it runs</b> ' +
       '(and before file edits when checkpoints are on). Restoring rolls that named root back and removes anything ' +
       'created since. <span class="dim">Use it to undo a bad change.</span></p>' +
-      '<div class="mc-acts" style="margin:0 0 8px"><button class="bb xs" id="rw-refresh" title="re-read this agent\'s restore points">↻ REFRESH</button></div>' +
+      // 9px of top margin: the paragraph above ends on a dim trailing clause and the button sat hard against it,
+      // which read as the two being one wrapped line rather than prose followed by a control.
+      '<div class="mc-acts" style="margin:9px 0 8px"><button class="bb xs" id="rw-refresh" title="re-read this agent\'s restore points">↻ REFRESH</button></div>' +
       '<div id="rw-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<div id="rw-msg" class="msg"></div>';
     const sections = [

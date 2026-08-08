@@ -1021,13 +1021,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
     // ---- right: the content host (all panes mounted; one visible) ----
     const host = mkEl('div', 'con-pane');
-    // the horizontal tab strip lives at the top of the pane in tabsTop mode; it reuses the tablist role.
-    let topTabs = null;
+    /* tabsTop: the strip is a SIBLING of the scrolling pane, not its first child. It used to live inside
+       .con-pane with position:sticky, and a sticky element inside a scroll container with top padding leaves a
+       live gap above itself — the CONFIG execution-profile chips were visibly scrolling through the band between
+       the window titlebar and the tab row. No amount of background on the strip closes that gap because the
+       content passes ABOVE it. Taking it out of the scrollport removes the failure mode instead of masking it. */
+    let topTabs = null, right = host;
     if (tabsTop) {
       topTabs = mkEl('div', 'con-toptabs');
       topTabs.setAttribute('role', 'tablist');
       topTabs.setAttribute('aria-label', String(key).toUpperCase() + ' sections');
-      host.appendChild(topTabs);
+      right = mkEl('div', 'con-col');
+      right.appendChild(topTabs);
+      right.appendChild(host);
     }
 
     const railItems = {};    // id -> rail/tab button
@@ -1072,7 +1078,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     }
 
     body.appendChild(left);
-    body.appendChild(host);
+    body.appendChild(right);   // === host when there is no top strip (the vertical-rail consoles are unchanged)
 
     function selectSection(id, viaClick) {
       if (!panes[id]) return;
@@ -1302,7 +1308,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
      system prompt the model runs on, so editing one here re-shapes the agent for real (App's
      applyAgentConfig, injected as access.config.apply). memory.md is the agent's own notebook —
      shown read-only and honestly labelled, because the agent writes it, not the Commander. */
-  // DOSSIER is CONSOLE MODE: the five sub-tabs are console sections (ids brief|growth|memory|skills|config),
+  // DOSSIER is CONSOLE MODE: the five sub-tabs are console sections (ids brief|growth|record|memory|config),
   // so the ACTIVE section lives in consoleSection['agents'] (not a private var). agSection() reads it with a
   // 'brief' fallback; it's the single source of truth for the memory-live guard + the BRIEF-only tick.
   function agSection() { return consoleSection['agents'] || 'brief'; }
@@ -1335,6 +1341,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return ((a && a.name) || 'agent').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'agent';
   }
 
+  /* The dossier portrait frame, in CSS px. NOT a taste number — it is derived from the shipped art.
+     Measured across all 36 skins (dev/skin-bounds.mjs): the drawn character inside each 92×92 master is
+     39–46px tall and 16–43px wide, the largest being pikachu at 43×46. The frame must leave room for the
+     largest character at ×2 (86 × 92) plus 6px of pad on every side, so that EVERY skin lands on the same
+     integer ×2 and the roster reads at one size. Shrink this and the big skins silently drop to ×1,
+     rendering half the height of everyone else. Re-run dev/skin-bounds.mjs before changing it. */
+  const PORTRAIT_W = 100, PORTRAIT_H = 108;
+
   function agHead(a, act) {
     const dn = linkDown();   // E2: link gone → the dossier can't honestly say ONLINE either
     const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
@@ -1346,7 +1360,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="ag-portrait-wrap"><div class="ag-portrait-well">' +
         '<span class="ag-ptick a"></span><span class="ag-ptick b"></span><span class="ag-ptick c"></span><span class="ag-ptick d"></span>' +
         '<span class="ag-psweep" aria-hidden="true"></span>' +
-        '<canvas id="ag-portrait" width="84" height="112"></canvas>' +
+        // size is owned by drawPortrait (DPR-aware backing store); these attrs are only the pre-paint box
+        '<canvas id="ag-portrait" width="' + PORTRAIT_W + '" height="' + PORTRAIT_H + '"></canvas>' +
       '</div></div>' +
       '<div class="ag-info">' +
       // NAME — read-only with a ✎ rename affordance, or an inline editor while agEdit['__name'] is set (wired in wireHead).
@@ -1364,29 +1379,74 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // the agent's deployed SPECIALTY (set by the Recruitment Bay) — its primary "what it's FOR" identity, shown first.
       ((typeof Specialties !== 'undefined' && a.specialtyId) ? (function () { var s = Specialties.get(a.specialtyId); return s ? '<span class="tag">' + esc(s.emoji + ' ' + s.name) + '</span>' : ''; })() : '') +
       // MODEL tag doubles as the shortcut into CONFIG › model (wired in wireHead) so "change the model" is one click from anywhere.
-      '<span class="tag model" data-goconfig="1" role="button" tabindex="0" title="change this agent’s model">' + esc(a.model || '—') + '</span>' +
-      '</div></div></div>';
+      '<span class="tag model" data-goconfig="ag-model-card" role="button" tabindex="0" title="change this agent’s model">' + esc(a.model || '—') + '</span>' +
+      '</div>' +
+      // the three stat wells ride INSIDE the hero's info column rather than as a full-width band beneath it.
+      // The hero previously used 88px of a 780px pane and left the rest empty while the stats claimed their own
+      // row — costing ~90px of vertical budget on the landing tab for no gain. Same wells, same numbers, one row.
+      agStats(a) +
+      '</div></div>';
+  }
+
+  // the three per-agent counters (never station totals wearing an agent label): RUNS from the Xp ledger's own
+  // attempt counter, LEVEL from the pure Xp engine, KUDOS = positive feedback. The full readout is GROWTH.
+  function agStats(a) {
+    const g = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats) : null;
+    const runs = (a.stats && a.stats.counters && a.stats.counters.runs) || 0;
+    return '<div class="stat-grid">' +
+      '<div class="stat-cell"><div class="stat-val">' + runs + '</div><div class="stat-lbl">RUNS</div></div>' +
+      '<div class="stat-cell"><div class="stat-val">' + (g ? g.level : '—') + '</div><div class="stat-lbl">LEVEL</div></div>' +
+      '<div class="stat-cell"><div class="stat-val pos">' + (g ? g.positiveFeedback : 0) + '</div><div class="stat-lbl">KUDOS</div></div>' +
+      '</div>';
+  }
+
+  /* SETUP STRIP (BRIEF). The five per-agent decisions that actually change how this unit behaves — model,
+     personality, approval posture, execution profile, and the away shift — each rendered as its CURRENT VALUE,
+     not as a link labelled "settings". They all live in CONFIG, which the live measurement found to be a flat
+     1565px scroll of nine cards and 62 controls: reaching "what model is this thing on?" meant a tab hop plus a
+     hunt. A value you can READ on the landing tab answers the question outright; clicking it jumps to the card
+     that owns it (data-goconfig = the target card's element id, wired in wireHead). Read-only by design — one
+     editor per setting, and it is the CONFIG card. */
+  function agSetupStrip(a) {
+    const pin = (a && a.model) ? String(a.model) : '';
+    const persona = (typeof Personas !== 'undefined' && Personas.get)
+      ? (Personas.get(Personas.resolve ? Personas.resolve((a && a.personaId) || Personas.DEFAULT_ID) : (a && a.personaId)) || {}).name
+      : '';
+    // executionProfileOf resolves the fallback by DEFAULT ID, never by array index: the array is ordered
+    // safest→broadest, so its first entry is the NARROWEST profile rather than the default. An index-based
+    // fallback would silently relabel an unknown profile as "safe cell" on the one surface whose whole job is
+    // stating this plainly. (test/permissions-ui.test.js greps the SOURCE for the index form — so this comment
+    // must not spell it out either; a locked grep is a contract on the text, not just on the behaviour.)
+    const prof = executionProfileOf(executionProfileId(a));
+    const rows = [
+      { lbl: 'MODEL',     val: pin || 'station default', dim: !pin,                 go: 'ag-model-card' },
+      { lbl: 'VOICE',     val: persona || '—',           dim: !persona,             go: 'ag-persona-card' },
+      { lbl: 'APPROVAL',  val: (a && a.approvalMode === 'full') ? 'full access' : 'asks first', dim: false, go: 'ag-approval-card' },
+      { lbl: 'RUNS IN',   val: prof.label.toLowerCase(),  dim: false,               go: 'ag-execution-card' },
+      { lbl: 'AWAY WORK', val: (a && a.workshop) ? 'on'  : 'off', dim: !(a && a.workshop), go: 'ag-workshop-card' }
+    ];
+    return '<div class="ag-setup" role="group" aria-label="How this agent is set up">' +
+      rows.map(r =>
+        '<button type="button" class="ag-setup-row" data-goconfig="' + r.go + '" title="change this in CONFIG">' +
+          '<span class="ag-setup-lbl">' + r.lbl + '</span>' +
+          '<span class="ag-setup-val' + (r.dim ? ' dim' : '') + '">' + esc(r.val) + '</span>' +
+          '<span class="ag-setup-go" aria-hidden="true">›</span></button>').join('') +
+      '</div>';
   }
 
   function agBrief(a) {
     const since = a.createdAt ? new Date(a.createdAt).toLocaleDateString() : '—';
-    // BRIEF stat wells — compact 3-up readout, all THREE per-agent (no station totals wearing an agent label):
-    // RUNS (this agent's own attempt counter from the Xp ledger), LEVEL (pure Xp engine), KUDOS (positive
-    // feedback). The full Level/XP/Satisfaction/milestone readout still lives in the GROWTH tab.
-    const g = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats) : null;
-    const lvl = g ? g.level : '—';
-    const kudos = g ? g.positiveFeedback : 0;
-    const runs = (a.stats && a.stats.counters && a.stats.counters.runs) || 0;   // per-agent run count (agent.run.end folds here)
-    return '<div class="stat-grid">' +
-      '<div class="stat-cell"><div class="stat-val">' + runs + '</div><div class="stat-lbl">RUNS</div></div>' +
-      '<div class="stat-cell"><div class="stat-val">' + lvl + '</div><div class="stat-lbl">LEVEL</div></div>' +
-      '<div class="stat-cell"><div class="stat-val pos">' + kudos + '</div><div class="stat-lbl">KUDOS</div></div>' +
-      '</div>' +
-      '<div class="ag-mission"><div class="ag-mission-lbl">PURPOSE</div>' +
+    // (the stat wells moved into agHead's info column — see agStats)
+    return '<div class="ag-mission"><div class="ag-mission-lbl">PURPOSE</div>' +
       (a.purpose
         ? '<div class="ag-mission-text">' + esc(a.purpose) + '</div>'
         : '<div class="ag-mission-cta">No purpose set — tell your agent what you need in COMMS, or write it in CONFIG › purpose.md.</div>') +
       '</div>' +
+      // the two questions the landing tab used to answer with 39 words of nothing: how is it set up, and what can it do.
+      '<div class="sec ag-brief-sec"><span class="sec-l">SET UP AS</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      agSetupStrip(a) +
+      '<div class="sec ag-brief-sec"><span class="sec-l">CAN DO</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      agSkills(a && a.id) +
       '<div class="ag-foot-row">on station since <b>' + since + '</b></div>';
   }
 
@@ -1446,7 +1506,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
     const progression =
       '<div>' +
-      '<div class="gx-sec"><span class="gx-ref">A</span><span class="gx-title">Progression</span><span class="gx-tag">LV ' + g.level + '&rarr;' + (g.level + 1) + '</span></div>' +
+      '<div class="gx-sec"><span class="gx-ref">▣</span><span class="gx-title">Progression</span><span class="gx-tag">LV ' + g.level + '&rarr;' + (g.level + 1) + '</span></div>' +
       '<div class="gx-row" style="margin-bottom:6px;"><span class="gx-lbl">This level</span>' +
         '<span class="gx-val" style="font-size:15px;">' + g.inLevel + ' <span class="gx-dim">/</span> ' + g.span + ' <span class="gx-dim" style="font-size:11px;">XP</span></span></div>' +
       '<div class="gx-trk" style="margin-bottom:5px;"><div class="gx-fill" style="width:' + g.pct + '%;"></div><div class="gx-mark" style="left:' + g.pct + '%;"></div></div>' +
@@ -1464,7 +1524,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '</div>';
     const confidence =
       '<div>' +
-      '<div class="gx-sec"><span class="gx-ref">B</span><span class="gx-title">Satisfaction</span><span class="gx-tag">' + (g.known ? 'average of your recent ratings (' + Xp.MIN_SAMPLES + '+ ratings)' : 'calibrating &middot; ' + g.samples + ' of ' + Xp.MIN_SAMPLES + ' ratings so far') + '</span></div>' +
+      '<div class="gx-sec"><span class="gx-ref">★</span><span class="gx-title">Satisfaction</span><span class="gx-tag">' + (g.known ? 'average of your recent ratings (' + Xp.MIN_SAMPLES + '+ ratings)' : 'calibrating &middot; ' + g.samples + ' of ' + Xp.MIN_SAMPLES + ' ratings so far') + '</span></div>' +
       '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
         '<span class="gx-confnum' + (g.known ? '' : ' cal') + '">' + confnum + '</span>' +
         '<span class="gx-band' + (g.known ? '' : ' cal') + '">' + (g.known ? g.band.toUpperCase() : 'CALIBRATING') + '</span></div>' +
@@ -1487,7 +1547,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const reliabilityBlk = !rl ? '' :
       // spans both columns of the existing .gx-2 grid (no CSS change; still correct under the 1-col media query)
       '<div style="grid-column:1/-1;">' +
-      '<div class="gx-sec"><span class="gx-ref">B2</span><span class="gx-title">Reliability</span><span class="gx-tag">' +
+      '<div class="gx-sec"><span class="gx-ref">◉</span><span class="gx-title">Reliability</span><span class="gx-tag">' +
         (rl.known ? 'runs it finished, of the runs it owned (' + Xp.MIN_RUNS + '+ runs)' : 'calibrating &middot; ' + rl.attempted + ' of ' + Xp.MIN_RUNS + ' attributable runs so far') + '</span></div>' +
       '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
         '<span class="gx-confnum' + (rl.known ? '' : ' cal') + '">' + (rl.known ? rl.pct + '<span style="font-size:18px;color:var(--ph-dim);">%</span>' : '—') + '</span>' +
@@ -1506,7 +1566,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
        never a zero: an unread skillbase is not an empty one. */
     const practiceBlk =
       '<div id="gx-practice" style="grid-column:1/-1;">' +
-      '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span>' +
+      '<div class="gx-sec"><span class="gx-ref">◇</span><span class="gx-title">Practice</span>' +
       '<span class="gx-tag">reading the skillbase&hellip;</span></div>' +
       '<div style="display:flex;align-items:baseline;gap:10px;"><span class="gx-confnum cal">&mdash;</span>' +
       '<span class="gx-band cal">READING</span></div></div>';
@@ -1516,7 +1576,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (m.earned ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + m.label + '</span></div>' +
       '<div class="sub">' + (m.earned ? 'EARNED' : '&#9656; ' + m.hint) + '</div></div>').join('');
     const trophies =
-      '<div class="gx-trohead"><div class="gx-sec" style="flex:1;margin:0;border:0;height:auto;"><span class="gx-ref">C</span><span class="gx-title">Trophy case</span></div>' +
+      '<div class="gx-trohead"><div class="gx-sec" style="flex:1;margin:0;border:0;height:auto;"><span class="gx-ref">▦</span><span class="gx-title">Trophy case</span></div>' +
       '<span class="gx-tag">' + pad2(earned) + ' earned &middot; ' + pad2(locked) + ' locked</span></div>' +
       '<div class="gx-tros">' + tros + '</div>';
 
@@ -1525,7 +1585,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const nAg = present.length || 1;
     const station = s ? (
       '<div class="gx-station" style="margin-top:18px;">' +
-      '<div class="hd"><span class="badge">D</span><span class="ttl">Station prestige</span><span class="agents">&Sigma; ' + nAg + ' AGENT' + (nAg === 1 ? '' : 'S') + '</span></div>' +
+      '<div class="hd"><span class="badge">●</span><span class="ttl">Station prestige</span><span class="agents">&Sigma; ' + nAg + ' AGENT' + (nAg === 1 ? '' : 'S') + '</span></div>' +
       '<div class="body">' +
         '<div class="lv"><div class="gx-lbl" style="font-size:9px;">STATION</div><div class="n">' + s.level + '</div><div class="gx-lbl" style="font-size:9px;">LEVEL</div></div>' +
         '<div style="flex:1;">' +
@@ -1537,9 +1597,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '</div></div>'
     ) : '';
 
+    /* The old gx-head said "AGENT DOSSIER // GROWTH READOUT" + the agent's name + "CLEARANCE LEVEL 04" — inside a
+       window titled AGENT DOSSIER, on a tab labelled GROWTH, with the agent selected and named in the left rail,
+       and with LEVEL already one of BRIEF's three stat wells. Four restatements of context the user already had,
+       occupying the top of the pane. The level chip survives (it belongs beside a level bar); the rest is gone. */
     return '<div class="gx">' +
-      '<div class="gx-head"><div><div class="gx-kicker">AGENT DOSSIER // GROWTH READOUT</div><div class="gx-name">' + esc(a.name) + '</div></div>' +
-      '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">CLEARANCE</div><span class="gx-clear"><span class="k">LEVEL</span><span class="v">' + pad2(g.level) + '</span></span></div></div>' +
+      '<div class="gx-head"><div class="gx-clear"><span class="k">LEVEL</span><span class="v">' + pad2(g.level) + '</span></div></div>' +
       '<div class="gx-2">' + progression + confidence + reliabilityBlk + practiceBlk + '</div>' +
       trophies + station +
       '</div>';
@@ -1554,7 +1617,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (!host || typeof Xp === 'undefined' || !Xp.practice) return;
     const fail = (why) => {
       const h = $('#gx-practice'); if (!h) return;
-      h.innerHTML = '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span>' +
+      h.innerHTML = '<div class="gx-sec"><span class="gx-ref">◇</span><span class="gx-title">Practice</span>' +
         '<span class="gx-tag">' + why + '</span></div>' +
         '<div style="display:flex;align-items:baseline;gap:10px;"><span class="gx-confnum cal">&mdash;</span>' +
         '<span class="gx-band cal">UNREAD</span></div>';
@@ -1572,7 +1635,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (p.idle) aside.push(p.idle + ' written but never used yet');
       if (p.given) aside.push(p.given + ' you wrote yourself');
       h.innerHTML =
-        '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span><span class="gx-tag">' +
+        '<div class="gx-sec"><span class="gx-ref">◇</span><span class="gx-title">Practice</span><span class="gx-tag">' +
           (p.count ? 'procedures it worked out and has actually used' : 'nothing distilled from real work yet') + '</span></div>' +
         '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
           '<span class="gx-confnum' + (p.count ? '' : ' cal') + '">' + p.count + '</span>' +
@@ -1593,8 +1656,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // missing gear and deep-links into REFIT (data-perk-cap → placeGearForSkill, wired in
     // buildAgents), and the toolset-off honesty pass dims families switched off in ABILITIES.
     const capLockedText = (s) => '○ NO ' + (SK_OBJ_NAME[s.cap] || String(s.cap || '').toUpperCase()) + ' AT DESK';
-    return '<h4 class="ms-h">GRANTED — ' + on + ' LIVE</h4>' +
-      '<div class="sk-chain">OBJECT AT DESK <span class="sk-chain-arr">→</span> CAPABILITY <span class="sk-chain-arr">→</span> SKILL</div>' +
+    // NAV CONDENSE 3: this grid folds into BRIEF (its own tab was 411px of read-only content the Commander had
+    // to go looking for), so the standalone <h4> heading is gone — the count rides the one-line chain below it,
+    // under BRIEF's own "CAN DO" rule. No duplicate title stacked on a title.
+    return '<div class="sk-chain"><b>' + on + ' live</b> &middot; OBJECT AT DESK <span class="sk-chain-arr">→</span> CAPABILITY <span class="sk-chain-arr">→</span> SKILL</div>' +
       '<div class="perk-grid">' +
       skills.map((s, i) => {
         const lockable = !s.on && s.cap;
@@ -1609,11 +1674,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           (lockable ? '<div class="perk-place">▸ PLACE IN REFIT</div>' : '') + '</div>';
       }).join('') +
       '</div>' +
+      /* one note, not two: the facts were previously spread across two stacked paragraphs of identical weight.
+         The consent sentence is NOT editorial — "File writes and commands pause for one-click approval in COMMS"
+         is a locked advertised claim (qa/product-perfect/claims.json → one-click-mutation-approval), and this
+         node is its surface locator. Reword the surrounding prose freely; that clause stays verbatim. */
       '<p class="sk-note">Capabilities follow the <b>objects at the workstation</b> — the room layout IS the ' +
-      'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the private ' +
-      '<b>notebook</b> saves freely.</p>' +
-      '<p class="sk-note">This view is <b>read-only</b> — the on/off switches for these tool families, and the ' +
-      'station’s <b>skill library</b>, live in <b>⇄ ABILITIES</b> on the bottom bar.</p>';
+      'permission system. <b>File writes</b> and <b>commands</b> pause for one-click approval in COMMS; the ' +
+      'private <b>notebook</b> saves freely. Read-only here: the on/off switches and the station’s skill ' +
+      'library live in <b>⇄ ABILITIES</b> on the bottom bar.</p>';
   }
 
   function fileCard(a, f) {
@@ -1644,9 +1712,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const MEM_KIND = { profile: 'PREFERENCE', fact: 'FACT', skill: 'SKILL', note: 'NOTE' };
 
   function agMemory(a) {
+    // same de-duplication as GROWTH: the window is already titled AGENT DOSSIER, the tab is already MEMORY, and
+    // the rail already names the agent. "PROVENANCE / TRACED ✓" is the one claim the header made that the pane
+    // does not otherwise state up front, and it earns its keep — the rest is dropped.
     return '<div class="gx">' +
-      '<div class="gx-head"><div><div class="gx-kicker">AGENT DOSSIER // MEMORY CORE</div><div class="gx-name">' + esc(a.name) + '</div></div>' +
-      '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">PROVENANCE</div><span class="gx-clear"><span class="k">TRACED</span><span class="v">&#10003;</span></span></div></div>' +
+      '<div class="gx-head"><div class="gx-clear"><span class="k">TRACED</span><span class="v">&#10003;</span></div></div>' +
       // P1-10 REFLECTION controls — the master on/off + the cooldown, both HONORED live at the reflect gate in the
       // sidecar (station-wide, not per-agent — the reflect loop is a station engine). Plus a plain scope note.
       '<div class="gx-sec"><span class="gx-ref">◈</span><span class="gx-title">Reflection</span></div>' +
@@ -1660,7 +1730,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="gx-sec" id="mc-pending-sec" style="display:none;"><span class="gx-ref gold">?</span><span class="gx-title">Awaiting your decision</span><span class="gx-tag" id="mc-pending-count"></span></div>' +
       '<div class="mc-note" id="mc-pending-note" style="display:none;">Sensitive beliefs raised while you were away — <b>nothing here is remembered yet</b>. <b>Keep</b> to save one &middot; <b>Discard</b> to reject it for good.</div>' +
       '<div id="mc-pending-list" class="mc-list"></div>' +
-      '<div class="gx-sec"><span class="gx-ref gold">M</span><span class="gx-title">Stored beliefs</span><span class="gx-tag" id="mc-count">&hellip;</span></div>' +
+      // ▤ not "M": the ref chip is a marker, and every other one in the dossier is a glyph. A bare letter reads as
+      // a code the reader is expected to already know (which is exactly what GROWTH's retired A/B/B2/B3 were).
+      '<div class="gx-sec"><span class="gx-ref gold">▤</span><span class="gx-title">Stored beliefs</span><span class="gx-tag" id="mc-count">&hellip;</span></div>' +
       '<div class="mc-note">Each belief traces to the run that earned it. <b>Pin</b> to lock it to the top of recall &middot; <b>Edit</b> to refine it &middot; <b>Forget</b> to remove it.</div>' +
       '<div id="mc-list" class="mc-list"><span class="loading pulse">reading memory core&hellip;</span></div>' +
       // observability: the permanent reject-list (Discarded proposals never re-proposed). Hidden until non-empty.
@@ -1912,14 +1984,42 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     });
   }
 
+  /* CONFIG — GROUPED (2026-08-07 dossier UX pass). Measured before this change: 1565px of scroll, nine cards,
+     62 controls, 1945 words, in one flat undifferentiated column. Nine cards is not the problem; nine cards with
+     no stated relationship is. They answer three different questions, so they now sit under three rules:
+
+       WHAT IT KNOWS  — the four markdown files that literally compose the system prompt.
+       HOW IT BEHAVES — the runtime decisions: voice, model, where it runs, whether it asks, the away shift.
+       THE UNIT       — appearance and deletion. Last, because it is the rarest and the most destructive.
+
+     The per-card "PER-AGENT" badge is retired with the grouping. It appeared on five of nine cards inside a
+     window whose title is AGENT DOSSIER and whose left rail names the selected agent — it carried no
+     information the surrounding chrome did not already carry, and it read as a warning label.
+     Card ids (ag-*-card) are the anchor targets BRIEF's setup strip jumps to. */
+  const CF_GROUPS = [
+    { id: 'cf-grp-knows',  label: 'WHAT IT KNOWS' },
+    { id: 'cf-grp-behaves', label: 'HOW IT BEHAVES' },
+    { id: 'cf-grp-unit',   label: 'THE UNIT' }
+  ];
   function agConfig(a) {
-    return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' +
+    const grp = (i, note) => '<div class="sec cf-grp" id="' + CF_GROUPS[i].id + '"><span class="sec-l">' + CF_GROUPS[i].label + '</span>' +
+      '<span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      (note ? '<p class="cf-grp-note">' + note + '</p>' : '');
+    // CONFIG is the one pane that is legitimately long (measured 1741px — it is the editor). Grouping tells you
+    // what is down there; this row lets you GO there without a scroll hunt. Wired in wireConfig.
+    const nav = '<div class="cf-nav" role="group" aria-label="Jump to a config group">' +
+      CF_GROUPS.map(g => '<button type="button" class="cf-nav-b" data-cfjump="' + g.id + '">' + g.label + '</button>').join('') +
+      '</div>';
+    return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' + nav +
+      grp(0, 'These four files ARE the system prompt. Edit one and the agent changes on its very next run.') +
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
+      grp(1, 'Runtime posture — none of this changes what the agent knows, only how it works.') +
       personaCard(a) +
       modelCard(a) +
       executionProfileCard(a) +
       approvalCard(a) +
       workshopCard(a) +
+      grp(2, '') +
       agCommand(a);   // SKIN swap + DANGER delete — lives at the END of CONFIG, off the BRIEF landing tab
   }
 
@@ -1930,8 +2030,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // truth (wireConfig fills #ag-ws-live async); the static shell asserts nothing it can't prove.
   function workshopCard(a) {
     const on = !!(a && a.workshop);
-    return '<div class="cf-card">' +
-      '<div class="cf-head"><span class="cf-file">◈ while you’re away</span><span class="cf-badge">PER-AGENT</span></div>' +
+    return '<div class="cf-card" id="ag-workshop-card">' +
+      '<div class="cf-head"><span class="cf-file">◈ while you’re away</span></div>' +
       '<label class="set-row" style="align-items:flex-start;gap:8px;">' +
         '<input type="checkbox" id="ag-workshop-on"' + (on ? ' checked' : '') + ' aria-label="Build things while I am away">' +
         '<span><b>Build things while I’m away</b>' +
@@ -1977,7 +2077,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const p = executionProfileOf(current);
     const chips = EXECUTION_PROFILES.map(x => '<button type="button" class="ov-vchip' + (x.id === current ? ' sel' : '') + '" data-execution-profile="' + x.id + '" data-name="' + esc(x.label) + '" data-reach="' + x.reach + '" title="' + esc(x.plain) + '" aria-pressed="' + (x.id === current ? 'true' : 'false') + '">' + reachMeter(x.reach) + esc(x.label) + '</button>').join('');
     return '<div class="cf-card" id="ag-execution-card">' +
-      '<div class="cf-head"><span class="cf-file">▣ execution profile</span><span class="cf-badge">PER-AGENT</span></div>' +
+      '<div class="cf-head"><span class="cf-file">▣ execution profile</span></div>' +
       '<div class="cf-desc">Where this agent runs and what scope it receives. This is separate from approval prompts and never grants real mouse, keyboard, or screen control.</div>' +
       '<div class="ov-vchips" id="ag-execution-chips">' + chips + '</div>' +
       '<div class="cf-desc pc-plain" id="ag-execution-plain">' + esc(p.plain) + '</div>' +
@@ -1990,8 +2090,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const full = !!(a && a.approvalMode === 'full');
     const chip = (id, label, desc, sel) =>
       '<button type="button" class="ov-vchip' + (sel ? ' sel' : '') + '" data-approval="' + id + '" data-name="' + esc(label) + '" title="' + esc(desc) + '" aria-pressed="' + (sel ? 'true' : 'false') + '">' + esc(label) + '</button>';
-    return '<div class="cf-card">' +
-      '<div class="cf-head"><span class="cf-file">✋ approval prompts</span><span class="cf-badge">PER-AGENT</span></div>' +
+    return '<div class="cf-card" id="ag-approval-card">' +
+      '<div class="cf-head"><span class="cf-file">✋ approval prompts</span></div>' +
       '<div class="cf-desc">Whether risky calls pause for your answer. This does not add tools, widen filesystem scope, choose a runtime, or grant real desktop control. <code>/yolo</code> remains the shortcut for the zero-prompt posture.</div>' +
       '<div class="ov-vchips" id="ag-approval-chips">' +
         chip('ask', 'ASK FOR APPROVAL', 'stops to check with you before it writes, runs, or reaches out', !full) +
@@ -2013,8 +2113,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const p = Personas.get ? Personas.get(cur) : null;
     const chips = Personas.list().map(x =>
       '<button type="button" class="ov-vchip' + (x.id === cur ? ' sel' : '') + '" data-persona="' + esc(x.id) + '" data-name="' + esc(x.name) + '" title="' + esc(x.vibe || '') + '" aria-pressed="' + (x.id === cur ? 'true' : 'false') + '">' + esc(x.name) + '</button>').join('');
-    return '<div class="cf-card">' +
-      '<div class="cf-head"><span class="cf-file">◉ personality</span><span class="cf-badge">PER-AGENT</span></div>' +
+    return '<div class="cf-card" id="ag-persona-card">' +
+      '<div class="cf-head"><span class="cf-file">◉ personality</span></div>' +
       '<div class="cf-desc">How this agent talks — in chat, delivered work, and its ambient lines on the floor. Changes the delivery only, never the work (or the station voice). Pick one to apply it immediately.</div>' +
       '<div class="ov-vchips" id="ag-persona-chips">' + chips + '</div>' +
       // sample-reply preview REMOVED (Andrew, 2026-07-20) — the sel chip + vibe tooltip carry the choice.
@@ -2038,8 +2138,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       ? '<div class="set-row mc-pick-row"><label for="ag-model-pick-model">MODEL</label>' +
           '<div class="mc-pick" id="ag-model-pick">' + ModelPicker.shellHTML({ id: 'ag-model-pick', inheritLabel: 'Follow station default', ariaLabel: 'Agent model', effort: true }) + '</div></div>'
       : '';
-    return '<div class="cf-card">' +
-      '<div class="cf-head"><span class="cf-file">▣ model</span><span class="cf-badge">PER-AGENT</span></div>' +
+    return '<div class="cf-card" id="ag-model-card">' +
+      '<div class="cf-head"><span class="cf-file">▣ model</span></div>' +
       '<div class="cf-desc">What this agent runs on. Pick a model to run this agent on it everywhere — chat, delegated work, scheduled routines — independent of the station default in the COMMS dock. “Follow station default” clears the pin.</div>' +
       picker +
       '<details class="mc-adv"' + ((pinned && !hasPicker) ? ' open' : '') + '><summary>advanced — type a model id</summary>' +
@@ -2060,6 +2160,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // .md save wiring on purpose: that handler used to omit the id, so a doc edit landed on the focused agent
     // instead of this one (see App.applyAgentConfig's targeting note).
     const a = present[sel];
+    // CONFIG group jump-nav: scroll the pane so the chosen rule sits at the top. Same landing math as BRIEF's
+    // setup-strip jump (offsetTop delta, not scrollIntoView — the minimum scroll leaves the target at the bottom
+    // edge, which reads as "nothing happened"), and it does NOT rerender: the pane is already the right one.
+    body.querySelectorAll('[data-cfjump]').forEach(b => b.addEventListener('click', () => {
+      const w = open.agents; if (!w) return;
+      const target = w.querySelector('#' + b.dataset.cfjump), pane = w.querySelector('.con-pane');
+      if (!target || !pane) return;
+      sfx('click');
+      pane.scrollTop = Math.max(0, target.offsetTop - pane.offsetTop - 8);
+    }));
     body.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
       agEdit[b.dataset.edit] = true; sfx('click'); rerender('agents');
     }));
@@ -2326,13 +2436,30 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // and the "model tag → CONFIG" shortcut. access.config.setName renames; a missing setName degrades to a notice.
   function wireHead(body) {
     const a = present[sel];
-    const goCfg = body.querySelector('.ag-tags .tag.model[data-goconfig]');
-    if (goCfg) {
-      // console mode: "jump to CONFIG" = land the rail on the config section, then rerender (mountConsole reads consoleSection).
-      const jump = () => { consoleSection['agents'] = 'config'; sfx('click'); rerender('agents'); };
-      goCfg.addEventListener('click', jump);
-      goCfg.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); jump(); } });
-    }
+    /* "jump to CONFIG" = land the rail on the config section, then rerender (mountConsole reads consoleSection).
+       Every element carrying data-goconfig opts in: the hero's MODEL tag (value '1' — the section, no anchor) and
+       BRIEF's setup rows (value = the target card's id). The anchor scroll runs AFTER the rerender has rebuilt the
+       pane, so it must re-query the live DOM rather than close over a node the rerender has already thrown away —
+       and it lands the card at the TOP of the pane rather than merely "into view", because a 1565px column
+       scrolled the minimum distance leaves the card you asked for hugging the bottom edge. */
+    const jumpToConfig = (anchor) => {
+      consoleSection['agents'] = 'config'; sfx('click'); rerender('agents');
+      if (!anchor || anchor === '1') return;
+      requestAnimationFrame(() => {
+        const w = open.agents; if (!w) return;
+        const card = w.querySelector('#' + anchor), pane = w.querySelector('.con-pane');
+        if (!card || !pane) return;
+        pane.scrollTop = Math.max(0, card.offsetTop - pane.offsetTop - 8);
+        card.classList.add('cf-jumped');
+        setTimeout(() => { try { card.classList.remove('cf-jumped'); } catch (_) {} }, 1400);
+      });
+    };
+    body.querySelectorAll('[data-goconfig]').forEach(el => {
+      const go = () => jumpToConfig(el.dataset.goconfig);
+      el.addEventListener('click', go);
+      // a real <button> already fires click on Enter/Space — only the faux-button span (the hero MODEL tag) needs this.
+      if (el.tagName !== 'BUTTON') el.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(); } });
+    });
     const rn = body.querySelector('#ag-rename-btn');
     if (rn) rn.addEventListener('click', () => { agEdit['__name'] = true; sfx('click'); rerender('agents'); });
     const commit = () => {
@@ -2440,19 +2567,82 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // onto window.DossierLanes at load time, and every rerender rebuilds them against the CURRENT
     // selected agent (they read H.present/H.sel), so the roster rail drives them like any other tab.
     const lanes = (window.DossierLanes || []).map(fn => { try { return fn(body); } catch (_) { return null; } }).filter(l => l && Array.isArray(l.sections));
+    /* NAV CONDENSE 3 (2026-08-07 dossier UX pass) — SEVEN tabs became FIVE, because the measurement said the
+       split was doing no work: BRIEF held 39 words and one control, SKILLS 411px of read-only grid, RESTORE 243px
+       of empty state, while CONFIG carried 1565px / 9 cards / 62 controls on its own. Tabs are supposed to divide
+       a large surface; six of seven were dividing nothing.
+         · SKILLS  → folds into BRIEF ("CAN DO") — it is read-only capability, part of who this unit is.
+         · RESTORE → folds into RECORD, next to the run history it rolls back. One lane for "what it did".
+       Lane sections (windows/logbook.js, windows/rewind.js) are still built + wired by their own modules; only
+       the MOUNT POINT changed, so both keep their live agent binding and their wire() pass below. `laneSec(id)`
+       looks a lane up by its declared id and returns its build fn, so a lane that fails to register degrades to a
+       missing block rather than a thrown render. */
+    const laneSec = (id) => {
+      for (const l of lanes) for (const s of l.sections) if (s.id === id) return s;
+      return null;
+    };
+    /* Build a jump row from the `.sec` block headers a pane ALREADY rendered, and prepend it. Reading the DOM
+       instead of taking a list means the contents can never drift from the contents page — the failure this
+       exists to prevent is a block being present but unreachable, which is exactly what folding LOGBOOK and
+       RESTORE into one lane risked. Stamps an id on each header so the click has something to scroll to; the
+       scroll math matches CONFIG's (offsetTop delta, never scrollIntoView). No-ops below two blocks — a table
+       of contents for one thing is noise. */
+    const addSectionJumpNav = (elx) => {
+      const heads = Array.from(elx.querySelectorAll(':scope > .sec, :scope > .con-lane > .sec'));
+      if (heads.length < 2) return;
+      const items = heads.map((h, i) => {
+        const id = 'rec-blk-' + i;
+        h.id = id;
+        const l = h.querySelector('.sec-l');
+        return { id, label: (l ? l.textContent : '').trim() };
+      }).filter(it => it.label);
+      if (items.length < 2) return;
+      const nav = mkEl('div', 'cf-nav',
+        items.map(it => '<button type="button" class="cf-nav-b" data-secjump="' + it.id + '">' + esc(it.label) + '</button>').join(''));
+      elx.insertBefore(nav, elx.firstChild);
+      nav.querySelectorAll('[data-secjump]').forEach(b => b.addEventListener('click', () => {
+        const target = elx.querySelector('#' + b.dataset.secjump);
+        const pane = elx.closest('.con-pane');
+        if (!target || !pane) return;
+        sfx('click');
+        pane.scrollTop = Math.max(0, target.offsetTop - pane.offsetTop - 8);
+      }));
+    };
+    const mountLane = (id) => (elx) => {
+      const s = laneSec(id);
+      if (!s) { elx.innerHTML = ''; return; }
+      const sub = mkEl('div', 'con-lane', '');
+      elx.appendChild(sub);
+      try { s.build(sub); } catch (_) { sub.innerHTML = ''; }
+    };
     const host = mountConsole(body, 'agents', [
-      { id: 'brief', label: 'BRIEF', glyph: '▤', desc: 'Who this agent is right now — identity, level, purpose, and live status.',
+      /* TAB ORDER (Andrew, 2026-08-07): BRIEF · GROWTH · RECORD · MEMORY · CONFIG. GROWTH sits second,
+         directly after BRIEF, because the two answer the same question at different depths — BRIEF states
+         the level and kudos, GROWTH is the readout behind those numbers. Putting RECORD between them split
+         a pair. Read as a sentence: who it is → how it's doing → what it did → what it knows → how to
+         change it. This is the array order and mountConsole renders it verbatim; there is no other list. */
+      { id: 'brief', label: 'BRIEF', glyph: '▤', desc: 'Who this agent is, how it is set up, and what it can do.',
         build: frag(agHead(a, act) + agBrief(a)) },
       { id: 'growth', label: 'GROWTH', glyph: '★', desc: 'XP ladder, satisfaction gauge, trophy case, and station prestige.',
         build: frag(agGrowth(a)) },
+      { id: 'record', label: 'RECORD', glyph: '▦', desc: 'What this agent has actually done — run history, dead-run post-mortems, and workspace restore points.',
+        build: (elx) => {
+          mountLane('logbook')(elx);
+          elx.insertAdjacentHTML('beforeend', '<div class="sec"><span class="sec-l">RESTORE POINTS</span><span class="sec-r"></span><span class="sec-nd"></span></div>');
+          mountLane('restore')(elx);
+          /* RECORD merges what were two separate tabs, and it measures 808px inside a 720px pane — so RESTORE
+             POINTS, a whole former tab, landed just under the fold with nothing on screen saying it exists.
+             Folding a tab away is only allowed if what it held stays FINDABLE. Same jump row CONFIG carries,
+             built by reading the block headers this pane actually rendered (rather than a hardcoded list) so a
+             lane that adds or renames a block cannot silently fall out of its own contents. */
+          addSectionJumpNav(elx);
+        } },
       { id: 'memory', label: 'MEMORY', glyph: '◈', desc: 'Every belief this agent has kept, traced to the run that earned it.',
         build: frag(agMemory(a)) },
-      { id: 'skills', label: 'SKILLS', glyph: '◇', desc: 'The capabilities granted by the objects at this agent’s workstation.',
-        build: frag(agSkills(a && a.id)) },
-      { id: 'config', label: 'CONFIG', glyph: '▣', desc: 'The markdown files that compose this agent’s prompt, plus its per-agent model pin.',
+      { id: 'config', label: 'CONFIG', glyph: '▣', desc: 'Everything you can change about this agent — its prompt files, how it behaves, and how it looks.',
         build: frag(agConfig(a)) }
-    ].concat(lanes.reduce((acc, l) => acc.concat(l.sections), [])), {
-      // tabsTop: the five section tabs (BRIEF/GROWTH/MEMORY/SKILLS/CONFIG) render as a horizontal strip at the
+    ], {
+      // tabsTop: the five section tabs (BRIEF/GROWTH/RECORD/MEMORY/CONFIG) render as a horizontal strip at the
       // top of the right pane; the left rail becomes the agent roster full-height (railTop below).
       tabsTop: true,
       search: true, searchPlaceholder: 'search dossier…',
@@ -2509,6 +2699,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
   function drawPortrait(cv, a) {
     if (!cv) return;
+    /* DPR-aware backing store. The canvas used to be a fixed 84×112 bitmap inside an 88×112 CSS box — a
+       1.048× browser stretch even at DPR 1, and on a HiDPI screen the whole thing was upscaled again. The
+       backing store now matches the CSS box times an INTEGER device factor, so the browser never resamples
+       and every scale in this function stays a whole number of device pixels. */
+    const dev = Math.max(1, Math.min(3, Math.round((typeof window !== 'undefined' && window.devicePixelRatio) || 1)));
+    if (cv.width !== PORTRAIT_W * dev || cv.height !== PORTRAIT_H * dev) {
+      cv.width = PORTRAIT_W * dev; cv.height = PORTRAIT_H * dev;
+    }
+    cv.style.width = PORTRAIT_W + 'px'; cv.style.height = PORTRAIT_H + 'px';
     const pctx = cv.getContext('2d');
     pctx.clearRect(0, 0, cv.width, cv.height);
     if (!(typeof SPRITES === 'object' && SPRITES.ready) || !SPRITES.isSkinReady(a.skin)) {
@@ -2521,19 +2720,34 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       }
       return;
     }
-    // drawBody sizes sprites for the FLOOR: each skin at its own small footprint scale (ULTRON ~0.6, most
-    // skins ~0.37) on a 92px master that's mostly transparent — reused as-is the body lands tiny and adrift
-    // in the frame, and DIFFERENTLY sized per skin. For the portrait we want every agent to FILL the frame
-    // the same, independent of how small it walks on the floor. So: render the body once to an offscreen
-    // buffer (real skin, noShadow), crop to its actual non-transparent bounds, then blit it in scaled to
-    // fill — preserving aspect and foot-anchoring to the bottom. (3× master in the buffer keeps detail.)
+    /* PORTRAIT RESOLUTION CHAIN (rebuilt 2026-08-07 — the old one produced a white blob).
+       Measured, not guessed: every one of the 36 shipped skins is a 92×92 sheet containing a character only
+       39–46px tall (median 43) — the sheet is mostly transparent padding. The old pipeline resampled that
+       character TWICE, both times fractionally and both times with smoothing on: drawBody drew it at the
+       FLOOR scale (~0.385) inside a 3× buffer, then the blit stretched the crop ~1.96× to fill the frame.
+       Net ≈2.3× bilinear upscale of a 43px pixel-art sprite: 26.6% of its opaque pixels came out as soft
+       anti-aliased edge, and the visor, eyes and suit detail dissolved.
+
+       Two rules, and they are opposites — which is why the old code got it wrong by applying one everywhere:
+         · DOWNSCALE → smooth. That is the floor draw's law (drawBody resampling the 92px master down to a
+           ~35px footprint); never NN-crush it, that is what mushed the crew before.
+         · UPSCALE → nearest-neighbour, at an INTEGER factor. Blowing pixel art up with interpolation is
+           precisely what destroys it. Chunky pixels are the intended look, not an artefact to smooth away.
+       So: cancel drawBody's floor scale (SPRITES.bodyScale — asked of the engine, never re-derived) to land
+       the master 1:1 in the buffer, then integer-NN it into the frame. The frame is sized so the largest
+       shipped character (43×46, pikachu) still clears ×2, which means EVERY skin lands on exactly ×2 — the
+       roster reads at one consistent size instead of each skin finding its own fractional fit. */
     const buf = drawPortrait._buf || (drawPortrait._buf = document.createElement('canvas'));
-    const BW = 200, BH = 200; buf.width = BW; buf.height = BH;
+    const BW = 220, BH = 220; buf.width = BW; buf.height = BH;
     const bctx = buf.getContext('2d');
     bctx.clearRect(0, 0, BW, BH);
+    bctx.imageSmoothingEnabled = false;   // the blit below is 1:1; keep it exact
     bctx.save();
-    bctx.translate(BW / 2, BH - 14);
-    bctx.scale(3, 3);
+    bctx.translate(BW / 2, BH - 40);
+    // 1/sc makes drawBody's own `dw = frame.width * sc` resolve to frame.width — an exact, unresampled
+    // 1:1 blit of the master. A missing/zero scale falls back to the old 3× rather than dividing by zero.
+    const sc = (typeof SPRITES.bodyScale === 'function') ? SPRITES.bodyScale({ id: a.id, skin: a.skin }) : 0;
+    bctx.scale(sc > 0 ? 1 / sc : 3, sc > 0 ? 1 / sc : 3);
     SPRITES.drawBody(bctx, { id: a.id, skin: a.skin, px: 0, py: 0, dir: 'south', color: a.color, state: 'idle', sitting: false, working: false, phase: 0, noShadow: true }, performance.now());
     bctx.restore();
     // measure the drawn body's real bounds (alpha > 16), so the fit ignores the master's transparent padding
@@ -2544,13 +2758,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     }
     if (!any) return;
     const sw = maxX - minX + 1, sh = maxY - minY + 1;
-    // fit into the frame with a small margin, aspect preserved, feet to the bottom
-    const padX = 8, padTop = 8, padBot = 6;
-    const k = Math.min((cv.width - padX * 2) / sw, (cv.height - padTop - padBot) / sh);
+    // INTEGER fit, floored at 1× — a fractional k is the whole defect, and 1× (native) is always honest.
+    // Pads are device px so the fit math and the drawn result share one coordinate space.
+    const padX = 6 * dev, padTop = 6 * dev, padBot = 6 * dev;
+    const kFit = Math.min((cv.width - padX * 2) / sw, (cv.height - padTop - padBot) / sh);
+    const k = Math.max(1, Math.floor(kFit));
     const dw = sw * k, dh = sh * k;
-    pctx.imageSmoothingEnabled = true;
-    if ('imageSmoothingQuality' in pctx) pctx.imageSmoothingQuality = 'high';
-    pctx.drawImage(buf, minX, minY, sw, sh, (cv.width - dw) / 2, cv.height - padBot - dh, dw, dh);
+    pctx.imageSmoothingEnabled = false;   // NN: preserve the artist's pixels instead of interpolating them away
+    // integer destination origin too — a half-pixel offset reintroduces the blur the NN flag just removed
+    pctx.drawImage(buf, minX, minY, sw, sh,
+      Math.round((cv.width - dw) / 2), Math.round(cv.height - padBot - dh), dw, dh);
   }
   // BRIEF live telemetry, painted in place (no DOM rebuild → open CONFIG/MEMORY editors are never wiped).
   // Touches only: the hero status dot + role line (agHead), and the roster idle/working hints (railTop). Every
@@ -2581,7 +2798,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       st.classList.toggle('working', live);
     });
   }
-  function openAgent(i) { sel = i; if (open.agents) { if (minimized.agents) restoreTerm('agents'); rerender('agents'); } else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { console: true, feature: true }); }
+  /* className 'dossier' pins the shell to a STEADY height (.term.console.dossier in app.css). Without it the
+     console is height:auto AND CSS-centred, so every tab whose content is a different length re-centres the whole
+     window: measured live, the tab strip you just clicked moved between y=236 (CONFIG) and y=387 (RESTORE) — up to
+     151px out from under the cursor, on the control you are actively using. The pane scrolls; the chrome holds still. */
+  function openAgent(i) { sel = i; if (open.agents) { if (minimized.agents) restoreTerm('agents'); rerender('agents'); } else toggleTerm('agents', 'AGENT DOSSIER', buildAgents, { console: true, feature: true, className: 'dossier' }); }
 
   /* ============== SKILLS — capability readout (mirrors the sidecar CAP_REGISTRY) ==============
      The agent's real tools come from the OBJECTS at its workstation (object = capability — see
@@ -7115,8 +7336,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // the old 'caps' section maps to the toolsets home); 'logbook' and 'rewind' are dossier
     // sections of the selected agent. ('updates' is still a real window — no alias needed.)
     skills:   { term: 'connectors', section: 'library', map: { library: 'library', agent: 'agent', caps: 'toolsets' } },
-    logbook:  { term: 'agents',     section: 'logbook', map: { runs: 'logbook', slag: 'logbook', insights: 'logbook' } },
-    rewind:   { term: 'agents',     section: 'restore', map: {} }
+    // NAV CONDENSE 3: LOGBOOK + RESTORE are now ONE dossier lane ('record'), so both retired window keys —
+    // and every section name either used to answer to — resolve to it.
+    logbook:  { term: 'agents',     section: 'record', map: { runs: 'record', slag: 'record', insights: 'record' } },
+    rewind:   { term: 'agents',     section: 'record', map: { restore: 'record' } }
   };
   function openTerm(key, section) {
     const al = TERM_ALIAS[key];
