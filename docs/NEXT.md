@@ -1,5 +1,29 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-08 — VOICE TURN BOUNDARIES + LIVE DICTATION — MERGED
+
+Merged to `feat/harness-backend` as `9e8c9c5c` from snapshot `17196bd9`. Conversation mode now keeps a 900 ms pre-roll, uses a quieter-room-safe
+speech threshold, permits utterances up to 60 seconds, and exposes a persistent TURN END
+control with 1.2, 1.8, and 2.6 second pause choices. Transcription mode now renders genuine
+local speech-recognition previews in the composer while the user is still speaking; the
+synthetic bullet/dot progress text is gone, and typed drafts remain protected.
+
+Conversation mode also fixes one speaker identity for the full Live Voice session. It snapshots
+the selected voice when the room opens, lets the first audible chunk choose the bundled Kokoro
+engine or its mapped Edge floor, and pins that engine for later chunks and turns. A transient
+failure can no longer substitute a different-sounding voice mid-conversation; changing the voice
+picker now truthfully applies to the next Live Voice session.
+
+Verification: focused voice-button (**86/86**), media-service (**34/34**), and claims
+(**64/64**) suites are green; mirrored website assets are exact; JavaScript syntax and strict
+package JSON checks are green. Both the final branch and merged trunk passed
+`npm run test:fast` **584/584 GREEN** and `npm run test:http` **70/70 GREEN**. Claims authority
+passes with 206 locked surface files. In the real seeded app, the TURN END control rendered with the persisted
+NORMAL 1.8S value after closing and reopening Local Live, using the station-native dark skin.
+The in-app browser denied microphone capture, so real acoustic boundary/transcript proof
+remains for an installed-desktop pass; production callback behavior is covered deterministically.
+No route, shared-contract, external-service, push, PR, or deploy change occurred.
+
 ## 2026-08-07 — PER-BLOCK CODE COPY — MERGED
 
 Merged to `feat/harness-backend` as `014dc3e3` from snapshot `d3b1c264`. Fenced COMMS code blocks now have
@@ -69,6 +93,33 @@ approvals, durable schedules, background delegation, session management, checkpo
 MCP OAuth/stdio, skills authoring, or provider breadth. Those are now confirmed peer capabilities. No row turns
 green from unit tests alone: final authority is a packaged live or fault-injection receipt at the exact release
 candidate SHA.
+
+## 2026-08-07 — USER-SELECTABLE TRAY START/CLOSE (`agent/tray-background`)
+
+READY TO MERGE. The existing Lane 4D tray supervisor now has two independent, opt-in desktop preferences:
+START MINIMIZED TO TRAY and CLOSE WINDOW TO TRAY. Both default off, persist through a versioned native JSON
+record with exact read-back and backup recovery, and surface verified native state in Settings. Enabling
+close-to-tray keeps the one supervised shell/sidecar alive even while idle; disabling it preserves the prior
+armed-work safety decision. Browser preview stays disabled and makes no native lifecycle claim. Tray Quit
+remains the explicit drain/kill/full-exit path.
+
+The first native live pass exposed a real Tauri seam: preventing `CloseRequested` alone did not prevent the
+event loop from exiting. The final implementation pairs that window event with one atomic pending-close flag
+and prevents only its corresponding user exit request. Programmatic exits, updater exit, OS exit, and the
+short-lived second-instance reveal process are not trapped. An isolated Windows debug build under identifier
+`ai.skynet.harness.traytest` persisted `{startMinimized:true,closeToTray:true}` through real Tauri IPC; a real
+window close logged `close_to_tray=true`, hid StarNet, and left the exact shell and sidecar alive. On restart,
+Win32 top-level-title inspection saw no visible `StarNet` window; a second launch exited 0, revealed `StarNet`,
+and left the primary alive. The existing tray Open/Quit handlers were compiled and covered by the focused
+seam but were not mouse-clicked in this isolated proof. The disposable test profile and WebView data were
+moved to the Recycle Bin; the installed StarNet process/data were never touched.
+
+Verification: `npm run test:fast` is **573/573 GREEN**; desktop lifecycle preference coverage is 14 assertions,
+quitguard is 27, claims authority is 64, and native preference tests are 3/3. The isolated Tauri debug build
+completed successfully. `test:http` was not run because this slice changes no sidecar route or HTTP contract.
+No shared event/schema edit, integration-tree edit, external message, provider spend, push, PR, deploy, tag,
+installer, or publication occurred.
+
 ## 2026-08-06 — PERSISTENT PER-AGENT FULL ACCESS (`agent/approval-full-access`)
 
 READY TO MERGE. The permission card's FULL ACCESS answer previously wrote only an in-process wildcard that
@@ -2700,3 +2751,52 @@ window title `native-open-proof-223f8c06.md - Notepad`. The folder control opene
 both focused and selected, and copy-path placed the exact 95-character absolute path on the clipboard. The
 temporary session, artifact, proof-specific Notepad process, and Explorer window were then removed; the prior
 clipboard text was restored.
+
+# IN PROGRESS 2026-08-07 — CONNECTORS & ABILITIES AUDIT (`agent/connector-abilities-audit-0807`)
+
+The ABILITIES console now gives a truthful, announced zero-result state instead of turning into a
+blank window and clearing the selected tab; its search is named for abilities rather than only
+connectors. Catalog setup filters expose their pressed state, connector/key/extension/Spotify and
+Skill Exchange feedback use polite live regions, and the procedure count says skills rather than
+colliding with the separate RECIPES product. MCP removal now uses the shared two-click armed
+confirmation before deleting the endpoint and its stored credential. The website mirror is synced.
+
+The connector audit also closed three provider-specific authentication defects. RFC 8414 discovery now
+handles pathful issuers such as monday.com's `/mcp` issuer. Dynamic registration preserves the protected
+client secret and advertised token-endpoint method for confidential clients (currently Supabase and
+monday.com), and uses them for both code exchange and refresh after restart. Composio keys now travel in
+the provider-required `x-consumer-api-key` header, including verified migration of an already-saved Bearer
+token; the catalog and KEYS UI describe that header truthfully instead of calling it a Bearer token.
+
+Live provider proof: all 15 directly sign-in-able OAuth catalog entries completed resource/authorization
+server discovery, S256 validation, and dynamic registration; 13 registered public clients and Supabase +
+monday.com registered confidential `client_secret_post` clients. Seeded `/oauth/start` flows for both
+confidential providers saved their client id, secret, and method in the protected envelope and retained
+them after sidecar restart. All 9 no-auth catalog endpoints initialized through the MCP manager (including
+their real tool/resource/prompt inventories). All advertised API-key endpoints were reachable and refused
+the deliberately invalid probes with authentication responses rather than transport/discovery failures.
+No third-party user consent or valid paid-service API key was supplied during this audit, so those
+account-specific consent screens and post-auth tool calls remain release-candidate acceptance work.
+
+Live seeded UI proof at `localhost:8897`: all eight sections and six intent routes opened; empty form
+validation, catalog filtering, search/Escape, tool inventories, placement deep-link, and native-control
+paint were exercised without browser warnings/errors. AWS Knowledge installed as a connected MCP with
+5 tools, reloaded, survived restart, required arm + confirm to remove, and stayed removed after a second
+restart. A Composio probe saved only the custom header, appeared under KEYS as `HEADER SAVED`, survived a
+restart with its value redacted from API output, reported the expected 401 instead of claiming connection,
+and was removed afterward. WEB & BROWSER and 1-3-1 Decision Framework switches each survived changed and
+restored-state restarts.
+
+Focused connector gates are 764 assertions green; the affected-domain slice is 26/26; `qa:journeys` is
+129/129 and the UI-only Beginner Run passed. The post-sync `npm run test:fast` is 573/573 green. Every
+one of the 68 HTTP integration files passed during this audit, including
+`sidecar.http` (468 assertions) and the live MCP connector E2E (87), but the canonical seven-minute
+`npm run test:http` wrapper timed out twice under sustained shared-host CPU pressure before it could run
+the whole list in one process. The omitted 12-file tail passed separately (374 assertions).
+
+NOT READY TO MERGE OR RELEASE: the canonical HTTP gate does not have one uninterrupted green receipt;
+Guardian did not complete before its ten-minute invocation
+ceiling; and installed-exe smoke is truthfully BLOCKED because no exact candidate SHA/artifact was supplied
+and no installed candidate was listening on CDP. `qa:ready` must remain NOT READY until those receipts are
+green. No production account, valid third-party credential, merge to trunk, push, PR, deployment, or
+publication was performed.

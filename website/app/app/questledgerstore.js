@@ -56,7 +56,11 @@ const QuestLedgerStore = (() => {
       attest: at,
       declineNote: (r && r.declineNote && typeof r.declineNote === 'object') ? { at: Number(r.declineNote.at) || 0, note: String(r.declineNote.note || '') } : null,
       groundedIn: (r && r.groundedIn) || null,
-      agentId: (r && r.agentId) || null
+      agentId: (r && r.agentId) || null,
+      completedBy: (r && r.completedBy) || null,
+      domain: (r && r.domain) || null,
+      goalId: (r && r.goalId) || null,
+      milestoneId: (r && r.milestoneId) || null
     };
   }
 

@@ -481,6 +481,8 @@ const World = (() => {
     if (unsub) { unsub(); unsub = null; }
     station = st; geo = null; cache = null; geoDirty = true; bakeDirty = true; fitNeeded = true;
     novelty = []; seenProps = null; seenBelts = null;   // re-learn the scene from scratch (no cross-station novelty)
+    clearDeferredShips();                               // a crate waiting on the OLD floor's handoff must never land on this one
+    dockLineWork.clear();
     propFoot = new Map(); pendingMourn = null;          // forget where things stood (no cross-station grief)
     agentDecor.length = 0; ownPlaced.clear(); placeCd = 0;   // forget which decor it placed (the new floor is a clean slate)
     if (agent && agent.fond) agent.fond.clear();        // forget the old floor's haunts — the new floor earns its own
@@ -3694,6 +3696,14 @@ const World = (() => {
       if (PropSprites.setOutboxCrates) PropSprites.setOutboxCrates(returnCrates());   // G2.3: uncollected while-away work stacks on the chute
       if (PropSprites.setMissionPins) { const mp = missionPinCounts(now); PropSprites.setMissionPins(mp[0], mp[1], mp[2], mp[3]); maybePinProposal(now, mp[3]); }   // G1b/G1c: open quests pin to the MISSION BOARD; a station-gap keeps it breathing; a jammed routine flags an amber JAM stub; G4: pending proposals + the walk-and-pin body
       if (PropSprites.setTrophyCount) PropSprites.setTrophyCount(trophyCount(now));   // G3b: earned trophies stand behind glass in the TROPHY CASE
+      if (PropSprites.setJourneyStage) {
+        let journeyStage = 0;
+        try {
+          const journey = (typeof JourneyStore !== 'undefined' && JourneyStore.status) ? JourneyStore.status() : null;
+          journeyStage = Math.max(0, Number(journey && journey.evolution && journey.evolution.stage) | 0);
+        } catch (_) {}
+        PropSprites.setJourneyStage(journeyStage);   // one proven goal = one physical beacon on the TROPHY CASE crown
+      }
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
         const work = (p.t === 'outbox' && outboxLit) || (p.t === 'bay' && bayLit(p, now)) || workstationLit(p) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
@@ -3828,6 +3838,10 @@ const World = (() => {
     _scanCv = pc; _scanKey = key;
     return _scanCv;
   }
+  // The station's own CRT is NOT user-optional — the feed is a tube, and the Appearance dial only
+  // thins the screen-space glass over the HTML (style.css body.crt-dull). `no-scan` remains the one
+  // and only suppressor here, and it is internal: scripts/verify-stars2.mjs sets it to flatten the
+  // feed for star-pixel checks. Do not wire a settings class into this pass.
   function drawCRT(now) {
     if (!cv || document.body.classList.contains('no-scan')) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -4624,11 +4638,18 @@ const World = (() => {
   // Every label NAMES THE FIX, never just the fault ("NO LINE FROM INTAKE", not the old "NO ROUTE IN").
   // A finding only exists when it's true: a lone assigned bay is a COMPLETE build and gets no callout;
   // a bay->OUTBOX ship-out lane is valid and GLOWS instead of nagging (the 2026-07-05 playtest bug class).
+  /* PARITY IS A LAW, NOT A HABIT (2026-08-07 conveyor audit). buildRoutingNags does `if (!label) continue`,
+     so a compiler code missing from this table is a finding the live world SILENTLY DROPS — the Commander
+     sees a dead line and no reason anywhere on the floor. ORPHAN_JUNCTION was exactly that: REFIT's
+     VAL_LABEL named it, the world said nothing. Every VAL_LABEL key must have an entry here (the wording
+     may differ — REFIT can spell out a gesture the world has no room for); locked by
+     test/routing-nag-parity.test.js, which reads both tables out of the two source files. */
   const NAG_LABEL = {
     UNBOUND_BAY: 'NO AGENT — CLICK', ORPHAN_BAY: 'NOT ON THE LINE', ORPHAN_SOURCE: 'NO BELT OUT',
     BAY_NOT_FED: 'NOT CONNECTED — FIX IN REFIT', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT LANE', DUP_AGENT: 'DUP AGENT',
     SPLIT_ONE_LANE: 'SPLITTER — ONE LANE', CHAIN_CYCLE: 'WORK LINE LOOPS',
-    BELT_BURIED: 'PROP ON THE LINE — MOVE IT'
+    BELT_BURIED: 'PROP ON THE LINE — MOVE IT',
+    ORPHAN_JUNCTION: 'NOT ON A BELT — MOVE IT'
   };
   // project the compiled plan's error list onto floor rectangles once per recompile (zero per-frame walk)
   function buildRoutingNags() {
@@ -5336,9 +5357,14 @@ const World = (() => {
      didn't run, never hide a run that did. */
   const dockLineWork = new Map();   // agentId -> lineId of the work-item most recently placed at this dock (or absent)
   function intakeMessage(payload) {
+    const p = payload || {};
+    /* THE HANDOFF ARRIVED — so the producing dock's own crate must NOT also ship (see shipProductCrate:
+       the wait exists precisely because this may never come). This runs FIRST, ahead of every early
+       return below: cancelling is bookkeeping about a run that already happened, and it must not depend
+       on whether this floor currently has a conveyor to draw the arriving crate on. */
+    if (p.kind === 'chain' && p.from) cancelDeferredShip(String(p.from));
     if (!convey) return;
     // tag the box with its content kind (the same getTag the sidecar routes by) so a FILTER sorts it visibly
-    const p = payload || {};
     if (p.agentId) { if (p.lineId) dockLineWork.set(p.agentId, String(p.lineId)); else dockLineWork.delete(p.agentId); }
     if (!p.tag && typeof Classify !== 'undefined' && Classify.getTag) p.tag = Classify.getTag(p.preview || p.text || '');
     // ride inbound work as ORE — a UNIFORM raw chunk: every incoming request is one identical piece of raw
@@ -5477,6 +5503,32 @@ const World = (() => {
     const w = runWork.get(aid || 'agent');
     return !!(w && (w.tools > 0 || w.dels > 0));
   }
+  /* NEVER NEITHER (2026-08-07 conveyor audit). The suppression below is right when the handoff crate
+     really comes — but it was unconditional, and the handoff is decided by the SIDECAR, later, against a
+     plan that may have been re-posted in between (a floor edit mid-run re-keys the line; the chain gate
+     then refuses to advance). Outcome: no handoff crate ever placed, the dock's own crate suppressed, and
+     a run the Commander PAID for left no mark on the floor at all — the floor asserting "nothing happened"
+     about work that did. So the suppression is now a WAIT, not a drop: hold the dock's crate for the grace
+     window, cancel it the moment the upstream handoff is actually placed (intakeMessage cancels on the
+     chain item's `from`), and ship it if the handoff never arrives. Exactly one crate either way. */
+  const HANDOFF_GRACE_MS = 8000;   // generous: the hop is a real model run being dispatched, not a tick
+  const deferredShip = new Map();  // producing agentId -> timer id
+  function cancelDeferredShip(aid) {
+    const t = aid && deferredShip.get(aid);
+    if (t) { clearTimeout(t); deferredShip.delete(aid); }
+  }
+  function clearDeferredShips() { for (const t of deferredShip.values()) clearTimeout(t); deferredShip.clear(); }
+  // the crate's MASS must be read NOW: run.end drops runUsdRecon the instant this returns, so a deferred
+  // ship that re-read it later would weigh every crate 0 (crate-mass honesty).
+  function productCrateSpec(p) {
+    const w = (typeof Conveyor !== 'undefined' && Conveyor.weightForUsd) ? Conveyor.weightForUsd(runUsdRecon.get((p && p.runId) || '')) : 0;
+    return { outbound: true, box: 'product', weight: w, workitemId: (p && p.workitemId) || '' };
+  }
+  function emitProductCrate(aid, spec) {
+    if (!convey) return;
+    const t = outboundBeltTile(aid);
+    if (t) convey.enqueueAt(t.x, t.y, spec);
+  }
   function shipProductCrate(p) {
     if (!convey) return;
     // A NON-TERMINAL STAGE SHIPS NOTHING OUT — *WHEN ITS WORK IS THE LINE'S*. If this dock's output hands off
@@ -5487,16 +5539,20 @@ const World = (() => {
     // crate is coming, so suppressing this one would erase real, delivered work from the floor. The dock's
     // belts still say "hands off to X"; what decides is whether THIS run's work belonged to X's line.
     const cAid = (p && p.agentId) || '';
-    const ch = (cAid && routingPlan && routingPlan.chains) ? routingPlan.chains[cAid] : null;
-    if (ch && ch.next && ch.next.length && dockLineWork.get(cAid)) return;
     const rid = (p && p.runId) || '';
+    // dedup FIRST (run.end is observed twice — local harness + SSE echo) so an echo can't arm two waits
     if (rid) { if (shippedRunIds.has(rid)) return; shippedRunIds.add(rid); if (shippedRunIds.size > 400) shippedRunIds.clear(); }
-    const t = outboundBeltTile(p && p.agentId);
     // MASS = the run's real reconciled cost (cargoProduct's contract) — the old hardcoded 0.3 drew every
     // crate mid-weight regardless of spend. Conveyor.weightForUsd maps reconciled usd -> 0..1; a run with
     // no reconciled cost ships weight 0 (the back-compat light look), never an estimate.
-    const w = (typeof Conveyor !== 'undefined' && Conveyor.weightForUsd) ? Conveyor.weightForUsd(runUsdRecon.get(rid)) : 0;
-    if (t) convey.enqueueAt(t.x, t.y, { outbound: true, box: 'product', weight: w, workitemId: (p && p.workitemId) || '' });
+    const spec = productCrateSpec(p);
+    const ch = (cAid && routingPlan && routingPlan.chains) ? routingPlan.chains[cAid] : null;
+    if (ch && ch.next && ch.next.length && dockLineWork.get(cAid)) {
+      cancelDeferredShip(cAid);
+      deferredShip.set(cAid, setTimeout(() => { deferredShip.delete(cAid); emitProductCrate(cAid, spec); }, HANDOFF_GRACE_MS));
+      return;
+    }
+    emitProductCrate(cAid, spec);
   }
   // an unproductive run produced no deliverable — ride a red-hot SLAG crate off the PRODUCING agent's bay
   // carrying its post-mortem one-liner, so the failed outcome is visible leaving the line.

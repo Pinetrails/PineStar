@@ -150,8 +150,11 @@ function fakeStack(tools) {
   A.ok(/\/api\/connectors\/refresh/.test(station), 'RELOAD hits the refresh endpoint');
   A.ok(/function badge/.test(station) && /connected/.test(station) && /error/.test(station), 'status badge (green/amber/red) present');
   A.ok(/mc-tools/.test(station), 'discovered-tools preview present');
-  A.ok(/act === 'remove'[\s\S]{0,500}if \(!r\.ok\)/.test(station),
+  A.ok(/async function removeConnector\([\s\S]{0,500}if \(!r\.ok\)/.test(station),
     'connector delete checks HTTP success before claiming removal');
+  A.ok(/function wireRemoveButtons\(\)/.test(station) && /ArmConfirm\.wire\(btn/.test(station) &&
+    /armedLabel:\s*'SURE\? REMOVE CONNECTOR'/.test(station) && /btn\.dataset\.wired === '1'/.test(station),
+    'connector removal requires the shared two-step armed confirmation');
   A.ok(/postJSON\('\/api\/connectors', \{ id, transport: c\.transport, enabled: cb\.checked \}\)[\s\S]{0,250}if \(!r\.ok\)/.test(station),
     'connector enable toggles reject and visibly revert a refused HTTP write');
 
@@ -191,6 +194,9 @@ function fakeStack(tools) {
   A.ok(/ccCache\.find\(/.test(station), 'install reads the authoritative url/name from the catalog, never a re-typed value');
   A.ok(/transport:\s*'http',\s*url:\s*e\.url/.test(station), 'install pre-fills the catalog entry url');
   A.ok(/if \(token\) payload\.token = token/.test(station), 'an API key is sent only when the user provided one');
+  A.ok(/const keyDelivery = e\.keyHeader/.test(station) && /esc\(e\.keyHeader\)/.test(station),
+    'custom-header API keys describe their real wire header instead of falsely claiming Bearer auth');
+  A.ok(/Authorization: Bearer &hellip;/.test(station), 'ordinary token connectors retain the Bearer-auth explanation');
   // truthful telemetry: ADDED state comes from the backend `installed` flag, and live state is re-read after add
   A.ok(/e\.installed/.test(station) && /✓ ADDED/.test(station), 'an already-installed connector shows ADDED (from backend state, not guessed)');
   A.ok(/state === 'up'/.test(station), 'the connect result badge reflects the real manager state, not an assumption');
@@ -210,6 +216,28 @@ function fakeStack(tools) {
   A.ok(/dataset\.search/.test(stationCore), 'console search also matches the off-screen data-search aliases');
   A.ok(/data-search="/.test(station), 'catalog cards emit data-search from their aliases');
   A.ok(/e\.aliases/.test(station) && /p\.aliases/.test(station), 'both the CATALOG and the KEYS platform card carry aliases');
+
+  /* ---------- 5. SEARCH + FILTER ACCESSIBILITY ----------
+     A zero-hit global search used to hide every pane and clear every tab's selected state, leaving a
+     silent blank console. Filter selection was color-only, and dynamic form feedback was not announced. */
+  A.ok(/mkEl\('div', 'con-search-empty'\)/.test(stationCore) && /setAttribute\('role', 'status'\)/.test(stationCore),
+    'console search owns a polite status surface for zero results');
+  A.ok(/setSearchContext\(matches\[0\] \|\| activeId\)/.test(stationCore),
+    'zero-hit search retains the real selected section instead of clearing the tablist selection');
+  A.ok(/searchLabel:\s*'Search abilities'/.test(station) && /searchEmptyText:\s*'No abilities match/.test(station),
+    'ABILITIES names its global search accurately and explains a zero-hit result');
+  A.ok(/data-cc-filter="all" aria-pressed="true"/.test(station) &&
+    /setAttribute\('aria-pressed', active \? 'true' : 'false'\)/.test(station),
+    'catalog setup filters expose the same selected state to assistive technology that the active class paints');
+  for (const id of ['sp-msg', 'mc-msg', 'cc-msg', 'ky-msg', 'ext-msg']) {
+    A.ok(new RegExp('id="' + id + '"[^>]*role="status"[^>]*aria-live="polite"').test(station),
+      id + ' announces validation and connection feedback');
+  }
+  A.ok(/\.con-search-empty\s*\{/.test(css), 'zero-result search feedback has station-native styling');
+  A.ok(/\(c\.hasToken \|\| c\.hasHeaders\) && !c\.oauth/.test(station),
+    'KEYS recognizes catalog connectors authenticated through a protected custom header');
+  A.ok(/c\.hasHeaders && !c\.hasToken \? 'header saved' : 'token saved'/.test(station),
+    'KEYS labels custom-header credentials truthfully instead of calling every credential a token');
 
   A.report('connectors-ui');
 })().catch(e => { console.log('FAIL: threw ' + (e && e.stack || e)); process.exit(1); });

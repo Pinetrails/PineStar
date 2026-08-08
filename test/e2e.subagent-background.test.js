@@ -56,7 +56,10 @@ function startMockOpenRouter() {
             if (!hasToolResult) tool('spawn_bg', 'team_spawn', { tasks: [{ prompt: 'work quietly in the background', label: 'bg-proof' }], background: true });
             else text('background worker started');
           } else if (/^sub-/.test(agentId)) {
-            text('background subagent done');
+            // Hold the worker open long enough to inspect the authoritative reconnect snapshot between
+            // its frozen run.start and run.end. This is the exact window where the CREW rail used to flip IDLE.
+            setTimeout(() => { text('background subagent done'); res.write('data: [DONE]\n\n'); res.end(); }, 900);
+            return;
           } else {
             text('unexpected agent ' + agentId);
           }
@@ -207,6 +210,10 @@ async function waitUntil(fn, ms, label) {
 
     await sse.waitFor(events => events.some(e => e.name === 'task' && e.payload && e.payload.kind === 'subagent' && e.payload.status === 'running'), 5000, 'subagent task running');
     await sse.waitFor(events => events.some(e => e.name === 'agent.run.start' && e.payload && /^sub-/.test(e.payload.agentId || '')), 5000, 'subagent run start');
+    const startedEvent = sse.events.find(e => e.name === 'agent.run.start' && e.payload && /^sub-/.test(e.payload.agentId || ''));
+    const liveSnapshot = await (await fetch(B + '/api/state/snapshot', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.ok((liveSnapshot.runs || []).some(r => r.runId === startedEvent.payload.runId && r.agentId === startedEvent.payload.agentId && r.source === 'subagent'),
+      'reconnect snapshot includes the confirmed background worker while its provider run is still live');
     await sse.waitFor(events => events.some(e => e.name === 'agent.run.end' && e.payload && /^sub-/.test(e.payload.agentId || '')), 5000, 'subagent run end');
     await sse.waitFor(events => events.some(e => e.name === 'task' && e.payload && e.payload.kind === 'subagent' && e.payload.status === 'done'), 5000, 'subagent task done');
 
@@ -217,6 +224,8 @@ async function waitUntil(fn, ms, label) {
     }, 5000, 'durable background subagent completion');
     A.ok(done && done.id, '/api/subagents exposes the completed background worker');
     A.ok(Array.isArray(done.events) && done.events.some(e => e.name === 'agent.run.start') && done.events.some(e => e.name === 'agent.run.end'), 'subagent record keeps watchable lifecycle events');
+    const settledSnapshot = await (await fetch(B + '/api/state/snapshot', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.ok(!(settledSnapshot.runs || []).some(r => r.runId === done.runId), 'reconnect snapshot drops the background worker after its run.end');
     A.ok(mock.requests.some(r => r.agentId === 'agent') && mock.requests.some(r => /^sub-/.test(r.agentId || '')), 'mock provider saw both lead and background worker calls');
   } finally {
     if (sse) sse.close();

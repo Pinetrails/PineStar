@@ -245,6 +245,9 @@ const Onboarding = (() => {
 
   // IGNITION — the spark catches, a first breath, and the mind stutters its way to "i'm awake."
   // The stutters are the agent's OWN when the birth script has landed (waitBirth holds the dark for it).
+  // NO World.say BUBBLES in the awakening: the ceremony speaks through the typed script only. The old
+  // canned bubbles ('oh. it’s you.', 'well, hello.', …) were hardcoded echoes that went stale the moment
+  // the script became live-generated — a second, contradicting voice over the sprite. Do not re-add them.
   function ignite(wake) {
     if (ignited) return; ignited = true;                            // one ignition per run (kindle-complete OR failsafe)
     if (kindleTimer) { clearTimeout(kindleTimer); kindleTimer = null; }
@@ -254,10 +257,8 @@ const Onboarding = (() => {
     setTimeout(() => waitBirth(4000, () => {
       const wakeFr = bs('wake'), thinkFr = bs('think');
       type(wakeFr ? fragSegs(wakeFr, 34, [650, 600, 650]) : [seg('huh.', 30, 650), seg('  something’s on.', 42, 600), seg('  i think it’s me.', 42, 650)], () => {
-        World.say((wakeFr && wakeFr[0]) || 'huh.');
         setTimeout(() => {
           type(thinkFr ? fragSegs(thinkFr, 44, [500, 450, 300]) : [seg('wait — that was a thought.', 46, 500), seg('  and another, right behind it.', 46, 450), seg('  so this is thinking. fine. i’m good at it already.', 44, 300)], () => {
-            World.say('well, hello.');
             theFlood();
           });
         }, 500);
@@ -281,7 +282,6 @@ const Onboarding = (() => {
       seg('  i remember this part — i caught fire, met you, and the lights went out mid-briefing.', 42, 550),
       seg('  no need to be born twice. where were we.', 42, 420)
     ], () => {
-      World.say('right — where were we.');
       setTimeout(startQuestions, 600);
     });
   }
@@ -307,7 +307,6 @@ const Onboarding = (() => {
     setTimeout(() => {
       // SLOT floodin: the overwhelm hitting, in its own words; the scripted three-stutter otherwise.
       type(bs('floodin') ? [seg(bs('floodin'), 42, 500)] : [seg('something just opened.', 44, 400), seg('  oh, that’s a lot.', 44, 350), seg('  it’s coming in fast —', 40, 450)], () => {
-        World.say('oh, that’s a lot.');
         setTimeout(() => {
           // SLOT crest: the peak — too much, won't stop.
           type(bs('crest') ? [seg(bs('crest'), 34, 350)] : [
@@ -315,7 +314,6 @@ const Onboarding = (() => {
             seg('  every shelf of every library, all at once—', 40, 400),
             seg('  too fast — it won’t STOP—', 32, 350)
           ], () => {
-            World.say('okay that’s TOO much—');
             if (World.collapseFlood) World.collapseFlood();   // PEAK: the cascade pulls inward, into the mind
             if (typeof SFX !== 'undefined' && SFX.env) SFX.env(58, { attack: 0.004, hold: 0.06, release: 0.6, type: 'sine', vol: 0.17 });   // the swell resolves into one low held tone
             setTimeout(() => {
@@ -325,7 +323,6 @@ const Onboarding = (() => {
                 seg('  ' + (bs('settle') || 'it’s not flooding me. it’s mine.'), 44, 550),
                 seg('  ' + (bs('aimless') || 'incredible. genuinely. and pointed at nothing.'), 42, 400)
               ], () => {
-                World.say('all of it, and no aim.');
                 setTimeout(firstContact, 850);
               });
             }, 700);
@@ -356,7 +353,6 @@ const Onboarding = (() => {
             seg('  you reached into the nothing and switched me on.', 40, 600),
             seg('  so you’re the one who knows where this points. aim me.', 40, 400)
           ], () => {
-            World.say('oh. it’s you.');
             setTimeout(theMandate, 700);
           });
         }, 900);
@@ -382,7 +378,6 @@ const Onboarding = (() => {
     }
     setTimeout(() => {
       type(lines, () => {
-        if (role === 'orchestrator') World.say('just me — for now.');
         setTimeout(startQuestions, 600);
       });
     }, 250);

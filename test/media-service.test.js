@@ -52,6 +52,19 @@ async function make(overrides) {
   return makeMediaService(opts);
 }
 
+async function invokeTts(overrides, body) {
+  const service = await make(Object.assign({}, overrides || {}, {
+    readBody: async () => JSON.stringify(body || {})
+  }));
+  const response = { status: 0, headers: {}, body: Buffer.alloc(0) };
+  await service.handleTts({}, {
+    headersSent: false,
+    writeHead(status, headers) { response.status = status; response.headers = headers || {}; this.headersSent = true; },
+    end(value) { response.body = Buffer.isBuffer(value) ? value : Buffer.from(String(value || '')); }
+  });
+  return response;
+}
+
 (async () => {
   // PCM wrapping and the local-ASR decoder remain exact inverses at their shared boundary.
   const pcm = Buffer.alloc(4 * 2 * 2);
@@ -152,7 +165,32 @@ async function make(overrides) {
   assert.equal(localPcm.length, decodedOgg.length * 4, 'Telegram Ogg/Opus reaches local ASR as 16 kHz Float32 PCM');
   assert.match((await local.transcribeAudioBuffer(Buffer.from('compressed'), 'webm')).reason, /local engine cannot decode webm/);
 
-  console.log('media-service: OK (29 assertions)');
+  // Local Live chooses its serving engine once. An Edge-pinned session bypasses Kokoro, while a
+  // Kokoro-pinned session fails silent instead of changing to a different voice for one sentence.
+  {
+    let localCalls = 0, edgeCalls = 0, edgeVoice = '';
+    const engines = {
+      localVoice: {
+        status: () => ({ available: true }), defaultVoice: () => 'am_onyx',
+        edgeVoiceFor: () => 'en-US-ChristopherNeural', transcribe: async () => '',
+        synthesize: async () => { localCalls++; throw new Error('temporary local failure'); }
+      },
+      edgetts: {
+        enabled: () => true, resolveVoice: () => 'en-US-ChristopherNeural',
+        synth: async (_text, options) => { edgeCalls++; edgeVoice = options.voice; return Buffer.from('edge-audio'); }
+      }
+    };
+    const edgePinned = await invokeTts(engines, { text: 'same speaker', local: true, localVoice: 'am_onyx', localEngine: 'edge' });
+    assert.equal(edgePinned.headers['X-Voice-Provider'], 'edge:en-US-ChristopherNeural', 'an Edge-pinned session names and keeps its mapped voice');
+    assert.equal(localCalls, 0, 'an Edge-pinned session never probes Kokoro between sentences');
+    assert.equal(edgeVoice, 'en-US-ChristopherNeural', 'the pinned Edge engine uses the selected voice mapping');
+
+    const localPinned = await invokeTts(engines, { text: 'do not switch', local: true, localVoice: 'am_onyx', localEngine: 'local-kokoro' });
+    assert.match(localPinned.headers['Content-Type'], /application\/json/, 'a failed Kokoro-pinned chunk degrades without returning another voice');
+    assert.equal(edgeCalls, 1, 'a Kokoro-pinned session never falls through to Edge mid-conversation');
+  }
+
+  console.log('media-service: OK (34 assertions)');
 })().finally(async () => {
   for (const root of roots) await fsp.rm(root, { recursive: true, force: true });
 }).catch(error => {
