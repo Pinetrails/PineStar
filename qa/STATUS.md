@@ -1091,6 +1091,8 @@ Gate: test:fast 342/342 green at the exact merged tree. Bonus: PU-01..14 re-veri
 
 **2026-08-07 merge digest (USER-SELECTABLE TRAY START/CLOSE):** `agent/tray-background` -> `feat/harness-backend` as merge `6ae1f852`, with the 206-file release surface re-locked at `cdd9704e`; exact-candidate isolated proof passed `test:fast` **580/580 GREEN**, claims **64/64**, desktop lifecycle **14/14**, quitguard **27/27**, and native Rust lifecycle preferences **3/3**. The merge and feature head remain ancestors of current trunk after concurrent integrations; no sidecar/route/shared-contract/credential change, so `test:http` was not required.
 
+**2026-08-08 merge digest (CREW STATUS RECONNECT TRUTH):** `agent/crew-status-truth` -> `feat/harness-backend` as merge `5b188477`; background workers remain WORKING across reload/SSE reconciliation only while controller-owned and `agent.run.start`-confirmed, then return IDLE on `agent.run.end`. Live reload proof stayed WORKING through five samples and settled IDLE cleanly; isolated post-merge snapshot `1b675d0a` gates: `test:fast` **580/580 GREEN**, `test:http:raw` **70/70 GREEN** (the wrapper's fixed 420s ceiling was bypassed after prior no-failure timeouts).
+
 ## Crew last-run
 
 Last-run / result per crew member. `Last run` and `Result` are filled in by each crew's
