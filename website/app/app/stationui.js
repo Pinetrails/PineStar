@@ -89,7 +89,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // every save that predates this key merges to the exact look it already had.
   // panelBright (0–100, default 0) is the tube's BRIGHTNESS knob: it lifts the panel glass's black
   // level toward the phosphor colour (never toward white). 0 = the shipped look, untouched.
-  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, panelBright: 0, textScale: 0, flicker: true, sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, panelBright: 0, textScale: 0, flicker: true, crtGlass: true, sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
   // TEXT SIZE steps (percent → chip label; 0 = AUTO, the default). Applied as a body zoom in
   // applySettings(): zoom scales layout too, so every hard-px face (COMMS included) grows together —
   // a root font-size can't reach the ~800 px-sized declarations. world.js resize() reads the same
@@ -234,9 +234,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // Applied here rather than only in the picker so it survives a reload.
     if (typeof Terrain !== 'undefined' && Terrain.setGround) Terrain.setGround(s.backdrop);
     if (typeof SpaceBG !== 'undefined' && SpaceBG.setBackdrop) SpaceBG.setBackdrop(s.backdrop);
-    // CRT scanlines are part of the fixed shipped look — no user toggle. `no-scan` stays an
-    // internal flag (set by scripts/verify-stars2.mjs to flatten the feed for star-pixel
-    // checks) and is intentionally never driven by settings here.
+    // CRT GLASS — the whole tube treatment on one switch: the in-canvas scanline/fade/grain pass
+    // and the barrel warp (world.js drawCRT/drawCurve), the screen-space scanline layer and page
+    // vignette (style.css body::after/::before), the tube glass over the feed (app.css
+    // #stage-wrap::before) and the bay scrim's lines. OFF leaves the pixel art unfiltered.
+    // Drives its OWN class: `no-scan` stays an internal flag (set by scripts/verify-stars2.mjs to
+    // flatten the feed for star-pixel checks) and is still never written from settings — a
+    // toggle() here would remove it out from under a verification run.
+    document.body.classList.toggle('crt-off', s.crtGlass === false);
     // TEXT SIZE — one dial for every hard-px UI face at once (0/absent = AUTO from screen size).
     // Removed (not '1') at 100% so the plain-desktop default leaves no inline style behind.
     const tz = resolveTextScale(s.textScale);
@@ -4565,7 +4570,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         theme: store.settings.theme, themeHue: store.settings.themeHue,
         themeSat: store.settings.themeSat, themeGlow: store.settings.themeGlow,
         panelBright: store.settings.panelBright,
-        flicker: store.settings.flicker,
+        flicker: store.settings.flicker, crtGlass: store.settings.crtGlass,
         sound: store.settings.sound, keepComputerAwake: store.settings.keepComputerAwake
       }, notifyPrefs: Object.assign({}, store.settings.notifyPrefs || notifyDefaults()) };
       try { if (typeof AutonomyStore !== 'undefined' && AutonomyStore.exportState) out.autonomy = AutonomyStore.exportState(); } catch (_) {}
@@ -4864,6 +4869,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         return '<button class="set-theme ' + (cur === v ? 'sel' : '') + '" aria-pressed="' + (cur === v ? 'true' : 'false') + '" data-ts="' + v + '" title="' + title + '">' + name + '</button>';
       }).join('') +
       '</div>' +
+      '<label class="set-row"><input type="checkbox" id="set-crtglass" ' + (s.crtGlass === false ? '' : 'checked') + '> CRT GLASS <span class="dim">— scanlines, tube curve and screen vignette; off shows the pixel art unfiltered</span></label>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       // TERMINAL AUDIO is a sound control, not a display one — its own header (it also gates notification chimes).
       '<h4 class="ms-h">SOUND</h4>' +
@@ -5042,7 +5048,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireSlider(glowIn, v => { s.themeGlow = clampN(v, 0, 150, 100); sliderVal('#set-glow-val', s.themeGlow + '%'); });
     wireSlider(brightIn, v => { s.panelBright = clampN(v, 0, 100, 0); sliderVal('#set-bright-val', s.panelBright + '%'); });
     const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); flashSaved(appMsg()); });
-    bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
+    bind('#set-crtglass', 'crtGlass'); bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
     // TEXT SIZE chips — instant-apply + persist, same idiom as the theme row above.
     const tsChips = host.querySelectorAll('#set-textsize [data-ts]');
     const syncTextSize = () => tsChips.forEach(x => {

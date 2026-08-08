@@ -249,6 +249,11 @@ body::after { /* scanlines + aperture-grille over EVERYTHING */
   }
 }
 body.no-scan::after { display: none; }
+/* CRT GLASS off (Appearance → DISPLAY). A SEPARATE class from `no-scan` on purpose: no-scan is the
+   internal verification flag (scripts/verify-stars2.mjs sets it directly to flatten the feed for
+   star-pixel checks) and must never be driven by, or clobbered by, a user setting. */
+body.crt-off::after { display: none; }
+body.crt-off::before { display: none; }
 body::before { /* curved-glass vignette + corner darkening */
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 940;
   background:
@@ -457,6 +462,7 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
   mix-blend-mode: multiply;
 }
 body.no-scan .crt-scan { display: none; }
+body.crt-off .crt-scan { display: none; }
 .crt-vignette {
   position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse at center, transparent 56%, rgba(0,0,0,0.6) 100%);
