@@ -216,14 +216,18 @@ body::after { /* scanlines + aperture-grille over EVERYTHING */
   --cz: var(--sn-unzoom, 1);
   /* BEAM scanlines: a soft dark trough between bright line-cores (graded stops,
      not a hard 1px bar) so it reads as an electron beam, not venetian blinds —
-     and the soft edges alias far less on fractional-DPI displays. 3px pitch. */
+     and the soft edges alias far less on fractional-DPI displays. 3px pitch.
+     The two trough alphas are var()s with the SHIPPED numbers as their fallbacks, so FULL is these
+     exact values and the CRT dial has one place to turn them down (see body.crt-dull below). The
+     geometry — pitch, stop positions, the graded shoulder — is deliberately NOT parameterised:
+     widening the pitch is what turns a beam into venetian blinds, so the dial changes depth only. */
   background:
     repeating-linear-gradient(0deg,
       rgba(0,0,0,0) 0px,
       rgba(0,0,0,0) calc(1px * var(--cz)),
-      rgba(0,0,0,0.13) calc(1.5px * var(--cz)),
-      rgba(0,0,0,0.30) calc(2px * var(--cz)),
-      rgba(0,0,0,0.13) calc(2.5px * var(--cz)),
+      rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(1.5px * var(--cz)),
+      rgba(0,0,0,var(--scan-core, 0.30)) calc(2px * var(--cz)),
+      rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(2.5px * var(--cz)),
       rgba(0,0,0,0) calc(3px * var(--cz))),
     repeating-linear-gradient(90deg,
       rgba(255,80,40,0.03) 0 calc(1px * var(--cz)),
@@ -238,9 +242,9 @@ body::after { /* scanlines + aperture-grille over EVERYTHING */
       repeating-linear-gradient(0deg,
         rgba(0,0,0,0) 0px,
         rgba(0,0,0,0) calc(1.5px * var(--cz)),
-        rgba(0,0,0,0.13) calc(2.2px * var(--cz)),
-        rgba(0,0,0,0.28) calc(3px * var(--cz)),
-        rgba(0,0,0,0.13) calc(3.8px * var(--cz)),
+        rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(2.2px * var(--cz)),
+        rgba(0,0,0,var(--scan-core-hi, 0.28)) calc(3px * var(--cz)),
+        rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(3.8px * var(--cz)),
         rgba(0,0,0,0) calc(4.5px * var(--cz))),
       repeating-linear-gradient(90deg,
         rgba(255,80,40,0.03) 0 calc(1.5px * var(--cz)),
@@ -249,27 +253,29 @@ body::after { /* scanlines + aperture-grille over EVERYTHING */
   }
 }
 body.no-scan::after { display: none; }
-/* CRT LEVEL (Appearance → CRT) — one dial, turned down in two steps. A SEPARATE class from
-   `no-scan` on purpose: no-scan is the internal verification flag (scripts/verify-stars2.mjs sets
-   it directly to flatten the feed for star-pixel checks) and must never be driven by, or clobbered
-   by, a user setting.
+/* CRT DULLED (Appearance → CRT) — the tube TURNED DOWN, never turned off.
+   A SEPARATE class from `no-scan` on purpose: no-scan is the internal verification flag
+   (scripts/verify-stars2.mjs sets it directly to flatten the feed for star-pixel checks) and must
+   never be driven by, or clobbered by, a user setting.
 
-   SOFT (`crt-soft`) lifts these two SCREEN-SPACE overlays off the whole page while leaving the
-   station feed's own CRT completely alone — the feed's scanlines are painted IN-CANVAS (world.js
-   drawCRT) and its curve/aberration/vignette come from drawCurve, none of which this touches. That
-   is the whole reason the option is cheap: measured row-to-row luminance ripple on a lit floor
-   region of the feed was 24.875 with this layer and 24.952 without it, i.e. the tube is unchanged.
-   What DOES change is text: a 3px-pitch trough at up to 0.30 alpha was crossing the body of every
-   14px VT323 glyph about 2.6 times. That interference — not contrast, which measures 5.7:1 — is the
-   "my eyes hurt" report. OFF (`crt-off`) is SOFT plus the in-canvas passes and the tube glass. */
-body.crt-soft::after { display: none; }
-body.crt-soft::before { display: none; }
-body.crt-off::after { display: none; }
-body.crt-off::before { display: none; }
+   There is no level that removes the CRT — the station is a tube, and that is not a preference.
+   What this does is thin the SCREEN-SPACE glass so the text underneath stops fighting it: the
+   trough depth drops to roughly 45% of shipped and the page vignette lightens. The pitch, the stop
+   positions and the graded shoulder are untouched, so it still reads as an electron beam at a
+   glance — it just stops carving ~2.6 troughs of 0.30 alpha through the body of every 14px VT323
+   glyph. (Contrast was never the problem: COMMS copy measures 5.7:1, past AA. The complaint is
+   interference at the glyph's own scale.) The station feed is not touched by any of this at all —
+   its scanlines, curve and aberration are painted IN-CANVAS by world.js drawCRT/drawCurve. */
+body.crt-dull {
+  --scan-shoulder: 0.06;   /* was 0.13 */
+  --scan-core: 0.14;       /* was 0.30 — the trough that was crossing every glyph */
+  --scan-core-hi: 0.13;    /* was 0.28, the hi-DPI variant's deeper core */
+  --page-vignette: 0.24;   /* was 0.42 — corner darkening over the rail and the dock */
+}
 body::before { /* curved-glass vignette + corner darkening */
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 940;
   background:
-    radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,0.42) 100%),
+    radial-gradient(ellipse 120% 90% at 50% 38%, transparent 55%, rgba(0,0,0,var(--page-vignette, 0.42)) 100%),
     radial-gradient(ellipse 60% 40% at 50% 0%, var(--ph-glow2), transparent 70%);
   mix-blend-mode: normal;
 }
@@ -474,18 +480,18 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
   mix-blend-mode: multiply;
 }
 body.no-scan .crt-scan { display: none; }
-body.crt-soft .crt-scan { display: none; }
-body.crt-off .crt-scan { display: none; }
+body.crt-dull .crt-scan { opacity: 0.45; }
 
-/* SOFT / OFF — the phosphor halo off the PROSE you actually read, and nowhere else.
-   `text-shadow` is an INHERITED property and the 4px halo comes from the `body` rule above, so
-   naming the four prose containers is enough: descendants inherit `none`, while every chip, button
-   and heading that declares its own glow keeps it untouched. That is why there is no `*` selector
-   and no !important here — a blanket sweep would flatten the chrome's identity along with the
-   copy, and the identity is not what hurts to read. Blur is the problem at 14px: a 4px halo on a
-   glyph whose strokes are ~2px is a soft edge on every stem. */
-body.crt-soft #chat-log, body.crt-soft .term-body, body.crt-soft #left, body.crt-soft #bottombar { text-shadow: none; }
-body.crt-off #chat-log, body.crt-off .term-body, body.crt-off #left, body.crt-off #bottombar { text-shadow: none; }
+/* DULLED — the phosphor halo TIGHTENED on the prose you actually read, and nowhere else.
+   Not removed: the glow is the phosphor, and killing it makes the copy read as flat web text in a
+   pixel-art station. Halving the blur is what buys the stems back — a 4px halo around a glyph whose
+   strokes are ~2px is a soft edge on every one of them; at 2px the same colour sits tight to the
+   letterform. `text-shadow` is an INHERITED property and the halo comes from the `body` rule above,
+   so naming the four prose containers is enough: descendants inherit the tighter value, while every
+   chip, button and heading that declares its own glow keeps it untouched. That is why there is no
+   `*` selector and no !important here — a blanket sweep would flatten the chrome's identity along
+   with the copy, and the identity is not the part that is hard to read. */
+body.crt-dull #chat-log, body.crt-dull .term-body, body.crt-dull #left, body.crt-dull #bottombar { text-shadow: 0 0 2px var(--ph-glow2); }
 .crt-vignette {
   position: absolute; inset: 0; pointer-events: none;
   background: radial-gradient(ellipse at center, transparent 56%, rgba(0,0,0,0.6) 100%);
