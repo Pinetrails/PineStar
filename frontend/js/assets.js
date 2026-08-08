@@ -5,7 +5,12 @@ const SPRITES = (() => {
   let ready = false;
   const frames = {};   // key "minion.walk.south" -> [Image]
   const tinted = {};   // key "FORGE|minion.walk.south" -> [canvas]
-  let tracksBySet = {};
+  // null means the manifest has not been planned yet. This distinction matters: World starts drawing
+  // immediately while init() is still awaiting manifest.json, so an existing non-default crew skin can
+  // reach loadSet() before its tracks exist. Memoizing that empty pre-init lookup as a finished set job
+  // poisoned the skin for the whole page session; the default/maintainer skin still worked because init()
+  // explicitly loads it after planning, and changing the affected agent to a new skin later also worked.
+  let tracksBySet = null;
   const setJobs = {};
   const loadedSets = new Set();
   let meta = { minion: { fw: 0, fh: 0 }, ultron: { fw: 0, fh: 0 } };
@@ -482,8 +487,12 @@ const SPRITES = (() => {
   function loadSet(set) {
     const key = String(set || '').trim();
     if (!key) return Promise.resolve(false);
-    if (setJobs[key]) return setJobs[key];
+    // Do not cache a request until the manifest is ready and proves the set has tracks. drawBody calls us
+    // again on the next frame, so a pre-init request naturally recovers as soon as init() installs the plan.
+    if (!tracksBySet) return Promise.resolve(false);
     const tracks = tracksBySet[key] || [];
+    if (!tracks.length) return Promise.resolve(false);
+    if (setJobs[key]) return setJobs[key];
     setJobs[key] = Promise.all(tracks.map(([track, paths]) =>
       Promise.all(paths.map(p => loadImage('assets/sprites/' + p))).then(imgs => {
         const ok = imgs.filter(Boolean);
