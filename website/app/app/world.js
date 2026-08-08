@@ -3828,6 +3828,10 @@ const World = (() => {
     _scanCv = pc; _scanKey = key;
     return _scanCv;
   }
+  // The station's own CRT is NOT user-optional — the feed is a tube, and the Appearance dial only
+  // thins the screen-space glass over the HTML (style.css body.crt-dull). `no-scan` remains the one
+  // and only suppressor here, and it is internal: scripts/verify-stars2.mjs sets it to flatten the
+  // feed for star-pixel checks. Do not wire a settings class into this pass.
   function drawCRT(now) {
     if (!cv || document.body.classList.contains('no-scan')) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);

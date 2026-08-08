@@ -89,7 +89,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // every save that predates this key merges to the exact look it already had.
   // panelBright (0–100, default 0) is the tube's BRIGHTNESS knob: it lifts the panel glass's black
   // level toward the phosphor colour (never toward white). 0 = the shipped look, untouched.
-  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, panelBright: 0, textScale: 0, flicker: true, sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, panelBright: 0, textScale: 0, flicker: true, crtGlass: 'full', sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
   // TEXT SIZE steps (percent → chip label; 0 = AUTO, the default). Applied as a body zoom in
   // applySettings(): zoom scales layout too, so every hard-px face (COMMS included) grows together —
   // a root font-size can't reach the ~800 px-sized declarations. world.js resize() reads the same
@@ -104,6 +104,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return long <= 1470 ? 115 : long <= 1740 ? 110 : 100;
   }
   function resolveTextScale(v) { const n = Number(v) || 0; return n === 0 ? autoTextScale() : clampN(n, 90, 150, 100); }
+  // CRT LEVEL (value → chip label → the tooltip). Two positions, strongest first.
+  // THERE IS NO "OFF", BY DECISION (Andrew, 2026-08-07): the station is a CRT, and letting a user
+  // switch that off is letting them switch the product's identity off. DULLED thins the glass over
+  // the HTML so the text stops fighting it — the station feed's own tube is untouched at either
+  // position. Also deliberately NOT called "easy read": most people who keep the tube on do not
+  // experience it as a hardship, and a label naming the problem makes the default sound endured.
+  const GLASS_STEPS = [
+    ['full', 'FULL', 'the shipped tube, at full strength'],
+    ['dulled', 'DULLED', 'the same tube, thinned over the panels and COMMS so text sits clearer under it'],
+  ];
+  // Accepts every value this setting has ever stored during the day it was being designed: the
+  // BOOLEAN it shipped as, and the 'easy'/'soft'/'off' ids of the levels that did not survive.
+  // Anyone who had turned the CRT DOWN lands on DULLED — never snapped back up to FULL, which would
+  // silently undo the choice they made, and never left on a level that no longer exists.
+  function resolveGlass(v) {
+    if (v === true || v == null) return 'full';
+    if (v === false || v === 'easy' || v === 'soft' || v === 'off') return 'dulled';
+    return GLASS_STEPS.some(([id]) => id === v) ? v : 'full';
+  }
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
@@ -234,9 +253,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // Applied here rather than only in the picker so it survives a reload.
     if (typeof Terrain !== 'undefined' && Terrain.setGround) Terrain.setGround(s.backdrop);
     if (typeof SpaceBG !== 'undefined' && SpaceBG.setBackdrop) SpaceBG.setBackdrop(s.backdrop);
-    // CRT scanlines are part of the fixed shipped look — no user toggle. `no-scan` stays an
-    // internal flag (set by scripts/verify-stars2.mjs to flatten the feed for star-pixel
-    // checks) and is intentionally never driven by settings here.
+    // CRT LEVEL — FULL or DULLED, and nothing turns the tube off. DULLED thins the SCREEN-SPACE
+    // glass over the HTML (style.css body.crt-dull lowers the --scan-* trough alphas and the page
+    // vignette, and tightens the phosphor halo in the prose containers). The station feed is
+    // untouched at either position: its scanlines/curve/aberration are painted in-canvas by
+    // world.js drawCRT/drawCurve, which reads only `no-scan`.
+    // Drives its OWN class: `no-scan` stays an internal flag (set by scripts/verify-stars2.mjs to
+    // flatten the feed for star-pixel checks) and is never written from settings — a toggle() here
+    // would remove it out from under a verification run.
+    document.body.classList.toggle('crt-dull', resolveGlass(s.crtGlass) === 'dulled');
     // TEXT SIZE — one dial for every hard-px UI face at once (0/absent = AUTO from screen size).
     // Removed (not '1') at 100% so the plain-desktop default leaves no inline style behind.
     const tz = resolveTextScale(s.textScale);
@@ -4824,7 +4849,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         theme: store.settings.theme, themeHue: store.settings.themeHue,
         themeSat: store.settings.themeSat, themeGlow: store.settings.themeGlow,
         panelBright: store.settings.panelBright,
-        flicker: store.settings.flicker,
+        flicker: store.settings.flicker, crtGlass: store.settings.crtGlass,
         sound: store.settings.sound, keepComputerAwake: store.settings.keepComputerAwake
       }, notifyPrefs: Object.assign({}, store.settings.notifyPrefs || notifyDefaults()) };
       try { if (typeof AutonomyStore !== 'undefined' && AutonomyStore.exportState) out.autonomy = AutonomyStore.exportState(); } catch (_) {}
@@ -5145,6 +5170,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         return '<button class="set-theme ' + (cur === v ? 'sel' : '') + '" aria-pressed="' + (cur === v ? 'true' : 'false') + '" data-ts="' + v + '" title="' + title + '">' + name + '</button>';
       }).join('') +
       '</div>' +
+      // CRT — its own section, and a LEVEL rather than a named mode. Framing this as an
+      // accessibility fix ("easy read") tells the people who like the tube that they are enduring
+      // something, which is not what most of them report. There is no OFF: the station is a CRT.
+      // SCREEN FLICKER lives here too — it is a CRT effect, not a display one.
+      '<h4 class="ms-h">CRT <span class="dim">— how strong the tube reads</span></h4>' +
+      '<div class="set-row"><span class="dim">DULLED thins the glass over the panels &amp; COMMS so text sits clearer under it. The station keeps its tube either way.</span></div>' +
+      '<div class="set-themes" id="set-crtglass">' +
+      GLASS_STEPS.map(([v, name, why]) => {
+        const cur = resolveGlass(s.crtGlass);
+        return '<button class="set-theme ' + (cur === v ? 'sel' : '') + '" aria-pressed="' + (cur === v ? 'true' : 'false') + '" data-glass="' + v + '" title="' + why + '">' + name + '</button>';
+      }).join('') +
+      '</div>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       // TERMINAL AUDIO is a sound control, not a display one — its own header (it also gates notification chimes).
       '<h4 class="ms-h">SOUND</h4>' +
@@ -5324,6 +5361,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireSlider(brightIn, v => { s.panelBright = clampN(v, 0, 100, 0); sliderVal('#set-bright-val', s.panelBright + '%'); });
     const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); flashSaved(appMsg()); });
     bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
+    // CRT GLASS chips — same instant-apply + persist idiom as TEXT SIZE below.
+    const glChips = host.querySelectorAll('#set-crtglass [data-glass]');
+    const syncGlass = () => glChips.forEach(x => {
+      const on = x.dataset.glass === resolveGlass(s.crtGlass);
+      x.classList.toggle('sel', on);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    glChips.forEach(b => b.addEventListener('click', () => {
+      s.crtGlass = resolveGlass(b.dataset.glass);
+      applySettings(); save(); sfx('click');
+      syncGlass(); flashSaved(appMsg());
+    }));
     // TEXT SIZE chips — instant-apply + persist, same idiom as the theme row above.
     const tsChips = host.querySelectorAll('#set-textsize [data-ts]');
     const syncTextSize = () => tsChips.forEach(x => {
