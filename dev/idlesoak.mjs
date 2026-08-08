@@ -128,26 +128,84 @@ try {
     await sleep(500);
   }
 
+  /* --pair: keep nudging two crew bodies together until an encounter fires. W4's beat needs two
+     eligible bodies within SOCIAL_NEAR_RADIUS at the moment one of them re-decides; waiting for
+     that to happen by chance costs many minutes of soak, and on a loaded machine (other agents'
+     gates competing for the CPU) the world ticks slowly enough that it may not happen at all. This
+     removes the WAITING, not the beat: the encounter still has to be selected, planned, walked and
+     held by the shipped engine — we only put the two of them in the same place. */
+  const PAIR = process.argv.indexOf('--pair') > -1;
+  const NUDGE = `(() => { try {
+    const bs = World.bodies().filter(b => b && !b.hero && !b.unplaced);
+    if (bs.length < 2) return 'need 2 crew';
+    if (bs.some(b => b.socialKind)) return 'in encounter';
+    const [a, b] = bs;
+    if (a.working || b.working || a.sitting || b.sitting) return 'busy';
+    return World._dbgTeleport(b.id, a.px + 3, a.py + 3) ? 'nudged' : 'teleport refused';
+  } catch (e) { return 'err ' + e; } })()`;
+
   const t0 = Date.now(), END = t0 + MINUTES * 60000, samples = [];
+  let seenEncounter = false, nextNudge = t0 + 8000;
   while (Date.now() < END) {
     const s = await evalJS(cdp, SAMPLE).catch(() => null);
-    if (s && s.bodies) samples.push(s);
+    if (s && s.bodies) {
+      samples.push(s);
+      if (s.bodies.some(b => b && b.socialKind)) seenEncounter = true;
+      if (PAIR && !seenEncounter && Date.now() >= nextNudge) {
+        nextNudge = Date.now() + 8000;
+        const r = await evalJS(cdp, NUDGE).catch(() => 'eval failed');
+        console.log('[idlesoak] nudge:', r);
+      }
+    }
     if (samples.length % 40 === 0) console.log(`[idlesoak] ${samples.length} samples · ${Math.round((END - Date.now()) / 1000)}s left`);
     await sleep(900);
   }
 
   // ── reduce ──────────────────────────────────────────────────────────────────────────────────
+  // W4 encounters are counted as EDGES, not samples: a body is credited with one encounter each time
+  // its socialKind goes null -> set, and one CONVERSATION each time its phase reaches 'hold' on a
+  // two-sided kind. Sample counts alone would just report "how long they stood there".
+  const prevSocial = new Map();
+  const encounters = { total: 0, byKind: {}, conversations: 0 };
+  for (const s of samples) {
+    for (const b of s.bodies) {
+      if (!b) continue;
+      const was = prevSocial.get(b.id) || { kind: null, held: false };
+      if (b.socialKind && !was.kind) { encounters.total++; encounters.byKind[b.socialKind] = (encounters.byKind[b.socialKind] || 0) + 1; }
+      const held = !!(b.socialKind && b.socialPhase === 'hold');
+      if (held && !was.held && (b.socialKind === 'huddle' || b.socialKind === 'border')) encounters.conversations++;
+      prevSocial.set(b.id, { kind: b.socialKind || null, held });
+    }
+  }
+
+  // the SHAPE of the encounter, not just that one happened: who was in it, what phase, who had the
+  // floor, and the sprite track each was drawn in. This is the W4 evidence — a conversation is a
+  // sequence, so a count could never show it.
+  const timeline = [];
+  for (const s of samples) {
+    const inIt = s.bodies.filter(b => b && b.socialKind);
+    if (!inIt.length || timeline.length >= 80) continue;
+    timeline.push({
+      t: s.t,
+      who: inIt.map(b => `${b.name}:${b.socialKind}/${b.socialPhase}${b.talking ? ' TALKING' : ''}${b.emote ? ' WAVE' : ''} ${(b.pose || '').replace(/^[^.]+\./, '')}`),
+    });
+  }
+
   const per = new Map();
   for (const s of samples) {
     for (const b of s.bodies) {
       if (!b || b.unplaced) continue;
       let r = per.get(b.id);
-      if (!r) { r = { id: b.id, name: b.name, n: 0, still: 0, wallDirSum: 0, facing: {}, goals: {}, quirks: {}, useKinds: {}, emotes: 0, outZone: 0, nextDoor: 0, tiles: new Set() }; per.set(b.id, r); }
+      if (!r) { r = { id: b.id, name: b.name, n: 0, still: 0, wallDirSum: 0, facing: {}, goals: {}, quirks: {}, useKinds: {}, emotes: 0, talking: 0, posesGesture: 0, posesTalk: 0, outZone: 0, nextDoor: 0, tiles: new Set() }; per.set(b.id, r); }
       r.n++;
       r.tiles.add(b.tile.x + ',' + b.tile.y);
       if (!b.inOwnZone) r.outZone++;
       if (b.inOwnZone && b.inHomeRoom === false) r.nextDoor++;
       if (b.emote) r.emotes++;
+      if (b.talking) r.talking++;
+      // RENDER TRUTH: the pose the body was last actually drawn in (assets.js records it).
+      if (b.pose && b.pose.indexOf('.gesture.') !== -1) r.posesGesture++;
+      if (b.pose && b.pose.indexOf('.talk.') !== -1) r.posesTalk++;
       if (b.goal) r.goals[b.goal] = (r.goals[b.goal] || 0) + 1;
       if (b.quirkKind) r.quirks[b.quirkKind] = (r.quirks[b.quirkKind] || 0) + 1;
       if (b.useKind) r.useKinds[b.useKind] = (r.useKinds[b.useKind] || 0) + 1;
@@ -160,7 +218,7 @@ try {
     }
   }
 
-  const report = { minutes: MINUTES, samples: samples.length, bodies: [] };
+  const report = { minutes: MINUTES, samples: samples.length, encounters, encounterTimeline: timeline, bodies: [] };
   for (const r of per.values()) {
     report.bodies.push({
       id: r.id, name: r.name, samples: r.n, stillSamples: r.still,
@@ -168,16 +226,34 @@ try {
       blindPickWallPct: r.still ? +(100 * (r.wallDirSum / r.still) / 4).toFixed(1) : 0,   // what a blind cardinal pick WOULD have scored on these same tiles
       facing: r.facing,
       distinctTiles: r.tiles.size, outOfZone: r.outZone, nextDoorSamples: r.nextDoor,
-      goals: r.goals, quirks: r.quirks, useKinds: r.useKinds, emoteSamples: r.emotes,
+      goals: r.goals, quirks: r.quirks, useKinds: r.useKinds, emoteSamples: r.emotes, talkingSamples: r.talking, drawnGesture: r.posesGesture, drawnTalk: r.posesTalk,
     });
   }
   writeFileSync(join(OUT, 'report.json'), JSON.stringify(report, null, 2));
   console.log('\n=== IDLE SOAK ===');
   console.log(JSON.stringify(report, null, 2));
 
+  /* STARVATION GUARD. This harness competes with whatever else the machine is running (on this
+     project, other agents' full test gates), and a starved page ticks the world far slower than the
+     wall clock: a run that managed 394 samples in 6 minutes when the box was free managed 66 in the
+     same 6 minutes when it was not. A starved run is NOT a green run — the beats simply never got
+     the CPU to happen — so it must report INCONCLUSIVE rather than let a wall-stare rate of 0% over
+     nine idle bodies-worth of nothing read as proof. */
+  const rate = report.samples / MINUTES;
+  report.samplesPerMin = +rate.toFixed(1);
+  if (rate < 25) {
+    console.log(`\nINCONCLUSIVE: ${report.samplesPerMin} samples/min (healthy is 60+). The page was starved — the world barely ticked, so an empty report means nothing. Re-run when the machine is free.`);
+    process.exit(4);
+  }
   for (const b of report.bodies) {
     if (b.outOfZone > 0) fail.push(`${b.name}: ${b.outOfZone} samples OUT of its zone (containment)`);
     if (b.stillSamples >= 20 && b.wallPct > 12) fail.push(`${b.name}: ${b.wallPct}% of still samples nose-to-wall (bar: <=12%)`);
+  }
+  // W4/W5 bars — only meaningful on a multi-body floor of a decent length
+  if (CREW >= 2 && MINUTES >= 5) {
+    if (!encounters.total) fail.push('no social encounter fired at all in ' + MINUTES + ' minutes on a ' + (CREW + 1) + '-body floor');
+    const talked = report.bodies.reduce((n, b) => n + b.talkingSamples, 0);
+    if (encounters.conversations > 0 && !talked) fail.push('a two-sided encounter reached its hold but NOBODY ever took a turn (the talk pose never fired)');
   }
   console.log(fail.length ? `\nFAIL:\n - ${fail.join('\n - ')}` : '\nPASS: no containment breaks, wall-stare under the bar');
 } catch (e) {

@@ -362,7 +362,25 @@ const SPRITES = (() => {
     // window's own progress (fixedIdx), NOT the free-running clock — a clock index would enter
     // the animation mid-cycle. Sets without a gesture track skip this entirely.
     let fixedIdx = null;
-    if (key && key.indexOf('.rot.') !== -1 && b.state !== 'walk'
+    /* ON-DEMAND EMOTE (world.js `emote()`, 2026-08-08) — the SAME art, played because something
+       happened: a body reaching for the thing it walked over to use, a greeting as two agents
+       settle in front of each other, a wave at someone passing. It is resolved BEFORE (and
+       independently of) the ambient stretch below, because the two guards differ in ways that
+       silently ate it: the stretch requires a `.rot.` pose and `!b.speaking`, so a body playing
+       the TALK pose — i.e. exactly a body mid-conversation — could never render its own wave, and
+       on the five sets that ship a talk track the key isn't `.rot.` at all. Keyed off the game's
+       4-value facing (the gesture art is cardinal-only) and it simply stops applying once the
+       track runs out: no cleanup, no held final frame. */
+    const em = b.emote;
+    if (em && em.kind === 'gesture' && em.start != null && b.state !== 'walk' && !b.working && !b.sitting && !meeting) {
+      const gk = frames[set + '.gesture.' + dir] ? set + '.gesture.' + dir : null;
+      if (gk) {
+        const GFPS = 8, glen = frames[gk].length, gdur = glen * (1000 / GFPS);
+        const et = nowMs - em.start;
+        if (et >= 0 && et < gdur) { key = gk; fixedIdx = Math.min(glen - 1, Math.floor(et / (1000 / GFPS))); bob = 0; }
+      }
+    }
+    if (fixedIdx == null && key && key.indexOf('.rot.') !== -1 && b.state !== 'walk'
         && !b.working && !b.sitting && !b.speaking && !meeting && !glancing) {
       // EXACT direction only — never fall back to another facing. Most sets ship the stretch
       // on the 4 cardinals alone (the diagonals would cost 4 more generations each and are
@@ -374,30 +392,16 @@ const SPRITES = (() => {
       const gk = frames[set + '.gesture.' + kd] ? set + '.gesture.' + kd : null;
       if (gk) {
         const GFPS = 8, glen = frames[gk].length, gdur = glen * (1000 / GFPS);
-        /* ON-DEMAND EMOTE (world.js `emote()`, 2026-08-08). The clock-driven stretch below is a
-           once-per-90-minutes ambient tic; this is the same art played BECAUSE something happened
-           — a body reaching for the thing it walked over to use. It wins over the ambient window,
-           and once the track has run out (elapsed >= gdur) it simply stops applying, so the body
-           returns to its normal pose with no cleanup and no held final frame. */
-        const em = b.emote;
-        if (em && em.kind === 'gesture' && em.start != null) {
-          const et = nowMs - em.start;
-          if (et >= 0 && et < gdur) {
-            key = gk; fixedIdx = Math.min(glen - 1, Math.floor(et / (1000 / GFPS))); bob = 0;
-          }
-        }
-        if (fixedIdx == null) {
-          // a stretch is a RARE beat (Andrew, 2026-07-31): once every ~90 minutes per body,
-          // not an every-cycle tic. Each body's fire-point is spread uniformly across the
-          // period via its float phase, so the crew never stretches in unison — and a fresh
-          // boot still sees SOMEONE stretch early rather than everyone at minute 90.
-          const GESTURE_PERIOD = 5400000;
-          const gph = Math.abs(aph) % (2 * Math.PI) / (2 * Math.PI);
-          const gt = (nowMs + gph * GESTURE_PERIOD) % GESTURE_PERIOD;
-          if (gt < gdur) {
-            key = gk; fixedIdx = Math.min(glen - 1, Math.floor(gt / (1000 / GFPS)));
-            bob = 0;   // the frames carry the motion; bobbing on top reads as jitter
-          }
+        // a stretch is a RARE beat (Andrew, 2026-07-31): once every ~90 minutes per body,
+        // not an every-cycle tic. Each body's fire-point is spread uniformly across the
+        // period via its float phase, so the crew never stretches in unison — and a fresh
+        // boot still sees SOMEONE stretch early rather than everyone at minute 90.
+        const GESTURE_PERIOD = 5400000;
+        const gph = Math.abs(aph) % (2 * Math.PI) / (2 * Math.PI);
+        const gt = (nowMs + gph * GESTURE_PERIOD) % GESTURE_PERIOD;
+        if (gt < gdur) {
+          key = gk; fixedIdx = Math.min(glen - 1, Math.floor(gt / (1000 / GFPS)));
+          bob = 0;   // the frames carry the motion; bobbing on top reads as jitter
         }
       }
     }
@@ -414,6 +418,10 @@ const SPRITES = (() => {
       }
     }
     if (!key) return null;
+    // the pose this body is ACTUALLY being drawn in, recorded read-only for live verification
+    // (dev/idlesoak.mjs asserts a waving body resolves to a `.gesture.` track). Nothing reads it
+    // to make a decision — a rendering claim has to be provable from the render, not re-derived.
+    b._pose = key;
 
     const fr = tintFrames(b.id, key);
     if (!fr || !fr.length) return null;

@@ -1702,6 +1702,10 @@ const World = (() => {
     // (re)set self.target (a pursuit leg); the walk block below then advances it.
     if (self.goal === 'mimic') stepMimic(now);
     if (self.goal === 'chase') stepChase(now);
+    // W4: someone walking past a standing body gets a look and a raised hand. Consulted every tick
+    // (its own scan gap + long cooldown do the throttling) because the passer is only in range for a
+    // second or two — waiting for this body's next idle re-decide would miss it. Gaze + emote only.
+    maybeAcknowledge(now);
     if (self.target) {
       if (now < (self.pauseUntil || 0)) {
         self.state = 'idle';                                // a deliberate hold mid-walk (maybeStrollBeat's considered pause / double-take)
@@ -1905,6 +1909,7 @@ const World = (() => {
     if (b.seatKey) occupiedSeats.delete(b.seatKey);
     b.seatKey = null; b.seated = false; b.pendSeat = null;
     b.goal = null; b.usingProp = null; b.watchProp = null; b.studyKey = null; b.quirkKind = null; b.stilling = false;
+    b.useBeat = null; b.emote = null; setTalking(b, false);   // W2/W4: a seized body is not mid-gesture and is not talking to anyone
     b.pauseUntil = 0; b.pauseLook = null; b.idleUntil = 0;
     if (chaseId === b.agentId) chaseId = null; b.chase = null; b.mimic = null;   // TIER D · D4: a summon seizes the body → drop any live chase/mimic + free the station chaser lock (G2)
   }
@@ -2247,6 +2252,47 @@ const World = (() => {
     return true;
   }
 
+  /* W4 — THE PASSING ACKNOWLEDGEMENT. The D3 encounter is a whole staged beat: a station-wide slot,
+     a rendezvous walk, a hold. It is rare on purpose and always will be. But two agents brushing
+     past each other and NOT reacting is its own kind of dead — the cheapest, most human signal on
+     the floor is the one that costs nothing: someone walks past where you are standing, you look
+     up and raise a hand.
+
+     So this deliberately takes NO slot, arms NO station budget, and moves NOBODY: the stander
+     glances + waves (its own gesture track), the passer glances back, and both carry on. It is the
+     Tier C gaze pattern (glanceAt's sanctioned two-sided write) plus one emote — no path, target or
+     goal is ever touched (K1), and it can never delay or preempt a real encounter or a summon.
+     Gated: the WAVER must be standing free (a walking body cannot render the standing gesture art
+     anyway) and the other must actually be going past, so it reads as "noticing someone pass",
+     never as two idle bodies saluting each other in place. */
+  function maybeAcknowledge(now) {
+    const me = self;
+    if (!me || me.unplaced || reduceMotion()) return false;
+    if (now < (me.ackCd || 0)) return false;
+    if (now < (me.ackScanAt || 0)) return false;      // cheap re-scan gap: this runs every tick, the scan does not
+    me.ackScanAt = now + 350;
+    if (me.working || me.sitting || me.state === 'walk' || me.social || me.goal === 'social') return false;
+    if (me === agent && activity !== 'idle') return false;                 // hero on task — not now
+    if (chatHot(now) && me === chatFocusBody()) return false;              // the Commander owns this body's attention
+    const rPx = ACK_RADIUS * T;
+    for (const other of allBodies()) {
+      if (!other || other === me || other.unplaced) continue;
+      if (other.state !== 'walk') continue;                                // it must be PASSING — this is not a standing salute
+      if (other.working || other.social) continue;
+      if (Math.hypot(other.px - me.px, other.py - me.py) > rPx) continue;
+      me.ackCd = now + U.irnd(ACK_CD_MIN, ACK_CD_MAX);
+      other.ackCd = Math.max(other.ackCd || 0, now + U.irnd(ACK_CD_MIN, ACK_CD_MAX));   // don't let the pair volley
+      if (!U.chance(0.5)) return false;                                    // half the time it just doesn't look up
+      const dur = U.irnd(700, 1200);
+      glanceAt(me, other, dur, now);                                       // me === self → setGlance
+      glanceAt(other, me, dur, now);                                       // the passer looks back (direct glance write, K2)
+      emote(me, now);                                                      // ...and raises a hand
+      me.idleUntil = Math.max(me.idleUntil || 0, now + dur + U.irnd(200, 500));   // hold the beat, exactly as the mutual glance does
+      return true;
+    }
+    return false;
+  }
+
   /* ================= TIER D · D3 — SOCIAL ENCOUNTERS (Tier C grows legs) =================
      Bounded, SILENT movement beats between two idle bodies. The four kinds:
        'huddle'  — two SAME-ZONE bodies converge to adjacent tiles, face each other, hold, break.
@@ -2262,12 +2308,42 @@ const World = (() => {
      via armBeat, G5); Tier B self-discipline (startEncounter is the ONE cross-body write; stepSocial mutates only
      self, K2); chat-stare exclusion (a chatFocus body never joins). */
   const SOCIAL_SEL_ROLL = 0.08;             // per idle re-decide, when a candidate pair exists + the social LANE is open (G5: rare; the lane cooldown — not this roll — sets the rate)
-  const SOCIAL_STATION_CD_MIN = 300000, SOCIAL_STATION_CD_MAX = 480000;   // dedicated social station cooldown LANE (5-8 min) — the rate governor (MC: ~9.5 encounters/hr on a 3-6 body floor; one at a time, G4)
+  /* W4 (2026-08-08): the lane was 5-8 MINUTES station-wide, one encounter at a time — which is why
+     nobody had ever actually watched two agents meet: on a floor you look at for a few minutes, the
+     expected number of encounters was under one. The beat is also no longer a silent stand-off (it
+     now carries a greeting, a turn-taking exchange and a parting wave), so it is worth seeing.
+     90-150s keeps the "one thing happening at a time" character — every other governor (the single
+     slot G4, the per-pair cooldown, crewBeatDamp, the hard timeout) is untouched. */
+  const SOCIAL_STATION_CD_MIN = 90000, SOCIAL_STATION_CD_MAX = 150000;   // dedicated social station cooldown LANE — the rate governor (one at a time, G4)
   const SOCIAL_HOLD_MIN = 3000, SOCIAL_HOLD_MAX = 7000;   // the silent face-each-other hold (varied)
   const SOCIAL_HARD_MS = 25000;             // whole-encounter hard timeout — the slot ALWAYS frees by this (G4)
   const SOCIAL_PAIR_CD_MIN = 180000, SOCIAL_PAIR_CD_MAX = 360000;   // per-pair cooldown (minutes) so a duo never loops (K4)
   const SOCIAL_NEAR_RADIUS = 5;             // tiles — huddle/watch candidate proximity (within the observer's zone via neighborsOf)
   const SOCIAL_FOLLOW_MIN = 2, SOCIAL_FOLLOW_MAX = 4;   // half-follow distance (tiles) — bounded, never completes
+  /* ---------- W4: THEY TALK, AND THEY WAVE (2026-08-08) ----------
+     A meeting between two agents used to be two sprites standing a tile apart, silent, motionless,
+     for three to seven seconds. Read cold it is indistinguishable from two stuck pathfinds. Both
+     halves of the fix are art the sets ALREADY ship and the engine already knew how to draw:
+
+       TALKING — `b.speaking` swaps to the set's `talk` track (5 of 38 sets) or, on every other set,
+       to a livelier bob + a 1px head bounce. That is enough to read as "these two are talking"
+       without a single line of dialogue — which is the right register anyway: this station's beats
+       are silent by design (curiositySay has been a no-op since the Thronglet pass), and the COMMS
+       transcript is where words belong. TURN-TAKING is what sells it: the two must not flap in
+       unison, so each derives its turn from the encounter's OWN start clock (socialBeat.startedAt,
+       stamped once by the coordinator) and its own side of the pair (a === first speaker). Reading
+       a shared READ-ONLY origin, not writing shared turn state, is what keeps K2 intact.
+
+       WAVING — the one-shot `gesture` track (35 of 38 sets), fired via emote() as a GREETING when
+       the two settle in front of each other and as a PARTING when the encounter ends.
+
+     Only the two-sided kinds (huddle/border) talk: a 'watch' subject is working and a 'follow'
+     never completes, so neither is a conversation. reduceMotion suppresses the gesture (the talk
+     pose is a bob, not travel, so it stays). */
+  const TALK_SLOT_MS = 1700;                // one speaking turn + the beat of silence after it
+  const TALK_SPEAK_MS = 1150;               // how much of a turn is actually mouth-moving
+  const ACK_RADIUS = 2.4;                   // tiles — a passing acknowledgement is arm's length, not across the room
+  const ACK_CD_MIN = 45000, ACK_CD_MAX = 90000;   // per-body: a wave is a greeting, not a tic
 
   /* armSocialBudget — the two station-level side-effects EVERY fired encounter must do, at ALL fire sites
      (startEncounter for huddle/border, and the one-sided planWatch/planFollow which set the slot inline):
@@ -2299,9 +2375,17 @@ const World = (() => {
     if (!s) return;
     const a = bodyForAgent(s.aId), b = bodyForAgent(s.bId);
     for (const body of [a, b]) {
+      // W4 SAFETY: the conversation pose is dropped for BOTH bodies on ANY end, even one whose plan
+      // was already torn down elsewhere (a seize clears .social first) — a body left mouth-moving
+      // at nobody is exactly the kind of state this project calls a lie.
+      if (body && !body.social) setTalking(body, false);
       if (!body || !body.social) continue;
-      // only tear down OUR plan; if a body was already re-tasked (working / summon), leave its live state alone —
-      // just drop the social plan so it stops trying to rendezvous. Its own tick owns the rest.
+      // W4: a PARTING wave, then drop the conversation pose. The wave is only owed on a beat that
+      // actually became a conversation (a two-sided HOLD) — an encounter torn down mid-walk, or one
+      // a summon seized, ends with nothing, which is the honest reading of what happened.
+      const talked = (s.kind === 'huddle' || s.kind === 'border') && body.social.phase === 'hold' && !body.working;
+      setTalking(body, false);
+      if (talked && !reduceMotion()) emote(body, now);
       body.social = null;
       if (body.goal === 'social') { body.goal = null; body.state = 'idle'; body.pathPts = null; body.target = null; body.idleUntil = Math.max(body.idleUntil || 0, now + U.irnd(300, 900)); }
     }
@@ -2345,7 +2429,7 @@ const World = (() => {
     // drop any in-flight idle state so the social plan owns each body cleanly (does NOT touch working/task — those
     // paths are excluded by socialEligible, so a/b are genuinely idle here).
     for (const body of [a, b]) { body.stilling = false; body.usingProp = null; body.sitting = false; body.pauseUntil = 0; body.pauseLook = null; body.studyKey = null; }
-    socialBeat = { kind, aId: a.id, bId: b.id, until: now + SOCIAL_HARD_MS };
+    socialBeat = { kind, aId: a.id, bId: b.id, until: now + SOCIAL_HARD_MS, startedAt: now };   // startedAt: the ONE clock both turn-takers read (see talkTurn)
     armSocialBudget(now);                                                 // G5 shared-gate arm + the 5-8min social LANE draw (total calm preserved; rate governed by the lane)
     return true;
   }
@@ -2399,14 +2483,61 @@ const World = (() => {
       self.state = 'idle'; self.sitting = false;
       if (pl.faceTile === 'partner') facePartner();
       else if (pl.faceTile) self.dir = dirToward(self.px, self.py, (pl.faceTile.x + 0.5) * T, (pl.faceTile.y + 0.5) * T);
+      talkTurn(self, now, pl);                                                        // W4: take (or yield) this body's turn in the exchange
       if (now >= pl.until) endEncounter(now);                                         // natural end → free the slot + arm the pair cooldown
     }
+  }
+  /* W4 — one body's turn in a two-sided exchange. Both bodies read the SAME hold clock (pl.holdAt,
+     stamped by each as it settles) and their own side of the pair, so they alternate without either
+     writing to the other or to any shared turn state (K2). A body only mouth-moves for the first
+     TALK_SPEAK_MS of its own slot, so there is a real beat of silence between turns — the pause is
+     what makes it read as listening rather than as two sprites vibrating. */
+  /* The turn phase MUST come from the ENCOUNTER's clock (socialBeat.startedAt), not from each
+     body's own arrival. Each body stamps pl.holdAt when IT settles, and the two rarely arrive
+     together — the first live soak caught them 2s apart, which put both of them in "slot 0" and
+     printed a sample with BOTH bodies talking. `holdAt` still gates whether this body has arrived
+     at all; the shared origin is what makes the two alternate. */
+  function talkTurn(b, now, pl) {
+    if (!b || !pl) return;
+    const twoSided = pl.kind === 'huddle' || pl.kind === 'border';
+    if (!twoSided || !socialBeat || !socialBeat.startedAt || !pl.holdAt) { setTalking(b, false); return; }
+    setTalking(b, myTurn(now - socialBeat.startedAt, socialBeat.aId === b.id, TALK_SLOT_MS, TALK_SPEAK_MS));
+  }
+  /* TALK-TURN-PURE-BEGIN — the turn-taking decision, extracted PURE (arguments only; no module
+     state, no RNG, no clock, no DOM) so the alternation is unit-testable headlessly. WHY headless:
+     an encounter is rare, tick-driven and needs two bodies to meet, so "do they take turns rather
+     than flap in unison" is not something a live soak can assert at every millisecond — but it is
+     the one property that decides whether this reads as a conversation.
+       elapsed  ms since the pair entered the hold (both read the SAME clock)
+       first    is this body the pair's FIRST speaker (socialBeat.aId)? The two bodies pass
+                opposite values, which is the ONLY thing that distinguishes them — no shared
+                mutable turn state, so neither body ever writes to the other (K2).
+       slotMs   one turn + the silence after it · speakMs how much of the turn is mouth-moving
+     The gap (slotMs - speakMs) is load-bearing: without it the two swap instantly and it reads as
+     two sprites vibrating rather than one listening while the other speaks. */
+  function myTurn(elapsed, first, slotMs, speakMs) {
+    if (!(elapsed >= 0) || !(slotMs > 0)) return false;
+    const mine = (Math.floor(elapsed / slotMs) % 2 === 0) === !!first;
+    return mine && (elapsed % slotMs) < speakMs;
+  }
+  /* TALK-TURN-PURE-END */
+  // `talking` is the world's own reason for the speaking pose; the hero ORs it with Voice in
+  // drawAgent (which recomputes `speaking` every frame), crew carry it directly.
+  function setTalking(b, on) {
+    if (!b) return;
+    b.talking = !!on;
+    if (b !== agent) b.speaking = !!on;
   }
   // enter the silent face-each-other hold (varied duration). Both bodies enter their own hold independently; the
   // encounter ends when EITHER reaches its `until` (endEncounter frees both) — a hard cap already bounds it.
   function enterHold(now, pl) {
     pl.phase = 'hold'; pl.until = now + U.irnd(SOCIAL_HOLD_MIN, SOCIAL_HOLD_MAX);
+    pl.holdAt = now;                                    // W4: THIS body has arrived (the turn PHASE comes from socialBeat.startedAt — see talkTurn)
     self.pathPts = null; self.target = null; self.state = 'idle'; self.goal = 'social';
+    // W4 GREETING: it settles in front of the other and raises a hand. Two-sided kinds only — you
+    // do not wave at the back of someone who is working ('watch'), or at someone you gave up
+    // following. Each body fires its OWN greeting as it arrives, so they land a beat apart.
+    if ((pl.kind === 'huddle' || pl.kind === 'border') && !reduceMotion()) emote(self, now);
   }
 
   /* stepSocialGuard — called every tick for a body whose goal==='social', BEFORE stepSocial. Enforces the two
@@ -2414,7 +2545,7 @@ const World = (() => {
      partner-broken check (K3 — if the OTHER party was seized/despawned/chat-focused, the survivor releases now
      rather than waiting forever at a rendezvous). Returns true if it handled (ended) the beat this tick. */
   function stepSocialGuard(now) {
-    if (!socialBeat) { if (self.social) { self.social = null; if (self.goal === 'social') { self.goal = null; self.state = 'idle'; self.idleUntil = now + 300; } } return true; }
+    if (!socialBeat) { setTalking(self, false); if (self.social) { self.social = null; if (self.goal === 'social') { self.goal = null; self.state = 'idle'; self.idleUntil = now + 300; } } return true; }
     if (now >= socialBeat.until || encounterBroken(now)) { endEncounter(now); return true; }
     return false;
   }
@@ -2501,7 +2632,7 @@ const World = (() => {
       if (socialBeat) return false;
       obs.social = { phase: 'walk', tx: c.x, ty: c.y, faceTile: { x: wt.x, y: wt.y }, kind: 'watch', partnerId: worker.id };
       obs.goal = 'social'; obs.stilling = false; obs.usingProp = null; obs.sitting = false; obs.pauseUntil = 0; obs.pauseLook = null; obs.studyKey = null;
-      socialBeat = { kind: 'watch', aId: obs.id, bId: worker.id, until: now + SOCIAL_HARD_MS };
+      socialBeat = { kind: 'watch', aId: obs.id, bId: worker.id, until: now + SOCIAL_HARD_MS, startedAt: now };
       armSocialBudget(now);   // shared-gate arm + social LANE draw (same as startEncounter — one-sided beats govern the lane too)
       return true;
     }
@@ -2528,7 +2659,7 @@ const World = (() => {
     obs.goal = 'social'; obs.stilling = false; obs.usingProp = null; obs.sitting = false; obs.pauseUntil = 0; obs.pauseLook = null; obs.studyKey = null;
     if (!setPathTo({ x: first.x, y: first.y })) { obs.social = null; obs.goal = null; return false; }
     obs.social.followLeft -= 1;
-    socialBeat = { kind: 'follow', aId: obs.id, bId: walker.id, until: now + SOCIAL_HARD_MS };
+    socialBeat = { kind: 'follow', aId: obs.id, bId: walker.id, until: now + SOCIAL_HARD_MS, startedAt: now };
     armSocialBudget(now);   // shared-gate arm + social LANE draw (same as startEncounter)
     return true;
   }
@@ -3756,6 +3887,9 @@ const World = (() => {
     // summon-seize block (which flips goal off 'mimic'/'chase') so work always wins (G2). Only while genuinely idle.
     if (activity === 'idle' && agent.goal === 'mimic') stepMimic(now);
     if (activity === 'idle' && agent.goal === 'chase') stepChase(now);
+    // W4: the hero side of the passing acknowledgement (see maybeAcknowledge — gaze + a raised hand,
+    // no slot, no movement). Self-gated on activity==='idle' inside, so a summoned hero never waves.
+    maybeAcknowledge(now);
     if (agent.target) {
       // belt-yield: about to cross a belt with cargo bearing down → pause and let it pass (only on a casual stroll)
       if (now >= (agent.pauseUntil || 0) && now >= (agent.yieldCd || 0) && agent.goal == null && shouldYieldToCargo()) {
@@ -4509,7 +4643,10 @@ const World = (() => {
     // voice cues animate the body while the HERO is actually speaking + a "listening" foot-pulse when the mic is
     // live (drawBody/drawFallback read who.speaking). Crew bodies don't use Voice, so these are hero-only.
     const listening = (who === agent) && (typeof Voice !== 'undefined' && Voice.isListening && Voice.isListening());
-    if (who === agent) who.speaking = (typeof Voice !== 'undefined' && Voice.isSpeaking && Voice.isSpeaking());
+    // W4: `speaking` is no longer only the hero's VOICE — a body taking its turn in a silent
+    // exchange sets `talking` (see talkTurn), and the hero must OR the two or its own conversation
+    // pose would be stomped back to false every frame by the Voice read below.
+    if (who === agent) who.speaking = (typeof Voice !== 'undefined' && Voice.isSpeaking && Voice.isSpeaking()) || !!who.talking;
     // while seated on a couch the agent draws on the cushion, not its (adjacent) logical tile — swap
     // px/py for the draw and restore after, so movement/pathing keep using the real logical position.
     const ox = who.px, oy = who.py;
@@ -6909,7 +7046,11 @@ const World = (() => {
           wallDirs: wallDirsAt(b),                                      // control: how many of the 4 cardinals here ARE wall (a blind pick would hit wall wallDirs/4 of the time)
           quirkKind: b.quirkKind || null,
           useKind: b.usingProp ? useKindOf(b.usingProp) : null,         // WHICH prop it is using (the per-kind beat)
-          emote: !!(b.emote && b.emote.until > fnow),                   // playing the one-shot gesture track
+          emote: !!(b.emote && b.emote.until > fnow),                   // playing the one-shot gesture track (a wave / a reach)
+          talking: !!b.talking,                                         // W4: taking its turn in a silent exchange
+          pose: b._pose || null,                                        // the sprite track it was LAST DRAWN in (assets.js records it) — render truth, not a re-derivation
+          socialKind: (b.social && b.social.kind) || null,              // which encounter it is in, and
+          socialPhase: (b.social && b.social.phase) || null,            // whether it is still walking to it or holding
           inHomeRoom: !!(z && z.kind === 'room' && typeof Zones !== 'undefined' && Zones.rectHas(z.rect, t.x, t.y))   // false + inOwnZone = it walked into another room on its roam radius
         };
       };
