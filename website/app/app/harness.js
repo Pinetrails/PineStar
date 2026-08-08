@@ -634,7 +634,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onTerminalReset, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, evidence, projectRoot, taskAction, recovery }) {
+  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, evidence, projectRoot, taskAction, recovery }) {
     const model = getModel(), provider = getProv(), key = getKey(provider), reasoningEffort = getReasoningEffort(provider);
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -739,10 +739,7 @@ const Harness = (() => {
             if (!runId) { runId = payload.runId; onRunId && onRunId(runId); }
             break;
           case 'agent.token': full += payload.delta; onToken && onToken(payload.delta); break;
-          // Any prose before a tool call was an in-progress narration segment, not the terminal answer. Keep it
-          // visible in the chronological live transcript, but reset every final-output accumulator at this
-          // authoritative boundary so returned/persisted/delivered text contains exactly the last assistant turn.
-          case 'agent.tool_call': full = ''; onTerminalReset && onTerminalReset(); onToolCall && onToolCall(payload); break;
+          case 'agent.tool_call': onToolCall && onToolCall(payload); break;
           case 'agent.tool_result': onToolResult && onToolResult(payload); break;
           case 'deliverable': onDeliverable && onDeliverable(payload); break;
           // the run is PAUSED on the sidecar awaiting this; the UI shows approve/always/full/deny and answers

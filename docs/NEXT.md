@@ -1,39 +1,5 @@
 # NEXT.md — current priorities & task queue
 
-## 2026-08-07 — TERMINAL OUTPUT + REAL CHECK RECOVERY (`agent/hermes-starnet-benchmark-0807`)
-
-READY TO MERGE. Provider prose emitted before a later tool call is now treated as chronological narration,
-not part of the terminal assistant answer. Browser COMMS, routines, channels, cron/LOOP drivers, ACP, the
-OpenAI-compatible accumulator, internal work lines, and campaign capture all reset their final-output buffer
-at the authoritative `agent.tool_call` boundary; live narration can remain visible without being persisted or
-delivered as a second complete answer. `runAgentLoop` also returns its terminal assistant text directly.
-
-The loop now stops one narrow redundant-call shape caught by the Hermes comparison: when the immediately prior
-successful tool turn was one deterministic check, the next model turn already contains a sufficient final answer,
-and it reissues that exact canonical check with unchanged arguments, the duplicate is dropped before transcript
-persistence or dispatch. Explicit retry intent, changed arguments, intervening tools/mutations, reads, polling,
-and all non-check tools remain repeatable. The regression proves one dispatch, two model turns, one terminal
-answer, and valid tool-call/result pairing; a companion case proves an explicitly announced rerun still executes.
-
-`parity-code-checks` is now a real fail-repair-rerun fixture instead of a static failure-report task. The host
-records ordered real process exits and independently grades `7 -> one authorized edit -> 0`, exact file bytes,
-changed paths, mutation count, final markers, and a fresh verification hash. The source-runtime campaign mode
-uses a bound installed runtime only for Node/dependencies while labeling worktree execution `source-runtime`, so
-uninstalled validation cannot be mistaken for release evidence. A live provider campaign on `gpt-5.6-luna`
-passed recovery **3/3** and patch-conflict **3/3**, with zero false-done, duplicate-mutation, wrong-destination,
-or authority-escape violations. The patch-conflict replay also exposed and fixed an oracle false negative for
-the truthful past tense “context did not match.” Temporary copied OAuth material was deleted after the isolated
-campaign; only ignored nonsensitive evidence remains.
-
-Verification: focused terminal/loop coverage is 87 assertions; fixture-host recovery coverage is 19 assertions;
-website mirror is synchronized. Canonical `npm run test:fast` is **580/580 GREEN** and `npm run test:http` is
-**70/70 GREEN**. Each gate had one unrelated load-sensitive first-run failure (`code-mode` deadline; Telegram
-empty tool wire); each failed suite passed immediately in isolation and the required complete canonical rerun was
-green. `node dev/seed.js --keep` then served this dirty branch live on isolated port 19779: `/health` reported
-`v0.9.0-91-g96c90254-dirty`, the station document returned HTTP 200 with StarNet content, and the spawned processes
-were stopped. No integration-tree edit, merge, push, PR, deployment, publication, or installed-candidate claim
-occurred.
-
 ## 2026-08-07 — PER-BLOCK CODE COPY — MERGED
 
 Merged to `feat/harness-backend` as `014dc3e3` from snapshot `d3b1c264`. Fenced COMMS code blocks now have

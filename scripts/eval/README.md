@@ -106,10 +106,6 @@ node scripts/eval/campaign-runner.mjs --harness starnet --fixtures scripts/eval/
 node scripts/eval/campaign-runner.mjs --harness hermes --fixtures scripts/eval/fixtures/parity-v0.9.0.jsonl --manifest <hermes-manifest.json> --output <hermes.jsonl> --output-dir <evidence-dir> --attempts 3 --source <frozen-hermes-source> --python <frozen-hermes-python> --home <isolated-hermes-home>
 ```
 
-To validate an uninstalled StarNet change against the same real provider and credential workspace, keep
-`--runtime-root` for the bound runtime and add `--source-root <worktree> --node-executable <node.exe>`.
-The campaign receipt labels that non-release run `source-runtime`; it cannot be mistaken for installed evidence.
-
 After parity is green, measure the actual installed desktop process and a provider-backed verified artifact.
 The signed result distinguishes desktop process-to-health/station readiness from installed-runtime
 send-to-first-token and send-to-verified-artifact latency.

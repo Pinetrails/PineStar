@@ -343,21 +343,6 @@
     return VOS_CHECK_RE.test(String(cmd));
   }
 
-  function canonicalJson(value) {
-    if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
-    if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(value[k])).join(',') + '}';
-    return JSON.stringify(value);
-  }
-
-  // Keep this deliberately narrow: ordinary reads/polls and every mutation remain repeatable.
-  function deterministicCheckSignature(call) {
-    if (!call) return '';
-    const key = vosKey(call.name);
-    const isFixtureCheck = /(^|__)fixture_run_command$/.test(key);
-    if (!VOS_VERIFIERS.has(key) && !isFixtureCheck && !(key === 'shell_exec' && vosIsCheckCommand(call.args))) return '';
-    return key + '\u0000' + canonicalJson(call.args || {});
-  }
-
   function announcesIntent(text) {
     const t = String(text == null ? '' : text).trim();
     if (!t) return false;
@@ -448,7 +433,6 @@
     const LG_STOP = (_lg === false) ? 0 : (_lg && _lg.stopAfter != null ? _lg.stopAfter : 6);
     const lgFails = new Map();    // signature (name\0args) -> failure count
     const lgWarned = new Set();   // signatures already nudged (the warn fires once)
-    let lastDeterministicCheck = '';   // immediately-prior successful check turn; any other tool turn clears it
 
     // CONTINUATION GUARD (default ON): some models (Kimi K3, live-caught 2026-07-17) end a turn by ANNOUNCING
     // the next action ("Reading the full main.js now — then fixing immediately.") with finish_reason 'stop' and
@@ -585,9 +569,7 @@
         if (typeof extra.budgetCapUsd === 'number' && isFinite(extra.budgetCapUsd)) endPayload.budgetCapUsd = extra.budgetCapUsd;
       }
       emit('agent.run.end', endPayload);
-      const tail = messages[messages.length - 1];
-      const terminalText = tail && tail.role === 'assistant' && !tail.tool_calls ? String(tail.content == null ? '' : tail.content) : '';
-      const out = { reason, messages, text: terminalText, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
+      const out = { reason, messages, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
       if (cut) out.finishReason = cut;
       if (endPayload.budgetScope) { out.budgetScope = endPayload.budgetScope; if (endPayload.budgetCapUsd != null) out.budgetCapUsd = endPayload.budgetCapUsd; }
       return out;
@@ -924,12 +906,6 @@
       }
 
       repairCalls(calls, emit, agentId, runId);   // L2: fix broken tool-call JSON before it is used or discarded
-      /* DUPLICATE CHECK STOP. If the model already supplied a sufficient answer while reissuing the exact check
-         from the immediately-prior tool turn, dispatching it again adds no evidence and forces another paid turn.
-         Drop it before persisting the assistant turn so tool-call/result pairing remains valid. Explicit retry
-         intent, changed arguments, other tools, reads, and mutations all continue normally. */
-      const repeatedCheck = calls.length === 1 ? deterministicCheckSignature(calls[0]) : '';
-      if (repeatedCheck && repeatedCheck === lastDeterministicCheck && String(acc.text || '').trim() && !announcesIntent(acc.text)) calls.length = 0;
       const assistant = assistantTurn(acc.text, calls, acc.reasoning);
       messages.push(assistant);
       {
@@ -1032,11 +1008,6 @@
         return end('error');
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
-      if (calls.length === 1 && results.length === 1 && results[0].ok && !results[0].isError) {
-        lastDeterministicCheck = deterministicCheckSignature(calls[0]);
-      } else {
-        lastDeterministicCheck = '';
-      }
       {
         const checkpointEnd = await saveCheckpoint('tool_results');
         if (checkpointEnd) return checkpointEnd;
@@ -1161,5 +1132,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, parallelizable, applyTurnBudget, squeeze } };
 });
