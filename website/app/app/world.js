@@ -2134,6 +2134,7 @@ const World = (() => {
      needed, exactly like the blink. */
   function emote(body, now, kind) {
     const b = body || self; if (!b) return false;
+    if (reduceMotion()) return false;                                 // a 1.1s arm animation is motion; one gate here covers every caller
     if (b.sitting || b.working || b.state === 'walk') return false;   // standing beats only — the gesture art is a standing pose
     b.emote = { kind: kind || 'gesture', start: now, until: now + 1600 };
     return true;
