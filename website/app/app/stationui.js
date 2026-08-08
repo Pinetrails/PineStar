@@ -104,22 +104,23 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return long <= 1470 ? 115 : long <= 1740 ? 110 : 100;
   }
   function resolveTextScale(v) { const n = Number(v) || 0; return n === 0 ? autoTextScale() : clampN(n, 90, 150, 100); }
-  // CRT LEVEL (value → chip label → the tooltip). Ordered strongest first so the row reads as one
-  // dial being turned DOWN, left to right — a level, not three named modes. Deliberately NOT called
-  // "easy read": most people who keep the tube on do not experience it as a hardship, and a label
-  // that implies otherwise makes the default sound like something to be endured.
+  // CRT LEVEL (value → chip label → the tooltip). Two positions, strongest first.
+  // THERE IS NO "OFF", BY DECISION (Andrew, 2026-08-07): the station is a CRT, and letting a user
+  // switch that off is letting them switch the product's identity off. DULLED thins the glass over
+  // the HTML so the text stops fighting it — the station feed's own tube is untouched at either
+  // position. Also deliberately NOT called "easy read": most people who keep the tube on do not
+  // experience it as a hardship, and a label naming the problem makes the default sound endured.
   const GLASS_STEPS = [
-    ['full', 'FULL', 'the shipped tube — scanlines, curve and glass over everything'],
-    ['soft', 'SOFT', 'the station keeps its tube; the panels and COMMS come out from under it'],
-    ['off', 'OFF', 'no scanlines, no curve, no glass — raw pixel art'],
+    ['full', 'FULL', 'the shipped tube, at full strength'],
+    ['dulled', 'DULLED', 'the same tube, thinned over the panels and COMMS so text sits clearer under it'],
   ];
-  // Accepts every value this setting has ever stored: the BOOLEAN it shipped as before it became a
-  // dial, and the 'easy' id SOFT was briefly called. An existing save must keep meaning what its
-  // owner chose, never silently snap back to the default.
+  // Accepts every value this setting has ever stored during the day it was being designed: the
+  // BOOLEAN it shipped as, and the 'easy'/'soft'/'off' ids of the levels that did not survive.
+  // Anyone who had turned the CRT DOWN lands on DULLED — never snapped back up to FULL, which would
+  // silently undo the choice they made, and never left on a level that no longer exists.
   function resolveGlass(v) {
     if (v === true || v == null) return 'full';
-    if (v === false) return 'off';
-    if (v === 'easy') return 'soft';
+    if (v === false || v === 'easy' || v === 'soft' || v === 'off') return 'dulled';
     return GLASS_STEPS.some(([id]) => id === v) ? v : 'full';
   }
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
@@ -252,19 +253,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // Applied here rather than only in the picker so it survives a reload.
     if (typeof Terrain !== 'undefined' && Terrain.setGround) Terrain.setGround(s.backdrop);
     if (typeof SpaceBG !== 'undefined' && SpaceBG.setBackdrop) SpaceBG.setBackdrop(s.backdrop);
-    // CRT LEVEL — one dial turned down in two steps. FULL is the shipped look. SOFT lifts only the
-    // two SCREEN-SPACE overlays (style.css body::after scanlines + body::before vignette) that lie
-    // over the panels and the transcript, and drops the inherited phosphor halo in the prose
-    // containers; the station feed keeps its whole tube, because its scanlines/curve/aberration are
-    // painted in-canvas (world.js drawCRT/drawCurve) and nothing here touches that pass. OFF
-    // additionally stops those in-canvas passes and clears the tube glass (app.css
-    // #stage-wrap::before).
-    // Drives its OWN classes: `no-scan` stays an internal flag (set by scripts/verify-stars2.mjs to
-    // flatten the feed for star-pixel checks) and is still never written from settings — a
-    // toggle() here would remove it out from under a verification run.
-    const glass = resolveGlass(s.crtGlass);
-    document.body.classList.toggle('crt-soft', glass === 'soft');
-    document.body.classList.toggle('crt-off', glass === 'off');
+    // CRT LEVEL — FULL or DULLED, and nothing turns the tube off. DULLED thins the SCREEN-SPACE
+    // glass over the HTML (style.css body.crt-dull lowers the --scan-* trough alphas and the page
+    // vignette, and tightens the phosphor halo in the prose containers). The station feed is
+    // untouched at either position: its scanlines/curve/aberration are painted in-canvas by
+    // world.js drawCRT/drawCurve, which reads only `no-scan`.
+    // Drives its OWN class: `no-scan` stays an internal flag (set by scripts/verify-stars2.mjs to
+    // flatten the feed for star-pixel checks) and is never written from settings — a toggle() here
+    // would remove it out from under a verification run.
+    document.body.classList.toggle('crt-dull', resolveGlass(s.crtGlass) === 'dulled');
     // TEXT SIZE — one dial for every hard-px UI face at once (0/absent = AUTO from screen size).
     // Removed (not '1') at 100% so the plain-desktop default leaves no inline style behind.
     const tz = resolveTextScale(s.textScale);
@@ -4894,10 +4891,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '</div>' +
       // CRT — its own section, and a LEVEL rather than a named mode. Framing this as an
       // accessibility fix ("easy read") tells the people who like the tube that they are enduring
-      // something, which is not what most of them report. It is a strength dial: turn it down as
-      // far as suits you. SCREEN FLICKER lives here too — it is a CRT effect, not a display one.
+      // something, which is not what most of them report. There is no OFF: the station is a CRT.
+      // SCREEN FLICKER lives here too — it is a CRT effect, not a display one.
       '<h4 class="ms-h">CRT <span class="dim">— how strong the tube reads</span></h4>' +
-      '<div class="set-row"><span class="dim">Turn it down a step at a time. SOFT keeps the tube on the station and takes it off the panels &amp; COMMS; OFF clears it everywhere.</span></div>' +
+      '<div class="set-row"><span class="dim">DULLED thins the glass over the panels &amp; COMMS so text sits clearer under it. The station keeps its tube either way.</span></div>' +
       '<div class="set-themes" id="set-crtglass">' +
       GLASS_STEPS.map(([v, name, why]) => {
         const cur = resolveGlass(s.crtGlass);

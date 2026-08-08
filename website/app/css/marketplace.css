@@ -26,9 +26,9 @@
     repeating-linear-gradient(0deg,
       rgba(0,0,0,0) 0px,
       rgba(0,0,0,0) calc(1px * var(--cz)),
-      rgba(0,0,0,0.13) calc(1.5px * var(--cz)),
-      rgba(0,0,0,0.30) calc(2px * var(--cz)),
-      rgba(0,0,0,0.13) calc(2.5px * var(--cz)),
+      rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(1.5px * var(--cz)),
+      rgba(0,0,0,var(--scan-core, 0.30)) calc(2px * var(--cz)),
+      rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(2.5px * var(--cz)),
       rgba(0,0,0,0) calc(3px * var(--cz))),
     repeating-linear-gradient(90deg,
       rgba(255,80,40,0.03) 0 calc(1px * var(--cz)),
@@ -41,9 +41,9 @@
       repeating-linear-gradient(0deg,
         rgba(0,0,0,0) 0px,
         rgba(0,0,0,0) calc(1.5px * var(--cz)),
-        rgba(0,0,0,0.13) calc(2.2px * var(--cz)),
-        rgba(0,0,0,0.28) calc(3px * var(--cz)),
-        rgba(0,0,0,0.13) calc(3.8px * var(--cz)),
+        rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(2.2px * var(--cz)),
+        rgba(0,0,0,var(--scan-core-hi, 0.28)) calc(3px * var(--cz)),
+        rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(3.8px * var(--cz)),
         rgba(0,0,0,0) calc(4.5px * var(--cz))),
       repeating-linear-gradient(90deg,
         rgba(255,80,40,0.03) 0 calc(1.5px * var(--cz)),
@@ -52,7 +52,9 @@
   }
 }
 body.no-scan .mkt-scrim::after { display: none; }
-body.crt-off .mkt-scrim::after { display: none; }
+/* the CRT dial needs no rule here: --scan-* are set on `body.crt-dull` and custom properties
+   INHERIT, so the bay scrim thins with the rest of the glass automatically. That is the
+   "retune both together" law held structurally instead of by memory. */
 @keyframes mkt-fade { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---- the console frame ---- */
