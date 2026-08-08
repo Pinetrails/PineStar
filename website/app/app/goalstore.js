@@ -120,7 +120,8 @@ const GoalStore = (() => {
       if (g) {
         const pr = Goals.progress(g);
         const next = Goals.nextMilestone(g);
-        payload = { text: g.text, done: pr.done, total: pr.total, pct: pr.pct, next: next ? next.text : null };
+        payload = { id: g.id, text: g.text, done: pr.done, total: pr.total, pct: pr.pct,
+          next: next ? next.text : null, milestoneId: next ? next.id : null };
       }
       fetch('/api/goals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal: payload }) }).catch(() => {});
     } catch (_) {}
@@ -300,7 +301,18 @@ const GoalStore = (() => {
         if (!doneWq[String(m.questRef)]) continue;
         const ev = clipEvidence(runSummary, m.text);
         const r = Goals.foldMilestoneDone(g, m.id, ev, now());
-        if (r.changed) { changed = true; if (r.goalDone) anyGoalDone = true; bumpStudySalience(g, m); }
+        if (r.changed) {
+          changed = true; if (r.goalDone) anyGoalDone = true; bumpStudySalience(g, m);
+          // Journey progression is distinct from XP: this posts the exact milestone/evidence edge the goal engine
+          // just accepted. The backend de-dupes by goal+milestone, derives domain conservatively, and only evolves
+          // the station when this is the final milestone of the whole goal.
+          try {
+            if (typeof JourneyStore !== 'undefined' && JourneyStore.noteMilestone) JourneyStore.noteMilestone({
+              goalId: g.id, goalText: g.text, milestoneId: m.id, milestoneText: m.text,
+              evidence: ev, agentId: 'agent', goalDone: !!r.goalDone
+            });
+          } catch (_) {}
+        }
       }
     }
     if (changed) { save(); pushToSidecar(); poke(); }

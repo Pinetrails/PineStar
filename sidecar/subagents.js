@@ -123,10 +123,34 @@
       const i = findIndex(id);
       if (i < 0) return;
       const r = records[i];
-      const ev = { ts: now(), name: name, payload: payload || {} };
+      const at = now();
+      const ev = { ts: at, name: name, payload: payload || {} };
       const events = (Array.isArray(r.events) ? r.events : []).concat([ev]).slice(-80);
-      records[i] = Object.assign({}, r, { events: events, updatedAt: now() });
+      // A durable background record says `running` as soon as it is queued, before runOnce has
+      // crossed the provider/concurrency gates. Only the frozen run.start earns a WORKING claim.
+      // Keep that confirmation outside the bounded event tail: a long worker can legitimately
+      // produce more than 80 watched events before a reconnect asks which runs are still live.
+      let confirmedAt = r.confirmedAt || 0;
+      const eventRunId = payload && payload.runId ? String(payload.runId) : '';
+      if (eventRunId && eventRunId === r.runId) {
+        if (name === 'agent.run.start') confirmedAt = at;
+        else if (name === 'agent.run.end') confirmedAt = 0;
+      }
+      records[i] = Object.assign({}, r, { events: events, confirmedAt: confirmedAt, updatedAt: at });
       save();
+    }
+
+    // Authoritative reconnect view for background workers. A controller proves this process still
+    // owns the work; confirmedAt proves runOnce emitted agent.run.start; status excludes interrupted,
+    // failed, completed, and restart-staled records. The frontend snapshot consumes this exact view
+    // instead of guessing from a durable `running` label or losing the worker after an SSE reconnect.
+    function activeRuns() {
+      const out = [];
+      for (const r of records) {
+        if (!r || r.status !== 'running' || !controllers.get(r.id) || !(r.confirmedAt > 0)) continue;
+        out.push({ runId: r.runId, agentId: r.agentId, startedAt: r.confirmedAt, source: 'subagent' });
+      }
+      return clone(out);
     }
     function publishTask(r, status) {
       try { emit('task', { id: r.id, agentId: r.agentId, status: status, kind: 'subagent', title: clip(r.prompt, 80) }); } catch (_) {}
@@ -174,6 +198,7 @@
         updatedAt: t,
         completedAt: 0,
         canResume: false,
+        confirmedAt: 0,
         destination: String(meta.destination || (old && old.destination) || ('lead:' + safeId(meta.leadId || 'agent', 'leadId'))),
         finalization: null
       };
@@ -286,7 +311,7 @@
 
     load();
     reconcileFinalizations();
-    return { list: list, get: get, start: start, interrupt: interrupt, interruptAll: interruptAll, resume: resume,
+    return { list: list, get: get, activeRuns: activeRuns, start: start, interrupt: interrupt, interruptAll: interruptAll, resume: resume,
       reconcileFinalizations: reconcileFinalizations,
       _internals: { records: function () { return records; }, controllers: controllers, load: load, save: save, appendEvent: appendEvent, publishFinalization: publishFinalization } };
   }

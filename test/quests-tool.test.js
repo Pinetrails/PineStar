@@ -26,7 +26,7 @@ function memFs() {
 const writeDurable = ({ fs }, file, data) => { fs.writeFileSync(file, data); };
 function fresh() { return makeQuestStore({ fs: memFs(), path, workspaces: '/ws', writeDurable }); }
 // a monotonic injected clock so the tool's now() is deterministic.
-function toolFor(store) { let t = 0; return makeQuestTools({ store, clock: { now: () => ++t } }).questUpdateTool; }
+function toolFor(store, activeGoal) { let t = 0; return makeQuestTools({ store, clock: { now: () => ++t }, activeGoal: () => activeGoal || null }).questUpdateTool; }
 const ctxOf = (agentId, runId) => ({ agentId, runId });
 
 (async () => {
@@ -151,20 +151,21 @@ const ctxOf = (agentId, runId) => ({ agentId, runId });
   // ---- op:mint — contract enforced, generated/agent-scoped, error passthrough VERBATIM ----
   {
     const store = fresh();
-    const tool = toolFor(store);
+    const tool = toolFor(store, { id: 'goal:csv', milestoneId: 'm:flow' });
 
     // no contract → the store's exact error string
     const noC = await tool.run({ op: 'mint', title: 'do a thing' }, ctxOf('hero', 'run1'));
     A.ok(/needs a valid completion contract/.test(noC.content), 'mint with no contract surfaces the store error verbatim');
 
     // valid mint → generated + createdBy agent:<id> + agent-scoped
-    const ok = await tool.run({ op: 'mint', title: 'Learn the CSV flow', contract: { type: 'attest', key: '' }, groundedIn: 'dossier: works with CSVs daily' }, ctxOf('hero', 'run1'));
+    const ok = await tool.run({ op: 'mint', title: 'Learn the CSV flow', contract: { type: 'attest', key: '' }, groundedIn: 'dossier: works with CSVs daily', domain: 'research' }, ctxOf('hero', 'run1'));
     A.ok(/Minted quest q:\d+/.test(ok.content), 'a valid mint returns the new quest id');
     const minted = store.list().find(q => q.title === 'Learn the CSV flow');
     A.eq(minted.kind, 'generated', 'minted quest is kind:generated');
     A.eq(minted.createdBy, 'agent:hero', 'minted quest createdBy is agent:<callingAgent>');
     A.eq(minted.agentId, 'hero', 'minted quest is scoped to the calling agent');
     A.eq(minted.groundedIn, 'dossier: works with CSVs daily', 'groundedIn is carried through');
+    A.eq([minted.domain, minted.goalId, minted.milestoneId], ['research', 'goal:csv', 'm:flow'], 'minted quest binds its mastery domain and active life-goal step');
 
     // the ≤3-open-generated cap: 2 more ok, the 4th rejected with the store's verbatim message. NOTE: each mint is
     // on a DISTINCT runId so the per-run mint cap (below) doesn't mask the store's open-generated cap.

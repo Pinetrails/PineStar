@@ -102,6 +102,8 @@ const App = (() => {
   let station = null;         // the canonical WorldModel station (the builder's source of truth)
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
   let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
+  let pendingGrowthSyncAt = 0;    // durable-run catch-up floor (server snapshot; legacy saves use their write time once)
+  let pendingRatingSyncAt = 0;    // authoritative work-rating ledger floor (repairs stale/rolled-back XP projections)
   let pendingProfile = null;      // a saved user-affinity profile slice awaiting ProfileStore.init() in enterGame()
   let pendingWorkSignal = null;   // a saved capability-usage histogram slice awaiting WorkSignalStore.init() in enterGame()
   let pendingDossier = null;      // a saved Commander-dossier slice awaiting DossierStore.init() in enterGame()
@@ -2507,6 +2509,7 @@ const App = (() => {
     if (typeof StationQuestStore !== 'undefined') StationQuestStore.reset();   // …and no inherited station-gap fix-it quests — a new Commander never sees the prior hero's capdenied backlog / dismissals (own key)
     if (typeof WorkQuestStore !== 'undefined') WorkQuestStore.reset();   // …and no inherited accepted-build work quests — a new Commander never inherits the prior hero's in-flight builds (own key)
     if (typeof GoalStore !== 'undefined') GoalStore.reset();   // …and a fresh goal tree — a new Commander never inherits the prior hero's goals/milestones/progress (own key)
+    if (typeof JourneyStore !== 'undefined' && JourneyStore.reset) JourneyStore.reset();   // …and no inherited metrics, mastery, or station evolution
     if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.reset) UnderstandingStore.reset();   // …and no inherited rating corroboration — a new Commander never inherits the prior hero's 👍/👎 confidence signal (own key)
     if (typeof MaintQuestStore !== 'undefined') MaintQuestStore.reset();   // …and no inherited maintenance quests — a new Commander never sees the prior hero's slag/jam backlog (own key)
     if (typeof MintStore !== 'undefined') MintStore.reset();   // …no inherited recurring-task shapes — these feed the seed shelf, so a leak would offer a prior Commander's chores (own key)
@@ -2525,6 +2528,8 @@ const App = (() => {
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
+    pendingGrowthSyncAt = 0;
+    pendingRatingSyncAt = 0;
     enterGame({ awaitingPurpose: true, wake: true });   // the Orchestrator authors its mission in the awakening (no pre-spec)
     persist();   // so a refresh mid-onboarding resumes to the purpose step
     return true;
@@ -2533,6 +2538,7 @@ const App = (() => {
   /* ---------- resume ---------- */
   function resumeInto(saved) {
     agent = saved.agent;
+    if (!(Number(agent.createdAt) > 0)) agent.createdAt = Math.max(1, Number(saved.updatedAt) || Date.now());
     if (!agent.role) agent.role = 'orchestrator';  // older hero saves predate the role field — the first agent is the lead
     agentDocs(agent);                              // seed config docs for older saves that predate them
     stripLegacyVoiceBlock(agent);                  // one-time: drop the old awakening's inline VOICE & MANNER so it doesn't double up with the archetype layer
@@ -2550,6 +2556,11 @@ const App = (() => {
     Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId, sessionUndo: saved.sessionUndo, deletedIds: saved.deletedIds });
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
+    pendingGrowthSyncAt = Math.max(0, Number((saved.stationStats && saved.stationStats.runSyncAt) || saved.updatedAt || 0));
+    // A legacy/stale projection with no dedicated rating watermark must replay this station generation from
+    // its beginning. Using save.updatedAt here can skip a rating that the server accepted before that stale
+    // local document was written (the exact multi-tab clobber this ledger exists to repair).
+    pendingRatingSyncAt = Math.max(1, Number(saved.stationStats && saved.stationStats.ratingSyncAt) || 1);
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
     pendingWorkSignal = saved.worksignal || null;   // restore the capability-usage histogram (adaptive recruitment)
     pendingDossier = saved.dossier || null;   // restore the station-wide Commander dossier
@@ -2595,6 +2606,10 @@ const App = (() => {
         return s ? { mount: s.mount || null, stack: !!s.stack, surface: !!s.surface } : null;
       });
     }
+    // STATION IDENTITY: did the save we are loading already carry one? (worldmodel stamps meta.createdAt
+    // at create AND backfills it on migrate — a stamp that is never SAVED would re-roll on every reload,
+    // and every per-station REFIT latch keyed on it would be lost. Read before deserialize mutates it.)
+    const hadStationId = !!(pendingStationDoc && pendingStationDoc.meta && pendingStationDoc.meta.createdAt);
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
     pendingStationDoc = null;
     // THE OVERSEER'S DESK IS A REAL PROP: materialize the starter workstation the world used to merely
@@ -2604,7 +2619,9 @@ const App = (() => {
     // only for the pathological no-space floor.
     if (agent && agent.id && typeof station.ensureWorkstation === 'function') {
       const seeded = station.ensureWorkstation(agent.id);
-      if (seeded && seeded.ok && !seeded.existing) persist();   // a real floor change — save it like any placement
+      // a real floor change, OR a save that just received its station id — either way the doc on disk is
+      // now behind the doc in memory, and the id in particular MUST be durable (see hadStationId above).
+      if (!hadStationId || (seeded && seeded.ok && !seeded.existing)) persist();
     }
     if (typeof World.loadStation === 'function') World.loadStation(station);   // the live world IS the built station
     // give resumed summoned crew their real floor bodies now that the station/geo is loaded (no-op for a
@@ -2656,7 +2673,7 @@ const App = (() => {
     // S3: onCredential fires only on a coarse track-record change (tier crossing / band flip), and re-pushes
     // the roster so the lead's next dispatch briefing describes its crew truthfully. Rare by construction.
     // S4: `agents` lets the boot-time trophy reconcile reach every specialist's case, not just the hero's.
-    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, agents: () => Array.from(agents.values()), station: pendingStationStats, persist: persist, onCredential: () => pushRoster() }); pendingStationStats = null; }
+    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, agents: () => Array.from(agents.values()), station: pendingStationStats, syncSince: pendingGrowthSyncAt, syncRatingsSince: pendingRatingSyncAt, persist: persist, onCredential: () => pushRoster() }); pendingStationStats = null; pendingGrowthSyncAt = 0; pendingRatingSyncAt = 0; }
     // PERSONALIZATION: the local user-affinity profile — folds the interest tag of each task + shipped work
     // into a tiny histogram (profile.js engine). Resume the saved slice, else start fresh + seed cold-start
     // from the agent's deployed specialty domain so day-one suggestions aren't blank.
@@ -2738,6 +2755,10 @@ const App = (() => {
     // QUEST V3 — the standing quest-REFRESH engine's frontend citizen: polls /api/quests/refresh (throttled on
     // the tick) for the north star + attempt ledger + due state, and owns the manual REFRESH QUESTS write.
     if (typeof QuestRefreshStore !== 'undefined') QuestRefreshStore.init();
+    // COMMANDER JOURNEY: the durable sidecar-owned loop connecting goal metrics + verified outcomes to
+    // agent-domain mastery, visible adaptation receipts, and expressive station evolution. Separate from XP;
+    // never grants capabilities. Init before GoalStore so a just-folded milestone can post immediately.
+    if (typeof JourneyStore !== 'undefined') JourneyStore.init();
     // G1b STATION-QUEST GENERATOR: subscribe to agent.tool_call and mint a fix-it quest when an agent reaches
     // for a tool its room can't grant (capdenied → playable direction). Init AFTER World.loadStation (its gap
     // check + resolution read World.heroCaps / the live floor) and after QuestStateStore so a resumed save's

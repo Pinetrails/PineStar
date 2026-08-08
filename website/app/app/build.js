@@ -144,6 +144,16 @@ const Build = (() => {
   // an exterior has no deck to match, and STATION's own follow-tone is the shell grey it always was.
   let hullMat = 'station', hullStyle = 'follow';
   let drag = null, hoverRoomId = null, hoverPropId = null, hoverTile = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
+  /* THE CAPTURED POINTER (2026-08-07 conveyor audit). onDown setPointerCapture()s the canvas so a drag
+     that leaves the element keeps tracking. Only onUp released it — every OTHER way a drag ends (ESC,
+     right-click, pointercancel, window blur) dropped `drag` and left the capture ON, and a captured
+     canvas swallows its own pointerleave/hover until the next click. Remember the id so every exit
+     releases it; endDrag() is the ONE way a drag is dropped. */
+  let dragPid = null;
+  function releaseDrag() {
+    if (dragPid != null && cv) { try { cv.releasePointerCapture(dragPid); } catch (e) {} }
+    dragPid = null; drag = null;
+  }
   let dupe = null;   // DUPE tool clipboard: {type:'prop'|'room', rects (rel to top-left), …} — armed = ghost follows cursor, click stamps
   let lineType = 'research_line';   // LINES tool: the armed starter-line blueprint (WorldModel.BLUEPRINTS id)
   /* WHERE CAN THIS GO — the candidate field (2026-08-07). Arming a blueprint used to answer
@@ -153,6 +163,47 @@ const Build = (() => {
      and NEVER inside the frame loop's hot path (a full scan is ~thousands of checkBlueprint calls
      — per frame it would melt). station.onChange drops the whole map; that is the only invalidation. */
   const lineFields = Object.create(null);   // bpId -> { set:Set('tx,ty'), list:[{tx,ty}], runs:[…], edges:[…] }
+  const lineFitsMemo = Object.create(null); // bpId -> bool, from the EARLY-EXIT probe (see lineFits)
+  /* ---------- THE GEOMETRY VERSION: one explicit invalidation signal (2026-08-08 perf pass) ----------
+     REFIT's frame loop was re-deriving, at 60fps, a pile of answers that can only change when the
+     FLOOR changes: the station bounds, the belt list, every bound bay's capability objects, the
+     table-mount resolution for every prop, and the top readout's room/tile census. On a large deck
+     that was the frame — bayObjects alone is O(bays × props × rooms).
+
+     `geoVer` is bumped by exactly one thing: station.onChange (plus open(), so a second session can
+     never read a memo left by the first). Every memo below stores the version it was computed at
+     and recomputes the instant that number moves. A memo is NEVER refreshed on a timer, a guess or
+     a heuristic — a stale overlay would be the app asserting a floor the model does not hold, which
+     is the same lie the truthful-telemetry law forbids everywhere else. */
+  let geoVer = 1;
+  let boundsVer = 0, boundsMemo = null;
+  let beltsVer = 0, beltsMemo = null;
+  let bayObjVer = 0, bayObjMemo = null;    // Map agentId -> objects (bayObjects is pure over the doc)
+  let mountVer = 0, mountOrder = null, mountMap = null;
+  let statVer = 0;                          // top readout: the room/prop census only moves with the floor
+  let jmapPlan = null, jmapOx = 0, jmapOy = 0, jmapMemo = null;   // junction map, keyed on the COMPILED plan
+  function bumpGeo() {
+    geoVer++;
+    boundsMemo = null; beltsMemo = null; bayObjMemo = null; mountOrder = null; mountMap = null;
+  }
+  // the station bounds, once per edit. Callers READ it (never mutate), so one shared object is safe.
+  const boundsMemoed = () => (boundsVer === geoVer && boundsMemo) ? boundsMemo : (boundsVer = geoVer, boundsMemo = station.bounds());
+  /* station.belts() allocates a fresh array of {x,y,dir} — one split(',') per belt tile — on every
+     call, and the frame called it once and handed it to three consumers. The model's belt graph
+     cannot change without an onChange, and every consumer (conveyor.tick, conveyor.drawBelts, the
+     ghost engine) treats it strictly read-only, so hand them all the SAME array for the edit. */
+  const beltsMemoed = () => (beltsVer === geoVer && beltsMemo) ? beltsMemo : (beltsVer = geoVer, beltsMemo = station.belts());
+  /* bayObjects, per (agentId, geometry). Also DEFENSIVE: world.js has always wrapped this call in a
+     try/catch and REFIT called it bare, so one throw took out the whole validation layer (and with
+     it every routing callout on the floor) instead of one bay's NO-COMPUTE check. */
+  function bayObjectsMemoed(agentId) {
+    if (bayObjVer !== geoVer || !bayObjMemo) { bayObjVer = geoVer; bayObjMemo = new Map(); }
+    if (bayObjMemo.has(agentId)) return bayObjMemo.get(agentId);
+    let objs = [];
+    try { objs = station.bayObjects(agentId) || []; } catch (_) { objs = []; }
+    bayObjMemo.set(agentId, objs);
+    return objs;
+  }
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
   let ghost = null;                     // GHOST PROJECTION (Phase 3): dedicated engine — never mixes with convey
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
@@ -168,13 +219,23 @@ const Build = (() => {
     if (running) return;
     station = opts.getStation();
     if (!station) return;
-    spaceHeld = false; drag = null; dupe = null; flashes.length = 0;   // never inherit latched state from a prior session
+    spaceHeld = false; drag = null; dragPid = null; dupe = null; flashes.length = 0;   // never inherit latched state from a prior session
+    /* SESSION-SCOPED UI STATE (2026-08-07 conveyor audit). Everything here outlived close() and lied on the
+       next open. The load-bearing one is `layerFailed`: renderDegraded is a TRUTHFUL-TELEMETRY readout —
+       "a draw layer is currently failing" — and one transient throw in a session two hours ago had it
+       asserting degradation forever, a state the harness could no longer prove. The rest are staleness:
+       propCardKey made re-hovering the same prop after a reopen paint an EMPTY card (the key matched, so
+       the body was never rebuilt), ordersSeenDone chimed completion for steps finished while REFIT was
+       shut, and propQuery reopened the palette silently filtered by a search the Commander can't see. */
+    for (const k in layerFailed) delete layerFailed[k];
+    propCardKey = null; ordersSeenDone = null; propQuery = ''; lastTier = '';
     tool = 'select';   // SELECT is the default mode — a fresh REFIT session never opens with a placement tool armed
     ridePending = false;   // the auto first-ride re-arms from THIS session's compile, never a stale one
     // finish-the-line: fresh session state (the registry itself persists in localStorage) + one seam probe
     finSample = null; finKeySel = null; finSig = ''; finCardEl = null; finComp = null; valComps = null; lastStampIds = null; finPollTs = 0;
     for (const k in stampNameOf) delete stampNameOf[k];   // session-scoped blueprint-name placeholders (line naming)
     clearLineFields();   // a fresh session never inherits a prior floor's "where can this go" answers
+    bumpGeo();           // …nor a prior floor's bounds/belts/bay-objects/mount memos (see geoVer)
     probeSampleSeam();
     buildDOM();
     if (opts.world && opts.world.stop) opts.world.stop();       // freeze the live sim
@@ -183,6 +244,7 @@ const Build = (() => {
     unsub = station.onChange(p => {
       bakeDirty = true; planDirty = true;   // a real floor edit — the compiled plan is stale
       clearLineFields();   // …and so is every cached "where can this blueprint go" answer
+      bumpGeo();           // …and every per-edit derived memo (bounds / belts / bayObjects / mounts / the readout census)
       /* A GLOBAL EDIT CANNOT BE INVALIDATED BY A RECTANGLE. The bake is cached in CHUNKS here, and
          `bakeDirtyRects` re-bakes only the chunks a rect touches — right for a deck or a prop, and
          WRONG for the shell, whose skin grouping and skirt ownership are station-wide. Drop the
@@ -493,6 +555,7 @@ const Build = (() => {
   function renderPalette() {
     const pal = root.querySelector('#refit-palette');
     if (!pal) return;
+    bumpUi();   // the dock is about to change height/width — positionFinCard must re-measure it
     const section = root.querySelector('#refit-option-section');
     const label = root.querySelector('#refit-palette-label');
     let paletteLabel = '';
@@ -1093,12 +1156,15 @@ const Build = (() => {
      so a legal anchor can never be more than half a footprint outside the station bounds. */
   const FIELD_MARGIN = 2;   // tiles of slack around the bounds — a centred footprint may hang its anchor just outside
   const SNAP_R = 3;         // "roughly there" = within this many tiles of a legal anchor
-  function clearLineFields() { for (const k of Object.keys(lineFields)) delete lineFields[k]; }
+  function clearLineFields() {
+    for (const k of Object.keys(lineFields)) delete lineFields[k];
+    for (const k of Object.keys(lineFitsMemo)) delete lineFitsMemo[k];
+  }
   function lineField(bpId) {
     const bp = blueprintOf(bpId);
     if (!bp || !station) return null;
     if (lineFields[bpId]) return lineFields[bpId];
-    const b = station.bounds();
+    const b = boundsMemoed();
     const hw = bp.w >> 1, hh = bp.h >> 1;
     const x0 = b.minTx + hw - FIELD_MARGIN, x1 = b.maxTx + hw + FIELD_MARGIN;
     const y0 = b.minTy + hh - FIELD_MARGIN, y1 = b.maxTy + hh + FIELD_MARGIN;
@@ -1121,8 +1187,26 @@ const Build = (() => {
     }
     return (lineFields[bpId] = { set, list, runs, edges });
   }
-  // does this blueprint fit ANYWHERE on the current deck? (shelf honesty — see renderPalette)
-  const lineFits = bpId => { const f = lineField(bpId); return !!(f && f.list.length); };
+  /* does this blueprint fit ANYWHERE on the current deck? (shelf honesty — see renderPalette)
+     The shelf asks this for ALL FOUR blueprints on every palette render, and building a full field
+     is thousands of checkBlueprint calls each — arming LINES on a large deck visibly froze. Existence
+     needs only the FIRST legal anchor, so probe in the SAME scan order and stop at it. The two paths
+     cannot disagree: both ask "does canPlaceBlueprint accept any anchor in the deck neighbourhood",
+     over the identical rectangle. When the full field is already cached (the armed blueprint) it is
+     used verbatim. Both are dropped together by clearLineFields on every station.onChange. */
+  function lineFits(bpId) {
+    if (lineFields[bpId]) return !!lineFields[bpId].list.length;
+    if (bpId in lineFitsMemo) return lineFitsMemo[bpId];
+    const bp = blueprintOf(bpId);
+    if (!bp || !station) return false;   // no blueprint = nothing to cache (lineField returned null here)
+    const b = boundsMemoed();
+    const hw = bp.w >> 1, hh = bp.h >> 1;
+    const x0 = b.minTx + hw - FIELD_MARGIN, x1 = b.maxTx + hw + FIELD_MARGIN;
+    const y0 = b.minTy + hh - FIELD_MARGIN, y1 = b.maxTy + hh + FIELD_MARGIN;
+    for (let ty = y0; ty <= y1; ty++) for (let tx = x0; tx <= x1; tx++)
+      if (station.canPlaceBlueprint(bp.id, tx - hw, ty - hh).ok) return (lineFitsMemo[bpId] = true);
+    return (lineFitsMemo[bpId] = false);
+  }
   /* SNAP: the ghost follows the cursor but lands on the nearest legal anchor within SNAP_R, so a
      click "roughly there" places the line. Beyond that radius the cursor tile is used raw and the
      ghost stays RED — a genuinely-nowhere-near aim must still be told no, not silently teleported
@@ -1132,13 +1216,24 @@ const Build = (() => {
     const f = lineField(lineType);
     if (!f || !f.list.length) return { tx, ty, snapped: false };
     if (f.set.has(tx + ',' + ty)) return { tx, ty, snapped: false };
-    let best = null, bestD = Infinity;
-    for (const c of f.list) {
-      const dx = c.tx - tx, dy = c.ty - ty, d = dx * dx + dy * dy;
-      if (d < bestD) { bestD = d; best = c; }
+    /* SEARCH THE RADIUS, NOT THE DECK. This walked the ENTIRE candidate list — thousands of tiles on
+       a large floor — every frame the LINES ghost was live, only to throw the winner away unless it
+       landed within SNAP_R. Any anchor outside the (2·SNAP_R+1)² box has |dx|>R or |dy|>R, hence
+       d > R², hence it would have been rejected by that very check; so scanning only the box cannot
+       change the answer. The box is walked in (dy, dx) order — the same order f.list is built in —
+       and ties still break on the first strictly-smaller distance, so the snap stays deterministic
+       and identical, tile for tile. */
+    let bx = 0, by = 0, bestD = Infinity, found = false;
+    for (let dy = -SNAP_R; dy <= SNAP_R; dy++) {
+      for (let dx = -SNAP_R; dx <= SNAP_R; dx++) {
+        const cx = tx + dx, cy = ty + dy;
+        if (!f.set.has(cx + ',' + cy)) continue;
+        const d = dx * dx + dy * dy;
+        if (d < bestD) { bestD = d; bx = cx; by = cy; found = true; }
+      }
     }
-    if (!best || bestD > SNAP_R * SNAP_R) return { tx, ty, snapped: false };
-    return { tx: best.tx, ty: best.ty, snapped: true };
+    if (!found || bestD > SNAP_R * SNAP_R) return { tx, ty, snapped: false };
+    return { tx: bx, ty: by, snapped: true };
   }
   // the ghost's rect set + validity at a cursor tile — same {rects, v} contract every ghost uses
   function lineGhost(tx, ty) {
@@ -1300,6 +1395,39 @@ const Build = (() => {
     }
   }
 
+  /* ---------- THE CARD STACK (2026-08-07 conveyor audit) ----------
+     Every modal card in REFIT — the first-run guide, the step editor, the workstation picker, the flow /
+     belt / junction / connector / room / door cards — mounts as `.refit-guide` + its own marker class, and
+     each one owns a `closeP` that does the work closing it OWES: the step card saves the job brief, the
+     flow card saves the line name, the room card saves the rename. Nothing outside those closures could
+     reach them, so two callers took a shortcut and paid for it:
+       • ESC matched `.refit-guide` — the class they ALL share — then markSeen()'d and removeChild()'d
+         directly. Pressing ESC over a step card threw away an unsaved job brief AND permanently marked
+         the build-mode guide seen, for a card that was not the guide. The law was even written down two
+         hundred lines below ("gate on `.refit-firstrun`, NEVER `.refit-guide`") and broken here.
+       • Every opener bailed out (`if (already mounted) return`) instead of replacing, so FINISH ① CREW
+         and the live world's NO AGENT nag did NOTHING while any other dock's card was open.
+     So: a card REGISTERS its own close path on its element, and both callers route through it. Closing is
+     always the card's own closing; opening always replaces whatever is up. */
+  function cardRegister(el, closeFn) { el._refitClose = closeFn; return el; }
+  // topmost = last mounted (DOM order); these cards are appended, never re-ordered
+  function cardTop() {
+    if (!root) return null;
+    const all = root.querySelectorAll('.refit-guide');
+    return all.length ? all[all.length - 1] : null;
+  }
+  // close ONE card through its own path (which is what saves what that card saves)
+  function cardClose(el) {
+    if (!el) return false;
+    const fn = el._refitClose;
+    el._refitClose = null;             // a close path that re-enters must not run twice
+    if (typeof fn === 'function') { try { fn(); } catch (e) { console.warn('[refit] card close path threw', e); } }
+    if (el.parentNode) el.parentNode.removeChild(el);   // backstop: every closeP already removes itself
+    return true;
+  }
+  // an opener calls this FIRST: whatever is up closes properly, then the new card takes the surface.
+  function cardCloseAll() { for (let i = 0; i < 16; i++) { const el = cardTop(); if (!el) break; cardClose(el); } }
+
   /* ---------- first-use guide ---------- */
   function hasSeen() { try { return !!localStorage.getItem(SEEN_KEY); } catch (e) { return false; } }
   function markSeen() { try { localStorage.setItem(SEEN_KEY, '1'); } catch (e) {} }
@@ -1353,6 +1481,7 @@ const Build = (() => {
     });
     requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const dismiss = () => { markSeen(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, dismiss);   // ESC on THIS card (and only this one) is what marks the guide seen
     g.querySelector('#refit-guide-go').onclick = dismiss;
     g.addEventListener('click', e => { if (e.target === g) dismiss(); });
   }
@@ -1414,8 +1543,9 @@ const Build = (() => {
     chain: "Work arrives here as the previous station's output. This is your station's job — your part of every run that reaches you."
   };
   function openStepCard(bayId, ev) {
-    if (!root || root.querySelector('.refit-step-card')) return;
+    if (!root) return;
     const p = station.propById(bayId); if (!p || p.t !== 'bay') return;
+    cardCloseAll();   // this card REPLACES whatever was up (FINISH ① CREW / the world's NO AGENT nag land here)
     const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
     const roleInfo = (p.role && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
     const canSummon = !!(roleInfo && typeof App !== 'undefined' && App.summonAgent);
@@ -1482,6 +1612,7 @@ const Build = (() => {
     const boundEl = g.querySelector('#step-bound');
     const clearErr = () => { input.classList.remove('is-error'); };
     const closeP = () => { saveBrief(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);   // ESC closes THROUGH here, so the job brief is saved and never discarded
     // a bind/unbind UPDATES the card in place (the brief draft must survive crewing the dock) — the
     // one-surface law: configure the whole step here, close once.
     const refreshBinding = () => {
@@ -1541,8 +1672,9 @@ const Build = (() => {
      when it's given a task it walks over and sits at this desk. The host/model is already chosen when the agent
      was created, so this is a single "pick an agent" step. Opens on place + on click (PROP_EDITABLE). */
   function openWorkstationPicker(propId, ev) {
-    if (!root || root.querySelector('.refit-ws-picker')) return;
+    if (!root) return;
     const p = station.propById(propId); if (!p || !WORKSTATION_TYPES[p.t]) return;
+    cardCloseAll();
     const cur = p.agentId || '';
     const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
     const rows = agents.map(a => `<button type="button" class="bb sm ws-agent${a.id === cur ? ' active' : ''}" data-aid="${esc(a.id)}">${esc(a.name || a.id)}${a.model ? ' <span class="ws-model">' + esc(a.model) + '</span>' : ''}</button>`).join('');
@@ -1572,6 +1704,7 @@ const Build = (() => {
     const input = g.querySelector('#ws-aid');
     const clearErr = () => { input.classList.remove('is-error'); };
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);
     // ONE CLICK: choosing a roster agent IS the assignment (mirrors the BAY picker — see the note there)
     g.querySelectorAll('.ws-agent').forEach(b => b.onclick = () => {
       const res = station.assignPropAgent(propId, b.dataset.aid);
@@ -1633,8 +1766,9 @@ const Build = (() => {
       + '</div><div class="flow-note">outside work rides IN to an agent’s dock · they work it at their desk · the finished result rides OUT. (COMMS orders skip the ride in — you gave them in person.)</div></div>';
   }
   function openFlowCard(propId) {
-    if (!root || root.querySelector('.refit-flow-card')) return;
+    if (!root) return;
     const p = station.propById(propId); if (!p) return;
+    cardCloseAll();
     const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger') ? 'junction' : 'bay';
     const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN', splitter: 'SPLITTER — LANES BALANCE' };
     const LINE = {
@@ -1730,6 +1864,7 @@ const Build = (() => {
       });
     }
     const closeP = () => { saveName(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);   // ESC closes THROUGH here, so the line name is saved and never discarded
     /* ---- trigger-zone wiring (intake only; every claim below is a server answer, never synthesized) ---- */
     if (isIntake) {
       const feedEl = g.querySelector('#trg-feed'), listEl = g.querySelector('#trg-routines');
@@ -1793,14 +1928,20 @@ const Build = (() => {
         if (!prompt || !schedule) { sfx('bad'); say('a task and a schedule are required', true); return; }
         if (!trgDock) { sfx('bad'); say('crew a dock first — a routine fires at an agent', true); return; }
         const btn = g.querySelector('#trg-create'); btn.disabled = true; say('saving…');
-        // the SAME create body the AUTOMATION window posts — tz for wall-clock honesty, the station's live
-        // provider, and NOTHING else: no unattendedGrants, no toolsets (a routine minted here holds exactly
-        // the defaults the AUTOMATION window's untouched form would give).
+        /* the SAME create body the AUTOMATION window posts — tz for wall-clock honesty, the station's live
+           provider, and NOTHING else: no unattendedGrants, no toolsets (a routine minted here holds exactly
+           the defaults the AUTOMATION window's untouched form would give)…
+           …plus ONE field only this door may set. `runsLine` is what makes a routine THIS LINE'S OWN
+           trigger: the work it fires carries the line's id, so the chain gate lets it run the whole line.
+           It is created here, on the INBOX card, under a button that literally says FOR THIS LINE — that
+           is the Commander asking for the line to run. A routine minted anywhere else omits it and stays
+           terminal (absent/false = the dock answers and nothing downstream spends), which is the safe
+           default: no run the Commander did not ask for. */
         const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch (e) { return undefined; } })();
         const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;
         const lname2 = lineNameOf(comp);
         const name = (lname2 ? lname2 + ' — ' : '') + (prompt.length > 48 ? prompt.slice(0, 45) + '…' : prompt);
-        fetch(finApi('/api/cron'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, prompt, schedule, agentId: trgDock, provider, tz }) })
+        fetch(finApi('/api/cron'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, prompt, schedule, agentId: trgDock, provider, tz, runsLine: true }) })
           .then(r => r.json()).then(r => {
             btn.disabled = false;
             if (r && r.error) { sfx('bad'); say('✕ ' + r.error, true); return; }
@@ -1825,7 +1966,8 @@ const Build = (() => {
      dispatch wouldn't reach. Plan coords are LOCAL (valPlan compiles from cacheGeo) → rebase the
      clicked WORLD tile by cacheGeo.origin before asking. */
   function openBeltCard(tx, ty, ev) {
-    if (!root || root.querySelector('.refit-belt-card')) return;
+    if (!root) return;
+    cardCloseAll();
     const dir = station.beltAt(tx, ty);
     if (!dir) return;
     const o = (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 };
@@ -1848,16 +1990,19 @@ const Build = (() => {
     root.appendChild(g);
     requestAnimationFrame(() => g.classList.add('refit-swap'));
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);
     g.querySelector('#belt-ok').onclick = () => { sfx('click'); closeP(); };
     g.addEventListener('click', e => { if (e.target === g) closeP(); });
   }
 
   function openJunctionEditor(propId, ev) {
-    if (!root || root.querySelector('.refit-junction-editor')) return;
+    if (!root) return;
+    cardCloseAll();
     const p = station.propById(propId); if (!p || p.t !== 'filter') return;
     const g = document.createElement('div');
     g.className = 'refit-guide refit-junction-editor';
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);
 
     {
       // resolve lanes at the tile the COMPILER attaches this junction to (own tile OR ring — see
@@ -1903,11 +2048,13 @@ const Build = (() => {
      is what bayObjects emits for the bay, so the agent in this room gains that server's live tools. The list is
      the live /api/connectors set; a state dot mirrors the panel. Opens on place/click, like the junction editor. */
   function openConnectorEditor(propId, ev) {
-    if (!root || root.querySelector('.refit-connector-editor')) return;
+    if (!root) return;
+    cardCloseAll();
     const p = station.propById(propId); if (!p || p.t !== 'connector_portal') return;
     const g = document.createElement('div');
     g.className = 'refit-guide refit-connector-editor';
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);
     g.innerHTML = '<div class="refit-guide-card"><h3>▮ CONNECTOR PORTAL — bind an MCP server</h3>'
       + '<ul><li>This gateway grants its bay\'s agent the <b>live tools</b> of ONE configured connector.</li>'
       + '<li>Bind it below — the portal then rides that server\'s state and pulses when its tools fire.</li></ul>'
@@ -2033,6 +2180,12 @@ const Build = (() => {
      stays false until an agent is truly bound. */
   // one per-station localStorage key root, shared by the first-ride flag and the finish-the-line
   // registry (same doc.meta.createdAt derivation — a UI one-shot never rides the save schema).
+  /* THE STATION'S OWN NAMESPACE. Every one-shot below (first ride, ORDERS dismissal, the finish-the-line
+     registry) is per-STATION, so it must hang off a durable per-station id — `doc.meta.createdAt`, stamped
+     once at creation and backfilled once on migrate (worldmodel.js stationId). Before 2026-08-07 nothing
+     ever stamped it, so this always answered 'default' and every "per-station" latch was in fact global:
+     a brand-new station inherited the first one's dismissals, never saw its first ride, and had its first
+     line retired before the card was ever shown. 'default' survives only as the storage-broken fallback. */
   function stationKeyOf(st) {
     let k = 'default';
     try { const d = st && st.doc && st.doc(); if (d && d.meta && d.meta.createdAt) k = String(d.meta.createdAt); } catch (e) {}
@@ -2156,8 +2309,10 @@ const Build = (() => {
      the checklist is the control, not a description of one. It gates NOTHING: this is the station
      arc vocabulary quests.js already ships ("honest-loot… like everything here it gates nothing"),
      brought to where the work happens. Dismissable forever. */
-  const ORDERS_KEY = 'starnet.refit.orders.dis';
-  const ordersDismissed = () => { try { return !!localStorage.getItem(ORDERS_KEY); } catch (e) { return false; } };
+  // PER STATION, like every other one-shot here (stationKeyOf) — this shipped with no suffix at all, so
+  // dismissing ORDERS on one station silently dismissed it on every station the Commander ever builds.
+  const ORDERS_KEY = () => 'starnet.refit.orders.dis.' + stationKeyOf(station);
+  const ordersDismissed = () => { try { return !!localStorage.getItem(ORDERS_KEY()); } catch (e) { return false; } };
   let ordersSeenDone = null;   // which steps were already done last render (so a NEW completion can chime)
 
   function ordersSteps() {
@@ -2180,6 +2335,7 @@ const Build = (() => {
   }
 
   function renderOrders() {
+    bumpUi();   // same as renderFinCard: the card in this slot is about to be rebuilt/re-measured
     if (ordersDismissed()) {
       if (finCardEl && finCardEl.parentNode) finCardEl.parentNode.removeChild(finCardEl);
       finCardEl = null; finComp = null; finSig = '';
@@ -2205,7 +2361,7 @@ const Build = (() => {
       + steps.map((s, i) => '<button type="button" class="bb fl-step' + (s.done ? ' done' : '') + '" data-ord="' + s.id + '"'
         + ' title="' + esc(s.tip) + '">' + (s.done ? '✓ ' : '①②③④'[i] + ' ') + esc(s.label) + '</button>').join('');
     finCardEl.querySelector('.fl-x').onclick = () => {
-      try { localStorage.setItem(ORDERS_KEY, '1'); } catch (e) {}
+      try { localStorage.setItem(ORDERS_KEY(), '1'); } catch (e) {}
       sfx('click'); renderOrders();
     };
     finCardEl.querySelectorAll('[data-ord]').forEach(b => {
@@ -2216,6 +2372,7 @@ const Build = (() => {
 
   function renderFinCard() {
     if (!root || !running) return;
+    bumpUi();   // the card is about to be re-measured/rebuilt — drop its pinned-position memo
     const c = finPick();
     if (!c) { renderOrders(); return; }   // no line yet → the stage BEFORE it, in the same slot
     finComp = c;
@@ -2286,9 +2443,19 @@ const Build = (() => {
   }
   // per-frame: hide while anything coach-like is up (same gate family as the first ride), else pin
   // the card beside the line's bounding box in screen space (the flashTip/clientX coordinate basis).
+  /* PIN ONLY WHEN SOMETHING MOVED (2026-08-08 perf pass). This ran three getBoundingClientRects and
+     two style writes on EVERY frame — the writes dirty layout, so the next frame's reads are forced
+     layouts, i.e. the loop paid for its own invalidation forever. The card's position is a pure
+     function of a handful of values: the camera, the window, REFIT's own chrome (dock width / card
+     size, tracked by uiVer), the text-size zoom, and which line it is anchored to. Sign those; an
+     unchanged signature means the pin is already correct and the frame owes it nothing.
+     The coach gate CLEARS the signature so the card is always re-pinned when it comes back. */
+  let finPosSig = '';
+  let uiVer = 1;   // bumped wherever REFIT's own DOM geometry can move — see bumpUi()
+  function bumpUi() { uiVer++; finPosSig = ''; }
   function positionFinCard() {
     if (!finCardEl) return;
-    if (tutorialCoaching() || (root && root.querySelector('.refit-firstrun'))) { finCardEl.style.display = 'none'; return; }
+    if (tutorialCoaching() || (root && root.querySelector('.refit-firstrun'))) { finCardEl.style.display = 'none'; finPosSig = ''; return; }
     const c = finComp;
     /* ORDERS mode has no line to anchor to (that is the whole point of it), so it parks in the top
        right of the glass — clear of the left dock and of the action deck above. FINISH THE LINE
@@ -2296,8 +2463,11 @@ const Build = (() => {
     if (!c && finCardEl.classList.contains('refit-orders')) {
       if (!cv) return;
       finCardEl.style.display = '';
+      const osig = 'o|' + uiVer + '|' + window.innerWidth + '|' + window.innerHeight + '|' + U.uiZoom();
+      if (osig === finPosSig) return;
       const r0 = cv.getBoundingClientRect();
       if (!r0.width) return;
+      finPosSig = osig;
       const z = U.uiZoom(), cr0 = finCardEl.getBoundingClientRect();
       finCardEl.style.left = Math.round((r0.right - (cr0.width || 236 * z) - 14 * z) / z) + 'px';
       finCardEl.style.top = Math.round((r0.top + 58 * z) / z) + 'px';
@@ -2306,8 +2476,13 @@ const Build = (() => {
     if (!c || !c.bbox || !cacheGeo || !cv) return;
     finCardEl.style.display = '';
     const o = cacheGeo.origin || { tx: 0, ty: 0 }, t = T();
+    const lsig = 'l|' + uiVer + '|' + zoom + '|' + panX + '|' + panY + '|' + t + '|' + o.tx + ',' + o.ty
+      + '|' + window.innerWidth + '|' + window.innerHeight + '|' + U.uiZoom()
+      + '|' + c.key + '|' + c.bbox.x1 + ',' + c.bbox.y1 + ',' + c.bbox.x2 + ',' + c.bbox.y2;
+    if (lsig === finPosSig) return;
     const r = cv.getBoundingClientRect();
     if (!r.width || !r.height) return;
+    finPosSig = lsig;
     const uiz = U.uiZoom();
     const sx = w => r.left + (w * zoom + panX) * (r.width / cv.width);
     const sy = w => r.top + (w * zoom + panY) * (r.height / cv.height);
@@ -2332,7 +2507,13 @@ const Build = (() => {
      at an outbox mouth. Works with REFIT closed: resolves the station via opts and maps the tile to
      its line in a fresh geometry frame. First delivery wins; done is forever (per station+line). */
   function noteLineDelivered(wtx, wty) {
-    const st = station || (opts && typeof opts.getStation === 'function' ? opts.getStation() : null);
+    /* THE LIVE STATION WINS. This hook fires from world.js with REFIT CLOSED, and close() never nulls the
+       module-level `station` — so preferring it meant the retirement was booked against whatever station
+       the last REFIT session held. Load a different save and the first real delivery retired a line on the
+       station you are no longer standing in. opts.getStation() is the app's live station; the stale
+       module field is only the fallback for a harness that injected no getter. */
+    const live = (opts && typeof opts.getStation === 'function') ? opts.getStation() : null;
+    const st = live || station;
     if (!st || typeof Pipeline === 'undefined' || !Pipeline.lineComponents) return;
     let geo = null;
     try { geo = st.projectGeometry(); } catch (e) { return; }
@@ -2359,8 +2540,9 @@ const Build = (() => {
      that already existed (rename · re-deck · delete), each routed through the same mutation API the
      tools use — no new model surface, no state of its own. */
   function openRoomCard(roomId, ev) {
-    if (!root || root.querySelector('.refit-room-card')) return;
+    if (!root) return;
     const rm = station.roomById(roomId); if (!rm) return;
+    cardCloseAll();
     const isSpawn = roomId === station.spawnRoomId();
     const kd = station.ROOM_KINDS[rm.kind] || {};
     const matId = station.matOfRoom ? station.matOfRoom(roomId) : (rm.floorMat || kd.mat);
@@ -2393,14 +2575,18 @@ const Build = (() => {
       </div>`;
     root.appendChild(g);
     requestAnimationFrame(() => g.classList.add('refit-swap'));
-    const closeC = () => { if (g.parentNode) g.parentNode.removeChild(g); };
     const nameEl = g.querySelector('#room-name');
+    // the rename is saved by CLOSING, like the step card's brief and the flow card's line name — removing a
+    // focused input does not reliably fire blur, so ESC/✕ used to drop a typed name on the floor.
+    let savedName = rm.name || '';
     const saveName = () => {
       const v = (nameEl.value || '').trim();
-      if (v === (rm.name || '')) return;
+      if (v === savedName) return;
       const res = station.renameRoom(roomId, v);
-      if (res && res.ok) { sfx('click'); flashTip(ev, 'renamed', true); } else sfx('bad');
+      if (res && res.ok) { savedName = v; sfx('click'); flashTip(ev, 'renamed', true); } else sfx('bad');
     };
+    const closeC = () => { saveName(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeC);
     nameEl.onkeydown = e => { if (e.key === 'Enter') { saveName(); closeC(); } };
     nameEl.onblur = saveName;
     // the two verbs that are TOOLS: arm the tool on this room rather than duplicating its behaviour
@@ -2426,8 +2612,9 @@ const Build = (() => {
   }
 
   function openDoorPicker(propId, ev) {
-    if (!root || root.querySelector('.refit-door-picker')) return;
+    if (!root) return;
     const p = station.propById(propId); if (!p || p.t !== 'airlock') return;
+    cardCloseAll();
     const cur = p.door || 'open';
     const room = station.roomAt(p.x, p.y);
     const isTrunk = !!(room && typeof station.doc === 'function' && station.doc().meta.trunkRoomId === room);
@@ -2454,6 +2641,7 @@ const Build = (() => {
     root.appendChild(g);
     requestAnimationFrame(() => g.classList.add('refit-swap'));   // soft rise-in on open (reduced-motion safe)
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);
     g.querySelectorAll('.door-state').forEach(b => b.onclick = () => {
       const res = station.setDoorState(propId, b.dataset.st);
       if (res && res.ok) { sfx('click'); flashTip(ev, 'airlock → ' + res.door, true); closeP(); }
@@ -2466,6 +2654,7 @@ const Build = (() => {
   /* ---------- camera + sizing ---------- */
   function resize() {
     if (!cv) return;
+    bumpUi();   // the glass moved — every memoized chrome measurement is stale (positionFinCard)
     dpr = window.devicePixelRatio || 1;
     // TEXT SIZE zoom parity with world.js resize(): body.style.zoom shrinks layout px, so bake the
     // factor back in or the REFIT floor upscales soft. Picking stays rect-ratio-based (canvasPoint).
@@ -2538,8 +2727,8 @@ const Build = (() => {
     // right-button cancels an in-progress edit (and never starts one) — then DROPS the armed tool
     // back to SELECT. The browser context menu is already suppressed on the canvas (contextmenu
     // preventDefault in buildDOM), so right-click is a pure deselect gesture.
-    if (ev.button === 2) { if (drag) { drag = null; hideTip(); } if (connectFrom) { connectFrom = null; hideTip(); } if (dupe) { dupe = null; hideTip(); setHint(); } deselectTool(); return; }
-    try { cv.setPointerCapture(ev.pointerId); } catch (e) {}
+    if (ev.button === 2) { if (drag) { releaseDrag(); hideTip(); } if (connectFrom) { connectFrom = null; hideTip(); } if (dupe) { dupe = null; hideTip(); setHint(); } deselectTool(); return; }
+    try { cv.setPointerCapture(ev.pointerId); dragPid = ev.pointerId; } catch (e) { dragPid = null; }
     if (panTrigger(ev)) { drag = { mode: 'pan', sx: toCanvas(ev).x, sy: toCanvas(ev).y }; cv.style.cursor = 'grabbing'; return; }
     if (ev.button !== 0) return;
     const w = toWorldTile(ev);
@@ -2638,6 +2827,7 @@ const Build = (() => {
 
   function onUp(ev) {
     try { cv.releasePointerCapture(ev.pointerId); } catch (e) {}
+    dragPid = null;
     if (!drag) return;
     const d = drag; drag = null;
     setCursor();
@@ -2650,8 +2840,12 @@ const Build = (() => {
     if (d.mode === 'paint') return commitPaint(d, ev);
     if (d.mode === 'reclaim') return commitReclaim(d, ev);
   }
-  function onCancel() { if (drag) { drag = null; hideTip(); setCursor(); } }
-  function onBlur() { spaceHeld = false; if (drag && drag.mode === 'pan') drag = null; setCursor(); }
+  function onCancel() { if (drag || dragPid != null) { releaseDrag(); hideTip(); setCursor(); } }
+  /* ALT-TAB DROPS THE WHOLE GESTURE, not just a pan. This cancelled `pan` only, so tabbing away mid
+     draw/belt/paint left a live drag with a frozen ghost pinned to the last tile the pointer touched —
+     and the pointer that would have ended it is now somewhere else entirely. A gesture you cannot see
+     is a gesture you cannot finish: end it, release the capture, and let the floor go quiet. */
+  function onBlur() { spaceHeld = false; if (drag || dragPid != null) { releaseDrag(); hideTip(); } setCursor(); }
 
   // add every tile on the segment from drag.cur to w (so a fast brush stroke skips nothing)
   function rasterTo(d, w) {
@@ -2943,8 +3137,15 @@ const Build = (() => {
       const zl = root.querySelector('#refit-zlvl');
       if (zl) zl.textContent = zt;
     }
+    /* THE CENSUS ONLY MOVES WITH THE FLOOR. The zoom readout above is per-frame (the camera is not
+       geometry), but rooms/rects/props cannot change without a station.onChange — and the scan below
+       walks every room AND every rect AND the whole prop list. The old throttle compared the finished
+       signature, which skipped the DOM write but paid the full walk on every one of 60 frames a
+       second. Gate the WALK on geoVer; the signature check still guards the DOM write. */
+    if (statVer === geoVer) return;
     const sub = root.querySelector('#refit-sub');
-    if (!sub) return;
+    if (!sub) return;   // DOM not up yet — do NOT bank the version, or the readout never lands
+    statVer = geoVer;
     const list = station.rooms();
     let tiles = 0, halls = 0, rooms = 0;
     for (const rm of list) {
@@ -2984,11 +3185,20 @@ const Build = (() => {
   function onKey(ev) {
     const a = ev.target;
     if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+    /* A MOUNTED CARD OWNS THE KEYBOARD (2026-08-07 conveyor audit). These shortcuts drive the FLOOR, and
+       the floor is not what you are looking at while a card is up: with the STEP editor open, `9` armed
+       LINES and yanked the camera out from under the card, and Ctrl+Z undid the very stamp that created
+       the bay being edited. Only ESC crosses a card — and it closes THAT card (below), never the floor. */
+    const modal = cardTop();
+    if (modal && ev.key !== 'Escape') return;
     if (ev.key === ' ') { ev.preventDefault(); spaceHeld = true; setCursor(); return; }
     if (ev.key === 'Escape') {
-      const card = root && root.querySelector('.refit-guide');
-      if (card) { markSeen(); card.parentNode.removeChild(card); return; }
-      if (drag) { drag = null; hideTip(); setCursor(); return; }         // cancel an in-progress edit first
+      // close the TOPMOST card through ITS OWN close path (which saves what that card saves — an unsaved
+      // job brief / line name / room rename). markSeen() belongs to the first-run card ALONE, and that
+      // card's own registered path is what does it: `.refit-guide` is shared by eight cards, so matching
+      // on it here is what used to mark the guide seen from a step editor and throw the brief away.
+      if (modal) { cardClose(modal); return; }
+      if (drag) { releaseDrag(); hideTip(); setCursor(); return; }       // cancel an in-progress edit first
       if (connectFrom) { connectFrom = null; hideTip(); return; }        // then a half-made connection
       if (dupe) { dupe = null; hideTip(); setHint(); return; }           // then the armed copy
       if (tool !== 'select') { deselectTool(); return; }                 // then the armed tool → SELECT
@@ -3192,7 +3402,14 @@ const Build = (() => {
      leak the context state stack forever. */
   const LAYER_MITER = 10, LAYER_SENTINEL = 7.3125;   // an ordinary value nothing in this file sets
   const layerFailed = Object.create(null);
+  /* ---------- FRAME COST INSTRUMENT (2026-08-08) ----------
+     OFF by default and off in every shipped frame: `perfAcc` is null, so the whole instrument costs
+     one null test per layer. A harness turns it on (__test__.perf(true)), lets the loop run, and
+     reads back real per-layer totals — a perf claim on this file is otherwise just a story. */
+  let perfAcc = null;
+  function perfAdd(name, ms) { const a = perfAcc[name] || (perfAcc[name] = { n: 0, ms: 0 }); a.n++; a.ms += ms; }
   function drawLayer(name, fn) {
+    const pt0 = perfAcc ? performance.now() : 0;
     ctx.miterLimit = LAYER_MITER;
     ctx.save();
     ctx.miterLimit = LAYER_SENTINEL;   // everything the layer pushes inherits this mark
@@ -3207,11 +3424,13 @@ const Build = (() => {
     }
     // pop back to (and including) our own save, whatever depth the layer left behind
     for (let i = 0; i < 64 && ctx.miterLimit === LAYER_SENTINEL; i++) ctx.restore();
+    if (perfAcc) perfAdd(name, performance.now() - pt0);
   }
 
   function frame(now) {
     if (!running) return;
     let failed = false;
+    const fT0 = perfAcc ? performance.now() : 0;
     insMemo = null;   // one layout measurement per frame at most (viewInsetsFrame)
     try {
     const visibleRect = cacheGeo ? visibleBakeRect(cacheGeo) : null;
@@ -3223,8 +3442,12 @@ const Build = (() => {
     if (ridePending && !tutorialCoaching() && !(root && root.querySelector('.refit-firstrun'))) fireFirstRide();
     // finish-the-line card: slow re-derive (feed truth changes on the world's poll, not on edits) + per-frame pin
     if (finCardEl && now - finPollTs > 2000) { finPollTs = now; renderFinCard(); }
+    const hT0 = perfAcc ? performance.now() : 0;
     positionFinCard();
+    if (perfAcc) perfAdd('~finCard', performance.now() - hT0);
+    const rT0 = perfAcc ? performance.now() : 0;
     updateTopReadout();   // station stats + the live zoom % (both self-throttle on an unchanged value)
+    if (perfAcc) perfAdd('~topReadout', performance.now() - rT0);
     const t = T();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
@@ -3294,6 +3517,7 @@ const Build = (() => {
       failed = true;
       recoverFrame(err);
     } finally {
+      if (perfAcc) perfAdd('=FRAME', performance.now() - fT0);
       scheduleFrame(failed);
     }
   }
@@ -3325,7 +3549,7 @@ const Build = (() => {
     // minor lines below ~5 device px per tile are noise, not grid — fade them out rather than alias
     const px = t * zoom;
     const minorK = clamp((px - 5) / 7, 0, 1);
-    const b = station.bounds();
+    const b = boundsMemoed();   // the apron follows the FLOOR, not the camera — once per edit, not per frame
     const ax0 = b.minTx - GRID_APRON, ay0 = b.minTy - GRID_APRON;
     const ax1 = b.maxTx + 1 + GRID_APRON, ay1 = b.maxTy + 1 + GRID_APRON;
 
@@ -3493,29 +3717,74 @@ const Build = (() => {
     // looked, in the one view you judge it from, like it had been dropped INSIDE the table.
     // The +0.5 goes with it: a mounted prop and its table cover the same tiles, so their sort keys tie
     // and raw array order (whichever was placed first) would decide who draws on top.
-    const key = p => (p.y + (p.h || 1)) + (p.mount ? 0.5 : 0);
-    const sorted = list
-      .map(p => { const m = station.mountOf ? station.mountOf(p) : null; return m ? Object.assign({}, p, { mount: m }) : p; })
-      .sort((a, b) => key(a) - key(b));
-    for (const p of sorted) PropSprites.draw(p, true);
+    // …resolved ONCE PER EDIT, not per frame: mountOf is O(props) inside the model (a propById find
+    // plus a surface-host scan), so asking it for every prop every frame was O(props²) at 60fps —
+    // and the map+sort it fed allocated two arrays a frame for an order that cannot change without a
+    // station.onChange. The wrapper object for a MOUNTED prop is still built per frame (as before),
+    // so PropSprites keeps reading the live prop, never a snapshot of it.
+    /* VIEWPORT CULL. Measured 2026-08-08: on a 337-prop floor the props layer was 28.8ms of a 32ms
+       frame — PropSprites renders every prop procedurally, every frame, with no offscreen cache. A
+       prop entirely off the glass paints nothing, so the frame owes it nothing; culling changes what
+       is DRAWN by zero pixels. The pad is deliberately generous (prop art anchors to its footprint
+       bottom and rises well above it — crowns, halos, the mount lift), so nothing can clip in at the
+       top edge as you pan. Zoomed all the way out to the whole station nothing is culled and the
+       cost is unchanged — which is the honest worst case, and exactly what the bench reports. */
+    const order = propDrawOrder(list);
+    const tp = T(), zt = zoom * tp;
+    const vx0 = (-panX) / zt - PROP_CULL_PAD, vy0 = (-panY) / zt - PROP_CULL_PAD;
+    const vx1 = (cv.width - panX) / zt + PROP_CULL_PAD, vy1 = (cv.height - panY) / zt + PROP_CULL_PAD;
+    for (const p of order) {
+      if (p.x > vx1 || p.y > vy1 || p.x + (p.w || 1) - 1 < vx0 || p.y + (p.h || 1) - 1 < vy0) continue;
+      const m = mountMap.get(p.id);
+      PropSprites.draw(m ? Object.assign({}, p, { mount: m }) : p, true);
+    }
+  }
+  /* 4 tiles = 48px at TILE 12. The worst upward overshoot in the whole prop catalog is 21px above a
+     prop's footprint top (masts/crowns; measured over propsprites.js), and SURFACE_RISE adds a few
+     more — so the pad is better than double the art that can ever hang outside a footprint. */
+  const PROP_CULL_PAD = 4;
+  function propDrawOrder(list) {
+    if (mountVer === geoVer && mountOrder) return mountOrder;
+    mountVer = geoVer;
+    const mounts = new Map();
+    for (const p of list) {
+      let m = null;
+      try { m = station.mountOf ? station.mountOf(p) : null; } catch (_) { m = null; }
+      if (m) mounts.set(p.id, m);
+    }
+    // MOUNT LIFT sort key, unchanged: a mounted prop and its table cover the same tiles, so their
+    // keys would tie and raw array order would decide who draws on top. `p.mount` is still consulted
+    // for the unmounted branch exactly as the old map+sort did.
+    const key = p => (p.y + (p.h || 1)) + ((mounts.get(p.id) || p.mount) ? 0.5 : 0);
+    const arr = list.slice().sort((a, b) => key(a) - key(b));   // stable, and never touches doc.props
+    mountMap = mounts;
+    return (mountOrder = arr);
   }
 
   // conveyor — belts (floor machinery) + the live transport sim. WORLD coords like drawProps.
   function drawConveyor(now, t) {
     if (!convey) return;
-    const belts = station.belts();
+    const belts = beltsMemoed();   // one array per EDIT, shared read-only by tick / ghost.tick / drawBelts
     const dt = lastFrameTs ? (now - lastFrameTs) : 16; lastFrameTs = now;
     // route the preview boxes through the SAME junctions the compiled plan uses, so a TEST box sorts exactly as
     // real work will (build-time "does my routing work?" loop). null until a junction exists -> boxes go straight.
     // Junction keys are LOCAL-frame (valPlan compiles from cacheGeo) — REBASE them to the WORLD tiles the
     // preview belts use, or junctions silently never trigger off-origin (the frame-drift bug class).
+    /* The rebase + junctionLaneOwners() ran EVERY FRAME even though both inputs — the compiled plan
+       and the bake origin — only move on a recompile. Memoize on exactly those two: valPlan is
+       replaced (never mutated) by rebake()'s compile, so object identity is the honest key. */
     let jmap = null;
     if (valPlan && valPlan.junctions && cacheGeo) {
       const o = cacheGeo.origin || { tx: 0, ty: 0 };
-      const owners = (typeof Pipeline !== 'undefined' && Pipeline.junctionLaneOwners) ? Pipeline.junctionLaneOwners(valPlan) : {};
-      for (const k in valPlan.junctions) {
-        const p = k.split(','), wk = (+p[0] + o.tx) + ',' + (+p[1] + o.ty);
-        (jmap = jmap || new Map()).set(wk, owners[k] ? Object.assign({}, valPlan.junctions[k], { owners: owners[k] }) : valPlan.junctions[k]);
+      if (jmapPlan === valPlan && jmapOx === o.tx && jmapOy === o.ty) {
+        jmap = jmapMemo;
+      } else {
+        const owners = (typeof Pipeline !== 'undefined' && Pipeline.junctionLaneOwners) ? Pipeline.junctionLaneOwners(valPlan) : {};
+        for (const k in valPlan.junctions) {
+          const p = k.split(','), wk = (+p[0] + o.tx) + ',' + (+p[1] + o.ty);
+          (jmap = jmap || new Map()).set(wk, owners[k] ? Object.assign({}, valPlan.junctions[k], { owners: owners[k] }) : valPlan.junctions[k]);
+        }
+        jmapPlan = valPlan; jmapOx = o.tx; jmapOy = o.ty; jmapMemo = jmap;
       }
     }
     convey.tick(dt, now, belts, jmap, testStops());   // stops: preview crates are consumed at their dock, like real ones
@@ -3671,7 +3940,9 @@ const Build = (() => {
     if (typeof station.bayObjects === 'function') {
       for (const p of (cacheGeo.props || [])) {
         if (p.t !== 'bay' || !p.agentId) continue;
-        if (station.bayObjects(p.agentId).indexOf('computer') >= 0) continue;
+        // memoized per (agentId, geoVer) and guarded — see bayObjectsMemoed. This ran BARE, per bay,
+        // per frame, and each call is O(props × rooms) inside the model.
+        if (bayObjectsMemoed(p.agentId).indexOf('computer') >= 0) continue;
         mark({ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }, '#ffbe3c', 'NO COMPUTE — ADD A PC IN THIS ROOM');
       }
     }
@@ -3813,9 +4084,28 @@ const Build = (() => {
     ctx.lineWidth = 1.5 / zoom;
     ctx.strokeStyle = protectedSpawn ? 'rgba(255,200,80,0.95)' : (tool === 'reclaim' ? 'rgba(255,92,77,0.95)' : 'rgba(120,220,255,0.95)');
     for (const r of rm.rects) ctx.strokeRect(r.x1 * t + 1, r.y1 * t + 1, (r.x2 - r.x1 + 1) * t - 2, (r.y2 - r.y1 + 1) * t - 2);
-    if (protectedSpawn) { // a small lock badge so the block is predictable, not surprising
-      const z = rm.rects[0]; ctx.fillStyle = 'rgba(255,200,80,0.95)'; ctx.font = (10 / zoom) + "px 'VT323','Courier New',monospace"; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText('⌂', (z.x1 + 0.5) * t, (z.y1 + 0.5) * t);
+    if (protectedSpawn) {
+      /* THE SPAWN-ROOM LOCK BADGE. Two laws were broken by one line here:
+         • '⌂' (U+2302) is NOT in VT323 — the browser silently fell back to another face for that one
+           glyph, so the badge rendered at foreign metrics (symbol-glyph law);
+         • it was painted with a bare ctx.fillText, OUTSIDE the one-voice arbiter, so it could print on
+           top of a hover nameplate or a validation callout claiming the same tile.
+         Now it is a DRAWN padlock — no font, no fallback, nothing to mis-measure — registered on the
+         `hover` layer (it is a fact about the room under the pointer) so the arbiter mutes it exactly
+         like every other voice when something louder is speaking at that anchor. */
+      const z = rm.rects[0];
+      const box = { x: z.x1 * t, y: z.y1 * t, w: t, h: t };
+      voiceSay('hover', box, box, (c) => {
+        const cx = (z.x1 + 0.5) * t, cy = (z.y1 + 0.5) * t, s = Math.max(3, 7 / zoom);
+        c.save();
+        c.strokeStyle = c.fillStyle = 'rgba(255,200,80,0.95)';
+        c.lineWidth = Math.max(0.6, 1.2 / zoom);
+        c.fillRect(cx - s / 2, cy - s * 0.1, s, s * 0.6);                       // the body
+        c.beginPath();                                                          // the shackle
+        c.arc(cx, cy - s * 0.1, s * 0.28, Math.PI, 0);
+        c.stroke();
+        c.restore();
+      });
     }
   }
 
@@ -4156,6 +4446,16 @@ const Build = (() => {
     lineSnapAt: (tx, ty) => lineSnap(tx, ty),
     // which draw layers have failed this session (empty = every layer is painting)
     degradedLayers: () => Object.keys(layerFailed),
+    /* FRAME COST INSTRUMENT — perf(true) starts accumulating, perf(false) stops and returns the
+       totals: { '=FRAME': {n, ms}, grid: {…}, props: {…}, … }. Off = a null test per layer. */
+    perf: (on) => {
+      if (on === false) { const o = perfAcc; perfAcc = null; return o; }
+      perfAcc = Object.create(null);
+      return true;
+    },
+    perfRead: () => (perfAcc ? JSON.parse(JSON.stringify(perfAcc)) : null),
+    // the per-edit memo generation — a harness can prove a cache actually invalidated on an edit
+    geoVer: () => geoVer,
     // camera + the dock/top insets, so a harness can assert framing against the VISIBLE glass
     camera: () => ({ zoom, panX, panY, cw: cv ? cv.width : 0, ch: cv ? cv.height : 0, tile: T(), ins: viewInsets() }),
     // ghost-projection readout (Phase 3) — the EXACT state the projection runs on (boxes/captions/log)

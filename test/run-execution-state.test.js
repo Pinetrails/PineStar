@@ -32,6 +32,19 @@ A.ok(bounded.content.startsWith('[tool output omitted'), 'later output is replac
 state.resetToolBytes();
 A.eq(state.toolBytes(), 0, 'compaction can reset the output budget');
 
+const receiptState = makeRunExecutionState();
+receiptState.boundToolResult({ content: 'a'.repeat(90), summary: 'read 90 chars' }, 100);
+const lateCommand = { content: 'test details\nPASS\n[exit 0]', summary: 'exit 0 (42ms)', parkedPath: '.output/shell.exec-run-0.txt', outputChars: 27 };
+A.ok(receiptState.willBoundToolResult(lateCommand, 100), 'a later result predicts the run-wide clip before its bytes are lost');
+const receipt = receiptState.boundToolResult(lateCommand, 100);
+A.ok(receipt.outputBounded, 'a clipped result is explicitly marked at the host boundary');
+A.ok(/exit 0 \(42ms\)/.test(receipt.content), 'the clipped result retains the authoritative tool summary');
+A.ok(/full 27-character output was saved/.test(receipt.content), 'the receipt reports the exact pre-clamp size');
+A.ok(/\.output\/shell\.exec-run-0\.txt/.test(receipt.content), 'the receipt points at the durable full output');
+const afterReceipt = receiptState.boundToolResult({ content: 'more details', summary: 'verify passed', parkedPath: '.output/verify-run-1.txt', outputChars: 12 }, 100);
+A.ok(/verify passed/.test(afterReceipt.content), 'even an exhausted run returns evidence instead of a generic suppression message');
+A.ok(/verify-run-1\.txt/.test(afterReceipt.content), 'an exhausted run keeps the recovery path actionable');
+
 A.eq(state.checkpointTurn(), 0, 'checkpoint sequence starts at zero');
 A.eq(state.advanceCheckpoint(), 1, 'checkpoint sequence advances explicitly');
 A.ok(!state.journalStarted(), 'journal starts false');

@@ -36,7 +36,7 @@
             '<button class="bb xs danger" id="sp-disconnect" style="display:none">✕ DISCONNECT</button>' +
           '</div>' +
         '</div>' +
-        '<div id="sp-msg" class="msg"></div>' +
+        '<div id="sp-msg" class="msg" role="status" aria-live="polite"></div>' +
       '</div>';
     // NO LEAD PARAGRAPH HERE. mountConsole already prints this section's `desc` as `.con-sec-desc`
     // directly above, and this pane used to follow it with a second sentence saying the same thing in
@@ -107,7 +107,7 @@
           '<button class="bb xs" id="mc-cancel" style="display:none">CANCEL EDIT</button>' +
         '</div>' +
       '</div>' +
-      '<div id="mc-msg" class="msg"></div>';
+      '<div id="mc-msg" class="msg" role="status" aria-live="polite"></div>';
     // ---- CATALOG pane markup: one-click, vetted MCP servers. The cards + category groups render async from
     //      GET /api/connectors/catalog. Installing reuses the SAME POST /api/connectors upsert the manual form uses. ----
     // The pane copy is JUST the setup-type legend now — the "browse vetted MCP servers and add them" sentence lived
@@ -118,16 +118,16 @@
     // I already on?" was equally unanswerable without reading every card.
     const secCatalog =
       '<div class="cc-filters" id="cc-filters" role="group" aria-label="Filter connectors by setup type">' +
-        '<button type="button" class="cc-filter active" data-cc-filter="all">ALL</button>' +
-        '<button type="button" class="cc-filter cc-lg-none" data-cc-filter="none">▸ no setup</button>' +
-        '<button type="button" class="cc-filter cc-lg-key" data-cc-filter="apikey">API key</button>' +
-        '<button type="button" class="cc-filter cc-lg-oauth" data-cc-filter="oauth">OAUTH</button>' +
-        '<button type="button" class="cc-filter cc-f-on" data-cc-filter="installed">✓ connected</button>' +
+        '<button type="button" class="cc-filter active" data-cc-filter="all" aria-pressed="true">ALL</button>' +
+        '<button type="button" class="cc-filter cc-lg-none" data-cc-filter="none" aria-pressed="false">▸ no setup</button>' +
+        '<button type="button" class="cc-filter cc-lg-key" data-cc-filter="apikey" aria-pressed="false">API key</button>' +
+        '<button type="button" class="cc-filter cc-lg-oauth" data-cc-filter="oauth" aria-pressed="false">OAUTH</button>' +
+        '<button type="button" class="cc-filter cc-f-on" data-cc-filter="installed" aria-pressed="false">✓ connected</button>' +
       '</div>' +
       '<p class="set-about"><span class="cc-legend"><b class="cc-lg-none">▸ no setup</b> connects instantly · ' +
         '<b class="cc-lg-key">API key</b> you paste a key · <b class="cc-lg-oauth">OAUTH</b> a secure browser sign-in.</span></p>' +
       '<div id="cc-list" class="cc-list"><span class="loading pulse">loading catalog…</span></div>' +
-      '<div id="cc-msg" class="msg"></div>' +
+      '<div id="cc-msg" class="msg" role="status" aria-live="polite"></div>' +
       '<p class="set-about dim">Need something not listed? Add any remote MCP server by URL in <b>MCP CONNECTORS</b>, or paste a bare API key for any platform in <b>KEYS</b>.</p>';
     // ---- KEYS pane markup: every platform key the agents hold, in one place. Top = keyed CATALOG/MCP platforms
     //      currently connected (truth from /api/connectors — managed on their own tab, read-only here). Bottom =
@@ -160,7 +160,7 @@
           'Keys are usable in watched sessions; scheduled and messaged runs cannot run shell commands.</div>' +
         '<div class="mc-acts"><button class="bb sm" id="ky-add">+ SAVE KEY</button></div>' +
       '</div>' +
-      '<div id="ky-msg" class="msg"></div>';
+      '<div id="ky-msg" class="msg" role="status" aria-live="polite"></div>';
     /* ---- EXTENSIONS: the Commander's OWN code, running inside the station ----
        Sits in this console and not in SETTINGS because "MCP server", "hook" and "plugin" are one user intent —
        things I plug into my station — and splitting them by which subsystem implements them is how a settings
@@ -200,7 +200,7 @@
         '<div class="mc-hint">Creates a WORKING plugin you can edit — it already counts tool calls and logs them at the end of a run. Unlike a hook it stays loaded, so it can remember things between events.</div>' +
         '<div class="mc-acts"><button class="bb sm" id="pl-add">+ CREATE PLUGIN</button><button class="bb xs" id="pl-where">⧉ COPY FOLDER PATH</button></div>' +
       '</div>' +
-      '<div id="ext-msg" class="msg"></div>';
+      '<div id="ext-msg" class="msg" role="status" aria-live="polite"></div>';
 
     const frag = h => (el => { el.innerHTML = h; });
     // NAV CONDENSE 2 (2026-08-04): the standalone SKILLS window merged in here — one window owns
@@ -262,7 +262,12 @@
       // hook-vs-plugin distinction, the sandbox reason) — unusually, this is the one pane where the
       // lead earns its place and the `desc` was the redundant half. So the desc yields instead.
       { id: 'extensions', label: 'EXTENSIONS', glyph: '⌥', desc: 'Your own hooks and plugins — the code you write, run by the station.', build: frag(secExt) }
-    ].concat(lanes.reduce((acc, l) => acc.concat(l.sections), [])), { search: true, searchPlaceholder: 'search a platform, tool or skill — try “notion”…' });
+    ].concat(lanes.reduce((acc, l) => acc.concat(l.sections), [])), {
+      search: true,
+      searchLabel: 'Search abilities',
+      searchPlaceholder: 'search a platform, tool or skill — try “notion”…',
+      searchEmptyText: 'No abilities match that search. Try another platform, tool, or skill.'
+    });
     lanes.forEach(l => { try { if (typeof l.wire === 'function') l.wire(); } catch (_) {} });
 
     /* Mount the front door ABOVE the panes, inside the scrolling content column: it is the first thing
@@ -689,6 +694,7 @@
           const cta = listEl.querySelector('#mc-empty-cta');
           if (cta) cta.addEventListener('click', () => { sfx('click'); const idf = body.querySelector('#mc-id'); if (idf) idf.focus(); });
         }
+        wireRemoveButtons();
       } catch (_) { listEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage connectors.</div>'; }
     }
     const postJSON = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -714,6 +720,36 @@
     const readFailLine = (res, offlineMsg) => res.offline
       ? '<div class="mc-detail">' + esc(offlineMsg) + '</div>'
       : '<div class="mc-detail">couldn\'t read this from the station' + (res.status ? ' (HTTP ' + res.status + ')' : '') + ' — it is running, so this is not a start-it problem. Retry, and check the station log if it persists.</div>';
+    async function removeConnector(id, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        const r = await postJSON('/api/connectors/remove', { id });
+        if (!r.ok) {
+          const j = await r.json().catch(() => ({}));
+          notify('Connector "' + id + '" was NOT removed', 'warn');
+          msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + ((j && j.error) || ('HTTP ' + r.status)); sfx('bad');
+        } else {
+          notify('Connector "' + id + '" removed'); sfx('click'); if (editing === id) resetForm(); ccRefresh();
+        }
+      } catch (e) { msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + ((e && e.message) || 'request failed'); sfx('bad'); }
+      if (btn && btn.isConnected) btn.disabled = false;
+      refresh();
+    }
+    function wireRemoveButtons() {
+      if (typeof ArmConfirm === 'undefined' || !ArmConfirm.wire) return;
+      listEl.querySelectorAll('button[data-act="remove"]').forEach(btn => {
+        const rowEl = btn.closest('.mc-row'); const id = rowEl && rowEl.dataset.id;
+        if (!id) return;
+        btn.dataset.wired = '1';
+        ArmConfirm.wire(btn, {
+          armedLabel: 'SURE? REMOVE CONNECTOR',
+          restLabel: '✕ REMOVE',
+          timeoutMs: 4000,
+          onArm: () => sfx('bad'),
+          onConfirm: () => removeConnector(id, btn)
+        });
+      });
+    }
     listEl.addEventListener('click', async ev => {
       const btn = ev.target.closest('button[data-act]'); if (!btn) return;
       const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
@@ -723,19 +759,11 @@
       // reconnects, so this works for revoked/expired grants where RELOAD just re-errors. ccSignIn owns the
       // pending/poll state; its progress lands in THIS pane's message line (msgEl), not the catalog's.
       if (act === 'resign') { sfx('click'); ccSignIn(id, msgEl); return; }
+      if (act === 'remove' && btn.dataset.wired === '1') return; // ArmConfirm owns both clicks.
+      if (act === 'remove') { await removeConnector(id, btn); return; } // defensive fallback for stripped builds.
       btn.disabled = true;
       try {
-        if (act === 'remove') {
-          const r = await postJSON('/api/connectors/remove', { id });
-          if (!r.ok) {
-            const j = await r.json().catch(() => ({}));
-            notify('Connector "' + id + '" was NOT removed', 'warn');
-            msgEl.classList.remove('ok'); msgEl.textContent = '✕ ' + ((j && j.error) || ('HTTP ' + r.status)); sfx('bad');
-          } else {
-            notify('Connector "' + id + '" removed'); sfx('click'); if (editing === id) resetForm(); ccRefresh();
-          }
-        }
-        else if (act === 'reload') {
+        if (act === 'reload') {
           msgEl.classList.remove('ok'); msgEl.textContent = 'reloading ' + id + '…';
           const j = await (await postJSON('/api/connectors/refresh', { id })).json().catch(() => ({}));
           if (j.status && j.status.state === 'up') { msgEl.classList.add('ok'); msgEl.textContent = '✓ ' + id + ' — ' + (j.status.toolCount || 0) + ' tool(s)'; }
@@ -853,9 +881,12 @@
           : '<button class="bb xs" data-cc-act="soon" disabled title="not directly wired yet — see the note">SOON</button>');   // an oauth entry with no endpoint and no aggregator is honestly not sign-in-able
       else if (e.authType === 'apikey') action = '<button class="bb xs" data-cc-act="key" data-id="' + esc(e.id) + '">+ ADD</button>';
       else action = '<button class="bb sm" data-cc-act="add" data-id="' + esc(e.id) + '">+ ADD</button>';
+      const keyDelivery = e.keyHeader
+        ? '<code>' + esc(e.keyHeader) + ': &hellip;</code>'
+        : '<code>Authorization: Bearer &hellip;</code>';
       const keyField = e.authType === 'apikey'
         ? '<div class="cc-key" style="display:none"><input type="password" class="key-input" data-cc-key="' + esc(e.id) + '" placeholder="' + esc(e.name) + ' API key / token" autocomplete="off" spellcheck="false">' +
-            '<div class="mc-hint">Stored locally by the sidecar, sent as <code>Authorization: Bearer …</code>, never displayed again.</div></div>'
+            '<div class="mc-hint">Stored locally by the sidecar, sent as ' + keyDelivery + ', never displayed again.</div></div>'
         : '';
       const home = e.homepage ? ' <a class="cc-home dim" href="' + esc(e.homepage) + '" target="_blank" rel="noopener">site ↗</a>' : '';
       // data-search: the console search box (stationui.js doFilter) matches textContent + this attribute, so a
@@ -927,7 +958,11 @@
     }
     function ccSetFilter(f) {
       ccFilter = f;
-      if (ccFiltersEl) ccFiltersEl.querySelectorAll('.cc-filter').forEach(x => x.classList.toggle('active', x.dataset.ccFilter === f));
+      if (ccFiltersEl) ccFiltersEl.querySelectorAll('.cc-filter').forEach(x => {
+        const active = x.dataset.ccFilter === f;
+        x.classList.toggle('active', active);
+        x.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
       ccApplyFilter();
     }
     if (ccFiltersEl) ccFiltersEl.addEventListener('click', ev => {
@@ -1074,7 +1109,7 @@
     const kyKeyEl = body.querySelector('#ky-key');
     const kyDocsEl = body.querySelector('#ky-docs');
     // TOP: platforms whose credential is a saved key/token on a live connector config. Read-only here — each is
-    // managed where it was added (its CATALOG card / MCP CONNECTORS row). hasToken is the backend's honest flag;
+    // managed where it was added (its CATALOG card / MCP CONNECTORS row). hasToken/hasHeaders are the backend's honest flags;
     // we never see (or show) the value. OAuth connectors are keyless by design and stay off this list.
     async function kyPlatformsRefresh() {
       try {
@@ -1085,7 +1120,7 @@
         const cj = cRes.json, gj = gRes.json;
         const byId = {};
         for (const e of ((gj && gj.connectors) || [])) byId[e.id] = e;
-        const keyed = ((cj && cj.connectors) || []).filter(c => c.hasToken && !c.oauth);
+        const keyed = ((cj && cj.connectors) || []).filter(c => (c.hasToken || c.hasHeaders) && !c.oauth);
         const n = body.querySelector('#ky-plat-n'); if (n) n.textContent = String(keyed.length);
         if (!keyed.length) {
           // The sentence named a destination and gave nothing to click — the same dead-end shape as the
@@ -1100,7 +1135,7 @@
           return '<div class="mc-row" style="--ci:' + i + '">' +
             '<div class="mc-top"><b>' + esc((cat && cat.name) || c.label || c.id) + '</b> <span class="dim">' + esc(c.id) + '</span>' +
               '<span class="mc-state" style="color:' + b[0] + '">' + b[1] + (c.toolCount ? ' · ' + c.toolCount + ' tool' + (c.toolCount === 1 ? '' : 's') : '') + '</span></div>' +
-            '<div class="mc-url dim"><span class="mc-tag">token saved</span> managed in ' + (cat ? 'CATALOG' : 'MCP CONNECTORS') + '</div>' +
+            '<div class="mc-url dim"><span class="mc-tag">' + (c.hasHeaders && !c.hasToken ? 'header saved' : 'token saved') + '</span> managed in ' + (cat ? 'CATALOG' : 'MCP CONNECTORS') + '</div>' +
           '</div>';
         }).join('');
       } catch (_) { kyPlatEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to see connected platforms.</div>'; }
