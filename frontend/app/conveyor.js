@@ -30,7 +30,20 @@ const Conveyor = (() => {
   const MAX_PENDING = 240;  // queued work-items awaiting a clear source tile (see enqueueAt)
 
   const key = (x, y) => x + ',' + y;
-  const buildMap = belts => { const m = new Map(); for (const b of belts) m.set(key(b.x, b.y), b.dir); return m; };
+  /* The tile->dir lookup is rebuilt from the belt list on every call, and a REFIT frame calls into
+     here three times (the sim's tick, the ghost projection's tick, drawBelts) — 3x the belt count in
+     Map writes, every frame, for a graph that only changes when the floor does. Memoized on the
+     ARRAY IDENTITY, which is the honest key: callers hand out a freshly-allocated list whenever the
+     topology moves, and the list is read-only on this side, so "same array" means "same graph".
+     A caller that still allocates per call simply misses the memo and pays exactly what it did. */
+  let mapSrc = null, mapMemo = null;
+  const buildMap = belts => {
+    if (belts && mapSrc === belts) return mapMemo;
+    const m = new Map();
+    for (const b of belts) m.set(key(b.x, b.y), b.dir);
+    if (belts) { mapSrc = belts; mapMemo = m; }
+    return m;
+  };
   // a junction's out-lanes: neighbour belts that DON'T flow back into the tile. Fixed order → deterministic routing.
   const LANE_ORDER = ['E', 'S', 'W', 'N'];
   function outLanes(x, y, map) {

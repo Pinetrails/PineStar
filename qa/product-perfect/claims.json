@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "abc1f7e5d3f817fcabe5ffbf5f4b051c1371eb00",
+    "sourceCommit": "a5d27185b6b2c4f871ac2d638298aca63665679b",
     "pathSetSha256": "1149d0e2e420dfdf56d9fdae886481ec4d54779bbf9ac01a84a761848732b4e7",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 286476,
-        "sha256": "f06101afb2be5bfa4e126680d5ff47b9371474591b787ff58c5762fc43013753"
+        "bytes": 299185,
+        "sha256": "735f1979a5849f6b843a407837b96ffb8f255fa5e6e369ce18d9023ee93a5411"
       },
       {
         "path": "frontend/app/channels.js",
@@ -178,8 +178,8 @@
       },
       {
         "path": "frontend/app/conveyor.js",
-        "bytes": 41694,
-        "sha256": "3f82a16e3e120ce38b1508119d691c015b5de2bdb9c07b0a0201ae6f2a4678bb"
+        "bytes": 42443,
+        "sha256": "9b92db0fce77dbbaf6ddb2ad5a2c54f3c25c4d75bc5ba4c3f7f1c2eccd37a7ca"
       },
       {
         "path": "frontend/app/crtlab.js",
@@ -323,8 +323,8 @@
       },
       {
         "path": "frontend/app/leftrail.js",
-        "bytes": 5554,
-        "sha256": "026f117672669bd8bcd5ab3e2f04558b1ab5b6eb28d40efa914a8d850fb34d97"
+        "bytes": 12500,
+        "sha256": "4f0540cd6b8cdd2cf509a2eac156c5a65cc1956ad142990d47e7e0ee07426ca9"
       },
       {
         "path": "frontend/app/legacymigrate.js",
@@ -403,8 +403,8 @@
       },
       {
         "path": "frontend/app/onboarding.js",
-        "bytes": 76569,
-        "sha256": "3eef3dd07494deea76a5f5882ee8b36e05eb522452c0e22667b18375a9d5ac10"
+        "bytes": 76494,
+        "sha256": "fe9d894c2e3b3ac044ba8e5baa717798839d385ec1daaae78021a6c8745cae68"
       },
       {
         "path": "frontend/app/permissions.js",
@@ -723,8 +723,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 545928,
-        "sha256": "f202f3057010aeca020144fa409d9fbcb3bb4de4c10639a4313c58f9983cfa08"
+        "bytes": 545874,
+        "sha256": "911c3f75e7ccbea5d744e1322c490c97b077e8f6180eff75dff45a90e019b91a"
       },
       {
         "path": "frontend/app/study.js",
@@ -823,13 +823,13 @@
       },
       {
         "path": "frontend/app/voice-live.js",
-        "bytes": 83437,
-        "sha256": "5321678d24421e40858cadb171f497e4e9352fb8ea8e5d821a842b11cbaacc2f"
+        "bytes": 81439,
+        "sha256": "ae457ab09a50d62c3b6b93ebb79a394252d4598145cf7ca44c48b1cf205374ef"
       },
       {
         "path": "frontend/app/voice.js",
-        "bytes": 105066,
-        "sha256": "c5a35f4f232365255deffebd3c4895c43a3906590fac9ead86b4b76ed1c05e50"
+        "bytes": 102105,
+        "sha256": "0afd7274b96d4eb5c8b2a099a8df49d2ba2958dc116f12725aba0c6bebc2f34b"
       },
       {
         "path": "frontend/app/waitanchor.js",
@@ -933,8 +933,8 @@
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 102072,
-        "sha256": "a525d8d9a0fb1553910c053e920e6f6986720b4b07bc7349f75b09341df03fc4"
+        "bytes": 106199,
+        "sha256": "9ae5966dd13fe0cc45968186b4612914a777591279cf704b833bad9eb3be7037"
       },
       {
         "path": "frontend/app/xp.js",
@@ -953,8 +953,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 325430,
-        "sha256": "397604b2a489bf2bbbfeeaaf309fd663bfe89dcc420844991761532ee5859e55"
+        "bytes": 324357,
+        "sha256": "ea5d8f56f6b23f9b8785877dc44edc712158fac00e32fcb7981b6d0548fe1f29"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -993,8 +993,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 100899,
-        "sha256": "2a0e1be03abfe80cb890ff032661c1f52b08870c46a1b2f08f8bcd726acc85f2"
+        "bytes": 101312,
+        "sha256": "09b19d6f2122d2c5f9beda1a7073987772c2d75945484363aa5419d50c83614d"
       },
       {
         "path": "frontend/css/titlebar.css",
