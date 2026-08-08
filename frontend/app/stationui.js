@@ -104,18 +104,22 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return long <= 1470 ? 115 : long <= 1740 ? 110 : 100;
   }
   function resolveTextScale(v) { const n = Number(v) || 0; return n === 0 ? autoTextScale() : clampN(n, 90, 150, 100); }
-  // CRT GLASS steps (value → chip label → the one-line explanation under the row). Ordered strongest
-  // treatment first so the row reads as a dial being turned DOWN, left to right.
+  // CRT LEVEL (value → chip label → the tooltip). Ordered strongest first so the row reads as one
+  // dial being turned DOWN, left to right — a level, not three named modes. Deliberately NOT called
+  // "easy read": most people who keep the tube on do not experience it as a hardship, and a label
+  // that implies otherwise makes the default sound like something to be endured.
   const GLASS_STEPS = [
-    ['full', 'FULL', 'the shipped tube — scanlines and curve over everything'],
-    ['easy', 'EASY READ', 'the tube stays on the station; panels and COMMS go clean'],
+    ['full', 'FULL', 'the shipped tube — scanlines, curve and glass over everything'],
+    ['soft', 'SOFT', 'the station keeps its tube; the panels and COMMS come out from under it'],
     ['off', 'OFF', 'no scanlines, no curve, no glass — raw pixel art'],
   ];
-  // Accepts the BOOLEAN this setting shipped as before it became a dial: an existing save holding
-  // `true`/`false` must keep meaning what the user chose, not silently reset to the default.
+  // Accepts every value this setting has ever stored: the BOOLEAN it shipped as before it became a
+  // dial, and the 'easy' id SOFT was briefly called. An existing save must keep meaning what its
+  // owner chose, never silently snap back to the default.
   function resolveGlass(v) {
     if (v === true || v == null) return 'full';
     if (v === false) return 'off';
+    if (v === 'easy') return 'soft';
     return GLASS_STEPS.some(([id]) => id === v) ? v : 'full';
   }
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
@@ -248,18 +252,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // Applied here rather than only in the picker so it survives a reload.
     if (typeof Terrain !== 'undefined' && Terrain.setGround) Terrain.setGround(s.backdrop);
     if (typeof SpaceBG !== 'undefined' && SpaceBG.setBackdrop) SpaceBG.setBackdrop(s.backdrop);
-    // CRT GLASS — a three-step dial over the tube treatment, because the CRT that hurts to read is
-    // not the CRT people came for. FULL is the shipped look. EASY READ lifts only the two
-    // SCREEN-SPACE overlays (style.css body::after scanlines + body::before vignette) that lie over
-    // the panels and the transcript, and drops the inherited phosphor halo in the prose containers;
-    // the station feed keeps its whole tube, because its scanlines/curve/aberration are painted
-    // in-canvas (world.js drawCRT/drawCurve) and nothing here touches that pass. OFF additionally
-    // stops those in-canvas passes and clears the tube glass (app.css #stage-wrap::before).
+    // CRT LEVEL — one dial turned down in two steps. FULL is the shipped look. SOFT lifts only the
+    // two SCREEN-SPACE overlays (style.css body::after scanlines + body::before vignette) that lie
+    // over the panels and the transcript, and drops the inherited phosphor halo in the prose
+    // containers; the station feed keeps its whole tube, because its scanlines/curve/aberration are
+    // painted in-canvas (world.js drawCRT/drawCurve) and nothing here touches that pass. OFF
+    // additionally stops those in-canvas passes and clears the tube glass (app.css
+    // #stage-wrap::before).
     // Drives its OWN classes: `no-scan` stays an internal flag (set by scripts/verify-stars2.mjs to
     // flatten the feed for star-pixel checks) and is still never written from settings — a
     // toggle() here would remove it out from under a verification run.
     const glass = resolveGlass(s.crtGlass);
-    document.body.classList.toggle('crt-easy', glass === 'easy');
+    document.body.classList.toggle('crt-soft', glass === 'soft');
     document.body.classList.toggle('crt-off', glass === 'off');
     // TEXT SIZE — one dial for every hard-px UI face at once (0/absent = AUTO from screen size).
     // Removed (not '1') at 100% so the plain-desktop default leaves no inline style behind.
@@ -4888,10 +4892,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         return '<button class="set-theme ' + (cur === v ? 'sel' : '') + '" aria-pressed="' + (cur === v ? 'true' : 'false') + '" data-ts="' + v + '" title="' + title + '">' + name + '</button>';
       }).join('') +
       '</div>' +
-      // CRT GLASS — a dial, not a switch, because "the CRT hurts my eyes" is a complaint about the
-      // glass over the TEXT, not about the station looking like a tube. EASY READ is the middle
-      // step that answers it without anyone giving up the look.
-      '<div class="set-row"><span class="dim">CRT GLASS — the tube treatment. EASY READ keeps it on the station but lifts it off the panels &amp; COMMS text</span></div>' +
+      // CRT — its own section, and a LEVEL rather than a named mode. Framing this as an
+      // accessibility fix ("easy read") tells the people who like the tube that they are enduring
+      // something, which is not what most of them report. It is a strength dial: turn it down as
+      // far as suits you. SCREEN FLICKER lives here too — it is a CRT effect, not a display one.
+      '<h4 class="ms-h">CRT <span class="dim">— how strong the tube reads</span></h4>' +
+      '<div class="set-row"><span class="dim">Turn it down a step at a time. SOFT keeps the tube on the station and takes it off the panels &amp; COMMS; OFF clears it everywhere.</span></div>' +
       '<div class="set-themes" id="set-crtglass">' +
       GLASS_STEPS.map(([v, name, why]) => {
         const cur = resolveGlass(s.crtGlass);
