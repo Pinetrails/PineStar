@@ -55,6 +55,12 @@ Ignored raw evidence and the two-wave analysis live under `.dogfood/eval-runtime
 temporary copied OAuth envelopes were deleted after capture. This is source-runtime comparison evidence, not
 installed-desktop or release-candidate proof.
 
+Post-comparison gate status (2026-08-08): the focused fixture suite remained green at 33 assertions, but
+`npm run test:fast` stopped at step 228/580 with 9 failures in `qa-product-perfect-claims.test.js`. The failures
+are the candidate-bound planning-authority/claims-ledger seal for this branch's changed tracked release surface,
+not comparison-fixture failures. `test:http` was not started after the mandatory fast gate went red, and the
+conditional merge automation remains paused until a reviewed claims re-lock and full green gate exist.
+
 ## 2026-08-07 — PER-BLOCK CODE COPY — MERGED
 
 Merged to `feat/harness-backend` as `014dc3e3` from snapshot `d3b1c264`. Fenced COMMS code blocks now have
