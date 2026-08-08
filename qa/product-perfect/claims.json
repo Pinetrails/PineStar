@@ -833,13 +833,13 @@
       },
       {
         "path": "frontend/app/voice-live.js",
-        "bytes": 81439,
-        "sha256": "ae457ab09a50d62c3b6b93ebb79a394252d4598145cf7ca44c48b1cf205374ef"
+        "bytes": 83437,
+        "sha256": "5321678d24421e40858cadb171f497e4e9352fb8ea8e5d821a842b11cbaacc2f"
       },
       {
         "path": "frontend/app/voice.js",
-        "bytes": 102105,
-        "sha256": "0afd7274b96d4eb5c8b2a099a8df49d2ba2958dc116f12725aba0c6bebc2f34b"
+        "bytes": 105066,
+        "sha256": "c5a35f4f232365255deffebd3c4895c43a3906590fac9ead86b4b76ed1c05e50"
       },
       {
         "path": "frontend/app/waitanchor.js",

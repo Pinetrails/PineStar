@@ -5127,7 +5127,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
        hardcoded here, so it can never drift from what the provider actually offers. */
     const secLiveVoice =
       '<h4 class="ms-h">SPOKEN VOICE</h4>' +
-      '<p class="set-about">The voice your agent speaks with in hands-free LIVE VOICE. Built in and keyless &mdash; the same on every provider. A change applies to the next thing spoken.</p>' +
+      '<p class="set-about">The voice your agent speaks with in hands-free LIVE VOICE. Built in and keyless &mdash; the same on every provider. A change applies to the next Live Voice session, keeping one speaker for the whole conversation.</p>' +
       '<div class="set-themes" id="set-lv-voices"><span class="dim">reading the provider’s voice list…</span></div>';
 
     const secAppearance =
