@@ -16,11 +16,25 @@ A.ok(i0 >= 0 && i1 > i0, 'world.js carries the FUN-REPEAT-PURE extraction marker
 const block = world.slice(world.indexOf('*/', i0) + 2, world.lastIndexOf('/*', i1));
 A.ok(/function funRecentlyUsed\(/.test(block), 'the marked block holds funRecentlyUsed');
 const { funRecentlyUsed } = eval('(function(){' + block + '\nreturn { funRecentlyUsed };})()');
-A.eq(funRecentlyUsed('lounge', 100000, 'lounge', 99999), true, 'the same couch is hard-blocked during its cooldown');
+A.eq(funRecentlyUsed('lounge', 100000, 'lounge', 99999), true, 'the same couch is marked recent during its cooldown');
 A.eq(funRecentlyUsed('lounge', 100000, 'lounge', 100000), false, 'the couch becomes eligible exactly when the cooldown expires');
 A.eq(funRecentlyUsed('lounge', 100000, 'arcade-1', 99999), false, 'a different leisure choice remains eligible');
-A.ok(/FUN_REPEAT_MIN\s*=\s*90000[\s\S]*FUN_REPEAT_MAX\s*=\s*150000/.test(world), 'repeat exclusion lasts 90–150 seconds');
-A.ok(!/c\.w\s*\*=\s*0\.12/.test(world), 'the ineffective weak repeat weighting is gone');
+A.ok(/FUN_REPEAT_MIN\s*=\s*90000[\s\S]*FUN_REPEAT_MAX\s*=\s*150000/.test(world), 'the recent-choice window lasts 90–150 seconds');
+A.ok(/recent \? 0\.28 : 1/.test(world), 'a recent choice is softly penalized when real alternatives exist');
+A.ok(/cands\.length === 1 && cands\[0\]\.recent/.test(world), 'a sole recent prop is still skipped instead of becoming permanent parking');
+
+// Variety + bounded exploration: desk/check-in and leisure are not compulsory branches, while a
+// long-idle body deliberately samples another room only through its stable zone and normal pathfinder.
+A.ok(/if \(now < \(self\.deskVisitCd \|\| 0\)\) return false/.test(world), 'desk check-ins respect a cooldown');
+A.ok(/deskVisitCd = now \+ U\.irnd\(60000, 120000\)/.test(world), 'a completed desk check-in waits 1–2 minutes before repeating');
+A.ok(/function planExplore\(now\)/.test(world), 'long-idle behavior has one narrow nearby-room planner');
+A.ok(/room && room !== here/.test(world), 'the exploration picker explicitly targets a different physical room');
+A.ok(/!tileInZone\(zone, tx, ty\) \|\| !geo\.walkable\(tx, ty, blocked\)/.test(world), 'exploration remains inside the existing leash and walkability rules');
+A.ok(/idleAge > 60000 && planExplore\(now\)/.test(world), 'another-room exploration begins only after sustained downtime');
+A.ok(/exploreCd = now \+ U\.irnd\(120000, 210000\)/.test(world), 'successful exploration has a long 2–3.5 minute cooldown');
+A.ok(/roamR: a \? Zones\.ROAM_RADIUS : 0/.test(world), 'deskless bodies use the same bounded radius around their stable spawn home');
+A.ok(/U\.chance\(0\.65\) && planSeekDesk/.test(world), 'social need no longer makes the desk a mandatory loop stop');
+A.ok(/U\.chance\(0\.55\) && planPlay/.test(world), 'stimulation can fall through to organic idle beats instead of forced prop rotation');
 
 // Calm/purposeful tuning: no cardinal spin sequence, no rapid machine swivels, and no decor tours.
 A.ok(!/\[['"]north['"],\s*['"]east['"],\s*['"]south['"],\s*['"]west['"]\]\.forEach/.test(world), 'the frantic four-direction scan sequence is gone');

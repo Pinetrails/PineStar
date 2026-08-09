@@ -866,7 +866,8 @@ const World = (() => {
       // SAME 100ms boundaries (the crew animated in visible lockstep). A fractional offset de-syncs them.
       phase: U.hash(a.id) % 6, aph: (U.hash(a.id) % 600) / 100, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false,  // idle leisure: which prop the agent is at + dwell timer + pose
-      lastFun: null, lastFunUntil: 0,   // hard recent-choice exclusion; prevents a lone couch becoming permanent parking
+      lastFun: null, lastFunUntil: 0,   // recent-choice penalty; a sole recent prop is skipped, a multi-prop room stays non-deterministic
+      deskVisitCd: 0, exploreCd: 0,     // stop desk loops; periodically take one bounded trip beyond the current room
       watchProp: null,   // lounge: the TV the couch-sitter is watching (kept lit while it watches)
       // seat-on-couch: logical pos stays on the approach tile, but it RENDERS at seat{Px,Py} ON the couch
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
@@ -1564,11 +1565,9 @@ const World = (() => {
      anchorFor(body): the body's own workstation/bay foot tile — its STABLE home (never its transient
      px/py, so the zone doesn't drift as it walks). Hero falls back to the module `seat` (its synthetic
      desk) when it has no placed workstation prop; crew resolve purely via deskPropFor/bay (P2/P3). */
-  /* The returned tile carries `assigned` — true when it came from a REAL posting (a bound
-     workstation, a bay, or the hero's own desk), false for the A2 fallback below (a placed body
-     with nowhere of its own yet). Only an ASSIGNED body earns the ROAM RADIUS: "how far from MY
-     DESK may I wander" is meaningless for a body that has no desk, and widening the deskless
-     fallback would just undo the bounded-spawn leash A2 exists to provide. */
+  /* The returned tile carries `assigned` for posting semantics, but every PLACED body's STABLE
+     anchor may own the same bounded roam radius. A deskless body uses its immutable spawn home,
+     so widening it cannot ratchet across the station as it walks. */
   function anchorFor(body) {
     if (!geo) return null;
     const aid = body && body.id;
@@ -1595,18 +1594,18 @@ const World = (() => {
     if (agent && agent.unplaced) return false;        // an unplaced hero owns nothing
     return crew.every(b => b && b.unplaced);          // no OTHER placed body shares the station
   }
-  /* ROAM RADIUS (2026-08-08 idle-life pass). A body assigned to a room used to be caged to that
+  /* ROAM RADIUS (2026-08-08 idle-life pass). A body anchored to a room used to be caged to that
      room's rect, which is why the station read as a set of terrariums: an agent could NEVER be
      seen anywhere but its own box. It now roams its home room PLUS Zones.ROAM_RADIUS tiles around
-     its own DESK, so it pops next door and comes back — still leashed to its posting, never free
+     its stable desk/spawn home, so it pops next door and comes back — still leashed to its posting, never free
      to cross the whole floor. Nothing else changes: every picker already filters through
-     tileInZone, so they all widen together, and the solo/null/deskless cases are untouched. */
+     tileInZone, so they all widen together; solo/null handling stays unchanged. */
   function zoneFor(body) {
     if (typeof Zones === 'undefined' || !geo) return null;
     const a = anchorFor(body);
     return Zones.computeZone({
       rects: geo.allRects, props: geo.props, agentId: body && body.id, anchorTile: a,
-      roamR: (a && a.assigned) ? Zones.ROAM_RADIUS : 0,
+      roamR: a ? Zones.ROAM_RADIUS : 0,
       doors: geo.doorDefs,                    // ...and a band past its OWN room's thresholds (Zones.SPILL_RADIUS)
       solo: soleOwner(body),
     });
@@ -2068,10 +2067,11 @@ const World = (() => {
      just called planProp, whose tryLounge short-circuit meant the measured result was BOTH bodies on
      the couch for 58% of the run and not one visit to the arcade, the pinball table or the bar. It
      is a candidate here, not a shortcut. */
-  const FUN_W = { arcade: 3, pinball: 3, pool: 2.5, poker: 2, dj: 2, juke: 1.5, bar: 2.5, gacha: 1.5, fish: 1.5, lounge: 2.5 };
+  const FUN_W = { arcade: 3, pinball: 3, pool: 2.5, poker: 2, dj: 2, juke: 1.5, bar: 2.5, gacha: 1.5, lounge: 2.5 };
   const FUN_REPEAT_MIN = 90000, FUN_REPEAT_MAX = 150000;
-  /* FUN-REPEAT-PURE-BEGIN — a recent choice is unavailable, not merely less likely. A weak weight
-     cannot prevent parking when the couch is the only candidate. Kept pure for the regression test. */
+  /* FUN-REPEAT-PURE-BEGIN — reports whether a choice is still recent. The picker skips a recent
+     SOLE option, but only down-weights it when alternatives exist so avoidance never becomes a
+     predictable forced rotation. Kept pure for the regression test. */
   function funRecentlyUsed(lastKey, lastUntil, key, now) {
     return !!key && lastKey === key && Number.isFinite(lastUntil) && now < lastUntil;
   }
@@ -2176,16 +2176,17 @@ const World = (() => {
     if (!geo || !geo.props || !geo.props.length) return false;
     const zone = zoneFor(self), cands = [];
     const lounge = loungePair(zone);
-    if (lounge && !funBlocked('lounge', now)) cands.push({ key: 'lounge', w: FUN_W.lounge, lounge });
+    if (lounge) { const recent = funBlocked('lounge', now); cands.push({ key: 'lounge', w: FUN_W.lounge * (recent ? 0.28 : 1), recent, lounge }); }
     for (const p of geo.props) {
       const u = propUse(p);
       if (!u || !FUN_KINDS[u.kind]) continue;
       if (!mayTouchProp(self.id, p)) continue;
       if (!tileInZone(zone, p.x, p.y)) continue;
-      if (funBlocked(p.id, now)) continue;
-      cands.push({ key: p.id, w: FUN_W[u.kind] || 2, prop: p, kind: u.kind });
+      const recent = funBlocked(p.id, now);
+      cands.push({ key: p.id, w: (FUN_W[u.kind] || 2) * (recent ? 0.28 : 1), recent, prop: p, kind: u.kind });
     }
     if (!cands.length) return false;                       // nothing fun placed → the bored branch carries on as before
+    if (cands.length === 1 && cands[0].recent) return false;   // one prop cannot become permanent parking
     let total = 0; for (const c of cands) total += c.w;
     // draw one, then fall through the rest in a rotated order so an unreachable pick never wastes the beat
     let roll = U.rnd(0, total), start = 0;
@@ -2222,8 +2223,9 @@ const World = (() => {
     for (const p of geo.props) {
       const use = propUse(p); if (!use || !purposefulIdleProp(p)) continue;
       if (use.kind === 'couch') { if (!funBlocked('lounge', now)) cands.push({ couch: p }); continue; }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
-      if (use.kind === 'seat') { cands.push({ seat: p }); continue; }     // only a seat pulled up to a purposeful counter reaches this branch
+      if (use.kind === 'seat') { const counter = counterForSeat(p); if (counter && counter.p && !funBlocked(counter.p.id, now)) cands.push({ seat: p }); continue; }   // only a non-recent purposeful counter seat reaches this branch
       if (use.kind === 'bar') continue;                                  // its adjacent purposeful seat is the destination, never the counter face itself
+      if (funBlocked(p.id, now)) continue;
       const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
       if (a && tileInZone(zone, a.tx, a.ty)) cands.push({ id: p.id, a });   // the APPROACH tile (where the body stands) must be in-zone
     }
@@ -3420,6 +3422,7 @@ const World = (() => {
   }
   // lonely → drift to a tile by the desk and face south (its window to the Commander); refills social
   function planSeekDesk(now) {
+    if (now < (self.deskVisitCd || 0)) return false;   // checking in is useful; bouncing back after every other activity is not
     const seat = seatFor(self);   // the CURRENT body's own desk (hero → synthetic `seat`; crew → its workstation chair) — never the hero's seat for a crew body (J2/J3)
     if (!seat) return false;
     const zone = zoneFor(self);   // J3: the desk spots derive from the seat with +2 south / ±1 offsets; clamp them to the body's OWN zone like every sibling picker
@@ -3427,8 +3430,41 @@ const World = (() => {
     for (const [tx, ty] of spots) {
       if (!tileInZone(zone, tx, ty)) continue;   // J3: never tether OUT of the body's zone (hero whole-floor 'multi' zone admits its own spots → byte-parity)
       if (!geo.walkable(tx, ty, blocked)) continue;
-      if (setPathTo({ x: tx, y: ty })) { self.goal = 'tend'; self.useFace = 'south'; self.usingProp = null; self.studyKey = null; if (!self.target) arrive(now); return true; }
+      if (setPathTo({ x: tx, y: ty })) { self.goal = 'tend'; self.useFace = 'south'; self.usingProp = null; self.studyKey = null; self.deskVisitCd = now + U.irnd(60000, 120000); if (!self.target) arrive(now); return true; }
     }
+    return false;
+  }
+  /* After a real stretch of downtime, take one trip beyond the current room when the existing zone
+     permits it. This is not free station roaming: zoneFor still limits the destination to the stable
+     home/spawn radius and directly connected rooms, and setPathTo owns the normal collision-safe walk. */
+  function planExplore(now) {
+    if (!self || !geo || !geo.allRects || !geo.allRects.length) return false;
+    // Spread the first stroll over 45 seconds instead of making every newly-idle body leave at once.
+    if (!self.exploreCd) {
+      self.exploreCd = now + U.irnd(1, 45000);
+      return false;
+    }
+    if (now < self.exploreCd) return false;
+    const cur = tileOf(self.px, self.py), here = roomOfLocalTile(cur.x, cur.y), zone = zoneFor(self);
+    if (!here || !zone) return false;
+    const rects = geo.allRects.filter(r => {
+      const room = roomOfLocalTile((r.x1 + r.x2) >> 1, (r.y1 + r.y2) >> 1);
+      return room && room !== here;
+    });
+    if (!rects.length) return false;
+    for (let i = 0; i < 36; i++) {
+      const r = rects[U.irnd(0, rects.length - 1)];
+      const tx = U.irnd(r.x1, r.x2), ty = U.irnd(r.y1, r.y2);
+      if (!tileInZone(zone, tx, ty) || !geo.walkable(tx, ty, blocked)) continue;
+      const there = roomOfLocalTile(tx, ty);
+      if (!there || there === here) continue;
+      if (!setPathTo({ x: tx, y: ty })) continue;
+      self.goal = null; self.usingProp = null; self.stilling = false; self.attn = null;
+      self.drive = null; self.driveUntil = 0;
+      self.exploreCd = now + U.irnd(120000, 210000);
+      return true;
+    }
+    self.exploreCd = now + U.irnd(30000, 60000);   // retry calmly if nearby geometry has no reachable sample this beat
     return false;
   }
   // restless → short back-and-forth hops near the current tile (paces in place instead of strolling far off)
@@ -3809,6 +3845,7 @@ const World = (() => {
     // USES the Commander's placed props (couch/TV/arcade) via planProp below — that stays.
     const n = self.needs, p = self.pers, ph = phaseOf(now), idleAge = now - (self.lastTaskAt || now);
     if (ph.tag === 'drift' && idleAge > 45000 && n.rest > 50 && U.chance(0.22) && sleep(now)) return;   // deep downtime in the wind-down mood -> power down where it stands
+    if (idleAge > 60000 && planExplore(now)) return;                                  // after a while, deliberately visit another reachable room inside the stable home range
     /* TIER D SELECTION (hoisted 2026-07-02 — live-soak fix): these three used to sit INSIDE the `top < 28`
        CONTENT branch below, but contentment is correct-but-rare in practice (stim/social decay while idle —
        the Pass-7 note), so chase/social/mimic were almost never even CONSULTED and the observed live rate was
@@ -3854,8 +3891,8 @@ const World = (() => {
     // ladder's own precedence below (rest > soc > stim) so the two can never disagree about who won.
     const win = top === wRest ? 'rest' : top === wSoc ? 'soc' : 'stim';
     if (win !== held) { self.drive = win; self.driveUntil = now + U.irnd(12000, 22000); }
-    if (top === wRest) { if (planRest(now)) return; }                                  // tired -> lounge / couch (but not the SAME couch on a loop — see planRest)
-    else if (top === wSoc) { if (planSeekDesk(now)) return; }                          // lonely -> the desk, face the Commander
+    if (top === wRest) { if (U.chance(0.7) && planRest(now)) return; }                  // tired usually rests; sometimes it simply carries on living
+    else if (top === wSoc) { if (U.chance(0.65) && planSeekDesk(now)) return; }         // desk check is meaningful, not the mandatory half of a loop
     else {                                                                             // bored / restless
       // TIER D · D5 beat 3 — QUEUE-AWARE IDLE BIAS: while the visible task/mission queue is non-empty, the OVERSEER
       // (hero only) leans harder into a purposeful caretaker lap (which visits desks / belts / the board — the
@@ -3867,8 +3904,8 @@ const World = (() => {
       // single leisure prop (see planPlay) — the whole reason a station full of arcade machines
       // read as scenery. Ahead of the caretaker lap on purpose: a lap is what you do when there is
       // nothing better, and the Commander placing a pinball table is them saying there is.
-      if (U.chance(0.7) && planPlay(now)) return;                                       //   bored + something fun placed -> play with it
-      const roundsBias = (self === agent && (missionPinCounts(now)[0] | 0) > 0) ? 0.45 : 0.3;
+      if (U.chance(0.55) && planPlay(now)) return;                                      //   bored + something fun placed -> often play, never always
+      const roundsBias = (self === agent && (missionPinCounts(now)[0] | 0) > 0) ? 0.4 : 0.12;
       if (U.chance(roundsBias) && maybeRounds(now)) return;                             //   do a deliberate caretaker lap (purpose, not aimless)
       if (n.stim < 42 && planPOI(now)) return;                                         //   study a machine / watch a belt
       // the vantage beat is a PUNCTUATION MARK, not a pastime. At 0.35 after 30s it became the most
@@ -3879,7 +3916,7 @@ const World = (() => {
     }
     // graceful fallbacks so it never freezes
     if (U.chance(0.45 * p.curious) && planPOI(now)) return;
-    if (U.chance(0.4 * p.homebody) && planProp(now)) return;
+    if (U.chance(0.18 * p.homebody) && planProp(now)) return;
     if (U.chance(0.45)) lookAround(now); else wander(now);
   }
 
@@ -6178,6 +6215,7 @@ const World = (() => {
       phase: U.hash('' + aid) % 6, aph: (U.hash('' + aid) % 600) / 100, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false, watchProp: null,
       lastFun: null, lastFunUntil: 0,
+      deskVisitCd: 0, exploreCd: 0,
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
       summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory (mirrors the hero literal) — runtime-only
