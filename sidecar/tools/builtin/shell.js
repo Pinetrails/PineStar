@@ -601,12 +601,31 @@
     return abs;
   }
 
-  // best-effort tree-kill: child.kill() reaps the shell; on Windows taskkill /T also reaps its grandchildren.
+  // best-effort tree-kill: on Windows taskkill must inspect the live shell root to discover `/T` descendants.
   function killTree(spawn, child, isWin) {
+    if (isWin && child.pid) {
+      let fellBack = false;
+      const fallback = () => {
+        if (fellBack) return;
+        fellBack = true;
+        try { child.kill(); } catch (_) {}
+      };
+      try {
+        const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+        if (killer && typeof killer.on === 'function') {
+          killer.on('error', fallback);
+          killer.on('close', (code) => { if (code !== 0) fallback(); });
+        }
+        try { if (killer && typeof killer.unref === 'function') killer.unref(); } catch (_) {}
+        return;
+      } catch (_) {
+        fallback();
+        return;
+      }
+    }
     try { child.kill(); } catch (_) {}
     try {
-      if (isWin && child.pid) spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-      else if (child.pid) process.kill(child.pid, 'SIGKILL');
+      if (child.pid) process.kill(child.pid, 'SIGKILL');
     } catch (_) {}
   }
 
