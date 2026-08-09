@@ -2488,6 +2488,7 @@ async function projectIsGitRepo(rootReal) { try { await fsp.stat(path.join(rootR
 const pathTrustCore = makePathTrust({
   fsp, pathMod: path,
   roots: blessedRoots,
+  workspaceRoot: WORKSPACES,
   bless: async (rootReal, m) => blessProjectRoot(rootReal, m),
   touch: (rootReal, abs) => { try { projectsStore.touch(rootReal, Date.now()); } catch (_) {} },
   isGitRepoOf: projectIsGitRepo,
