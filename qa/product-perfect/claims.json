@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "91d69f4f34581d72c0b06354da093ebd48b4480d",
+    "sourceCommit": "214382ef417a4a011d139a198d40c671f99b94f2",
     "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
     "files": [
       {
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 575775,
-        "sha256": "2be41d577a6f78ed10a1ae72faf580053fe9b798b948e2825e51880dbf2b2988"
+        "bytes": 575915,
+        "sha256": "64d97adcd0f0fc13e0ccb882ec12aa2f37f47e8d5127e9e74681dcddf5956842"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -283,8 +283,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 72975,
-        "sha256": "a91a2735b0a3a76715c3952eda24113c154d406d4879affadb84c7b6f3a714d2"
+        "bytes": 73377,
+        "sha256": "af147887b52e9321aecb9bcfc736b26c1d871a2a55beb0cf14cde75bf818bfcd"
       },
       {
         "path": "frontend/app/hint.js",
@@ -898,8 +898,8 @@
       },
       {
         "path": "frontend/app/windows/routines.js",
-        "bytes": 35085,
-        "sha256": "e2e8858fb7636b6e75f81aa769b4a9409688b7c658d19a8871cbd678ddc97e91"
+        "bytes": 35147,
+        "sha256": "50f0125d9b92d15c36baee29c2279583b691423c4038fa6449b654ead2cbd066"
       },
       {
         "path": "frontend/app/windows/trophies.js",
