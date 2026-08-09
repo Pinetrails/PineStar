@@ -366,6 +366,10 @@ const SPRITES = (() => {
     // agent like the blink so the crew never moves in unison. The index is derived from the
     // window's own progress (fixedIdx), NOT the free-running clock — a clock index would enter
     // the animation mid-cycle. Sets without a gesture track skip this entirely.
+    /* This track is a STRETCH. It is fired here, on its own slow ambient clock, and nowhere else:
+       an attempt to reuse it on demand (reaching for a prop, working an arcade cabinet, waving)
+       was removed 2026-08-08 because a stretch played at those moments reads as a glitch. New
+       meanings need new frames, not this one re-labelled. */
     let fixedIdx = null;
     if (key && key.indexOf('.rot.') !== -1 && b.state !== 'walk'
         && !b.working && !b.sitting && !b.speaking && !meeting && !glancing) {
@@ -405,6 +409,10 @@ const SPRITES = (() => {
       }
     }
     if (!key) return null;
+    // the pose this body is ACTUALLY being drawn in, recorded read-only for live verification
+    // (dev/idlesoak.mjs asserts a waving body resolves to a `.gesture.` track). Nothing reads it
+    // to make a decision — a rendering claim has to be provable from the render, not re-derived.
+    b._pose = key;
 
     const fr = tintFrames(b.id, key);
     if (!fr || !fr.length) return null;
