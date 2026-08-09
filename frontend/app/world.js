@@ -56,6 +56,15 @@ const World = (() => {
   let _lut = null, _lutKey = '', _outImg = null;   // CPU per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurveCPU()
   let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glAberrLoc = null, _glVigLoc = null, _glOverLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
   let _glProbeOk = false, _glProbeTries = 0, _glProbeSkip = 0, _glProbeClean = 0, _glProbeCv = null;   // one-time GL output sanity probe — see drawCurveGL()
+  function glContextLost(gl) {
+    try { return !!(gl && typeof gl.isContextLost === 'function' && gl.isContextLost()); }
+    catch (_) { return true; }   // an unreadable context is no safer to blit than a proven-lost one
+  }
+  function abandonCurveGL(reason) {
+    if (!_glFailed) console.warn('[crt] ' + reason + ' — switching to CPU fallback');
+    _glFailed = true; _glReady = false;
+    return false;
+  }
   // whole-frame per-channel means via a 16×16 GPU downscale (~1KB readback) — the probe's sampler
   function probeMeans(src) {
     if (!_glProbeCv) { _glProbeCv = document.createElement('canvas'); _glProbeCv.width = 16; _glProbeCv.height = 16; }
@@ -4537,6 +4546,12 @@ const World = (() => {
     if (_glReady || _glFailed) return _glReady;
     try {
       _glc = document.createElement('canvas'); _glc.width = W; _glc.height = H;
+      // A WebView/GPU reset reports context loss as WebGL state, not a JavaScript exception. Mark the GPU path
+      // unusable immediately; the next drawCurve() frame takes the existing pixel-identical CPU warp.
+      _glc.addEventListener('webglcontextlost', ev => {
+        try { ev.preventDefault(); } catch (_) {}
+        abandonCurveGL('WebGL context lost');
+      }, false);
       _gl = _glc.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true }) ||
             _glc.getContext('experimental-webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true });
       if (!_gl) throw new Error('no webgl');
@@ -4586,13 +4601,15 @@ const World = (() => {
       _glVigLoc = gl.getUniformLocation(prog, 'uVig'); _glOverLoc = gl.getUniformLocation(prog, 'uOver');
       _glProg = prog; _glReady = true;
       return true;
-    } catch (e) { console.warn('[crt] WebGL curve unavailable, using CPU fallback:', e && e.message); _glFailed = true; _gl = null; return false; }
+    } catch (e) { _gl = null; return abandonCurveGL('WebGL curve unavailable: ' + ((e && e.message) || String(e))); }
   }
   function drawCurveGL(k, W, H) {
     try {
       if (!initGL(W, H)) return false;
       const gl = _gl;
+      if (glContextLost(gl)) return abandonCurveGL('WebGL context lost before draw');
       if (_glc.width !== W || _glc.height !== H) { _glc.width = W; _glc.height = H; }
+      if (glContextLost(gl)) return abandonCurveGL('WebGL context lost during resize');
       // OUTPUT SANITY PROBE (2026-07-20, the mac theme-wash report): the warp only MOVES pixels and
       // applies a channel-NEUTRAL vignette, so the frame's global per-channel ratios must survive it.
       // WKWebView's GL sits on a different backend (ANGLE-on-Metal) than Windows — a channel-order/
@@ -4611,6 +4628,10 @@ const World = (() => {
       if (_glVigLoc) gl.uniform1f(_glVigLoc, vigAmt());
       if (_glOverLoc) gl.uniform1f(_glOverLoc, overAmt());
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      // Context loss is deliberately checked AGAIN after GPU work and BEFORE the destructive clear below.
+      // WebGL commands on a lost context are specified to no-op instead of throwing; without this guard the
+      // dead offscreen canvas is copied over a healthy 2D frame and the camera feed goes permanently black.
+      if (glContextLost(gl)) return abandonCurveGL('WebGL context lost during draw');
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0, 0, W, H); ctx.drawImage(_glc, 0, 0);   // blit the warped result back onto the visible feed
       if (pre) {
@@ -4646,7 +4667,7 @@ const World = (() => {
         }
       }
       return true;
-    } catch (e) { console.warn('[crt] WebGL curve draw failed, using CPU fallback:', e && e.message); _glFailed = true; return false; }
+    } catch (e) { return abandonCurveGL('WebGL curve draw failed: ' + ((e && e.message) || String(e))); }
   }
   function drawCurveCPU(k, W, H) {
     const hw = W / 2, hh = H / 2;
@@ -7213,6 +7234,26 @@ const World = (() => {
   // so the DOWN branch can be observed against a real non-OPEN readyState without killing the whole process.
   const _dbgLinkState = () => ({ es: !!chanES, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round(((typeof performance !== 'undefined') ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) });
   const _dbgDropBridge = () => { if (chanES) { try { chanES.close(); } catch (_) {} } return _dbgLinkState(); };
+  // Deterministic live regression seam for the offscreen CRT warp. It invokes the browser-standard
+  // WEBGL_lose_context extension on the exact production context, then exposes only renderer health + a
+  // bounded whole-frame brightness sample so the test can prove the SAME visible feed stayed alive.
+  const _dbgCurveState = () => {
+    let means = null;
+    try { if (cv) means = probeMeans(cv); } catch (_) {}
+    return {
+      path: _glFailed ? 'cpu' : (_glReady ? 'webgl' : 'uninitialized'),
+      ready: _glReady, failed: _glFailed, lost: glContextLost(_gl),
+      frameSum: means ? Math.round(means[0] + means[1] + means[2]) : null
+    };
+  };
+  const _dbgLoseCurveContext = () => {
+    if (!_gl || !_glReady) return { ok: false, reason: 'WebGL curve is not active' };
+    let ext = null;
+    try { ext = _gl.getExtension('WEBGL_lose_context'); } catch (_) {}
+    if (!ext || typeof ext.loseContext !== 'function') return { ok: false, reason: 'WEBGL_lose_context unavailable' };
+    ext.loseContext();
+    return { ok: true };
+  };
   // belt-legibility readout for CDP verify scripts: the EXACT state the renderer draws from (never a re-derivation)
   const _dbgBeltLegibility = () => ({
     beltCount: beltTileSet ? beltTileSet.size : 0,
@@ -7235,7 +7276,7 @@ const World = (() => {
     // FEED TRUTH accessor (guided workflows): the exact server-proven state the NO FEED nag keys on —
     // REFIT's finish-the-line card reads THIS, never a parallel poll, so the two can never disagree.
     feedState: () => ({ known: feedState.known, fed: feedState.fed }),
-    loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, setOnIntakeSample, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility, _dbgPropClientPoint, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
+    loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, setOnIntakeSample, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgCurveState, _dbgLoseCurveContext, _dbgBeltLegibility, _dbgPropClientPoint, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
