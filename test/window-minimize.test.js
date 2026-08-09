@@ -50,6 +50,8 @@ const resB = body(/function restoreTerm\(key\)\s*\{[\s\S]*?\n  \}/, 'restoreTerm
 A.ok(/if \(!w \|\| !minimized\[key\]\) return/.test(resB), 'restoreTerm no-ops on a window that is not minimized');
 A.ok(/delete minimized\[key\]/.test(resB) && /removeChip\(key\)/.test(resB), 'restoreTerm clears the minimized flag and removes the chip');
 A.ok(/classList\.remove\('term-min-hidden'/.test(resB) && /removeAttribute\('aria-hidden'\)/.test(resB), 'restoreTerm un-hides the window');
+A.ok(/if \(key === 'agents'\) rerender\('agents'\)/.test(resB),
+  'restoring the Agent Dossier refreshes its live model and run counters before reveal');
 A.ok(/placeTerm\(w, key\)/.test(resB), 'restoreTerm re-applies the remembered geometry via placeTerm (lands it back exactly)');
 
 // placeTerm honours the captured termPos (the geometry round-trip completes)
