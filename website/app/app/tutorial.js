@@ -951,7 +951,7 @@ const Tutorial = (() => {
         + fmEntry('REAL', '3 · CONSENT', 'before i touch a file or reach out i stop and ask — approve once, always, or kill it.')
         + fmEntry('REAL', '4 · RUN', 'i execute the real tools you’ve granted me — web search, file read/write — and stream the result to COMMS.')
         + fmEntry('REAL', '5 · PROVE', 'i verify the work and show the outcome instead of just claiming it.')
-        + '<p class="fm-note">the crew in the left rail are echoes for now — placeholders until you recruit more minds. today it’s one of me, running the whole loop.</p>';
+        + '<p class="fm-note">every crew member you recruit is a real, separate agent with its own identity, workspace, memory, and sessions. right now one agent runs the loop; recruit more and each runs its own work.</p>';
     }
     if (tab === 'GEAR') {
       return '<p class="fm-lead">a prop in my room is a PERMISSION. drop these in a bay’s room to grant a power; most other furniture is set dressing.</p>'

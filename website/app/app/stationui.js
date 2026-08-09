@@ -3503,18 +3503,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
 
   // purposeful empty-state per kanban lane (Phase 2 · E). The TO DO column gets a CTA that focuses the
-  // add-a-workstream input (focus only — no new functionality); ACTIVE/SHIPPED just explain what lands here.
+  // add-a-task input (focus only — no new functionality); ACTIVE/SHIPPED just explain what lands here.
   function kbEmpty(lane) {
     if (lane === 'todo') return '<div class="kb-empty-col"><div class="empty-state">' +
-      '<span class="es-glyph">▧</span><b>NO WORKSTREAMS</b>' +
-      '<span>Queue the first thing you want your agent to build.</span>' +
+      '<span class="es-glyph">▧</span><b>NO TASKS</b>' +
+      '<span>Queue a planned task for an agent.</span>' +
       '<button class="es-cta" type="button">+ ADD ONE</button></div></div>';
     if (lane === 'active') return '<div class="kb-empty-col"><div class="empty-state">' +
       '<span class="es-glyph">▶</span><b>NOTHING IN FLIGHT</b>' +
-      '<span>Assign a TO DO card and it moves here while the agent works.</span></div></div>';
+      '<span>Assign a TO DO task and it moves here while the agent works.</span></div></div>';
     return '<div class="kb-empty-col"><div class="empty-state">' +
       '<span class="es-glyph">✓</span><b>NOTHING SHIPPED YET</b>' +
-      '<span>Finished workstreams land here as proof of work.</span></div></div>';
+      '<span>Tasks you mark shipped land here as proof of work.</span></div></div>';
   }
   // TRUTHFUL RUN-STATE (IN PROGRESS cards only): the chip maps to a PROVABLE backend state — RUNNING when a run
   // is actually in flight on this stream (Channels.isBusy), else DONE — REVIEW & SHIP once at least one run has
@@ -3609,7 +3609,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const keepScroll = live ? Array.from(body.querySelectorAll('.kb-col')).map(c => c.scrollTop) : null;
     const streams = boardStreams();
     body.innerHTML =
-      '<div class="kb-add"><input id="kb-in" maxlength="80" placeholder="add a workstream for your agent…" autocomplete="off">' +
+      '<div class="kb-add"><input id="kb-in" maxlength="80" placeholder="add a planned task…" autocomplete="off">' +
       '<button class="bb sm" id="kb-add">+ ADD</button></div>' +
       '<div class="kb-cols">' +
       COLS.map(([lane, label]) => {
@@ -3623,7 +3623,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // hunting HERE, but this board only holds queued directives — finished routine/away runs are
       // readable sessions in COMMS and collectable on the OUTBOX. Shown only when the board is empty
       // (that's exactly when the hunt strands); openTerm('outbox') is the one-click door.
-      (streams.length ? '' : '<div class="win-note" style="margin-top:8px">Looking for finished work? Routine and while-away runs aren’t board cards — they land as sessions in COMMS and wait on the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
+      (streams.length ? '' : '<div class="win-note" style="margin-top:8px">This board holds tasks you plan here or launch from Recipes and goals. Chats, routines, and while-away runs live as Sessions in COMMS; finished files wait in the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
     // entrance motion belongs to USER-initiated opens only — a background data poke must not re-animate.
     // (body persists across rebuilds, so the class must be actively toggled both ways.)
     body.classList.toggle('kb-live-refresh', live);
@@ -3633,7 +3633,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const submit = () => { const t = inp.value; inp.value = ''; addTask(t); };
     body.querySelector('#kb-add').addEventListener('click', () => { sfx('click'); submit(); });
     inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit(); } });
-    // empty-state CTA (TO DO column): focus the add-a-workstream input — no new behaviour, just focus.
+    // empty-state CTA (TO DO column): focus the add-a-task input — no new behaviour, just focus.
     body.querySelectorAll('.kb-empty-col .es-cta').forEach(b =>
       b.addEventListener('click', () => { sfx('click'); inp.focus(); }));
     const obLink = body.querySelector('#kb-outbox-link');
@@ -5407,7 +5407,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div id="diag-build" class="dim" style="margin-top:6px;font-size:11px" hidden></div>' +
       // CLEAR NOTIFICATIONS moved to the NOTIFICATIONS section (where it belongs); this is now just the about note.
       '<h4 class="ms-h">ABOUT</h4>' +
-      '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
+      '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage planned tasks on the TASK BOARD and saved conversations under SESSIONS in COMMS.</p>';
 
     const frag = html => (el => { el.innerHTML = html; });  // curried: fill a pane element with a fragment
     function wireLiveVoice(host) {
