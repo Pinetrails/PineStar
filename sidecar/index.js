@@ -7734,8 +7734,9 @@ const ROUTES = [
   { m: 'GET', qsplit: '/api/channels/events', h: handleChannelEvents },   // path match: the SSE url carries a ?token= query now
   { m: 'POST', exact: '/api/routing', h: handleRouting },
   { m: 'GET', qsplit: '/api/routing/chain', h: handleRoutingChain },   // qsplit, not exact: `exact` compares the FULL url and this route always carries a query
-  // PROOF (guided workflow Phase 4): run ONE real, labeled sample job through the armed line. Refusals are
-  // 409, never 404 — the finish-the-line card feature-detects the route by exactly that difference.
+  // PROOF (guided workflow Phase 4): GET is the inert feature probe; POST runs ONE real, labeled sample
+  // job through the armed line. Keeping discovery separate means probing can never spend or dispatch.
+  { m: 'GET', exact: '/api/routing/sample', h: handleRoutingSampleStatus },
   { m: 'POST', exact: '/api/routing/sample', h: handleRoutingSample },
   { m: 'GET', exact: '/api/budget/status', h: handleBudgetStatus },
   { m: 'GET', qsplit: '/api/credits', h: handleCredits },   // 404s (no surface) unless managed credits are configured
@@ -8253,6 +8254,12 @@ function handleRoutingChain(req, res) {
   if (next) { try { brief = router.stageBrief(next); } catch (_) { brief = null; } }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ next: next || null, brief: brief || null }));
+}
+
+/* ---- GET /api/routing/sample — inert feature discovery for the Build Mode finish-the-line card. ---- */
+function handleRoutingSampleStatus(_req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ ok: true, available: true }));
 }
 
 /* ---- POST /api/routing/sample — PROOF: feed ONE real, clearly-labeled work item through the armed line.

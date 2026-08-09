@@ -2325,7 +2325,7 @@ const Build = (() => {
       || (r.floorPaint && Object.keys(r.floorPaint).length)
       || (r.floorStyle && kinds[r.kind] && r.floorStyle !== kinds[r.kind].floor));
     const desk = props.some(p => WORKSTATION_TYPES[p.t]);
-    const line = props.some(p => p.t === 'intake') && props.some(p => p.t === 'bay');
+    const line = props.some(p => p.t === 'bay') && props.some(p => p.t === 'intake' || p.t === 'outbox');
     return [
       { id: 'grow', done: spaces >= 2, label: 'ADD A SECOND SPACE', tool: 'room', tip: 'a room or a hallway — your agent walks what you build' },
       { id: 'dress', done: dressed, label: 'LAY A DECK YOU LIKE', tool: 'paint', tip: 'pick a material and a colour, then click a room' },
@@ -2873,7 +2873,11 @@ const Build = (() => {
     const rect = !d.moved ? stampRectFor(d.cur.tx, d.cur.ty)
       : (tool === 'hall') ? laneRect(d.start, d.cur) : norm(d.start, d.cur);
     const res = (tool === 'hall') ? station.placeHallway({ rect }) : station.addRoom({ kind, rect });
-    if (res && res.ok) { pushFlash([rect], false); rememberDrawn(rect); }
+    if (res && res.ok) {
+      pushFlash([rect], false);
+      rememberDrawn(rect);
+      deselectTool({ silent: true });
+    }
     feedback(res, ev, tool === 'hall' ? 'hallway run' : 'room placed');
   }
   function commitMove(d, ev) {
@@ -3184,12 +3188,15 @@ const Build = (() => {
 
   function onKey(ev) {
     const a = ev.target;
-    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)) return;
+    const modal = cardTop();
+    // Inputs keep every ordinary editing key, but ESC still belongs to the mounted card so its
+    // registered close path can save the field before dismissing it.
+    if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable)
+      && (!modal || ev.key !== 'Escape')) return;
     /* A MOUNTED CARD OWNS THE KEYBOARD (2026-08-07 conveyor audit). These shortcuts drive the FLOOR, and
        the floor is not what you are looking at while a card is up: with the STEP editor open, `9` armed
        LINES and yanked the camera out from under the card, and Ctrl+Z undid the very stamp that created
        the bay being edited. Only ESC crosses a card — and it closes THAT card (below), never the floor. */
-    const modal = cardTop();
     if (modal && ev.key !== 'Escape') return;
     if (ev.key === ' ') { ev.preventDefault(); spaceHeld = true; setCursor(); return; }
     if (ev.key === 'Escape') {
