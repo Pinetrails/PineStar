@@ -67,6 +67,7 @@ async function expectReject(p, pattern, label) {
     const out = await capped.run({ code: `return 'x'.repeat(200);` }, { composeDispatch: async () => 'x' });
     A.ok(/truncated at 64 bytes/.test(out.content), 'final output cap is explicit');
     A.ok(Buffer.byteLength(out.content, 'utf8') <= 64, 'final output including its notice stays within the byte cap');
+    A.eq(out.fullContent, 'x'.repeat(200), 'the exact pre-cap code result crosses the registry persistence seam');
     const callCapped = Code.makeCodeTools({ limits: { timeoutMs: 3000, maxCalls: 2, maxOutputBytes: 1000 } }).codeTool;
     const calls = await callCapped.run({ code: `
       let denied='';

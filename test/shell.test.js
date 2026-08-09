@@ -72,6 +72,8 @@ const SLEEP = process.platform === 'win32' ? 'ping -n 5 127.0.0.1 > NUL' : 'slee
     const small = makeShellTool({ spawn, fs, pathMod: path, root, clock: makeClock(0), limits: { maxBytes: 5 } }).execTool;
     const r5 = await small.run({ cmd: 'echo hello world this is long' }, ctx());
     A.ok(/truncated/.test(r5.content), 'oversized output truncated');
+    A.ok(/hello world this is long/.test(r5.fullContent), 'the full shell bytes survive the intrinsic preview ceiling');
+    A.ok(/\[exit 0\]$/.test(r5.fullContent), 'the recoverable shell artifact includes the real terminal exit receipt');
 
     /* ---- 5b. ANSI STRIP (ref-parity). npm/git/cargo/pytest emit colour whenever they think a TTY is
        attached, and the model reads the control bytes as tokens — '[32m' is billed content meaning

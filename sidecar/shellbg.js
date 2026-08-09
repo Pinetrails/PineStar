@@ -74,6 +74,8 @@
     const now = (deps.clock && typeof deps.clock.now === 'function') ? deps.clock.now : () => 0;
     const redact = typeof deps.redact === 'function' ? deps.redact : (s) => s;
     const onExit = typeof deps.onExit === 'function' ? deps.onExit : () => {};
+    const spill = typeof deps.spill === 'function' ? deps.spill : null;
+    const newId = typeof deps.newId === 'function' ? deps.newId : null;
     const isWinDefault = (deps.isWin != null) ? deps.isWin : WIN;
     const MAX = deps.maxPerAgent || 5;
     /* 16KB held about 200 lines of a dev server — the ring lapped before the agent got back to look, so the
@@ -94,7 +96,8 @@
       return {
         bgId: r.bgId, pid: r.child && r.child.pid || null, cmd: r.cmd, running: r.running, exitCode: r.exitCode, killed: r.killed,
         ms: Math.max(0, (r.endedAt != null ? r.endedAt : now()) - r.startedAt),
-        tail: r.out.slice(-2000)
+        tail: r.out.slice(-2000), outputPath: r.outputPath || null, outputBytes: r.outputBytes || 0,
+        outputSpillVerified: !!r.outputPath && !r.outputSpillError, outputSpillError: r.outputSpillError || null
       };
     }
 
@@ -138,10 +141,16 @@
           if (typeof ledger.pinIdentity === 'function') Promise.resolve(ledger.pinIdentity(child.pid)).catch(() => {});
         }
       } catch (_) {}
-      const bgId = 'bg_' + (++seq);
-      const rec = { bgId, agentId, cmd, child, out: '', running: true, exitCode: null, killed: false, startedAt: now(), endedAt: null, dropped: 0, stdinClosed: false };
+      const bgId = newId ? 'bg_' + String(newId()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) : 'bg_' + (++seq);
+      const rec = { bgId, agentId, cmd, child, out: '', running: true, exitCode: null, killed: false, startedAt: now(), endedAt: null, dropped: 0, stdinClosed: false, outputPath: null, outputBytes: 0, outputSpillError: '' };
       const append = (buf) => {
         let s = ''; try { s = redact(String(buf)); } catch (_) { s = String(buf); }
+        if (spill && s) {
+          try {
+            const saved = spill({ agentId, kind: 'shell-bg', id: bgId, text: s });
+            if (saved && saved.path) { rec.outputPath = String(saved.path); rec.outputBytes = Math.max(0, Number(saved.bytes) || rec.outputBytes); rec.outputSpillError = ''; }
+          } catch (e) { rec.outputSpillError = String((e && e.message) || e || 'output spill failed').slice(0, 300); }
+        }
         rec.out += s;
         if (rec.out.length > RING) {
           let cut = rec.out.length - RING;
@@ -220,7 +229,9 @@
         lines: page.map(x => x[1]), firstLineNo: page.length ? page[0][0] : 0, lineNos: page.map(x => x[0]),
         offset: off, returned: page.length,
         totalLines: all.length, matchedLines: needle ? numbered.length : null, grep: opts.grep || null,
-        droppedBytes: r.dropped, truncatedStart: r.dropped > 0
+        droppedBytes: r.dropped, truncatedStart: r.dropped > 0,
+        outputPath: r.outputPath || null, outputBytes: r.outputBytes || 0,
+        outputSpillVerified: !!r.outputPath && !r.outputSpillError, outputSpillError: r.outputSpillError || null
       };
     }
 

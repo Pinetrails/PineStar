@@ -24,6 +24,9 @@ async function rejects(promise, pattern, msg) {
     A.ok(pattern.test((e && e.message) || String(e)), msg + ' - ' + ((e && e.message) || e));
   }
 }
+async function rejectedError(promise) {
+  try { await promise; return null; } catch (e) { return e; }
+}
 function patch(body) {
   return '*** Begin Patch\n' + body + '\n*** End Patch';
 }
@@ -43,7 +46,9 @@ function patch(body) {
 
   // ---- add + multi-hunk update success ----
   {
-    await patchTool.run({ patch: patch('*** Add File: multi.txt\n+alpha\n+beta\n+gamma') }, ctx);
+    const added = await patchTool.run({ patch: patch('*** Add File: multi.txt\n+alpha\n+beta\n+gamma') }, ctx);
+    A.eq(added.mutationReceipt.state, 'read-back-verified', 'patch success requires all planned files to read back exactly');
+    A.eq(added.mutationReceipt.files[0].state, 'read-back-verified', 'patch exposes a per-file verification receipt');
     let r = await readTool.run({ path: 'multi.txt' }, ctx);
     A.eq(r.content, 'alpha\nbeta\ngamma', 'add file writes patch content');
 
@@ -142,6 +147,66 @@ function patch(body) {
     // two genuinely DISTINCT blocks are still ambiguous
     const twice = ['start', '  x', 'end', 'pad', 'start', '  y', 'end'].join(NL);
     A.ok(!fuzzyFindAndReplace(twice, ['start', '  z', 'end'].join(NL), 'X').ok, 'two distinct blocks are still reported ambiguous');
+  }
+
+  // ---- mutation receipts: injected storage faults never produce a false success claim ----
+  {
+    const faultRoot = path.join(ROOT, 'faults');
+    let wrote = false;
+    const unreadableAfterWrite = new Proxy(fsp, { get(target, prop) {
+      if (prop === 'writeFile') return async (...args) => { const out = await target.writeFile(...args); wrote = true; return out; };
+      if (prop === 'readFile') return async (...args) => { if (wrote) throw Object.assign(new Error('injected read-back failure'), { code: 'EIO' }); return target.readFile(...args); };
+      const value = target[prop]; return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    const unreadable = makeFsTools({ fsp: unreadableAfterWrite, pathMod: path, root: faultRoot, limits: { writeBytes: 4096, readReturn: 4096 } });
+    const noReadback = await rejectedError(unreadable.writeTool.run({ path: 'unproved.txt', content: 'intended' }, ctx));
+    A.eq(noReadback.mutationReceipt.state, 'failed', 'a resolved write with unavailable read-back is not promoted to success');
+    A.ok(noReadback.mutationReceipt.phases.indexOf('written') >= 0, 'the receipt distinguishes written from read-back verified');
+    A.ok(!/\bWrote\b/.test(noReadback.message), 'the failed read-back path never emits a Wrote claim');
+
+    const corrupting = new Proxy(fsp, { get(target, prop) {
+      if (prop === 'writeFile') return async (file, data, ...rest) => { await target.writeFile(file, data, ...rest); await target.writeFile(file, Buffer.from('CORRUPT')); };
+      const value = target[prop]; return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    const corrupt = makeFsTools({ fsp: corrupting, pathMod: path, root: faultRoot, limits: { writeBytes: 4096, readReturn: 4096 } });
+    const partial = await rejectedError(corrupt.writeTool.run({ path: 'partial.txt', content: 'intended' }, ctx));
+    A.eq(partial.mutationReceipt.state, 'partially-applied', 'wrong bytes after a write are reported partially applied');
+    A.ok(partial.mutationReceipt.actualSha256 !== partial.mutationReceipt.sha256, 'partial receipt proves intended and observed digests differ');
+
+    const failBeforeWrite = new Proxy(fsp, { get(target, prop) {
+      if (prop === 'writeFile') return async () => { throw new Error('injected write refusal'); };
+      const value = target[prop]; return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    const failed = makeFsTools({ fsp: failBeforeWrite, pathMod: path, root: faultRoot, limits: { writeBytes: 4096, readReturn: 4096 } });
+    const refused = await rejectedError(failed.writeTool.run({ path: 'never.txt', content: 'intended' }, ctx));
+    A.eq(refused.mutationReceipt.state, 'failed', 'a mutation that never changed disk is distinctly failed');
+    A.eq(refused.mutationReceipt.phases.join(','), 'attempted,failed', 'attempted and failed phases remain auditable');
+  }
+
+  // ---- multi-file patch: a later write fault exposes the already-applied boundary ----
+  {
+    const partialRoot = path.join(ROOT, 'partial-patch');
+    await fsp.mkdir(path.join(partialRoot, 'ag'), { recursive: true });
+    await fsp.writeFile(path.join(partialRoot, 'ag', 'one.txt'), 'one');
+    await fsp.writeFile(path.join(partialRoot, 'ag', 'two.txt'), 'two');
+    let writeCount = 0;
+    const partialFsp = new Proxy(fsp, { get(target, prop) {
+      if (prop === 'writeFile') return async (file, data, ...rest) => {
+        writeCount++;
+        if (writeCount === 2) { await target.writeFile(file, Buffer.from('BROKEN')); throw new Error('injected second-file failure'); }
+        return target.writeFile(file, data, ...rest);
+      };
+      const value = target[prop]; return typeof value === 'function' ? value.bind(target) : value;
+    } });
+    const partialTools = makeFsTools({ fsp: partialFsp, pathMod: path, root: partialRoot, limits: { writeBytes: 4096, readReturn: 4096 } });
+    const err = await rejectedError(partialTools.patchTool.run({ patch: patch([
+      '*** Update File: one.txt', '-one', '+ONE',
+      '*** Update File: two.txt', '-two', '+TWO'
+    ].join('\n')) }, ctx));
+    A.eq(err.mutationReceipt.state, 'partially-applied', 'multi-file patch reports a partial application when the second write faults');
+    A.eq(err.mutationReceipt.files[0].state, 'read-back-verified', 'patch receipt preserves the first verified file');
+    A.eq(err.mutationReceipt.files[1].state, 'partially-applied', 'patch receipt names the corrupted file boundary');
+    A.ok(!/Applied patch/.test(err.message), 'a partial patch never emits the success summary');
   }
 
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}

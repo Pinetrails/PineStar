@@ -592,6 +592,7 @@ test/station-bridge.test.js
 test/station-commands.test.js
 test/station-tools.test.js
 test/code-mode.test.js
+test/output-artifacts.test.js
 test/station-recovery.test.js
 test/station-recovery-cli.test.js
 test/execution-profiles.test.js

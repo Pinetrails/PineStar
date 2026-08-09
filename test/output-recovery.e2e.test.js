@@ -1,6 +1,6 @@
-/* node test/output-recovery.e2e.test.js — a real sidecar run must not lose a late command receipt when
-   earlier tool output fills the run-wide context allowance. The full result is parked once, read back, and
-   the model still sees the host-authored exit summary instead of a generic internal-budget dead end. */
+/* node test/output-recovery.e2e.test.js — a real sidecar run must not lose a verified mutation or late command
+   receipt when earlier tool output fills the run-wide context allowance. Full output is parked once, mutations
+   carry exact read-back receipts, and both artifacts survive a real sidecar restart. */
 'use strict';
 
 const A = require('./_assert.js');
@@ -29,10 +29,12 @@ function startProvider() {
         if (toolResults.length === 0) {
           call = { id: 'brief_1', name: 'brief_proceed', args: { objective: 'prove the late command result survives output pressure', deliverable: 'a verified command receipt', assumptions: ['Use the trusted workspace shell'] } };
         } else if (toolResults.length === 1) {
-          call = { id: 'flood_1', name: 'shell_exec', args: { cmd: 'type flood-a.txt' } };
+          call = { id: 'mutate_1', name: 'fs_write', args: { path: 'mutation-receipt.txt', content: 'MUTATION_OK\n' } };
         } else if (toolResults.length === 2) {
-          call = { id: 'flood_2', name: 'shell_exec', args: { cmd: 'type flood-b.txt' } };
+          call = { id: 'flood_1', name: 'shell_exec', args: { cmd: 'type flood-a.txt' } };
         } else if (toolResults.length === 3) {
+          call = { id: 'flood_2', name: 'shell_exec', args: { cmd: 'type flood-b.txt' } };
+        } else if (toolResults.length === 4) {
           call = { id: 'check_1', name: 'shell_exec', args: { cmd: 'node -e "console.log(\'CHECK_OK\')"' } };
         } else {
           final = 'The check passed from the retained exit receipt.';
@@ -84,7 +86,7 @@ function startProvider() {
       body: JSON.stringify({
         key: 'sk-or-v1-output-recovery-fake', provider: 'openrouter', model: 'test/output-recovery',
         agentId: 'receipt', streamId: 'output-recovery', isTask: true,
-        messages: [{ role: 'user', content: 'Run the two large diagnostics, then run the small final check and report whether it passed.' }]
+        messages: [{ role: 'user', content: 'Write the mutation receipt file, run the two large diagnostics, then run the small final check and report only proven outcomes.' }]
       })
     });
     A.eq(response.status, 200, 'the production /api/run path streams the pressured run');
@@ -93,6 +95,12 @@ function startProvider() {
 
     const last = provider.requests[provider.requests.length - 1] || {};
     const resultMessages = (last.messages || []).filter(message => message && message.role === 'tool');
+    const mutation = resultMessages.find(message => message.tool_call_id === 'mutate_1');
+    A.ok(mutation, 'the final provider turn receives the workspace mutation result');
+    A.ok(/mutation receipt: read-back-verified/.test(mutation.content), 'the mutation is not reported successful until exact read-back verification');
+    A.ok(/attempted 12 bytes; written 12; verified 12/.test(mutation.content), 'the live mutation receipt reports exact attempted, written, and verified sizes');
+    const mutationPath = path.join(agentWorkspace, 'mutation-receipt.txt');
+    A.eq(fs.readFileSync(mutationPath, 'utf8'), 'MUTATION_OK\n', 'independent disk read confirms the exact live mutation bytes');
     const check = resultMessages.find(message => message.tool_call_id === 'check_1');
     A.ok(check, 'the final provider turn receives the late command result');
     const resultLengths = resultMessages.map(message => message.tool_call_id + ':' + String(message.content || '').length).join(',');
@@ -103,6 +111,11 @@ function startProvider() {
     const saved = match ? fs.readFileSync(path.join(fixture.workspace, 'receipt', match[1]), 'utf8') : '';
     A.ok(/CHECK_OK/.test(saved) && /\[exit 0\]/.test(saved), 'the parked file read-back contains the complete command output and exit line');
     A.ok(new Set((check.content.match(/\.output\/[A-Za-z0-9_.-]+\.txt/g) || [])).size === 1, 'the late result names one stable parked artifact');
+
+    await fixture.restart();
+    A.eq(fs.readFileSync(mutationPath, 'utf8'), 'MUTATION_OK\n', 'the read-back-verified workspace mutation survives a real sidecar restart');
+    const savedAfterRestart = match ? fs.readFileSync(path.join(fixture.workspace, 'receipt', match[1]), 'utf8') : '';
+    A.eq(savedAfterRestart, saved, 'the complete parked output remains byte-identical after restart');
   } finally {
     await fixture.dispose();
     await new Promise(resolve => provider.server.close(resolve));

@@ -33,6 +33,7 @@ const { makeAgentLifecycle } = require('./agent-lifecycle.js');
 const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
+const { makeOutputArtifacts } = require('./output-artifacts.js');
 const { makeWebTools, makePoliteScheduler } = require('./tools/builtin/web.js');
 const { makeWebReader } = require('./tools/builtin/webreader.js');
 const { makeBrowserTools } = require('./tools/builtin/browser.js');
@@ -370,6 +371,7 @@ function defaultWorkspaces() {
   return neu;
 }
 const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : defaultWorkspaces();
+const outputArtifacts = makeOutputArtifacts({ fsp, fs, pathMod: path, root: WORKSPACES, crypto });
 
 // DEV/QA must be destructive only inside an explicit scratch profile. A forgotten WORKSPACES override used
 // to make a headless audit inherit the Commander's canonical app-data root; that can produce a reset-looking
@@ -3123,7 +3125,8 @@ if (require.main === module) {
   procLedger.sweep().then(s => { if (s.examined) console.log('[proc-ledger] boot sweep: examined=' + s.examined + ' killed=' + s.killed + ' gone=' + s.gone + ' pid-reused=' + s.reused); }).catch(() => {});
   inputGuard.observe('boot').catch(() => {});
 }
-const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
+const appendDurableProcessOutput = entry => outputArtifacts.append(entry);
+const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, newId: () => crypto.randomUUID(), onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger, spill: appendDurableProcessOutput });
 const EXECUTION_SETTINGS_FILE = path.join(WORKSPACES, 'execution-settings.json');
 const executionIdleDefault = Math.max(0, Math.min(1440, Number(process.env.STARNET_DOCKER_IDLE_MINUTES == null ? 60 : process.env.STARNET_DOCKER_IDLE_MINUTES) || 0));
 let executionSettings = (() => {
@@ -3198,6 +3201,7 @@ const terminalSessions = makeTerminalSessions({
   pty: terminalPty, clock: { now: () => Date.now() }, newId: () => crypto.randomUUID(),
   load: () => terminalMetadataStore.readKey('all'), save: (value) => terminalMetadataStore.set('all', value),
   redact: redact, ledger: procLedger, stopTree: stopTerminalTree,
+  spill: appendDurableProcessOutput,
   onExit: (s) => { try { console.log('[terminal] ' + s.agentId + '/' + s.name + ' ' + s.state + (s.exitCode == null ? '' : ' exit=' + s.exitCode)); } catch (_) {} }
 });
 if (terminalPtyLoadError && require.main === module) console.warn('[terminal] PTY runtime unavailable: ' + terminalPtyLoadError);
@@ -13127,18 +13131,9 @@ async function runOnce(o) {
     // design: a parker that fails degrades to the plain clamp rather than failing the tool call.
     parkOutput: async (content, meta) => {
       try {
-        const ws = await executionEnvironment.ensureWorkspace(fsJail.safeAgentId(agentId || 'agent'));
-        await fsp.mkdir(path.join(ws, '.output'), { recursive: true });
         const safeTool = String((meta && meta.tool) || 'tool').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40);
-        const rel = '.output/' + safeTool + '-' + String(runId || 'run').replace(/[^A-Za-z0-9_-]/g, '') + '-' + (parkSeq++) + '.txt';
-        const full = String(content);
-        const abs = path.join(ws, rel);
-        await fsp.writeFile(abs, full, 'utf8');
-        // A path is evidence only after byte-for-byte read-back. If storage returned short/corrupt bytes, the
-        // caller falls back to an honest unpreserved-output receipt instead of pointing at an unproved file.
-        const readBack = await fsp.readFile(abs, 'utf8');
-        if (readBack !== full) return null;
-        return { path: rel };   // WORKSPACE-RELATIVE: the exact string fs.read takes, not a host absolute path
+        const stem = safeTool + '-' + String(runId || 'run').replace(/[^A-Za-z0-9_-]/g, '') + '-' + (parkSeq++);
+        return await outputArtifacts.park(agentId || 'agent', stem, content);
       } catch (_) { return null; }
     },
     // The context carries the host-minted remote-owner lease only for a locally paired Telegram owner.

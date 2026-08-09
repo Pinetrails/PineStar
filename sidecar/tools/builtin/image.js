@@ -238,7 +238,7 @@
     async function analyzeViaAux(content) {
       const text = String(await auxVision({ messages: [{ role: 'user', content }], timeoutMs: ANALYZE_TIMEOUT_MS }) || '').trim();
       if (!text) throw new Error('the session model returned no text for the image — it may not support vision');
-      return clip(text);
+      return text;
     }
     async function analyzeImageUrl(url, question, modelOverride) {
       const model = String(modelOverride || VISION_MODEL);
@@ -256,7 +256,7 @@
         const data = await orPost({ model, messages: [{ role: 'user', content }] }, ANALYZE_TIMEOUT_MS);
         const text = textFromResponse(data);
         if (!text) throw new Error('vision model "' + model + '" returned no text — is it vision-capable?');
-        return clip(text);
+        return text;
       } catch (e) { orErr = e; }
       if (auxVision) {
         try { return await analyzeViaAux(content); }
@@ -282,8 +282,9 @@
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
         const url = await imageToUrl(aid, args.image);
-        const out = await analyzeImageUrl(url, args.prompt, args.model);
-        return { content: out, summary: 'analyzed image (' + out.length + ' chars)' };
+        const full = await analyzeImageUrl(url, args.prompt, args.model);
+        const out = clip(full);
+        return { content: out, fullContent: out === full ? undefined : full, summary: 'analyzed image (' + full.length + ' chars)' };
       }
     };
 
@@ -294,7 +295,7 @@
     const hasVision = !!apiKey || !!auxVision;
     async function browserVision({ imageBase64, question }) {
       const url = 'data:image/png;base64,' + String(imageBase64 || '');
-      return analyzeImageUrl(url, question);
+      return clip(await analyzeImageUrl(url, question));
     }
 
     return {

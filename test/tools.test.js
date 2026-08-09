@@ -360,9 +360,24 @@ const call = (name, args, id) => ({ id: id || 'c1', name, args, argsRaw: JSON.st
       A.ok(parked && parked.content.length === HUGE.length, 'the FULL output reaches the parker, before any clamp');
       A.eq(parked.meta.tool, 'flood', 'the parker is told which tool produced it');
       A.eq(r.outputChars, HUGE.length, 'dispatch retains the exact pre-clamp character count for later receipts');
+      A.eq(r.outputBytes, Buffer.byteLength(HUGE), 'dispatch retains the exact pre-clamp byte count');
       A.ok(r.content.length <= 81000, 'the in-context result is still capped');
+      A.ok(r.content.indexOf('Full size: ' + HUGE.length + ' characters / ' + Buffer.byteLength(HUGE) + ' UTF-8 bytes') >= 0, 'the central ceiling surfaces exact full size');
       A.ok(/\.output\/flood-r1-0\.txt/.test(r.content), 'the note points at the file holding the full output');
       A.ok(/Do NOT repeat this call/.test(r.content), 'and tells the model to read that file instead of re-running');
+
+      reg.register({
+        name: 'intrinsic-cap', capability: 'compute', scope: 'read', requiresConsent: false,
+        description: 'narrow tool ceiling', schema: { type: 'object', properties: {} },
+        run: async () => ({ content: 'preview [truncated]', fullContent: 'complete-middle-and-tail', summary: 'intrinsic cap' })
+      });
+      parked = null;
+      const intrinsic = await reg.dispatch({ id: 'c6b', name: 'intrinsic-cap', args: {} }, parkCtx);
+      A.eq(parked.content, 'complete-middle-and-tail', 'a tool-specific ceiling parks its hidden full output even below the registry cap');
+      A.eq(intrinsic.outputChars, 'complete-middle-and-tail'.length, 'the receipt reports the exact pre-truncation size, not preview size');
+      A.eq(intrinsic.outputBytes, Buffer.byteLength('complete-middle-and-tail'), 'the receipt separately reports exact UTF-8 bytes');
+      A.eq(intrinsic.parkedPath, '.output/flood-r1-0.txt', 'the parked artifact path is carried structurally');
+      A.ok(intrinsic.content.indexOf('24 characters / 24 UTF-8 bytes before truncation') >= 0 && intrinsic.content.indexOf('.output/flood-r1-0.txt') >= 0, 'the model-visible receipt surfaces exact size and retrieval path');
 
       // A parker that fails must never fail the tool call — losing the tail must not also lose the answer.
       const broken = await reg.dispatch({ id: 'c7', name: 'flood', args: {} }, { timeoutMs: 5000, parkOutput: async () => { throw new Error('disk full'); } });

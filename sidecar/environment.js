@@ -161,10 +161,12 @@
       }
 
       const t0 = now();
-      let out = '', total = 0, truncated = false, timedOut = false, aborted = false, settled = false;
+      let out = '', fullOut = '', total = 0, truncated = false, timedOut = false, aborted = false, settled = false;
       const append = function (buf) {
+        const complete = buf == null ? '' : String(buf);
+        fullOut += complete;
         if (total >= maxBytes) { truncated = true; return; }
-        let s = buf == null ? '' : String(buf);
+        let s = complete;
         if (total + s.length > maxBytes) { s = s.slice(0, maxBytes - total); truncated = true; }
         out += s;
         total += s.length;
@@ -186,6 +188,7 @@
         resolve({
           exitCode: (typeof code === 'number' && !timedOut && !aborted) ? code : -1,
           out: out,
+          fullOut: fullOut,
           ms: Math.max(0, now() - t0),
           truncated: truncated,
           timedOut: timedOut,

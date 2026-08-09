@@ -34,6 +34,11 @@ const { makeVerifyTool } = require('../sidecar/tools/builtin/verify.js');
     A.eq(path.resolve(checkpoints[0].candidate), path.resolve(root, 'a1'), 'verify checkpoints the effective project cwd');
     A.eq(checkpoints[0].opts.always, true, 'verify preserves the always-checkpoint execution safety coupling');
 
+    const tinyTool = makeVerifyTool({ spawn, fs, pathMod: path, root, clock: makeClock(0), redact: s => s, limits: { maxBytes: 8 } }).verifyTool;
+    const capped = await tinyTool.run({ cmd: 'echo complete-verification-output' }, ctx);
+    A.ok(/output truncated/.test(capped.content), 'verify preview stays bounded');
+    A.ok(/complete-verification-output/.test(capped.fullContent), 'the complete verification output is recoverable without rerunning the check');
+
     // ---- a failing check -> FAILED verdict (a non-zero exit is a verdict, not a thrown tool error) ----
     events.length = 0;
     const bad = await tool.run({ cmd: 'exit 1' }, ctx);
