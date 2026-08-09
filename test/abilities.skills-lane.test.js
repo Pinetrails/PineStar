@@ -33,5 +33,10 @@ A.ok(/window\.AbilityLanes\.push\(abilitySkillsLane\)/.test(source), 'the Skills
 A.ok(source.includes("skills.length + ' skill'"), 'the library count calls these procedures skills, not launchable recipes');
 A.ok(/id="sk-exchange-preview"[^>]*role="status"[^>]*aria-live="polite"/.test(source),
   'Skill Exchange inspection and validation feedback is announced');
+A.ok(source.includes('PACKAGE SHA-256') && source.includes('sk-package-file'), 'review exposes the complete package manifest and exact digest');
+A.ok(source.includes('IMPORT EXPORTED PACKAGE') && source.includes('data-ag-act="export"'), 'lossless import and export controls are present');
+A.ok(source.includes('data-ag-act="generations"') && source.includes('data-rollback='), 'offline generation rollback is exposed');
+A.ok(source.includes('DISCOVER SITE') && source.includes('SAVE TAP'), 'registry discovery and user-managed taps are exposed');
+A.ok(!source.includes('referenced package files remain at the source'), 'the obsolete single-document limitation is gone');
 
 A.report('abilities.skills-lane.test');

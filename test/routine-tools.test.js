@@ -18,6 +18,7 @@ const call = (name, args) => ({ id: 'c1', name, args: args || {}, argsRaw: JSON.
   let jobs = [];
   let createdSpec = null;
   let armed = false;
+  const notes = new Map();
 
   const tools = makeRoutineTools({
     roster: () => roster,
@@ -25,6 +26,8 @@ const call = (name, args) => ({ id: 'c1', name, args: args || {}, argsRaw: JSON.
     schedulerState: () => armed,
     normalizeProvider: (p) => p === 'codex' || p === 'openrouter' ? p : '',
     armScheduler: (enabled) => { armed = enabled === true; return armed; },
+    getRoutineNotepad: async id => notes.get(id) || '',
+    setRoutineNotepad: async (id, text) => { notes.set(id, text); return true; },
     createRoutine: (spec) => {
       createdSpec = spec;
       const job = {
@@ -52,15 +55,26 @@ const call = (name, args) => ({ id: 'c1', name, args: args || {}, argsRaw: JSON.
       name: 'Daily AI news brief',
       prompt: 'Research the latest AI related news, cite sources, and summarize the top items.',
       schedule: '0 9 * * *',
-      provider: 'codex'
+      provider: 'codex', monitorMode: true
     }, { agentId: 'agent' });
     A.eq(createdSpec.agentId, 'researcher-2', 'research/news/latest routine auto-routes to the research specialist');
     A.eq(createdSpec.provider, 'codex', 'provider is normalized and stored');
+    A.eq(createdSpec.monitorMode, true, 'routine.create preserves explicit monitor mode');
     A.eq(armed, true, 'routine.create arms the scheduler by default so the job will actually fire');
     const body = JSON.parse(out.content);
     A.eq(body.routedTo, 'researcher-2', 'tool result reports the routed agent');
     A.eq(body.schedulerArmed, true, 'tool result reports the scheduler armed state');
     A.eq(body.job.id, 'job_1', 'tool result carries the created routine');
+  }
+
+  // ---- a scheduled run gets one bounded job-local notepad; callers cannot name a different job ----
+  {
+    const unavailable = await tools.notepadTool.run({ action: 'read' }, { agentId: 'agent' });
+    A.eq(unavailable.summary, 'unavailable', 'routine.notepad is unavailable outside a host-minted scheduled run');
+    const saved = await tools.notepadTool.run({ action: 'write', text: 'checkpoint A' }, { cronJobId: 'job_1' });
+    A.eq(saved.summary, 'routine notepad saved', 'the current routine can persist bounded scratch state');
+    const read = await tools.notepadTool.run({ action: 'read', id: 'another-job' }, { cronJobId: 'job_1' });
+    A.eq(read.content, 'checkpoint A', 'a model-supplied job id cannot escape the host-minted routine scope');
   }
 
   // ---- list: reads the same server-owned job snapshot shape the ROUTINES panel renders ----

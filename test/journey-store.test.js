@@ -19,7 +19,7 @@ const writeDurable = ({ fs }, file, data) => fs.writeFileSync(file, data);
 const fresh = fs => makeJourneyStore({ fs: fs || memFs(), path, workspaces: '/ws', writeDurable });
 
 (async () => {
-  A.eq(normalize(null), { v: 1, seq: 0, metrics: [], outcomes: [], mastery: [], receipts: [], goalsReached: [], suppressed: {} }, 'missing journey state hydrates safely');
+  A.eq(normalize(null), { v: 1, seq: 0, commanderEpoch: 0, startedAt: 0, metrics: [], outcomes: [], outcomeKeys: [], mastery: [], receipts: [], goalsReached: [], suppressed: {} }, 'missing journey state hydrates safely');
   A.eq([tierFor(0), tierFor(1), tierFor(3), tierFor(7)], ['unproven', 'tested', 'practiced', 'proven'], 'mastery tiers cross only on verified outcome counts');
   A.eq(evolutionFor(['a', 'b']).name, 'ORBIT', 'station evolution is derived from distinct goals reached');
   A.eq(evolutionFor(Array.from({ length: 9 }, (_, i) => String(i))).stage, 9, 'station evolution remains uncapped across a long Commander journey');
@@ -75,8 +75,41 @@ const fresh = fs => makeJourneyStore({ fs: fs || memFs(), path, workspaces: '/ws
   A.eq(restarted.snapshot().evolution.goalsReached, 2, 'metrics, mastery, receipts, and evolution survive process restart');
   A.eq(restarted.snapshot().mastery.find(m => m.agentId === 'builder').count, 8, 'restart preserves the exact verified mastery count');
   A.eq(Object.keys(restarted.snapshot()).includes('capabilities'), false, 'journey state has no capability/unlock field by construction');
-  await restarted.reset();
+
+  // Long-horizon invariants: visible history may be bounded, but idempotency, active user metrics, and the
+  // distinct-goal evolution count must never silently fall out of their authority windows.
+  const longFs = memFs(), long = fresh(longFs);
+  for (let n = 1; n <= 305; n++) await long.recordQuest({ id: 'q:long-' + n, status: 'done', title: 'Long outcome ' + n,
+    domain: 'support', completedBy: 'keeper', contract: { type: 'artifact', key: 'proof-' + n } }, null, 1000 + n);
+  A.eq(long.read().outcomes.length, 300, 'stored outcome history remains bounded');
+  A.eq(long.snapshot().mastery.find(m => m.agentId === 'keeper' && m.domain === 'support').count, 305, 'mastery keeps the full verified lifetime count');
+  A.ok((await long.recordQuest({ id: 'q:long-1', status: 'done', title: 'Long outcome 1', domain: 'support', completedBy: 'keeper',
+    contract: { type: 'artifact', key: 'proof-1' } }, null, 2000)).duplicate, 'an outcome remains idempotent after its visible row ages out');
+  A.eq(long.snapshot().mastery.find(m => m.agentId === 'keeper' && m.domain === 'support').count, 305, 'aged-out replay cannot inflate mastery');
+  for (let n = 1; n <= 45; n++) await long.recordMilestone({ goalId: 'goal:long-' + n, milestoneId: 'finish', milestoneText: 'Finish goal ' + n,
+    evidence: 'final evidence ' + n, agentId: 'keeper', domain: 'planning', goalDone: true }, 3000 + n);
+  A.eq(long.snapshot().evolution.goalsReached, 45, 'station evolution never stops counting distinct completed goals');
+
+  const metricFs = memFs(), metricStore = fresh(metricFs), createdMetrics = [];
+  for (let n = 0; n < 40; n++) createdMetrics.push(await metricStore.createMetric({ label: 'Active metric ' + n, baseline: 0, target: 1 }, 4000 + n));
+  A.ok(createdMetrics.every(r => r.ok), 'forty active Commander metrics are retained');
+  const overflowMetric = await metricStore.createMetric({ label: 'Overflow metric', baseline: 0, target: 1 }, 5000);
+  A.ok(!overflowMetric.ok, 'the active metric ceiling refuses overflow instead of deleting user data');
+  A.ok(metricStore.snapshot().metrics.some(m => m.id === createdMetrics[0].metric.id), 'the oldest active metric survives an overflow attempt');
+  A.ok(!(await metricStore.createMetric({ label: 'Null baseline', baseline: null, target: 10 }, 5001)).ok, 'null is not silently coerced into a numeric metric baseline');
+
+  const unreadableFs = memFs();
+  unreadableFs.readFileSync = () => { const e = new Error('locked'); e.code = 'EBUSY'; throw e; };
+  const unreadable = fresh(unreadableFs);
+  let unreadableThrew = false;
+  try { unreadable.snapshot(); } catch (_) { unreadableThrew = true; }
+  A.ok(unreadableThrew, 'an unreadable journey ledger fails loudly instead of presenting an empty life history');
+  await restarted.reset(5000, 77);
+  A.eq(restarted.currentEpoch(1), 77, 'reset atomically advances the Commander generation authority');
   A.eq(restarted.snapshot().evolution.goalsReached, 0, 'a new Commander can start with a truly clean journey');
+  const priorQuest = quest(99); priorQuest.completedAt = 4999;
+  A.ok((await restarted.recordQuest(priorQuest, null, 5001)).skipped, 'completed quests from before the reset epoch cannot bleed into a new Commander journey');
+  A.eq(restarted.snapshot().mastery.length, 0, 'prior-Commander quest reconciliation cannot restore old mastery after reset');
 
   A.report('journey-store.test');
 })().catch(e => { console.error(e); process.exitCode = 1; });

@@ -24,4 +24,18 @@ A.ok(/tracksBySet = SpriteLoadPlan\.groupTracks\(man\.sprites\)/.test(loaderSour
 A.ok(/Promise\.all\(\[loadSet\(defSet\), loadSet\('ultron'\)\]\)/.test(loaderSource), 'runtime startup is limited to the default and station-leader sets');
 A.ok(/if \(!loadedSets\.has\(set\)\) \{ loadSet\(set\); return null; \}/.test(loaderSource), 'an unseen skin starts one lazy load and renders the honest fallback meanwhile');
 
+// COLD-START RACE: enterGame intentionally does not await SPRITES.init() before World.start(), so the first
+// paint can request every persisted crew skin while manifest.json is still in flight. The old loader started
+// and memoized an empty job at that point. Default/maintainer art loaded because init explicitly requests it
+// after planning; existing non-default agents stayed on the tiny fallback forever, while changing to a new skin
+// after boot worked immediately. Pre-plan and missing-plan lookups must return before setJobs can be consulted or
+// populated, leaving the next animation frame free to retry against the completed manifest.
+const loadSetBody = (/function loadSet\(set\)\s*\{([\s\S]*?)\n  \}/.exec(loaderSource) || [])[1] || '';
+A.ok(/let tracksBySet = null/.test(loaderSource), 'uninitialized tracks are distinct from a planned empty manifest');
+const readyGuard = loadSetBody.indexOf('if (!tracksBySet) return Promise.resolve(false)');
+const trackGuard = loadSetBody.indexOf('if (!tracks.length) return Promise.resolve(false)');
+const memoLookup = loadSetBody.indexOf('if (setJobs[key]) return setJobs[key]');
+A.ok(readyGuard >= 0 && trackGuard > readyGuard && memoLookup > trackGuard,
+  'pre-manifest and missing-set requests return before memoization, so cold-start crew skins can retry');
+
 A.report('sprite-loading.test');

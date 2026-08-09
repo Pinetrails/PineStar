@@ -77,6 +77,15 @@ A.eq(borderTileFor(Ra, e, { x: 0, y: 0 }, () => false), null, 'a fully-blocked e
 // ---- source locks: the wiring exists as designed (browser flow, per the repo's world.js test pattern) ----
 A.ok(/planBorderMeeting/.test(src) && /borderTileFor\(ra, edge, tileOf\(a\.px, a\.py\), walk\)/.test(src), 'planBorderMeeting injects the live walkable predicate');
 A.ok(/_dbgSocialGeom/.test(src), 'the pure helpers are exposed read-only on the World API for the DEV harness');
-A.ok(/socialBeat = \{ kind, aId: a\.id, bId: b\.id, until: now \+ SOCIAL_HARD_MS \}/.test(src), 'encounters carry the whole-encounter hard timeout');
+// The hard timeout must survive any future field added to the slot (W4 added startedAt), so this
+// pins the timeout itself rather than the exact object literal — the old exact-shape regex broke on
+// an addition that could not possibly have removed the timeout.
+A.ok(/socialBeat = \{ kind, aId: a\.id, bId: b\.id, until: now \+ SOCIAL_HARD_MS[,}]/.test(src), 'encounters carry the whole-encounter hard timeout');
+// ...and every slot-set site stamps the encounter's own start clock, which is what the two bodies of
+// a two-sided beat read to take TURNS (test/talk-turn.test.js owns the alternation itself). Without
+// it each body measured from its own arrival and both could speak at once.
+const slotSites = src.match(/socialBeat = \{ kind[^}]*\}/g) || [];
+A.ok(slotSites.length >= 3, 'all the slot-set sites are found (startEncounter + the two one-sided beats)');
+A.ok(slotSites.every(s => /startedAt: now/.test(s)), 'every encounter stamps startedAt — the ONE clock both turn-takers read');
 
 A.report('social-border.test');

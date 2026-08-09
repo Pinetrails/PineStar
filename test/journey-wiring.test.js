@@ -18,4 +18,6 @@ A.ok(ui.indexOf('STOP USING THIS') >= 0 && ui.indexOf('RESUME ADAPTATION') >= 0,
 A.ok(world.indexOf('PropSprites.setJourneyStage') >= 0 && props.indexOf('journeyStage') >= 0, 'distinct reached goals physically transform the trophy case crown');
 A.ok(xp.indexOf('SIZE_MULT') < 0 && ratings.indexOf('const verdictDelta = 3') >= 0, 'tool/spend size can no longer weight new XP verdicts upstream or downstream');
 A.ok(!/capabilit(?:y|ies).*evolution/i.test(read('sidecar/journey-store.js')), 'journey storage does not advertise capability gates');
+A.ok(host.indexOf('station generation changed; reload before updating journey') >= 0 && host.indexOf('journeyStore.currentEpoch') >= 0,
+  'stale tabs cannot write journey progress into a different Commander generation');
 A.report('journey-wiring.test');

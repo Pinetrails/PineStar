@@ -91,6 +91,7 @@ const World = (() => {
   let sparkAt = 0, bornAt = 0, dawnAt = 0, truthPulseAt = 0;   // ignition spark / color-into-being / dawn-bloom / per-truth-flare timestamps
   let floodAt = 0, floodEndAt = 0, floodStreams = null;        // THE FLOOD: screen-space data-cascade — start / collapse-trigger / seeded streams
   let firstWakeDone = false;                                   // FIRST LIGHT: once-per-page-life latch — the wake ritual fires at most once (a re-bake/refit never resets it)
+  let floorLiveAt = 0;                                         // when this page's world started running — the boot-quiet window the spawn WELCOME waits out (a roster replay spawns every body at once)
   let kindleArmed = false, kindleP = 0, kindleHolding = false, kindlePeak = 0, kindleDone = null;   // THE KINDLING: the user HOLDS to wake the dormant mind; their attention fills kindleP (0..1) → ignition
   // THE VOID backdrop (dense parallax starfield + nebulas) lives in spacebg.js (SpaceBG.draw),
   // shared with REFIT (build.js) so entering/exiting build mode never jumps the sky.
@@ -172,6 +173,18 @@ const World = (() => {
   const NOVELTY_MAX = 4;
   let lastSelfTalk = -1e9;          // global self-talk cooldown — bubbles stay rare, honest thoughts (never a monologue)
   const seenCount = new Map();      // habituation: how many times a prop-id / belt-tile has been studied (novel -> familiar)
+  /* ...and how it FADES again (2026-08-08 idle-life pass). Habituation only ever climbed, and planPOI
+     drops any prop studied 4+ times, so after ~10 minutes of watching, every machine on the floor was
+     permanently "furniture" and the ambient-curiosity beat had nothing left to pick — the station went
+     inert exactly when a viewer had settled in to watch it. Interest now decays one step every
+     FORGET_MS, so a thing ignored for a while becomes worth a second look. */
+  const FORGET_MS = 150000;
+  let forgetAt = 0;
+  function decayHabits(now) {
+    if (now < forgetAt) return;
+    forgetAt = now + FORGET_MS;
+    for (const [k, v] of seenCount) { if (v <= 1) seenCount.delete(k); else seenCount.set(k, v - 1); }
+  }
   /* THE COMMANDER'S PRESENCE — the agent's sense of "where you are." lastCursor is the cursor's world
      position (cached on mousemove); userReturnUntil is a brief window after you return to the tab; deepLocks
      budgets the rare long "deep lock" to ~1 per session. These feed THE LOOK-UP + the cursor gaze-drift:
@@ -275,6 +288,48 @@ const World = (() => {
     beanbag: ['this is undignified', 'it holds the shape of the last one', 'nobody sat here in a while', 'acceptable'],
     pinball: ['tilt', 'the ball obeys physics, not me', 'high score is mine', 'one more ball'],
     seat: ['taking the weight off', 'a seat is a seat', 'i will sit a moment', 'this one is mine for now'],   // stool/chair: the ONE prop a body actually sits on
+  };
+  /* ---------- USE_BEAT: what USING a prop actually looks like (2026-08-08 idle-life pass) ----------
+     Every leisure prop used to resolve to the SAME beat: stand (or sit) on the approach tile, hold
+     for a flat 10-22s, fidget on the generic cadence. A pinball table and a bookshelf were the same
+     behavior with different pixels behind the body — the props were scenery the agent happened to
+     stand near, not things it DID anything with.
+
+     Each row tunes the dials the beat actually has, keyed by the catalog's `use.kind`:
+       dwell   [min,max] ms at the prop — how long the thing holds you
+       fidget  [min,max] ms between the small look-away flicks (fast = engaged/twitchy, slow = absorbed)
+       track   true = while dwelling, keep glancing at the prop's own animation (fish, holo pet,
+               the arcade screen) instead of around the room.
+     A kind with no row keeps the old generic beat, so adding a `use` row to the catalog never
+     requires touching this table (same contract as USE_LINE).
+
+     ⛔ NO GESTURE TRACK HERE. A first cut fired the sets' one-shot `gesture` animation on arrival
+     and on a loop at the "active" machines, on the theory that it was a generic arm movement. It is
+     not: that track is an arms-up STRETCH, so what shipped was an agent walking up to the arcade
+     cabinet and stretching in front of it (Andrew, 2026-08-08: "makes 0 sense... it just walks up to
+     the machines and starts stretching"). REUSING AN ANIMATION FOR SOMETHING IT DOES NOT DEPICT
+     READS AS A BUG, NOT AS LIFE. A real "playing the machine" pose is new ART, not a flag in this
+     table — until that art exists the honest beat is: stand at it, face it, and hold. */
+  const USE_BEAT = {
+    pinball:   { dwell: [22000, 40000], fidget: [8000, 14000], track: true },   // face the game; at most an occasional slow look away
+    arcade:    { dwell: [22000, 40000], fidget: [8000, 14000], track: true },
+    pool:      { dwell: [18000, 32000], fidget: [6000, 10000] },                // line up, hold, then move on
+    poker:     { dwell: [16000, 28000], fidget: [6000, 10000] },
+    dj:        { dwell: [14000, 26000], fidget: [5000, 9000] },
+    juke:      { dwell: [6000, 12000],  fidget: [6000, 10000] },                // pick a track and move on
+    gacha:     { dwell: [8000, 15000],  fidget: [5000, 9000] },                 // crank, watch, crank
+    vend:      { dwell: [5000, 11000],  fidget: [1400, 2800] },
+    fridge:    { dwell: [4000, 8000],   fidget: [1400, 2800] },
+    coffee:    { dwell: [4000, 9000],   fidget: [1600, 3200] },                // a short stop — the ritual, not the drink
+    locker:    { dwell: [5000, 10000],  fidget: [1600, 3200] },
+    bookshelf: { dwell: [18000, 34000], fidget: [3000, 6000] },                // the longest, stillest dwell on the floor
+    terra:     { dwell: [12000, 22000], fidget: [2600, 5200], track: true },
+    fish:      { dwell: [14000, 26000], fidget: [2600, 5200], track: true },   // restful: it just watches
+    pet:       { dwell: [9000, 18000],  fidget: [1400, 2800], track: true },
+    bar:       { dwell: [12000, 24000], fidget: [7000, 12000] },
+    tv:        { dwell: [14000, 26000], fidget: [2600, 5200], track: true },
+    beanbag:   { dwell: [12000, 24000], fidget: [2600, 5200] },
+    seat:      { dwell: [12000, 26000], fidget: [8000, 14000] },
   };
   /* QUIRKS — rare, gated, deliberately UNPREDICTABLE one-offs that surface an off-screen inner life
      (the "why did it just do that" beats). Eerie via stillness + ambiguity, never spooky one-liners.
@@ -811,6 +866,7 @@ const World = (() => {
       // SAME 100ms boundaries (the crew animated in visible lockstep). A fractional offset de-syncs them.
       phase: U.hash(a.id) % 6, aph: (U.hash(a.id) % 600) / 100, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false,  // idle leisure: which prop the agent is at + dwell timer + pose
+      lastFun: null, lastFunUntil: 0,   // hard recent-choice exclusion; prevents a lone couch becoming permanent parking
       watchProp: null,   // lounge: the TV the couch-sitter is watching (kept lit while it watches)
       // seat-on-couch: logical pos stays on the approach tile, but it RENDERS at seat{Px,Py} ON the couch
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
@@ -818,6 +874,7 @@ const World = (() => {
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
       summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory so a summon-glance fires once per event, not every frame (runtime-only)
       neighborGlanceCd: 0, // Tier C / C-Beat2: per-body cooldown so two idle neighbors don't re-roll a mutual glance the instant the last lapses (runtime-only)
+      barJoinCd: 0, barJoinUntil: 0,   // rare same-room join at an occupied bar; planSeat still owns the actual sit
       // INNER LIFE: a fixed temperament + three slow-draining needs that drive WHICH goal it pursues
       pers: makePersonality(a.id),
       needs: { rest: U.irnd(72, 92), stim: U.irnd(72, 92), social: U.irnd(72, 92) },   // born content; drifts into wants over the first minute
@@ -985,7 +1042,7 @@ const World = (() => {
     frame(performance.now());
   }
 
-  function start() { if (running) return; running = true; last = performance.now(); frame(last); }
+  function start() { if (running) return; running = true; last = performance.now(); if (!floorLiveAt) floorLiveAt = last; frame(last); }
   function stop() { running = false; if (raf) { cancelAnimationFrame(raf); raf = 0; } }
   function wakeIn() { wakeAt = performance.now(); }
 
@@ -1335,7 +1392,14 @@ const World = (() => {
     if (self.goal === 'work') { if (self === agent && seat) { const f = seatFoot(seat); self.px = f.x; self.py = f.y; } self.sitting = true; self.working = false; self.dir = deskFace || 'north'; self.state = 'idle'; self.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
     else if (self.goal === 'use') {
       self.sitting = self.useSit; self.working = false; self.dir = self.useFace; self.state = 'idle';
-      self.useUntil = now + U.irnd(10000, 22000); takeSeat();
+      // W2: the prop decides what using it looks like (how long it holds you, how the gaze behaves).
+      // No row = the old generic beat. NO gesture here — see the USE_BEAT header.
+      const beat = USE_BEAT[useKindOf(self.usingProp)] || null;
+      self.useUntil = Math.max(now + (beat ? U.irnd(beat.dwell[0], beat.dwell[1]) : U.irnd(10000, 22000)), self.barJoinUntil || 0);
+      self.barJoinUntil = 0;
+      self.useBeat = beat; self.glanceCd = 0;
+      self.nextFidget = now + (beat ? U.irnd(beat.fidget[0], beat.fidget[1]) : U.irnd(2000, 4000));
+      takeSeat();
       // the prop-specific thought wins over the generic "resting" one — it says something true about
       // WHERE the body is, which the bare rest line cannot. Falls back when the kind has no entry.
       const line = USE_LINE[useKindOf(self.usingProp)];
@@ -1343,10 +1407,11 @@ const World = (() => {
       else if (self.useSit && self.needs.rest < 35) curiositySay(SELF_REST, 0.4, now);
     }
     else if (self.goal === 'lounge') {
-      // settled AT the couch, watching the paired TV — face the screen, a longer dwell than a one-off prop.
-      // SEAT LAW: standing. A couch is not a chair, and the sit pose on a cushion read as a body parked upright on it.
-      self.sitting = false; self.working = false; self.dir = self.useFace; self.state = 'idle';
-      self.useUntil = now + U.irnd(18000, 30000); self.glanceCd = 0; self.nextFidget = now + U.irnd(1500, 3500);
+      // Couch/TV is the one intentional sofa exception to the chair-only sit rule: the body claimed a real
+      // cushion in planCouchSit, so render it ON that cushion and let it settle in for a genuine viewing session.
+      self.sitting = true; self.working = false; self.dir = self.useFace; self.state = 'idle';
+      self.useUntil = Math.max(now + U.irnd(90000, 180000), self.barJoinUntil || 0); self.barJoinUntil = 0;
+      self.glanceCd = 0; self.nextFidget = now + U.irnd(1500, 3500);
       takeSeat(); curiositySay(self.needs.rest < 35 ? SELF_REST : CURIO_WATCH, 0.45, now);
     }
     else if (self.goal === 'sleep') {
@@ -1369,7 +1434,12 @@ const World = (() => {
       if (self.goal === 'tend') { self.studyUntil = now + offbeat(now, U.irnd(3500, 8000)); curiositySay(self.needs.social < 30 ? SELF_TEND : SELF_QUIET, 0.5, now); }
       else if (self.goal === 'gaze') { self.studyUntil = now + offbeat(now, U.irnd(4000, 8000)); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
       else if (self.goal === 'watch') { self.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); if (U.chance(0.5)) scanThen(now, self.useFace); }
-      else { self.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(self.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (self.inspectNovel ? 0.7 : 0.55) * famK, now); if (U.chance(0.55)) scanThen(now, self.useFace); }
+      else {
+        // INSPECT: it walked over to a machine to look at it — a study, held, with the settle-scan.
+        // (No gesture: the only track available is an arms-up stretch, which is not "examining".)
+        self.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(self.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (self.inspectNovel ? 0.7 : 0.55) * famK, now);
+        if (U.chance(0.55)) scanThen(now, self.useFace);
+      }
     }
     else if (self.goal === 'rounds') {
       // a stop on the caretaker lap — face it, a brief ownership beat, then tick advances to the next stop.
@@ -1404,7 +1474,13 @@ const World = (() => {
     }
     else if (self.goal === 'social') { self.state = 'idle'; self.target = null; self.pathPts = null; }   // TIER D · D3: reached a social waypoint — stay on goal='social'; stepSocial enters the hold next tick
     else if (self.goal === 'chase') { self.state = 'idle'; self.target = null; self.pathPts = null; }    // TIER D · D4: reached a pursuit leg — stay on goal='chase'; stepChase repaths (or enters the stare) next tick
-    else { self.state = 'idle'; self.idleUntil = now + U.irnd(1600, 3600); }
+    else {
+      // a plain stroll (wander/pace) with no goal at the end of it. The walk HEADING used to survive
+      // as the facing, so a stroll that ended one tile short of a wall left the body nose to the
+      // plaster for the whole dwell. Arriving anywhere is a reason to look around.
+      self.state = 'idle'; self.idleUntil = now + U.irnd(1600, 3600);
+      if (!self.goal && !self.sitting) { const d = lookDir(self); self.dir = d; setGlance(d, U.irnd(500, 900), now); }
+    }
   }
   /* ---------- CONTINUITY OF ATTENTION (the anti-aimlessness fix) ----------
      `wander` samples a UNIFORMLY RANDOM tile of the whole zone, and every idle decision re-rolls from
@@ -1488,13 +1564,18 @@ const World = (() => {
      anchorFor(body): the body's own workstation/bay foot tile — its STABLE home (never its transient
      px/py, so the zone doesn't drift as it walks). Hero falls back to the module `seat` (its synthetic
      desk) when it has no placed workstation prop; crew resolve purely via deskPropFor/bay (P2/P3). */
+  /* The returned tile carries `assigned` — true when it came from a REAL posting (a bound
+     workstation, a bay, or the hero's own desk), false for the A2 fallback below (a placed body
+     with nowhere of its own yet). Only an ASSIGNED body earns the ROAM RADIUS: "how far from MY
+     DESK may I wander" is meaningless for a body that has no desk, and widening the deskless
+     fallback would just undo the bounded-spawn leash A2 exists to provide. */
   function anchorFor(body) {
     if (!geo) return null;
     const aid = body && body.id;
     const dp = aid && deskPropFor(aid);
-    if (dp) return { x: dp.x, y: dp.y };
-    if (aid && geo.props) { const bay = geo.props.find(p => p.t === 'bay' && p.agentId === aid); if (bay) return { x: bay.x, y: bay.y }; }
-    if (body === agent && seat) return { x: seat.tx, y: seat.ty };   // hero on the synthetic auto-desk
+    if (dp) return { x: dp.x, y: dp.y, assigned: true };
+    if (aid && geo.props) { const bay = geo.props.find(p => p.t === 'bay' && p.agentId === aid); if (bay) return { x: bay.x, y: bay.y, assigned: true }; }
+    if (body === agent && seat) return { x: seat.tx, y: seat.ty, assigned: true };   // hero on the synthetic auto-desk
     // A2 leash fallback: a PLACED crew body with no workstation/bay (the common freshly-summoned worker
     // before the user assigns it a PC) anchors on its OWN foot tile, so zoneFor yields a bounded leash
     // around its spawn spot instead of null — keeping it alive (BR-4 'summoned agents move') without
@@ -1514,9 +1595,21 @@ const World = (() => {
     if (agent && agent.unplaced) return false;        // an unplaced hero owns nothing
     return crew.every(b => b && b.unplaced);          // no OTHER placed body shares the station
   }
+  /* ROAM RADIUS (2026-08-08 idle-life pass). A body assigned to a room used to be caged to that
+     room's rect, which is why the station read as a set of terrariums: an agent could NEVER be
+     seen anywhere but its own box. It now roams its home room PLUS Zones.ROAM_RADIUS tiles around
+     its own DESK, so it pops next door and comes back — still leashed to its posting, never free
+     to cross the whole floor. Nothing else changes: every picker already filters through
+     tileInZone, so they all widen together, and the solo/null/deskless cases are untouched. */
   function zoneFor(body) {
     if (typeof Zones === 'undefined' || !geo) return null;
-    return Zones.computeZone({ rects: geo.allRects, props: geo.props, agentId: body && body.id, anchorTile: anchorFor(body), solo: soleOwner(body) });
+    const a = anchorFor(body);
+    return Zones.computeZone({
+      rects: geo.allRects, props: geo.props, agentId: body && body.id, anchorTile: a,
+      roamR: (a && a.assigned) ? Zones.ROAM_RADIUS : 0,
+      doors: geo.doorDefs,                    // ...and a band past its OWN room's thresholds (Zones.SPILL_RADIUS)
+      solo: soleOwner(body),
+    });
   }
   // membership shorthands — a null zone admits NOTHING (the body has no roam area → fall through to
   // an in-place beat). When Zones is absent the wrapper returns null; treat that as "uncaged" so a
@@ -1617,6 +1710,10 @@ const World = (() => {
     // (re)set self.target (a pursuit leg); the walk block below then advances it.
     if (self.goal === 'mimic') stepMimic(now);
     if (self.goal === 'chase') stepChase(now);
+    // W4: someone walking past a standing body gets a look and a raised hand. Consulted every tick
+    // (its own scan gap + long cooldown do the throttling) because the passer is only in range for a
+    // second or two — waiting for this body's next idle re-decide would miss it. Gaze + emote only.
+    maybeAcknowledge(now);
     if (self.target) {
       if (now < (self.pauseUntil || 0)) {
         self.state = 'idle';                                // a deliberate hold mid-walk (maybeStrollBeat's considered pause / double-take)
@@ -1642,9 +1739,9 @@ const World = (() => {
       // above own the facing + lifecycle; this branch just STOPS the fall-through to decideIdle (which would stomp it).
       self.state = 'idle';
     } else if (self.goal === 'use') {
-      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
+      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.useBeat = null; self.sitting = false; self.state = 'idle'; self.glance = null; self.trackUntil = 0; self.glanceCd = now + U.irnd(5000, 9000); self.idleUntil = now + U.irnd(2500, 4500); }
     } else if (self.goal === 'lounge') {
-      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.watchProp = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
+      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.watchProp = null; self.sitting = false; self.state = 'idle'; self.glance = null; self.trackUntil = 0; self.glanceCd = now + U.irnd(5000, 9000); self.idleUntil = now + U.irnd(2500, 4500); }
     } else if (self.goal === 'rounds') {
       if (now >= self.studyUntil) roundsNext(now);
     } else if (self.goal === 'sleep') {
@@ -1799,13 +1896,11 @@ const World = (() => {
   function releaseSeat() {
     if (!self) return;
     if (self.seatKey) occupiedSeats.delete(self.seatKey);
-    self.seatKey = null; self.seated = false; self.pendSeat = null;
+    self.seatKey = null; self.seated = false; self.pendSeat = null; self.barJoinUntil = 0;
   }
-  /* on arrival, snap the render position onto the seat claimed at plan time (logical pos stays put).
-     SEAT LAW: the ELSE branch is load-bearing. Only planSeat sets a pendSeat now — a couch/bed claim is a
-     "nobody else take this spot" reservation with no cushion to render on — so without the reset a body
-     that got up off a stool and walked to a bunk kept `seated` true and went on drawing itself back at the
-     stool. `seated` must mean exactly "there is a seat under me, right now". */
+  /* on arrival, snap the render position onto the claimed stool/chair/couch seat (logical pos stays put).
+     The ELSE branch is load-bearing: bed claims deliberately have no pendSeat, so without the reset a body
+     that left a stool for a bunk could keep drawing itself back at the stool. */
   function takeSeat() {
     if (self.seatKey && self.pendSeat) { self.seated = true; self.seatPx = self.pendSeat.px; self.seatPy = self.pendSeat.py; self.pendSeat = null; }
     else self.seated = false;
@@ -1818,36 +1913,36 @@ const World = (() => {
   function seizeFromIdle(b) {
     if (!b) return;
     if (b.seatKey) occupiedSeats.delete(b.seatKey);
-    b.seatKey = null; b.seated = false; b.pendSeat = null;
+    b.seatKey = null; b.seated = false; b.pendSeat = null; b.barJoinUntil = 0;
     b.goal = null; b.usingProp = null; b.watchProp = null; b.studyKey = null; b.quirkKind = null; b.stilling = false;
+    b.useBeat = null; setTalking(b, false);   // a seized body is not mid-leisure and is not talking to anyone
     b.pauseUntil = 0; b.pauseLook = null; b.idleUntil = 0;
     if (chaseId === b.agentId) chaseId = null; b.chase = null; b.mimic = null;   // TIER D · D4: a summon seizes the body → drop any live chase/mimic + free the station chaser lock (G2)
   }
 
-  /* ---------- SEAT LAW (2026-08-04) ----------
+  /* ---------- SEAT LAW (2026-08-04; couch exception restored 2026-08-08) ----------
      A body may be drawn in the SIT pose in exactly two places: its own workstation chair (goal 'work',
      drawSeatChair puts a real chair under it) and a single-tile seat prop — STOOL / CHAIR — which planSeat
      renders the body ON TOP OF. Nothing else. The sit sprite is a chair pose; the old catalog let it fire
-     on a couch cushion, a beanbag and (worst) a BED, where the body read as parked bolt-upright on the
-     mattress instead of lying in it. Those props are now walk-to-and-STAND-at destinations: same routine,
-     same dwell, standing body. The switch lives in the catalog (`use.sit` in propsprites.js) — this file
-     only ever mirrors it, except where a goal used to hardcode `sitting = true`. */
+     on a beanbag and (worst) a BED, where the body read as parked bolt-upright on the mattress instead of
+     lying in it. Those remain walk-to-and-STAND-at destinations. A claimed couch cushion is the narrow
+     exception requested by the Commander: planCouchSit supplies a real render anchor and the sofa art
+     occludes the legs, restoring the established sit-and-watch-TV behavior without reopening bed sitting. */
 
   /* v7 couch dwell: a couch is a blocking prop (you can't path onto it), so the agent walks to a tile
-     ADJACENT to a free cushion and stands there. Cushions are the inner footprint columns (an arm is
+     ADJACENT to a free cushion and then renders on it. Cushions are the inner footprint columns (an arm is
      skipped at each end on a wide couch). Each cushion is reserved in occupiedSeats so a second agent
      takes a different one (or, when the couch is full, planProp moves on to another couch) — the claim
      is what keeps two bodies from crowding the same stretch of sofa.
-     tvId != null → goal 'lounge' (watch + light the TV); else a plain couch dwell.
-     SEAT LAW: no pendSeat and no useSit — the body stands at the couch, it does not sit on it. */
+     tvId != null → goal 'lounge' (watch + light the TV); else a plain couch dwell. */
   const LOUNGE_MAXT = 7;
   const SEAT_NB = [[0, 1], [0, -1], [1, 0], [-1, 0]];   // approach a cushion from any walkable neighbour
   function planCouchSit(now, couch, tvId, faceDir, zone) {
     /* STALE-CLAIM RULE: drop whatever seat this body still holds BEFORE claiming a new one. Committing to a
        new destination means it is leaving the old seat regardless, and an inherited `pendSeat` is worse than
        a leaked key — takeSeat() would consume the PREVIOUS seat's cushion on THIS goal's arrival and draw the
-       body on furniture it never walked to. Only planSeat sets a pendSeat now, so a stale one is rare enough
-       to be invisible until it isn't. Safe to release before the plan can fail: every caller is the idle
+       body on furniture it never walked to. Only the two real-seat planners set a pendSeat, so a stale one is
+       rare enough to be invisible until it isn't. Safe to release before the plan can fail: every caller is the idle
        decision, which only runs when the body is free to move. */
     releaseSeat();
     const w = couch.w || 1, h = couch.h || 1;
@@ -1866,9 +1961,9 @@ const World = (() => {
         if (!geo.walkable(ax, ay, blocked)) continue;
         if (!setPathTo({ x: ax, y: ay })) continue;
         occupiedSeats.add(couch.id + ':' + slot); self.seatKey = couch.id + ':' + slot;
-        self.pendSeat = null;                                // SEAT LAW: the body renders where it WALKED, not on the cushion
+        self.pendSeat = { px: (sx + 0.5) * T, py: (couch.y + h) * T - 2 };   // render foot at the cushion front
         self.goal = tvId ? 'lounge' : 'use'; self.usingProp = couch.id; self.watchProp = tvId || null;
-        self.useSit = false; self.useFace = faceDir || 'south';
+        self.useSit = true; self.useFace = faceDir || 'south';
         if (!self.target) arrive(now);                       // already adjacent → settle immediately
         return true;
       }
@@ -1876,7 +1971,7 @@ const World = (() => {
     return false;
   }
 
-  /* THE ONLY REAL SIT (SEAT LAW): a single-tile seat prop — STOOL / CHAIR. Like a couch it BLOCKS, so
+  /* SINGLE-TILE REAL SIT (SEAT LAW): a STOOL / CHAIR. Like a couch it BLOCKS, so
      the body walks to an adjacent tile and then renders on the seat's own tile (pendSeat), which is what
      makes the sit pose honest: there is a seat under the body. One occupant per seat (occupiedSeats),
      released by the same releaseSeat()/seizeFromIdle() paths as every other claim. */
@@ -1895,33 +1990,224 @@ const World = (() => {
       // and the draw pass sorts the seat art just BEHIND this body so the body sits IN it, not under it.
       self.pendSeat = { px: (p.x + 0.5) * T, py: (p.y + 1) * T - 1 };
       self.goal = 'use'; self.usingProp = p.id; self.watchProp = null;
-      self.useSit = true; self.useFace = 'south';             // a stool has no front — face the viewer
+      // A STOOL PULLED UP TO SOMETHING FACES IT (2026-08-08, Andrew: "agents should sit on stools
+      // facing the opposite direction, so they can sit at the bar"). A stool has no front of its
+      // own, so 'south' was a fine default for a stool standing alone — but a stool set against a
+      // BAR is furniture for the bar, and a body sitting with its back to the counter it is sitting
+      // at reads as a bug. If a counter-ish prop is adjacent, face THAT, even when that means
+      // turning its back to the camera.
+      self.useSit = true; self.useFace = counterFace(p) || 'south';
       if (!self.target) arrive(now);                          // already adjacent → sit immediately
       return true;
     }
     return false;
   }
 
+  /* The direction from a seat toward the COUNTER it is pulled up to, or null if it stands alone.
+     "Counter" = the props you sit AT rather than on: a bar, a long table, a pool/poker table, the
+     DJ booth. Derived live from adjacency (nothing in the catalog pairs a stool with a bar), and
+     deliberately allows 'north' — sitting at a bar means showing the camera your back. */
+  const COUNTER_KINDS = { bar: 1, pool: 1, poker: 1, dj: 1 };
+  function isCounterProp(p) {
+    if (!p) return false;
+    const u = propUse(p);
+    return !!((u && COUNTER_KINDS[u.kind]) || p.t === 'longtable');
+  }
+  function counterForSeat(seat) {
+    if (!geo || !geo.props || !seat) return null;
+    const sx = seat.x + 0.5, sy = seat.y + 0.5;
+    let best = null;
+    for (const p of geo.props) {
+      if (p === seat || p.id === seat.id) continue;
+      if (!isCounterProp(p)) continue;   // longtable has no `use` row but is exactly this
+      const w = p.w || 1, h = p.h || 1;
+      // nearest point of the prop's footprint to the seat — a 4-wide bar is close along its whole run
+      const nx = Math.max(p.x, Math.min(sx, p.x + w)), ny = Math.max(p.y, Math.min(sy, p.y + h));
+      const d = Math.abs(nx - sx) + Math.abs(ny - sy);
+      if (d > 1.8) continue;                                  // pulled UP to it, not merely in the same room
+      if (!best || d < best.d) best = { p, d, nx, ny };
+    }
+    return best;
+  }
+  function counterFace(seat) {
+    const best = counterForSeat(seat);
+    return best ? dirToward((seat.x + 0.5) * T, (seat.y + 0.5) * T, best.nx * T, best.ny * T) : null;
+  }
+
   /* couch + a TV nearby → dwell at the couch and watch it. The pairing is derived live (gen has no
      authored couch/TV pairs): for each couch, the nearest TV within range, faced from the couch. */
   function tryLounge(now) {
+    if (funBlocked('lounge', now)) return false;
     const zone = zoneFor(self);   // P1: only lounge on a couch INSIDE the body's zone (the body sits there)
+    const pair = loungePair(zone);   // the couch/TV resolution now lives in ONE place (planPlay weighs the same pairing)
+    if (!pair) return false;
+    if (pair.couch && !tileInZone(zone, pair.couch.x, pair.couch.y)) return false;
+    if (!planCouchSit(now, pair.couch, pair.tvId, pair.face, zone)) return false;
+    rememberFun('lounge', now);
+    return true;
+  }
+
+  /* ---------- ENTERTAINMENT: what a BORED agent does (2026-08-08) ----------
+     THE DEFECT Andrew reported after living with the floor: "I don't see it interacting with the
+     couch and TV I placed." He was right, and it is a gating bug, not a missing feature. planProp
+     — the ONLY route to a couch, an arcade, a pinball table, the bar — hung off the REST drive
+     (`top === wRest`), i.e. an agent only ever went near the entertainment when it was TIRED. A
+     BORED agent (the stim drive, which is what idle downtime actually accumulates) went on a
+     caretaker lap, studied a machine, or paced. So a station kitted out as a games room was
+     furniture the agent walked past.
+
+     planPlay is the missing pull: when there is something FUN in reach, being bored is a reason to
+     go and play with it. It is deliberately a thin wrapper over the existing planProp/tryLounge
+     machinery (no new movement, no new goals, no new state) — the only new thing is that leisure is
+     now reachable from the drive that actually fires. FUN_KINDS is what "entertainment" means: the
+     things a person crosses a room for. Decorative/passive `use` rows remain available to explicit
+     systems, but the ambient idle picker does not turn them into staring destinations. */
+  const FUN_KINDS = { arcade: 1, pinball: 1, pool: 1, poker: 1, juke: 1, dj: 1, bar: 1, gacha: 1 };
+  /* Relative pull. The couch+TV lounge is the single most comfortable thing in the room and it also
+     holds the longest dwell, so left equal-weighted it swallows the floor: the first build of this
+     just called planProp, whose tryLounge short-circuit meant the measured result was BOTH bodies on
+     the couch for 58% of the run and not one visit to the arcade, the pinball table or the bar. It
+     is a candidate here, not a shortcut. */
+  const FUN_W = { arcade: 3, pinball: 3, pool: 2.5, poker: 2, dj: 2, juke: 1.5, bar: 2.5, gacha: 1.5, fish: 1.5, lounge: 2.5 };
+  const FUN_REPEAT_MIN = 90000, FUN_REPEAT_MAX = 150000;
+  /* FUN-REPEAT-PURE-BEGIN — a recent choice is unavailable, not merely less likely. A weak weight
+     cannot prevent parking when the couch is the only candidate. Kept pure for the regression test. */
+  function funRecentlyUsed(lastKey, lastUntil, key, now) {
+    return !!key && lastKey === key && Number.isFinite(lastUntil) && now < lastUntil;
+  }
+  /* FUN-REPEAT-PURE-END */
+  function funBlocked(key, now) { return funRecentlyUsed(self.lastFun, self.lastFunUntil, key, now); }
+  function rememberFun(key, now) {
+    self.lastFun = key;
+    self.lastFunUntil = now + U.irnd(FUN_REPEAT_MIN, FUN_REPEAT_MAX);
+  }
+  // Deliberate idle destinations stay intentionally small. Decorative blockers (speaker, plant, shelf)
+  // are scenery; a body crosses the room for a game, a real counter, or couch/TV—not to stare at decor.
+  function purposefulIdleProp(p) {
+    const u = propUse(p); if (!u) return false;
+    if (u.kind === 'couch' || FUN_KINDS[u.kind]) return true;
+    if (u.kind !== 'seat') return false;
+    const counter = counterForSeat(p), kind = counter && counter.p && (propUse(counter.p) || {}).kind;
+    return kind === 'bar' || kind === 'pool' || kind === 'poker';
+  }
+  // the couch/TV pairing (the v7 lounge), resolved as DATA so planPlay can weigh it against the rest
+  function loungePair(zone) {
+    if (!geo || !geo.props) return null;
     const couches = [], tvs = [];
     for (const p of geo.props) {
-      const use = propUse(p); if (!use) continue;
-      if (use.kind === 'couch') { couches.push(p); }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
-      else if (use.kind === 'tv') tvs.push({ p, cx: p.x + (p.w || 1) / 2, cy: p.y + (p.h || 1) / 2 });   // the TV is only WATCHED from the couch (no walk) — may sit anywhere in view
+      const u = propUse(p); if (!u) continue;
+      if (u.kind === 'couch') couches.push(p);
+      else if (u.kind === 'tv') tvs.push({ p, cx: p.x + (p.w || 1) / 2, cy: p.y + (p.h || 1) / 2 });
     }
-    if (!couches.length || !tvs.length) return false;
-    const order = U.irnd(0, couches.length - 1);   // don't always favour the same couch
+    if (!couches.length || !tvs.length) return null;
+    const order = U.irnd(0, couches.length - 1);
     for (let k = 0; k < couches.length; k++) {
       const couch = couches[(order + k) % couches.length];
       const cx = couch.x + (couch.w || 1) / 2, cy = couch.y + (couch.h || 1) / 2;
       let best = null;
       for (const tv of tvs) { const d = Math.hypot(tv.cx - cx, tv.cy - cy); if (d <= LOUNGE_MAXT && (!best || d < best.d)) best = { tv, d }; }
       if (!best) continue;
-      const face = dirToward(cx, cy, best.tv.cx, best.tv.cy);   // turn to the TV from the couch
-      if (planCouchSit(now, couch, best.tv.p.id, face, zone)) return true;
+      if (zone && !tileInZone(zone, couch.x, couch.y)) continue;
+      return { couch, tvId: best.tv.p.id, face: dirToward(cx, cy, best.tv.cx, best.tv.cy) };
+    }
+    return null;
+  }
+  // a FREE stool/chair pulled up to this counter (bar / pool / table), or null — so "go to the bar"
+  // means SITTING at it, which is what a bar is for (and what counterFace turns the body toward)
+  function stoolAt(counter, zone) {
+    if (!geo || !geo.props) return null;
+    for (const p of geo.props) {
+      const u = propUse(p); if (!u || u.kind !== 'seat') continue;
+      if (occupiedSeats.has(p.id + ':0')) continue;
+      if (zone && !tileInZone(zone, p.x, p.y)) continue;
+      const w = counter.w || 1, h = counter.h || 1;
+      const nx = Math.max(counter.x, Math.min(p.x + 0.5, counter.x + w));
+      const ny = Math.max(counter.y, Math.min(p.y + 0.5, counter.y + h));
+      if (Math.abs(nx - (p.x + 0.5)) + Math.abs(ny - (p.y + 0.5)) <= 1.8) return p;
+    }
+    return null;
+  }
+  /* A quiet social reuse, not a second encounter engine: when exactly one other body is already seated at
+     a bar in this body's current room, occasionally take another free stool at THAT bar. The long per-body
+     cooldown is armed on every eligible look, whether the roll lands or not, and the counter is capped at
+     two committed sitters. planSeat owns all pathing, claims, containment and task pre-emption. */
+  function maybeJoinBar(now) {
+    if (!self || now < (self.barJoinCd || 0) || !geo || !geo.props) return false;
+    const here = tileOf(self.px, self.py), room = roomOfLocalTile(here.x, here.y);
+    if (!room) return false;
+    const zone = zoneFor(self), bodies = allBodies();
+    const bars = [];
+    for (const other of bodies) {
+      if (!other || other === self || other.unplaced || other.goal !== 'use' || !other.sitting || !other.seated) continue;
+      const ot = tileOf(other.px, other.py);
+      if (roomOfLocalTile(ot.x, ot.y) !== room) continue;
+      const seat = geo.props.find(p => p.id === other.usingProp), counter = counterForSeat(seat);
+      if (!counter || !counter.p || (propUse(counter.p) || {}).kind !== 'bar') continue;
+      const committed = bodies.filter(b => {
+        if (!b || b === self || b.unplaced || b.goal !== 'use') return false;
+        const bs = geo.props.find(p => p.id === b.usingProp), bc = counterForSeat(bs);
+        return !!(bc && bc.p && bc.p.id === counter.p.id);
+      });
+      if (committed.length !== 1) continue;                    // one host + one joiner, never a crowd
+      const stool = stoolAt(counter.p, zone);
+      if (stool) bars.push({ other, stool });
+    }
+    if (!bars.length) return false;
+    self.barJoinCd = now + U.irnd(60000, 120000);              // one eligible roll every 1–2 minutes
+    if (!U.chance(0.35)) return false;                         // only sometimes, never every bar visit
+    const pick = U.pick(bars);
+    if (!planSeat(now, pick.stool, zone)) return false;
+    const togetherUntil = now + U.irnd(45000, 75000);
+    self.barJoinUntil = togetherUntil;
+    pick.other.useUntil = Math.max(pick.other.useUntil || 0, togetherUntil);
+    return true;
+  }
+  /* TIRED. The couch is the right answer and stays the first one — but "tired" is the drive that
+     refills WHILE you rest, so a body whose rest need re-tops the moment it stands up will re-pick
+     the same couch forever: measured, a crew body spent 252 of 457 samples on one couch across 8
+     consecutive visits and touched nothing else in the room. So: the couch, unless it just got off
+     that couch, in which case anything else fun will do. */
+  function planRest(now) {
+    if (tryLounge(now)) return true;
+    if (planPlay(now)) return true;
+    return planProp(now);
+  }
+  function planPlay(now) {
+    if (!geo || !geo.props || !geo.props.length) return false;
+    const zone = zoneFor(self), cands = [];
+    const lounge = loungePair(zone);
+    if (lounge && !funBlocked('lounge', now)) cands.push({ key: 'lounge', w: FUN_W.lounge, lounge });
+    for (const p of geo.props) {
+      const u = propUse(p);
+      if (!u || !FUN_KINDS[u.kind]) continue;
+      if (!mayTouchProp(self.id, p)) continue;
+      if (!tileInZone(zone, p.x, p.y)) continue;
+      if (funBlocked(p.id, now)) continue;
+      cands.push({ key: p.id, w: FUN_W[u.kind] || 2, prop: p, kind: u.kind });
+    }
+    if (!cands.length) return false;                       // nothing fun placed → the bored branch carries on as before
+    let total = 0; for (const c of cands) total += c.w;
+    // draw one, then fall through the rest in a rotated order so an unreachable pick never wastes the beat
+    let roll = U.rnd(0, total), start = 0;
+    for (let i = 0; i < cands.length; i++) { roll -= cands[i].w; if (roll <= 0) { start = i; break; } }
+    for (let k = 0; k < cands.length; k++) {
+      const c = cands[(start + k) % cands.length];
+      if (c.lounge) {
+        if (planCouchSit(now, c.lounge.couch, c.lounge.tvId, c.lounge.face, zone)) { rememberFun('lounge', now); return true; }
+        continue;
+      }
+      // a counter you SIT at: take a stool pulled up to it if one is free (counterFace turns the
+      // body to the bar), else stand at the counter itself
+      if (c.kind === 'bar' || c.kind === 'pool' || c.kind === 'poker') {
+        const stool = stoolAt(c.prop, zone);
+        if (stool && planSeat(now, stool, zone)) { rememberFun(c.key, now); return true; }
+        if (c.kind === 'bar') continue;                         // a bar without a free stool is not a standing-and-staring destination
+      }
+      const a = PropAnchor.deriveAnchor(c.prop, geo, { approach: (propUse(c.prop) || {}).approach || 'south', extra: blocked });
+      if (!a || !tileInZone(zone, a.tx, a.ty) || !setPathTo({ x: a.tx, y: a.ty })) continue;
+      self.goal = 'use'; self.usingProp = c.prop.id; self.useFace = a.face; self.useSit = false; rememberFun(c.key, now);
+      if (!self.target) arrive(now);
+      return true;
     }
     return false;
   }
@@ -1934,9 +2220,10 @@ const World = (() => {
     const zone = zoneFor(self);   // P1: only use leisure props the body can reach WITHOUT leaving its zone
     const cands = [];
     for (const p of geo.props) {
-      const use = propUse(p); if (!use) continue;
-      if (use.kind === 'couch') { cands.push({ couch: p }); continue; }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
-      if (use.kind === 'seat') { cands.push({ seat: p }); continue; }     // SEAT LAW: a stool/chair is claimed + rendered ON by planSeat, not approached
+      const use = propUse(p); if (!use || !purposefulIdleProp(p)) continue;
+      if (use.kind === 'couch') { if (!funBlocked('lounge', now)) cands.push({ couch: p }); continue; }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
+      if (use.kind === 'seat') { cands.push({ seat: p }); continue; }     // only a seat pulled up to a purposeful counter reaches this branch
+      if (use.kind === 'bar') continue;                                  // its adjacent purposeful seat is the destination, never the counter face itself
       const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
       if (a && tileInZone(zone, a.tx, a.ty)) cands.push({ id: p.id, a });   // the APPROACH tile (where the body stands) must be in-zone
     }
@@ -1944,7 +2231,7 @@ const World = (() => {
     const start = U.irnd(0, cands.length - 1);   // random offset, but try each prop at most once
     for (let k = 0; k < cands.length; k++) {
       const c = cands[(start + k) % cands.length];
-      if (c.couch) { if (planCouchSit(now, c.couch, null, 'north', zone)) return true; continue; }   // lone couch → stand at it facing UP (back to the viewer)
+      if (c.couch) { if (planCouchSit(now, c.couch, null, 'north', zone)) { rememberFun('lounge', now); return true; } continue; }   // lone couch → stand at it facing UP (back to the viewer)
       if (c.seat) { if (planSeat(now, c.seat, zone)) return true; continue; }                        // stool/chair → the one honest sit
       if (setPathTo({ x: c.a.tx, y: c.a.ty })) {
         self.goal = 'use'; self.usingProp = c.id; self.useFace = c.a.face; self.useSit = c.a.sit;
@@ -1968,6 +2255,7 @@ const World = (() => {
     for (const p of props) {
       if (seenProps.has(p.id)) continue;
       if (!mayTouchProp(agent && agent.id, p)) continue;   // another agent's (or unclaimed) workstation isn't "novel" to this one — don't walk over
+      if (!purposefulIdleProp(p) && !(isWorkstationProp(p.t) && p.agentId === (agent && agent.id))) continue;   // decor is noticed visually, never treated as a destination
       const tx = Math.floor(p.x + (p.w || 1) / 2), ty = Math.floor(p.y + (p.h || 1) / 2);
       if (!tileInZone(zone, tx, ty)) continue;             // out-of-zone placement — noticed, but not walked to
       pushNovelty(tx, ty, 'prop', p.id);
@@ -2035,6 +2323,17 @@ const World = (() => {
   }
 
   function setGlance(dir, ms, now) { if (self) self.glance = { dir, until: now + ms }; }
+  /* ⛔ THERE IS NO ON-DEMAND EMOTE, ON PURPOSE (2026-08-08).
+     A first cut of this pass added one: fire the sprite sets' one-shot `gesture` track when
+     something happened — reaching for a prop on arrival, a loop at the arcade/pinball so the body
+     "worked" the machine, a greeting and parting wave, a hand raised at someone walking past. It
+     shipped and it was wrong, because that track is an ARMS-UP STRETCH and nothing else: what you
+     actually saw was an agent walk up to the arcade cabinet and stretch at it (Andrew: "makes 0
+     sense"). AN ANIMATION REUSED FOR SOMETHING IT DOES NOT DEPICT READS AS A BUG, NOT AS LIFE —
+     four call sites, one piece of art, four wrong readings. Playing a machine and waving each need
+     their OWN frames; until those exist the honest beat is stance, facing and dwell, which is what
+     this engine now does. The ambient once-per-~90-minutes stretch in assets.js is untouched: there
+     the art is fired as exactly what it is. */
 
   /* ================= Tier C (cross-agent awareness) — C0 plumbing =================
      INVIOLABLE RULE: perceive across zones, ACT (move) only within your own. These two helpers are the
@@ -2149,6 +2448,46 @@ const World = (() => {
     return true;
   }
 
+  /* W4 — THE PASSING ACKNOWLEDGEMENT. The D3 encounter is a whole staged beat: a station-wide slot,
+     a rendezvous walk, a hold. It is rare on purpose and always will be. But two agents brushing
+     past each other and NOT reacting is its own kind of dead — the cheapest, most human signal on
+     the floor is the one that costs nothing: someone walks past where you are standing, you look
+     up and raise a hand.
+
+     So this deliberately takes NO slot, arms NO station budget, and moves NOBODY: the stander
+     glances + waves (its own gesture track), the passer glances back, and both carry on. It is the
+     Tier C gaze pattern (glanceAt's sanctioned two-sided write) plus one emote — no path, target or
+     goal is ever touched (K1), and it can never delay or preempt a real encounter or a summon.
+     Gated: the WAVER must be standing free (a walking body cannot render the standing gesture art
+     anyway) and the other must actually be going past, so it reads as "noticing someone pass",
+     never as two idle bodies saluting each other in place. */
+  function maybeAcknowledge(now) {
+    const me = self;
+    if (!me || me.unplaced || reduceMotion()) return false;
+    if (now < (me.ackCd || 0)) return false;
+    if (now < (me.ackScanAt || 0)) return false;      // cheap re-scan gap: this runs every tick, the scan does not
+    me.ackScanAt = now + 350;
+    if (me.working || me.sitting || me.state === 'walk' || me.social || me.goal === 'social') return false;
+    if (me === agent && activity !== 'idle') return false;                 // hero on task — not now
+    if (chatHot(now) && me === chatFocusBody()) return false;              // the Commander owns this body's attention
+    const rPx = ACK_RADIUS * T;
+    for (const other of allBodies()) {
+      if (!other || other === me || other.unplaced) continue;
+      if (other.state !== 'walk') continue;                                // it must be PASSING — this is not a standing salute
+      if (other.working || other.social) continue;
+      if (Math.hypot(other.px - me.px, other.py - me.py) > rPx) continue;
+      me.ackCd = now + U.irnd(ACK_CD_MIN, ACK_CD_MAX);
+      other.ackCd = Math.max(other.ackCd || 0, now + U.irnd(ACK_CD_MIN, ACK_CD_MAX));   // don't let the pair volley
+      if (!U.chance(0.5)) return false;                                    // half the time it just doesn't look up
+      const dur = U.irnd(700, 1200);
+      glanceAt(me, other, dur, now);                                       // me === self → setGlance
+      glanceAt(other, me, dur, now);                                       // the passer looks back (direct glance write, K2)
+      me.idleUntil = Math.max(me.idleUntil || 0, now + dur + U.irnd(200, 500));   // hold the beat, exactly as the mutual glance does
+      return true;
+    }
+    return false;
+  }
+
   /* ================= TIER D · D3 — SOCIAL ENCOUNTERS (Tier C grows legs) =================
      Bounded, SILENT movement beats between two idle bodies. The four kinds:
        'huddle'  — two SAME-ZONE bodies converge to adjacent tiles, face each other, hold, break.
@@ -2164,12 +2503,41 @@ const World = (() => {
      via armBeat, G5); Tier B self-discipline (startEncounter is the ONE cross-body write; stepSocial mutates only
      self, K2); chat-stare exclusion (a chatFocus body never joins). */
   const SOCIAL_SEL_ROLL = 0.08;             // per idle re-decide, when a candidate pair exists + the social LANE is open (G5: rare; the lane cooldown — not this roll — sets the rate)
-  const SOCIAL_STATION_CD_MIN = 300000, SOCIAL_STATION_CD_MAX = 480000;   // dedicated social station cooldown LANE (5-8 min) — the rate governor (MC: ~9.5 encounters/hr on a 3-6 body floor; one at a time, G4)
+  /* W4 (2026-08-08): the lane was 5-8 MINUTES station-wide, one encounter at a time — which is why
+     nobody had ever actually watched two agents meet: on a floor you look at for a few minutes, the
+     expected number of encounters was under one. The beat is also no longer a silent stand-off (it
+     now carries a greeting, a turn-taking exchange and a parting wave), so it is worth seeing.
+     90-150s keeps the "one thing happening at a time" character — every other governor (the single
+     slot G4, the per-pair cooldown, crewBeatDamp, the hard timeout) is untouched. */
+  const SOCIAL_STATION_CD_MIN = 90000, SOCIAL_STATION_CD_MAX = 150000;   // dedicated social station cooldown LANE — the rate governor (one at a time, G4)
   const SOCIAL_HOLD_MIN = 3000, SOCIAL_HOLD_MAX = 7000;   // the silent face-each-other hold (varied)
   const SOCIAL_HARD_MS = 25000;             // whole-encounter hard timeout — the slot ALWAYS frees by this (G4)
   const SOCIAL_PAIR_CD_MIN = 180000, SOCIAL_PAIR_CD_MAX = 360000;   // per-pair cooldown (minutes) so a duo never loops (K4)
   const SOCIAL_NEAR_RADIUS = 5;             // tiles — huddle/watch candidate proximity (within the observer's zone via neighborsOf)
   const SOCIAL_FOLLOW_MIN = 2, SOCIAL_FOLLOW_MAX = 4;   // half-follow distance (tiles) — bounded, never completes
+  /* ---------- W4: THEY TALK, AND THEY WAVE (2026-08-08) ----------
+     A meeting between two agents used to be two sprites standing a tile apart, silent, motionless,
+     for three to seven seconds. Read cold it is indistinguishable from two stuck pathfinds. Both
+     halves of the fix are art the sets ALREADY ship and the engine already knew how to draw:
+
+       TALKING — `b.speaking` swaps to the set's `talk` track (5 of 38 sets) or, on every other set,
+       to a livelier bob + a 1px head bounce. That is enough to read as "these two are talking"
+       without a single line of dialogue — which is the right register anyway: this station's beats
+       are silent by design (curiositySay has been a no-op since the Thronglet pass), and the COMMS
+       transcript is where words belong. TURN-TAKING is what sells it: the two must not flap in
+       unison, so each derives its turn from the encounter's OWN start clock (socialBeat.startedAt,
+       stamped once by the coordinator) and its own side of the pair (a === first speaker). Reading
+       a shared READ-ONLY origin, not writing shared turn state, is what keeps K2 intact.
+
+     (A greeting/parting WAVE was built here too and then removed — the only gesture art in the
+     project is an arms-up stretch, and a stretch is not a wave. See the emote() note above.)
+
+     Only the two-sided kinds (huddle/border) talk: a 'watch' subject is working and a 'follow'
+     never completes, so neither is a conversation. */
+  const TALK_SLOT_MS = 1700;                // one speaking turn + the beat of silence after it
+  const TALK_SPEAK_MS = 1150;               // how much of a turn is actually mouth-moving
+  const ACK_RADIUS = 2.4;                   // tiles — a passing acknowledgement is arm's length, not across the room
+  const ACK_CD_MIN = 45000, ACK_CD_MAX = 90000;   // per-body: a wave is a greeting, not a tic
 
   /* armSocialBudget — the two station-level side-effects EVERY fired encounter must do, at ALL fire sites
      (startEncounter for huddle/border, and the one-sided planWatch/planFollow which set the slot inline):
@@ -2201,9 +2569,14 @@ const World = (() => {
     if (!s) return;
     const a = bodyForAgent(s.aId), b = bodyForAgent(s.bId);
     for (const body of [a, b]) {
+      // W4 SAFETY: the conversation pose is dropped for BOTH bodies on ANY end, even one whose plan
+      // was already torn down elsewhere (a seize clears .social first) — a body left mouth-moving
+      // at nobody is exactly the kind of state this project calls a lie.
+      if (body && !body.social) setTalking(body, false);
       if (!body || !body.social) continue;
-      // only tear down OUR plan; if a body was already re-tasked (working / summon), leave its live state alone —
-      // just drop the social plan so it stops trying to rendezvous. Its own tick owns the rest.
+      // W4: drop the conversation pose as the encounter ends. (The parting WAVE was removed with
+      // the rest of the gesture-track misuse — see the emote() header: that art is a stretch.)
+      setTalking(body, false);
       body.social = null;
       if (body.goal === 'social') { body.goal = null; body.state = 'idle'; body.pathPts = null; body.target = null; body.idleUntil = Math.max(body.idleUntil || 0, now + U.irnd(300, 900)); }
     }
@@ -2247,7 +2620,7 @@ const World = (() => {
     // drop any in-flight idle state so the social plan owns each body cleanly (does NOT touch working/task — those
     // paths are excluded by socialEligible, so a/b are genuinely idle here).
     for (const body of [a, b]) { body.stilling = false; body.usingProp = null; body.sitting = false; body.pauseUntil = 0; body.pauseLook = null; body.studyKey = null; }
-    socialBeat = { kind, aId: a.id, bId: b.id, until: now + SOCIAL_HARD_MS };
+    socialBeat = { kind, aId: a.id, bId: b.id, until: now + SOCIAL_HARD_MS, startedAt: now };   // startedAt: the ONE clock both turn-takers read (see talkTurn)
     armSocialBudget(now);                                                 // G5 shared-gate arm + the 5-8min social LANE draw (total calm preserved; rate governed by the lane)
     return true;
   }
@@ -2301,14 +2674,60 @@ const World = (() => {
       self.state = 'idle'; self.sitting = false;
       if (pl.faceTile === 'partner') facePartner();
       else if (pl.faceTile) self.dir = dirToward(self.px, self.py, (pl.faceTile.x + 0.5) * T, (pl.faceTile.y + 0.5) * T);
+      talkTurn(self, now, pl);                                                        // W4: take (or yield) this body's turn in the exchange
       if (now >= pl.until) endEncounter(now);                                         // natural end → free the slot + arm the pair cooldown
     }
+  }
+  /* W4 — one body's turn in a two-sided exchange. Both bodies read the SAME hold clock (pl.holdAt,
+     stamped by each as it settles) and their own side of the pair, so they alternate without either
+     writing to the other or to any shared turn state (K2). A body only mouth-moves for the first
+     TALK_SPEAK_MS of its own slot, so there is a real beat of silence between turns — the pause is
+     what makes it read as listening rather than as two sprites vibrating. */
+  /* The turn phase MUST come from the ENCOUNTER's clock (socialBeat.startedAt), not from each
+     body's own arrival. Each body stamps pl.holdAt when IT settles, and the two rarely arrive
+     together — the first live soak caught them 2s apart, which put both of them in "slot 0" and
+     printed a sample with BOTH bodies talking. `holdAt` still gates whether this body has arrived
+     at all; the shared origin is what makes the two alternate. */
+  function talkTurn(b, now, pl) {
+    if (!b || !pl) return;
+    const twoSided = pl.kind === 'huddle' || pl.kind === 'border';
+    if (!twoSided || !socialBeat || !socialBeat.startedAt || !pl.holdAt) { setTalking(b, false); return; }
+    setTalking(b, myTurn(now - socialBeat.startedAt, socialBeat.aId === b.id, TALK_SLOT_MS, TALK_SPEAK_MS));
+  }
+  /* TALK-TURN-PURE-BEGIN — the turn-taking decision, extracted PURE (arguments only; no module
+     state, no RNG, no clock, no DOM) so the alternation is unit-testable headlessly. WHY headless:
+     an encounter is rare, tick-driven and needs two bodies to meet, so "do they take turns rather
+     than flap in unison" is not something a live soak can assert at every millisecond — but it is
+     the one property that decides whether this reads as a conversation.
+       elapsed  ms since the pair entered the hold (both read the SAME clock)
+       first    is this body the pair's FIRST speaker (socialBeat.aId)? The two bodies pass
+                opposite values, which is the ONLY thing that distinguishes them — no shared
+                mutable turn state, so neither body ever writes to the other (K2).
+       slotMs   one turn + the silence after it · speakMs how much of the turn is mouth-moving
+     The gap (slotMs - speakMs) is load-bearing: without it the two swap instantly and it reads as
+     two sprites vibrating rather than one listening while the other speaks. */
+  function myTurn(elapsed, first, slotMs, speakMs) {
+    if (!(elapsed >= 0) || !(slotMs > 0)) return false;
+    const mine = (Math.floor(elapsed / slotMs) % 2 === 0) === !!first;
+    return mine && (elapsed % slotMs) < speakMs;
+  }
+  /* TALK-TURN-PURE-END */
+  // `talking` is the world's own reason for the speaking pose; the hero ORs it with Voice in
+  // drawAgent (which recomputes `speaking` every frame), crew carry it directly.
+  function setTalking(b, on) {
+    if (!b) return;
+    b.talking = !!on;
+    if (b !== agent) b.speaking = !!on;
   }
   // enter the silent face-each-other hold (varied duration). Both bodies enter their own hold independently; the
   // encounter ends when EITHER reaches its `until` (endEncounter frees both) — a hard cap already bounds it.
   function enterHold(now, pl) {
     pl.phase = 'hold'; pl.until = now + U.irnd(SOCIAL_HOLD_MIN, SOCIAL_HOLD_MAX);
+    pl.holdAt = now;                                    // W4: THIS body has arrived (the turn PHASE comes from socialBeat.startedAt — see talkTurn)
     self.pathPts = null; self.target = null; self.state = 'idle'; self.goal = 'social';
+    // (The GREETING wave that used to fire here is gone with the rest of the gesture-track misuse:
+    // the only such art in the project is an arms-up stretch, and a stretch is not a wave. What
+    // remains is what the bodies actually do — turn to face each other and take turns.)
   }
 
   /* stepSocialGuard — called every tick for a body whose goal==='social', BEFORE stepSocial. Enforces the two
@@ -2316,7 +2735,7 @@ const World = (() => {
      partner-broken check (K3 — if the OTHER party was seized/despawned/chat-focused, the survivor releases now
      rather than waiting forever at a rendezvous). Returns true if it handled (ended) the beat this tick. */
   function stepSocialGuard(now) {
-    if (!socialBeat) { if (self.social) { self.social = null; if (self.goal === 'social') { self.goal = null; self.state = 'idle'; self.idleUntil = now + 300; } } return true; }
+    if (!socialBeat) { setTalking(self, false); if (self.social) { self.social = null; if (self.goal === 'social') { self.goal = null; self.state = 'idle'; self.idleUntil = now + 300; } } return true; }
     if (now >= socialBeat.until || encounterBroken(now)) { endEncounter(now); return true; }
     return false;
   }
@@ -2403,7 +2822,7 @@ const World = (() => {
       if (socialBeat) return false;
       obs.social = { phase: 'walk', tx: c.x, ty: c.y, faceTile: { x: wt.x, y: wt.y }, kind: 'watch', partnerId: worker.id };
       obs.goal = 'social'; obs.stilling = false; obs.usingProp = null; obs.sitting = false; obs.pauseUntil = 0; obs.pauseLook = null; obs.studyKey = null;
-      socialBeat = { kind: 'watch', aId: obs.id, bId: worker.id, until: now + SOCIAL_HARD_MS };
+      socialBeat = { kind: 'watch', aId: obs.id, bId: worker.id, until: now + SOCIAL_HARD_MS, startedAt: now };
       armSocialBudget(now);   // shared-gate arm + social LANE draw (same as startEncounter — one-sided beats govern the lane too)
       return true;
     }
@@ -2430,7 +2849,7 @@ const World = (() => {
     obs.goal = 'social'; obs.stilling = false; obs.usingProp = null; obs.sitting = false; obs.pauseUntil = 0; obs.pauseLook = null; obs.studyKey = null;
     if (!setPathTo({ x: first.x, y: first.y })) { obs.social = null; obs.goal = null; return false; }
     obs.social.followLeft -= 1;
-    socialBeat = { kind: 'follow', aId: obs.id, bId: walker.id, until: now + SOCIAL_HARD_MS };
+    socialBeat = { kind: 'follow', aId: obs.id, bId: walker.id, until: now + SOCIAL_HARD_MS, startedAt: now };
     armSocialBudget(now);   // shared-gate arm + social LANE draw (same as startEncounter)
     return true;
   }
@@ -2694,7 +3113,136 @@ const World = (() => {
       self.cursorGazeCd = now + U.irnd(20000, 45000);
       return dirToward(self.px, self.py, lastCursor.wx, lastCursor.wy);
     }
-    return U.pick(['east', 'west', 'south', 'north']);
+    return lookDir(self);   // LOOK AT SOMETHING (see lookDirFrom) — never a blind cardinal into a wall
+  }
+
+  /* ================= SUBJECT-FACING (2026-08-08 idle-life pass) =================
+     THE DEFECT: every ambient facing in this engine was `U.pick(['east','west','south','north'])`
+     — a blind cardinal. In a walled station with no windows, roughly half of those point the body
+     at bare wall a tile from its nose, and the "eerie contemplation" beats (gaze-out at the room
+     EDGE facing OUTWARD, face-a-wall, the vigil) pointed at wall BY CONSTRUCTION. Andrew's read
+     was the correct one: it isn't contemplative, it's a character with nothing to look at.
+
+     THE RULE: a body may hold any pose it likes, but it must be looking AT something. lookDirFrom
+     ray-marches each cardinal from a stand tile and scores what the line of sight actually
+     contains — depth of open floor, a prop the ray runs into, a conveyor belt, another body, a
+     doorway through to the next room. A direction whose very first tile is wall scores ~zero and
+     effectively never wins. The winner is drawn WEIGHTED-random from the scores, so the choice
+     stays unpredictable (the engine's whole character) while never being blind.
+
+     Pure-ish: reads geo + bodies, mutates nothing, draws one U.rnd. Degrades to the old blind pick
+     when geo is missing, so a boot-order gap can never freeze a body's head. */
+  const LOOK_REACH = 10;                       // how far down a line of sight we care to look (tiles)
+  const LOOK_DIRS = [['north', 0, -1], ['south', 0, 1], ['east', 1, 0], ['west', -1, 0]];
+  // the prop occupying a tile, or null (props are blockers, so this answers "did my line of sight
+  // stop at a THING or at bare wall" — the whole distinction this pass turns on)
+  function propAtTile(tx, ty) {
+    const props = (geo && geo.props) || [];
+    for (const p of props) {
+      const w = p.w || 1, h = p.h || 1;
+      if (tx >= p.x && tx < p.x + w && ty >= p.y && ty < p.y + h) return p;
+    }
+    return null;
+  }
+  function beltAtTile(tx, ty) {
+    const belts = (geo && geo.belts) || [];
+    for (const b of belts) if (b.x === tx && b.y === ty) return b;
+    return null;
+  }
+  function bodyAtTile(tx, ty, except) {
+    for (const b of allBodies()) {
+      if (!b || b === except || b.unplaced) continue;
+      const t = tileOf(b.px, b.py);
+      if (t.x === tx && t.y === ty) return b;
+    }
+    return null;
+  }
+  /* score one cardinal from (tx,ty): how much is there to see this way?
+     A wall at range 1 scores 0.15 (never quite impossible — a body CAN turn to a wall, it just
+     stops being the default), and every subject found along the ray adds, discounted by distance
+     so the near thing wins over the far one. */
+  function lookScore(tx, ty, dx, dy, except) {
+    let score = 0, x = tx, y = ty;
+    for (let d = 1; d <= LOOK_REACH; d++) {
+      x += dx; y += dy;
+      const walk = geo.walkable(x, y, blocked);
+      const near = 1 / (1 + d * 0.35);                       // near things dominate far ones
+      const body = bodyAtTile(x, y, except);
+      if (body) score += 4.0 * near;                          // ANOTHER AGENT is the best thing to look at
+      if (beltAtTile(x, y)) score += 2.2 * near;              // cargo moving past
+      if (!walk) {
+        const p = propAtTile(x, y);
+        if (p) score += 2.6 * near;                           // the ray ran into a THING — that's a subject
+        else if (d === 1) return 0.15;                        // bare wall right at the nose — the defect this pass exists to kill
+        else score += 0.15;                                   // bare wall further off: the room simply ends here
+        return score + Math.min(d, 6) * 0.28;                 // + credit for the open floor it looked across
+      }
+      score += 0.28;                                          // open floor: depth is itself worth looking down
+      if (geo.doorDefs && isDoorTile(x, y)) score += 2.4 * near;   // a threshold — looking THROUGH to the next room
+    }
+    return score;
+  }
+  // is this tile part of a threshold (a doorway between two zones)? doorDefs are [x1,y1,x2,y2] seam pairs.
+  function isDoorTile(tx, ty) {
+    const defs = (geo && geo.doorDefs) || [];
+    for (const d of defs) if ((d[0] === tx && d[1] === ty) || (d[2] === tx && d[3] === ty)) return true;
+    return false;
+  }
+  /* the facing to adopt from a stand tile: weighted-random over the four scored cardinals.
+     opts.exclude — a direction to leave out (e.g. don't just look back the way you came).
+     opts.away    — bias AWAY from the Commander (the 'ponder'/'turn your back' flavor) by halving
+                    the south score, WITHOUT ever letting the body pick a wall instead. */
+  function lookDirFrom(tx, ty, opts) {
+    opts = opts || {};
+    if (!geo || typeof geo.walkable !== 'function') return U.pick(['east', 'west', 'south', 'north']);
+    const scored = [];
+    let total = 0;
+    for (const [dir, dx, dy] of LOOK_DIRS) {
+      if (opts.exclude === dir) continue;
+      let s = lookScore(tx, ty, dx, dy, opts.except || null);
+      if (opts.away && dir === 'south') s *= 0.35;
+      scored.push({ dir, s }); total += s;
+    }
+    if (!scored.length || total <= 0) return U.pick(['east', 'west', 'south', 'north']);
+    let roll = U.rnd(0, total);
+    for (const c of scored) { roll -= c.s; if (roll <= 0) return c.dir; }
+    return scored[scored.length - 1].dir;
+  }
+  /* WHAT IS ACTUALLY IN FRONT OF A BODY — one tile ahead of its live facing:
+     'body' | 'belt' | 'open' | 'prop' | 'wall'. This is the metric the whole W1 pass turns on, so
+     it is exposed read-only through bodies() and measured in a live soak: an idle body reading
+     'wall' is a body with its nose against the plaster, which is the thing we removed. */
+  function subjectAt(b, x, y) {
+    if (bodyAtTile(x, y, b)) return 'body';
+    if (beltAtTile(x, y)) return 'belt';
+    if (geo.walkable(x, y, blocked)) return 'open';
+    return propAtTile(x, y) ? 'prop' : 'wall';
+  }
+  function facingDetail(b) {
+    if (!geo || !b || typeof geo.walkable !== 'function') return null;
+    const t = tileOf(bodyPosX(b), bodyPosY(b));
+    const d = (b.glance && b.glance.until > fnow) ? b.glance.dir : (b.dir || 'south');
+    const v = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] }[d] || [0, 1];
+    const x = t.x + v[0], y = t.y + v[1];
+    return { subject: subjectAt(b, x, y), prop: propAtTile(x, y), tile: { x, y } };
+  }
+  /* THE CONTROL for that metric: how many of the FOUR cardinals from where this body stands are
+     bare wall. A blind `U.pick` of a cardinal — which is exactly what this engine used to do — would
+     face wall at wallDirs/4. Sampled alongside `facing`, it gives the soak an in-sample baseline to
+     compare the real facing rate against, instead of an unfalsifiable "looks better now". */
+  function wallDirsAt(b) {
+    if (!geo || !b || typeof geo.walkable !== 'function') return null;
+    const t = tileOf(bodyPosX(b), bodyPosY(b));
+    let n = 0;
+    for (const [, dx, dy] of LOOK_DIRS) if (subjectAt(b, t.x + dx, t.y + dy) === 'wall') n++;
+    return n;
+  }
+  // shorthand: what should THIS body be looking at from where it stands
+  function lookDir(body, opts) {
+    const b = body || self;
+    if (!b) return 'south';
+    const t = tileOf(bodyPosX(b), bodyPosY(b));
+    return lookDirFrom(t.x, t.y, Object.assign({ except: b }, opts || {}));
   }
 
   // go inspect the freshest queued placement (pops the queue; tries each until one is reachable)
@@ -2703,7 +3251,7 @@ const World = (() => {
     while (novelty.length) {
       const n = novelty.pop();
       let foot = { x: n.tx, y: n.ty, w: 1, h: 1 };
-      if (n.kind === 'prop' && n.pid && geo.props) { const p = geo.props.find(q => q.id === n.pid); if (!p || !mayTouchProp(self.id, p)) continue; foot = p; }
+      if (n.kind === 'prop' && n.pid && geo.props) { const p = geo.props.find(q => q.id === n.pid); if (!p || !mayTouchProp(self.id, p) || (!purposefulIdleProp(p) && !(isWorkstationProp(p.t) && p.agentId === self.id))) continue; foot = p; }
       const extra = n.kind === 'belt' ? beltUnion() : blocked;   // for a belt, stand beside it — not on the machinery
       const a = PropAnchor.deriveAnchor(foot, geo, { approach: 'auto', extra });
       if (a && tileInZone(zone, a.tx, a.ty) && setPathTo({ x: a.tx, y: a.ty })) {
@@ -2725,8 +3273,9 @@ const World = (() => {
     const inBelts = belts.filter(b => tileInZone(zone, b.x, b.y));
     if (inBelts.length) { const b = inBelts[U.irnd(0, inBelts.length - 1)]; cands.push({ kind: 'watch', key: 'belt:' + b.x + ',' + b.y, foot: { x: b.x, y: b.y, w: 1, h: 1 }, extra: beltUnion() }); }
     const props = (geo && geo.props) || [];
-    // non-leisure kit (leisure is planProp's job), skipping the over-familiar — it has become furniture (habituation); in-zone only
-    const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks && (seenCount.get(p.id) || 0) < 4 && mayTouchProp(self.id, p) && tileInZone(zone, p.x, p.y); });
+    // A deliberate prop study means checking THIS body's assigned workstation. Decorative blockers are
+    // scenery, not "machines" to walk over and stare at; leisure is handled by planPlay/planProp.
+    const machines = props.filter(p => isWorkstationProp(p.t) && p.agentId === self.id && (seenCount.get(p.id) || 0) < 4 && tileInZone(zone, p.x, p.y));
     if (machines.length) { const p = machines[U.irnd(0, machines.length - 1)]; cands.push({ kind: 'inspect', key: p.id, foot: p, extra: blocked }); }
     if (cands.length === 2 && U.chance(0.5)) cands.reverse();
     for (const c of cands) {
@@ -2892,19 +3441,39 @@ const World = (() => {
     }
     return false;
   }
-  // deep downtime → walk to the station edge and contemplate the void (faces outward, long quiet dwell)
-  function planGazeOut(now) {
+  /* deep downtime → take up a VANTAGE and look out over the station (long quiet dwell).
+     WAS planGazeOut: it walked to the outermost EDGE tile of the zone and faced OUTWARD — i.e. it
+     walked to a wall and stared at it, which in a windowless station is exactly what it looked
+     like. Same beat, same goal ('gaze'), same dwell: the body now walks to a tile with a real LINE
+     OF SIGHT (a doorway it can look through, a long open run, a machine, the belt) and faces the
+     thing. The contemplation survives; the drywall doesn't. */
+  function planVantage(now) {
     if (!geo || !geo.allRects || !geo.allRects.length) return false;
-    const zone = zoneFor(self);   // P1: gaze at the OWN-ZONE edge — clamped, not the whole-station edge (a solo whole-station zone keeps the true edge)
-    const cx = geo.COLS / 2, cy = geo.ROWS / 2, cands = [];
-    for (const r of geo.allRects) {
-      cands.push({ tx: r.x1, ty: (r.y1 + r.y2) >> 1, face: 'west' }); cands.push({ tx: r.x2, ty: (r.y1 + r.y2) >> 1, face: 'east' });
-      cands.push({ tx: (r.x1 + r.x2) >> 1, ty: r.y1, face: 'north' }); cands.push({ tx: (r.x1 + r.x2) >> 1, ty: r.y2, face: 'south' });
+    const zone = zoneFor(self);   // P1: a vantage inside the OWN zone — clamped, exactly as the edge-gaze was
+    const cur = tileOf(self.px, self.py);
+    const seen = new Set(), cands = [];
+    const add = (tx, ty) => {
+      const k = tx + ',' + ty;
+      if (seen.has(k)) return; seen.add(k);
+      if (!tileInZone(zone, tx, ty) || !geo.walkable(tx, ty, blocked)) return;
+      if (tx === cur.x && ty === cur.y) return;                  // a vantage you are already standing on is not a walk
+      let best = 0, face = 'south';
+      for (const [dir, dx, dy] of LOOK_DIRS) { const s = lookScore(tx, ty, dx, dy, self); if (s > best) { best = s; face = dir; } }
+      cands.push({ tx, ty, face, s: best });
+    };
+    // the standing spots BESIDE each threshold — the honest "looking through into the next room"
+    for (const d of (geo.doorDefs || [])) { add(d[0], d[1]); add(d[2], d[3]); }
+    // plus a sample of open floor, so the vantage isn't always the same doorway
+    for (let i = 0; i < 22; i++) {
+      const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
+      add(U.irnd(r.x1, r.x2), U.irnd(r.y1, r.y2));
     }
-    cands.sort((a, b) => ((b.tx - cx) ** 2 + (b.ty - cy) ** 2) - ((a.tx - cx) ** 2 + (a.ty - cy) ** 2));   // furthest-out first
-    for (const c of cands) {
-      if (!tileInZone(zone, c.tx, c.ty)) continue;   // only the edges of the agent's own zone
-      if (geo.walkable(c.tx, c.ty, blocked) && setPathTo({ x: c.tx, y: c.ty })) { self.goal = 'gaze'; self.useFace = c.face; self.usingProp = null; self.studyKey = null; if (!self.target) arrive(now); return true; }
+    if (!cands.length) return false;
+    cands.sort((a, b) => b.s - a.s);
+    const top = cands.slice(0, 5);                               // the best few, then one at random — a favourite spot, not THE spot
+    for (let i = top.length - 1; i > 0; i--) { const j = U.irnd(0, i), t = top[i]; top[i] = top[j]; top[j] = t; }
+    for (const c of top) {
+      if (setPathTo({ x: c.tx, y: c.ty })) { self.goal = 'gaze'; self.useFace = c.face; self.usingProp = null; self.studyKey = null; if (!self.target) arrive(now); return true; }
     }
     return false;
   }
@@ -2944,10 +3513,10 @@ const World = (() => {
     armBeat(now);                                 // D2 (G5): arm the floor-wide governor — a quirk is a noticeable beat, so it also damps the NEXT crew quirk AND the station's stroll/off-beat/revisit budget (subsumes the old per-quirk lastQuirkAt)
     const r = U.irnd(0, 999);
     if (r < 320) return quirkListen(now);    // 32% — freeze + snap toward a sound only it heard
-    if (r < 520) return quirkScan(now);      // 20% — a slow, deliberate sweep of the room
+    if (r < 520) return quirkScan(now);      // 20% — one slow, deliberate subject-facing look
     if (r < 680) return quirkPonder(now);    // 16% — stops, faces away, lost in thought
-    if (r < 790) return planGazeOut(now);    // 11% — drifts to the edge and stares into the void
-    if (r < 870) return quirkFaceWall(now);  //  8% — walks to a wall and just faces it (unexplained)
+    if (r < 790) return planVantage(now);    // 11% — drifts to a vantage and looks out over the station
+    if (r < 870) return quirkDoorway(now) || quirkScan(now);  //  8% — stands in a doorway looking through; no threshold falls back to one calm look
     if (r < 945 && quirkVigil(now)) return true;   // ~7.5% — the VIGIL: dead-center, faces one wall, holds (falls through to the stare if no center is free)
     return quirkStare(now);                  // ~5.5% — the long stare straight at YOU (rarest, eeriest)
   }
@@ -2957,33 +3526,39 @@ const World = (() => {
     if (face) { self.dir = face; setGlance(face, U.irnd(300, 600), now); }
     return true;
   }
-  function quirkListen(now) { const d = U.pick(['east', 'west', 'south', 'north']); startQuirk(now, 'listen', U.irnd(2200, 4500), d); setGlance(d, 260, now); curiositySay(Q_LISTEN, 0.22, now); return true; }
+  function quirkListen(now) { const d = lookDir(self); startQuirk(now, 'listen', U.irnd(2200, 4500), d); setGlance(d, 260, now); curiositySay(Q_LISTEN, 0.22, now); return true; }   // it snaps toward a sound — down a line of sight, not into the wall behind it
   function quirkScan(now) {
-    startQuirk(now, 'scan', U.irnd(3200, 4600), 'north');
-    const body = self;   // B1: capture the scheduling body — the deferred sweep must turn THIS body, not whatever `self` points to at fire time
-    ['north', 'east', 'south', 'west'].forEach((d, i) => setTimeout(() => { if (body && body.goal === 'quirk' && body.quirkKind === 'scan') { body.dir = d; body.glance = { dir: d, until: performance.now() + 900 }; } }, i * 850));
+    const d = lookDir(self);
+    startQuirk(now, 'scan', U.irnd(3200, 4600), d);   // one meaningful direction; never spin through all four cardinals
     return true;
   }
-  function quirkPonder(now) { startQuirk(now, 'ponder', U.irnd(4000, 7000), U.pick(['north', 'east', 'west'])); curiositySay(Q_PONDER, 0.4, now); return true; }
-  function quirkFaceWall(now) {   // walks to a wall and just... faces it. no explanation. (uses arrive's quirk dwell)
-    if (!geo || !geo.allRects || !geo.allRects.length) return false;
-    const zone = zoneFor(self);   // P1: face a wall WITHIN the zone, not a wall across the station
-    const DIRS = [['north', 0, -1], ['south', 0, 1], ['east', 1, 0], ['west', -1, 0]];
-    for (let tries = 0; tries < 30; tries++) {
-      const r = geo.allRects[U.irnd(0, geo.allRects.length - 1)];
-      const tx = U.irnd(r.x1, r.x2), ty = U.irnd(r.y1, r.y2);
-      if (!tileInZone(zone, tx, ty)) continue;
-      if (!geo.walkable(tx, ty, blocked)) continue;
-      const walls = DIRS.filter(([d, dx, dy]) => !geo.walkable(tx + dx, ty + dy, blocked));
-      if (!walls.length) continue;
-      if (!setPathTo({ x: tx, y: ty })) continue;
-      self.goal = 'quirk'; self.quirkKind = 'wall'; self.useFace = U.pick(walls)[0]; self.usingProp = null; self.studyKey = null;
+  function quirkPonder(now) { startQuirk(now, 'ponder', U.irnd(4000, 7000), lookDir(self, { away: true })); curiositySay(Q_PONDER, 0.4, now); return true; }   // lost in thought, turned away from you — but turned toward SOMETHING
+  /* WAS quirkFaceWall — "walks to a wall and just faces it, no explanation". The unexplained detour
+     is good; the wall was the problem (it read as a broken pathfind, not an inner life). It now
+     walks to a THRESHOLD and stands in the doorway looking through into the next room — the same
+     unexplained, silent, held beat, aimed at somewhere it isn't. */
+  function quirkDoorway(now) {
+    if (!geo || !geo.doorDefs || !geo.doorDefs.length) return false;
+    const zone = zoneFor(self), cur = tileOf(self.px, self.py);
+    const spots = [];
+    for (const d of geo.doorDefs) {
+      for (const [tx, ty, ox, oy] of [[d[0], d[1], d[2], d[3]], [d[2], d[3], d[0], d[1]]]) {
+        if (!tileInZone(zone, tx, ty) || !geo.walkable(tx, ty, blocked)) continue;
+        if (tx === cur.x && ty === cur.y) continue;
+        spots.push({ tx, ty, face: dirToward((tx + 0.5) * T, (ty + 0.5) * T, (ox + 0.5) * T, (oy + 0.5) * T) });   // stand this side, look THROUGH
+      }
+    }
+    if (!spots.length) return false;
+    for (let i = spots.length - 1; i > 0; i--) { const j = U.irnd(0, i), t = spots[i]; spots[i] = spots[j]; spots[j] = t; }
+    for (const s of spots.slice(0, 6)) {
+      if (!setPathTo({ x: s.tx, y: s.ty })) continue;
+      self.goal = 'quirk'; self.quirkKind = 'doorway'; self.useFace = s.face; self.usingProp = null; self.studyKey = null;
       if (!self.target) arrive(now);
       return true;
     }
     return false;
   }
-  function quirkVigil(now) {   // walks to a room's center, faces ONE cardinal, holds dead still — the held emptiness (silent)
+  function quirkVigil(now) {   // walks to a room's center, holds dead still — the held emptiness (silent)
     if (!geo || !geo.allRects || !geo.allRects.length) return false;
     const zone = zoneFor(self);   // P1: the vigil stands at a rect-center INSIDE the zone (a solo whole-station zone admits every center)
     for (let t = 0; t < 24; t++) {
@@ -2992,7 +3567,7 @@ const World = (() => {
       if (!tileInZone(zone, tx, ty)) continue;
       if (!geo.walkable(tx, ty, blocked)) continue;
       if (!setPathTo({ x: tx, y: ty })) continue;
-      self.goal = 'quirk'; self.quirkKind = 'vigil'; self.useFace = U.pick(['north', 'south', 'east', 'west']); self.usingProp = null; self.studyKey = null;
+      self.goal = 'quirk'; self.quirkKind = 'vigil'; self.useFace = lookDirFrom(tx, ty, { except: self }); self.usingProp = null; self.studyKey = null;   // the stillness is the beat; it still has to be LOOKING at something
       if (!self.target) arrive(now);
       return true;
     }
@@ -3123,7 +3698,7 @@ const World = (() => {
     if (now < (self.roundsCd || 0) || !geo || typeof PropAnchor === 'undefined') return false;
     const zone = zoneFor(self);   // P1: a caretaker lap stays inside the zone (no straddling into the next room)
     const cur = tileOf(self.px, self.py), stops = [];
-    for (const p of (geo.props || [])) { const s = specOf(p.t); if (s && s.blocks && mayTouchProp(self.id, p) && tileInZone(zone, p.x, p.y) && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p }); }   // no ownership beat at another body's (or unclaimed) workstation, and never out of zone
+    for (const p of (geo.props || [])) if (isWorkstationProp(p.t) && p.agentId === self.id && tileInZone(zone, p.x, p.y) && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p });   // desk check, never a tour of decorative blockers
     const belts = (geo.belts || []).filter(b => tileInZone(zone, b.x, b.y)); if (belts.length) stops.push({ belt: belts[U.irnd(0, belts.length - 1)] });
     // D5 beat 1 (HERO-ONLY): fold in a supervisor stop behind each crew body WORKING in the hero's zone. Guarded on
     // self===agent so crew rounds are byte-identical (crew never scan crew — zero crew-side diff); the whole block is
@@ -3186,7 +3761,7 @@ const World = (() => {
     const cur = tileOf(self.px, self.py);
     if (cur.x === f.x && cur.y === f.y) { self.revisitCd = now + U.irnd(40000, 80000); return false; }
     if (!geo.walkable(f.x, f.y, blocked) || !setPathTo({ x: f.x, y: f.y })) return false;
-    self.goal = 'revisit'; self.useFace = U.pick(['south', 'north', 'east', 'west']); self.usingProp = null; self.studyKey = null;
+    self.goal = 'revisit'; self.useFace = lookDirFrom(f.x, f.y, { except: self }); self.usingProp = null; self.studyKey = null;   // back at the haunt, looking at whatever made it a haunt
     self.revisitCd = now + U.irnd(60000, 120000);
     armBeat(now);   // D2 (G5): a haunt-revisit walk is a noticeable beat — count it against the station budget
     if (!self.target) arrive(now);
@@ -3249,6 +3824,7 @@ const World = (() => {
     if (maybeChase(now)) return;         // TIER D · D4 THE CHASE: ultra-rare (8-15 min station cooldown, one chaser ever, mutually exclusive with a live social beat, cursor fresh+MOVING) — breaks toward the cursor, pursues, stops+stares, walks off. Rolled FIRST but hardest-gated: most idle decisions never even reach the roll.
     if (maybeSocial(now)) return;        // TIER D · D3: a rare SILENT social encounter (huddle/watch/border/half-follow) between idle neighbors — bounded movement, one live station-wide, zone-clamped, per-pair cooldown (G3/G4/G5); selected here at the idle cadence off neighborsOf (K4 — never off observing another encounter)
     if (maybeMimic(now)) return;         // TIER D · D4 CURSOR-MIMIC: a rare quirk-band head-only follow of the moving cursor (3-6s, per-body 45-90s cooldown, station-gated); reduceMotion → a single glance
+    if (maybeJoinBar(now)) return;       // rare, same-room reuse: join exactly one existing bar sitter on another stool
     /* FOLLOW-THROUGH (continuity of attention, drive half). The three drives were re-raced from scratch on
        every re-decide, so PARTLY satisfying one could flip the winner and send the body off to an unrelated
        category mid-thought — the same incoherence `attn` fixes spatially. The drive that most recently took
@@ -3278,7 +3854,7 @@ const World = (() => {
     // ladder's own precedence below (rest > soc > stim) so the two can never disagree about who won.
     const win = top === wRest ? 'rest' : top === wSoc ? 'soc' : 'stim';
     if (win !== held) { self.drive = win; self.driveUntil = now + U.irnd(12000, 22000); }
-    if (top === wRest) { if (planProp(now)) return; }                                  // tired -> lounge / couch
+    if (top === wRest) { if (planRest(now)) return; }                                  // tired -> lounge / couch (but not the SAME couch on a loop — see planRest)
     else if (top === wSoc) { if (planSeekDesk(now)) return; }                          // lonely -> the desk, face the Commander
     else {                                                                             // bored / restless
       // TIER D · D5 beat 3 — QUEUE-AWARE IDLE BIAS: while the visible task/mission queue is non-empty, the OVERSEER
@@ -3286,10 +3862,19 @@ const World = (() => {
       // work-adjacent points) rather than an aimless beat — a WEIGHT shift (x1.5, never absolute), not new movement.
       // The multiplier derives from missionPinCounts (cached, no RNG) so the U.chance draw count is UNCHANGED; a
       // no-queue floor keeps the exact 0.3 (byte-identical), and crew (self!==agent) always use 0.3.
+      // ENTERTAINMENT FIRST (2026-08-08). Bored, and there is a games room in reach? Go and play.
+      // This is the branch idle downtime actually lands in, and until now it could not reach a
+      // single leisure prop (see planPlay) — the whole reason a station full of arcade machines
+      // read as scenery. Ahead of the caretaker lap on purpose: a lap is what you do when there is
+      // nothing better, and the Commander placing a pinball table is them saying there is.
+      if (U.chance(0.7) && planPlay(now)) return;                                       //   bored + something fun placed -> play with it
       const roundsBias = (self === agent && (missionPinCounts(now)[0] | 0) > 0) ? 0.45 : 0.3;
       if (U.chance(roundsBias) && maybeRounds(now)) return;                             //   do a deliberate caretaker lap (purpose, not aimless)
       if (n.stim < 42 && planPOI(now)) return;                                         //   study a machine / watch a belt
-      if (idleAge > 30000 && U.chance(0.35) && planGazeOut(now)) return;               //   long quiet -> contemplate the void
+      // the vantage beat is a PUNCTUATION MARK, not a pastime. At 0.35 after 30s it became the most
+      // common thing the hero did (measured: 98 of 259 idle samples) and the floor read as a body
+      // wandering off to stare at nothing every few seconds. Rarer, and only after a long quiet.
+      if (idleAge > 60000 && U.chance(0.12) && planVantage(now)) return;                //   long quiet -> take up a vantage and look out over the station
       if (p.restless * ph.restless > 1.0 && pace(now)) return;                          //   antsy -> pace in place
     }
     // graceful fallbacks so it never freezes
@@ -3352,7 +3937,7 @@ const World = (() => {
     }
     // lounging on the couch: eyes settle on the TV (base facing), with the odd glance around the room
     if (agent.goal === 'lounge') {
-      if (U.chance(0.25)) { setGlance(U.pick(['east', 'west', 'south']), U.irnd(400, 800), now); agent.glanceCd = now + U.irnd(2600, 5200); }
+      if (U.chance(0.25)) { setGlance(lookDir(agent, { exclude: agent.useFace }), U.irnd(400, 800), now); agent.glanceCd = now + U.irnd(2600, 5200); }   // eyes off the screen for a beat — at something, not at the wall behind the couch
       else agent.glanceCd = now + U.irnd(1200, 2400);
       return;
     }
@@ -3368,11 +3953,22 @@ const World = (() => {
       else { agent.glanceCd = now + U.irnd(1600, 3200); }
       return;
     }
-    // a quirk in progress: scan pans itself (timed); the others mostly hold their pose with a rare flick
+    // a quirk in progress: the calm scan already chose one subject; the others mostly hold with a rare flick
     if (agent.goal === 'quirk') {
       if (agent.quirkKind === 'vigil') { agent.glanceCd = now + 6000; return; }   // the VIGIL holds dead still — zero head-turns, the held emptiness
-      if (agent.quirkKind !== 'scan' && U.chance(0.3)) setGlance(U.pick(['east', 'west', 'south', 'north']), U.irnd(400, 800), now);
+      if (agent.quirkKind !== 'scan' && U.chance(0.3)) setGlance(lookDir(agent), U.irnd(400, 800), now);
       agent.glanceCd = now + U.irnd(1200, 2600);
+      return;
+    }
+    // AT A PROP (W2): the prop's own fidget cadence. An absorbing thing with something moving on it
+    // (a tank, a screen, a holo pet) holds the gaze and is only rarely looked away from; everything
+    // else gets the busier "using it while taking the room in" rhythm. The look-away always has a
+    // subject (lookDir), and never doubles back onto the prop the body is already facing.
+    if (agent.goal === 'use') {
+      const b = agent.useBeat, span = b ? b.fidget : [2000, 4000];
+      if (now < (agent.nextFidget || 0)) return;
+      agent.nextFidget = now + U.irnd(span[0], span[1]);
+      if (U.chance(b && b.track ? 0.08 : 0.25)) { setGlance(lookDir(agent, { exclude: agent.useFace }), U.irnd(600, 1000), now); agent.glanceCd = now + U.irnd(3000, 5000); }
       return;
     }
     // working at the desk: glance at a freshly placed thing nearby, else fidget-look up from the screen
@@ -3416,7 +4012,8 @@ const World = (() => {
     // endEncounter is idempotent; this is the belt-and-suspenders that makes the slot un-leakable.
     if (socialBeat && (now >= socialBeat.until || encounterBroken(now))) endEncounter(now);
     sweepChase(now);                                              // TIER D · D4: station-level chase sweep (G4) — a seized/despawned/chat-focused chaser ALWAYS frees the lock same-tick, independent of its own stepper
-    tickNeeds(dt);                                                 // the inner meters drain/refill by what it is doing
+    decayHabits(now);                                             // habituation fades (see FORGET_MS) — a floor watched for an hour must not run out of things worth looking at
+    tickNeeds(dt);                                              // the inner meters drain/refill by what it is doing
     if (!agent.sitting && !agent.seated) ensureAgentValid();       // CONTAINMENT BACKSTOP (2026-07-12): a standing hero off the floor re-homes NOW, not at the next refit (rederive was the only caller — any missed frame-shift left it adrift until then)
     stepCrew(dt, now);                                             // the OTHER agents wander the station while idle (the hero is below)
     const SPEED = 34 * (agent.pers ? agent.pers.pace : 1);         // temperament: each agent walks at its own pace
@@ -3489,6 +4086,9 @@ const World = (() => {
     // summon-seize block (which flips goal off 'mimic'/'chase') so work always wins (G2). Only while genuinely idle.
     if (activity === 'idle' && agent.goal === 'mimic') stepMimic(now);
     if (activity === 'idle' && agent.goal === 'chase') stepChase(now);
+    // W4: the hero side of the passing acknowledgement (see maybeAcknowledge — gaze + a raised hand,
+    // no slot, no movement). Self-gated on activity==='idle' inside, so a summoned hero never waves.
+    maybeAcknowledge(now);
     if (agent.target) {
       // belt-yield: about to cross a belt with cargo bearing down → pause and let it pass (only on a casual stroll)
       if (now >= (agent.pauseUntil || 0) && now >= (agent.yieldCd || 0) && agent.goal == null && shouldYieldToCargo()) {
@@ -3512,7 +4112,7 @@ const World = (() => {
       }
     } else if (agent.goal === 'use') {
       // lounging at a prop: hold the pose until the dwell timer ends, then drift back to wandering
-      if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
+      if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.useBeat = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
     } else if (agent.goal === 'lounge') {
       // sitting on the couch watching the TV: maybeGlance animates the gaze; clear both props when done
       if (now >= agent.useUntil) { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.sitting = false; agent.state = 'idle'; agent.idleUntil = now + U.irnd(400, 1200); }
@@ -3711,14 +4311,12 @@ const World = (() => {
         // (token/tool-driven, heatFor) + a task-progress fraction ONLY when a real one was published
         // (deskProgFor — a live harness run has none and renders none).
         const live = (p.agentId && workstationLit(p)) ? { heat: heatFor(p.agentId), prog: deskProgFor(p.agentId) } : null;
-        // SEAT LAW: `seated` now means exactly one thing — a body rendered ON a stool/chair prop. That seat
-        // must sort JUST BEHIND its sitter (seatPy - 1), so the body sits IN the seat instead of the seat art
-        // being painted over its legs. (Pre-2026-08-04 this ran the other way, +1, because `seated` then meant
-        // a couch/bed occupant and the sofa's tall BACK panel was supposed to occlude the sitter. Couch and bed
-        // no longer seat anyone, so that inversion would now just hide a body behind a stool.)
+        // A stool/chair sorts just BEHIND its sitter; a couch sorts just IN FRONT so the tall sofa back
+        // occludes the sitter's lower body. Beds/beanbags never set `seated` and never enter this branch.
         const sitter = (agent && agent.seated && agent.usingProp === p.id) ? agent
           : crew.find(b => b.seated && b.usingProp === p.id);
-        let sy = sitter ? sitter.seatPy - 1 : (p.y + (p.h || 1)) * T;
+        const sitterUse = sitter ? propUse(p) : null;
+        let sy = sitter ? sitter.seatPy + (sitterUse && sitterUse.kind === 'couch' ? 1 : -1) : (p.y + (p.h || 1)) * T;
         // MOUNT LIFT, resolved per FRAME rather than stored on the prop: a table-top prop only rides the
         // table while the table is actually under it. Reclaim the table and the prop drops back to the
         // deck instead of floating — which is why no saved station ever needs migrating for this.
@@ -4250,7 +4848,10 @@ const World = (() => {
     // voice cues animate the body while the HERO is actually speaking + a "listening" foot-pulse when the mic is
     // live (drawBody/drawFallback read who.speaking). Crew bodies don't use Voice, so these are hero-only.
     const listening = (who === agent) && (typeof Voice !== 'undefined' && Voice.isListening && Voice.isListening());
-    if (who === agent) who.speaking = (typeof Voice !== 'undefined' && Voice.isSpeaking && Voice.isSpeaking());
+    // W4: `speaking` is no longer only the hero's VOICE — a body taking its turn in a silent
+    // exchange sets `talking` (see talkTurn), and the hero must OR the two or its own conversation
+    // pose would be stomped back to false every frame by the Voice read below.
+    if (who === agent) who.speaking = (typeof Voice !== 'undefined' && Voice.isSpeaking && Voice.isSpeaking()) || !!who.talking;
     // while seated on a couch the agent draws on the cushion, not its (adjacent) logical tile — swap
     // px/py for the draw and restore after, so movement/pathing keep using the real logical position.
     const ox = who.px, oy = who.py;
@@ -5576,10 +6177,12 @@ const World = (() => {
       // `phase` stays an INTEGER (phaseOf indexes PHASES[] with it); `aph` is the FLOAT sprite offset — see the hero's note.
       phase: U.hash('' + aid) % 6, aph: (U.hash('' + aid) % 600) / 100, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false, watchProp: null,
+      lastFun: null, lastFunUntil: 0,
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
       summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory (mirrors the hero literal) — runtime-only
       neighborGlanceCd: 0, // Tier C / C-Beat2: per-body mutual-glance cooldown (mirrors the hero literal) — runtime-only
+      barJoinCd: 0, barJoinUntil: 0,
       wakeAt: 0, workUntil: 0,
       // B0 — FULL ENGINE STATE SHAPE (additive, runtime-only): mirror the hero literal (spawn ~346-367) so a
       // crew body reads real meters/temperament when Tier B2 routes the sentience engine through it (stepCrew →
@@ -5719,6 +6322,42 @@ const World = (() => {
     b.summoned = true; b.wakeAt = fnow;                                   // a small materialize ripple
     b.idleUntil = fnow + U.irnd(1400, 3200);                              // hold a beat after materializing, then it strolls
     crew.push(b);
+    greetNewcomer(b, fnow);                                               // somebody on the floor goes over to say hello
+  }
+  /* THE WELCOME (2026-08-08, Andrew: "agents should greet one another when a new one is spawned,
+     perhaps they will walk up to one another and wave"). A body materializing on the floor is an
+     EVENT, so this fires off the event rather than waiting for the ambient social lane — the same
+     shape as the Tier C summon-glance, which also fires off an event instead of a dice roll.
+
+     It reuses the D3 huddle wholesale: the greeter walks over, both wave as they settle, they take
+     turns in the silent exchange, and they part with a wave. So it costs one function, inherits
+     every existing safety property (one encounter station-wide, zone-clamped targets, work seizes
+     instantly, the hard timeout), and CANNOT stack — if an encounter is already live, the newcomer
+     simply arrives unremarked, which is honest. The station LANE cooldown is deliberately bypassed
+     (a welcome is not ambient chatter) but the fired encounter still arms it, so a burst of spawns
+     produces ONE welcome, not one per body. */
+  function greetNewcomer(newBody, now) {
+    if (!newBody || newBody.unplaced || !geo || socialBeat || reduceMotion()) return false;
+    // Not during BOOT: replaying a saved roster spawns every body at once, and nobody welcomes a
+    // floor that is still materializing. (This deliberately does NOT key on firstWakeDone — that
+    // latch only ever fires for a brand-new agent's awakening ceremony, so on every resumed save it
+    // stays false forever and would have silently disabled the welcome for good.)
+    if (!agent || agent.unplaced || agent.goal === 'firstwake') return false;
+    if (!floorLiveAt || (now - floorLiveAt) < 8000) return false;
+    const keep = self;
+    try {
+      let best = null;
+      for (const other of allBodies()) {
+        if (!other || other === newBody || other.unplaced) continue;
+        self = other;                                                     // socialEligible/zoneFor read the CURRENT body
+        if (!socialEligible(other, now)) continue;
+        const d = Math.hypot(other.px - newBody.px, other.py - newBody.py);
+        if (!best || d < best.d) best = { body: other, d };
+      }
+      if (!best) return false;
+      self = best.body;
+      return planHuddle(best.body, newBody, now);                         // walks, waves, exchanges turns, parts
+    } finally { self = keep; }                                            // MANDATORY restore (B1) — spawnAgent runs outside the engine loop
   }
   // rename a placed body (hero or crew) so its floor nameplate follows a dossier rename. DISPLAY-ONLY: the
   // agentId that keys crew/anchors/engine-state never changes, so this can't disturb any body's identity.
@@ -6549,6 +7188,8 @@ const World = (() => {
     sitting: !!(agent && agent.sitting),
     seatKey: (agent && agent.seatKey) || null,
     seated: !!(agent && agent.seated),
+    useMs: agent ? Math.max(0, Math.round((agent.useUntil || 0) - ((typeof performance !== 'undefined') ? performance.now() : fnow))) : 0,
+    watchProp: (agent && agent.watchProp) || null,
     // where the body actually DRAWS: seated bodies render on the claimed seat tile, everyone else on their own
     renderPx: agent ? (agent.seated ? { x: agent.seatPx, y: agent.seatPy } : { x: agent.px, y: agent.py }) : null,
     walkingTo: (agent && agent.target) ? { x: agent.target.x, y: agent.target.y } : null,
@@ -6634,17 +7275,32 @@ const World = (() => {
       const snap = (b, hero) => {
         if (!b) return null;
         const t = tileOf(b.px, b.py);
+        const rt = tileOf(bodyPosX(b), bodyPosY(b));
         const z = zoneFor(b);
+        const fd = facingDetail(b), fp = fd && fd.prop;
         return {
           id: b.id, name: b.name, hero: !!hero,
-          tile: t, px: Math.round(b.px), py: Math.round(b.py), dir: b.dir, state: b.state,
+          tile: t, renderTile: rt, px: Math.round(b.px), py: Math.round(b.py), dir: b.dir, state: b.state,
           goal: b.goal || null, moving: !!b.target, working: !!b.working, sitting: !!b.sitting,
           seated: !!b.seated, unplaced: !!b.unplaced, summoned: !!b.summoned,   // summoned = carries the idle inner life (roster bodies must, post-relaunch too)
           visTopPy: (b.visTopPy != null) ? Math.round(b.visTopPy) : null,       // drawn head-top (world px) — the overlay anchor drawBubble/drawNameplate use
           say: (b.say && b.say.text && b.say.until > fnow) ? b.say.text : null,
           target: b.target ? { tile: tileOf(b.target.x, b.target.y), x: Math.round(b.target.x), y: Math.round(b.target.y) } : null,
           glance: b.glance ? { dir: b.glance.dir, ms: Math.max(0, Math.round((b.glance.until || 0) - fnow)) } : null,
-          zone: z, inOwnZone: tileInZone(z, t.x, t.y)
+          zone: z, inOwnZone: tileInZone(z, t.x, t.y),
+          // idle-life (2026-08-08) instrumentation — read-only, no side effects:
+          facing: fd ? fd.subject : null,                               // what is one tile ahead of its RENDERED position ('wall' is the defect)
+          facingProp: fp ? { id: fp.id, type: fp.t, useKind: (propUse(fp) || {}).kind || null } : null,
+          facingCounter: !!(fp && isCounterProp(fp)),                   // truthful bar-stool proof: the actual prop in front is counter-ish
+          wallDirs: wallDirsAt(b),                                      // control: how many of the 4 cardinals here ARE wall (a blind pick would hit wall wallDirs/4 of the time)
+          quirkKind: b.quirkKind || null,
+          useKind: b.usingProp ? useKindOf(b.usingProp) : null,         // WHICH prop it is using (the per-kind beat)
+          emote: !!(b.emote && b.emote.until > fnow),                   // the ambient stretch is playing (assets.js owns it; nothing in the idle engine fires it)
+          talking: !!b.talking,                                         // W4: taking its turn in a silent exchange
+          pose: b._pose || null,                                        // the sprite track it was LAST DRAWN in (assets.js records it) — render truth, not a re-derivation
+          socialKind: (b.social && b.social.kind) || null,              // which encounter it is in, and
+          socialPhase: (b.social && b.social.phase) || null,            // whether it is still walking to it or holding
+          inHomeRoom: !!(z && z.kind === 'room' && typeof Zones !== 'undefined' && Zones.rectHas(z.rect, t.x, t.y))   // false + inOwnZone = it walked into another room on its roam radius
         };
       };
       return [snap(agent, true), ...crew.map((b) => snap(b, false))].filter(Boolean);

@@ -5,7 +5,12 @@ const SPRITES = (() => {
   let ready = false;
   const frames = {};   // key "minion.walk.south" -> [Image]
   const tinted = {};   // key "FORGE|minion.walk.south" -> [canvas]
-  let tracksBySet = {};
+  // null means the manifest has not been planned yet. This distinction matters: World starts drawing
+  // immediately while init() is still awaiting manifest.json, so an existing non-default crew skin can
+  // reach loadSet() before its tracks exist. Memoizing that empty pre-init lookup as a finished set job
+  // poisoned the skin for the whole page session; the default/maintainer skin still worked because init()
+  // explicitly loads it after planning, and changing the affected agent to a new skin later also worked.
+  let tracksBySet = null;
   const setJobs = {};
   const loadedSets = new Set();
   let meta = { minion: { fw: 0, fh: 0 }, ultron: { fw: 0, fh: 0 } };
@@ -361,6 +366,10 @@ const SPRITES = (() => {
     // agent like the blink so the crew never moves in unison. The index is derived from the
     // window's own progress (fixedIdx), NOT the free-running clock — a clock index would enter
     // the animation mid-cycle. Sets without a gesture track skip this entirely.
+    /* This track is a STRETCH. It is fired here, on its own slow ambient clock, and nowhere else:
+       an attempt to reuse it on demand (reaching for a prop, working an arcade cabinet, waving)
+       was removed 2026-08-08 because a stretch played at those moments reads as a glitch. New
+       meanings need new frames, not this one re-labelled. */
     let fixedIdx = null;
     if (key && key.indexOf('.rot.') !== -1 && b.state !== 'walk'
         && !b.working && !b.sitting && !b.speaking && !meeting && !glancing) {
@@ -400,6 +409,10 @@ const SPRITES = (() => {
       }
     }
     if (!key) return null;
+    // the pose this body is ACTUALLY being drawn in, recorded read-only for live verification
+    // (dev/idlesoak.mjs asserts a waving body resolves to a `.gesture.` track). Nothing reads it
+    // to make a decision — a rendering claim has to be provable from the render, not re-derived.
+    b._pose = key;
 
     const fr = tintFrames(b.id, key);
     if (!fr || !fr.length) return null;
@@ -482,8 +495,12 @@ const SPRITES = (() => {
   function loadSet(set) {
     const key = String(set || '').trim();
     if (!key) return Promise.resolve(false);
-    if (setJobs[key]) return setJobs[key];
+    // Do not cache a request until the manifest is ready and proves the set has tracks. drawBody calls us
+    // again on the next frame, so a pre-init request naturally recovers as soon as init() installs the plan.
+    if (!tracksBySet) return Promise.resolve(false);
     const tracks = tracksBySet[key] || [];
+    if (!tracks.length) return Promise.resolve(false);
+    if (setJobs[key]) return setJobs[key];
     setJobs[key] = Promise.all(tracks.map(([track, paths]) =>
       Promise.all(paths.map(p => loadImage('assets/sprites/' + p))).then(imgs => {
         const ok = imgs.filter(Boolean);

@@ -30,6 +30,9 @@ const wqComplete = id => { wq[id].status = 'done'; };
 // capture the sidecar mirror + let a POST resolve
 const posts = [];
 global.fetch = (url, opts) => { posts.push({ url, body: JSON.parse((opts && opts.body) || '{}') }); return Promise.resolve({ ok: true }); };
+const journeyPosts = [];
+let journeyAvailable = false;
+global.JourneyStore = { noteMilestone: async d => { journeyPosts.push(Object.assign({}, d)); return journeyAvailable ? { ok: true } : { ok: false, error: 'offline' }; } };
 
 // a fake Harness returning a fixed decomposition (COUNTED — the spend-once cache is asserted on this counter)
 let harnessReply = '1. Set up the runtime\n2. Wire the event bus\n3. Build the first agent loop';
@@ -97,8 +100,14 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   wqComplete('wq:1');
   clock = 2000;
   GoalStore._onRunEnd({ reason: 'done', agentId: 'agent', runId: 'run_a' });
+  await new Promise(resolve => setImmediate(resolve));
   A.eq(GoalStore.activeGoal().milestones[0].status, 'done', 'completing the REAL work completes the milestone (never a manual tick)');
   A.ok(GoalStore.activeGoal().milestones[0].evidence, 'evidence is written onto the milestone node');
+  A.eq(GoalStore.activeGoal().milestones[0].journeySyncedAt, null, 'a failed journey fold remains durably pending');
+  journeyAvailable = true;
+  await GoalStore._syncJourneyMilestones();
+  A.ok(GoalStore.activeGoal().milestones[0].journeySyncedAt, 'a later sync retries and acknowledges the completed milestone');
+  A.eq(journeyPosts.filter(p => p.goalId === goal.id && p.milestoneId === goal.milestones[0].id).length, 2, 'the failed milestone is retried exactly once when service returns');
   const q2 = GoalStore.quests();
   A.ok(/1 of 3/.test(q2[0].desc), 'the arc meter advanced to 1 of 3 (honest)');
   const nextStep = q2.filter(q => q.kind === 'arc-step').find(s => s.isNext);
@@ -164,8 +173,10 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   clock = 9000; GoalStore._onRunEnd({ reason: 'done', agentId: 'agent', runId: 'run_p' });
   const prBefore = GoalStore.quests()[0].desc;
   GoalStore.init({ now: () => clock, getSystem: () => '', launchDirective: t => launches.push(t) });   // re-hydrate from the own key
+  await new Promise(resolve => setImmediate(resolve));
   A.ok(GoalStore.activeGoal() && GoalStore.activeGoal().id === gp.id, 'the goal tree survives a re-init (persisted, own key)');
   A.eq(GoalStore.quests()[0].desc, prBefore, 'progress + evidence round-trip through persistence');
+  A.ok(GoalStore.activeGoal().milestones[0].journeySyncedAt, 'journey acknowledgement survives the goal-store persistence round-trip');
 
   /* ====== 8. THE ONE-BEAT DISCIPLINE — BEHAVIORAL (memory wins, study second, arc third) ======
      The arc confirm beat is the LOWEST-priority participant on the pure beat-slot arbiter (Study.makeBeatSlot):

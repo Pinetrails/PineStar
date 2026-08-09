@@ -15,8 +15,9 @@ try {
   fs.writeFileSync(path.join(current, '.starnet-workspace-owner.json'), '{}');
   fs.writeFileSync(path.join(current, '.schema-version.json'), '{}');
   fs.writeFileSync(path.join(current, '.migrated'), '1');
+  fs.writeFileSync(path.join(current, '.migration-receipt.json'), JSON.stringify({ version: 1, validated: true, sourceRoots: [], files: [] }));
   let v = inspectWorkspaceLineage({ fs, path, workspaceRoot: current, candidateRoots: [legacy], snapshotsRoot: snapshots, platform: process.platform });
-  A.eq(v.priorInstallEvidence, false, 'runtime/schema/migration infrastructure alone is a genuine first run');
+  A.eq(v.priorInstallEvidence, false, 'runtime/schema/migration infrastructure, including an empty migration receipt, is a genuine first run');
   A.eq(v.onboardingAllowed, true, 'onboarding is allowed only with zero evidence');
 
   fs.mkdirSync(legacy, { recursive: true });

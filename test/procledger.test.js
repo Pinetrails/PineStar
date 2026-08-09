@@ -154,6 +154,28 @@ const { makeProcLedger, _internals } = require('../sidecar/procledger.js');
   A.eq(killedRetry, [555], 'the retained receipt is reaped on the next successful boot');
   A.eq(JSON.parse(fs.readFileSync(file, 'utf8')).procs.length, 0, 'only the successful retry consumes the receipt');
 
+  // ---- 5b. managed Windows fallback: CIM denial still pins/reaps exact identities; unpinned stays retained ----
+  {
+    const calls = [];
+    const probe = _internals.makeWin32Probe((exe, args, opts, cb) => {
+      calls.push(args.join(' '));
+      if (calls.length === 1) return cb(Object.assign(new Error('access denied'), { code: 5 }), '');
+      cb(null, JSON.stringify({ ProcessId: 811, CreatedMs: 7001 }));
+    });
+    const got = await probe([811]);
+    A.eq(got.get(811).created, 7001, 'Get-Process fallback preserves exact creation identity when CIM is denied');
+    A.eq(got.get(811).identityOnly, true, 'fallback is explicitly marked identity-only');
+    A.eq(calls.length, 2, 'CIM denial invokes exactly one safe fallback probe');
+
+    const fileU = path.join(dir, 'identity-only-unpinned.json');
+    const u1 = makeProcLedger({ fs, pathMod: path, file: fileU, clock, probe: async () => new Map(), killTree: async () => {} });
+    u1.record({ pid: 812, cmd: 'node unique-server.js' });
+    const u2 = makeProcLedger({ fs, pathMod: path, file: fileU, clock, probe: async () => new Map([[812, { cmd: '', created: 7002, identityOnly: true }]]), killTree: async () => A.ok(false, 'identity-only cannot kill an unpinned receipt') });
+    const us = await u2.sweep();
+    A.eq(us.uncertain, 1, 'an unpinned identity-only result is retained as uncertain');
+    A.eq(JSON.parse(fs.readFileSync(fileU, 'utf8')).procs.length, 1, 'uncertain receipt remains durable for a later richer probe');
+  }
+
   // ---- 6. bad pids are refused ----
   const l6 = makeProcLedger({ fs, pathMod: path, file: path.join(dir, 'l6.json'), clock, probe: async () => new Map(), killTree: async () => {} });
   A.eq(l6.record({ pid: 0, cmd: 'x' }), null, 'pid 0 refused');

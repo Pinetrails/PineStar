@@ -64,7 +64,7 @@ again on the exact merged trunk. Frontend-only: `test:http` was not required.
 
 ## 2026-08-07 — STARNET 0.10 FINAL HERMES PARITY MAP (`agent/hermes-final-gap-audit`)
 
-G0 AND G2 LANE COMPLETE; G1 PACKAGED BASELINE PARTIAL; INTEGRATION PENDING. The comparison is pinned to StarNet `0.9.0` at `fc452230` and Hermes Agent
+G0, G2, AND G3 LANE ACCEPTANCE COMPLETE; G1 PACKAGED BASELINE PARTIAL; INTEGRATION PENDING. The comparison is pinned to StarNet `0.9.0` at `fc452230` and Hermes Agent
 `origin/main` at `10a2b3d7` (2026-08-07), rather than the stale July Hermes checkout. The full evidence map and
 observable exit tests live in `docs/HARNESS_GAP_2026-08-07.md`.
 
@@ -95,6 +95,17 @@ adapter: MCP re-initialized/listed, Telegram re-authenticated but remained only 
 sent. Focused coverage is 8/8; `sidecar.http.test` is 471 assertions; website mirror is 3,883 + 2 embed-only green. The
 canonical fast gate passed all new doctor tests, then stopped at the existing candidate-bound claims seal at step
 228/576 (10 problems / 54 ok); this isolated lane did not rewrite shared release claims.
+
+G3 is implemented on `agent/mcp-process-lifecycle`. Canonical SHA-256 cache identity binds stdio schemas to command,
+arguments/package spec, cwd, environment, and Safe Cell owner. Warm boot projects only a matching size-bounded disk
+record and reports `cached` / process stopped; first use re-initializes and re-lists before dispatch, so a stale tool,
+resource, or prompt cannot run as current. Idle and maximum lifetime recycle the child, owner/profile changes withdraw
+the projection, and ordinary transport crashes retain the existing bounded reconnect path. Stdio children now use the
+durable process ledger; a real Windows force-death test proved the next boot reaped exactly the owned child, including
+on the managed-host CIM-denied path via exact creation-time fallback. The live seeded ABILITIES panel rendered
+`idle · starts on use · 1 tool` plus `cached_probe` without launching a child. Focused G3 evidence is 22 schema-
+lifecycle, 38 stdio, 6 real orphan, and 38 ledger assertions; the exact lane tree is 586/586 fast and 70/70 HTTP green.
+This remains a lane candidate, not trunk capability, until merged.
 
 G1 now has a cryptographically verified **0.9.0 baseline**, not a completed lifecycle matrix. Receipt
 `C:\Users\andro\gen-trees\release-090-final\.dogfood\g1-packaged-lifecycle\20260807T175943\g1-packaged-lifecycle-receipt.json`

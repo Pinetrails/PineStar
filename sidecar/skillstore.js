@@ -27,11 +27,11 @@
   // could describe a locally chopped document. Match the package byte ceiling so accepted source bytes
   // round-trip intact; progressive disclosure still keeps bodies out of the always-on prompt index.
   const NAME_MAX = 80, SUMMARY_MAX = 280, CATEGORY_MAX = 80, BODY_MAX = 256000;
-  const DEFAULT_MAX_PER_AGENT = 100, SUPPORT_FILE_MAX = 64000;
+  const DEFAULT_MAX_PER_AGENT = 100, SUPPORT_FILE_MAX = 256000;
   // A package is bounded by three numbers, not one. Per-file content was always clamped
   // (SUPPORT_FILE_MAX), but nothing bounded HOW MANY files or the package total — so a review
   // pass that keeps demoting session detail into references/ could grow one skill without limit.
-  const DEFAULT_MAX_FILES = 24, DEFAULT_MAX_PACKAGE_BYTES = 256000;
+  const DEFAULT_MAX_FILES = 64, DEFAULT_MAX_PACKAGE_BYTES = 1024 * 1024;
   // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
   // silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
   const STATES = new Set(['active', 'stale', 'archived']);
@@ -77,8 +77,8 @@
     if (!files) return out;
     if (Array.isArray(files)) {
       for (const f of files) if (f && f.path) out[str(f.path)] = {
-        path: str(f.path), content: str(f.content).slice(0, SUPPORT_FILE_MAX),
-        updatedAt: num(f.updatedAt)
+        path: str(f.path), content: str(f.content).slice(0, Math.ceil(SUPPORT_FILE_MAX * 4 / 3) + 4),
+        encoding: f.encoding === 'base64' ? 'base64' : 'utf8', updatedAt: num(f.updatedAt)
       };
       return out;
     }
@@ -86,13 +86,20 @@
       for (const p of Object.keys(files)) {
         const f = files[p];
         if (f && typeof f === 'object') out[str(f.path || p)] = {
-          path: str(f.path || p), content: str(f.content).slice(0, SUPPORT_FILE_MAX),
-          updatedAt: num(f.updatedAt)
+          path: str(f.path || p), content: str(f.content).slice(0, Math.ceil(SUPPORT_FILE_MAX * 4 / 3) + 4),
+          encoding: f.encoding === 'base64' ? 'base64' : 'utf8', updatedAt: num(f.updatedAt)
         };
-        else out[str(p)] = { path: str(p), content: str(f).slice(0, SUPPORT_FILE_MAX), updatedAt: 0 };
+        else out[str(p)] = { path: str(p), content: str(f).slice(0, SUPPORT_FILE_MAX), encoding: 'utf8', updatedAt: 0 };
       }
     }
     return out;
+  }
+  function normPackageFiles(files) {
+    if (!Array.isArray(files)) return [];
+    return files.map(f => ({
+      path: str(f && f.path), encoding: 'base64', content: str(f && f.content),
+      bytes: num(f && f.bytes), sha256: str(f && f.sha256)
+    })).filter(f => f.path && f.content);
   }
   function supportPath(raw) {
     let p = str(raw).trim().replace(/\\/g, '/').replace(/^\/+/, '');
@@ -143,13 +150,18 @@
       scan: r.scan || null,
       guardAction: r.guardAction || '',
       contentDigest: r.contentDigest ? str(r.contentDigest) : '',
+      packageDigest: r.packageDigest ? str(r.packageDigest) : '',
+      packageBytes: num(r.packageBytes),
+      packageFiles: normPackageFiles(r.packageFiles),
+      packageDiverged: bool(r.packageDiverged),
       absorbedInto: r.absorbedInto ? str(r.absorbedInto) : '',
       files: normFiles(r.files)
     };
   }
 
   function projectFile(f, includeContent) {
-    const out = { path: f.path, updatedAt: num(f.updatedAt), bytes: str(f.content).length };
+    const bytes = f.encoding === 'base64' ? Math.floor(str(f.content).length * 3 / 4) : Buffer.byteLength(str(f.content), 'utf8');
+    const out = { path: f.path, encoding: f.encoding || 'utf8', updatedAt: num(f.updatedAt), bytes };
     if (includeContent) out.content = str(f.content);
     return out;
   }
@@ -166,9 +178,11 @@
       viewCount: s.viewCount || 0, useCount: s.useCount || 0, patchCount: s.patchCount || 0,
       packagePath: s.packagePath || '', scan: s.scan || null, guardAction: s.guardAction || '',
       contentDigest: s.contentDigest || '', absorbedInto: s.absorbedInto || '',
+      packageDigest: s.packageDigest || '', packageBytes: s.packageBytes || 0,
+      packageFileCount: (s.packageFiles || []).length, packageDiverged: !!s.packageDiverged,
       files
     };
-    if (includeBody) out.body = s.body || '';
+    if (includeBody) { out.body = s.body || ''; out.packageFiles = normPackageFiles(s.packageFiles); }
     return out;
   }
 
@@ -218,7 +232,14 @@
         if (guard && typeof guard.scanSkillRecord === 'function') {
           // 'user' (the Commander's own typing) is its own trust tier — see the TRUST table in
           // skills/guard.js for why it asks rather than blocks now that verdicts are enforced.
-          const scan = guard.scanSkillRecord(projected, { source: trustSource(entry.createdBy) });
+          const scanInput = clone(projected);
+          if (Array.isArray(entry.packageFiles) && entry.packageFiles.length && !entry.packageDiverged) {
+            scanInput.files = entry.packageFiles.filter(f => f.path !== 'SKILL.md').map(f => {
+              const bytes = Buffer.from(str(f.content), 'base64'); const text = bytes.toString('utf8');
+              return { path: f.path, content: Buffer.from(text, 'utf8').equals(bytes) ? text : '[binary asset: ' + bytes.length + ' bytes]' };
+            });
+          }
+          const scan = guard.scanSkillRecord(scanInput, { source: trustSource(entry.createdBy) });
           entry.scan = scan;
           if (guard && typeof guard.shouldAllow === 'function') {
             const policy = guard.shouldAllow(scan, { allowAsk: true });
@@ -303,8 +324,12 @@
         scan: existing ? existing.scan || null : null,
         guardAction: existing ? existing.guardAction || '' : '',
         contentDigest: existing ? existing.contentDigest || '' : '',
+        packageDigest: e.packageDigest != null ? str(e.packageDigest) : ((existing && existing.packageDigest) || ''),
+        packageBytes: e.packageBytes != null ? num(e.packageBytes) : ((existing && existing.packageBytes) || 0),
+        packageFiles: e.packageFiles != null ? normPackageFiles(e.packageFiles) : normPackageFiles(existing && existing.packageFiles),
+        packageDiverged: e.packageDiverged != null ? !!e.packageDiverged : !!(existing && existing.packageDiverged),
         absorbedInto: existing ? existing.absorbedInto || '' : '',
-        files: existing ? clone(existing.files || {}) : {}
+        files: e.files != null ? normFiles(e.files) : (existing ? clone(existing.files || {}) : {})
       } };
     }
 
@@ -383,6 +408,7 @@
         made = makeEntry(Object.assign({}, e, { agentId, name: existing.name }), existing);
         if (!made.ok) return { ok: false, error: made.error };
         made.entry.patchCount = (made.entry.patchCount || 0) + 1;
+        if (e.packageDigest == null) made.entry.packageDiverged = !!made.entry.packageDigest;
         entry = persist(made.entry);
         return { ok: true, action: 'edit', skill: projectSkill(entry, true), edited: true };
       }
@@ -392,6 +418,7 @@
         if (!p.ok) return p;
         made = makeEntry(Object.assign({}, existing, { agentId, name: existing.name, body: p.body }), existing);
         made.entry.patchCount = (made.entry.patchCount || 0) + 1;
+        made.entry.packageDiverged = !!made.entry.packageDigest;
         entry = persist(made.entry);
         return { ok: true, action: 'patch', skill: projectSkill(entry, true), edited: true };
       }
@@ -436,7 +463,8 @@
         t = now();
         entry = clone(existing);
         entry.files = normFiles(entry.files);
-        const content = red(e.content, supportFileMax);
+        const encoding = e.encoding === 'base64' ? 'base64' : 'utf8';
+        const content = encoding === 'base64' ? str(e.content).slice(0, Math.ceil(supportFileMax * 4 / 3) + 4) : red(e.content, supportFileMax);
         // Per-file bytes were already clamped above; these two bound the PACKAGE. Overwriting an
         // existing path is always allowed (it cannot grow the count, and its old bytes leave with it).
         const isNew = !entry.files[p.path];
@@ -448,7 +476,8 @@
         if (bytes + content.length > maxPackageBytes) {
           return { ok: false, error: 'the skill package would exceed ' + maxPackageBytes + ' bytes - trim it or split the content into a second skill' };
         }
-        entry.files[p.path] = { path: p.path, content: content, updatedAt: t };
+        entry.files[p.path] = { path: p.path, content: content, encoding, updatedAt: t };
+        entry.packageDiverged = !!entry.packageDigest;
         entry.patchCount = (entry.patchCount || 0) + 1;
         entry.updatedAt = t;
         entry = persist(entry);
@@ -460,6 +489,7 @@
         entry = clone(existing);
         entry.files = normFiles(entry.files);
         delete entry.files[p.path];
+        entry.packageDiverged = !!entry.packageDigest;
         entry.patchCount = (entry.patchCount || 0) + 1;
         entry.updatedAt = now();
         entry = persist(entry);

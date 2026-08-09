@@ -148,6 +148,12 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(journey1.body.journey.metrics[0].current, 10, 'journey metric survives a real HTTP read-after-write');
     const journeyBad = await j('POST', '/api/journey', { op: 'invent.level' });
     A.eq(journeyBad.status, 400, 'unknown journey operation -> 400');
+    const journeyReset = await j('POST', '/api/journey', { op: 'journey.reset', epoch: 2 });
+    A.eq(journeyReset.status, 200, 'journey reset advances to a new Commander generation');
+    const staleJourney = await j('POST', '/api/journey', { op: 'metric.create', epoch: 1, label: 'Stale tab metric', baseline: 0, target: 1 });
+    A.eq(staleJourney.status, 409, 'a stale Commander generation cannot mutate the new journey');
+    const currentJourney = await j('POST', '/api/journey', { op: 'metric.create', epoch: 2, label: 'Current tab metric', baseline: 0, target: 1 });
+    A.eq(currentJourney.status, 200, 'the active Commander generation can mutate its journey');
 
     // ---- (7) POST /api/activity — arrival IS the signal; always 200 with the recorded timestamp ----
     const before = Date.now();

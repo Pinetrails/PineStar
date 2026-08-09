@@ -9,6 +9,7 @@
    It is dependency-injected for tests and sidecar containment.
 */
 'use strict';
+const packageFormat = require('./package-format.js');
 (function (root, factory) {
   const api = factory();
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
@@ -131,6 +132,7 @@
     const fs = opts.fs;
     const path = opts.pathMod;
     const root = opts.root;
+    const now = typeof opts.now === 'function' ? opts.now : () => 0;
     if (!fs || !path || !root) {
       return { writePackage() {}, hydrate(skill) { return skill; }, packageDir() { return ''; }, renderSkillMd, parseFrontmatter, splitRendered };
     }
@@ -171,6 +173,12 @@
       if (!insideRoot(file)) throw new Error('skill package path escapes the package root: ' + file);
       fs.writeFileSync(file, text, 'utf8');
     }
+    function writeBytes(file, bytes) {
+      if (!insideRoot(file)) throw new Error('skill package path escapes the package root: ' + file);
+      ensureDir(path.dirname(file));
+      if (!insideRoot(file)) throw new Error('skill package path escapes the package root: ' + file);
+      fs.writeFileSync(file, bytes);
+    }
     function projectedFiles(skill) {
       const files = Array.isArray(skill.files) ? skill.files : [];
       return files.map(f => ({ path: supportPath(f.path), content: str(f.content), updatedAt: f.updatedAt || 0 })).filter(f => f.path);
@@ -183,6 +191,16 @@
         try { if (fs.existsSync(visible)) fs.rmSync(visible, { recursive: true, force: true }); } catch (_) {}
       }
       ensureDir(dir);
+      if (Array.isArray(skill.packageFiles) && skill.packageFiles.length && skill.packageDigest && !skill.packageDiverged) {
+        const pkg = packageFormat.fromEnvelope({ format: packageFormat.FORMAT, digest: skill.packageDigest, files: skill.packageFiles });
+        // The manifest is complete, so the directory must be complete too. Remove the prior contained
+        // generation before writing; otherwise an upstream-deleted script remains executable on disk.
+        if (!insideRoot(dir)) throw new Error('skill package path escapes the package root: ' + dir);
+        if (fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+        ensureDir(dir);
+        for (const f of pkg.files) writeBytes(path.join(dir, f.path), Buffer.from(f.content, 'base64'));
+        return dir;
+      }
       const s = Object.assign({}, skill, { files: projectedFiles(skill) });
       writeText(path.join(dir, 'SKILL.md'), renderSkillMd(s));
       for (const f of s.files) writeText(path.join(dir, f.path), f.content);
@@ -209,9 +227,11 @@
               const rel = path.relative(dir, full).replace(/\\/g, '/');
               const p = supportPath(rel);
               if (!p) continue;
-              let content = '';
-              try { content = fs.readFileSync(full, 'utf8'); } catch (_) {}
-              out.push({ path: p, content, updatedAt: 0, bytes: content.length });
+              let content = Buffer.alloc(0);
+              try { content = fs.readFileSync(full); } catch (_) {}
+              const asText = content.toString('utf8');
+              const isUtf8 = Buffer.from(asText, 'utf8').equals(content);
+              out.push({ path: p, content: isUtf8 ? asText : content.toString('base64'), encoding: isUtf8 ? 'utf8' : 'base64', updatedAt: 0, bytes: content.length });
             }
           }
         }
@@ -226,8 +246,19 @@
       if (!fs.existsSync(md)) return skill;
       if (!insideRoot(md)) return skill;   // same law as the write side: a redirected package is not this skill's package
       let parsed = null;
-      try { parsed = parseFrontmatter(fs.readFileSync(md, 'utf8')); } catch (_) {}
-      const files = readSupportFiles(dir);
+      let files = [];
+      if (Array.isArray(skill.packageFiles) && skill.packageFiles.length && skill.packageDigest && !skill.packageDiverged) {
+        try {
+          const pkg = packageFormat.fromEnvelope({ format: packageFormat.FORMAT, digest: skill.packageDigest, files: skill.packageFiles });
+          const main = pkg.files.find(f => f.path === 'SKILL.md');
+          parsed = parseFrontmatter(Buffer.from(main.content, 'base64').toString('utf8'));
+          files = pkg.files.filter(f => f.path !== 'SKILL.md').map(f => ({
+            path: f.path, content: f.content, encoding: 'base64', updatedAt: 0, bytes: f.bytes
+          }));
+        } catch (_) { parsed = null; files = []; }
+      }
+      if (!parsed) try { parsed = parseFrontmatter(fs.readFileSync(md, 'utf8')); } catch (_) {}
+      if (!files.length) files = readSupportFiles(dir);
       const out = Object.assign({}, skill);
       if (parsed) {
         out.description = parsed.meta.description || out.description || out.summary || '';
@@ -244,7 +275,36 @@
       out.packagePath = dir;
       return out;
     }
-    return { writePackage, hydrate, packageDir, archiveDir, renderSkillMd, parseFrontmatter, splitRendered, supportPath };
+    function generationDir(skill) {
+      return path.join(root, '.generations', safeSegment(skill.agentId || 'agent'), safeSegment(skill.id || skill.name || 'skill'));
+    }
+    function snapshot(skill) {
+      if (!skill || !skill.packageDigest || !Array.isArray(skill.packageFiles) || !skill.packageFiles.length) return null;
+      const pkg = packageFormat.fromEnvelope({ format: packageFormat.FORMAT, digest: skill.packageDigest, files: skill.packageFiles });
+      const dir = generationDir(skill); ensureDir(dir);
+      const target = path.join(dir, pkg.digest + '.json');
+      if (!fs.existsSync(target)) writeText(target, packageFormat.toEnvelope(pkg, {
+        name: skill.name || '', sourceUrl: skill.sourceUrl || '', sourceVersion: skill.sourceVersion || '', savedAt: now()
+      }));
+      return { digest: pkg.digest, bytes: pkg.bytes, fileCount: pkg.files.length };
+    }
+    function generations(skill) {
+      const dir = generationDir(skill); if (!fs.existsSync(dir)) return [];
+      return fs.readdirSync(dir).filter(n => /^[a-f0-9]{64}\.json$/.test(n)).map(n => {
+        try {
+          const raw = fs.readFileSync(path.join(dir, n), 'utf8'); const envelope = JSON.parse(raw);
+          const pkg = packageFormat.fromEnvelope(envelope);
+          return { digest: pkg.digest, bytes: pkg.bytes, fileCount: pkg.files.length, metadata: envelope.metadata || {} };
+        } catch (_) { return null; }
+      }).filter(Boolean);
+    }
+    function readGeneration(skill, digest) {
+      if (!/^[a-f0-9]{64}$/.test(str(digest))) throw new Error('invalid generation digest');
+      const file = path.join(generationDir(skill), str(digest) + '.json');
+      if (!insideRoot(file) || !fs.existsSync(file)) throw new Error('no such offline generation');
+      return packageFormat.fromEnvelope(fs.readFileSync(file, 'utf8'));
+    }
+    return { writePackage, hydrate, packageDir, archiveDir, renderSkillMd, parseFrontmatter, splitRendered, supportPath, snapshot, generations, readGeneration };
   }
 
   return { makePackageStore, renderSkillMd, parseFrontmatter, splitRendered, supportPath, safeSegment, SUPPORT_DIRS };
