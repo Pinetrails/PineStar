@@ -250,7 +250,9 @@ const iso = ms => new Date(ms).toISOString();
 
     A.eq(driver.applyTick(clock.now()).fired, 0, 'a no-capability one-shot does not fire (no run launched)');
     A.eq(fired.length, 0, 'no cron.fire for the no-capability one-shot');
-    A.eq(cronStore.getJob(store, 'ncap').fireClaim, dueAt, 'a claim was still stamped (bounds re-attempts to ~maxRunMs)');
+    A.eq(cronStore.getJob(store, 'ncap').fireClaim, null, 'blocked_config clears the in-flight claim because no run launched');
+    A.eq(cronStore.getJob(store, 'ncap').state, 'blocked_config', 'missing capability is a durable visible configuration block');
+    A.eq(Date.parse(cronStore.getJob(store, 'ncap').nextRunAt), dueAt + MIN, 'the blocked one-shot receives a bounded recheck time instead of hammering every tick');
 
     // next tick INSIDE the window: still claimed -> not re-attempted (bounded backoff, not per-tick hammering).
     clock.set(dueAt + MIN);

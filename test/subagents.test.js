@@ -70,6 +70,44 @@ function tick() { return new Promise(resolve => setImmediate(resolve)); }
     A.eq(interrupted.canResume, true, 'interrupted record can resume');
     A.ok(!mgr.interrupt(hold.id, 'other').ok, 'lead ownership is enforced');
 
+    // Steering is durable, one-shot, ownership-bound, and generation-bound.
+    let steeredHandle = null, finishSteered;
+    const steeredDone = new Promise(resolve => { finishSteered = resolve; });
+    const steered = mgr.start({ leadId: 'lead', agentId: 'worker', prompt: 'steer me',
+      resultSchema: { type: 'object', required: ['ok'], properties: { ok: { type: 'boolean' } } } }, async (h) => {
+      steeredHandle = h;
+      await steeredDone;
+      return { status: 'done', reason: 'done', result: '{"ok":true}', structuredResult: { ok: true },
+        validation: { state: 'valid' }, repairRunId: 'repair_1', artifacts: [{ path: 'proof.txt' }], usd: 0.4 };
+    });
+    await tick();
+    A.ok(!mgr.steer(steered.id, 'other', steered.generation, 'wrong owner').ok, 'another lead cannot steer the worker');
+    A.ok(!mgr.steer(steered.id, 'lead', steered.generation + 1, 'wrong generation').ok, 'a mismatched generation is rejected');
+    A.ok(mgr.steer(steered.id, 'lead', steered.generation, 'use the newer constraint').ok, 'the exact live generation accepts steering');
+    A.eq(steeredHandle.steer(), ['use the newer constraint'], 'the worker drains its durable steering instruction once');
+    A.eq(steeredHandle.steer(), [], 'an applied steering instruction cannot replay');
+    finishSteered(); await tick(); await tick();
+    const steeredFinal = mgr.get(steered.id);
+    A.eq(steeredFinal.steerHistory[0].status, 'applied', 'steering history records durable application');
+    A.eq(steeredFinal.structuredResult, { ok: true }, 'structured result survives settlement');
+    A.eq(steeredFinal.artifacts[0].path, 'proof.txt', 'artifact receipt survives settlement');
+    A.eq(steeredFinal.usd, 0.4, 'worker cost survives settlement');
+
+    // A late settlement from an interrupted generation cannot clobber its resumed replacement.
+    let finishOld, finishNew;
+    const oldDone = new Promise(resolve => { finishOld = resolve; });
+    const newDone = new Promise(resolve => { finishNew = resolve; });
+    const racing = mgr.start({ leadId: 'lead', agentId: 'worker', prompt: 'generation race' }, async () => oldDone);
+    await tick(); mgr.interrupt(racing.id, 'lead');
+    const racingResume = mgr.resume(racing.id, async () => newDone);
+    A.eq(racingResume.record.generation, racing.generation + 1, 'resume advances the worker generation');
+    finishOld({ status: 'done', reason: 'done', result: 'old generation', usd: 9 }); await tick(); await tick();
+    const duringRace = mgr.get(racing.id);
+    A.eq(duringRace.status, 'running', 'late old-generation settlement cannot finish the replacement');
+    A.eq(duringRace.generation, racingResume.record.generation, 'late settlement cannot roll back generation');
+    finishNew({ status: 'done', reason: 'done', result: 'new generation', usd: 0.1 }); await tick(); await tick();
+    A.eq(mgr.get(racing.id).result, 'new generation', 'only the current generation may settle the record');
+
     // restart/load marks formerly-running records stale; resume restarts in the same durable record.
     const stale = mgr.start({ leadId: 'lead', agentId: 'worker', prompt: 'resume me' }, async () => new Promise(() => {}));
     await tick();

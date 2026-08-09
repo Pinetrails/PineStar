@@ -57,7 +57,7 @@
   const iso = cron._internals.iso;            // ms(arg) -> ISO; deterministic (no zero-arg new Date)
 
   // fields a user may edit via updateJob. `id`, timestamps, run-state and counters are NOT editable here.
-  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'scriptTimeoutMs', 'workdir', 'contextFrom', 'misfire', 'unattendedGrants', 'noAgent', 'enabledToolsets', 'attachToSession', 'origin', 'runsLine'];
+  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'scriptTimeoutMs', 'workdir', 'contextFrom', 'monitorMode', 'misfire', 'unattendedGrants', 'noAgent', 'enabledToolsets', 'attachToSession', 'origin', 'runsLine'];
 
   /* UNATTENDED CAPABILITY GRANT (2026-07-25) — the capability families the Commander explicitly approved for
      THIS routine to use with nobody watching. Default EMPTY: a routine grants nothing extra unless the user
@@ -183,6 +183,16 @@
       scriptTimeoutMs: spec.scriptTimeoutMs != null ? Math.min(120000, Math.max(1000, parseInt(spec.scriptTimeoutMs, 10) || 30000)) : 30000,
       workdir: spec.workdir != null ? String(spec.workdir) : null,
       contextFrom: spec.contextFrom == null ? null : normList(spec.contextFrom, 8, ID_RE),
+      // G7 monitor state: the user-controlled mode is editable; hashes/check timestamps are runtime receipts.
+      // The hash advances only after a successful run, so a failed changed source remains retryable.
+      monitorMode: spec.monitorMode === true,
+      monitorHash: null,
+      monitorLastCheckedAt: null,
+      // G7 fail-closed configuration state. One fingerprint receives one durable alert until configuration changes.
+      blockedConfig: null,
+      // G7 job-local scratchpad. It is never model-addressable by job id; the host mints the current cronJobId.
+      notepad: '',
+      notepadUpdatedAt: null,
       noAgent: spec.noAgent === true,
       /* ONLY A ROUTINE THAT BELONGS TO A LINE RUNS THE LINE (Andrew's ruling, 2026-08-07). A routine fires AT
          a dock; if the floor draws stages past that dock, running them buys a provider call per stage. Deciding
@@ -255,6 +265,10 @@
       if (Object.prototype.hasOwnProperty.call(patch, 'enabledToolsets')) next.enabledToolsets = Array.isArray(patch.enabledToolsets) ? patch.enabledToolsets.slice() : null;
       if (Object.prototype.hasOwnProperty.call(patch, 'skills')) next.skills = normList(patch.skills, 8, /^[A-Za-z0-9_. -]{1,120}$/);
       if (Object.prototype.hasOwnProperty.call(patch, 'contextFrom')) next.contextFrom = patch.contextFrom == null ? null : normList(patch.contextFrom, 8, ID_RE);
+      if (Object.prototype.hasOwnProperty.call(patch, 'monitorMode')) {
+        next.monitorMode = patch.monitorMode === true;
+        if (!next.monitorMode) { next.monitorHash = null; next.monitorLastCheckedAt = null; }
+      }
       if (Object.prototype.hasOwnProperty.call(patch, 'enabledToolsets')) next.enabledToolsets = patch.enabledToolsets == null ? null : normList(patch.enabledToolsets, 16, /^[A-Za-z0-9:_-]{1,80}$/);
       if (patch.repeat && patch.repeat.times !== undefined) {
         const t = patch.repeat.times;
@@ -264,6 +278,10 @@
         next.schedule = patch.schedule || null;
         next.scheduleDisplay = next.schedule && next.schedule.display ? next.schedule.display : '';
         if (next.enabled) next.nextRunAt = armAt(next.schedule, null, now, ctx && ctx.defaultTz);   // re-anchor at now
+      }
+      if (['agentId', 'model', 'provider', 'deliver', 'origin'].some(k => Object.prototype.hasOwnProperty.call(patch, k))) {
+        next.blockedConfig = null;
+        if (next.state === 'blocked_config') next.state = next.enabled ? 'scheduled' : 'paused';
       }
       return next;
     });
@@ -350,6 +368,60 @@
     });
   }
 
+  function markBlockedConfig(jobs, id, info, ctx) {
+    info = info || {}; ctx = ctx || {};
+    const now = ctx.now || 0;
+    return mapJob(jobs, id, (job) => {
+      const fingerprint = String(info.fingerprint || '').slice(0, 200);
+      const same = !!(job.blockedConfig && job.blockedConfig.fingerprint === fingerprint);
+      const blocked = {
+        fingerprint: fingerprint,
+        reason: String(info.reason || 'routine configuration is incomplete').slice(0, 1000),
+        since: same ? job.blockedConfig.since : iso(now),
+        alertedAt: info.alerted ? (same && job.blockedConfig.alertedAt ? job.blockedConfig.alertedAt : iso(now))
+          : (same ? job.blockedConfig.alertedAt || null : null)
+      };
+      const next = Object.assign({}, job, {
+        state: 'blocked_config', blockedConfig: blocked, fireClaim: null, heartbeatAt: null,
+        lastError: blocked.reason, lastReason: 'blocked_config', lastStatus: 'error'
+      });
+      // A blocked one-shot otherwise remains due every scheduler tick. Recheck at a bounded time without
+      // finalizing its only occurrence; a configuration edit clears the block and can re-anchor/trigger it.
+      if (job.schedule && job.schedule.kind === 'once' && info.retryAt != null) next.nextRunAt = iso(info.retryAt);
+      return next;
+    });
+  }
+
+  function clearBlockedConfig(jobs, id) {
+    return mapJob(jobs, id, (job) => {
+      if (!job.blockedConfig && job.state !== 'blocked_config') return job;
+      return Object.assign({}, job, { blockedConfig: null, state: job.enabled ? 'scheduled' : 'paused', lastError: null });
+    });
+  }
+
+  function markMonitorCheck(jobs, id, info, ctx) {
+    info = info || {}; ctx = ctx || {};
+    return mapJob(jobs, id, (job) => {
+      const next = Object.assign({}, job, {
+        monitorLastCheckedAt: iso(ctx.now || 0),
+        monitorHash: info.commit === true ? String(info.hash || '').slice(0, 200) : (job.monitorHash || null)
+      });
+      if (info.unchanged === true) {
+        next.fireClaim = null; next.heartbeatAt = null;
+        if (job.schedule && job.schedule.kind === 'once' && info.retryAt != null) next.nextRunAt = iso(info.retryAt);
+      }
+      return next;
+    });
+  }
+
+  function setNotepad(jobs, id, text, ctx) {
+    ctx = ctx || {};
+    return mapJob(jobs, id, (job) => Object.assign({}, job, {
+      notepad: String(text == null ? '' : text).slice(0, 8000),
+      notepadUpdatedAt: iso(ctx.now || 0)
+    }));
+  }
+
   /* markRun — record the outcome of a fired run. `result = { runId, status:'ok'|'error', reason, error, transient }`.
      ctx = { now, maxRetries=3, backoffMs=90000 }.
 
@@ -375,6 +447,10 @@
       next.lastStatus = ok ? 'ok' : 'error';
       next.lastError = ok ? null : (result.error != null ? String(result.error) : 'error');
       if (ok && result.output != null) next.lastOutput = String(result.output).slice(0, 32000);
+      if (ok && result.monitorHash != null) {
+        next.monitorHash = String(result.monitorHash).slice(0, 200);
+        next.monitorLastCheckedAt = iso(now);
+      }
       // G4.5: ANY settlement (success, terminal failure, OR transient failure) means the run is no longer
       // in flight, so CLEAR the one-shot fire-claim. The not-due guard must only suppress re-fire WHILE
       // actually running — a transient settlement clears the claim so the backoff path below can re-arm
@@ -447,6 +523,10 @@
     renewOnceHeartbeat: renewOnceHeartbeat,
     markRun: markRun,
     markDelivery: markDelivery,
+    markBlockedConfig: markBlockedConfig,
+    clearBlockedConfig: clearBlockedConfig,
+    markMonitorCheck: markMonitorCheck,
+    setNotepad: setNotepad,
     removeJob: removeJob,
     getJob: getJob,
     loadEnvelope: loadEnvelope,

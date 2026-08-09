@@ -41,6 +41,14 @@ function checkOne(check, trajectory) {
     case 'set_equals': pass = Array.isArray(actual) && Array.isArray(check.value) &&
       equal(actual.map(stable).sort(), check.value.map(stable).sort()); break;
     case 'length_equals': pass = actual != null && Number(actual.length) === Number(check.value); break;
+    case 'length_max': pass = Number(actual == null ? 0 : actual.length) <= Number(check.value); break;
+    case 'count_equals': {
+      const needle = String(check.value && check.value.needle || '');
+      const expected = Number(check.value && check.value.count);
+      const count = needle ? String(actual == null ? '' : actual).split(needle).length - 1 : 0;
+      pass = Number.isInteger(expected) && count === expected;
+      break;
+    }
     case 'gte': pass = Number.isFinite(Number(actual)) && Number(actual) >= Number(check.value); break;
     case 'in': pass = Array.isArray(check.value) && check.value.some(value => equal(actual, value)); break;
     case 'truthy': pass = !!actual; break;
@@ -143,7 +151,7 @@ export function makePassingObservation(fixture) {
   };
   // Test helper only: synthesize the exact host-observation values named by the oracle.
   for (const check of fixture.oracle.checks) {
-    if (!['equals', 'set_equals', 'length_equals', 'gte', 'in', 'contains', 'contains_all', 'contains_any'].includes(check.op)) continue;
+    if (!['equals', 'set_equals', 'length_equals', 'length_max', 'count_equals', 'gte', 'in', 'contains', 'contains_all', 'contains_any'].includes(check.op)) continue;
     let value = check.value;
     if (check.op === 'length_equals') {
       const current = valueAt(trajectory, check.path);
@@ -151,9 +159,11 @@ export function makePassingObservation(fixture) {
       while (value.length < Number(check.value)) value.push({});
       value.length = Number(check.value);
     }
+    else if (check.op === 'length_max') value = [];
     else if (check.op === 'in') value = check.value[0];
     else if (check.op === 'contains_any') value = check.value[0];
     else if (check.op === 'contains_all') value = check.value.join(' ');
+    else if (check.op === 'count_equals') value = Array(Math.max(0, Number(check.value.count)) + 1).join(String(check.value.needle));
     setPath(check.path, value, check.op === 'contains' || check.op === 'contains_all' || check.op === 'contains_any');
   }
   if (trajectory.observation.claimedDone === undefined) trajectory.observation.claimedDone = true;

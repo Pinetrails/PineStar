@@ -385,4 +385,28 @@ const iso = cron._internals.iso;
   A.eq(store.getJob(jobs, 'runtime1').lastOutput, 'upstream result', 'successful final output persists for context pipelines');
 }
 
+// ---- G7 monitor/config/notepad receipts are bounded, pure, and survive the envelope. ----
+{
+  let jobs = store.createJob([], {
+    id: 'g7', schedule: cron.parseSchedule('every 1h', T0), monitorMode: true, contextFrom: ['source']
+  }, { now: T0 });
+  A.eq(jobs[0].monitorMode, true, 'monitor mode is durable opt-in state');
+  A.eq(jobs[0].monitorHash, null, 'a new monitor has no claimed source hash');
+  jobs = store.markBlockedConfig(jobs, 'g7', { fingerprint: 'fp1', reason: 'connect provider', alerted: true }, { now: T0 + 1 });
+  A.eq(jobs[0].state, 'blocked_config', 'configuration failure gets a distinct durable state');
+  A.ok(jobs[0].blockedConfig.alertedAt, 'the first actionable alert is durably receipted');
+  const firstAlert = jobs[0].blockedConfig.alertedAt;
+  jobs = store.markBlockedConfig(jobs, 'g7', { fingerprint: 'fp1', reason: 'connect provider', alerted: false }, { now: T0 + 2 });
+  A.eq(jobs[0].blockedConfig.alertedAt, firstAlert, 'the same configuration fingerprint preserves one alert receipt');
+  jobs = store.clearBlockedConfig(jobs, 'g7');
+  A.eq(jobs[0].blockedConfig, null, 'valid configuration clears the block');
+  jobs = store.setNotepad(jobs, 'g7', 'x'.repeat(9000), { now: T0 + 3 });
+  A.eq(jobs[0].notepad.length, 8000, 'job notepad is hard-bounded');
+  jobs = store.markRun(jobs, 'g7', { runId: 'g7-run', status: 'ok', reason: 'done', output: 'changed', monitorHash: 'sha256:new' }, { now: T0 + HOUR });
+  A.eq(jobs[0].monitorHash, 'sha256:new', 'only a successful settlement commits the observed source hash');
+  const loaded = store.loadEnvelope(JSON.stringify(store.toEnvelope(jobs))).jobs[0];
+  A.eq({ monitorHash: loaded.monitorHash, note: loaded.notepad, blocked: loaded.blockedConfig },
+    { monitorHash: 'sha256:new', note: 'x'.repeat(8000), blocked: null }, 'monitor and isolated scratch state survive restart loading');
+}
+
 A.report('cron-store');
