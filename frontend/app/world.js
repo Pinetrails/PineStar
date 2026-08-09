@@ -1350,15 +1350,6 @@ const World = (() => {
     const dxT = box.x - agent.target.x, dyT = box.y - agent.target.y;
     return box.d < 15 || Math.hypot(dxT, dyT) < 15;
   }
-  // a quick 2-beat settle-scan (left, then right) before committing the gaze to finalDir — reads as deliberate "taking it in"
-  function scanThen(now, finalDir) {
-    const body = self;   // B1: capture the scheduling body — the setTimeout closures must animate THIS body, not whatever `self` points to at fire time (self is restored to agent each tick)
-    const guard = () => body && (body.goal === 'inspect' || body.goal === 'watch');
-    const sides = U.chance(0.5) ? ['west', 'east'] : ['east', 'west'];
-    if (body) body.glance = { dir: sides[0], until: now + 380 };
-    setTimeout(() => { if (guard()) body.glance = { dir: sides[1], until: performance.now() + 380 }; }, 420);
-    setTimeout(() => { if (guard()) { body.glance = null; body.dir = finalDir; } }, 860);
-  }
   function arrive(now) {
     self.pathPts = null; self.target = null; self.pauseUntil = 0; self.pauseLook = null; self.stilling = false;
     if (self.goal === 'firstwake') { self.state = 'idle'; return; }   // the wake ritual self-drives via stepFirstWake; the rare 'find feet' arrival is a no-op
@@ -1434,12 +1425,11 @@ const World = (() => {
       if (self.studyKey) seenCount.set(self.studyKey, fam + 1);
       if (self.goal === 'tend') { self.studyUntil = now + offbeat(now, U.irnd(3500, 8000)); curiositySay(self.needs.social < 30 ? SELF_TEND : SELF_QUIET, 0.5, now); }
       else if (self.goal === 'gaze') { self.studyUntil = now + offbeat(now, U.irnd(4000, 8000)); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
-      else if (self.goal === 'watch') { self.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); if (U.chance(0.5)) scanThen(now, self.useFace); }
+      else if (self.goal === 'watch') { self.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); }
       else {
-        // INSPECT: it walked over to a machine to look at it — a study, held, with the settle-scan.
+        // INSPECT: it walked over to a machine to look at it — face the subject and hold the study.
         // (No gesture: the only track available is an arms-up stretch, which is not "examining".)
         self.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(self.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (self.inspectNovel ? 0.7 : 0.55) * famK, now);
-        if (U.chance(0.55)) scanThen(now, self.useFace);
       }
     }
     else if (self.goal === 'rounds') {

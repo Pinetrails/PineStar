@@ -39,6 +39,7 @@ A.ok(/U\.chance\(0\.55\) && planPlay/.test(world), 'stimulation can fall through
 // Calm/purposeful tuning: no cardinal spin sequence, no rapid machine swivels, and no decor tours.
 A.ok(!/\[['"]north['"],\s*['"]east['"],\s*['"]south['"],\s*['"]west['"]\]\.forEach/.test(world), 'the frantic four-direction scan sequence is gone');
 A.ok(/function quirkScan\(now\)\s*\{\s*const d = lookDir\(self\);[\s\S]{0,120}startQuirk\(now,\s*['"]scan['"][\s\S]{0,80},\s*d\)/.test(world), 'a scan now chooses one meaningful direction and holds it');
+A.ok(!/function scanThen\(/.test(world), 'inspect/watch arrivals no longer flick left-right-target in under a second');
 A.ok(/arcade:\s*\{\s*dwell:\s*\[22000,\s*40000\],\s*fidget:\s*\[8000,\s*14000\]/.test(world), 'arcade attention no longer re-rolls every second');
 A.ok(/U\.chance\(b\s*&&\s*b\.track\s*\?\s*0\.08\s*:\s*0\.25\)/.test(world), 'prop look-aways are rare instead of the dominant beat');
 A.ok(/function purposefulIdleProp\(p\)/.test(world), 'deliberate idle destinations use one narrow allow-list');
