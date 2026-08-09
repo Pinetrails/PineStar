@@ -5,6 +5,9 @@
    → the ONE aux model call → parse → questStore.mint → the quests visible at GET /api/quests + the north
    star + attempt ledger at GET /api/quests/refresh + the durable files on disk.
 
+   RESTART WAIT — a due save persisted at effective posture WAIT boots twice with zero provider calls and byte-for-
+     byte unchanged quest/refresh stores; an explicit manual refresh still launches and mints afterward.
+
    BOOT 1 — THE HAPPY CHAIN: a never-refreshed save with a dossier + active goal boots; the due cycle fires
      off the boot look, the mock's grounded QUEST reply mints station-wide generated quests with real
      contracts, the north star adopts the Commander's ACTIVE GOAL (user-set outranks inferred), and both
@@ -32,6 +35,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 /* ---- the mock OpenRouter: the quest-master system marker routes to the canned refresh reply ---- */
 function startMock(refreshReply) {
   return new Promise((resolve) => {
+    const calls = { model: 0, quest: 0 };
     const server = http.createServer((req, res) => {
       if (req.url.indexOf('/models') >= 0) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -40,20 +44,21 @@ function startMock(refreshReply) {
       }
       if (req.url.indexOf('/chat/completions') >= 0) {
         let body = ''; req.on('data', d => { body += d; }); req.on('end', () => {
+          calls.model++;
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
           const text = t => {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: t } }] }) + '\n\n');
             res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 6, completion_tokens: 4, total_tokens: 10 } }) + '\n\n');
             res.write('data: [DONE]\n\n'); res.end();
           };
-          if (body.indexOf('quest master') >= 0) text(refreshReply);   // runQuestRefreshCycle's system marker
+          if (body.indexOf('quest master') >= 0) { calls.quest++; text(refreshReply); }   // runQuestRefreshCycle's system marker
           else text('ok, done.');
         });
         return;
       }
       res.writeHead(404); res.end();
     });
-    server.listen(0, HOST, () => resolve({ server, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
+    server.listen(0, HOST, () => resolve({ server, base: 'http://' + HOST + ':' + server.address().port + '/api/v1', calls }));
   });
 }
 
@@ -83,6 +88,15 @@ function seedEvidence(ws) {
   }));
 }
 
+function seedAutonomy(ws, initiative) {
+  fs.mkdirSync(ws, { recursive: true });
+  fs.writeFileSync(path.join(ws, '_commander.autonomy.json'), JSON.stringify({
+    v: 1,
+    posture: { v: 1, initiative: initiative || 'propose', reach: 'observe', leashPerDay: 3 },
+    beliefs: null
+  }));
+}
+
 async function pollRefresh(B, token, pred, label, ms) {
   const until = Date.now() + (ms || 20000);
   let last = null;
@@ -99,6 +113,65 @@ const QUIET = { SKYNET_THREAD_MINE: '0', SKYNET_SKILL_REVIEW: '0', SKYNET_SKILL_
 const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAULT_MODEL: 'test/model' };
 
 (async () => {
+  /* ===== RESTART WAIT: no background provider call or quest mutation; manual refresh survives ===== */
+  {
+    const mock = await startMock([
+      'NORTH_STAR: Grow the channel to sustainable income',
+      'QUEST: Publish episode 3',
+      'DESC: Finish the edit and get episode 3 live.',
+      'REWARD: a published episode moving the channel forward',
+      'CONTRACT: attest',
+      'WHY: your active goal names publish episode 3 as the next step'
+    ].join('\n'));
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-qrefresh-wait-restart-'));
+    seedEvidence(ws);
+    seedAutonomy(ws, 'wait');
+    const questFile = path.join(ws, '_station.quests.json');
+    const refreshFile = path.join(ws, '_station.questrefresh.json');
+    const seededQuests = JSON.stringify({ v: 1, seq: 0, quests: [], deniedTitles: [] });
+    const seededRefresh = JSON.stringify({ v: 1, state: { v: 1, lastCycleAt: 0, lastMintAt: 0, northStar: null, proposedNorthStar: null, pendingQuests: [], declinedNorthStars: [], ledger: [] } });
+    fs.writeFileSync(questFile, seededQuests);
+    fs.writeFileSync(refreshFile, seededRefresh);
+    let child = null;
+    let B = '';
+    let token = '';
+    try {
+      for (let restart = 0; restart < 2; restart++) {
+        const up = await boot(8975 + (process.pid % 10), Object.assign({ SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base }, CRED, QUIET), 20);
+        child = up.child;
+        B = 'http://' + HOST + ':' + up.port;
+        token = await bootToken(B, B);
+        await sleep(3800);   // cross the real three-second boot catch-up on both the original boot and restart
+        const posture = await (await fetch(B + '/api/autonomy/posture', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+        A.eq(posture.summary.initiative, 'wait', 'restart ' + (restart + 1) + ': the effective server posture is WAIT');
+        A.eq(mock.calls.model, 0, 'restart ' + (restart + 1) + ': WAIT made zero background provider calls');
+        A.eq(mock.calls.quest, 0, 'restart ' + (restart + 1) + ': WAIT made zero background quest-provider calls');
+        A.eq(fs.readFileSync(questFile, 'utf8'), seededQuests, 'restart ' + (restart + 1) + ': WAIT made zero quest-ledger mutations');
+        A.eq(fs.readFileSync(refreshFile, 'utf8'), seededRefresh, 'restart ' + (restart + 1) + ': WAIT made zero refresh-state mutations');
+        try { child.kill(); } catch (_) {}
+        child = null;
+        await sleep(200);
+      }
+
+      const up = await boot(8975 + (process.pid % 10), Object.assign({ SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base }, CRED, QUIET), 20);
+      child = up.child;
+      B = 'http://' + HOST + ':' + up.port;
+      token = await bootToken(B, B);
+      const runRes = await (await fetch(B + '/api/quests/refresh/run', { method: 'POST', headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+      A.ok(runRes.ok && runRes.started, 'WAIT preserves explicit manual REFRESH QUESTS authority');
+      await pollRefresh(B, token, p => (p.ledger || []).some(e => e.outcome === 'minted'), 'the WAIT-posture manual refresh minting');
+      A.eq(mock.calls.model, 1, 'manual refresh made exactly one provider call after two WAIT boots');
+      A.eq(mock.calls.quest, 1, 'manual refresh made exactly one quest-provider call after two WAIT boots');
+      const quests = JSON.parse(fs.readFileSync(questFile, 'utf8'));
+      A.eq((quests.quests || []).filter(q => q.createdBy === 'system:quest-refresh').length, 1, 'manual refresh may mutate the quest ledger at WAIT');
+    } finally {
+      try { if (child) child.kill(); } catch (_) {}
+      try { mock.server.close(); } catch (_) {}
+      await sleep(150);
+      try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+    }
+  }
+
   /* ================= BOOT 1 — the happy chain ================= */
   {
     const mock = await startMock([
@@ -117,6 +190,7 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
     ].join('\n'));
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-qrefresh-e2e-'));
     seedEvidence(ws);   // NO _station.questrefresh.json: a never-cycled state is due at the boot look
+    seedAutonomy(ws);
     const { child, port } = await boot(8985 + (process.pid % 10), Object.assign({ SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base }, CRED, QUIET), 20);
     const B = 'http://' + HOST + ':' + port;
     try {
@@ -180,6 +254,7 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
     ].join('\n'));
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-qrefresh-e2e-'));
     seedEvidence(ws);
+    seedAutonomy(ws);
     const { child, port } = await boot(8995 + (process.pid % 10), Object.assign({ SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base }, CRED, QUIET), 20);
     const B = 'http://' + HOST + ':' + port;
     try {
@@ -205,6 +280,7 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
     const mock = await startMock('NORTH_STAR: should never be requested');
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-qrefresh-e2e-'));
     // NO dossier, NO goal, NO activity: the due boot-look cycle must SKIP before spending the model call.
+    seedAutonomy(ws);
     const { child, port } = await boot(9005 + (process.pid % 10), Object.assign({ SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base }, CRED, QUIET), 20);
     const B = 'http://' + HOST + ':' + port;
     try {
@@ -229,6 +305,7 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
     const mock = await startMock(['NORTH_STAR: should never be requested', 'QUEST: Should never mint', 'CONTRACT: attest', 'WHY: grow the youtube channel'].join('\n'));
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-qrefresh-e2e-'));
     seedEvidence(ws);   // full evidence — proving the skip is the SLATE-FULL guard, not the cold-save guard
+    seedAutonomy(ws);
     // seed the store already at the cap: 3 OPEN station-wide (agentId:null) generated quests.
     fs.writeFileSync(path.join(ws, '_station.quests.json'), JSON.stringify({ v: 1, seq: 3, quests: [1, 2, 3].map(i => ({
       id: 'q:' + i, title: 'Seeded generated ' + i, kind: 'generated', agentId: null, createdBy: 'system:quest-refresh',
@@ -265,6 +342,7 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
     ].join('\n'));
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-qrefresh-e2e-'));
     // dossier ONLY — NO goal file, so the north star comes from INFERENCE (the propose-and-confirm path).
+    seedAutonomy(ws);
     fs.mkdirSync(ws, { recursive: true });
     fs.writeFileSync(path.join(ws, '_commander.dossier.json'), JSON.stringify({
       block: 'COMMANDER DOSSIER\n- Goals: grow the youtube channel to sustainable income\n- Stack: davinci resolve, notion'
@@ -334,6 +412,7 @@ const CRED = { SKYNET_OPENROUTER_KEY: 'sk-or-v1-questrefresh-fake', SKYNET_DEFAU
     ].join('\n'));
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-qrefresh-e2e-'));
     seedEvidence(ws);
+    seedAutonomy(ws);
     // the CROSS-ENGINE decline: "Publish episode 3" is a DECLINED thread (a different engine's store). The quest
     // refresher never consults threads for dedup on its own — only the shared declined index bridges them.
     fs.writeFileSync(path.join(ws, 'threads.json'), JSON.stringify({

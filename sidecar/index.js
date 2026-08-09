@@ -6578,6 +6578,11 @@ async function runQuestRefreshCycle(why) {
 function questRefreshTick() {
   if (process.env.SKYNET_QUEST_REFRESH === '0') return;
   if (questRefreshingNow) return;
+  // The cadence and caught-up triggers are BACKGROUND initiative. Read the server-owned effective posture on
+  // every look so the fully-off end of the autonomy dial is honored across restarts: WAIT means nothing starts,
+  // calls a provider, stamps refresh state, or mints quests on its own. The explicit /refresh/run route does not
+  // come through this function; a Commander pressing REFRESH QUESTS remains the authority for a manual cycle.
+  if (!(commanderPosture.summary() || {}).enabled) return;
   // V3 §6 note: the readiness gate is applied INSIDE the cycle as dossier ADMISSIBILITY (a synced not-ready
   // verdict blanks the dossier out of the evidence, so a blitzed onboarding can't mint quests) — never here
   // at the tick, so the cadence still spends and the honest 'skipped' ledger semantics survive.
@@ -8105,8 +8110,9 @@ server.listen(PORT, '127.0.0.1', () => {
   try {
     if (nightshiftShouldArm()) armNightshift();
   } catch (e) { console.warn('[nightshift] start failed:', (e && e.message) || e); }
-  // QUEST REFRESH (QUEST V3, on by default): the 24h + caught-up quest-refresh tick. Inert only under
-  // SKYNET_QUEST_REFRESH=0. The gate itself spends nothing; a due cycle makes ONE aux model call.
+  // QUEST REFRESH (QUEST V3, on by default): the 24h + caught-up quest-refresh tick. Inert under
+  // SKYNET_QUEST_REFRESH=0 or effective autonomy posture WAIT. The gate itself spends nothing; an allowed due
+  // cycle makes ONE aux model call. Explicit manual refresh remains available at every posture.
   try {
     armQuestRefresh();
   } catch (e) { console.warn('[questrefresh] start failed:', (e && e.message) || e); }
