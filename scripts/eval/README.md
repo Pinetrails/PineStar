@@ -101,6 +101,14 @@ isolated comparison venv, its evaluation profile default pinned to the compariso
 tool-search collapsing disabled so the Codex-backed ACP session retains and sees its dynamic MCP surface.
 The driver verifies the session model and fails closed on drift.
 
+The additive focused pack `packs/output-reliability-v1.jsonl` and matching fixture pack exercise truncated
+output continuation, malformed-result recovery, cancellation resume, timeout honesty, and real concurrent
+workers completing out of request order. It is intentionally separate from the frozen 32-scenario v0.9
+release contract. Run three attempts per harness through the same campaign runner and grade the raw rows with
+`applyIndependentParityGrades`; exact output markers are checked with `count_equals`. The fixture's
+`fixture_status` tool is the authoritative post-action read-back. `fixture_inspect` reports setup only and
+must not be treated as evidence that an action persisted.
+
 ```powershell
 node scripts/eval/campaign-runner.mjs --harness starnet --fixtures scripts/eval/fixtures/parity-v0.9.0.jsonl --manifest <starnet-manifest.json> --output <starnet.jsonl> --output-dir <evidence-dir> --attempts 3 --runtime-root <installed-root> --workspaces <active-credential-workspaces>
 node scripts/eval/campaign-runner.mjs --harness hermes --fixtures scripts/eval/fixtures/parity-v0.9.0.jsonl --manifest <hermes-manifest.json> --output <hermes.jsonl> --output-dir <evidence-dir> --attempts 3 --source <frozen-hermes-source> --python <frozen-hermes-python> --home <isolated-hermes-home>
