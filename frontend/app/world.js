@@ -6313,6 +6313,10 @@ const World = (() => {
     const t = spawnTileLocal();
     const ring = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [3, 1], [-3, 1], [1, 3], [-1, -3], [3, -2]];
     const seen = new Set(crew.filter(b => b.summoned).map(b => { const tt = tileOf(b.px, b.py); return tt.x + ',' + tt.y; }));
+    // The hero occupies the ring too. Omitting it made the first summoned worker take [0,0]
+    // directly underneath the hero; hover/click then resolved the hero first and the specialist
+    // was impossible to address on the floor even though its roster/body existed.
+    if (agent && !agent.unplaced) { const ht = tileOf(bodyPosX(agent), bodyPosY(agent)); seen.add(ht.x + ',' + ht.y); }
     for (let i = 0; i < ring.length; i++) {
       const tx = t.x + ring[i][0], ty = t.y + ring[i][1];
       if (geo && geo.walkable(tx, ty, blocked) && !seen.has(tx + ',' + ty)) return footOf(tx, ty);

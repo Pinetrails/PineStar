@@ -1271,12 +1271,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // aborted/dropped run's agent.run.end never reached the bus) so the panel can't get stuck showing it WORKING.
     for (const id of Array.from(runningAgents.keys())) { if (!present.some(a => a.id === id)) { runningAgents.delete(id); runSeenAt.delete(id); } }
     const act = activity();
+    let focusedId = '';
+    try { focusedId = (typeof App !== 'undefined' && App.currentAgent && App.currentAgent() || {}).id || ''; } catch (_) {}
     let working = 0;
     present.forEach(a => {
       const live = agentLive(a.id);
       if (live) working++;
       const e = $('#cs-' + a.id);
-      if (e) e.textContent = live ? (act === 'talk' ? 'in conversation' : 'working at the terminal') : 'idle — awaiting orders';
+      if (e) e.textContent = live ? (a.id === focusedId && act === 'talk' ? 'in conversation' : 'working at the terminal') : 'idle — awaiting orders';
       // H: mark the row WORKING so the in-flight shimmer bar shows only while it's actually running.
       if (e && e.parentElement && e.parentElement.parentElement) e.parentElement.parentElement.classList.toggle('working', live);
     });
@@ -1379,8 +1381,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   function agHead(a, act) {
     const dn = linkDown();   // E2: link gone → the dossier can't honestly say ONLINE either
-    const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
-    const statusText = dn ? 'OFFLINE' : act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
+    const live = !!(a && agentLive(a.id));
+    let focused = false;
+    try { focused = !!(a && typeof App !== 'undefined' && App.currentAgent && App.currentAgent() && App.currentAgent().id === a.id); } catch (_) {}
+    const dotCls = dn ? 'down' : live ? 'working' : (focused && act === 'talk') ? 'thinking' : 'on';
+    const statusText = dn ? 'OFFLINE' : live ? 'WORKING' : (focused && act === 'talk') ? 'THINKING' : 'ONLINE';
     const lv = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats).level : null;   // always-visible level chip
     return '<div class="ag-hero">' +
       // recessed portrait WELL: corner ticks + a slow scan-sweep overlay (v2 hero pattern). The sweep +
@@ -2613,6 +2618,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (sel >= present.length) sel = 0;
     const a = present[sel];
     const act = activity();
+    let focusedId = '';
+    try { focusedId = (typeof App !== 'undefined' && App.currentAgent && App.currentAgent() || {}).id || ''; } catch (_) {}
     // CONSOLE MODE: the roster is the rail-top; the five former sub-tabs are console sections. Every section
     // pane is built up-front (mountConsole keeps them all in the DOM), so the single wire pass below reaches
     // every control — wireHead (header, all sections), wireConfig (CONFIG pane), loadMemoryCore (MEMORY pane).
@@ -2705,7 +2712,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // ROSTER: keep the exact .ag-list / .ag-item class names; upgrade the rows premium (color dot, name,
         // and a cheap live status hint driven by the same run state the crew panel reads).
         const hint = (x) => agentLive(x.id)
-          ? '<span class="ag-item-st working">' + (act === 'talk' ? 'talking' : 'working') + '</span>'
+          ? '<span class="ag-item-st working">' + (x.id === focusedId && act === 'talk' ? 'talking' : 'working') + '</span>'
           : '<span class="ag-item-st">idle</span>';
         top.innerHTML =
           '<div class="ag-list" role="listbox" aria-label="Agents on station">' +
@@ -2831,9 +2838,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const w = open.agents; if (!w) return;
     const act = activity();
     const dn = linkDown();   // E2: keep the live-painted status honest — link gone → OFFLINE, not ONLINE
-    const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
-    const statusText = dn ? 'OFFLINE' : act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
-    // hero: the status dot (class) + the role line's status word
+    const selected = present[sel] || null;
+    const selectedLive = !!(selected && agentLive(selected.id));
+    let focusedId = '';
+    try { focusedId = (typeof App !== 'undefined' && App.currentAgent && App.currentAgent() || {}).id || ''; } catch (_) {}
+    const selectedTalking = !!(selected && selected.id === focusedId && act === 'talk');
+    const dotCls = dn ? 'down' : selectedLive ? 'working' : selectedTalking ? 'thinking' : 'on';
+    const statusText = dn ? 'OFFLINE' : selectedLive ? 'WORKING' : selectedTalking ? 'THINKING' : 'ONLINE';
+    // selected agent: the status dot (class) + the role line's status word
     const dot = w.querySelector('.ag-role-line .ag-sdot');
     if (dot) dot.className = 'ag-sdot ' + dotCls;
     const line = w.querySelector('.ag-role-line');
@@ -2849,7 +2861,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const x = present[+it.dataset.i]; if (!x) return;
       const st = it.querySelector('.ag-item-st'); if (!st) return;
       const live = agentLive(x.id);
-      st.textContent = live ? (act === 'talk' ? 'talking' : 'working') : 'idle';
+      st.textContent = live ? ((x.id === focusedId && act === 'talk') ? 'talking' : 'working') : 'idle';
       st.classList.toggle('working', live);
     });
   }
