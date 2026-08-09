@@ -41,6 +41,19 @@ A.ok(/_glProbeClean >= 3/.test(glBody), 'trust latches only after three clean pr
 A.ok(/_glProbeTries < 30/.test(glBody), 'probing is bounded (stops trying after 30 attempts)');
 A.ok(glBody.indexOf('bright output minted from a dark input') > 0,
   'the dark-input wash arm exists (the reported mac scenario: wash over the dark awakening)');
+const firstLossGuard = glBody.indexOf("glContextLost(gl)) return abandonCurveGL('WebGL context lost before draw')");
+const drawIdx = glBody.indexOf('gl.drawArrays');
+const secondLossGuard = glBody.indexOf("glContextLost(gl)) return abandonCurveGL('WebGL context lost during draw')");
+const clearIdx = glBody.indexOf('ctx.clearRect');
+A.ok(firstLossGuard > 0 && firstLossGuard < upIdx, 'context loss is detected before any GPU upload');
+A.ok(secondLossGuard > drawIdx && secondLossGuard < clearIdx,
+  'context loss is detected after GPU drawing and BEFORE the visible feed is cleared');
+A.ok(/addEventListener\('webglcontextlost'/.test(src) && /ev\.preventDefault\(\)/.test(src),
+  'the offscreen curve canvas listens for the browser context-loss event');
+A.ok(/function abandonCurveGL[\s\S]{0,400}_glFailed = true; _glReady = false/.test(src),
+  'one abandon seam permanently routes the session to the CPU warp');
+A.ok(/_dbgLoseCurveContext[\s\S]{0,500}getExtension\('WEBGL_lose_context'\)[\s\S]{0,300}loseContext\(\)/.test(src),
+  'the deterministic live regression invokes WEBGL_lose_context on the production warp');
 // tries must be consumed ONLY on judged (lit) frames — a long dark awakening must never
 // exhaust the probe budget before the room first lights
 const litArm = glBody.indexOf('preSum >= 15');

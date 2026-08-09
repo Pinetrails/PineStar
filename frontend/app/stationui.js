@@ -744,6 +744,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     sfx('open');
     w.classList.remove('term-min-hidden', 'term-minimizing');
     w.removeAttribute('aria-hidden');
+    // The dossier displays live model and run counters. It stays mounted while minimized, so refresh that
+    // readout before revealing it again; other windows keep their in-progress DOM and draft state untouched.
+    if (key === 'agents') rerender('agents');
     // land it back at the remembered spot (or CSS-centre if never moved), lift to top, replay power-on.
     placeTerm(w, key);
     w.style.zIndex = U.zTop();
@@ -3909,7 +3912,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // whatever onboarding stored — and REMOVE-ing the last custom key stranded a still-active endpoint with no
       // editor. hasStoredCredential('custom') stays false for it (an endpoint is configuration, not a credential).
       const keylessEp = provider === 'custom' && !!(h.getBaseUrl && h.getBaseUrl('custom'));
-      if (set || keylessEp) out.push({ provider, key: h.getKey ? h.getKey(provider) : '', baseUrl: h.getBaseUrl ? h.getBaseUrl(provider) : '', model: (h.getModel && h.getModel()) || '', local: provider === 'ollama' });
+      if (set || keylessEp) out.push({ provider, key: h.getKey ? h.getKey(provider) : '', stored: !!set, baseUrl: h.getBaseUrl ? h.getBaseUrl(provider) : '', model: (h.getModel && h.getModel()) || '', local: provider === 'ollama' });
     }
     addProvider(active);
     if (active !== 'openrouter') addProvider('openrouter');
@@ -4122,7 +4125,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<span class="conn-dot"></span>' +
         '<div class="key-main">' +
         '<div class="key-top"><span class="key-prov">' + esc(provName(k.provider)) + '</span>' +
-        '<code class="key-mask" title="shown masked when a key exists — the full key is never displayed">' + esc(k.key ? maskKey(k.key) : (k.baseUrl || 'keyless endpoint')) + '</code></div>' +
+        '<code class="key-mask" title="shown masked when a key exists — the full key is never displayed">' + esc(k.key ? maskKey(k.key) : (k.baseUrl || (k.stored ? 'stored securely' : 'keyless endpoint'))) + '</code></div>' +
         '<div class="key-meta">model <b>' + esc(k.model || '—') + '</b> · ' +
         runState + '</div>' +
         '</div>' +

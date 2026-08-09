@@ -427,7 +427,7 @@
          cannot have a machine-checked ending without one. The command stays visible either way: it is run at
          your project root and you are entitled to see exactly what that is. */
       const checkRow = t.check
-        ? '<div id="lp-checkrow" class="lp-checkline dim">reading the project…</div>' +
+        ? '<div id="lp-checkrow" class="lp-checkline dim">choose a project to detect its check command</div>' +
           '<input id="lp-check" class="lp-p" data-key="check" type="hidden">'
         : '';
 
@@ -465,7 +465,11 @@
         const detect = async () => {
           const val = (dirEl.value || '').trim();
           const rowEl = formEl.querySelector('#lp-checkrow');
-          if (val && checkEl && rowEl) {
+          if (!val && checkEl && rowEl) {
+            checkEl.value = '';
+            rowEl.className = 'lp-checkline dim';
+            rowEl.textContent = 'choose a project to detect its check command';
+          } else if (checkEl && rowEl) {
             rowEl.className = 'lp-checkline dim'; rowEl.textContent = 'reading the project…';
             try {
               const r = await (await post('/api/loops/detect', { path: val })).json();
