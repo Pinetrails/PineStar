@@ -655,6 +655,15 @@ const App = (() => {
      builder / dossier read. focusAgent(id) repoints COMMS + the run identity at one crew member — the
      focus follows whichever workstream is active (switchWorkstream calls it with the stream's agentId). */
   function liveAgents() { return [...agents.values()]; }
+  // Canvas bodies carry stable agent ids, while the dossier owns a roster index. Resolve at click time from
+  // the same live registry StationUI receives so a summoned specialist opens its own record without changing
+  // COMMS focus. Unknown/stale bodies fail closed instead of silently opening the Overseer.
+  function openWorldAgent(agentId) {
+    const i = liveAgents().findIndex(a => a && a.id === agentId);
+    if (i < 0 || typeof StationUI === 'undefined' || !StationUI.openAgent) return false;
+    StationUI.openAgent(i);
+    return true;
+  }
   function registerHero(a) { agents.clear(); agents.set(a.id, a); }   // wake/resume: the hero founds the registry
   // rosterClause() reads the LIVE registry, so every orchestrator prompt must be recomposed whenever the roster
   // changes shape (summon; crew rehydrate on resume; a crew rename) — this is the cached-systemPrompt trap: the
@@ -2590,7 +2599,7 @@ const App = (() => {
     SPRITES.init();
     World.init(el('stage'));
     World.spawn(agent);
-    World.setOnClick(() => { if (typeof StationUI !== 'undefined') StationUI.openAgent(0); });
+    World.setOnClick(openWorldAgent);
     World.setOnArcade(() => { if (typeof StationUI !== 'undefined' && StationUI.openArcade) StationUI.openArcade(); });   // click a cabinet → BREACH PROTOCOL
     // 2026-07-16 UX fix: the OUTBOX click opens the OUTBOX window — one clean list of ALL uncollected
     // finished work, readable + rateable in place (the old path fired a one-crate chat beat, which read

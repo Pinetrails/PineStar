@@ -979,11 +979,14 @@ const World = (() => {
       const wasDrag = drag && drag.moved; drag = null; cv.style.cursor = 'default';
       if (wasDrag) return;
       const wp = toWorld(ev);
-      // a click opens the HERO's console (StationUI.openAgent(0)); keep it hero-only so a crew
-      // body's hover nameplate never turns into a wrong-panel open. Crew clicks fall through.
-      if (agent && agentHit(wp) === agent) {
-        if (activity !== 'task') { agent.dir = 'south'; setGlance('south', 1000, performance.now()); curiositySay(SELF_GREET, 0.8, performance.now()); }   // eye contact for the Commander
-        if (onClick) onClick(); return;
+      // Every body that raises the agent hover nameplate is also a real dossier target. Pass its stable
+      // roster id through the click seam so a specialist opens ITS dossier instead of falling through or
+      // reusing the Overseer's index. The greeting remains hero-only: crew clicks open a panel, not a hero line.
+      const hit = agentHit(wp);
+      if (hit) {
+        if (hit === agent && activity !== 'task') { agent.dir = 'south'; setGlance('south', 1000, performance.now()); curiositySay(SELF_GREET, 0.8, performance.now()); }   // eye contact for the Commander
+        if (onClick) onClick(hit.agentId || hit.id);
+        return;
       }
       const arc = arcadeAt(wp);
       if (arc && onArcade) { onArcade(arc); return; }

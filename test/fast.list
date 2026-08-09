@@ -373,6 +373,7 @@ test/theme-custom-phosphor.test.js
 test/panel-brightness.test.js
 test/window-minimize.test.js
 test/nightshift-steer-ui.test.js
+test/world-agent-click.test.js
 test/world-setskin.test.js
 test/capprop-map.contract.test.js
 test/dock-terms-open.test.js
