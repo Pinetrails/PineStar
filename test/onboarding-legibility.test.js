@@ -52,5 +52,27 @@ const Glossary = require('../frontend/app/glossary.js');
   A.eq(closedManual, 1, 'replay closes the Field Manual before the Dialogue lesson can be covered');
   A.ok(/fm-replay/.test(tutorialSrc) && /replay\.onclick = \(\) =>/.test(tutorialSrc), 'Field Manual renders and wires REPLAY QUICK TOUR');
 
+  // Release clarity regression: Genesis must route each editable choice to its real home, and the work
+  // vocabulary must preserve the product's existing truth — deliberate tasks are board cards; every saved
+  // conversation is a COMMS Session; recruited crew are real agents, never decorative placeholders.
+  const indexSrc = fs.readFileSync(path.join(root, 'frontend', 'index.html'), 'utf8');
+  const stationUiSrc = fs.readFileSync(path.join(root, 'frontend', 'app', 'stationui.js'), 'utf8');
+  A.ok(indexSrc.includes('agent setup in CREW › AGENTS') && indexSrc.includes('model in COMMS') && indexSrc.includes('SYSTEM › SETTINGS'),
+    'Genesis routes editable setup to the real agent, model, and settings surfaces');
+  A.eq(indexSrc.includes('everything here is re-editable later in the Commander Dossier'), false,
+    'Genesis no longer sends agent configuration to the Commander Dossier');
+  A.ok(indexSrc.includes('planned work — queued, active &amp; shipped'),
+    'WORK describes TASKS as planned board work instead of claiming every run lives there');
+  A.ok(stationUiSrc.includes('<b>NO TASKS</b>') && stationUiSrc.includes('placeholder="add a planned task…"'),
+    'TASK BOARD uses task language instead of exposing the internal workstream record name');
+  A.ok(stationUiSrc.includes('Chats, routines, and while-away runs live as Sessions in COMMS'),
+    'TASK BOARD explains which real work belongs only in COMMS Sessions');
+  A.ok(/workstream:\s+'the saved conversation behind a COMMS session/.test(fs.readFileSync(path.join(root, 'frontend', 'app', 'glossary.js'), 'utf8')),
+    'the glossary explains the workstream record without conflating it with a board task');
+  A.ok(/every crew member you recruit is a real, separate agent/.test(tutorialSrc),
+    'Field Manual states that recruited crew are real independent agents');
+  A.eq(/echoes for now|placeholders until you recruit more minds/.test(tutorialSrc), false,
+    'Field Manual contains no placeholder-agent contradiction');
+
   A.report('onboarding-legibility.test');
 })();
