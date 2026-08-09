@@ -17,7 +17,7 @@
                             with ZERO extra keys. The old behavior (hard error demanding an OpenRouter key)
                             was the root of a live user bug: blind agents asked users for a key they never needed.
 
-   makeImageTools({ openrouter:{apiKey, model?}, fsp, pathMod, root, fetchImpl?, imageModel?, visionModel?,
+   makeImageTools({ openrouter:{apiKey, model?, baseUrl?}, fsp, pathMod, root, fetchImpl?, imageModel?, visionModel?,
                     auxVision? })   // auxVision: async ({ messages, timeoutMs }) -> text (session-provider one-shot)
      -> { generateTool, analyzeTool, register(reg), _internals }
 
@@ -30,7 +30,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (fsMod) {
   'use strict';
 
-  const OR_URL = 'https://openrouter.ai/api/v1/chat/completions';
+  const DEFAULT_OR_URL = 'https://openrouter.ai/api/v1/chat/completions';
   // 2026-07-07 image-quality escape: the old default (gemini-2.5-flash-image, "Nano Banana 1") is the OLDEST
   // image model in the live OpenRouter catalog — garbled text on UI mockups/marketing assets was its signature.
   // Default = current-gen fast (Nano Banana 2); PREMIUM = Nano Banana Pro (built for legible text / hero art);
@@ -97,6 +97,8 @@
     deps = deps || {};
     const or = deps.openrouter || {};
     const apiKey = or.apiKey || deps.apiKey || '';
+    const orBaseUrl = String(or.baseUrl || deps.baseUrl || '').trim().replace(/\/+$/, '');
+    const orUrl = orBaseUrl ? orBaseUrl + '/chat/completions' : DEFAULT_OR_URL;
     const fsp = deps.fsp, P = deps.pathMod, ROOT = deps.root;
     if (!fsp || !P || !ROOT) throw new Error('image.js requires { fsp, pathMod, root }');
     const doFetch = deps.fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
@@ -118,8 +120,8 @@
     }
 
     async function orPost(body, timeoutMs) {
-      if (!apiKey) throw new Error('no OpenRouter API key configured — connect a key first');
-      const res = await withTimeout(signal => doFetch(OR_URL, {
+      if (!apiKey) throw new Error('STUDIO image generation is unavailable: no OpenRouter API key is connected. Open SETTINGS > PROVIDERS and connect OpenRouter, then retry; no image was produced.');
+      const res = await withTimeout(signal => doFetch(orUrl, {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json', 'HTTP-Referer': 'https://starnet.local', 'X-Title': 'STARNET' },
         body: JSON.stringify(body),

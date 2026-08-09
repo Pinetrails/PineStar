@@ -16,6 +16,7 @@ const dns = require('node:dns');
 
 const { runAgentLoop } = require('./loop.js');
 const DomainTask = require('./domain-task.js');
+const ImageTask = require('./image-task.js');
 const { makeCostEngine } = require('./cost.js');
 const { makeLedger } = require('./ledger.js');
 const { makeBudget } = require('./budget.js');
@@ -12202,6 +12203,7 @@ async function runOnce(o) {
   // A single explicit host inspection is a bounded lookup, not an autonomous research brief. Classifying once
   // at admission lets the prompt, advertised tools, dispatch guard, and terminal-evidence stop share one truth.
   const directDomainTask = isTask ? DomainTask.classify(latestUserText(messages)) : null;
+  const imageTask = isTask ? ImageTask.classify(latestUserText(messages)) : null;
   // P1-6 per-agent model/provider OVERRIDE: when a run carries NO explicit model/provider (headless hub, delegated
   // worker, or any caller that didn't pass one), fall back to THIS AGENT's pinned identity in the roster before the
   // station default. An explicit per-run o.model/o.provider still wins (the interactive dock path is unchanged), so
@@ -12471,6 +12473,8 @@ async function runOnce(o) {
   const managedSkills = [];
   const seenLoadedSkills = new Set();
   const openrouterToolKey = providerId === 'openrouter' ? runKey : runtimeKey;
+  const studioRoute = ImageTask.resolveRoute({ providerId, runKey, stationOpenRouterKey: runtimeKey });
+  const studioOpenRouterBase = providerId === 'openrouter' ? baseUrl : providerRuntimeBaseUrl('openrouter', '');
   // web_search/web_fetch (DDG/Jina, OR fallback) + web_request. `accessSurface` is host authority: it comes
   // from the run host, never from tool args. An authenticated owner DM has the same stored-key reach as the
   // desktop; an ordinary autonomous caller remains restricted to explicitly unattended-approved keys.
@@ -12530,7 +12534,7 @@ async function runOnce(o) {
       return out;
     } finally { clearTimeout(t); }
   };
-  const imageTools = makeImageTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null, fsp, pathMod: path, root: WORKSPACES, imageModel: String(ENV('IMAGE_MODEL') || '').trim() || undefined, auxVision: auxVisionCall });
+  const imageTools = makeImageTools({ openrouter: studioRoute.ok ? { apiKey: studioRoute.key, model, baseUrl: studioOpenRouterBase } : null, fsp, pathMod: path, root: WORKSPACES, imageModel: String(ENV('IMAGE_MODEL') || '').trim() || undefined, auxVision: auxVisionCall });
   // browser.vision uses the SAME vision model as image_analyze when a key exists; with no key it
   // reports "unavailable" honestly (never a success-shaped stub). Pass the dep only when usable.
   runBrowser = makeBrowserTools({
@@ -12961,6 +12965,24 @@ async function runOnce(o) {
   resolved = enforceSyntheticOnly(resolved, remoteDesktopAuthorized);
   resolved = enforceRunAuthority(resolved, registry, userControlAuthority);
   resolved = enforceEnabledToolsets(resolved, registry, o.enabledToolsets);
+  if (imageTask) {
+    const imageRoomId = station.agents && station.agents[agentId] && station.agents[agentId].room;
+    const imageRoom = imageRoomId && station.rooms && station.rooms[imageRoomId];
+    const hasStudio = !!(imageRoom && Array.isArray(imageRoom.objects) && imageRoom.objects.some(ob => ob && ob.objectType === 'studio'));
+    const imageBlocker = ImageTask.admissionBlocker({
+      hasStudio,
+      studioEnabled: resolved.tools.indexOf('image_generate') >= 0,
+      route: studioRoute,
+      providerId,
+      model
+    });
+    if (imageBlocker) {
+      emit('agent.run.start', { agentId, runId, trigger, model });
+      emit('agent.run.error', { agentId, runId, transient: false, message: imageBlocker });
+      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+      return;
+    }
+  }
   if (Array.isArray(o.preloadSkills) && o.preloadSkills.length && resolved.tools.indexOf('skill.view') < 0) {
     emit('agent.run.start', { agentId, runId, trigger, model });
     emit('agent.run.error', { agentId, runId, transient: false, message: 'This routine requires saved skills, but its per-job toolset/station does not grant skill.view.' });
@@ -14014,7 +14036,7 @@ async function runOnce(o) {
     // right direction, since the alternative is a run that can still call tools but can no longer SEE any.
     if (name === 'agent.compact') execution.resetToolBytes();
     execution.observeToolEvent(name, payload);
-    if (taskBrief && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
+    if ((taskBrief || imageTask) && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
       bufferedTaskEnd = payload; return;
     }
     emit(name, payload);
@@ -14079,6 +14101,20 @@ async function runOnce(o) {
       // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
       approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
     });
+    if (imageTask && result && result.reason === 'done') {
+      let clarifying = false;
+      if (taskBrief && Array.isArray(result.messages)) {
+        for (let i = result.messages.length - 1; i >= 0; i--) {
+          const m = result.messages[i];
+          if (m && m.role === 'assistant' && typeof m.content === 'string') {
+            clarifying = !!TaskIntent.parse(m.content);
+            break;
+          }
+        }
+      }
+      const completionError = ImageTask.enforceCompletion(result, execution.artifactList(), { clarifying });
+      if (completionError) emit('agent.run.error', { agentId, runId, transient: false, message: completionError });
+    }
     // HOOKS — on_session_end. The run's real outcome, not an optimistic one: `reason` is whatever the loop
     // actually ended on ('done' | 'empty' | 'max_iters' | 'budget' | 'cancelled' | 'error'), so a hook that
     // pages on failure pages on the truth. This is the seam for "when a run finishes, notify me / run the
@@ -14118,12 +14154,12 @@ async function runOnce(o) {
       } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }
     }
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : bufferedTaskEnd.reason }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason) }));
       bufferedTaskEnd = null;
     }
   } finally {
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : bufferedTaskEnd.reason }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason) }));
       bufferedTaskEnd = null;
     }
     // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
