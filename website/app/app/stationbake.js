@@ -2731,7 +2731,9 @@ const StationBake = (() => {
       for (let j = 0; j < rows; j++) for (let i = 0; i < count; i++) {
         const lx = X + RW * (i + 0.5) / count, ly = y0 + step * j;
         const gw = b.createRadialGradient(lx, ly, 1, lx, ly, rad * 0.7);
-        gw.addColorStop(0, 'rgba(250,236,206,' + LIGHT.floor + ')'); gw.addColorStop(0.6, 'rgba(250,236,206,' + (LIGHT.floor * 0.32).toFixed(3) + ')'); gw.addColorStop(1, 'rgba(250,236,206,0)');
+        // Warm-neutral rather than near-white: keeps the shipped pool strength/contrast while
+        // taking the clinical edge off the deck and lowering peak luminance a small amount.
+        gw.addColorStop(0, 'rgba(246,224,188,' + LIGHT.floor + ')'); gw.addColorStop(0.6, 'rgba(246,224,188,' + (LIGHT.floor * 0.32).toFixed(3) + ')'); gw.addColorStop(1, 'rgba(246,224,188,0)');
         b.fillStyle = gw; b.fillRect(lx - rad * 0.7, ly - rad * 0.7, rad * 1.4, rad * 1.4);
         // FLOOR SHEEN (Slice 2): a faint vertical reflection streak on the deck below the pool, as if
         // the polished plating catches the ceiling light. Narrow (≈40% pool width), taller than wide,
@@ -2766,7 +2768,7 @@ const StationBake = (() => {
         const tall = up > 0 && extN.has(Math.floor(lx / T) + ',' + r.y1);
         const fy = tall ? r.y1 * T - up + 2 : r.y1 * T + 1;   // just under the crown when tall; legacy spot at up:0
         b.fillStyle = '#6a6253'; b.fillRect(Math.round(lx) - 4, fy, 8, 2);
-        b.fillStyle = 'rgba(255,255,255,0.55)'; b.fillRect(Math.round(lx) - 3, fy, 6, 1);
+        b.fillStyle = 'rgba(255,228,184,0.55)'; b.fillRect(Math.round(lx) - 3, fy, 6, 1);
       }
     }
   }
@@ -2799,9 +2801,9 @@ const StationBake = (() => {
       const rad = Math.min(60, Math.max(22, cross * 0.85));
       const pool = (lx, ly) => {
         const g = b.createRadialGradient(lx, ly, 1, lx, ly, rad * 0.7);
-        g.addColorStop(0, 'rgba(250,236,206,' + LIGHT.floor + ')');
-        g.addColorStop(0.6, 'rgba(250,236,206,' + (LIGHT.floor * 0.32).toFixed(3) + ')');
-        g.addColorStop(1, 'rgba(250,236,206,0)');
+        g.addColorStop(0, 'rgba(246,224,188,' + LIGHT.floor + ')');
+        g.addColorStop(0.6, 'rgba(246,224,188,' + (LIGHT.floor * 0.32).toFixed(3) + ')');
+        g.addColorStop(1, 'rgba(246,224,188,0)');
         b.fillStyle = g; b.fillRect(lx - rad * 0.7, ly - rad * 0.7, rad * 1.4, rad * 1.4);
         bakeSheen(b, lx, ly + T * 0.9, rad * 0.34);
         lampPos.push({ x: lx, y: ly, r: rad * 1.4 });

@@ -4703,7 +4703,7 @@ const World = (() => {
     for (const f of cache.flickers) {
       const a = Math.max(0, CRT.glow * (0.55 + 0.45 * Math.sin(now / 210 + f.x) * Math.sin(now / 83 + f.y)));
       const g = ctx.createRadialGradient(f.x, f.y, 1, f.x, f.y, f.r * 0.7);
-      g.addColorStop(0, 'rgba(240,230,206,' + a + ')'); g.addColorStop(1, 'rgba(240,230,206,0)');
+      g.addColorStop(0, 'rgba(238,218,184,' + a + ')'); g.addColorStop(1, 'rgba(238,218,184,0)');
       ctx.fillStyle = g; ctx.fillRect(f.x - f.r * 0.7, f.y - f.r * 0.7, f.r * 1.4, f.r * 1.4);
     }
     ctx.globalCompositeOperation = 'source-over';
