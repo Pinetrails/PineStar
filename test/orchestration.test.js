@@ -920,6 +920,64 @@ const leadCtx = () => ({ agentId: 'agent', emit: () => {} });
   A.eq(mirror, page, 'the website mirror of stationcommands.js is in sync');
 }
 
+// ---- G6 structured contracts: validate, repair once, and never accept invalid completion ----
+{
+  let n = 0;
+  const ro = fakeRunOnce(async () => (++n === 1
+    ? { reason: 'done', messages: [{ role: 'assistant', content: 'not json' }], usd: 0.2, artifacts: [{ path: 'draft.txt' }] }
+    : { reason: 'done', messages: [{ role: 'assistant', content: '{"answer":"fixed"}' }], usd: 0.1, artifacts: [{ path: 'fixed.txt' }] }));
+  const roster = new Map([['worker', { system: 'W', model: 'm' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), perWorker: 1 });
+  const out = await dispatchTool.run({ workers: [{ agentId: 'worker', prompt: 'answer', resultSchema: {
+    type: 'object', required: ['answer'], properties: { answer: { type: 'string' } }, additionalProperties: false
+  } }] }, { agentId: 'lead', emit: () => {} });
+  const row = JSON.parse(out.content)[0];
+  A.eq(ro.calls.length, 2, 'invalid structured output receives exactly one repair run');
+  A.eq(row.validation.state, 'repaired', 'the host identifies a repaired result');
+  A.eq(row.structuredResult, { answer: 'fixed' }, 'the repaired strict JSON value is returned separately');
+  A.ok(Math.abs(row.usd - 0.3) < 1e-9, 'initial and repair costs are both retained');
+  A.eq(row.artifacts.length, 2, 'artifacts from initial and repair runs are retained');
+}
+
+{
+  const ro = fakeRunOnce(async () => ({ reason: 'done', messages: [{ role: 'assistant', content: 'still invalid' }], usd: 0.1 }));
+  const roster = new Map([['worker', { system: 'W', model: 'm' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), perWorker: 1 });
+  const out = await dispatchTool.run({ workers: [{ agentId: 'worker', prompt: 'answer', resultSchema: { type: 'object' } }] }, { agentId: 'lead', emit: () => {} });
+  const row = JSON.parse(out.content)[0];
+  A.eq(ro.calls.length, 2, 'an invalid result is never repaired more than once');
+  A.eq(row.reason, 'invalid-result', 'invalid output after repair is not accepted as done');
+  A.eq(row.validation.state, 'invalid', 'the terminal validation state is explicit');
+}
+
+// ---- G6 spawn quality gate and generation-bound steering tool ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-orch-g6-'));
+  try {
+    let T = 1, seq = 0, release;
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'subagents.json'),
+      clock: { now: () => T++ }, emit: () => {}, newId: () => 'reg_' + (++seq) });
+    const ro = fakeRunOnce(async (o) => { await new Promise(resolve => { release = resolve; }); return { reason: 'done', messages: [{ role: 'assistant', content: 'ok' }], usd: 0 }; });
+    const tools = makeOrchestrationTools({ runOnce: ro, roster: () => new Map(), key: 'k', model: 'm', newId: counter(), subagents });
+    const rejected = await tools.spawnTool.run({ tasks: [{ prompt: 'same' }, { prompt: ' same ' }, { prompt: '   ' }] }, { agentId: 'lead', emit: () => {} });
+    A.eq(ro.calls.length, 0, 'empty and duplicate clone tasks are rejected before any provider run');
+    A.eq(JSON.parse(rejected.content).filter(r => r.reason === 'not-spawned').length, 3, 'every rejected batch row is reported');
+    const started = await tools.spawnTool.run({ tasks: [{ prompt: 'unique' }], background: true }, { agentId: 'lead', emit: () => {} });
+    const worker = JSON.parse(started.content)[0]; await tick();
+    const stale = await tools.steerTool.run({ id: worker.id, generation: worker.generation + 1, text: 'wrong' }, { agentId: 'lead' });
+    A.eq(stale.summary, 'not queued', 'team.steer refuses a stale generation');
+    const queued = await tools.steerTool.run({ id: worker.id, generation: worker.generation, text: 'follow up' }, { agentId: 'lead' });
+    A.ok(/queued for generation/.test(queued.summary), 'team.steer queues for the inspected generation');
+    release(); await tick(); await tick();
+  } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
+{
+  const registryRows = require('../sidecar/capability/registry.js').CAP_REGISTRY.orchestrator;
+  const steer = registryRows.find(r => r.tool === 'team.steer');
+  A.ok(steer && steer.scope === 'write' && steer.requiresConsent === false, 'capability registry exposes generation-bound steering without a spend grant');
+}
+
 A.report('orchestration.test');
 
 })();

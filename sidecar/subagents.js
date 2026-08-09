@@ -96,6 +96,11 @@
       return {
         id: r.id, leadId: r.leadId, agentId: r.agentId, runId: r.runId, status: r.status, destination: r.destination || '',
         prompt: r.prompt, result: r.result || '', reason: r.reason || '', usd: r.usd || 0,
+        generation: Math.max(1, Math.floor(Number(r.generation) || 1)),
+        resultSchema: r.resultSchema || null, structuredResult: r.structuredResult == null ? null : r.structuredResult,
+        validation: r.validation || null, repairRunId: r.repairRunId || '',
+        artifacts: Array.isArray(r.artifacts) ? r.artifacts.slice(-40) : [],
+        steerHistory: Array.isArray(r.steerHistory) ? r.steerHistory.slice(-40) : [],
         attempts: r.attempts || 0, startedAt: r.startedAt || 0, updatedAt: r.updatedAt || 0,
         completedAt: r.completedAt || 0, canInterrupt: !!controllers.get(r.id), canResume: !!r.canResume,
         events: Array.isArray(r.events) ? r.events.slice(-50) : []
@@ -148,7 +153,8 @@
       const out = [];
       for (const r of records) {
         if (!r || r.status !== 'running' || !controllers.get(r.id) || !(r.confirmedAt > 0)) continue;
-        out.push({ runId: r.runId, agentId: r.agentId, startedAt: r.confirmedAt, source: 'subagent' });
+        out.push({ runId: r.runId, agentId: r.agentId, startedAt: r.confirmedAt, source: 'subagent',
+          subagentId: r.id, generation: Math.max(1, Math.floor(Number(r.generation) || 1)) });
       }
       return clone(out);
     }
@@ -182,6 +188,7 @@
       const t = now();
       const oldIndex = findIndex(id);
       const old = oldIndex >= 0 ? records[oldIndex] : null;
+      const generation = Math.max(1, Math.floor(Number((old && old.generation) || 0)) + 1);
       const rec = {
         id: id,
         leadId: safeId(meta.leadId || 'agent', 'leadId'),
@@ -198,8 +205,15 @@
         updatedAt: t,
         completedAt: 0,
         canResume: false,
+        generation: generation,
         confirmedAt: 0,
         destination: String(meta.destination || (old && old.destination) || ('lead:' + safeId(meta.leadId || 'agent', 'leadId'))),
+        resultSchema: meta.resultSchema != null ? clone(meta.resultSchema) : ((old && old.resultSchema) || null),
+        structuredResult: old && old.structuredResult != null ? clone(old.structuredResult) : null,
+        validation: old && old.validation ? clone(old.validation) : null,
+        repairRunId: '',
+        artifacts: old && Array.isArray(old.artifacts) ? old.artifacts.slice(-40) : [],
+        steerHistory: old && Array.isArray(old.steerHistory) ? old.steerHistory.slice(-40) : [],
         finalization: null
       };
       const i = oldIndex;
@@ -214,7 +228,7 @@
       if (typeof runner !== 'function') throw new Error('subagent runner required');
       const rec = upsertStart(meta || {});
       const ac = new AbortController();
-      controllers.set(rec.id, ac);
+      controllers.set(rec.id, { ac: ac, generation: rec.generation });
       const runEmit = function (name, payload) {
         appendEvent(rec.id, name, payload);
         try { emit(name, payload); } catch (_) {}
@@ -241,10 +255,15 @@
         } catch (_) {}
       };
       Promise.resolve().then(function () {
-        return runner({ id: rec.id, runId: rec.runId, signal: ac.signal, emit: runEmit, record: view(rec) });
+        return runner({ id: rec.id, runId: rec.runId, signal: ac.signal, emit: runEmit, record: view(rec),
+          generation: rec.generation, steer: function () { return drainSteer(rec.id, rec.generation); } });
       }).then(function (result) {
-        controllers.delete(rec.id);
+        const owned = controllers.get(rec.id);
+        if (owned && owned.generation === rec.generation) controllers.delete(rec.id);
         const cur = get(rec.id);
+        // An interrupted generation can settle after its replacement has already started. It must never delete
+        // the replacement's controller or overwrite that newer generation's durable state.
+        if (cur && cur.generation !== rec.generation) return;
         if (cur && cur.status === 'interrupted') return;
         const status = !result ? 'refused' : (result.status || (result.reason === 'done' ? 'done' : 'done'));
         const fields = {
@@ -252,6 +271,10 @@
           reason: (result && result.reason) || (status === 'refused' ? 'refused' : 'done'),
           result: (result && result.result) || '',
           usd: (result && result.usd) || 0,
+          structuredResult: result && result.structuredResult != null ? clone(result.structuredResult) : null,
+          validation: result && result.validation ? clone(result.validation) : null,
+          repairRunId: (result && result.repairRunId) || '',
+          artifacts: result && Array.isArray(result.artifacts) ? result.artifacts.slice(-40) : ((cur && cur.artifacts) || []),
           completedAt: now(),
           canResume: status !== 'done'
         };
@@ -261,8 +284,10 @@
         if (afterFinalizationCommitted && afterFinalizationCommitted(clone(done)) === false) return;
         try { publishFinalization(done || rec); } catch (_) { /* the pending receipt is replayed at restart */ }
       }, function (e) {
-        controllers.delete(rec.id);
+        const owned = controllers.get(rec.id);
+        if (owned && owned.generation === rec.generation) controllers.delete(rec.id);
         const cur = get(rec.id);
+        if (cur && cur.generation !== rec.generation) return;
         if (cur && cur.status === 'interrupted') return;
         const msg = 'worker run failed: ' + ((e && e.message) || e);
         const fields = { status: 'error', reason: 'error', result: msg, usd: 0, completedAt: now(), canResume: true,
@@ -274,13 +299,56 @@
       return view(rec);
     }
 
+    /* A steer is accepted only for the exact live generation the caller inspected. Persisting the pending row
+       before returning closes the restart gap; draining marks it applied before the loop receives the text, so a
+       later generation can never inherit an old follow-up. */
+    function steer(id, leadId, generation, text) {
+      id = safeId(id, 'subagent id');
+      const rec = get(id);
+      if (!rec) return { ok: false, error: 'no such subagent' };
+      if (leadId && rec.leadId !== String(leadId)) return { ok: false, error: 'subagent belongs to another lead' };
+      const expected = Math.floor(Number(generation) || 0);
+      if (expected !== rec.generation) return { ok: false, error: 'subagent generation changed', currentGeneration: rec.generation };
+      const control = controllers.get(id);
+      if (!control || control.generation !== rec.generation || rec.status !== 'running') return { ok: false, error: 'subagent generation is not running', currentGeneration: rec.generation };
+      const note = String(text == null ? '' : text).trim().slice(0, 4000);
+      if (!note) return { ok: false, error: 'steering text is required' };
+      const at = now();
+      const history = (Array.isArray(rec.steerHistory) ? rec.steerHistory : []).concat([{ generation: rec.generation, text: note, queuedAt: at, status: 'pending' }]).slice(-40);
+      patch(id, { steerHistory: history }, true);
+      return { ok: true, id: id, generation: rec.generation, queuedAt: at };
+    }
+
+    function drainSteer(id, generation) {
+      const i = findIndex(id);
+      if (i < 0) return [];
+      const rec = records[i];
+      if (!rec || rec.status !== 'running' || rec.generation !== generation) return [];
+      const history = Array.isArray(rec.steerHistory) ? rec.steerHistory.slice() : [];
+      const notes = [];
+      const at = now();
+      let changed = false;
+      for (let n = 0; n < history.length; n++) {
+        const row = history[n];
+        if (!row || row.generation !== generation || row.status !== 'pending') continue;
+        notes.push(String(row.text || ''));
+        history[n] = Object.assign({}, row, { status: 'applied', appliedAt: at });
+        changed = true;
+      }
+      if (!changed) return [];
+      const before = records[i];
+      records[i] = Object.assign({}, rec, { steerHistory: history.slice(-40), updatedAt: at });
+      try { save(true); } catch (_) { records[i] = before; return []; }
+      return notes;
+    }
+
     function interrupt(id, leadId) {
       id = safeId(id, 'subagent id');
       const rec = get(id);
       if (!rec) return { ok: false, error: 'no such subagent' };
       if (leadId && rec.leadId !== String(leadId)) return { ok: false, error: 'subagent belongs to another lead' };
-      const ac = controllers.get(id);
-      if (ac) { try { ac.abort(); } catch (_) {} controllers.delete(id); }
+      const control = controllers.get(id);
+      if (control && control.ac) { try { control.ac.abort(); } catch (_) {} controllers.delete(id); }
       if (TERMINAL.has(rec.status) && rec.status !== 'running') return { ok: true, alreadyDone: true, record: rec };
       const next = patch(id, { status: 'interrupted', reason: 'interrupted', completedAt: now(), canResume: true });
       publishTask(next || rec, 'failed');
@@ -311,9 +379,9 @@
 
     load();
     reconcileFinalizations();
-    return { list: list, get: get, activeRuns: activeRuns, start: start, interrupt: interrupt, interruptAll: interruptAll, resume: resume,
+    return { list: list, get: get, activeRuns: activeRuns, start: start, steer: steer, interrupt: interrupt, interruptAll: interruptAll, resume: resume,
       reconcileFinalizations: reconcileFinalizations,
-      _internals: { records: function () { return records; }, controllers: controllers, load: load, save: save, appendEvent: appendEvent, publishFinalization: publishFinalization } };
+      _internals: { records: function () { return records; }, controllers: controllers, load: load, save: save, appendEvent: appendEvent, publishFinalization: publishFinalization, drainSteer: drainSteer } };
   }
 
   return { makeSubagentManager: makeSubagentManager };
