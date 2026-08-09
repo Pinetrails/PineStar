@@ -22,6 +22,18 @@ A.eq(funRecentlyUsed('lounge', 100000, 'arcade-1', 99999), false, 'a different l
 A.ok(/FUN_REPEAT_MIN\s*=\s*90000[\s\S]*FUN_REPEAT_MAX\s*=\s*150000/.test(world), 'repeat exclusion lasts 90–150 seconds');
 A.ok(!/c\.w\s*\*=\s*0\.12/.test(world), 'the ineffective weak repeat weighting is gone');
 
+// Calm/purposeful tuning: no cardinal spin sequence, no rapid machine swivels, and no decor tours.
+A.ok(!/\[['"]north['"],\s*['"]east['"],\s*['"]south['"],\s*['"]west['"]\]\.forEach/.test(world), 'the frantic four-direction scan sequence is gone');
+A.ok(/function quirkScan\(now\)\s*\{\s*const d = lookDir\(self\);[\s\S]{0,120}startQuirk\(now,\s*['"]scan['"][\s\S]{0,80},\s*d\)/.test(world), 'a scan now chooses one meaningful direction and holds it');
+A.ok(/arcade:\s*\{\s*dwell:\s*\[22000,\s*40000\],\s*fidget:\s*\[8000,\s*14000\]/.test(world), 'arcade attention no longer re-rolls every second');
+A.ok(/U\.chance\(b\s*&&\s*b\.track\s*\?\s*0\.08\s*:\s*0\.25\)/.test(world), 'prop look-aways are rare instead of the dominant beat');
+A.ok(/function purposefulIdleProp\(p\)/.test(world), 'deliberate idle destinations use one narrow allow-list');
+A.ok(/const FUN_KINDS\s*=\s*\{[^}]*arcade[^}]*pinball[^}]*pool[^}]*bar[^}]*\}/.test(world), 'purposeful games and counters stay eligible');
+A.ok(!/const FUN_KINDS\s*=\s*\{[^}]*fish/.test(world), 'passive decor watching is not in the deliberate leisure picker');
+A.ok(/const use = propUse\(p\); if \(!use \|\| !purposefulIdleProp\(p\)\) continue/.test(world), 'generic prop planning rejects irrelevant catalog use rows');
+A.ok(/isWorkstationProp\(p\.t\)\s*&&\s*p\.agentId\s*===\s*self\.id/.test(world), 'ambient prop inspection is limited to the body’s own desk');
+A.ok(/if \(c\.kind === ['"]bar['"]\) continue/.test(world), 'a bar without a free stool is skipped rather than stared at');
+
 // Couch/TV regression: a claimed sofa cushion is rendered as a real sit and holds for minutes,
 // while the catalog remains sit:false so the generic prop path cannot reopen bed/beanbag sitting.
 A.ok(/self\.pendSeat\s*=\s*\{\s*px:\s*\(sx\s*\+\s*0\.5\)\s*\*\s*T,\s*py:\s*\(couch\.y\s*\+\s*h\)\s*\*\s*T\s*-\s*2\s*\}/.test(world), 'couch planning records the claimed cushion render position');

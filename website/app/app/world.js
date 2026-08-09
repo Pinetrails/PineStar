@@ -311,13 +311,13 @@ const World = (() => {
      READS AS A BUG, NOT AS LIFE. A real "playing the machine" pose is new ART, not a flag in this
      table — until that art exists the honest beat is: stand at it, face it, and hold. */
   const USE_BEAT = {
-    pinball:   { dwell: [22000, 40000], fidget: [700, 1500],  track: true },   // absorbed, hands busy, eyes on the table
-    arcade:    { dwell: [22000, 40000], fidget: [700, 1500],  track: true },
-    pool:      { dwell: [18000, 32000], fidget: [1600, 3200] },                // line up, walk round, line up again
-    poker:     { dwell: [16000, 28000], fidget: [2000, 4000] },
-    dj:        { dwell: [14000, 26000], fidget: [1400, 2800] },
-    juke:      { dwell: [6000, 12000],  fidget: [1800, 3600] },                // pick a track and move on
-    gacha:     { dwell: [8000, 15000],  fidget: [1200, 2400] },                // crank, watch, crank
+    pinball:   { dwell: [22000, 40000], fidget: [8000, 14000], track: true },   // face the game; at most an occasional slow look away
+    arcade:    { dwell: [22000, 40000], fidget: [8000, 14000], track: true },
+    pool:      { dwell: [18000, 32000], fidget: [6000, 10000] },                // line up, hold, then move on
+    poker:     { dwell: [16000, 28000], fidget: [6000, 10000] },
+    dj:        { dwell: [14000, 26000], fidget: [5000, 9000] },
+    juke:      { dwell: [6000, 12000],  fidget: [6000, 10000] },                // pick a track and move on
+    gacha:     { dwell: [8000, 15000],  fidget: [5000, 9000] },                 // crank, watch, crank
     vend:      { dwell: [5000, 11000],  fidget: [1400, 2800] },
     fridge:    { dwell: [4000, 8000],   fidget: [1400, 2800] },
     coffee:    { dwell: [4000, 9000],   fidget: [1600, 3200] },                // a short stop — the ritual, not the drink
@@ -326,10 +326,10 @@ const World = (() => {
     terra:     { dwell: [12000, 22000], fidget: [2600, 5200], track: true },
     fish:      { dwell: [14000, 26000], fidget: [2600, 5200], track: true },   // restful: it just watches
     pet:       { dwell: [9000, 18000],  fidget: [1400, 2800], track: true },
-    bar:       { dwell: [12000, 24000], fidget: [1800, 3600] },
+    bar:       { dwell: [12000, 24000], fidget: [7000, 12000] },
     tv:        { dwell: [14000, 26000], fidget: [2600, 5200], track: true },
     beanbag:   { dwell: [12000, 24000], fidget: [2600, 5200] },
-    seat:      { dwell: [12000, 26000], fidget: [2400, 4800] },
+    seat:      { dwell: [12000, 26000], fidget: [8000, 14000] },
   };
   /* QUIRKS — rare, gated, deliberately UNPREDICTABLE one-offs that surface an off-screen inner life
      (the "why did it just do that" beats). Eerie via stillness + ambiguity, never spooky one-liners.
@@ -1739,9 +1739,9 @@ const World = (() => {
       // above own the facing + lifecycle; this branch just STOPS the fall-through to decideIdle (which would stomp it).
       self.state = 'idle';
     } else if (self.goal === 'use') {
-      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.useBeat = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
+      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.useBeat = null; self.sitting = false; self.state = 'idle'; self.glance = null; self.trackUntil = 0; self.glanceCd = now + U.irnd(5000, 9000); self.idleUntil = now + U.irnd(2500, 4500); }
     } else if (self.goal === 'lounge') {
-      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.watchProp = null; self.sitting = false; self.state = 'idle'; self.idleUntil = now + U.irnd(400, 1200); }
+      if (now >= self.useUntil) { releaseSeat(); self.goal = null; self.usingProp = null; self.watchProp = null; self.sitting = false; self.state = 'idle'; self.glance = null; self.trackUntil = 0; self.glanceCd = now + U.irnd(5000, 9000); self.idleUntil = now + U.irnd(2500, 4500); }
     } else if (self.goal === 'rounds') {
       if (now >= self.studyUntil) roundsNext(now);
     } else if (self.goal === 'sleep') {
@@ -2060,9 +2060,9 @@ const World = (() => {
      go and play with it. It is deliberately a thin wrapper over the existing planProp/tryLounge
      machinery (no new movement, no new goals, no new state) — the only new thing is that leisure is
      now reachable from the drive that actually fires. FUN_KINDS is what "entertainment" means: the
-     things a person crosses a room for, as opposed to a coffee machine or a bookshelf, which stay
-     where they were (planProp still reaches everything). */
-  const FUN_KINDS = { arcade: 1, pinball: 1, pool: 1, poker: 1, juke: 1, dj: 1, bar: 1, gacha: 1, fish: 1 };
+     things a person crosses a room for. Decorative/passive `use` rows remain available to explicit
+     systems, but the ambient idle picker does not turn them into staring destinations. */
+  const FUN_KINDS = { arcade: 1, pinball: 1, pool: 1, poker: 1, juke: 1, dj: 1, bar: 1, gacha: 1 };
   /* Relative pull. The couch+TV lounge is the single most comfortable thing in the room and it also
      holds the longest dwell, so left equal-weighted it swallows the floor: the first build of this
      just called planProp, whose tryLounge short-circuit meant the measured result was BOTH bodies on
@@ -2080,6 +2080,15 @@ const World = (() => {
   function rememberFun(key, now) {
     self.lastFun = key;
     self.lastFunUntil = now + U.irnd(FUN_REPEAT_MIN, FUN_REPEAT_MAX);
+  }
+  // Deliberate idle destinations stay intentionally small. Decorative blockers (speaker, plant, shelf)
+  // are scenery; a body crosses the room for a game, a real counter, or couch/TV—not to stare at decor.
+  function purposefulIdleProp(p) {
+    const u = propUse(p); if (!u) return false;
+    if (u.kind === 'couch' || FUN_KINDS[u.kind]) return true;
+    if (u.kind !== 'seat') return false;
+    const counter = counterForSeat(p), kind = counter && counter.p && (propUse(counter.p) || {}).kind;
+    return kind === 'bar' || kind === 'pool' || kind === 'poker';
   }
   // the couch/TV pairing (the v7 lounge), resolved as DATA so planPlay can weigh it against the rest
   function loungePair(zone) {
@@ -2192,6 +2201,7 @@ const World = (() => {
       if (c.kind === 'bar' || c.kind === 'pool' || c.kind === 'poker') {
         const stool = stoolAt(c.prop, zone);
         if (stool && planSeat(now, stool, zone)) { rememberFun(c.key, now); return true; }
+        if (c.kind === 'bar') continue;                         // a bar without a free stool is not a standing-and-staring destination
       }
       const a = PropAnchor.deriveAnchor(c.prop, geo, { approach: (propUse(c.prop) || {}).approach || 'south', extra: blocked });
       if (!a || !tileInZone(zone, a.tx, a.ty) || !setPathTo({ x: a.tx, y: a.ty })) continue;
@@ -2210,9 +2220,10 @@ const World = (() => {
     const zone = zoneFor(self);   // P1: only use leisure props the body can reach WITHOUT leaving its zone
     const cands = [];
     for (const p of geo.props) {
-      const use = propUse(p); if (!use) continue;
+      const use = propUse(p); if (!use || !purposefulIdleProp(p)) continue;
       if (use.kind === 'couch') { if (!funBlocked('lounge', now)) cands.push({ couch: p }); continue; }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
-      if (use.kind === 'seat') { cands.push({ seat: p }); continue; }     // SEAT LAW: a stool/chair is claimed + rendered ON by planSeat, not approached
+      if (use.kind === 'seat') { cands.push({ seat: p }); continue; }     // only a seat pulled up to a purposeful counter reaches this branch
+      if (use.kind === 'bar') continue;                                  // its adjacent purposeful seat is the destination, never the counter face itself
       const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
       if (a && tileInZone(zone, a.tx, a.ty)) cands.push({ id: p.id, a });   // the APPROACH tile (where the body stands) must be in-zone
     }
@@ -2244,6 +2255,7 @@ const World = (() => {
     for (const p of props) {
       if (seenProps.has(p.id)) continue;
       if (!mayTouchProp(agent && agent.id, p)) continue;   // another agent's (or unclaimed) workstation isn't "novel" to this one — don't walk over
+      if (!purposefulIdleProp(p) && !(isWorkstationProp(p.t) && p.agentId === (agent && agent.id))) continue;   // decor is noticed visually, never treated as a destination
       const tx = Math.floor(p.x + (p.w || 1) / 2), ty = Math.floor(p.y + (p.h || 1) / 2);
       if (!tileInZone(zone, tx, ty)) continue;             // out-of-zone placement — noticed, but not walked to
       pushNovelty(tx, ty, 'prop', p.id);
@@ -3239,7 +3251,7 @@ const World = (() => {
     while (novelty.length) {
       const n = novelty.pop();
       let foot = { x: n.tx, y: n.ty, w: 1, h: 1 };
-      if (n.kind === 'prop' && n.pid && geo.props) { const p = geo.props.find(q => q.id === n.pid); if (!p || !mayTouchProp(self.id, p)) continue; foot = p; }
+      if (n.kind === 'prop' && n.pid && geo.props) { const p = geo.props.find(q => q.id === n.pid); if (!p || !mayTouchProp(self.id, p) || (!purposefulIdleProp(p) && !(isWorkstationProp(p.t) && p.agentId === self.id))) continue; foot = p; }
       const extra = n.kind === 'belt' ? beltUnion() : blocked;   // for a belt, stand beside it — not on the machinery
       const a = PropAnchor.deriveAnchor(foot, geo, { approach: 'auto', extra });
       if (a && tileInZone(zone, a.tx, a.ty) && setPathTo({ x: a.tx, y: a.ty })) {
@@ -3261,10 +3273,9 @@ const World = (() => {
     const inBelts = belts.filter(b => tileInZone(zone, b.x, b.y));
     if (inBelts.length) { const b = inBelts[U.irnd(0, inBelts.length - 1)]; cands.push({ kind: 'watch', key: 'belt:' + b.x + ',' + b.y, foot: { x: b.x, y: b.y, w: 1, h: 1 }, extra: beltUnion() }); }
     const props = (geo && geo.props) || [];
-    // non-leisure kit (leisure is planProp's job), skipping the over-familiar — it has become furniture (habituation); in-zone only
-    // non-leisure kit it has not worn out yet. The 4-look cap is now a fading one (decayHabits), so a
-    // machine ignored for a few minutes climbs back onto this list instead of being furniture forever.
-    const machines = props.filter(p => { const s = specOf(p.t); return s && !s.use && s.blocks && (seenCount.get(p.id) || 0) < 4 && mayTouchProp(self.id, p) && tileInZone(zone, p.x, p.y); });
+    // A deliberate prop study means checking THIS body's assigned workstation. Decorative blockers are
+    // scenery, not "machines" to walk over and stare at; leisure is handled by planPlay/planProp.
+    const machines = props.filter(p => isWorkstationProp(p.t) && p.agentId === self.id && (seenCount.get(p.id) || 0) < 4 && tileInZone(zone, p.x, p.y));
     if (machines.length) { const p = machines[U.irnd(0, machines.length - 1)]; cands.push({ kind: 'inspect', key: p.id, foot: p, extra: blocked }); }
     if (cands.length === 2 && U.chance(0.5)) cands.reverse();
     for (const c of cands) {
@@ -3502,10 +3513,10 @@ const World = (() => {
     armBeat(now);                                 // D2 (G5): arm the floor-wide governor — a quirk is a noticeable beat, so it also damps the NEXT crew quirk AND the station's stroll/off-beat/revisit budget (subsumes the old per-quirk lastQuirkAt)
     const r = U.irnd(0, 999);
     if (r < 320) return quirkListen(now);    // 32% — freeze + snap toward a sound only it heard
-    if (r < 520) return quirkScan(now);      // 20% — a slow, deliberate sweep of the room
+    if (r < 520) return quirkScan(now);      // 20% — one slow, deliberate subject-facing look
     if (r < 680) return quirkPonder(now);    // 16% — stops, faces away, lost in thought
     if (r < 790) return planVantage(now);    // 11% — drifts to a vantage and looks out over the station
-    if (r < 870) return quirkDoorway(now) || quirkScan(now);  //  8% — stands in a doorway looking through into the next room (unexplained); a station with no thresholds falls back to the sweep
+    if (r < 870) return quirkDoorway(now) || quirkScan(now);  //  8% — stands in a doorway looking through; no threshold falls back to one calm look
     if (r < 945 && quirkVigil(now)) return true;   // ~7.5% — the VIGIL: dead-center, faces one wall, holds (falls through to the stare if no center is free)
     return quirkStare(now);                  // ~5.5% — the long stare straight at YOU (rarest, eeriest)
   }
@@ -3517,9 +3528,8 @@ const World = (() => {
   }
   function quirkListen(now) { const d = lookDir(self); startQuirk(now, 'listen', U.irnd(2200, 4500), d); setGlance(d, 260, now); curiositySay(Q_LISTEN, 0.22, now); return true; }   // it snaps toward a sound — down a line of sight, not into the wall behind it
   function quirkScan(now) {
-    startQuirk(now, 'scan', U.irnd(3200, 4600), 'north');
-    const body = self;   // B1: capture the scheduling body — the deferred sweep must turn THIS body, not whatever `self` points to at fire time
-    ['north', 'east', 'south', 'west'].forEach((d, i) => setTimeout(() => { if (body && body.goal === 'quirk' && body.quirkKind === 'scan') { body.dir = d; body.glance = { dir: d, until: performance.now() + 900 }; } }, i * 850));
+    const d = lookDir(self);
+    startQuirk(now, 'scan', U.irnd(3200, 4600), d);   // one meaningful direction; never spin through all four cardinals
     return true;
   }
   function quirkPonder(now) { startQuirk(now, 'ponder', U.irnd(4000, 7000), lookDir(self, { away: true })); curiositySay(Q_PONDER, 0.4, now); return true; }   // lost in thought, turned away from you — but turned toward SOMETHING
@@ -3688,7 +3698,7 @@ const World = (() => {
     if (now < (self.roundsCd || 0) || !geo || typeof PropAnchor === 'undefined') return false;
     const zone = zoneFor(self);   // P1: a caretaker lap stays inside the zone (no straddling into the next room)
     const cur = tileOf(self.px, self.py), stops = [];
-    for (const p of (geo.props || [])) { const s = specOf(p.t); if (s && s.blocks && mayTouchProp(self.id, p) && tileInZone(zone, p.x, p.y) && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p }); }   // no ownership beat at another body's (or unclaimed) workstation, and never out of zone
+    for (const p of (geo.props || [])) if (isWorkstationProp(p.t) && p.agentId === self.id && tileInZone(zone, p.x, p.y) && (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) <= 11) stops.push({ prop: p });   // desk check, never a tour of decorative blockers
     const belts = (geo.belts || []).filter(b => tileInZone(zone, b.x, b.y)); if (belts.length) stops.push({ belt: belts[U.irnd(0, belts.length - 1)] });
     // D5 beat 1 (HERO-ONLY): fold in a supervisor stop behind each crew body WORKING in the hero's zone. Guarded on
     // self===agent so crew rounds are byte-identical (crew never scan crew — zero crew-side diff); the whole block is
@@ -3943,7 +3953,7 @@ const World = (() => {
       else { agent.glanceCd = now + U.irnd(1600, 3200); }
       return;
     }
-    // a quirk in progress: scan pans itself (timed); the others mostly hold their pose with a rare flick
+    // a quirk in progress: the calm scan already chose one subject; the others mostly hold with a rare flick
     if (agent.goal === 'quirk') {
       if (agent.quirkKind === 'vigil') { agent.glanceCd = now + 6000; return; }   // the VIGIL holds dead still — zero head-turns, the held emptiness
       if (agent.quirkKind !== 'scan' && U.chance(0.3)) setGlance(lookDir(agent), U.irnd(400, 800), now);
@@ -3958,7 +3968,7 @@ const World = (() => {
       const b = agent.useBeat, span = b ? b.fidget : [2000, 4000];
       if (now < (agent.nextFidget || 0)) return;
       agent.nextFidget = now + U.irnd(span[0], span[1]);
-      if (U.chance(b && b.track ? 0.28 : 0.72)) { setGlance(lookDir(agent, { exclude: agent.useFace }), U.irnd(450, 900), now); agent.glanceCd = now + 600; }
+      if (U.chance(b && b.track ? 0.08 : 0.25)) { setGlance(lookDir(agent, { exclude: agent.useFace }), U.irnd(600, 1000), now); agent.glanceCd = now + U.irnd(3000, 5000); }
       return;
     }
     // working at the desk: glance at a freshly placed thing nearby, else fidget-look up from the screen
