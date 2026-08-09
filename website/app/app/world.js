@@ -1594,19 +1594,15 @@ const World = (() => {
     if (agent && agent.unplaced) return false;        // an unplaced hero owns nothing
     return crew.every(b => b && b.unplaced);          // no OTHER placed body shares the station
   }
-  /* ROAM RADIUS (2026-08-08 idle-life pass). A body anchored to a room used to be caged to that
-     room's rect, which is why the station read as a set of terrariums: an agent could NEVER be
-     seen anywhere but its own box. It now roams its home room PLUS Zones.ROAM_RADIUS tiles around
-     its stable desk/spawn home, so it pops next door and comes back — still leashed to its posting, never free
-     to cross the whole floor. Nothing else changes: every picker already filters through
-     tileInZone, so they all widen together; solo/null handling stays unchanged. */
+  /* TRUE ROAM RADIUS (2026-08-08 idle-life pass). Every placed body gets one immutable
+     desk/spawn-centered distance leash across the station floor. Room plates do not widen or clip
+     it; walkability and the existing pathfinder decide which in-radius destinations are reachable. */
   function zoneFor(body) {
     if (typeof Zones === 'undefined' || !geo) return null;
     const a = anchorFor(body);
     return Zones.computeZone({
       rects: geo.allRects, props: geo.props, agentId: body && body.id, anchorTile: a,
       roamR: a ? Zones.ROAM_RADIUS : 0,
-      doors: geo.doorDefs,                    // ...and a band past its OWN room's thresholds (Zones.SPILL_RADIUS)
       solo: soleOwner(body),
     });
   }
@@ -3436,7 +3432,7 @@ const World = (() => {
   }
   /* After a real stretch of downtime, take one trip beyond the current room when the existing zone
      permits it. This is not free station roaming: zoneFor still limits the destination to the stable
-     home/spawn radius and directly connected rooms, and setPathTo owns the normal collision-safe walk. */
+     home/spawn radius, and setPathTo owns the normal collision-safe, reachable walk. */
   function planExplore(now) {
     if (!self || !geo || !geo.allRects || !geo.allRects.length) return false;
     // Spread the first stroll over 45 seconds instead of making every newly-idle body leave at once.

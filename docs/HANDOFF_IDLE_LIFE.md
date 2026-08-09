@@ -50,9 +50,10 @@ Applied in `arrive()`'s `'use'` branch and the `use` branch of `maybeGlance`. Ha
 permanently "furniture" and ambient curiosity ran out of targets.
 
 ### 3. Roam — `frontend/app/zones.js`
-Zone = home room **∪** `ROAM_RADIUS` (9) around the body's own desk **∪** a `SPILL_RADIUS` (6) band
-past the thresholds **of its own room** (`spillPoints`, non-transitive). Opt-in per call: `roamR` is
-passed only for a body with a real posting (`anchorFor().assigned`). `test/zones.test.js` covers it.
+Zone = station floor **∩** `ROAM_RADIUS` (14) around the body's stable desk/spawn anchor. Room plates
+do not widen or clip that distance, and the same rule applies to solo and deskless placed bodies.
+`geo.walkable` plus the existing pathfinder still reject walls and unreachable destinations; the
+zone only owns the stable distance boundary. `test/zones.test.js` covers the exact edge behavior.
 
 ### 4. Social — greet, take turns, wave
 `talkTurn`/`myTurn` (extracted PURE, `TALK-TURN-PURE`, locked by `test/talk-turn.test.js`) alternate
