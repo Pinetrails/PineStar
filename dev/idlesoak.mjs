@@ -224,9 +224,14 @@ try {
   }
 
   const per = new Map();
+  let couchTvSeatSamples = 0, sharedBarSamples = 0, maxBarSitters = 0;
   for (const s of samples) {
+    const barSitters = s.bodies.filter(b => b && b.sitting && b.seated && b.facingProp && b.facingProp.useKind === 'bar');
+    maxBarSitters = Math.max(maxBarSitters, barSitters.length);
+    if (barSitters.length >= 2) sharedBarSamples++;
     for (const b of s.bodies) {
       if (!b || b.unplaced) continue;
+      if (b.goal === 'lounge' && b.useKind === 'couch' && b.sitting && b.seated) couchTvSeatSamples++;
       b.__t = s.t;
       let r = per.get(b.id);
       if (!r) { r = { id: b.id, name: b.name, n: 0, still: 0, wallDirSum: 0, facing: {}, goals: {}, quirks: {}, useKinds: {}, emotes: 0, talking: 0, posesGesture: 0, posesTalk: 0, visits: {}, dwellMs: {}, prevUse: null, visitStart: null, seatSamples: 0, seatFacingCounter: 0, outZone: 0, nextDoor: 0, tiles: new Set() }; per.set(b.id, r); }
@@ -263,7 +268,11 @@ try {
     }
   }
 
-  const report = { minutes: MINUTES, samples: samples.length, floor: builtFloor, encounters, encounterTimeline: timeline, bodies: [] };
+  const report = {
+    minutes: MINUTES, samples: samples.length, floor: builtFloor, encounters, encounterTimeline: timeline,
+    requestedBehaviors: { couchTvSeatSamples, sharedBarSamples, maxBarSitters },
+    bodies: []
+  };
   for (const r of per.values()) {
     report.bodies.push({
       id: r.id, name: r.name, samples: r.n, stillSamples: r.still,

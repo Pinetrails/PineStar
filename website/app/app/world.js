@@ -874,6 +874,7 @@ const World = (() => {
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
       summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory so a summon-glance fires once per event, not every frame (runtime-only)
       neighborGlanceCd: 0, // Tier C / C-Beat2: per-body cooldown so two idle neighbors don't re-roll a mutual glance the instant the last lapses (runtime-only)
+      barJoinCd: 0, barJoinUntil: 0,   // rare same-room join at an occupied bar; planSeat still owns the actual sit
       // INNER LIFE: a fixed temperament + three slow-draining needs that drive WHICH goal it pursues
       pers: makePersonality(a.id),
       needs: { rest: U.irnd(72, 92), stim: U.irnd(72, 92), social: U.irnd(72, 92) },   // born content; drifts into wants over the first minute
@@ -1394,7 +1395,8 @@ const World = (() => {
       // W2: the prop decides what using it looks like (how long it holds you, how the gaze behaves).
       // No row = the old generic beat. NO gesture here — see the USE_BEAT header.
       const beat = USE_BEAT[useKindOf(self.usingProp)] || null;
-      self.useUntil = now + (beat ? U.irnd(beat.dwell[0], beat.dwell[1]) : U.irnd(10000, 22000));
+      self.useUntil = Math.max(now + (beat ? U.irnd(beat.dwell[0], beat.dwell[1]) : U.irnd(10000, 22000)), self.barJoinUntil || 0);
+      self.barJoinUntil = 0;
       self.useBeat = beat; self.glanceCd = 0;
       self.nextFidget = now + (beat ? U.irnd(beat.fidget[0], beat.fidget[1]) : U.irnd(2000, 4000));
       takeSeat();
@@ -1405,10 +1407,11 @@ const World = (() => {
       else if (self.useSit && self.needs.rest < 35) curiositySay(SELF_REST, 0.4, now);
     }
     else if (self.goal === 'lounge') {
-      // settled AT the couch, watching the paired TV — face the screen, a longer dwell than a one-off prop.
-      // SEAT LAW: standing. A couch is not a chair, and the sit pose on a cushion read as a body parked upright on it.
-      self.sitting = false; self.working = false; self.dir = self.useFace; self.state = 'idle';
-      self.useUntil = now + U.irnd(18000, 30000); self.glanceCd = 0; self.nextFidget = now + U.irnd(1500, 3500);
+      // Couch/TV is the one intentional sofa exception to the chair-only sit rule: the body claimed a real
+      // cushion in planCouchSit, so render it ON that cushion and let it settle in for a genuine viewing session.
+      self.sitting = true; self.working = false; self.dir = self.useFace; self.state = 'idle';
+      self.useUntil = Math.max(now + U.irnd(90000, 180000), self.barJoinUntil || 0); self.barJoinUntil = 0;
+      self.glanceCd = 0; self.nextFidget = now + U.irnd(1500, 3500);
       takeSeat(); curiositySay(self.needs.rest < 35 ? SELF_REST : CURIO_WATCH, 0.45, now);
     }
     else if (self.goal === 'sleep') {
@@ -1893,13 +1896,11 @@ const World = (() => {
   function releaseSeat() {
     if (!self) return;
     if (self.seatKey) occupiedSeats.delete(self.seatKey);
-    self.seatKey = null; self.seated = false; self.pendSeat = null;
+    self.seatKey = null; self.seated = false; self.pendSeat = null; self.barJoinUntil = 0;
   }
-  /* on arrival, snap the render position onto the seat claimed at plan time (logical pos stays put).
-     SEAT LAW: the ELSE branch is load-bearing. Only planSeat sets a pendSeat now — a couch/bed claim is a
-     "nobody else take this spot" reservation with no cushion to render on — so without the reset a body
-     that got up off a stool and walked to a bunk kept `seated` true and went on drawing itself back at the
-     stool. `seated` must mean exactly "there is a seat under me, right now". */
+  /* on arrival, snap the render position onto the claimed stool/chair/couch seat (logical pos stays put).
+     The ELSE branch is load-bearing: bed claims deliberately have no pendSeat, so without the reset a body
+     that left a stool for a bunk could keep drawing itself back at the stool. */
   function takeSeat() {
     if (self.seatKey && self.pendSeat) { self.seated = true; self.seatPx = self.pendSeat.px; self.seatPy = self.pendSeat.py; self.pendSeat = null; }
     else self.seated = false;
@@ -1912,37 +1913,36 @@ const World = (() => {
   function seizeFromIdle(b) {
     if (!b) return;
     if (b.seatKey) occupiedSeats.delete(b.seatKey);
-    b.seatKey = null; b.seated = false; b.pendSeat = null;
+    b.seatKey = null; b.seated = false; b.pendSeat = null; b.barJoinUntil = 0;
     b.goal = null; b.usingProp = null; b.watchProp = null; b.studyKey = null; b.quirkKind = null; b.stilling = false;
     b.useBeat = null; setTalking(b, false);   // a seized body is not mid-leisure and is not talking to anyone
     b.pauseUntil = 0; b.pauseLook = null; b.idleUntil = 0;
     if (chaseId === b.agentId) chaseId = null; b.chase = null; b.mimic = null;   // TIER D · D4: a summon seizes the body → drop any live chase/mimic + free the station chaser lock (G2)
   }
 
-  /* ---------- SEAT LAW (2026-08-04) ----------
+  /* ---------- SEAT LAW (2026-08-04; couch exception restored 2026-08-08) ----------
      A body may be drawn in the SIT pose in exactly two places: its own workstation chair (goal 'work',
      drawSeatChair puts a real chair under it) and a single-tile seat prop — STOOL / CHAIR — which planSeat
      renders the body ON TOP OF. Nothing else. The sit sprite is a chair pose; the old catalog let it fire
-     on a couch cushion, a beanbag and (worst) a BED, where the body read as parked bolt-upright on the
-     mattress instead of lying in it. Those props are now walk-to-and-STAND-at destinations: same routine,
-     same dwell, standing body. The switch lives in the catalog (`use.sit` in propsprites.js) — this file
-     only ever mirrors it, except where a goal used to hardcode `sitting = true`. */
+     on a beanbag and (worst) a BED, where the body read as parked bolt-upright on the mattress instead of
+     lying in it. Those remain walk-to-and-STAND-at destinations. A claimed couch cushion is the narrow
+     exception requested by the Commander: planCouchSit supplies a real render anchor and the sofa art
+     occludes the legs, restoring the established sit-and-watch-TV behavior without reopening bed sitting. */
 
   /* v7 couch dwell: a couch is a blocking prop (you can't path onto it), so the agent walks to a tile
-     ADJACENT to a free cushion and stands there. Cushions are the inner footprint columns (an arm is
+     ADJACENT to a free cushion and then renders on it. Cushions are the inner footprint columns (an arm is
      skipped at each end on a wide couch). Each cushion is reserved in occupiedSeats so a second agent
      takes a different one (or, when the couch is full, planProp moves on to another couch) — the claim
      is what keeps two bodies from crowding the same stretch of sofa.
-     tvId != null → goal 'lounge' (watch + light the TV); else a plain couch dwell.
-     SEAT LAW: no pendSeat and no useSit — the body stands at the couch, it does not sit on it. */
+     tvId != null → goal 'lounge' (watch + light the TV); else a plain couch dwell. */
   const LOUNGE_MAXT = 7;
   const SEAT_NB = [[0, 1], [0, -1], [1, 0], [-1, 0]];   // approach a cushion from any walkable neighbour
   function planCouchSit(now, couch, tvId, faceDir, zone) {
     /* STALE-CLAIM RULE: drop whatever seat this body still holds BEFORE claiming a new one. Committing to a
        new destination means it is leaving the old seat regardless, and an inherited `pendSeat` is worse than
        a leaked key — takeSeat() would consume the PREVIOUS seat's cushion on THIS goal's arrival and draw the
-       body on furniture it never walked to. Only planSeat sets a pendSeat now, so a stale one is rare enough
-       to be invisible until it isn't. Safe to release before the plan can fail: every caller is the idle
+       body on furniture it never walked to. Only the two real-seat planners set a pendSeat, so a stale one is
+       rare enough to be invisible until it isn't. Safe to release before the plan can fail: every caller is the idle
        decision, which only runs when the body is free to move. */
     releaseSeat();
     const w = couch.w || 1, h = couch.h || 1;
@@ -1961,9 +1961,9 @@ const World = (() => {
         if (!geo.walkable(ax, ay, blocked)) continue;
         if (!setPathTo({ x: ax, y: ay })) continue;
         occupiedSeats.add(couch.id + ':' + slot); self.seatKey = couch.id + ':' + slot;
-        self.pendSeat = null;                                // SEAT LAW: the body renders where it WALKED, not on the cushion
+        self.pendSeat = { px: (sx + 0.5) * T, py: (couch.y + h) * T - 2 };   // render foot at the cushion front
         self.goal = tvId ? 'lounge' : 'use'; self.usingProp = couch.id; self.watchProp = tvId || null;
-        self.useSit = false; self.useFace = faceDir || 'south';
+        self.useSit = true; self.useFace = faceDir || 'south';
         if (!self.target) arrive(now);                       // already adjacent → settle immediately
         return true;
       }
@@ -1971,7 +1971,7 @@ const World = (() => {
     return false;
   }
 
-  /* THE ONLY REAL SIT (SEAT LAW): a single-tile seat prop — STOOL / CHAIR. Like a couch it BLOCKS, so
+  /* SINGLE-TILE REAL SIT (SEAT LAW): a STOOL / CHAIR. Like a couch it BLOCKS, so
      the body walks to an adjacent tile and then renders on the seat's own tile (pendSeat), which is what
      makes the sit pose honest: there is a seat under the body. One occupant per seat (occupiedSeats),
      released by the same releaseSeat()/seizeFromIdle() paths as every other claim. */
@@ -2013,7 +2013,7 @@ const World = (() => {
     const u = propUse(p);
     return !!((u && COUNTER_KINDS[u.kind]) || p.t === 'longtable');
   }
-  function counterFace(seat) {
+  function counterForSeat(seat) {
     if (!geo || !geo.props || !seat) return null;
     const sx = seat.x + 0.5, sy = seat.y + 0.5;
     let best = null;
@@ -2025,9 +2025,13 @@ const World = (() => {
       const nx = Math.max(p.x, Math.min(sx, p.x + w)), ny = Math.max(p.y, Math.min(sy, p.y + h));
       const d = Math.abs(nx - sx) + Math.abs(ny - sy);
       if (d > 1.8) continue;                                  // pulled UP to it, not merely in the same room
-      if (!best || d < best.d) best = { d, nx, ny };
+      if (!best || d < best.d) best = { p, d, nx, ny };
     }
-    return best ? dirToward(sx * T, sy * T, best.nx * T, best.ny * T) : null;
+    return best;
+  }
+  function counterFace(seat) {
+    const best = counterForSeat(seat);
+    return best ? dirToward((seat.x + 0.5) * T, (seat.y + 0.5) * T, best.nx * T, best.ny * T) : null;
   }
 
   /* couch + a TV nearby → dwell at the couch and watch it. The pairing is derived live (gen has no
@@ -2113,6 +2117,41 @@ const World = (() => {
       if (Math.abs(nx - (p.x + 0.5)) + Math.abs(ny - (p.y + 0.5)) <= 1.8) return p;
     }
     return null;
+  }
+  /* A quiet social reuse, not a second encounter engine: when exactly one other body is already seated at
+     a bar in this body's current room, occasionally take another free stool at THAT bar. The long per-body
+     cooldown is armed on every eligible look, whether the roll lands or not, and the counter is capped at
+     two committed sitters. planSeat owns all pathing, claims, containment and task pre-emption. */
+  function maybeJoinBar(now) {
+    if (!self || now < (self.barJoinCd || 0) || !geo || !geo.props) return false;
+    const here = tileOf(self.px, self.py), room = roomOfLocalTile(here.x, here.y);
+    if (!room) return false;
+    const zone = zoneFor(self), bodies = allBodies();
+    const bars = [];
+    for (const other of bodies) {
+      if (!other || other === self || other.unplaced || other.goal !== 'use' || !other.sitting || !other.seated) continue;
+      const ot = tileOf(other.px, other.py);
+      if (roomOfLocalTile(ot.x, ot.y) !== room) continue;
+      const seat = geo.props.find(p => p.id === other.usingProp), counter = counterForSeat(seat);
+      if (!counter || !counter.p || (propUse(counter.p) || {}).kind !== 'bar') continue;
+      const committed = bodies.filter(b => {
+        if (!b || b === self || b.unplaced || b.goal !== 'use') return false;
+        const bs = geo.props.find(p => p.id === b.usingProp), bc = counterForSeat(bs);
+        return !!(bc && bc.p && bc.p.id === counter.p.id);
+      });
+      if (committed.length !== 1) continue;                    // one host + one joiner, never a crowd
+      const stool = stoolAt(counter.p, zone);
+      if (stool) bars.push({ other, stool });
+    }
+    if (!bars.length) return false;
+    self.barJoinCd = now + U.irnd(60000, 120000);              // one eligible roll every 1–2 minutes
+    if (!U.chance(0.35)) return false;                         // only sometimes, never every bar visit
+    const pick = U.pick(bars);
+    if (!planSeat(now, pick.stool, zone)) return false;
+    const togetherUntil = now + U.irnd(45000, 75000);
+    self.barJoinUntil = togetherUntil;
+    pick.other.useUntil = Math.max(pick.other.useUntil || 0, togetherUntil);
+    return true;
   }
   /* TIRED. The couch is the right answer and stays the first one — but "tired" is the drive that
      refills WHILE you rest, so a body whose rest need re-tops the moment it stands up will re-pick
@@ -3775,6 +3814,7 @@ const World = (() => {
     if (maybeChase(now)) return;         // TIER D · D4 THE CHASE: ultra-rare (8-15 min station cooldown, one chaser ever, mutually exclusive with a live social beat, cursor fresh+MOVING) — breaks toward the cursor, pursues, stops+stares, walks off. Rolled FIRST but hardest-gated: most idle decisions never even reach the roll.
     if (maybeSocial(now)) return;        // TIER D · D3: a rare SILENT social encounter (huddle/watch/border/half-follow) between idle neighbors — bounded movement, one live station-wide, zone-clamped, per-pair cooldown (G3/G4/G5); selected here at the idle cadence off neighborsOf (K4 — never off observing another encounter)
     if (maybeMimic(now)) return;         // TIER D · D4 CURSOR-MIMIC: a rare quirk-band head-only follow of the moving cursor (3-6s, per-body 45-90s cooldown, station-gated); reduceMotion → a single glance
+    if (maybeJoinBar(now)) return;       // rare, same-room reuse: join exactly one existing bar sitter on another stool
     /* FOLLOW-THROUGH (continuity of attention, drive half). The three drives were re-raced from scratch on
        every re-decide, so PARTLY satisfying one could flip the winner and send the body off to an unrelated
        category mid-thought — the same incoherence `attn` fixes spatially. The drive that most recently took
@@ -4261,14 +4301,12 @@ const World = (() => {
         // (token/tool-driven, heatFor) + a task-progress fraction ONLY when a real one was published
         // (deskProgFor — a live harness run has none and renders none).
         const live = (p.agentId && workstationLit(p)) ? { heat: heatFor(p.agentId), prog: deskProgFor(p.agentId) } : null;
-        // SEAT LAW: `seated` now means exactly one thing — a body rendered ON a stool/chair prop. That seat
-        // must sort JUST BEHIND its sitter (seatPy - 1), so the body sits IN the seat instead of the seat art
-        // being painted over its legs. (Pre-2026-08-04 this ran the other way, +1, because `seated` then meant
-        // a couch/bed occupant and the sofa's tall BACK panel was supposed to occlude the sitter. Couch and bed
-        // no longer seat anyone, so that inversion would now just hide a body behind a stool.)
+        // A stool/chair sorts just BEHIND its sitter; a couch sorts just IN FRONT so the tall sofa back
+        // occludes the sitter's lower body. Beds/beanbags never set `seated` and never enter this branch.
         const sitter = (agent && agent.seated && agent.usingProp === p.id) ? agent
           : crew.find(b => b.seated && b.usingProp === p.id);
-        let sy = sitter ? sitter.seatPy - 1 : (p.y + (p.h || 1)) * T;
+        const sitterUse = sitter ? propUse(p) : null;
+        let sy = sitter ? sitter.seatPy + (sitterUse && sitterUse.kind === 'couch' ? 1 : -1) : (p.y + (p.h || 1)) * T;
         // MOUNT LIFT, resolved per FRAME rather than stored on the prop: a table-top prop only rides the
         // table while the table is actually under it. Reclaim the table and the prop drops back to the
         // deck instead of floating — which is why no saved station ever needs migrating for this.
@@ -6134,6 +6172,7 @@ const World = (() => {
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
       summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory (mirrors the hero literal) — runtime-only
       neighborGlanceCd: 0, // Tier C / C-Beat2: per-body mutual-glance cooldown (mirrors the hero literal) — runtime-only
+      barJoinCd: 0, barJoinUntil: 0,
       wakeAt: 0, workUntil: 0,
       // B0 — FULL ENGINE STATE SHAPE (additive, runtime-only): mirror the hero literal (spawn ~346-367) so a
       // crew body reads real meters/temperament when Tier B2 routes the sentience engine through it (stepCrew →
@@ -7139,6 +7178,8 @@ const World = (() => {
     sitting: !!(agent && agent.sitting),
     seatKey: (agent && agent.seatKey) || null,
     seated: !!(agent && agent.seated),
+    useMs: agent ? Math.max(0, Math.round((agent.useUntil || 0) - ((typeof performance !== 'undefined') ? performance.now() : fnow))) : 0,
+    watchProp: (agent && agent.watchProp) || null,
     // where the body actually DRAWS: seated bodies render on the claimed seat tile, everyone else on their own
     renderPx: agent ? (agent.seated ? { x: agent.seatPx, y: agent.seatPy } : { x: agent.px, y: agent.py }) : null,
     walkingTo: (agent && agent.target) ? { x: agent.target.x, y: agent.target.y } : null,

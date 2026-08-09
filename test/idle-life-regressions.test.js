@@ -22,6 +22,24 @@ A.eq(funRecentlyUsed('lounge', 100000, 'arcade-1', 99999), false, 'a different l
 A.ok(/FUN_REPEAT_MIN\s*=\s*90000[\s\S]*FUN_REPEAT_MAX\s*=\s*150000/.test(world), 'repeat exclusion lasts 90–150 seconds');
 A.ok(!/c\.w\s*\*=\s*0\.12/.test(world), 'the ineffective weak repeat weighting is gone');
 
+// Couch/TV regression: a claimed sofa cushion is rendered as a real sit and holds for minutes,
+// while the catalog remains sit:false so the generic prop path cannot reopen bed/beanbag sitting.
+A.ok(/self\.pendSeat\s*=\s*\{\s*px:\s*\(sx\s*\+\s*0\.5\)\s*\*\s*T,\s*py:\s*\(couch\.y\s*\+\s*h\)\s*\*\s*T\s*-\s*2\s*\}/.test(world), 'couch planning records the claimed cushion render position');
+A.ok(/self\.useSit\s*=\s*true;\s*self\.useFace/.test(world), 'the couch plan commits to the sit pose');
+A.ok(/self\.goal\s*===\s*['"]lounge['"][\s\S]{0,500}self\.sitting\s*=\s*true[\s\S]{0,300}U\.irnd\(90000,\s*180000\)/.test(world), 'TV lounging sits on the couch for 90–180 seconds');
+A.ok(/sitterUse\s*&&\s*sitterUse\.kind\s*===\s*['"]couch['"]\s*\?\s*1\s*:\s*-1/.test(world), 'couch and stool seats retain their distinct occlusion order');
+
+// Shared bar regression: reuse planSeat and the existing seat claims; one host may gain one joiner,
+// with a rare roll and a long cooldown rather than a per-frame social loop.
+A.ok(/function maybeJoinBar\(now\)/.test(world), 'same-room bar companionship has one narrow planner');
+A.ok(/roomOfLocalTile\(ot\.x,\s*ot\.y\)\s*!==\s*room/.test(world), 'bar joining requires the same physical room');
+A.ok(/committed\.length\s*!==\s*1/.test(world), 'a bar companionship is capped at two committed sitters');
+A.ok(/barJoinCd\s*=\s*now\s*\+\s*U\.irnd\(60000,\s*120000\)[\s\S]{0,180}U\.chance\(0\.35\)/.test(world), 'an eligible bar join rolls only once per 1–2 minute cooldown');
+A.ok(/if\s*\(!planSeat\(now,\s*pick\.stool,\s*zone\)\)\s*return false/.test(world), 'bar joining reuses the proven seat/path/claim primitive');
+A.ok(/if\s*\(maybeJoinBar\(now\)\)\s*return/.test(world), 'the idle decision ladder consults the narrow bar join planner');
+A.ok(/goal\s*===\s*['"]lounge['"][\s\S]{0,100}useKind\s*===\s*['"]couch['"][\s\S]{0,100}sitting\s*&&\s*b\.seated/.test(soak), 'the live soak counts actual seated couch/TV frames');
+A.ok(/barSitters\.length\s*>=\s*2[\s\S]{0,120}sharedBarSamples\+\+/.test(soak), 'the live soak counts simultaneous bar company rather than separate visits');
+
 // Render truth: a seated body is measured from where it is drawn, and the counter is identified.
 A.ok(/tileOf\(bodyPosX\(b\),\s*bodyPosY\(b\)\)/.test(world), 'facing uses the rendered body position');
 A.ok(/facingCounter:\s*!!\(fp\s*&&\s*isCounterProp\(fp\)\)/.test(world), 'body snapshots identify the actual counter prop ahead');
