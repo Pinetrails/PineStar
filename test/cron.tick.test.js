@@ -340,6 +340,34 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     A.eq(s.getJob('monitor').monitorHash, 'hash:version two', 'the successful changed run advances the durable hash');
   }
 
+  // ---- 8aa. restart preserves the hash barrier: unchanged source still spends/delivers nothing ----
+  {
+    const source = Object.assign(intervalJob('restart-source', 'every 1h'), { lastStatus: 'ok', lastOutput: 'version one' });
+    const monitor = cronStore.makeJob({ id: 'restart-monitor', prompt: 'summarize changes', agentId: 'cron_monitor',
+      schedule: cron.parseSchedule('every 1m', T0), contextFrom: ['restart-source'], monitorMode: true }, { id: 'restart-monitor', now: T0 });
+    const deps = {
+      contextFor: (_job, jobs) => String(cronStore.getJob(jobs, 'restart-source').lastOutput || ''),
+      hashText: text => 'hash:' + text
+    };
+    const beforeRestart = setup([source, monitor], okRun('reported before restart'), deps);
+    beforeRestart.clock.set(T0 + 60000); beforeRestart.driver.applyTick(beforeRestart.clock.now()); await flush(); await flush();
+    const settled = beforeRestart.getJob('restart-monitor');
+    A.eq(settled.monitorHash, 'hash:version one', 'pre-restart monitor commits the source hash');
+    A.eq(beforeRestart.runs.length, 1, 'pre-restart changed source calls the model once');
+    A.eq(beforeRestart.deliveries.length, 1, 'pre-restart changed source delivers once');
+
+    // Model a real process boundary through the exact durable envelope loader, then construct a fresh driver.
+    const reloaded = cronStore.loadEnvelope(cronStore.toEnvelope(beforeRestart.getJobs())).jobs;
+    const afterRestart = setup(reloaded, okRun('must never run'), Object.assign({ t0: T0 + 60000 }, deps));
+    afterRestart.clock.set(T0 + 120000); afterRestart.driver.applyTick(afterRestart.clock.now()); await flush();
+    const unchanged = afterRestart.getJob('restart-monitor');
+    A.eq(afterRestart.runs.length, 0, 'restart + unchanged source makes zero model calls');
+    A.eq(afterRestart.deliveries.length, 0, 'restart + unchanged source makes zero delivery attempts');
+    A.eq(unchanged.lastRunId, settled.lastRunId, 'suppressed restart check records no phantom run');
+    A.eq(unchanged.monitorHash, settled.monitorHash, 'suppressed restart check keeps the committed hash');
+    A.ok(unchanged.monitorLastCheckedAt !== settled.monitorLastCheckedAt, 'suppressed restart check durably advances only its check timestamp');
+  }
+
   // ---- 8b. OAuth-backed providers launch without a BYOK key ----
   {
     const j = intervalJob('j1', 'every 1m');
