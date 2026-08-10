@@ -4071,17 +4071,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const stat = linked
       ? (bal == null ? '● LINKED · BALANCE UNAVAILABLE' : '● LINKED · ' + esc(bal) + (creditsProv.tier ? ' · $' + esc(creditsProv.tier) + '/MO' : ''))
       : '○ NOT LINKED';
-    return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
-      '<span class="conn-dot"></span>' +
-      '<div class="prov-main">' +
-      '<div class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</div>' +
-      '<div class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</div>' +
-      '</div>' +
-      '<div class="prov-stat">' + stat +
-        '<button class="bb sm prov-addkey" data-act="credits-store" data-provider="' + esc(p.id) + '" ' +
-        'title="' + (linked ? 'balance, plan and history live in the STORE' : 'link this station to a StarNet account') + '">' +
-        (linked ? '◆ STORE' : '🔗 LINK STATION') + '</button>' +
-      '</div>' +
+    return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="group" aria-label="' + esc(p.name) + ' provider" style="--ci:' + pi + '">' +
+      '<button class="prov-select" data-act="prov-select" aria-label="Select ' + esc(p.name) + ' provider">' +
+        '<span class="conn-dot"></span>' +
+        '<span class="prov-main">' +
+          '<span class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</span>' +
+          '<span class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</span>' +
+        '</span>' +
+        '<span class="prov-stat"><span class="prov-stat-t">' + stat + '</span></span>' +
+      '</button>' +
+      '<button class="bb sm prov-addkey" data-act="credits-store" data-provider="' + esc(p.id) + '" ' +
+      'aria-label="' + (linked ? 'Open the STORE' : 'Link this station to a StarNet account') + '" ' +
+      'title="' + (linked ? 'balance, plan and history live in the STORE' : 'link this station to a StarNet account') + '">' +
+      (linked ? '◆ STORE' : '🔗 LINK STATION') + '</button>' +
       '</div>';
   }
 
