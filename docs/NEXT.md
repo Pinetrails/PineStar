@@ -1,5 +1,21 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-09 — CURRENT WEBSITE STATION PREVIEW (`agent/station-preview-current`)
+
+READY TO MERGE. The starnetos.com station preview was still clipping the embedded app with the
+retired `666x744 @ 283,88` camera rectangle while the current shell renders the stage at
+`748x752 @ 252,84`. The homepage now measures the real same-origin `#stage` rectangle after iframe
+load and on later layout changes, then derives its crop offset, scale, and aspect ratio from that
+live geometry. The website app mirror is synchronized with the current frontend, including the
+latest station lighting/rendering changes, and the corrected controller is cache-busted.
+
+Live local-site proof at desktop width rendered the complete warm-lit station with measured crop
+`748 / 752`, offsets `-252px / -84px`, and scale `0.721925`; at `390x844` it retained the same live
+geometry, scaled to `0.447861`, and reported `scrollWidth 375` with no horizontal overflow. The new
+regression is 6/6, website mirror is exact (3,885 files + 2 embed-only), claims planning authority
+is PASS (37 claims / 208 locked files), and `npm run test:fast` is **595/595 GREEN**. No publish,
+Cloudflare deploy, push, PR, credential, provider-spend, or production-data action occurred.
+
 ## 2026-08-08 — VOICE TURN BOUNDARIES + LIVE DICTATION — MERGED
 
 Merged to `feat/harness-backend` as `9e8c9c5c` from snapshot `17196bd9`. Conversation mode now keeps a 900 ms pre-roll, uses a quieter-room-safe
