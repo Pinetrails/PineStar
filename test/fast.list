@@ -30,6 +30,7 @@ test/concurrency.test.js
 test/workspace-lease.test.js
 test/workspace-owner.test.js
 test/workspace-safety.test.js
+test/workspace-recovery.test.js
 test/workspace-lineage.test.js
 test/agent-lifecycle.test.js
 test/durable-store.test.js

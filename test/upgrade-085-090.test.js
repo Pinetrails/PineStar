@@ -19,6 +19,7 @@ const fallbackChain = require('../sidecar/fallbackchain.js');
 const { makeDomainStore } = require('../sidecar/domain-store.js');
 const { makeMemoryStore } = require('../sidecar/memory-store.js');
 const { makeSaveStore } = require('../sidecar/savestore.js');
+const WorkspaceRecovery = require('../sidecar/workspace-recovery.js');
 
 const SAVE_KEY = 'starnet.save';
 const RELEASE_SAVE_VERSION = 5;
@@ -199,5 +200,29 @@ A.ok(/"openrouter" => KEYCHAIN_ACCOUNT\.to_string\(\)/.test(credentialsRs) && /f
   'candidate keeps the released provider credential account references');
 A.ok(/format!\("channel:\{channel\}"\)/.test(credentialsRs) && /read_channel_token\(channel\)[\s\S]*?keychain_has_it[\s\S]*?remove\("token"\)/.test(credentialsRs),
   'channel credentials keep their account references and plaintext is stripped only after read-back proof');
+
+// 6. Intel macOS path split: a released v0.8.5 durable save under the manual-sidecar shelf self-heals into
+// the desktop bundle-id shelf before stores open, survives the candidate reader, and leaves the source intact.
+const intelHome = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-upgrade-085-intel-mac-'));
+try {
+  const legacyMac = path.join(intelHome, '.local', 'share', 'StarNet', 'workspaces');
+  const desktopMac = path.join(intelHome, 'Library', 'Application Support', 'ai.skynet.harness', 'workspaces');
+  fs.mkdirSync(legacyMac, { recursive: true });
+  makeSaveStore({ fs, pathMod: path, root: legacyMac, clock: { now: () => 1700000000100 } }).save('agent', oldDoc);
+  const sourceBytes = fs.readFileSync(path.join(legacyMac, 'agent.save.json'));
+  const recovered = WorkspaceRecovery.applyPendingRecovery({
+    fs, path, platform: 'darwin', home: intelHome, workspaceRoot: desktopMac,
+    candidateRoots: [legacyMac], auto: true, now: () => 1700000000200
+  });
+  A.eq(recovered.applied, true, 'Intel macOS fixture automatically activates one v0.8.5 manual-sidecar station');
+  A.eq(makeSaveStore({ fs, pathMod: path, root: desktopMac, clock: { now: () => 1700000000300 } }).load('agent'), oldDoc,
+    'patched desktop store reads the recovered v0.8.5 station without field loss');
+  A.eq(fs.readFileSync(path.join(legacyMac, 'agent.save.json')), sourceBytes,
+    'Intel macOS recovery leaves the released source generation byte-exact');
+  A.ok(fs.existsSync(path.join(desktopMac, '.migration-receipt.json')) && fs.existsSync(path.join(desktopMac, '.migrated')),
+    'Intel macOS activation leaves a validated migration receipt and one-shot marker');
+} finally {
+  fs.rmSync(intelHome, { recursive: true, force: true });
+}
 
 A.report('upgrade-085-090');

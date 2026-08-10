@@ -28,6 +28,7 @@ const { makeWorkspaceLease } = require('./workspace-lease.js');
 const { makeWorkspaceOwner } = require('./workspace-owner.js');
 const { classifyWorkspace, workspaceCandidates } = require('./workspace-safety.js');
 const { inspectWorkspaceLineage } = require('./workspace-lineage.js');
+const workspaceRecovery = require('./workspace-recovery.js');
 const { makeUpdatePreparation } = require('./update-preparation.js');
 const { makeAgentLifecycle } = require('./agent-lifecycle.js');
 const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
@@ -359,6 +360,11 @@ const SHARED = path.resolve(__dirname, '..', 'shared');
 // Files, so writing beside the .js source EACCES-fails on first boot and silently kills ALL persistence
 // (ledger/memory/secrets/cron) and degrades every permission grant to a deny. App-data is always writable.
 function defaultWorkspaces() {
+  if (process.platform === 'darwin') {
+    // Match Tauri app.path().app_data_dir() exactly. Older manual sidecars used ~/.local/share/StarNet;
+    // that location remains a recovery candidate, never a second canonical station.
+    return path.join(os.homedir() || '.', 'Library', 'Application Support', 'ai.skynet.harness', 'workspaces');
+  }
   const base = process.env.LOCALAPPDATA || process.env.APPDATA            // Windows: %LOCALAPPDATA% (machine-local app data)
     || process.env.XDG_DATA_HOME                                          // Linux XDG
     || path.join(os.homedir() || '.', '.local', 'share');                 // POSIX fallback
@@ -372,6 +378,22 @@ function defaultWorkspaces() {
 }
 const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : defaultWorkspaces();
 const outputArtifacts = makeOutputArtifacts({ fsp, fs, pathMod: path, root: WORKSPACES, crypto });
+
+const RECOVERY_CANDIDATE_ROOTS = workspaceCandidates({
+  path: path, env: process.env, platform: process.platform, homedir: () => os.homedir()
+}).concat([path.resolve(__dirname, 'workspaces'), path.resolve(__dirname, '..', 'workspaces')]);
+
+// Recovery activation must precede the owner claim and every store constructor. With no explicit request,
+// production may self-heal only one unambiguous valid legacy root; conflicts stay read-only for the picker.
+const startupWorkspaceRecovery = workspaceRecovery.applyPendingRecovery({
+  fs, path, platform: process.platform, home: os.homedir(), workspaceRoot: WORKSPACES,
+  candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS, auto: !DEV_MODE, now: Date.now
+});
+if (startupWorkspaceRecovery && startupWorkspaceRecovery.applied) {
+  console.warn('[recovery] restored prior station before opening stores; source preserved, rollback retained=' + !!startupWorkspaceRecovery.rollbackRetained);
+} else if (startupWorkspaceRecovery && startupWorkspaceRecovery.ok === false) {
+  console.error('[recovery] automatic station recovery failed closed: ' + String(startupWorkspaceRecovery.error || 'unknown error'));
+}
 
 // DEV/QA must be destructive only inside an explicit scratch profile. A forgotten WORKSPACES override used
 // to make a headless audit inherit the Commander's canonical app-data root; that can produce a reset-looking
@@ -414,9 +436,23 @@ process.once('exit', () => { try { workspaceOwner.release(); } catch (_) {} });
 // isolated DEV/QA roots deliberately do not look sideways into the Commander's production profile.
 const workspaceLineage = inspectWorkspaceLineage({
   fs: fs, path: path, platform: process.platform, workspaceRoot: WORKSPACES,
-  candidateRoots: DEV_MODE ? [] : workspaceCandidates({ path: path, env: process.env, homedir: () => os.homedir() })
-    .concat([path.resolve(__dirname, 'workspaces'), path.resolve(__dirname, '..', 'workspaces')])
+  candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS
 });
+const workspaceRecoveryInspection = workspaceRecovery.inspectCandidates({
+  fs, path, platform: process.platform, home: os.homedir(), workspaceRoot: WORKSPACES,
+  candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS
+});
+workspaceLineage.recovery = workspaceRecovery.publicInspection(workspaceRecoveryInspection);
+
+function publicWorkspaceLineage() {
+  const home = os.homedir();
+  const out = JSON.parse(JSON.stringify(workspaceLineage));
+  out.currentWorkspace = workspaceRecovery._internals.displayPath(out.currentWorkspace, home, path, process.platform);
+  out.evidence = (out.evidence || []).map(row => Object.assign({}, row, {
+    root: workspaceRecovery._internals.displayPath(row.root, home, path, process.platform)
+  }));
+  return out;
+}
 
 /* ---- LIVE MODEL PRICING (2026-07-31, Hermes-parity pass): wire the models.dev aggregate into the
    price snapshot so a newly-released model gets its real published rate instead of a stale family
@@ -7647,6 +7683,8 @@ const ROUTES = [
   { m: 'POST', exact: '/api/update/prepare', h: handleUpdatePrepare },
   { m: 'POST', exact: '/api/update/cancel', h: handleUpdateCancel },
   { m: 'GET', exact: '/api/update/status', h: handleUpdateStatus },
+  { m: 'GET', exact: '/api/lineage/report', h: serveWorkspaceRecoveryReport },
+  { m: 'POST', exact: '/api/lineage/recover', h: handleWorkspaceRecovery },
   { m: 'GET', exact: '/api/lineage', h: serveWorkspaceLineage },
   { m: 'POST', exact: '/api/session', h: handleApiSession },
   // qsplit, not exact: these carry ?provider= so the page can ask about the provider it is actually on.
@@ -7999,7 +8037,38 @@ function handleUpdateStatus(req, res) {
 }
 function serveWorkspaceLineage(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ ok: true, lineage: workspaceLineage }));
+  res.end(JSON.stringify({ ok: true, lineage: publicWorkspaceLineage() }));
+}
+function serveWorkspaceRecoveryReport(req, res) {
+  const report = workspaceRecovery.recoveryReport({
+    fs, path, platform: process.platform, arch: process.arch, home: os.homedir(), workspaceRoot: WORKSPACES,
+    candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS,
+    inspection: workspaceRecoveryInspection, publicLineage: publicWorkspaceLineage(), now: Date.now
+  });
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
+    'Content-Disposition': 'attachment; filename="starnet-recovery-report.json"'
+  });
+  res.end(JSON.stringify(report, null, 2) + '\n');
+}
+async function handleWorkspaceRecovery(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 4096)) || {}; }
+  catch (_) { return json(400, { ok: false, error: 'bad json' }); }
+  try {
+    const result = workspaceRecovery.requestRecovery({
+      fs, path, platform: process.platform, home: os.homedir(), workspaceRoot: WORKSPACES,
+      candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS,
+      inspection: workspaceRecoveryInspection, candidateId: String(body.candidateId || ''), now: Date.now
+    });
+    json(202, Object.assign({}, result, { desktopWillRestart: DESKTOP_SHELL }));
+    // Exit only after the authenticated response is flushed. The desktop guardian respawns automatically;
+    // a manual sidecar is explicitly told by the UI to restart it. The next boot applies before store open.
+    setTimeout(() => process.exit(75), 150);
+  } catch (error) {
+    json(409, { ok: false, error: String(error && error.message || error) });
+  }
 }
 
 // Prefix routes are route families, not arbitrary string aliases. A route whose declared prefix already
@@ -16379,8 +16448,8 @@ function serveSaveLoad(req, res) {
     // path can disclose a damaged/restored save instead of silently presenting the pristine first-run ceremony.
     // EL-11 FIX 1 (GB-9): also surface workspaceDegraded at boot-read time, not only on the first refused write.
     const recovery = (typeof saveStore.recoveryNotice === 'function') ? (saveStore.recoveryNotice(agent) || null) : null;
-    json(200, { save: doc || null, recovery: recovery, lineage: workspaceLineage, degraded: workspaceDegraded ? true : undefined });
-  } catch (e) { json(200, { save: null, recovery: null, lineage: workspaceLineage }); }
+    json(200, { save: doc || null, recovery: recovery, lineage: publicWorkspaceLineage(), degraded: workspaceDegraded ? true : undefined });
+  } catch (e) { json(200, { save: null, recovery: null, lineage: publicWorkspaceLineage() }); }
 }
 // POST /api/save/recovery-ack { agent? } — the frontend has SHOWN the honest quarantine/recovery notice; clear
 // the marker so it appears exactly once. Never touches the save itself (the quarantined copy stays on disk).
