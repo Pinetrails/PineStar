@@ -386,10 +386,16 @@ jobs:
             $tabs = $null
             for ($i = 0; $i -lt 180; $i++) {
               if ($desktop.HasExited) { throw "desktop exited before CDP with code $($desktop.ExitCode)" }
+              $probe = [Net.Sockets.TcpClient]::new()
               try {
-                $tabs = Invoke-RestMethod -Uri 'http://127.0.0.1:9333/json' -TimeoutSec 1
-                if ($tabs) { break }
-              } catch {}
+                $connect = $probe.ConnectAsync('127.0.0.1', 9333)
+                if ($connect.Wait(200) -and $probe.Connected) {
+                  try {
+                    $tabs = Invoke-RestMethod -Uri 'http://127.0.0.1:9333/json' -TimeoutSec 2
+                    if ($tabs) { break }
+                  } catch {}
+                }
+              } finally { $probe.Dispose() }
               Start-Sleep -Milliseconds 500
             }
             if (-not $tabs) { throw 'desktop CDP did not become ready within 90 seconds' }
@@ -490,6 +496,7 @@ jobs:
         with:
           name: t0-clean-install-00ccbcfa
           if-no-files-found: warn
+          include-hidden-files: true
           path: |
             .dogfood/external-t0/**
             .dogfood/t0-clean-install-*/**
