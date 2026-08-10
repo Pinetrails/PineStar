@@ -58,11 +58,16 @@ const PROBE = `(() => {
     return out;
   };
 
+  /* Once the fix shipped, projectGeometry emits the corridor chamfers itself — so "before" can no
+     longer be the default, and this probe would have quietly compared the fix against itself. The
+     BEFORE panel now STRIPS every corridor chamfer back out, which is exactly the pre-fix geometry;
+     the AFTER panel takes whatever the shipped path produces, and never restates it. */
   const shoot = (withCorridorChamfers) => {
     const st = build();
     const geo = st.projectGeometry();
-    const added = withCorridorChamfers ? corridorChamfers(geo) : [];
-    if (added.length) geo.chamfers = geo.chamfers.concat(added);
+    const isCorTile = (c) => geo.allRects.some(r => geo.isCorridor(r.z) && c[0] >= r.x1 && c[0] <= r.x2 && c[1] >= r.y1 && c[1] <= r.y2);
+    if (!withCorridorChamfers) geo.chamfers = geo.chamfers.filter(c => !isCorTile(c));
+    const added = withCorridorChamfers ? geo.chamfers.filter(isCorTile) : [];
     const bk = SB.bake(geo);
     const lit = mk(bk.W, bk.H);
     lit.g.fillStyle = '#ff00ff'; lit.g.fillRect(0, 0, bk.W, bk.H);
@@ -93,8 +98,8 @@ const PROBE = `(() => {
   };
 
   const crops = {
-    NW_corner_closeup: sheetOf([['NOW  (no corridor chamfer)', off], ['WITH corridor chamfer', on]], 34, 72, 9),
-    NW_corner_wide:    sheetOf([['NOW', off], ['WITH corridor chamfer', on]], 60, 200, 3),
+    NW_corner_closeup: sheetOf([['BEFORE  (rooms-only chamfer)', off], ['AFTER  (hallway chamfered)', on]], 34, 72, 9),
+    NW_corner_wide:    sheetOf([['BEFORE', off], ['AFTER', on]], 60, 200, 3),
   };
   return JSON.stringify({ tile: T, cornerPx: [CX, CY], corridorChamfersFound: on.added, crops });
 })()`;
