@@ -1408,7 +1408,9 @@ const App = (() => {
     let a = null;
     try { a = summonAgent(spec, { activate: false, desk: true }); } catch (_) { a = null; }
     if (!a) return null;
-    try { await lastRosterPush; } catch (_) {}   // the worker is now in the backend roster → safe to delegate
+    let rosterLanded = false;
+    try { rosterLanded = (await lastRosterPush) === true; } catch (_) {}
+    if (!rosterLanded) return null;   // fail closed: never tell the Commander it can dispatch an unregistered worker
     // READ BACK what actually landed, so the ack can tell the lead where the desk is. Deliberately a PURE
     // read (propsByAgent), never a second ensureWorkstation call: re-running the seeder here could place a
     // desk AFTER summonAgent's persist() — a floor change that would not be saved until the next write.
