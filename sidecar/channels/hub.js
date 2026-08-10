@@ -319,6 +319,9 @@
     // old absent property ('' / 'global' fallbacks), so behaviour is unchanged.
     const streamIdFor = typeof o.streamId === 'function' ? o.streamId
       : (o.streamId ? function () { return String(o.streamId); } : null);
+    // Canonical transcript projection. Ordinary channel chats share the durable workstream ledger used by
+    // desktop COMMS; the legacy channel history remains an offline fallback only.
+    const historyFor = typeof o.historyFor === 'function' ? o.historyFor : null;
     // ONE-RESOLVER LAW: any telemetry that attributes an inbound message to an agent (workitem crates, queue
     // HUD) must come from THIS hub's resolution, never a parallel guess. onResolved fires once per real message
     // (never for /commands) with the exact agentId the run will execute as, in onInbound's first synchronous
@@ -460,6 +463,19 @@
     function agentIdFor(chatId) {
       const tail = String(chatId).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40 - agentPrefix.length);
       return agentPrefix + (tail || '0');
+    }
+    function resolvedStreamId(chatId) {
+      let explicit = '';
+      try { if (streamIdFor) explicit = String(streamIdFor(chatId) || ''); } catch (_) { explicit = ''; }
+      if (/^[A-Za-z0-9_-]{1,64}$/.test(explicit)) return explicit;
+      if (!bindChats) return null;
+      try {
+        const rec = typeof store.getChatRecord === 'function' ? store.getChatRecord(chatId) : null;
+        const bound = rec && String(rec.streamId || '');
+        if (/^[A-Za-z0-9_-]{1,64}$/.test(bound)) return bound;
+      } catch (_) {}
+      const base = ('channel_' + channel + '_' + String(chatId)).replace(/[^A-Za-z0-9_-]/g, '_');
+      return base.slice(0, 64) || null;
     }
 
     /* ---- ROUTE: answer WHERE the question was asked -------------------------------------------------------
@@ -1308,6 +1324,7 @@
         : boundAgentId
         ? boundAgentId
         : (sec.agentId && AID_RE.test(String(sec.agentId))) ? String(sec.agentId) : agentIdFor(chatId);
+      const canonicalStreamId = resolvedStreamId(chatId);
 
       // B4 — persist the chat→agent binding (+ this hub's channel) so the autonomous notifier can find which chat to
       // ping for a given agent when a cron run produces work. Best-effort: a store hiccup must never block the reply.
@@ -1316,7 +1333,7 @@
       // /model and the notifier all started asserting an agent the user never chose. Persist only when the chat is
       // unbound or the resolution agrees with the binding.
       // (bindChats:false — an ephemeral proof chat never becomes addressed; see the option note above.)
-      try { if (bindChats && typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel }); } catch (_) {}
+      try { if (bindChats && typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel, streamId: canonicalStreamId || undefined }); } catch (_) {}
 
       // announce the SINGLE resolution to the host (workitem crate + queue HUD attribution — one truth).
       // isTask rides along: the BELT IS WORK-ONLY (Andrew's ruling 2026-07-05) — the host places a crate only
@@ -1419,7 +1436,10 @@
       // turn carries the media notes (with saved .attachments/ paths), so an agent in a LATER turn can still reach
       // the files through its workspace tools even though history replays as plain text.
       let history = [];
-      try { history = store.loadHistory(agentId); } catch (_) {}
+      try {
+        history = canonicalStreamId && historyFor ? historyFor(canonicalStreamId, agentId) : store.loadHistory(agentId);
+        if (!Array.isArray(history)) history = [];
+      } catch (_) { try { history = store.loadHistory(agentId); } catch (_) { history = []; } }
       try { store.appendTurn(agentId, 'user', turnText || '[the user sent a media message]'); } catch (_) {}
       const userTurn = { role: 'user', content: turnText };
       if (mediaIngest.attachments.length) userTurn.attachments = mediaIngest.attachments;
@@ -1526,7 +1546,7 @@
           await runOnce({
             key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
             emit: sink, signal: ac.signal, runId, trigger: 'event',
-            streamId: streamIdFor ? streamIdFor(chatId) : undefined,   // sample/proof seam — undefined for every ordinary channel
+            streamId: canonicalStreamId || undefined,
             initialTaint: mediaIngest.attachments.length ? 'channel attachment' : null,
             surface: wantApprovals ? 'interactive' : 'autonomous',
             ownerTrusted: ownerTrusted,
@@ -1619,7 +1639,7 @@
                 baseUrl: hopConfig.baseUrl || hopConfig.base_url || '', reasoningEffort: hopConfig.reasoningEffort || hopConfig.reasoning_effort,
                 system: hopConfig.system || personaFor(h.agentId, rec), messages: hist.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: h.text }]),
                 agentId: h.agentId, isTask: true, emit: hopSink, signal: h.signal, runId: hopRunId, trigger: 'event',
-                streamId: streamIdFor ? streamIdFor(chatId) : undefined,   // the whole line's runs share one workstream (sample/proof seam)
+                streamId: canonicalStreamId || undefined,   // the whole line shares one canonical transcript
                 initialTaint: 'upstream agent output',
                 surface: 'autonomous', ownerTrusted: ownerTrusted, broadcast: true, reflect: true,
                 station: (resolveStation ? resolveStation(h.agentId) : null) || undefined,

@@ -21,6 +21,7 @@
   'use strict';
 
   const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;
+  const nodeCrypto = require('node:crypto');
   const WIN = (typeof process !== 'undefined' && process.platform) === 'win32';
   const DEFAULT_DOCKER_IMAGE = 'node:20-bookworm';
 
@@ -725,6 +726,7 @@
     const states = new Map();
     const sessions = new Map();
     const operations = new Map();
+    let jobSeq = 0;
 
     function nowMs() { try { return Number(clock.now()) || 0; } catch (_) { return 0; } }
     function quote(value) { return "'" + String(value == null ? '' : value).replace(/'/g, "'\\''") + "'"; }
@@ -747,6 +749,16 @@
       }
       return state;
     }
+    function markUnavailable(agentId, message) {
+      const state = stateFor(agentId);
+      state.availability = 'unavailable'; state.error = String(message || 'SSH unavailable').slice(0, 300); state.lastProbeAt = nowMs();
+    }
+    function foregroundBoundary(result) {
+      if (result && result.aborted) return 'foreground SSH transport was aborted before completion';
+      if (result && result.timedOut) return 'foreground SSH transport timed out before completion';
+      if (result && result.exitCode !== 0) return 'foreground SSH transport exited ' + String(result.exitCode) + ' before completion';
+      return '';
+    }
     function enqueue(agentId, work) {
       const aid = safeAgentId(agentId || 'agent');
       const previous = operations.get(aid) || Promise.resolve();
@@ -760,13 +772,29 @@
       try { fs.mkdirSync(dir, { recursive: true }); } catch (_) {}
       return dir;
     }
+    function sessionFile(agentId) { return P.join(ROOT, '.execution', 'ssh', safeAgentId(agentId) + '.json'); }
+    function readSession(agentId) {
+      try {
+        const row = JSON.parse(fs.readFileSync(sessionFile(agentId), 'utf8'));
+        return row && typeof row.cwd === 'string' ? row.cwd : null;
+      } catch (_) { return null; }
+    }
+    function saveSession(agentId, cwd) {
+      const file = sessionFile(agentId), dir = P.dirname(file), tmp = file + '.tmp';
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(tmp, JSON.stringify({ version: 1, cwd: String(cwd) }));
+      fs.renameSync(tmp, file);
+      const proven = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (!proven || proven.cwd !== String(cwd)) throw new Error('SSH session cwd could not be read back');
+    }
     function getCwd(agentId) {
-      const aid = safeAgentId(agentId || 'agent'), row = target(aid), saved = sessions.get(aid);
+      const aid = safeAgentId(agentId || 'agent'), row = target(aid), saved = sessions.get(aid) || readSession(aid);
+      if (saved && !sessions.has(aid)) sessions.set(aid, saved);
       return saved && posixInside(saved, row.remoteRoot) ? saved : row.remoteRoot;
     }
     function rememberCwd(agentId, cwd) {
       const aid = safeAgentId(agentId || 'agent'), row = target(aid);
-      if (cwd && posixInside(cwd, row.remoteRoot)) sessions.set(aid, String(cwd));
+      if (cwd && posixInside(cwd, row.remoteRoot)) { sessions.set(aid, String(cwd)); saveSession(aid, String(cwd)); }
       return getCwd(aid);
     }
     function destination(row) { return (row.user ? row.user + '@' : '') + row.host; }
@@ -814,6 +842,43 @@
         if (result.exitCode !== 0 || String(result.out || '').indexOf('starnet-sync-safe') < 0) throw new Error('workspace pull refused: remote tree contains a symbolic link or could not be verified');
       });
     }
+    function manifestFile(agentId) { return P.join(ROOT, '.execution', 'ssh', safeAgentId(agentId) + '.manifest.json'); }
+    function readBaseline(agentId) { try { const v = JSON.parse(fs.readFileSync(manifestFile(agentId), 'utf8')); return v && v.files && typeof v.files === 'object' ? v.files : null; } catch (_) { return null; } }
+    function saveBaseline(agentId, files) {
+      const file = manifestFile(agentId), tmp = file + '.tmp'; fs.mkdirSync(P.dirname(file), { recursive: true });
+      fs.writeFileSync(tmp, JSON.stringify({ version: 1, files })); fs.renameSync(tmp, file);
+      const proven = JSON.parse(fs.readFileSync(file, 'utf8')); if (!proven || JSON.stringify(proven.files) !== JSON.stringify(files)) throw new Error('SSH sync baseline could not be read back');
+    }
+    function localManifest(agentId) {
+      const root = ensureWorkspace(agentId), out = {}, stack = [root];
+      while (stack.length) {
+        const dir = stack.pop();
+        for (const name of fs.readdirSync(dir)) {
+          const full = P.join(dir, name), stat = fs.lstatSync(full), rel = P.relative(root, full).replace(/\\/g, '/');
+          if (stat.isSymbolicLink()) throw new Error('workspace sync refused: symbolic links are not allowed (' + rel + ')');
+          if (stat.isDirectory()) stack.push(full);
+          else if (stat.isFile()) out[rel] = nodeCrypto.createHash('sha256').update(fs.readFileSync(full)).digest('hex');
+        }
+      }
+      return out;
+    }
+    async function remoteManifest(row, opts) {
+      const script = 'cd ' + quote(row.remoteRoot) + ' || exit 97\nfind . -type f ! -path "./.starnet/*" -exec sha256sum {} \\;\n';
+      const result = await runSsh(row, script, { timeoutMs: opts.timeoutMs || 60000, maxTimeoutMs: opts.maxTimeoutMs, maxBytes: 4 << 20, signal: opts.signal });
+      if (result.exitCode !== 0 || result.truncated) throw new Error('workspace sync refused: remote manifest could not be proven completely');
+      const out = {};
+      for (const line of String(result.out || '').split(/\r?\n/)) { const m = /^([a-f0-9]{64})\s+\*?\.\/(.+)$/.exec(line); if (m) out[m[2]] = m[1]; }
+      return out;
+    }
+    function syncConflicts(base, local, remote) {
+      const conflicts = [], keys = new Set(Object.keys(local).concat(Object.keys(remote), base ? Object.keys(base) : []));
+      for (const key of keys) {
+        const b = base ? base[key] : undefined, l = local[key], r = remote[key];
+        const clash = base ? (l !== b && r !== b && l !== r) : (l != null && r != null && l !== r);
+        if (clash) conflicts.push(key);
+      }
+      return conflicts.sort();
+    }
     function ensureReadyRaw(agentId) {
       const aid = safeAgentId(agentId || 'agent'), row = target(aid), state = stateFor(aid), sig = signature(row);
       ensureWorkspace(aid);
@@ -830,7 +895,7 @@
           state.availability = 'ready'; state.error = null;
           return { ok: true, reused: false, backend: 'ssh', agentId: aid };
         }).catch(function (e) {
-          state.availability = 'unavailable'; state.error = String((e && e.message) || e || 'SSH unavailable').slice(0, 300); state.lastProbeAt = nowMs();
+          markUnavailable(aid, (e && e.message) || e || 'SSH unavailable');
           throw e;
         });
     }
@@ -842,6 +907,13 @@
       state.sync.state = 'syncing'; state.sync.direction = direction; state.sync.error = null;
       const remote = destination(row) + ':' + row.remoteRoot;
       return ensureReadyRaw(aid).then(async function () {
+        let local = null, remoteFiles = null;
+        if (opts.conflictAware) {
+          assertLocalTreeSafe(aid); await assertRemoteTreeSafe(row, opts);
+          local = localManifest(aid); remoteFiles = await remoteManifest(row, opts);
+          const conflicts = syncConflicts(readBaseline(aid), local, remoteFiles);
+          if (conflicts.length) throw new Error('workspace sync conflict: both local and remote changed ' + conflicts.slice(0, 20).join(', ') + '; neither side was overwritten');
+        }
         if (direction === 'push' || direction === 'both') {
           assertLocalTreeSafe(aid);
           const pushed = await runScp(row, aid + '/.', remote + '/', opts);
@@ -854,6 +926,7 @@
           if (pulled.exitCode !== 0) throw new Error('workspace pull failed' + (pulled.out ? ': ' + String(pulled.out).trim().slice(0, 200) : ''));
           state.sync.lastPullAt = nowMs();
         }
+        if (opts.conflictAware) saveBaseline(aid, direction === 'pull' ? remoteFiles : local);
         state.sync.state = 'ready'; state.sync.direction = direction; state.sync.error = null;
         return { ok: true, needed: true, backend: 'ssh', agentId: aid, direction, lastPushAt: state.sync.lastPushAt, lastPullAt: state.sync.lastPullAt };
       }).catch(function (e) {
@@ -887,52 +960,190 @@
       out.BROWSER = 'none';
       return out;
     }
+    async function createCheckpointRaw(agentId, opts) {
+      opts = opts || {};
+      const aid = safeAgentId(agentId || 'agent'), row = target(aid);
+      const id = 'sshcp_' + stableHash(aid + '\n' + nowMs() + '\n' + (++jobSeq) + '\n' + String(opts.label || 'checkpoint'));
+      const dir = row.remoteRoot + '/.starnet/checkpoints', archive = dir + '/' + id + '.tar';
+      const script = 'mkdir -p ' + quote(dir) + '\ncd ' + quote(row.remoteRoot) + ' || exit 97\ntar -cf ' + quote(archive) + ' --exclude=./.starnet . || exit 98\ndigest=$(sha256sum ' + quote(archive) + ' | cut -d" " -f1)\nbytes=$(wc -c < ' + quote(archive) + ')\nprintf %s "$digest" > ' + quote(dir + '/' + id + '.sha256') + '\nprintf %s ' + quote(String(nowMs())) + ' > ' + quote(dir + '/' + id + '.at') + '\nprintf "STARNET_CHECKPOINT\\t' + id + '\\t%s\\t%s\\n" "$digest" "$bytes"\n';
+      const result = await runSsh(row, script, { timeoutMs: opts.timeoutMs || 120000, maxBytes: 4096, signal: opts.signal });
+      const m = /STARNET_CHECKPOINT\t(sshcp_[a-f0-9]{8})\t([a-f0-9]{64})\t(\d+)/.exec(String(result.out || ''));
+      if (result.exitCode !== 0 || !m) throw new Error('remote checkpoint could not be verified');
+      return { id: m[1], digest: m[2], bytes: Number(m[3]), createdAt: nowMs(), backend: 'ssh', created: true };
+    }
+    function createCheckpoint(agentId, opts) {
+      const aid = safeAgentId(agentId || 'agent'); return enqueue(aid, () => ensureReadyRaw(aid).then(() => createCheckpointRaw(aid, opts)));
+    }
+    function listCheckpoints(agentId) {
+      const aid = safeAgentId(agentId || 'agent');
+      return enqueue(aid, async function () {
+        const row = target(aid), dir = row.remoteRoot + '/.starnet/checkpoints';
+        const script = 'test -d ' + quote(dir) + ' || exit 0\nfor f in ' + quote(dir) + '/sshcp_*.tar; do test -f "$f" || continue; id=${f##*/}; id=${id%.tar}; digest=$(cat ' + quote(dir) + '/"$id".sha256 2>/dev/null || true); at=$(cat ' + quote(dir) + '/"$id".at 2>/dev/null || true); bytes=$(wc -c < "$f"); printf "STARNET_CHECKPOINT\\t%s\\t%s\\t%s\\t%s\\n" "$id" "$digest" "$bytes" "$at"; done\n';
+        const result = await runSsh(row, script, { timeoutMs: 60000, maxBytes: 64000 });
+        if (result.exitCode !== 0) throw new Error('remote checkpoints could not be listed');
+        return String(result.out || '').split(/\r?\n/).map(line => { const m = /^STARNET_CHECKPOINT\t(sshcp_[a-f0-9]{8})\t([a-f0-9]{64})\t(\d+)\t(\d*)$/.exec(line); return m ? { id: m[1], digest: m[2], bytes: Number(m[3]), createdAt: Number(m[4]) || 0, backend: 'ssh' } : null; }).filter(Boolean);
+      });
+    }
+    function restoreCheckpoint(agentId, snapshotId, opts) {
+      opts = opts || {};
+      const aid = safeAgentId(agentId || 'agent');
+      if (!/^sshcp_[a-f0-9]{8}$/.test(String(snapshotId || ''))) return Promise.resolve(false);
+      return enqueue(aid, async function () {
+        const row = target(aid), dir = row.remoteRoot + '/.starnet/checkpoints', archive = dir + '/' + snapshotId + '.tar';
+        const script = 'test -f ' + quote(archive) + ' || exit 44\nwant=$(cat ' + quote(dir + '/' + snapshotId + '.sha256') + ' 2>/dev/null || true)\ngot=$(sha256sum ' + quote(archive) + ' | cut -d" " -f1)\ntest -n "$want" && test "$want" = "$got" || exit 45\nfind ' + quote(row.remoteRoot) + ' -mindepth 1 -maxdepth 1 ! -name .starnet -exec rm -rf -- {} + || exit 46\ntar -xf ' + quote(archive) + ' -C ' + quote(row.remoteRoot) + ' || exit 47\nprintf starnet-checkpoint-restored\n';
+        const result = await runSsh(row, script, { timeoutMs: opts.timeoutMs || 120000, maxBytes: 4096 });
+        if (result.exitCode === 44) return false;
+        if (result.exitCode !== 0 || String(result.out || '').indexOf('starnet-checkpoint-restored') < 0) throw new Error('remote checkpoint restore could not be verified');
+        const local = ensureWorkspace(aid), rootResolved = P.resolve(ROOT), localResolved = P.resolve(local);
+        if (!hostInside(P, localResolved, rootResolved) || localResolved === rootResolved) throw new Error('local SSH mirror boundary could not be proven');
+        for (const name of fs.readdirSync(local)) fs.rmSync(P.join(local, name), { recursive: true, force: true });
+        await syncWorkspaceRaw(aid, { direction: 'pull', timeoutMs: opts.timeoutMs || 120000 });
+        return true;
+      });
+    }
     function execute(opts) {
       opts = opts || {};
       const aid = safeAgentId(opts.agentId || 'agent');
       return enqueue(aid, function () {
         const row = target(aid), cwd = opts.cwd || getCwd(aid);
         if (!posixInside(cwd, row.remoteRoot)) throw new Error('SSH cwd must stay inside ' + row.remoteRoot);
-        return syncWorkspaceRaw(aid, { direction: 'push', timeoutMs: opts.timeoutMs, maxTimeoutMs: opts.maxTimeoutMs, signal: opts.signal }).then(function () {
+        return syncWorkspaceRaw(aid, { direction: 'push', timeoutMs: opts.timeoutMs, maxTimeoutMs: opts.maxTimeoutMs, signal: opts.signal }).then(async function () {
+          const checkpoint = await createCheckpointRaw(aid, { label: 'shell.exec', timeoutMs: opts.timeoutMs, signal: opts.signal });
           const env = serviceEnv(opts.surface);
           let script = 'cd ' + quote(cwd) + ' || exit 97\n';
           for (const name of Object.keys(env).sort()) script += 'export ' + name + '=' + quote(env[name]) + '\n';
           script += String(opts.cmd || '') + '\n';
-          return runSsh(row, script, opts);
+          const result = await runSsh(row, script, opts); result.remoteCheckpointId = checkpoint.id; return result;
         }).then(function (result) {
+          const boundary = foregroundBoundary(result);
+          if (boundary) markUnavailable(aid, boundary);
           return syncWorkspaceRaw(aid, { direction: 'pull', timeoutMs: opts.timeoutMs, maxTimeoutMs: opts.maxTimeoutMs, signal: opts.signal })
-            .then(function () { return result; });
+            .then(function () {
+              if (boundary) result.remoteBoundary = boundary + '; remote process continuation and command completion are unconfirmed';
+              return result;
+            }).catch(function (e) {
+              if (!boundary) throw e;
+              throw new Error(boundary + '; workspace recovery failed: ' + String((e && e.message) || e));
+            });
         });
+      });
+    }
+    function remoteJobDir(row, bgId) {
+      if (!/^sshbg_[a-f0-9]{8,32}$/.test(String(bgId || ''))) throw new Error('bad SSH background id');
+      return row.remoteRoot + '/.starnet/jobs/' + String(bgId);
+    }
+    function parseJobLine(out, cmd) {
+      const line = String(out || '').split(/\r?\n/).find(x => x.indexOf('STARNET_JOB\t') === 0);
+      if (!line) return null;
+      const p = line.split('\t');
+      return { bgId: p[1], pid: Number(p[2]) || null, running: p[3] === 'running', lost: p[3] === 'lost', exitCode: p[4] === '' ? null : Number(p[4]), killed: p[4] === 'killed', ms: 0, cmd: String(cmd || 'remote background process'), tail: '' };
+    }
+    function startBackground(opts) {
+      opts = opts || {};
+      const aid = safeAgentId(opts.agentId || 'agent');
+      return enqueue(aid, async function () {
+        const row = target(aid), cwd = opts.cwd || getCwd(aid), cmd = String(opts.cmd || '');
+        if (!cmd) return { ok: false, error: 'empty command' };
+        if (!posixInside(cwd, row.remoteRoot)) return { ok: false, error: 'SSH cwd must stay inside ' + row.remoteRoot };
+        await syncWorkspaceRaw(aid, { direction: 'push' });
+        const bgId = 'sshbg_' + stableHash(aid + '\n' + nowMs() + '\n' + (++jobSeq) + '\n' + cmd);
+        const dir = remoteJobDir(row, bgId), encoded = Buffer.from(cmd, 'utf8').toString('base64');
+        const script = 'mkdir -p ' + quote(dir) + '\n'
+          + 'printf %s ' + quote(encoded) + ' | base64 -d > ' + quote(dir + '/cmd') + '\n'
+          + 'printf %s ' + quote(cwd) + ' > ' + quote(dir + '/cwd') + '\n'
+          + '( cd ' + quote(cwd) + ' && sh ' + quote(dir + '/cmd') + ' > ' + quote(dir + '/out') + ' 2> ' + quote(dir + '/err') + '; ec=$?; printf %s "$ec" > ' + quote(dir + '/exit') + ' ) < /dev/null > /dev/null 2>&1 &\n'
+          + 'pid=$!; printf %s "$pid" > ' + quote(dir + '/pid') + '\n'
+          + 'identity=$(ps -o lstart= -p "$pid" 2>/dev/null | sha256sum | cut -d" " -f1); test -n "$identity" || exit 91; printf %s "$identity" > ' + quote(dir + '/identity') + '\n'
+          + "printf 'STARNET_JOB\\t" + bgId + "\\t%s\\trunning\\t\\n' \"$pid\"\n";
+        const result = await runSsh(row, script, { timeoutMs: 30000, maxBytes: 4096 });
+        const job = parseJobLine(result.out, cmd);
+        if (result.exitCode !== 0 || !job) return { ok: false, error: 'remote background start could not be verified' };
+        return Object.assign({ ok: true, persistent: true, reattachable: true }, job);
+      });
+    }
+    function statusBackground(agentId, bgId) {
+      const aid = safeAgentId(agentId || 'agent');
+      return enqueue(aid, async function () {
+        const row = target(aid), root = row.remoteRoot + '/.starnet/jobs';
+        if (!bgId) {
+          const script = 'test -d ' + quote(root) + ' || exit 0\nfor d in ' + quote(root) + '/sshbg_*; do test -d "$d" || continue; id=${d##*/}; pid=$(cat "$d/pid" 2>/dev/null || true); want=$(cat "$d/identity" 2>/dev/null || true); got=$(ps -o lstart= -p "$pid" 2>/dev/null | sha256sum | cut -d" " -f1); if test -n "$pid" && test -n "$want" && test "$want" = "$got" && kill -0 "$pid" 2>/dev/null; then st=running; ec=; elif test -f "$d/exit"; then st=exited; ec=$(cat "$d/exit" 2>/dev/null || true); else st=lost; ec=; fi; printf "STARNET_JOB\\t%s\\t%s\\t%s\\t%s\\n" "$id" "$pid" "$st" "$ec"; done\n';
+          const result = await runSsh(row, script, { timeoutMs: 30000, maxBytes: 64000 });
+          if (result.exitCode !== 0) return [];
+          return String(result.out || '').split(/\r?\n/).map(x => parseJobLine(x, '')).filter(Boolean);
+        }
+        const dir = remoteJobDir(row, bgId);
+        const script = 'test -d ' + quote(dir) + ' || exit 44\npid=$(cat ' + quote(dir + '/pid') + ' 2>/dev/null || true)\nwant=$(cat ' + quote(dir + '/identity') + ' 2>/dev/null || true)\ngot=$(ps -o lstart= -p "$pid" 2>/dev/null | sha256sum | cut -d" " -f1)\nif test -n "$pid" && test -n "$want" && test "$want" = "$got" && kill -0 "$pid" 2>/dev/null; then st=running; ec=; elif test -f ' + quote(dir + '/exit') + '; then st=exited; ec=$(cat ' + quote(dir + '/exit') + ' 2>/dev/null || true); else st=lost; ec=; fi\nprintf "STARNET_JOB\\t' + bgId + '\\t%s\\t%s\\t%s\\n" "$pid" "$st" "$ec"\nprintf "STARNET_TAIL\\n"\ntail -c 2000 ' + quote(dir + '/out') + ' ' + quote(dir + '/err') + ' 2>/dev/null || true\n';
+        const result = await runSsh(row, script, { timeoutMs: 30000, maxBytes: 8192 });
+        if (result.exitCode === 44) return null;
+        const job = parseJobLine(result.out, 'remote background process');
+        if (job) { job.tail = String(result.out || '').split('STARNET_TAIL\n').slice(1).join('STARNET_TAIL\n'); if (job.lost) job.remoteBoundary = 'saved SSH pid no longer matches its original process identity; completion is unconfirmed'; }
+        if (job && !job.running) { try { await syncWorkspaceRaw(aid, { direction: 'pull' }); } catch (_) {} }
+        return job;
+      });
+    }
+    function readBackground(agentId, bgId, opts) {
+      opts = opts || {};
+      const aid = safeAgentId(agentId || 'agent');
+      return enqueue(aid, async function () {
+        const row = target(aid), dir = remoteJobDir(row, bgId);
+        const result = await runSsh(row, 'test -d ' + quote(dir) + ' || exit 44\ncat ' + quote(dir + '/out') + ' ' + quote(dir + '/err') + ' 2>/dev/null || true\n', { timeoutMs: 30000, maxBytes: 512000 });
+        if (result.exitCode === 44) return { ok: false, error: 'no such background process' };
+        let lines = String(result.fullOut || result.out || '').split(/\r?\n/), grep = opts.grep == null ? '' : String(opts.grep);
+        if (grep) lines = lines.filter(x => x.indexOf(grep) >= 0);
+        const total = lines.length, limit = clamp(opts.limit || 200, 1, 1000);
+        let offset = Number(opts.offset); if (!isFinite(offset)) offset = Math.max(0, total - limit); if (offset < 0) offset = Math.max(0, total + offset);
+        const page = lines.slice(offset, offset + limit);
+        return { ok: true, bgId: String(bgId), running: false, exitCode: null, killed: false, cmd: 'remote background process', totalLines: total, returned: page.length, offset, firstLineNo: page.length ? offset + 1 : 0, lines: page, lineNos: page.map((_x, i) => offset + i + 1), grep: grep || null, matchedLines: grep ? total : 0, truncatedStart: !!result.truncated };
+      });
+    }
+    function killBackground(agentId, bgId) {
+      const aid = safeAgentId(agentId || 'agent');
+      return enqueue(aid, async function () {
+        const row = target(aid), dir = remoteJobDir(row, bgId);
+        const script = 'test -d ' + quote(dir) + ' || exit 44\npid=$(cat ' + quote(dir + '/pid') + ' 2>/dev/null || true)\nwant=$(cat ' + quote(dir + '/identity') + ' 2>/dev/null || true)\ngot=$(ps -o lstart= -p "$pid" 2>/dev/null | sha256sum | cut -d" " -f1)\nif test -n "$pid" && test -n "$want" && test "$want" = "$got" && kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null || exit 45; elif test ! -f ' + quote(dir + '/exit') + '; then exit 46; fi\nprintf killed > ' + quote(dir + '/exit') + '\nprintf starnet-killed\n';
+        const result = await runSsh(row, script, { timeoutMs: 30000, maxBytes: 4096 });
+        return result.exitCode === 0 ? { ok: true, bgId: String(bgId), killed: true } : { ok: false, error: result.exitCode === 44 ? 'no such background process' : 'remote kill could not be verified' };
+      });
+    }
+    function killAllBackground(agentId) {
+      const aid = safeAgentId(agentId || 'agent');
+      return enqueue(aid, async function () {
+        const row = target(aid), root = row.remoteRoot + '/.starnet/jobs';
+        const script = 'n=0\nfor d in ' + quote(root) + '/sshbg_*; do test -d "$d" || continue; pid=$(cat "$d/pid" 2>/dev/null || true); want=$(cat "$d/identity" 2>/dev/null || true); got=$(ps -o lstart= -p "$pid" 2>/dev/null | sha256sum | cut -d" " -f1); if test -n "$pid" && test -n "$want" && test "$want" = "$got" && kill -0 "$pid" 2>/dev/null; then kill "$pid" 2>/dev/null && n=$((n+1)); printf killed > "$d/exit"; fi; done\nprintf "STARNET_KILLED\\t%s\\n" "$n"\n';
+        const result = await runSsh(row, script, { timeoutMs: 30000, maxBytes: 4096 });
+        const m = /STARNET_KILLED\t(\d+)/.exec(String(result.out || '')); return m ? Number(m[1]) : 0;
       });
     }
     function describe(agentId) {
       let row = null, state = null;
       try { if (agentId) { row = target(agentId); state = stateFor(agentId); } } catch (_) {}
       return {
-        backend: 'ssh', workspace: row ? row.remoteRoot : null, hostWorkspace: false, background: false,
+        backend: 'ssh', workspace: row ? row.remoteRoot : null, hostWorkspace: false, background: true,
         availability: { state: row ? state.availability : 'configuration-required', checked: !!(state && state.lastProbeAt), error: state ? state.error : null },
         remote: row ? { configured: true, host: row.host, user: row.user, port: row.port, remoteRoot: row.remoteRoot, auth: 'os-openssh', strictHostKeyChecking: true } : { configured: false },
         sync: state ? Object.assign({}, state.sync) : { state: 'never', direction: null, error: null, lastPushAt: 0, lastPullAt: 0 },
-        safeCell: { default: false, hostileCodeSandbox: false, controls: ['strict known_hosts', 'batch-only authentication', 'remote workspace clamp', 'push before command', 'pull after command', 'foreground timeout/abort kill'] }
+        persistence: { restartReuse: true, remoteJobs: true, cwd: true },
+        safeCell: { default: false, hostileCodeSandbox: false, controls: ['strict known_hosts', 'batch-only authentication', 'remote workspace clamp', 'push before command', 'pull after command', 'reattachable remote jobs', 'foreground disconnect boundary'] }
       };
     }
     function invalidateAgent(agentId) { states.delete(safeAgentId(agentId || 'agent')); sessions.delete(safeAgentId(agentId || 'agent')); return { ok: true }; }
 
     return {
       id: 'ssh',
-      supports: { shell: true, background: false, hostWorkspace: false, workspaceSync: true, checkpoints: false, hostileCodeSandbox: false, persistentSession: false, stdioMcp: false },
+      supports: { shell: true, background: true, hostWorkspace: false, workspaceSync: true, checkpoints: true, hostileCodeSandbox: false, persistentSession: true, stdioMcp: false },
       describe, ensureReady, cleanupAgent: function (agentId) { invalidateAgent(agentId); return Promise.resolve({ ok: true, removed: false, backend: 'ssh', disconnected: true }); },
       cleanupIdle: function () { return Promise.resolve({ ok: true, enabled: false, idleMs: 0, checked: 0, stopped: [], skipped: [] }); },
       syncWorkspace, invalidateAgent, workspaceRoot, ensureWorkspace, getCwd, rememberCwd, execute,
-      startBackground: function () { return Promise.resolve({ ok: false, error: 'background processes are not available for the SSH backend; run it in the foreground or use a remote service manager' }); },
-      statusBackground: function (_agentId, bgId) { return bgId ? null : []; },
-      readBackground: function () { return { ok: false, error: 'background processes are not available for the SSH backend' }; },
-      writeBackground: function () { return { ok: false, error: 'background processes are not available for the SSH backend' }; },
+      createCheckpoint, listCheckpoints, restoreCheckpoint,
+      startBackground,
+      statusBackground,
+      readBackground,
+      writeBackground: function () { return Promise.resolve({ ok: false, error: 'stdin is not attached to restart-persistent SSH background jobs' }); },
       closeBackgroundStdin: function () { return { ok: false, error: 'background processes are not available for the SSH backend' }; },
-      killBackground: function () { return { ok: false, error: 'background processes are not available for the SSH backend' }; },
-      killAllBackground: function () { return 0; },
+      killBackground,
+      killAllBackground,
       spawnStdio: function () { throw new Error('mcp stdio is not available through the SSH backend'); },
-      _internals: { states, operations, target, runSsh, runScp, quote, assertLocalTreeSafe, assertRemoteTreeSafe }
+      _internals: { states, operations, target, runSsh, runScp, quote, assertLocalTreeSafe, assertRemoteTreeSafe, parseJobLine, remoteJobDir, localManifest, remoteManifest, syncConflicts }
     };
   }
 
@@ -968,6 +1179,9 @@
       closeBackgroundStdin: backend.closeBackgroundStdin,
       killBackground: backend.killBackground,
       killAllBackground: backend.killAllBackground,
+      createCheckpoint: backend.createCheckpoint,
+      listCheckpoints: backend.listCheckpoints,
+      restoreCheckpoint: backend.restoreCheckpoint,
       spawnStdio: backend.spawnStdio,
       _backend: backend,
       _internals: { safeAgentId: safeAgentId, makeConfig: makeConfig, sanitizeChildEnv: sanitizeChildEnv, mergeServiceEnv: mergeServiceEnv, runProcess: runProcess, hostInside: hostInside, posixInside: posixInside, stableHash: stableHash }

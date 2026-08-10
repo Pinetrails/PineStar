@@ -213,7 +213,13 @@ function makeFakeSpawn() {
       A.eq(env.backendId, 'ssh', 'SSH backend selected');
       A.eq(env.supports.hostWorkspace, false, 'SSH truthfully reports no bind-mounted host workspace');
       A.eq(env.supports.workspaceSync, true, 'SSH advertises explicit workspace synchronization');
-      A.eq(env.supports.checkpoints, false, 'SSH declines unsupported remote checkpoint claims');
+      A.eq(env.supports.checkpoints, true, 'SSH advertises checkpoints only with verified remote archive and restore support');
+      const conflicts = env._backend._internals.syncConflicts;
+      A.eq(conflicts(null, { 'same.txt': 'local' }, { 'same.txt': 'remote' }), ['same.txt'], 'first sync refuses an ambiguous two-sided file instead of choosing a winner');
+      A.eq(conflicts({ 'same.txt': 'base' }, { 'same.txt': 'local' }, { 'same.txt': 'remote' }), ['same.txt'], 'later sync detects two-sided divergence from its proven baseline');
+      A.eq(conflicts({ 'same.txt': 'base' }, { 'same.txt': 'local' }, { 'same.txt': 'base' }), [], 'a one-sided change remains synchronizable');
+      const lostIdentity = env._backend._internals.parseJobLine('STARNET_JOB\tsshbg_deadbeef\t700\tlost\t\n', 'job');
+      A.ok(lostIdentity.lost && !lostIdentity.running, 'a reused/missing remote pid identity is LOST, never reported running');
       spawn.setNext('starnet-ssh-ready', 0);
       const readyOne = env.ensureReady('a4');
       const readyTwo = env.ensureReady('a4');
@@ -232,11 +238,13 @@ function makeFakeSpawn() {
       A.eq(env.getCwd('a4'), '/srv/starnet/a4/src', 'SSH refuses a cwd outside the configured remote root');
 
       spawn.setNext('push-ok', 0);
+      spawn.setNext('STARNET_CHECKPOINT\tsshcp_aaaaaaaa\t' + 'a'.repeat(64) + '\t1024\n', 0);
       spawn.setNext('remote-ok', 0);
       spawn.setNext('starnet-sync-safe', 0);
       spawn.setNext('pull-ok', 0);
       const result = await env.execute({ agentId: 'a4', cmd: 'echo remote', timeoutMs: 2000, surface: 'interactive' });
       A.eq(result.out.trim(), 'remote-ok', 'SSH returns the real remote command result');
+      A.eq(result.remoteCheckpointId, 'sshcp_aaaaaaaa', 'foreground execution exposes the exact pre-command remote checkpoint');
       const scpCalls = spawn.calls.filter(x => x.file === 'scpx');
       A.eq(scpCalls.length, 2, 'remote command performs one push and one pull');
       A.ok(scpCalls[0].args.indexOf('a4/.') >= 0 && scpCalls[0].args.some(x => /andrew@buildbox:\/srv\/starnet\/a4\/$/.test(x)), 'push copies the local agent workspace to the exact remote root');
@@ -250,6 +258,14 @@ function makeFakeSpawn() {
       A.ok(remoteScript.indexOf("STARNET_COMPUTER_DRIVER='0'") >= 0, 'remote shell receives the physical-input hard floor');
       A.eq(env.describe('a4').sync.state, 'ready', 'descriptor reports the proven sync state');
 
+      spawn.setNext('STARNET_CHECKPOINT\tsshcp_aaaaaaaa\t' + 'a'.repeat(64) + '\t1024\t123\n', 0);
+      const remotePoints = await env.listCheckpoints('a4');
+      A.eq(remotePoints[0].id, 'sshcp_aaaaaaaa', 'remote checkpoint list returns only verified archive identities');
+      spawn.setNext('starnet-checkpoint-restored', 0);
+      spawn.setNext('starnet-sync-safe', 0);
+      spawn.setNext('pull-ok', 0);
+      A.eq(await env.restoreCheckpoint('a4', 'sshcp_aaaaaaaa'), true, 'remote rewind verifies the archive then refreshes the local mirror');
+
       const linkPath = path.join(root, 'a4', 'escape-link');
       fs.symlinkSync(root, linkPath, process.platform === 'win32' ? 'junction' : 'dir');
       let localLinkRefused = false; try { await env.syncWorkspace('a4', { direction: 'push' }); } catch (e) { localLinkRefused = /symbolic links/.test(String(e.message)); }
@@ -258,6 +274,33 @@ function makeFakeSpawn() {
       spawn.setNext('starnet-sync-symlink', 96);
       let remoteLinkRefused = false; try { await env.syncWorkspace('a4', { direction: 'pull' }); } catch (e) { remoteLinkRefused = /remote tree/.test(String(e.message)); }
       A.ok(remoteLinkRefused, 'workspace pull refuses a remote tree whose symlink boundary cannot be proven');
+
+      const restartedCwd = makeEnvironmentManager({ spawn: makeFakeSpawn(), fs, pathMod: path, root, clock,
+        sshConfig: () => target, config: { backend: 'ssh', sshBin: 'sshx', scpBin: 'scpx' } });
+      A.eq(restartedCwd.getCwd('a4'), '/srv/starnet/a4/src', 'SSH cwd survives sidecar restart through read-back-verified host state');
+      A.eq(restartedCwd.supports.persistentSession, true, 'SSH advertises restart continuity only after cwd and remote jobs are persistent');
+
+      spawn.setNext('push-ok', 0);
+      spawn.setNext('STARNET_JOB\tsshbg_aaaaaaaa\t700\trunning\t\n', 0);
+      const bg = await env.startBackground({ agentId: 'a4', cmd: 'node server.js', cwd: '/srv/starnet/a4/src' });
+      A.ok(bg.ok && bg.reattachable && bg.bgId === 'sshbg_aaaaaaaa', 'SSH background start returns a reattachable remote identity');
+      const bgStart = spawn.calls.find(x => x.file === 'sshx' && /base64 -d/.test(x.child.stdin.writes.join('')));
+      A.ok(bgStart && /\.starnet\/jobs\//.test(bgStart.child.stdin.writes.join('')) && /\/identity/.test(bgStart.child.stdin.writes.join('')), 'remote job metadata includes a process-identity proof under the configured remote workspace');
+      const spawnRestart = makeFakeSpawn();
+      spawnRestart.setNext('STARNET_JOB\tsshbg_aaaaaaaa\t700\trunning\t\nSTARNET_TAIL\nlistening\n', 0);
+      const reattached = makeEnvironmentManager({ spawn: spawnRestart, fs, pathMod: path, root, clock,
+        sshConfig: () => target, config: { backend: 'ssh', sshBin: 'sshx', scpBin: 'scpx' } });
+      const liveJob = await reattached.statusBackground('a4', 'sshbg_aaaaaaaa');
+      A.ok(liveJob && liveJob.running && /listening/.test(liveJob.tail), 'fresh sidecar reattaches to the remote pid and output tail');
+
+      spawn.setNext('push-ok', 0);
+      spawn.setNext('STARNET_CHECKPOINT\tsshcp_bbbbbbbb\t' + 'b'.repeat(64) + '\t1024\n', 0);
+      spawn.setNext('ssh: Connection reset by peer', 255);
+      spawn.setNext('ssh: connect refused', 255);
+      let disconnectError = '';
+      try { await env.execute({ agentId: 'a4', cmd: 'long-running-command', timeoutMs: 2000 }); } catch (e) { disconnectError = String(e && e.message || e); }
+      A.ok(/foreground SSH transport exited 255/.test(disconnectError) && /workspace recovery failed/.test(disconnectError), 'foreground disconnect reports the exact unconfirmed process and recovery boundary');
+      A.eq(env.describe('a4').availability.state, 'unavailable', 'transport loss invalidates cached remote readiness');
 
       const missing = makeEnvironmentManager({ spawn: makeFakeSpawn(), fs, pathMod: path, root, clock, sshConfig: () => null, config: { backend: 'ssh' } });
       let refused = false; try { await missing.ensureReady('missing'); } catch (e) { refused = /not configured/.test(String(e.message)); }

@@ -152,6 +152,7 @@ const { makeEnvironmentProxyFetch } = require('./channels/proxy-fetch.js');
 const telegramOwnerPairing = require('./channels/owner-pairing.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub, menuCommands } = require('./channels/hub.js');
+const { makeWebhookVerifier } = require('./channels/webhook-auth.js');
 const { makePromptRegistry } = require('./channels/prompts.js');   // C6: the bounded token→meaning map behind inline keyboards
 const { makeOpenAiCompat } = require('./openai-compat.js');   // /v1/* OpenAI-compatible surface (external harness ingress)
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
@@ -159,6 +160,7 @@ const { parseSlackTokens } = require('./channels/slack.js');                    
 const channelSecretsMod = require('./channels/secrets.js');                        // T1.4: token-vs-config split + keychain migration
 const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
+const relayWebhook = makeWebhookVerifier({ secret: process.env.STARNET_CHANNEL_WEBHOOK_SECRET || '', now: () => Date.now() });
 const { makeRouter } = require('./routing/router.js');
 const { makeChainRunner } = require('./routing/chain.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
@@ -6796,6 +6798,7 @@ function startTelegram(token, key, model, agentCfg) {
   let adapterRef = null;
   const hub = makeChannelHub({
     channel: 'telegram', runOnce: runOnce, store: channelStore,
+    historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     // Only the adapter can mint owner trust: its owner is claimed from an admitted DM and group traffic never
@@ -7039,6 +7042,7 @@ function startTelegramBot(botId) {
   const botStore = makeBotScopedStore(botId);
   const hub = makeChannelHub({
     channel: 'telegram:' + botId, runOnce: runOnce, store: botStore,
+    historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     ownerTrusted: (msg) => !!(adapterRef && adapterRef._internals && msg && msg.chatType === 'dm'
@@ -7176,6 +7180,7 @@ function startDiscord(token, key, model, agentCfg) {
   const wired = wireChannel(channelRegistry.get('discord'), {
     hub: {
       runOnce: runOnce, store: channelStore,
+      historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
       secrets: () => {
         const d = (channelSecrets && channelSecrets.discord) || {};
         const provider = normalizeProvider(d.provider);
@@ -7287,6 +7292,7 @@ function getDevHub() {
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     runOnce: runOnce, store: channelStore,
+    historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
     send: (chatId, text) => devCaptureReply(chatId, text),
     secrets: devHubSecrets,
     persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
@@ -7448,6 +7454,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
   const wired = wireChannel(desc, {
     hub: {
       runOnce: runOnce, store: channelStore,
+      historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
       secrets: () => {
         const r = (channelSecrets && channelSecrets[id]) || {};
         const p = normalizeProvider(r.provider);
@@ -7664,7 +7671,7 @@ async function handleExecutionSync(req, res) {
   const rec = agentRoster.get(agentId);
   if (!rec) return sendExecutionJson(res, 404, { ok: false, error: 'no such agent' });
   if (rec.executionProfile !== 'remote-ssh') return sendExecutionJson(res, 409, { ok: false, error: 'select the Remote SSH execution profile before synchronizing' });
-  try { return sendExecutionJson(res, 200, await executionEnvironment.syncWorkspace(agentId, { direction: body.direction })); }
+  try { return sendExecutionJson(res, 200, await executionEnvironment.syncWorkspace(agentId, { direction: body.direction, conflictAware: true })); }
   catch (e) { return sendExecutionJson(res, 502, { ok: false, error: String((e && e.message) || e), environment: executionEnvironment.describeAgent(agentId) }); }
 }
 async function handleExecutionCleanup(req, res) {
@@ -7972,6 +7979,8 @@ const ROUTES = [
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
+  { m: 'POST', exact: '/api/channels/handoff', h: handleChannelHandoff },
+  { m: 'POST', prefix: '/api/channels/webhook/', h: handleChannelWebhook },
   { m: 'GET', prefix: '/api/memory/proposals', h: serveProposals },
   { m: 'GET', prefix: '/api/memory/pending', h: servePending },   // un-answered high-stakes decks (durable, cross-run)
   { m: 'POST', exact: '/api/memory/turnin', h: handleMemoryTurnin },
@@ -8372,6 +8381,7 @@ function getSampleHub() {
   sampleHub = makeChannelHub({
     channel: 'sample', maxMessageLength: 4000, agentPrefix: 'smp_', textBatchWaitMs: 0,
     runOnce: runOnce, store: channelStore,
+    historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
     /* THE SAMPLE IS UNADDRESSED, EVERY TIME. This route's whole claim is "a REAL run on the REAL UNADDRESSED
        dispatch path" — the FILTER/SPLITTER must sort it. The hub's ordinary chat→agent bookkeeping saved a
        binding for chatId 'sample' on the first run, so from the SECOND sample on resolveTarget took its
@@ -11258,12 +11268,13 @@ async function handleCheckpointRestore(req, res) {
   const agentId = String(body.agentId || '');
   const snapshotId = String(body.snapshotId || '');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'bad agentId' });
-  if (!checkpointStore.isValidId(snapshotId)) return json(400, { error: 'bad snapshotId' });
+  const remoteEnv = executionEnvironment.backendIdFor(agentId) === 'ssh' ? executionEnvironment.forAgent(agentId) : null;
+  if (remoteEnv ? !/^sshcp_[a-f0-9]{8}$/.test(snapshotId) : !checkpointStore.isValidId(snapshotId)) return json(400, { error: 'bad snapshotId' });
   const operationId = 'restore-' + crypto.randomUUID();
   const lifecycle = await agentLifecycle.acquireMutation(agentId, operationId);
   if (!lifecycle.ok) return json(409, { error: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
   let ok;
-  try { ok = await checkpointStore.restore(agentId, snapshotId); }
+  try { ok = remoteEnv && typeof remoteEnv.restoreCheckpoint === 'function' ? await remoteEnv.restoreCheckpoint(agentId, snapshotId) : await checkpointStore.restore(agentId, snapshotId); }
   catch (e) { return json(500, { error: 'restore failed: ' + ((e && e.message) || e) }); }
   finally { lifecycle.release(); }
   if (!ok) return json(404, { error: 'no such snapshot for that agent' });
@@ -11272,13 +11283,15 @@ async function handleCheckpointRestore(req, res) {
 }
 
 // GET /api/checkpoint?agent=<id> — the read-only snapshot index a "rewind" affordance lists from.
-function handleCheckpointList(req, res) {
+async function handleCheckpointList(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'bad agentId' });
-    json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: checkpointStore.list(agent).snapshots });
+    const remoteEnv = executionEnvironment.backendIdFor(agent) === 'ssh' ? executionEnvironment.forAgent(agent) : null;
+    const snapshots = remoteEnv && typeof remoteEnv.listCheckpoints === 'function' ? await remoteEnv.listCheckpoints(agent) : checkpointStore.list(agent).snapshots;
+    json(200, { enabled: remoteEnv ? true : CHECKPOINTS_ENABLED, snapshots });
   } catch (e) {
     // HONESTY (GROUND_UP_AUDIT P2): a thrown store read is a real failure — report 500 so a crash isn't
     // masked as "no restore points". A genuinely-empty list still returns 200 {snapshots:[]} above (shape
@@ -16877,6 +16890,47 @@ function serveTranscript(req, res) {
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 200));
     json(200, { stream, turns: transcriptStore.history(stream, { limit }) });
   } catch (e) { json(200, { turns: [] }); }   // tolerate any error — empty transcript, never a 500
+}
+
+/* Bind a local authenticated messaging conversation to an existing desktop workstream. This mutates only
+   routing metadata: it never sends a message or starts a model run. */
+async function handleChannelHandoff(req, res) {
+  const json = (code, value) => respondJson(res, code, value);
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16, res)) || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  const channel = String(body.channel || '').trim(), chatId = String(body.chatId || '').trim(), streamId = String(body.streamId || '').trim();
+  const agentId = body.agentId == null ? '' : String(body.agentId).trim();
+  if (!/^[A-Za-z0-9:_-]{1,80}$/.test(channel) || !chatId || chatId.length > 200) return json(400, { error: 'channel and chatId are required' });
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(streamId)) return json(400, { error: 'invalid streamId' });
+  if (agentId && !isAgentId(agentId)) return json(400, { error: 'invalid agentId' });
+  const bot = /^telegram:([^:]+)$/.exec(channel);
+  const storeKey = bot ? bot[1] + '|' + chatId : chatId;
+  const prior = channelStore.getChatRecord(storeKey);
+  if (prior && prior.channel && String(prior.channel) !== channel) return json(409, { error: 'chatId is already owned by ' + prior.channel });
+  const patch = { channel, chatId, streamId };
+  if (agentId) patch.agentId = agentId;
+  const saved = channelStore.saveChatRecord(storeKey, patch);
+  json(200, { ok: true, channel, chatId, streamId, agentId: saved.agentId || null, turns: transcriptStore.history(streamId, { limit: 200 }).length });
+}
+
+/* Authenticated relay ingress. API-token auth is still required by the global HTTP guard; this second HMAC
+   proves payload origin and the timestamp+nonce cache makes lifecycle delivery exactly-once at this boundary. */
+async function handleChannelWebhook(req, res) {
+  const json = (code, value) => respondJson(res, code, value);
+  const channel = decodeURIComponent(String(req.url || '').split('?')[0].slice('/api/channels/webhook/'.length));
+  if (!/^[A-Za-z0-9:_-]{1,80}$/.test(channel)) return json(404, { error: 'unknown channel' });
+  let raw; try { raw = await readBody(req, 2 << 20, res); } catch (_) { return; }
+  const verdict = relayWebhook.verify({
+    timestamp: req.headers['x-starnet-timestamp'], nonce: req.headers['x-starnet-nonce'],
+    signature: req.headers['x-starnet-signature'], body: raw
+  });
+  if (!verdict.ok) return json(verdict.code || 401, { error: verdict.error });
+  let body; try { body = JSON.parse(raw) || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  const live = liveChannelFor(channel);
+  if (!(live && live.hub && typeof live.hub.onInbound === 'function')) return json(409, { error: channel + ' is not connected' });
+  const msg = body.message || body;
+  if (!msg.chatId || (!msg.text && !(Array.isArray(msg.media) && msg.media.length))) return json(400, { error: 'message payload is incomplete' });
+  await live.hub.onInbound(Object.assign({}, msg, { chatId: String(msg.chatId), userId: String(msg.userId || ''), chatType: msg.chatType === 'group' ? 'group' : 'dm' }));
+  json(202, { ok: true, accepted: true, channel, nonce: verdict.nonce });
 }
 
 // GET /api/memory/proposals?agent=<id>&run=<id> — the pending Keep/Edit/Discard candidates reflection raised

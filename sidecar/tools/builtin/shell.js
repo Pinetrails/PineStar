@@ -833,20 +833,21 @@
       description: 'List your running/finished background processes (from shell.exec background:true), or pass an id '
         + 'for one process — shows whether it is still running, its exit code if done, and a tail of its output.',
       schema: { type: 'object', properties: { id: { type: 'string' } } },
-      run: function (args, ctx) {
+      run: async function (args, ctx) {
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const source = environment && typeof environment.statusBackground === 'function' ? environment : null;
         if (!source && !bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
         const id = args && args.id ? String(args.id) : null;
         if (id) {
-          const v = source ? source.statusBackground(aid, id) : bg.status(aid, id);
+          const v = await Promise.resolve(source ? source.statusBackground(aid, id) : bg.status(aid, id));
           if (!v) return { content: 'No background process "' + id + '".', summary: 'not found' };
           const saved = v.outputSpillVerified ? '\n[full output: ' + v.outputBytes + ' bytes durably appended to ' + v.outputPath + ']' : (v.outputSpillError ? '\n[full-output spill failed: ' + v.outputSpillError + ']' : '');
-          return { content: '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : 'exited ' + v.exitCode + (v.killed ? ' (killed)' : '')) + ' · ' + v.ms + 'ms · ' + v.cmd + saved + '\n--- output tail ---\n' + redact(v.tail || '(none)'), summary: v.running ? 'running' : 'exited ' + v.exitCode };
+          const state = v.running ? 'RUNNING' : v.lost ? 'LOST — ' + (v.remoteBoundary || 'remote process identity is unconfirmed') : 'exited ' + v.exitCode + (v.killed ? ' (killed)' : '');
+          return { content: '[' + v.bgId + '] ' + state + ' · ' + v.ms + 'ms · ' + v.cmd + saved + '\n--- output tail ---\n' + redact(v.tail || '(none)'), summary: v.running ? 'running' : v.lost ? 'lost' : 'exited ' + v.exitCode };
         }
-        const list = source ? (source.statusBackground(aid) || []) : (bg.status(aid) || []);
+        const list = await Promise.resolve(source ? source.statusBackground(aid) : bg.status(aid)) || [];
         if (!list.length) return { content: 'No background processes.', summary: '0' };
-        return { content: list.map(function (v) { return '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : 'exited ' + v.exitCode) + ' · ' + v.cmd; }).join('\n'), summary: list.length + ' process(es)' };
+        return { content: list.map(function (v) { return '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : v.lost ? 'LOST (identity mismatch)' : 'exited ' + v.exitCode) + ' · ' + v.cmd; }).join('\n'), summary: list.length + ' process(es)' };
       }
     };
     /* H2.3 — READ PAST THE TAIL. shell.bg.status returns the last ~2000 characters, which is fine for "is it
@@ -862,13 +863,13 @@
         type: 'object', required: ['id'],
         properties: { id: { type: 'string' }, offset: { type: 'number' }, limit: { type: 'number' }, grep: { type: 'string' } }
       },
-      run: function (args, ctx) {
+      run: async function (args, ctx) {
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const source = environment && typeof environment.readBackground === 'function' ? environment : null;
         if (!source && (!bg || typeof bg.read !== 'function')) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
         const id = args && args.id ? String(args.id) : '';
         const opts = { offset: args && args.offset, limit: args && args.limit, grep: args && args.grep };
-        const r = source ? source.readBackground(aid, id, opts) : bg.read(aid, id, opts);
+        const r = await Promise.resolve(source ? source.readBackground(aid, id, opts) : bg.read(aid, id, opts));
         if (!r || !r.ok) return { content: 'Could not read: ' + ((r && r.error) || 'unknown error'), summary: 'not read' };
         const head = '[' + r.bgId + '] ' + (r.running ? 'RUNNING' : 'exited ' + r.exitCode + (r.killed ? ' (killed)' : '')) + ' · ' + r.cmd;
         const scope = r.grep
@@ -904,7 +905,7 @@
         type: 'object', required: ['id'],
         properties: { id: { type: 'string' }, input: { type: 'string' }, submit: { type: 'boolean' }, eof: { type: 'boolean' } }
       },
-      run: function (args, ctx) {
+      run: async function (args, ctx) {
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const id = args && args.id ? String(args.id) : '';
         const wantEof = !!(args && args.eof);
@@ -912,7 +913,7 @@
         if (!source && (!bg || typeof bg.write !== 'function')) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
 
         if (wantEof) {
-          const c = source && typeof source.closeBackgroundStdin === 'function' ? source.closeBackgroundStdin(aid, id) : bg.closeStdin(aid, id);
+          const c = await Promise.resolve(source && typeof source.closeBackgroundStdin === 'function' ? source.closeBackgroundStdin(aid, id) : bg.closeStdin(aid, id));
           return { content: c.ok ? (c.alreadyClosed ? 'stdin for ' + id + ' was already closed.' : 'Closed stdin for ' + id + ' (EOF sent).') : ('Could not close stdin: ' + c.error), summary: c.ok ? 'eof' : 'not closed' };
         }
         const input = String((args && args.input) || '');
@@ -925,7 +926,7 @@
         const remoteOwner = !!(ctx && ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner');
         const risk = remoteOwner ? null : commandSafetyRisk(input, { cwd: jailRoot, fs: fs, pathMod: P, dialect: dialect, isWin: isWin });
         if (risk) throw new Error('refused [' + risk.kind + ']: this input ' + risk.reason + '. A line sent to a shell or REPL runs like a command, so it is screened the same way.');
-        const r = source ? source.writeBackground(aid, id, { input: input, submit: args && args.submit }) : bg.write(aid, id, { input: input, submit: args && args.submit });
+        const r = await Promise.resolve(source ? source.writeBackground(aid, id, { input: input, submit: args && args.submit }) : bg.write(aid, id, { input: input, submit: args && args.submit }));
         return {
           content: r.ok ? ('Sent ' + r.bytes + ' byte(s) to ' + id + '. Read what it printed with shell.bg.read.') : ('Could not write: ' + r.error),
           summary: r.ok ? 'wrote ' + r.bytes + 'b' : 'not written'
@@ -937,12 +938,12 @@
       name: 'shell.bg.kill', capability: 'workbench', scope: 'write', requiresConsent: false,
       description: 'Stop one of your background processes by id (from shell.bg.status). Kills the whole process tree.',
       schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
-      run: function (args, ctx) {
+      run: async function (args, ctx) {
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const source = environment && typeof environment.killBackground === 'function' ? environment : null;
         if (!source && !bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
         const id = args && args.id ? String(args.id) : '';
-        const r = source ? source.killBackground(aid, id) : bg.kill(aid, id);
+        const r = await Promise.resolve(source ? source.killBackground(aid, id) : bg.kill(aid, id));
         return { content: r.ok ? (r.alreadyExited ? 'Process ' + id + ' had already exited.' : 'Killed background process ' + id + '.') : ('Could not kill: ' + r.error), summary: r.ok ? 'killed' : 'not killed' };
       }
     };
