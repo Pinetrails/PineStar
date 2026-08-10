@@ -124,6 +124,28 @@ export const openStableSettings = `(async () => {
   return opened + (settled ? ':provider-health-settled' : ':provider-health-timeout');
 })()`;
 
+// The quest refresher is intentionally ambient: it may finish its startup cycle at any point in the
+// screenshot sweep, and a seeded placeholder credential can add a provider-error ledger row. Freeze
+// only the screenshot browser's read seam to a truthful empty/not-yet-run fixture before opening the
+// panel. This keeps the golden frame about layout while the real refresh lifecycle stays covered by
+// its store, HTTP, and journey tests.
+export const openStableQuests = `(async () => {
+  try {
+    if (typeof QuestRefreshStore === 'object' && QuestRefreshStore) {
+      QuestRefreshStore.sync = () => {};
+      QuestRefreshStore.status = () => ({
+        enabled: true, northStar: null, lastCycleAt: 0, dueAt: 0, due: false,
+        why: null, binding: null, inFlight: false, openCount: 0, ledger: []
+      });
+      QuestRefreshStore.isRunning = () => false;
+    }
+  } catch (_) {}
+  const opened = ${openSel('[data-term="quests"]', 'QUESTS')};
+  if (/^(NOTFOUND|CLICK_ERR)/.test(String(opened))) return opened;
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  return opened + ':refresh-fixture-settled';
+})()`;
+
 export const closeOnly = `(() => { ${CLOSE}; return 'reset'; })()`;
 
 // REFIT first-use guide: on a fresh browser profile, build.js showGuide() paints a full-canvas
@@ -166,7 +188,7 @@ export function buildStates() {
     // (nav-condense, 2026-08-04) — keep the canonical post-condense state key so the
     // state enumerator and golden baseline describe the same live surface.
     { name: 'work-automation', drive: openSel('[data-term="automation"]', 'AUTOMATION') },
-    { name: 'work-quests',     drive: openSel('[data-term="quests"]', 'QUESTS') },
+    { name: 'work-quests',     drive: openStableQuests },
     // BUILD group
     { name: 'build-station',   drive: openSel('#bb-build', 'REFIT STATION'),       wait: 2000 },
     // ABILITIES kept the stable connectors term when SKILLS folded into it (nav-condense2),
