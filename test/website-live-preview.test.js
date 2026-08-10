@@ -25,7 +25,7 @@ A.eq(/clip\.clientWidth\s*\/\s*666/.test(js), false,
   'the current preview scale is not pinned to the retired 666px stage width');
 A.ok(/live-preview\.js\?v=20260809/.test(html),
   'the homepage cache-busts the corrected preview controller');
-A.ok(/app\/embed\.htm\?v=20260810-current-station-v2/.test(html),
+A.ok(/app\/embed\.htm\?v=20260810-default-station-v3/.test(html),
   'the homepage uses the cache-busted dashboard-upload-safe station document');
 
 function bootDemo(initial) {
@@ -46,12 +46,12 @@ function bootDemo(initial) {
 const upgraded = bootDemo({ 'starnet.save': '{"retired":"station"}' });
 const upgradedSave = JSON.parse(upgraded['starnet.save']);
 const upgradedRoom = upgradedSave.station.rooms.r1;
-A.eq(upgradedRoom.floorStyle, 'walnut', 'the website demo uses the current seeded floor style');
-A.eq(upgradedRoom.floorMat, 'plank', 'the website demo uses the current seeded floor material');
-A.eq(upgradedRoom.wallMat, 'ribbed', 'the website demo uses the current seeded wall material');
-A.eq(upgradedRoom.hullStyle, 'ember', 'the website demo uses the current seeded hull style');
-A.eq(upgradedRoom.hullMat, 'brick', 'the website demo uses the current seeded hull material');
-A.eq(upgraded['starnet.website.demo.rev'], '2026-08-10-current-station-v2',
+A.eq(upgradedRoom.floorStyle, 'hull', 'the website demo uses the standard starter floor style');
+A.eq(upgradedRoom.floorMat, null, 'the website demo inherits the standard starter floor material');
+A.eq(upgradedRoom.wallMat, null, 'the website demo inherits the standard starter wall material');
+A.eq(upgradedRoom.hullStyle, null, 'the website demo inherits the standard starter hull style');
+A.eq(upgradedRoom.hullMat, null, 'the website demo uses the standard station hull material');
+A.eq(upgraded['starnet.website.demo.rev'], '2026-08-10-default-station-v3',
   'a versioned marker moves returning visitors off the retired captured save');
 
 const currentRev = upgraded['starnet.website.demo.rev'];
