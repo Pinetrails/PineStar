@@ -75,6 +75,8 @@
     function receiptError(message, receipt) {
       const error = new Error(message + ' ' + receiptLine(receipt));
       error.mutationReceipt = receipt;
+      // Alias retained for callers that use the shorter generic receipt field.
+      error.receipt = receipt;
       return error;
     }
     async function verifiedMutation(spec) {
@@ -275,7 +277,7 @@
         await stampSeen(aid, abs);                // our own write is the new baseline, so a rewrite never self-trips
         emitDeliverable(ctx, aid, args.path);
         return finishEditDiagnostics(diagnosticTicket,
-          { content: 'Wrote ' + args.path + ' (' + data.length + ' bytes).\n' + receiptLine(receipt), summary: 'wrote ' + args.path + ' (' + kb(data.length) + ')', mutationReceipt: receipt }, ctx);
+          { content: 'Wrote ' + args.path + ' (' + data.length + ' bytes).\n' + receiptLine(receipt), summary: 'wrote ' + args.path + ' (' + kb(data.length) + ')', mutationReceipt: receipt, receipt }, ctx);
       }
     };
 
@@ -387,7 +389,7 @@
         emitDeliverable(ctx, aid, args.path);
         const added = Buffer.byteLength(String(args.content), 'utf8');
         return finishEditDiagnostics(diagnosticTicket,
-          { content: 'Appended to ' + args.path + ' (+' + added + ' bytes, now ' + bytes + ').\n' + receiptLine(receipt), summary: 'appended ' + args.path + ' (+' + kb(added) + ')', mutationReceipt: receipt }, ctx);
+          { content: 'Appended to ' + args.path + ' (+' + added + ' bytes, now ' + bytes + ').\n' + receiptLine(receipt), summary: 'appended ' + args.path + ' (+' + kb(added) + ')', mutationReceipt: receipt, receipt }, ctx);
       }
     };
 
@@ -414,7 +416,7 @@
         const receipt = await verifiedMutation({ operation: 'edit', path: args.path, abs, expected, initial: initialBytes, mutate: () => fsp.writeFile(abs, expected) });
         emitDeliverable(ctx, aid, args.path);
         return finishEditDiagnostics(diagnosticTicket,
-          { content: 'Edited ' + args.path + ' (' + count + ' replacement' + (count === 1 ? '' : 's') + ').\n' + receiptLine(receipt), summary: 'edited ' + args.path + ' (' + count + 'x)', mutationReceipt: receipt }, ctx);
+          { content: 'Edited ' + args.path + ' (' + count + ' replacement' + (count === 1 ? '' : 's') + ').\n' + receiptLine(receipt), summary: 'edited ' + args.path + ' (' + count + 'x)', mutationReceipt: receipt, receipt }, ctx);
       }
     };
 
@@ -521,7 +523,11 @@
           attemptedBytes: touched.reduce((n, p) => n + (p.content == null ? 0 : Buffer.byteLength(p.content, 'utf8')), 0), writtenBytes: 0, verifiedBytes: 0, sha256: null, files: []
         };
         try {
-          for (const plan of touched) {
+          // Apply destinations/updated files before deletes. In particular, a move must never
+          // remove the last source copy until its destination was written and read back exactly.
+          const ordered = touched.filter(plan => plan.content != null)
+            .concat(touched.filter(plan => plan.content == null));
+          for (const plan of ordered) {
             const expected = plan.content == null ? null : Buffer.from(plan.content, 'utf8');
             const initial = plan.initialContent == null ? null : Buffer.from(plan.initialContent, 'utf8');
             if (expected) await fsp.mkdir(P.dirname(plan.abs), { recursive: true });
@@ -565,7 +571,8 @@
         return finishEditDiagnostics(diagnosticTicket, {
           content: 'Applied patch: ' + touched.length + ' file' + (touched.length === 1 ? '' : 's') + ' changed.\n' + receiptLine(patchReceipt),
           summary: 'patched ' + touched.length + ' file' + (touched.length === 1 ? '' : 's'),
-          mutationReceipt: patchReceipt
+          mutationReceipt: patchReceipt,
+          receipt: patchReceipt
         }, ctx);
       }
     };
