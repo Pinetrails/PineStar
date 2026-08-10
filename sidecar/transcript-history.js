@@ -75,7 +75,7 @@ function makeSegmentedTranscriptIo(opts) {
     return m ? Number(m[1]) : 0;
   }
   function emptyIndex(n) {
-    return { version: VERSION, segment: n, rows: 0, bytes: 0, minRowId: 0, maxRowId: 0, minTs: 0, maxTs: 0, corruptLines: 0, streams: {}, terms: {} };
+    return { version: VERSION, segment: n, rows: 0, bytes: 0, minRowId: 0, maxRowId: 0, minTs: 0, maxTs: 0, corruptLines: 0, streams: Object.create(null), terms: Object.create(null) };
   }
   function noteIndex(index, row) {
     const id = num(row.rowId);
@@ -85,6 +85,14 @@ function makeSegmentedTranscriptIo(opts) {
     if (id > index.maxRowId) index.maxRowId = id;
     if (!index.minTs || (ts && ts < index.minTs)) index.minTs = ts;
     if (ts > index.maxTs) index.maxTs = ts;
+    // Transcript content and stream ids are untrusted dictionary keys. Plain objects make
+    // keys such as "constructor" resolve to inherited prototype values, while "__proto__"
+    // can mutate the dictionary itself. Normalize both fresh and JSON-loaded indexes to
+    // null-prototype maps before indexing them.
+    if (!index.streams || typeof index.streams !== 'object' || Array.isArray(index.streams)) index.streams = Object.create(null);
+    else if (Object.getPrototypeOf(index.streams) !== null) index.streams = Object.assign(Object.create(null), index.streams);
+    if (!index.terms || typeof index.terms !== 'object' || Array.isArray(index.terms)) index.terms = Object.create(null);
+    else if (Object.getPrototypeOf(index.terms) !== null) index.terms = Object.assign(Object.create(null), index.terms);
     const sid = str(row.streamId) || 'global';
     let stream = index.streams[sid];
     if (!stream) stream = index.streams[sid] = { count: 0, lastAt: 0, preview: '' };
