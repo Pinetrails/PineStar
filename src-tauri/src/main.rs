@@ -35,11 +35,12 @@ use tauri::{
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use credentials::{
-    channel_keychain_entry, delete_credential_honest, is_known_channel, keychain_entry,
-    keychain_entry_for, keychain_pool_entry_for, migrate_channel_tokens_from_plaintext,
-    normalize_provider, read_channel_token, read_key, read_key_for, read_key_pool_for,
-    restore_credential, rollback_error, KEYCHAIN_PROVIDERS, SIDECAR_CHANNEL_TOKEN_ENVS,
-    SIDECAR_PROVIDER_KEY_ENVS,
+    channel_keychain_entry, credits_keychain_entry, delete_credential_honest, is_known_channel,
+    keychain_entry, keychain_entry_for, keychain_pool_entry_for,
+    migrate_channel_tokens_from_plaintext, migrate_credits_token_from_plaintext,
+    normalize_provider, read_channel_token, read_credits_token, read_key, read_key_for,
+    read_key_pool_for, restore_credential, rollback_error, KEYCHAIN_PROVIDERS,
+    SIDECAR_CHANNEL_TOKEN_ENVS, SIDECAR_PROVIDER_KEY_ENVS,
 };
 use lifecycle_preferences::{
     load as load_lifecycle_preferences, save_verified as save_lifecycle_preferences,
@@ -1581,6 +1582,12 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
             set_sidecar_branded_env(&mut cmd, env_name, token);
         }
     }
+    // StarNet Cloud device token, same path. Because EVERY sidecar spawn goes through this builder,
+    // a sidecar restarted after adoption still comes up linked even though the token is no longer
+    // in credits.json — the file keeps the non-secret fields and this supplies the secret.
+    if let Some(token) = read_credits_token() {
+        cmd.env("STARNET_CREDITS_TOKEN", token);
+    }
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
@@ -2366,6 +2373,36 @@ fn harness_clear_key(state: State<AppState>) -> Result<(), String> {
     Ok(())
 }
 
+/// Adopt a freshly linked station's device token into the OS keychain and strip it from
+/// `.secrets/credits.json`. Called by the UI right after a successful link.
+///
+/// **The token never enters the WebView.** The UI only says "a link just happened"; Rust reads the
+/// file, moves the secret, and rewrites the file. That preserves the property the sidecar already
+/// guarantees — the device token never leaves the backend — which storing it from JavaScript would
+/// have thrown away.
+///
+/// Returns whether the keychain now holds a token, so the caller can report the truth rather than
+/// assume success (a locked keychain leaves the token on disk, by design).
+#[tauri::command]
+fn harness_adopt_credits_token(state: State<AppState>) -> bool {
+    migrate_credits_token_from_plaintext(&state.workspaces)
+}
+
+/// Whether a device token is in the keychain. Never returns the token itself.
+#[tauri::command]
+fn harness_has_credits_token() -> bool {
+    read_credits_token().is_some()
+}
+
+/// Forget the device token (UNLINK). Deletion failures surface as Err so the UI can never claim
+/// "unlinked" while a money-spending credential is still in the keychain — truthful telemetry
+/// applies to destruction too. Safe under the secret-durability law: relinking mints a new token.
+#[tauri::command]
+fn harness_clear_credits_token() -> Result<(), String> {
+    let entry = credits_keychain_entry().map_err(|e| e.to_string())?;
+    delete_credential_honest(&entry)
+}
+
 /// Store (or, for an empty value, clear) a channel bot token in the OS keychain, then push it to the running
 /// sidecar — no restart, so the current page is never disrupted. The token never returns to the WebView.
 #[tauri::command]
@@ -3140,6 +3177,9 @@ fn main() {
             harness_clear_key,
             harness_store_channel_token,
             harness_has_channel_token,
+            harness_adopt_credits_token,
+            harness_has_credits_token,
+            harness_clear_credits_token,
             starnet_open_artifact,
             starnet_reveal_path,
             open_external_url,
@@ -3190,6 +3230,9 @@ fn main() {
             // One-time: lift any plaintext channel bot tokens into the keychain and strip them from the file,
             // BEFORE spawning the sidecar so the injected SKYNET_<ID>_TOKEN env reflects the migrated tokens.
             migrate_channel_tokens_from_plaintext(&workspaces);
+            // Same one-time sweep for the cloud device token — this is what upgrades an already
+            // linked station from a plaintext token to a keychain one, with no user action.
+            migrate_credits_token_from_plaintext(&workspaces);
             let state = AppState {
                 port,
                 ipc_token,

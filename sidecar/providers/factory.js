@@ -48,6 +48,7 @@
       return codex.makeCodexProvider({
         fetch: opts.fetch,
         token: opts.token,
+        renewToken: opts.renewToken,   // optional 401-recovery seam — the host's force-refresh (see codex.js header)
         baseUrl: opts.baseUrl || profile.baseUrl,
         reasoningEffort: opts.reasoningEffort
       });

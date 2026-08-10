@@ -81,11 +81,18 @@ for (const [file, src] of NORMALIZERS) {
   }
 }
 
-/* ---------- genesis picker (the user-visible half of the original report) ---------- */
-for (const id of OAUTH_IDS) {
+/* ---------- genesis picker (the user-visible half of the original report) ----------
+   Codex is the DELIBERATE exception since the 2026-08-10 hero swap: ChatGPT sign-in has no chip of its
+   own — it lives INSIDE the OPENAI card (two paths, one card). The reachability this test exists to
+   guarantee is asserted directly: the OPENAI selection shows the shared sign-in block wired to codex. */
+for (const id of EXTRA_IDS) {
   A.ok(new RegExp('data-prov="' + id + '"').test(htmlSrc),
     'genesis picker offers a chip for OAuth provider ' + id);
 }
+A.ok(!/data-prov="codex"/.test(htmlSrc), 'codex deliberately has no standalone genesis chip (it rides the OPENAI card)');
+A.ok(/isOpenAI[\s\S]{0,120}codex-block/.test(appSrc) || /codex-block'\)\.classList\.toggle\('hidden', !\(isOAuth \|\| isOpenAI\)\)/.test(appSrc),
+  'the OPENAI selection shows the shared sign-in block (ChatGPT stays reachable at genesis)');
+A.ok(/applyOAuthBlockCopy\('codex'\)/.test(appSrc), "the OPENAI card's sign-in half speaks ChatGPT");
 {
   // OAUTH_GENESIS is an object literal — extract its top-level keys
   const m = /const OAUTH_GENESIS = Object.freeze\(\{([\s\S]*?)\n  \}\);/.exec(appSrc);
