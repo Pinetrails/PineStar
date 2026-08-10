@@ -98,6 +98,8 @@ function desktopBuildStep() {
   if (linker) lines.push('set "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=' + linker + '"');
   lines.push(cmdQuote(process.execPath) + ' scripts\\prepare-node.mjs');
   lines.push('if errorlevel 1 exit /b %errorlevel%');
+  lines.push(cmdQuote(process.execPath) + ' scripts\\stage-voice-deps.mjs --target win-x64');
+  lines.push('if errorlevel 1 exit /b %errorlevel%');
   lines.push(cmdQuote(tauri) + ' build');
   lines.push('exit /b %errorlevel%');
   const runner = join(OUT, 'desktop-build-runner.cmd');

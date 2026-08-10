@@ -116,8 +116,20 @@ for (const id of INTERACTIVE) {
   A.ok(sp.use && typeof sp.use.approach === 'string', id + '.use.approach is a string');
   A.ok(sp.use && typeof sp.use.kind === 'string', id + '.use.kind is a string');
 }
-A.eq(PropSprites.spec('couch').use.sit, true, 'couch is a seat (sit:true)');
 A.eq(PropSprites.spec('arcade').use.sit, false, 'arcade is stand-and-play (sit:false)');
+/* SEAT LAW (2026-08-04): the sit sprite is a CHAIR pose, so `use.sit` may only be true where a seat is
+   really under the body — the single-tile seats. Couch/bed/beanbag used to carry it and rendered a body
+   parked bolt-upright on the furniture. This walks the WHOLE catalog so a future `sit: true` on some new
+   sofa fails here rather than in the world. */
+const SITTABLE = new Set(['stool', 'chair']);
+for (const sp of PropSprites.CATALOG) {
+  if (!sp.use) continue;
+  A.eq(!!sp.use.sit, SITTABLE.has(sp.id), 'SEAT LAW: ' + sp.id + '.use.sit === ' + SITTABLE.has(sp.id));
+  if (SITTABLE.has(sp.id)) A.eq(sp.use.kind, 'seat', sp.id + ' uses kind:seat (planSeat claims + renders ON it)');
+}
+for (const id of SITTABLE) A.ok(PropSprites.spec(id) && PropSprites.spec(id).use, 'seat prop ' + id + ' still carries a use descriptor');
+A.eq(PropSprites.spec('couch').use.sit, false, 'couch is stand-at (SEAT LAW)');
+A.eq(PropSprites.spec('bunk').use.sit, false, 'bed is stand-beside (SEAT LAW — the reported bug)');
 A.ok(!(PropSprites.spec('desk').use), 'work desk is NOT a leisure prop (no use descriptor)');
 A.ok(!(PropSprites.spec('crate').use), 'storage crate is NOT a leisure prop');
 

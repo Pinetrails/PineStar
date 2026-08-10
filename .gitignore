@@ -45,6 +45,8 @@ src-tauri/binaries/
 # (each run writes a SHOT_DIR with a nested _profile chrome user-data-dir). Never committed.
 .uishots*/
 .mock-shot/
+# dev/idlesoak.mjs output (report.json + its own seeded workspace + chrome profile). Never committed.
+.idlesoak*/
 # qa:summon-delegate journey scratch (seeded workspace + its own chrome profile). Never committed.
 .summon-journey/
 .qa_tmp/
@@ -143,3 +145,18 @@ __pycache__/
 
 # the exact upload for starnetos.com, rebuilt by scripts/stage-website-deploy.mjs each deploy
 website-deploy/
+
+# ABILITIES lane visual-proof screenshots (headless capture output; never committed)
+dev/.shots-abilities/
+.shots-before/
+
+# LINE PLACEMENT lane visual-proof screenshots (headless capture output; never committed)
+dev/.shots-line-placement/
+dev/.shots-ux-walk/
+
+# CONVEYOR CORRECTNESS lane visual-proof screenshots + claim log (headless capture output; never committed)
+dev/.shots-conveyor-correctness/
+dev/.shots-conveyor-correctness.log
+
+# CREW rail roster-window proof shots (same pattern)
+dev/.shots-crew-fit/

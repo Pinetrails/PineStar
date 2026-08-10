@@ -26,7 +26,8 @@
         verb: 'polling',
         steps: [
           'In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → copy the token it gives you.',
-          'Paste it below and connect. Your agent answers DMs using this app\'s current provider + model.'
+          'Paste it below and connect. StarNet will show a one-time owner pairing <code>/pair</code> command.',
+          'Send that owner pairing command to your bot in Telegram. Only then can the bot accept your DMs.'
         ],
         note: 'The token is stored locally by the sidecar and never displayed.',
         fieldsHtml: '<label class="ch-lbl" for="tg-token">BOT TOKEN <span class="dim">— from @BotFather</span></label>' +
@@ -34,7 +35,7 @@
         read: (b) => ({ token: (b.querySelector('#tg-token').value || '').trim() }),
         clear: (b) => { b.querySelector('#tg-token').value = ''; },
         emptyMsg: 'paste your @BotFather token first',
-        okMsg: '✓ connected — open Telegram and DM your bot',
+        okMsg: '✓ connected — Telegram is accepting owner DMs',
         // multi-bot: each additional bot is a SEPARATE Telegram contact hard-bound to one agent. The list paints
         // exclusively from the status payload's bots[] (truthful per-instance transport state); the add flow is
         // token + agent — the sidecar validates the token with getMe before anything persists.
@@ -82,7 +83,7 @@
       { id: 'slack', title: 'SLACK', pre: 'sl', accent: '#b98ec8',
         // HONESTY: channel messages need a chat allowlist no production path supplies yet — DMs only today.
         // audit finding 5: Slack appears in BOTH panels — say which direction THIS one is.
-        tagline: 'Your agent inside your Slack workspace — DM it and it replies. (DMs only for now — channels aren\'t wired yet. Want the agent to USE Slack as a tool instead? That\'s ⇄ TOOLSETS.)',
+        tagline: 'Your agent inside your Slack workspace — DM it and it replies. (DMs only for now — channels aren\'t wired yet. Want the agent to USE Slack as a tool instead? That\'s ⇄ ABILITIES.)',
         verb: 'receiving',
         steps: [
           'Open <b>api.slack.com/apps</b> → <b>Create New App</b> → From scratch.',
@@ -228,6 +229,9 @@
     // not the POST), and the saved placeholders (restored when a card goes back to un-configured).
     const configuredById = {};
     const pendingConnect = {};
+    // A pairing code is returned exactly once. Keep its instruction outside the repainting DOM so a later
+    // channel.connect event cannot replace it with a generic success line (the live-reported lost-code bug).
+    const pairingInstruction = {};
     const savedPlaceholder = {};
 
     // status-line colour by state as a CLASS (never inline el.style.color — truthful-telemetry palette lives in css).
@@ -249,16 +253,18 @@
       if (!list) return;
       list.textContent = '';
       for (const bItem of (Array.isArray(bots) ? bots : [])) {
+        const acceptingDms = bItem.acceptingDms === true;
+        const pairingBlocked = !!bItem.connected && !acceptingDms;
         const row = document.createElement('div');
-        row.className = 'tg-bot-row' + (bItem.connected ? ' on' : '');
+        row.className = 'tg-bot-row' + (acceptingDms ? ' on' : '');
         row.dataset.bot = String(bItem.botId || '');
         const name = document.createElement('span');
         name.className = 'tg-bot-name';
         name.textContent = (bItem.username ? '@' + bItem.username : 'bot ' + bItem.botId) + ' → ' + (bItem.agentName || bItem.agentId || '?');
         const state = document.createElement('span');
         const inFlight = !bItem.connected && (bItem.state === 'connecting' || bItem.state === 'reconnecting');
-        state.className = 'ch-state ' + stateClass(bItem.connected, inFlight, bItem.state, bItem.configured);
-        state.textContent = bItem.connected ? '● connected' : inFlight ? '◐ connecting…'
+        state.className = 'ch-state ' + (pairingBlocked ? 'st-wait' : stateClass(bItem.connected, inFlight, bItem.state, bItem.configured));
+        state.textContent = pairingBlocked ? '◐ polling · pair owner' : acceptingDms ? '● connected' : inFlight ? '◐ connecting…'
           : bItem.state === 'error' ? ('✕ ' + (bItem.detail || 'error')) : (bItem.enabled === false ? '○ off' : '○ offline');
         if (bItem.ownerLocked) state.title = 'owner-locked';
         if (bItem.delivery && bItem.delivery.state === 'down') state.title = 'outbound delivery degraded' + (bItem.delivery.detail ? ': ' + bItem.delivery.detail : '');
@@ -286,9 +292,13 @@
       const state = st && st.state;
       const inFlight = !conn && (state === 'connecting' || state === 'reconnecting');
       const configured = !!(st && st.configured);
+      // Telegram has two separate truths: Bot API polling and admitted owner DMs. Polling without a paired owner
+      // is real transport health, but it is not an operational channel; ordinary messages are refused by design.
+      const pairingBlocked = c.id === 'telegram' && conn && !(st && st.acceptingDms === true);
       configuredById[c.id] = configured;
-      el.className = 'ch-state ' + stateClass(conn, inFlight, state, configured);
-      el.textContent = conn ? ('● CONNECTED — ' + c.verb + (state && state !== 'up' ? ' (' + state + ')' : ''))
+      el.className = 'ch-state ' + (pairingBlocked ? 'st-wait' : stateClass(conn, inFlight, state, configured));
+      el.textContent = pairingBlocked ? '◐ POLLING — DMs BLOCKED: PAIR OWNER'
+        : conn ? ('● CONNECTED — ' + c.verb + (state && state !== 'up' ? ' (' + state + ')' : ''))
         : inFlight ? ('◐ ' + (state === 'reconnecting' ? 'reconnecting' : 'connecting') + '…' + (st.detail ? ' — ' + st.detail : ''))
         : state === 'error' ? ('✕ error' + (st.detail ? ' — ' + st.detail : '') + (c.errHint || ''))
         : configured ? ('○ saved but offline — RESUME to reconnect' + (st.detail ? ' — ' + st.detail : ''))
@@ -298,11 +308,11 @@
       if (st && st.warning) el.textContent += ' ⚠ ' + st.warning;
       // rail dot + overview summary row ride the SAME proven status (one truth, three projections)
       const dot = body.querySelector('#' + c.pre + '-dot');
-      if (dot) dot.className = 'ch-rail-dot ' + stateClass(conn, inFlight, state, configured);
+      if (dot) dot.className = 'ch-rail-dot ' + (pairingBlocked ? 'st-wait' : stateClass(conn, inFlight, state, configured));
       const sum = body.querySelector('#' + c.pre + '-sum');
       if (sum) {
-        sum.className = 'ch-state ' + stateClass(conn, inFlight, state, configured);
-        sum.textContent = conn ? '● connected' : inFlight ? '◐ connecting…'
+        sum.className = 'ch-state ' + (pairingBlocked ? 'st-wait' : stateClass(conn, inFlight, state, configured));
+        sum.textContent = pairingBlocked ? '◐ polling — pair owner' : conn ? '● connected' : inFlight ? '◐ connecting…'
           : state === 'error' ? '✕ error' : configured ? '○ saved — offline' : '○ not connected';
       }
       // SETUP GUIDE auto-fold — keyed off `configured` (a real saved config), never off `conn`: a platform
@@ -319,14 +329,14 @@
       if (guide && guide.dataset.autofold === '1') guide.open = !configured;
       if (c.prefill) { try { c.prefill(body, st); } catch (_) {} }
       const card = body.querySelector('#ch-card-' + c.id);
-      if (card) card.classList.toggle('on', conn);
+      if (card) card.classList.toggle('on', conn && !pairingBlocked);
 
       // ANSWERS AS / owner-locked truth line (only once a config exists — never claim an identity for a cold card).
       const ans = body.querySelector('#' + c.pre + '-answers');
       if (ans) {
         const nm = (st && st.agentName || '').trim();
         const bits = [];
-        if ((conn || configured) && nm) bits.push('ANSWERS AS: ' + nm);
+        if ((conn || configured) && nm) bits.push((pairingBlocked ? 'WILL ANSWER AS: ' : 'ANSWERS AS: ') + nm);
         if (st && st.ownerLocked) bits.push('owner-locked ✓');
         if (c.id === 'telegram' && st && st.delivery && st.delivery.state === 'down') bits.push('OUTBOUND DEGRADED: ' + (st.delivery.detail || 'send failed'));
         ans.textContent = bits.join('  ·  ');
@@ -362,13 +372,24 @@
           : pairingActive ? 'pairing code active - awaiting /pair' : 'not paired';
         if (pairBtn) { pairBtn.style.display = configured && !ownerLocked ? '' : 'none'; pairBtn.disabled = !configured; }
         if (revokeBtn) { revokeBtn.style.display = ownerLocked ? '' : 'none'; if (!ownerLocked) disarm('tg-owner-revoke', revokeBtn, 'REVOKE OWNER'); }
+        const msgEl = body.querySelector('#tg-msg');
+        if (ownerLocked && pairingInstruction.telegram) {
+          delete pairingInstruction.telegram;
+          setMsg(msgEl, '✓ owner paired — Telegram is connected and accepting DMs', 'ok');
+        } else if (!ownerLocked && !pairingActive && pairingInstruction.telegram) {
+          delete pairingInstruction.telegram;
+          setMsg(msgEl, 'pairing code expired — click PAIR OWNER for a fresh one', 'info');
+        }
       }
 
       // finalize a pending connect's MESSAGE from the proven status (not the optimistic POST body).
       if (pendingConnect[c.id]) {
         const msgEl = body.querySelector('#' + c.pre + '-msg');
         if (conn) {
-          setMsg(msgEl, c.okMsg, 'ok'); delete pendingConnect[c.id];
+          if (c.id === 'telegram' && !(st && st.acceptingDms === true)) {
+            setMsg(msgEl, pairingInstruction.telegram || 'Telegram is polling, but DMs stay blocked until you click PAIR OWNER and send the /pair command.', 'info');
+          } else setMsg(msgEl, c.okMsg, 'ok');
+          delete pendingConnect[c.id];
           // first-steps: only ticked on the PROVEN round-trip (this branch), never on the optimistic POST.
           try { if (typeof Tutorial !== 'undefined' && Tutorial.tickBrief) Tutorial.tickBrief('channel'); } catch (_) {}
         }
@@ -501,7 +522,12 @@
           else {
             // DERIVE the outcome line from the status refresh (paintCard finalizes pendingConnect), NOT from this
             // POST — the sidecar only reports 'connecting' until the transport actually proves the round-trip.
-            if (localFallback) setMsg(msgEl, 'connecting… (token saved locally, not the OS keychain)', 'info');
+            if (c.id === 'telegram' && j.pairingCode) {
+              pairingInstruction.telegram = 'Telegram poller starting. To activate DMs, send this exact message to your bot: /pair ' + j.pairingCode + ' (expires in 10 minutes).';
+              setMsg(msgEl, pairingInstruction.telegram, 'info');
+            } else if (c.id === 'telegram' && j.pairingRequired) {
+              setMsg(msgEl, 'Telegram poller starting, but DMs are blocked: ' + (j.pairingError || 'click PAIR OWNER to issue a pairing command.'), 'info');
+            } else if (localFallback) setMsg(msgEl, 'connecting… (token saved locally, not the OS keychain)', 'info');
             sfx('click');
             try { c.clear(body); } catch (_) {}
           }
@@ -585,7 +611,8 @@
           const r = await Harness.api.post('/api/channels/telegram/owner/pair', {});
           const j = r.j || {};
           if (!r.ok || j.error || !j.code) { setMsg(msgEl, 'could not issue a pairing code: ' + (j.error || ('HTTP ' + r.status)), ''); sfx('bad'); return; }
-          setMsg(msgEl, 'In Telegram, DM this bot: /pair ' + j.code + ' (code expires in 10 minutes).', 'info');
+          pairingInstruction.telegram = 'In Telegram, DM this bot: /pair ' + j.code + ' (code expires in 10 minutes).';
+          setMsg(msgEl, pairingInstruction.telegram, 'info');
           sfx('click'); refreshAll();
         } catch (_) { setMsg(msgEl, 'could not reach the sidecar', ''); sfx('bad'); }
       });

@@ -57,8 +57,13 @@ const NightDraftNudge = (() => {
     // re-check the guards right before firing (the fetch was async — a beat may have claimed the slot meanwhile).
     if (fired) return;
     try { if (Chat.beatBusy && Chat.beatBusy()) return; } catch (_) {}
+    // the SHARED session ask budget (one-memory lane): "review?" is a proactive consent ask, so it spends the
+    // same bounded budget the spine's channels do. A spent budget just waits — the drafts are still on the desk,
+    // the morning report still lists them, and the next session's quieter moment offers this again.
+    try { if (Chat.askBudgetSpent && Chat.askBudgetSpent()) return; } catch (_) {}
 
     fired = true;          // spend the session's single nudge even if later dismissed (anti-nag)
+    try { if (Chat.spendAsk) Chat.spendAsk(); } catch (_) {}   // …and one unit of the shared budget
     stopPolling();
     const n = unseen.length;
     const newestAt = Number(unseen[0] && unseen[0].at) || Date.now();   // the mark to set once it's acknowledged

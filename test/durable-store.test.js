@@ -144,6 +144,19 @@ async function main() {
     A.eq(r2.status, 'corrupt', 'present-but-bad main with no .bak is CORRUPT, never silently absent/empty');
     A.eq(store.get('busted'), undefined, 'get() returns undefined for corrupt (caller decides) — but onCorrupt fired');
     A.ok(corruptFlagged >= 1, 'onCorrupt surfaced the unrecoverable file LOUDLY (not silent)');
+
+    // A corrupt record is not a new record. update() must preserve its only forensic/recovery bytes instead of
+    // passing undefined to a default-empty mutator and committing an amnesiac replacement.
+    const corruptBytes = fs.files.get(fileFor('busted'));
+    let corruptWrite = null;
+    try { await store.update('busted', cur => (Array.isArray(cur) ? cur : []).concat([{ id: 'new' }])); }
+    catch (e) { corruptWrite = e; }
+    A.ok(corruptWrite && corruptWrite.code === 'ESTORE_CORRUPT', 'update() refuses an unrecoverable corrupt record');
+    A.eq(fs.files.get(fileFor('busted')), corruptBytes, 'refused corrupt update preserves the original bytes exactly');
+
+    // Preserve the valid initialization path: a genuinely absent key still starts from undefined and commits.
+    await store.update('brandnew', cur => ({ initializedFrom: cur === undefined ? 'absent' : 'unexpected' }));
+    A.eq(store.get('brandnew'), { initializedFrom: 'absent' }, 'update() still initializes a genuinely absent record');
   }
 
   // ---- C4. the .bak is NEVER clobbered by a corrupt current main ----
@@ -216,7 +229,7 @@ async function main() {
   }
 
   // ---- E. saveJsonVerified (EL-5b F1/F3/F4): read-back PROOF + retry-once for irreplaceable credentials ----
-  // The shared primitive behind saveConnectorOauth() and saveCodexTokens(): a swallowed write on a rotated/
+  // The shared primitive behind connector-state and Codex-token persistence: a swallowed write on a rotated/
   // exchanged token silently loses the credential on the NEXT boot while the UI claims "connected". This must
   // report ok:false (never a false success) when the read-back cannot prove the value reached disk.
   {

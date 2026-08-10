@@ -223,8 +223,10 @@
   function digest(loop, ctx) {
     ctx = ctx || {};
     const maxItems = clampInt(ctx.maxItems, 1, 60, 12);
-    const its = ((loop && loop.iterations) || []).filter(it => it && it.outcome !== 'cancelled');
-    if (!its.length) return '';
+    const allIts = ((loop && loop.iterations) || []).filter(Boolean);
+    const interrupted = allIts.filter(it => it.outcome === 'cancelled').slice(-maxItems);
+    const its = allIts.filter(it => it.outcome !== 'cancelled');
+    if (!its.length && !interrupted.length) return '';
 
     const lines = [];
     const rejected = its.filter(it => it.verdict === 'rejected' && it.verdictNote).slice(-maxItems);
@@ -234,6 +236,15 @@
 
     lines.push('<loop_ledger iteration="' + ((loop.iterationCount || 0) + 1) + '">');
     lines.push('You are continuing a standing loop, not starting fresh. History below is FACT — do not repeat it.');
+
+    /* A cancelled pass is not completed work, but filtering it out entirely loses the one fact the replacement
+       pass needs most: a tool may have committed an effect immediately before cancellation/restart. The journal
+       keeps the detailed provider-valid checkpoint for human recovery; this bounded loop-level fence prevents
+       a fresh model turn from blindly repeating an action whose outcome it cannot prove. */
+    if (interrupted.length) {
+      lines.push('', 'INTERRUPTED PASSES — completion and side effects are not proven:');
+      for (const it of interrupted) lines.push('  #' + it.n + ' was cancelled before completion. Inspect and verify current state before repeating any action from that pass.');
+    }
 
     if (rejected.length) {
       lines.push('', 'THE COMMANDER REJECTED THESE — these are boundaries, respect them:');

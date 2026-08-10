@@ -6,8 +6,15 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const {
-  makeMediaService, pcmToWav, wavToMono16kFloat32, sttMultipartBody
+  makeMediaService, pcmToWav, wavToMono16kFloat32, oggOpusToMono16kFloat32, sttMultipartBody
 } = require('../sidecar/media-service.js');
+
+// 80 ms mono Opus tone in a real Ogg container. Generated once with libopus; checked in as text so the
+// test proves the shipped WASM decoder without requiring ffmpeg on a developer or release machine.
+const OGG_OPUS = Buffer.from(
+  'T2dnUwACAAAAAAAAAAC36uPZAAAAACvBgEwBE09wdXNIZWFkAQE4AYC7AAAAAABPZ2dTAAAAAAAAAAAAALfq49kBAAAAq9xArgE+T3B1c1RhZ3MNAAAATGF2ZjYyLjEyLjEwMQEAAAAdAAAAZW5jb2Rlcj1MYXZjNjIuMjguMTAxIGxpYm9wdXNPZ2dTAAQ4EAAAAAAAALfq49kCAAAABkcHRAVFOzI3H3iCAbdsRyTqAkZv+rYDjIE01uheAesbsV7vyXgY8gqzIUHM0aaf4Yqbhp1rgeoEnutAiitHUCgJ0EZTAHRNtp96w/QA+XijP/esmIUDXCYKV5+K8o09bIVMwBPqQbZh53f7dxTMWHWvNRLH9wshBXhb4UZ4svXifY+1ePppKdPLeJujElFFAKzjUZtzIbzvkYf9xoYkZjRJyLfYYOyuGQ16hsiSDl+FlUmChd1GPvaUKYt4m6MRtBy/UiiBezmWuWR9rnAX1N7fcFaVORBbFQ/O0UoSEsPPQg+XUCym9WlXzffTW861RJUCeAZq5oQF8SsdLTmsuzQSGw7LXdkN4omo7g5at9f8/g==',
+  'base64'
+);
 
 const roots = [];
 
@@ -45,6 +52,19 @@ async function make(overrides) {
   return makeMediaService(opts);
 }
 
+async function invokeTts(overrides, body) {
+  const service = await make(Object.assign({}, overrides || {}, {
+    readBody: async () => JSON.stringify(body || {})
+  }));
+  const response = { status: 0, headers: {}, body: Buffer.alloc(0) };
+  await service.handleTts({}, {
+    headersSent: false,
+    writeHead(status, headers) { response.status = status; response.headers = headers || {}; this.headersSent = true; },
+    end(value) { response.body = Buffer.isBuffer(value) ? value : Buffer.from(String(value || '')); }
+  });
+  return response;
+}
+
 (async () => {
   // PCM wrapping and the local-ASR decoder remain exact inverses at their shared boundary.
   const pcm = Buffer.alloc(4 * 2 * 2);
@@ -64,6 +84,10 @@ async function make(overrides) {
   assert.equal(decoded[1], -1);
   assert.equal(wavToMono16kFloat32(Buffer.from('not wav')), null);
 
+  const decodedOgg = await oggOpusToMono16kFloat32(OGG_OPUS);
+  assert.ok(decodedOgg.length >= 1200 && decodedOgg.length <= 1500, 'real Ogg/Opus is decoded and resampled to 16 kHz');
+  assert.ok(decodedOgg.some(sample => Math.abs(sample) > 0.01), 'decoded Ogg/Opus contains audible PCM');
+
   // Multipart construction preserves the audio byte-for-byte and names the Whisper model/file parts.
   const audio = Buffer.from([0, 1, 2, 255, 13, 10]);
   const multipart = sttMultipartBody(audio, 'clip.webm', 'audio/webm', { model: 'whisper-test' }, n => Buffer.alloc(n, 7));
@@ -76,7 +100,15 @@ async function make(overrides) {
   // No credentials and no local engine is an honest terminal capability result.
   const keyless = await make();
   assert.deepEqual(await keyless.transcribeAudioBuffer(Buffer.from('audio'), 'webm'), { ok: false, reason: 'no key' });
+  assert.deepEqual(keyless.sttStatus(), {
+    available: false, preferred: 'none', cloud: false, local: false, native: false
+  });
   assert.match((await keyless.synthesizeForAgent({ text: 'hello' })).reason, /edge: disabled/);
+
+  const nativeOnly = await make({ nativeStt: { status: () => ({ available: true }), recognize: async () => ({ ok: true, text: 'native' }) } });
+  assert.deepEqual(nativeOnly.sttStatus(), {
+    available: true, preferred: 'native', cloud: false, local: false, native: true
+  });
 
   // A keyed TTS failure falls through to the free Edge floor instead of committing a hard failure.
   let ttsFetches = 0;
@@ -124,10 +156,41 @@ async function make(overrides) {
     }
   });
   assert.deepEqual(await local.transcribeAudioBuffer(wav, 'wav'), { ok: true, text: 'local words' });
+  assert.deepEqual(local.sttStatus(), {
+    available: true, preferred: 'local', cloud: false, local: true, native: false
+  });
   assert.equal(localPcm.length, decoded.length * 4);
-  assert.match((await local.transcribeAudioBuffer(Buffer.from('compressed'), 'ogg')).reason, /local engine needs wav/);
+  localPcm = null;
+  assert.deepEqual(await local.transcribeAudioBuffer(OGG_OPUS, 'ogg'), { ok: true, text: 'local words' });
+  assert.equal(localPcm.length, decodedOgg.length * 4, 'Telegram Ogg/Opus reaches local ASR as 16 kHz Float32 PCM');
+  assert.match((await local.transcribeAudioBuffer(Buffer.from('compressed'), 'webm')).reason, /local engine cannot decode webm/);
 
-  console.log('media-service: OK (25 assertions)');
+  // Local Live chooses its serving engine once. An Edge-pinned session bypasses Kokoro, while a
+  // Kokoro-pinned session fails silent instead of changing to a different voice for one sentence.
+  {
+    let localCalls = 0, edgeCalls = 0, edgeVoice = '';
+    const engines = {
+      localVoice: {
+        status: () => ({ available: true }), defaultVoice: () => 'am_onyx',
+        edgeVoiceFor: () => 'en-US-ChristopherNeural', transcribe: async () => '',
+        synthesize: async () => { localCalls++; throw new Error('temporary local failure'); }
+      },
+      edgetts: {
+        enabled: () => true, resolveVoice: () => 'en-US-ChristopherNeural',
+        synth: async (_text, options) => { edgeCalls++; edgeVoice = options.voice; return Buffer.from('edge-audio'); }
+      }
+    };
+    const edgePinned = await invokeTts(engines, { text: 'same speaker', local: true, localVoice: 'am_onyx', localEngine: 'edge' });
+    assert.equal(edgePinned.headers['X-Voice-Provider'], 'edge:en-US-ChristopherNeural', 'an Edge-pinned session names and keeps its mapped voice');
+    assert.equal(localCalls, 0, 'an Edge-pinned session never probes Kokoro between sentences');
+    assert.equal(edgeVoice, 'en-US-ChristopherNeural', 'the pinned Edge engine uses the selected voice mapping');
+
+    const localPinned = await invokeTts(engines, { text: 'do not switch', local: true, localVoice: 'am_onyx', localEngine: 'local-kokoro' });
+    assert.match(localPinned.headers['Content-Type'], /application\/json/, 'a failed Kokoro-pinned chunk degrades without returning another voice');
+    assert.equal(edgeCalls, 1, 'a Kokoro-pinned session never falls through to Edge mid-conversation');
+  }
+
+  console.log('media-service: OK (34 assertions)');
 })().finally(async () => {
   for (const root of roots) await fsp.rm(root, { recursive: true, force: true });
 }).catch(error => {

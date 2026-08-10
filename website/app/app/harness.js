@@ -29,25 +29,118 @@ const Harness = (() => {
     for (const k in modelsByProv) { const m = modelsByProv[k] && modelsByProv[k][id]; if (m) return m; }
     return null;
   }
-  // Per-agent context-window occupancy = the latest real prompt_tokens for that same agent/model.
-  // Distinct from totals.tokens (lifetime in+out), and not persisted across resumes.
-  let contextByAgent = {};   // agentId -> { used, model, runId }
+  /* CONTEXT OCCUPANCY IS PER CONVERSATION, NOT PER AGENT.
+     This was keyed by agentId alone, and the bottom bar labels itself "MEMORY OF THIS CHAT" — so
+     opening a NEW session (or switching to any other one) kept asserting the PREVIOUS conversation's
+     fill over an empty transcript. Proven live 2026-08-03: a workstream with zero turns read
+     "13k / 200k (7% full)" inherited from a 4-turn sibling. After a long chat that reads as 60%+ of
+     the window occupied by a conversation that has not said a word — the exact class of claim the
+     harness cannot prove. The key is agentId + streamId (the workstream the run was launched from). */
+  let contextByKey = {};     // agentId\0streamId -> { used, model, runId, sentEstimate, live }
   let runModels = {};        // runId -> model from agent.run.start, for events that omit model
+  let runConv = {};          // runId -> { key, sentEstimate } registered by chat() at run.start
+  /* HARNESS OVERHEAD, LEARNED FROM A REAL REQUEST (agentId\0model -> tokens).
+     A request carries far more than the visible dialogue: system prompt, every tool schema, and the
+     sidecar's manual/capability/skill/memory dressing. On a seeded station that measured ~13.1k tokens
+     against a two-line chat. So a browser-side estimate of the dialogue alone is not a usable stand-in —
+     but prompt_tokens MINUS our estimate of the messages we sent IS the overhead, directly observed.
+     Learned from the FIRST cost event of a run only: later turns of an agentic run carry accumulated
+     tool results the next request will never resend, and calibrating on those inflates the overhead.
+
+     PERSISTED, because this closure dies on every reload and a station gets reloaded constantly — an
+     un-persisted calibration means the gauge goes blank after every refresh and only comes back once
+     you have paid for another turn, which is most of what "it never works" felt like. The stored value
+     is a real past measurement, it is only ever used to produce a tilde-marked projection, and the very
+     next turn overwrites it — so a system-prompt or toolset change (which does move the overhead)
+     self-corrects on first use rather than persisting a lie. */
+  const LS_OVERHEAD = 'starnet.ctx.overhead';
+  const OVERHEAD_MAX = 40;   // bounded: a few models per provider, never an unbounded localStorage row
+  // Each entry is CtxGauge.calibrate's { overhead } fit. A stored entry that is not a usable fit is
+  // DROPPED, not coerced — a half-read calibration would silently bias every projection it feeds.
+  let overheadByModel = (() => {
+    const out = Object.create(null);
+    try {
+      const raw = JSON.parse(localStorage.getItem(LS_OVERHEAD) || '{}');
+      if (raw && typeof raw === 'object') {
+        for (const k in raw) {
+          const v = raw[k];
+          if (!v || typeof v !== 'object') continue;
+          const o = Number(v.overhead);
+          if (isFinite(o) && o >= 0) out[k] = { overhead: Math.floor(o) };
+        }
+      }
+    } catch (_) {}
+    return out;
+  })();
+  function rememberOverhead(key, cal) {
+    if (!cal) return;
+    overheadByModel[key] = cal;
+    try {
+      const keys = Object.keys(overheadByModel);
+      if (keys.length > OVERHEAD_MAX) { for (const k of keys.slice(0, keys.length - OVERHEAD_MAX)) delete overheadByModel[k]; }
+      localStorage.setItem(LS_OVERHEAD, JSON.stringify(overheadByModel));
+    } catch (_) {}   // a full/blocked localStorage must never break a run's cost fold
+  }
   // Runs launched with internal:true (retitle / goal-judge / pitch / autopilot self-talk) are tiny
   // side prompts on the SAME agentId — their prompt_tokens must never overwrite the agent's real
   // context occupancy (they made the gauge snap back to ~1% right after every real turn).
   const internalRuns = new Set();   // runIds whose cost events are gauge-invisible
 
-  // Fold ONE token-bearing agent.cost payload into the per-agent context occupancy. Called from the
-  // U.bus subscription below, which sees BOTH transports: chat-stream events (re-emitted by chat()'s
+  // Composite map keys join on U+0000, built with String.fromCharCode so no raw NUL byte ever lands in
+  // this source file (a literal one makes the whole file invisible to grep). No id can contain it.
+  const SEP = String.fromCharCode(0);
+  const convKey = (agentId, streamId) => String(agentId || 'agent') + SEP + String(streamId || '');
+  const hasEst = () => (typeof CtxGauge !== 'undefined' && !!CtxGauge.estimateMessages);
+  const estOf = msgs => (hasEst() ? CtxGauge.estimateMessages(msgs) : 0);
+
+  /* Register the conversation a run belongs to, plus our estimate of the messages it was given.
+     Called by chat() the moment it latches a runId, so the bus fold below can attribute the run's
+     cost events to the right conversation and calibrate the overhead against what we actually sent. */
+  function registerRun(runId, agentId, streamId, messages) {
+    if (!runId) return;
+    runConv[runId] = { key: convKey(agentId, streamId), sentEstimate: estOf(messages), calibrated: false, agentId: String(agentId || 'agent') };
+  }
+
+  // Fold ONE token-bearing agent.cost payload into the per-conversation context occupancy. Called from
+  // the U.bus subscription below, which sees BOTH transports: chat-stream events (re-emitted by chat()'s
   // reader) and routed/scheduled/channel runs arriving over the world SSE bridge — previously only
-  // the chat path updated the gauge, so background runs never moved it.
+  // the chat path updated the gauge, so background runs never moved it. A run with no registered
+  // conversation (a server-launched cron/channel run) folds under the agent's streamless bucket: it is
+  // real occupancy, but it belongs to no on-screen chat and must not colour one.
   function foldContextCost(payload) {
     if (!payload || !(payload.tokensIn > 0)) return;               // summarizer/compaction emits omit token fields on purpose
     if (payload.runId && internalRuns.has(payload.runId)) return;  // gauge-invisible side prompt
     const aid = payload.agentId || 'agent';
     const m = payload.model || runModels[payload.runId] || getModel();
-    contextByAgent[aid] = { used: payload.tokensIn, model: m, runId: payload.runId || '' };
+    const reg = payload.runId ? runConv[payload.runId] : null;
+    const key = reg ? reg.key : convKey(aid, '');
+    /* THE FIRST cost event of a run is the only one that measures the messages we actually sent — every
+       later turn of an agentic run adds tool results the next request will never carry. So it is the
+       only one allowed to (a) calibrate the harness overhead and (b) stand as this conversation's
+       BASELINE: the exact, measured cost of this exact transcript. Calibrating on a tool-heavy turn 4
+       instead would have inflated the overhead ~4x and every projection with it. */
+    const firstOfRun = !!(reg && !reg.seen);
+    if (reg) reg.seen = true;
+    if (firstOfRun && m && hasEst()) rememberOverhead(reg.agentId + SEP + m, CtxGauge.calibrateFromEstimate(payload.tokensIn, reg.sentEstimate));
+    const prev = contextByKey[key];
+    const baseline = firstOfRun ? payload.tokensIn
+      : ((prev && prev.runId === (payload.runId || '')) ? prev.baseline : 0);
+    contextByKey[key] = {
+      used: payload.tokensIn, model: m, runId: payload.runId || '',
+      sentEstimate: reg ? reg.sentEstimate : -1, baseline: baseline || 0, live: true
+    };
+  }
+  // A run ended: its measurement stops being "what the model is holding right now". The reading stays
+  // (it is still the last real thing we know) but drops out of live mode, so contextState projects the
+  // NEXT request instead of freezing on an agentic run's tool-result peak that will never be resent.
+  function endContextRun(payload) {
+    const rid = payload && payload.runId;
+    if (!rid) return;
+    const reg = runConv[rid];
+    const rec = reg && contextByKey[reg.key];
+    if (rec && rec.runId === rid) rec.live = false;
+    else { for (const k in contextByKey) { if (contextByKey[k] && contextByKey[k].runId === rid) contextByKey[k].live = false; } }
+    delete runConv[rid];
   }
 
   // Desktop (Tauri) build: the BYOK key lives in the OS keychain — never in localStorage and
@@ -78,7 +171,8 @@ const Harness = (() => {
   // PRIVATE local credential; a naive substring match on '/api/' would attach it to third-party URLs that merely
   // contain '/api/' (e.g. the OpenRouter fallback catalog https://openrouter.ai/api/v1/models), leaking the token
   // cross-origin AND forcing a CORS preflight OpenRouter rejects (so the fallback fails exactly when it's needed).
-  // Same-origin = a leading-slash relative path ('/api/...') OR an absolute URL whose origin === location.origin.
+  // Accepted = a leading-slash relative path ('/api/...'), an absolute URL at location.origin, OR the exact
+  // configured loopback sidecar origin used by the packaged Tauri page.
   function apiPath(s) {
     s = String(s || '');
     if (s.indexOf('/api/') === 0) return true;   // leading-slash relative — always same-origin
@@ -87,7 +181,21 @@ const Harness = (() => {
       const base = (typeof location !== 'undefined' && location.href) ? location.href : undefined;
       const parsed = new URL(s, base);
       const here = (typeof location !== 'undefined' && location.origin) ? location.origin : null;
-      return here != null && parsed.origin === here && parsed.pathname.indexOf('/api/') === 0;
+      if (parsed.pathname.indexOf('/api/') !== 0) return false;
+      if (here != null && parsed.origin === here) return true;
+      // The packaged Tauri page is cross-origin from its configured loopback sidecar. Trust only that
+      // exact configured loopback origin; accepting arbitrary cross-origin /api URLs would leak the token.
+      let sidecar = null;
+      const configured = (typeof window !== 'undefined' && window.__STARNET_API__) ? String(window.__STARNET_API__) : '';
+      if (configured) {
+        try {
+          const u = new URL(configured, base);
+          const host = String(u.hostname || '').toLowerCase();
+          const loopback = host === '127.0.0.1' || host === 'localhost' || host === '[::1]' || host === '::1';
+          if (loopback && (u.protocol === 'http:' || u.protocol === 'https:')) sidecar = u.origin;
+        } catch (_) {}
+      }
+      return sidecar != null && parsed.origin === sidecar;
     } catch (_) { return false; }
   }
   function isApiUrl(u) {
@@ -335,7 +443,9 @@ const Harness = (() => {
     localStorage.setItem(LS.model, m || '');
     // A deliberate model switch invalidates every context-occupancy reading (a different window,
     // and the next prompt re-measures): blank the gauge honestly rather than show a stale fill.
-    if ((m || '') !== prev) contextByAgent = {};
+    // The learned overheads survive — they are keyed BY MODEL, so switching back re-uses the
+    // calibration that model already earned instead of going blind again.
+    if ((m || '') !== prev) { contextByKey = {}; runConv = {}; }
   };
   const getProv = () => normalizeProviderId(localStorage.getItem(LS.prov) || 'openrouter');
   const setProv = p => localStorage.setItem(LS.prov, normalizeProviderId(p || 'openrouter'));
@@ -388,17 +498,60 @@ const Harness = (() => {
     return (m && m.context_length) || 0;
   }
 
-  /* Last measured context-window occupancy for an agent. The reading is trusted for the model that
-     PRODUCED it (rec.model — the provider stamped it on the reconciled agent.cost), so a mid-run
-     provider failover or a crew agent on an aux model still shows its real occupancy against that
-     model's real limit. A USER model switch wipes the readings (setModel) — the gauge then honestly
-     reports measured:false ("waiting for a measured prompt") until the new model's first real turn. */
-  function contextState(agentId) {
+  /* Context-window occupancy for ONE conversation — the question the bottom-bar gauge actually asks
+     ("MEMORY OF THIS CHAT"), so it is answered per (agentId, streamId), never per agent alone.
+
+       contextState(agentId, streamId, messages)
+         messages — the dialogue this conversation would send next (chat.js historyWindow). Optional;
+                    without it the reading falls back to the last measurement, as before.
+
+     Three honest answers, in order of strength:
+       1. LIVE      a run is streaming for this conversation right now → the provider's own
+                    prompt_tokens for the request in flight. Exact, and the one time the bar should
+                    track an agentic run climbing toward the compaction threshold.
+       2. PROJECTED the model's learned harness overhead + our estimate of this conversation's
+                    dialogue. This is what makes a NEW or RESUMED session readable instead of blank,
+                    and what makes the bar move when you paste something big. Marked projected → the
+                    renderer prints "~", so it never passes as a measurement.
+       3. MEASURED  a settled reading for THIS conversation whose message set has not changed since
+                    (used when we have no calibration to project from yet).
+     None of those available → measured:false, projected:false: the gauge shows "calibrating" rather
+     than a number it cannot stand behind.
+
+     The reading is trusted for the model that PRODUCED it (rec.model — the provider stamped it on the
+     reconciled agent.cost), so a mid-run provider failover or a crew agent on an aux model still shows
+     its real occupancy against that model's real limit. */
+  function contextState(agentId, streamId, messages) {
     const aid = agentId || 'agent';
-    const rec = contextByAgent[aid] || null;
-    const measured = !!(rec && rec.used > 0 && rec.model);
-    const model = (measured && rec.model) || getModel() || '';
-    return { agentId: aid, model, used: measured ? rec.used : 0, limit: contextLimitOf(model), measured };
+    const rec = contextByKey[convKey(aid, streamId)] || null;
+    const hasRec = !!(rec && rec.used > 0 && rec.model);
+    const model = (hasRec && rec.model) || getModel() || '';
+    const limit = contextLimitOf(model);
+    const base = { agentId: aid, streamId: String(streamId || ''), model, limit };
+
+    // 1. in flight — report what the provider says the model is holding this second
+    if (hasRec && rec.live) return Object.assign(base, { used: rec.used, measured: true, projected: false });
+
+    const est = Array.isArray(messages) ? estOf(messages) : null;
+    // 2. this transcript was itself measured (a run's FIRST turn carried exactly these messages) and
+    //    nothing has been added since — an exact reading beats projecting the same thing.
+    if (hasRec && rec.baseline > 0 && est !== null && est === rec.sentEstimate) {
+      return Object.assign(base, { used: rec.baseline, measured: true, projected: false });
+    }
+    if (hasRec && est === null) return Object.assign(base, { used: rec.used, measured: true, projected: false });   // caller passed no transcript
+    // 3. this conversation HAS a measurement, just not of its current shape: grow from its own
+    //    baseline. Better than the model-level fit because that baseline already contains this chat's
+    //    real overhead AND anything the sidecar compacted away — neither has to be re-guessed.
+    if (hasRec && rec.baseline > 0 && est !== null && hasEst()) {
+      return Object.assign(base, { used: CtxGauge.projectFromBaseline(rec.baseline, rec.sentEstimate, messages), measured: false, projected: true });
+    }
+    // 4. never measured here — fall back to the model's learned overhead plus this transcript
+    const cal = overheadByModel[aid + SEP + model];
+    if (est !== null && cal && hasEst()) {
+      return Object.assign(base, { used: CtxGauge.projectFrom(cal, messages), measured: false, projected: true });
+    }
+    if (hasRec) return Object.assign(base, { used: rec.used, measured: true, projected: false });
+    return Object.assign(base, { used: 0, measured: false, projected: false });
   }
 
   function normalizeModel(m) {
@@ -524,7 +677,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, projectRoot, taskAction }) {
+  async function chat({ system, messages, onToken, onTerminalReset, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, evidence, projectRoot, taskAction, recovery }) {
     const model = getModel(), provider = getProv(), key = getKey(provider), reasoningEffort = getReasoningEffort(provider);
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -534,11 +687,24 @@ const Harness = (() => {
     let res;
     try {
       const reqBody = { model, provider, reasoningEffort, system, messages, agentId: agentId || 'agent', isTask: !!isTask, recurring: !!recurring };
+      if (recovery && recovery.sourceRunId && recovery.continuationId && recovery.continuationToken) {
+        reqBody.recovery = {
+          sourceRunId: String(recovery.sourceRunId), continuationId: String(recovery.continuationId),
+          continuationToken: String(recovery.continuationToken)
+        };
+      }
       if (getBaseUrl(provider)) reqBody.baseUrl = getBaseUrl(provider);
       if (streamId) reqBody.streamId = streamId;   // M-mem.2b: scope this run's memory to the active workstream
       // reason-only self-talk (retitle / goal-judge / pitch / autopilot): the sidecar keeps the caller's system
       // prompt VERBATIM (no manual/capability/skill/memory dressing) and never stamps the away clock for it.
       if (internal) reqBody.internal = true;
+      /* THE EVIDENCE PACK, for the runs that must GUESS (rec perfection W2). An internal run gets a verbatim
+         system prompt — which is right for a strict-format parse, and wrong for the three RECOMMENDATION
+         generators, which were asked "what should this Commander do next?" while being handed strictly less
+         about the Commander than an ordinary task run receives. `evidence:true` appends the SAME bounded,
+         provenance-labelled server-side pack (commander-context.js) an ordinary task gets — nothing else about
+         the internal path changes (no manual, no skills, no memory fence, no recall-stat writes). */
+      if (evidence) reqBody.evidence = true;
       if (/^(answer|cancel|replace)$/.test(String(taskAction || ''))) reqBody.taskAction = String(taskAction);
       if (recipeId) reqBody.recipeId = String(recipeId).slice(0, 60);   // provenance spine: which recipe launched this run (rides to the durable run row)
       // project-anchored session (ref-parity working folder): the sidecar injects the folder context line
@@ -607,10 +773,19 @@ const Harness = (() => {
           case 'agent.run.start':
             if (payload.runId && payload.model) runModels[payload.runId] = payload.model;
             if (internal && payload.runId) internalRuns.add(payload.runId);   // this run's cost events must not move the context gauge
+            // Bind the run to the CONVERSATION that launched it. Only here do we know both the
+            // streamId and the exact message array we sent, and the gauge needs both: the streamId to
+            // avoid painting this run's fill onto some other session, the messages to learn what the
+            // harness adds on top of them. run.start always precedes agent.cost on this stream, so the
+            // bus fold below always finds the registration.
+            if (payload.runId && !internal) registerRun(payload.runId, agentId || 'agent', streamId, messages);
             if (!runId) { runId = payload.runId; onRunId && onRunId(runId); }
             break;
           case 'agent.token': full += payload.delta; onToken && onToken(payload.delta); break;
-          case 'agent.tool_call': onToolCall && onToolCall(payload); break;
+          // Any prose before a tool call was an in-progress narration segment, not the terminal answer. Keep it
+          // visible in the chronological live transcript, but reset every final-output accumulator at this
+          // authoritative boundary so returned/persisted/delivered text contains exactly the last assistant turn.
+          case 'agent.tool_call': full = ''; onTerminalReset && onTerminalReset(); onToolCall && onToolCall(payload); break;
           case 'agent.tool_result': onToolResult && onToolResult(payload); break;
           case 'deliverable': onDeliverable && onDeliverable(payload); break;
           // the run is PAUSED on the sidecar awaiting this; the UI shows approve/always/full/deny and answers
@@ -689,8 +864,12 @@ const Harness = (() => {
   // answer a live permission.prompt: decision ∈ once|always|full|deny. Resolves the run's paused dispatch so it
   // continues (or denies). Separate request from the open /api/run stream — no deadlock.
   async function consent(runId, promptId, decision) {
-    if (!runId || !promptId) return;
-    try { await fetch('/api/consent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId, decision }) }); } catch (_) {}
+    if (!runId || !promptId) return { ok: false, decision: 'deny' };
+    try {
+      const r = await fetch('/api/consent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, promptId, decision }) });
+      const j = await r.json().catch(() => null);
+      return (j && typeof j === 'object') ? j : { ok: false, decision: 'deny' };
+    } catch (_) { return { ok: false, decision: 'deny' }; }
   }
 
   // EL-11 FIX 1c: attest to the sidecar that a live permission.prompt is now RENDERED to a human (the active
@@ -833,6 +1012,31 @@ const Harness = (() => {
       return { ok: false, error: (j && j.error) || 'could not record that decision' };
     } catch (e) { return { ok: false, error: 'the station did not answer' }; }
   }
+  async function skillExchangePost(path, body) {
+    try {
+      const r = await fetch('/api/skill-exchange/' + path, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {})
+      });
+      const j = await r.json().catch(() => null);
+      if (r.ok) return j || { ok: true };
+      return { ok: false, error: (j && j.error) || 'the skill exchange refused that request' };
+    } catch (e) { return { ok: false, error: 'the station did not answer' }; }
+  }
+  function skillExchangeInspect(url) { return skillExchangePost('inspect', { url }); }
+  function skillExchangeRegistry(o) { return skillExchangePost('registry', o); }
+  function skillExchangeDiscover(o) { return skillExchangePost('discover', o); }
+  async function skillExchangeRegistries(o) {
+    if (o) return skillExchangePost('registries', o);
+    try { const r = await fetch('/api/skill-exchange/registries', { cache: 'no-store' }); return r.ok ? await r.json() : { ok: false }; }
+    catch (_) { return { ok: false, error: 'the station did not answer' }; }
+  }
+  function skillExchangeImport(envelope) { return skillExchangePost('import', { envelope }); }
+  function skillExchangeInstall(o) { return skillExchangePost('install', o); }
+  function skillExchangeCheck(o) { return skillExchangePost('check', o); }
+  function skillExchangeExport(o) { return skillExchangePost('export', o); }
+  function skillExchangePublishHandoff(o) { return skillExchangePost('publish-handoff', o); }
+  function skillExchangeGenerations(o) { return skillExchangePost('generations', o); }
+  function skillExchangeRollback(o) { return skillExchangePost('rollback', o); }
 
   async function memoryRecords(agentId) {
     try {
@@ -891,7 +1095,12 @@ const Harness = (() => {
   // ONE fold point for context occupancy: every agent.cost on the bus — chat-stream re-emits AND
   // routed/scheduled/channel runs arriving over the world SSE bridge — updates the gauge. util.js
   // (U.bus) loads before this file; the chat reader keeps a direct-fold fallback for busless embeds.
-  if (typeof U !== 'undefined' && U.bus) { try { U.bus.on('agent.cost', foldContextCost); } catch (_) {} }
+  if (typeof U !== 'undefined' && U.bus) {
+    try { U.bus.on('agent.cost', foldContextCost); } catch (_) {}
+    // …and ONE release point: when the run ends its reading stops being "in flight" (see endContextRun).
+    try { U.bus.on('agent.run.end', endContextRun); } catch (_) {}
+    try { U.bus.on('agent.run.error', endContextRun); } catch (_) {}
+  }
 
   /* IS THE LOCAL ENGINE ACTUALLY UP? (2026-07-29 — the "Can't reach StarNet's local service" misdiagnosis.)
      A dead response stream and a dead sidecar are INDISTINGUISHABLE from the thrown fetch error alone (see the
@@ -943,11 +1152,17 @@ const Harness = (() => {
     studyProposals,
     threadProposals, threadTurnin,
     agentSkills, agentSkillsRead, agentSkillManage, agentSkillAllow,
+    skillExchangeInspect, skillExchangeRegistry, skillExchangeDiscover, skillExchangeRegistries, skillExchangeImport, skillExchangeInstall, skillExchangeCheck,
+    skillExchangeExport, skillExchangePublishHandoff, skillExchangeGenerations, skillExchangeRollback,
     api,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),
     totals: () => totals,
     setTotals: t => { totals = { tokens: t.tokens || 0, cost: t.cost || 0, calls: t.calls || 0 }; },
-    resetTotals: () => { totals = { tokens: 0, cost: 0, calls: 0 }; contextByAgent = {}; runModels = {}; }
+    resetTotals: () => {
+      totals = { tokens: 0, cost: 0, calls: 0 }; contextByKey = {}; runModels = {}; runConv = {};
+      overheadByModel = Object.create(null);
+      try { localStorage.removeItem(LS_OVERHEAD); } catch (_) {}   // a wipe must clear the persisted calibration too
+    }
   };
 })();

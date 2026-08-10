@@ -74,6 +74,8 @@
     const now = (deps.clock && typeof deps.clock.now === 'function') ? deps.clock.now : () => 0;
     const redact = typeof deps.redact === 'function' ? deps.redact : (s) => s;
     const onExit = typeof deps.onExit === 'function' ? deps.onExit : () => {};
+    const spill = typeof deps.spill === 'function' ? deps.spill : null;
+    const newId = typeof deps.newId === 'function' ? deps.newId : null;
     const isWinDefault = (deps.isWin != null) ? deps.isWin : WIN;
     const MAX = deps.maxPerAgent || 5;
     /* 16KB held about 200 lines of a dev server — the ring lapped before the agent got back to look, so the
@@ -94,7 +96,8 @@
       return {
         bgId: r.bgId, pid: r.child && r.child.pid || null, cmd: r.cmd, running: r.running, exitCode: r.exitCode, killed: r.killed,
         ms: Math.max(0, (r.endedAt != null ? r.endedAt : now()) - r.startedAt),
-        tail: r.out.slice(-2000)
+        tail: r.out.slice(-2000), outputPath: r.outputPath || null, outputBytes: r.outputBytes || 0,
+        outputSpillVerified: !!r.outputPath && !r.outputSpillError, outputSpillError: r.outputSpillError || null
       };
     }
 
@@ -108,7 +111,23 @@
       let child;
       // detached on POSIX so the child leads its own group (clean tree-kill); windowsHide everywhere. unref so a
       // live bg child never keeps the sidecar process alive on its own.
-      try { child = spawn(cmd, { cwd: o.cwd, shell: true, windowsHide: true, detached: !isWin, env: o.env }); }
+      try {
+        /* Environment backends may own the shell boundary themselves (Docker uses `docker exec`, for
+           example). Accept an argv-form child without changing the long-standing local shell path. Exact
+           argv keeps the backend command out of a host shell and therefore avoids a second quoting/parser
+           boundary around agent-authored text. */
+        if (o.file && Array.isArray(o.args)) {
+          child = spawn(String(o.file), o.args.map(String), Object.assign({}, o.spawnOptions || {}, {
+            cwd: o.cwd,
+            shell: false,
+            windowsHide: true,
+            detached: !isWin,
+            env: o.env
+          }));
+        } else {
+          child = spawn(cmd, { cwd: o.cwd, shell: true, windowsHide: true, detached: !isWin, env: o.env });
+        }
+      }
       catch (e) { return { ok: false, error: 'could not start: ' + ((e && e.message) || e) }; }
       try { if (typeof child.unref === 'function') child.unref(); } catch (_) {}
       // record a REDACTED command to the on-disk ledger — a backgrounded command can carry a secret on its argv
@@ -122,10 +141,16 @@
           if (typeof ledger.pinIdentity === 'function') Promise.resolve(ledger.pinIdentity(child.pid)).catch(() => {});
         }
       } catch (_) {}
-      const bgId = 'bg_' + (++seq);
-      const rec = { bgId, agentId, cmd, child, out: '', running: true, exitCode: null, killed: false, startedAt: now(), endedAt: null, dropped: 0, stdinClosed: false };
+      const bgId = newId ? 'bg_' + String(newId()).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 64) : 'bg_' + (++seq);
+      const rec = { bgId, agentId, cmd, child, out: '', running: true, exitCode: null, killed: false, startedAt: now(), endedAt: null, dropped: 0, stdinClosed: false, outputPath: null, outputBytes: 0, outputSpillError: '' };
       const append = (buf) => {
         let s = ''; try { s = redact(String(buf)); } catch (_) { s = String(buf); }
+        if (spill && s) {
+          try {
+            const saved = spill({ agentId, kind: 'shell-bg', id: bgId, text: s });
+            if (saved && saved.path) { rec.outputPath = String(saved.path); rec.outputBytes = Math.max(0, Number(saved.bytes) || rec.outputBytes); rec.outputSpillError = ''; }
+          } catch (e) { rec.outputSpillError = String((e && e.message) || e || 'output spill failed').slice(0, 300); }
+        }
         rec.out += s;
         if (rec.out.length > RING) {
           let cut = rec.out.length - RING;
@@ -204,7 +229,9 @@
         lines: page.map(x => x[1]), firstLineNo: page.length ? page[0][0] : 0, lineNos: page.map(x => x[0]),
         offset: off, returned: page.length,
         totalLines: all.length, matchedLines: needle ? numbered.length : null, grep: opts.grep || null,
-        droppedBytes: r.dropped, truncatedStart: r.dropped > 0
+        droppedBytes: r.dropped, truncatedStart: r.dropped > 0,
+        outputPath: r.outputPath || null, outputBytes: r.outputBytes || 0,
+        outputSpillVerified: !!r.outputPath && !r.outputSpillError, outputSpillError: r.outputSpillError || null
       };
     }
 

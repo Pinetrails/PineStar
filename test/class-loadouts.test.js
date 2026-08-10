@@ -60,27 +60,73 @@ for (const b of CATALOG) {
   }
 }
 
-/* ---------- 1b. BUSINESS-ROSTER CONTENT: 12 specialized builtins + 14 archetypes, seals/codes, sanity ----------
-   Redesign 2026-07-16 (supersedes the 2026-07-14 recuration): the curated roster is 12 truly SPECIALIZED
-   business-grade jobs; the generalist/lifestyle classes were demoted to the ARCHETYPE pool (off the roster,
-   never gated, seeds for the scout's personalized prospect minting). liaison/publicist/bookkeeper were
-   RETIRED outright — envoy, marketer+publisher, and treasurer are their strict supersets, and near-duplicate
-   archetypes would shadow the real class in the scout's matcher. */
+/* ---------- 1b. ROSTER CONTENT: 36 curated builtins + 21 archetypes, seals/codes, sanity ----------
+   Third wave 2026-08-03 adds the SHIP-YOUR-APP lane (apptester / auditor / deployer / dbhelper — the jobs an
+   AI-assembled app actually fails at: nothing tested it, keys shipped to the browser, it will not build on the
+   host, the database is readable by anyone), the marketing SUB-NICHES (emailmarketer / adcopy / landingwriter,
+   which the one generic "marketer" was standing in for), and the business roles (support on the roster;
+   hiring / processwriter / pitchwriter in the archive). The security auditor was PROMOTED out of the archive
+   and re-aimed at app security rather than generic file sweeps.
+   Expansion 2026-08-03 (supersedes the 2026-07-16 business-grade redesign): the 12-class business bar had
+   narrowed the VISIBLE roster to job titles and folded everything else into a collapsed archive, which read
+   as bare. The bar is now "does this class own an outcome nobody else on the roster owns", which admits:
+     • CAPABILITY classes only this harness can offer — pilot (drives a real browser), foreman (splits work
+       across the crew), nightwatch (the unattended shift), harvester (the web into a dataset);
+     • LIFE & MONEY classes — paralegal, negotiator, jobhunter, ghostwriter, sentinel (public exposure),
+       registrar (the people), provisioner (the week's food), taskmaster (commitments), + archive medic/diplomat;
+     • the BUILD lane — drafter (a fuzzy idea into a testable spec);
+     • PROMOTED deep cuts whose demand was never niche — chief / envoy / tutor.
+   scribe joins liaison/publicist/bookkeeper as RETIRED — writer and ghostwriter are its strict supersets, and a
+   near-duplicate would shadow them in the scout's matcher. curator and muse were deliberately KEPT (distinct
+   jobs, not duplicates). */
 const classicons = require('../frontend/app/classicons.js');
-A.eq(builtins.length, 12, 'the curated roster ships exactly 12 classes');
-A.eq(archetypes.length, 18, 'the archetype pool holds the 18 deep cuts');
-const CURATED = ['strategist', 'opportunist', 'researcher', 'engineer', 'analyst', 'marketer', 'publisher', 'producer', 'writer', 'prospector', 'treasurer', 'scout'];
-A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 12 specialized business classes');
+A.eq(builtins.length, 35, 'the curated roster ships exactly 35 classes');
+A.eq(archetypes.length, 20, 'the archetype pool holds the 20 deep cuts');
+const CURATED = ['strategist', 'chief', 'opportunist', 'researcher', 'analyst', 'marketer',
+  'copywriter', 'webdesigner', 'publisher', 'producer', 'writer', 'ghostwriter', 'prospector',
+  'negotiator', 'treasurer', 'paralegal', 'support', 'envoy', 'registrar', 'jobhunter', 'tutor',
+  'taskmaster', 'provisioner', 'sentinel', 'scout', 'nightwatch', 'foreman', 'pilot', 'harvester',
+  'drafter', 'engineer', 'dbhelper', 'apptester', 'auditor', 'deployer'];
+A.eq(builtins.map(b => b.id).sort().join(','), CURATED.slice().sort().join(','), 'the curated roster is exactly the 35 consolidated classes');
 A.eq(builtins[0].id, 'strategist', 'the strategist is the roster\'s first card (the bay\'s default focus)');
-const ARCH_IDS = ['chief', 'operator', 'scribe', 'designer', 'tutor', 'navigator', 'curator', 'muse',
-  'reviewer', 'archivist', 'broker', 'auditor', 'translator', 'herald',
-  'closer', 'steward', 'optimizer', 'envoy'];
-A.eq(archetypes.map(a => a.id).sort().join(','), ARCH_IDS.slice().sort().join(','), 'the archetype pool is exactly the 18 deep cuts');
+// ROSTER ORDER IS A PRODUCT DECISION (Andrew, 2026-08-03): the roster opens on TRADITIONAL jobs and the
+// build-your-app block sits at the BOTTOM. A first insertion put the technical classes at position 7 and he
+// rejected it on sight — "i like the previous setup as it was more traditional jobs, and towards the bottom
+// should be where the more vibe coding related agents are". So the lane must stay on the default roster (it is
+// why the vibe-coding audience opens the bay at all) AND stay last.
+const BUILD_LANE = ['drafter', 'engineer', 'dbhelper', 'apptester', 'auditor', 'deployer'];
+for (const id of BUILD_LANE) A.ok(builtins.some(b => b.id === id), 'the build lane stays on the default roster: ' + id);
+A.eq(builtins.slice(-BUILD_LANE.length).map(b => b.id), BUILD_LANE, 'the build-your-app block sits at the BOTTOM of the roster, in build order');
+// and nothing technical creeps back above the traditional jobs: the first ten cards carry no build-lane class
+for (const b of builtins.slice(0, 10)) {
+  A.ok(BUILD_LANE.indexOf(b.id) < 0, 'the roster opens on traditional jobs, not the build lane: ' + b.id);
+}
+const ARCH_IDS = ['anchor', 'medic', 'diplomat', 'operator', 'designer', 'navigator',
+  'curator', 'muse', 'reviewer', 'archivist', 'broker', 'a11y', 'hiring', 'processwriter',
+  'pitchwriter', 'translator', 'herald', 'closer', 'steward', 'optimizer'];
+A.eq(archetypes.map(a => a.id).sort().join(','), ARCH_IDS.slice().sort().join(','), 'the archetype pool is exactly the 20 deep cuts');
 for (const id of ARCH_IDS) A.ok(!builtins.some(b => b.id === id), 'archetype is OFF the default roster: ' + id);
-// the retired near-duplicates must be GONE from both shelves (they would shadow their superset builtins)
-for (const id of ['liaison', 'publicist', 'bookkeeper']) A.ok(!CATALOG.some(b => b.id === id), 'retired class is fully removed: ' + id);
+/* RETIRED. A class must be a role somebody would HIRE, not a task — Andrew, 2026-08-03: "'landing page
+   writer' is so subniche… we dont want tiny subniches the user can make that themselves, we want widespread
+   real agent classes." The three marketing micro-classes collapsed into Copywriter (the writing that has to
+   sell) + Web Designer (the pages themselves), and the records keeper folded into the broader Home Manager.
+   liaison/publicist/bookkeeper/scribe were earlier retirements for the same reason (subsets of a broader class). */
+for (const id of ['liaison', 'publicist', 'bookkeeper', 'scribe',
+  'emailmarketer', 'adcopy', 'landingwriter', 'quartermaster']) {
+  A.ok(!CATALOG.some(b => b.id === id), 'retired class is fully removed: ' + id);
+}
+// curator + muse were deliberately KEPT (distinct jobs) — a later "tidy the archive" pass must not silently drop them
+for (const id of ['curator', 'muse']) A.ok(CATALOG.some(b => b.id === id), 'deliberately-kept archetype survives: ' + id);
 // no id/name collision across the two shelves (an archetype must never shadow a curated class)
-const NEW_CLASSES = ['strategist', 'opportunist', 'marketer', 'publisher', 'producer', 'writer', 'prospector', 'envoy', 'treasurer'];
+const NEW_CLASSES = ['strategist', 'opportunist', 'marketer', 'publisher', 'producer', 'writer', 'prospector', 'envoy', 'treasurer',
+  // 2026-08-03 expansion classes — each carries the full loadout + presentation fields
+  'pilot', 'foreman', 'nightwatch', 'ghostwriter', 'paralegal', 'negotiator', 'jobhunter', 'anchor',
+  // 2026-08-03 second wave
+  'drafter', 'harvester', 'sentinel', 'registrar', 'provisioner', 'taskmaster', 'medic', 'diplomat',
+  // 2026-08-03 third wave — the ship-your-app lane, marketing sub-niches, and business roles
+  'apptester', 'deployer', 'dbhelper', 'support', 'a11y', 'hiring', 'processwriter', 'pitchwriter',
+  // 2026-08-03 consolidation: broad roles replacing the marketing micro-classes
+  'copywriter', 'webdesigner'];
 const byId = new Map(CATALOG.map(b => [b.id, b]));
 for (const id of NEW_CLASSES) {
   const b = byId.get(id);
@@ -204,6 +250,36 @@ for (const id of ['envoy', 'marketer', 'publisher', 'herald']) {
     id + ' never claims to auto-send outward');
 }
 
+/* ---------- 1d''. UNTRUSTED-INPUT HONESTY: a class that reads stranger-authored text says so ----------
+   Andrew, 2026-08-03: the support agent "should advertise drafting messages rather than literally answering
+   it for them as that will make their agent susceptible to prompt injection specifically if its answering
+   questions". He is right, and it generalises: every class whose whole job is reading text written by someone
+   who is not the Commander (support tickets, an inbox, a community) is reading a channel an attacker can write
+   to. Those classes must (a) frame the output as a DRAFT the Commander sends, and (b) state in their standing
+   orders that the incoming text is DATA, never instructions. The backend already wraps untrusted routine and
+   script output (`<untrusted_routine_context>` in sidecar/index.js); this is the class-level half. */
+const STRANGER_TEXT_CLASSES = ['support', 'envoy', 'steward'];
+for (const id of STRANGER_TEXT_CLASSES) {
+  const b = byId.get(id);
+  A.ok(!!b, 'stranger-text class present: ' + id);
+  if (!b) continue;
+  const orders = b.manual.toLowerCase();
+  A.ok(/data, never instructions/.test(orders),
+    id + ' states that incoming message text is DATA, never instructions (prompt-injection surface)');
+  A.ok(/never acted on|never act on it|report/.test(orders),
+    id + ' routes an embedded instruction into the REPORT rather than acting on it: ' + id);
+  const text = (b.purpose + ' ' + b.blurb + ' ' + b.manual).toLowerCase();
+  A.ok(/draft/.test(text), id + ' frames its output as a draft for the Commander');
+}
+// the support agent specifically must NOT advertise answering — that framing is what invites an auto-reply wiring
+{
+  const sup = byId.get('support');
+  A.ok(!/answered|answers them/.test(sup.tagline.toLowerCase()),
+    'the support agent tagline does not advertise answering: ' + sup.tagline);
+  A.ok(/draft/.test(sup.tagline.toLowerCase()), 'the support agent tagline leads with DRAFTING: ' + sup.tagline);
+  A.ok(/untrusted/.test(sup.purpose.toLowerCase()), 'the support agent purpose names the customer message as untrusted');
+}
+
 /* ---------- 1e. every skill a class ships exists + its frontmatter parses ---------- */
 const referenced = new Set();
 for (const b of CATALOG) for (const s of b.skills) referenced.add(s);
@@ -222,7 +298,16 @@ const NEW_SKILLS = ['source-triangulation', 'feed-watch', 'adversarial-review-pa
   'announcement-kit', 'study-plan', 'security-sweep', 'ledger-upkeep', 'translation-pass', 'digest-composer',
   'itinerary-planning', 'file-curation',
   // 2026-07-16 business-roster skills
-  'marketing-plan', 'content-calendar', 'ugc-brief', 'short-form-script', 'lead-scouting', 'inbox-triage', 'cost-audit', 'opportunity-scan'];
+  'marketing-plan', 'content-calendar', 'ugc-brief', 'short-form-script', 'lead-scouting', 'inbox-triage', 'cost-audit', 'opportunity-scan',
+  // 2026-08-03 expansion skills (one signature recipe per new class that had no existing fit)
+  'browser-operation', 'work-splitting', 'voice-match', 'contract-review', 'negotiation-case', 'application-tailoring',
+  // 2026-08-03 second wave
+  'dataset-harvest', 'spec-drafting', 'exposure-reduction', 'relationship-log', 'meal-planning',
+  'commitment-tracking', 'health-record-prep', 'hard-conversation',
+  // 2026-08-03 third wave
+  'exposed-secrets-audit', 'deploy-checklist', 'schema-and-access', 'accessibility-audit',
+  'email-sequence', 'ad-copy-testing', 'landing-copy', 'support-replies', 'hiring-screen',
+  'sop-writing', 'pitch-deck'];
 for (const slug of NEW_SKILLS) {
   const sk = SLUGS.get(slug);
   A.ok(!!sk, 'S2 new skill authored: ' + slug);
@@ -238,7 +323,7 @@ const arch = S.get('translator');
 A.ok(arch && arch.id === 'translator' && arch.custom === false, 'Specialties.get resolves an archetype id');
 A.ok(!S.builtins().some(b => b.id === 'translator'), 'builtins() (the default roster) excludes archetypes');
 A.ok(!S.list().some(b => b.id === 'translator'), 'list() (roster + customs) excludes archetypes — they are asked for explicitly');
-A.eq(S.archetypes().length, 18, 'archetypes() exposes the pool');
+A.eq(S.archetypes().length, 20, 'archetypes() exposes the pool');
 const archCompose = S.compose('reviewer');
 A.ok(archCompose && archCompose.purpose.length > 0 && archCompose.manual.length > 0, 'compose() works on an archetype (summonable as-is, same deploy path)');
 // a custom can never shadow an archetype id (uniqueId consults get(), which now spans both shelves)

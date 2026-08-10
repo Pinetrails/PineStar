@@ -93,6 +93,10 @@ function withCandidates(n, spec) {
   const many = [];
   for (let i = 0; i < 500; i++) many.push('f' + i + '.js');
   A.eq(G.commitPaths(many).length, G.PATHS_CAP, 'the pathspec is capped');
+  A.eq(G.harvestDelta(null, { gitProven: true, files: ['MY-NOTES.txt'] }).ok, false, 'missing pre-iteration proof fails closed instead of claiming every dirty file');
+  A.eq(G.harvestDelta({ gitProven: false, files: [] }, { gitProven: true, files: ['MY-NOTES.txt'] }).ok, false, 'an unproven pre-iteration snapshot never aliases to a clean tree');
+  A.eq(G.harvestDelta({ gitProven: true, files: ['MY-NOTES.txt'] }, { gitProven: true, files: ['MY-NOTES.txt', 'src/new.js'] }),
+    { ok: true, paths: ['src/new.js'] }, 'a proven delta excludes Commander-owned files that were already dirty');
 }
 
 // ---- 5. undoPlan: THE STACKING LAW, in git ----

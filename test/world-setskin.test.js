@@ -54,6 +54,16 @@ A.ok(/bodyForAgent\(agentId\)/.test(wBody) && /return false/.test(wBody), 'world
 A.ok(/b\.skin = sk/.test(wBody), 'world.setSkin repoints the live body skin (the sprite-swap seam)');
 A.ok(/setSkin\b/.test(worldSrc) && /return \{[\s\S]*\bsetSkin\b/.test(worldSrc), 'world.js exports setSkin on the World surface');
 
+/* ---- 2b. BAY-BOUND REHYDRATE: loadStation creates these bodies before spawnAgent restores the roster. ---- */
+const sm = /function spawnAgent\(a\)\s*\{([\s\S]*?)\n  \}/.exec(worldSrc);
+A.ok(sm, 'world.js still defines spawnAgent(a)');
+const existing = sm && /const ex = crew\.find\([^;]+\);[\s\S]*?if \(ex\)\s*\{([\s\S]*?)return;\s*\}/.exec(sm[1]);
+A.ok(existing, 'spawnAgent has the existing bay-body rehydrate path');
+const exBody = existing ? existing[1] : '';
+A.ok(/ex\.skin\s*=\s*a\.skin/.test(exBody), 'a bay-bound body restores its persisted skin before spawnAgent returns');
+A.ok(/ex\.name\s*=\s*a\.name/.test(exBody), 'a bay-bound body restores its persisted display name before spawnAgent returns');
+A.ok(/ex\.color\s*=\s*a\.color/.test(exBody), 'a bay-bound body restores its persisted suit color before spawnAgent returns');
+
 /* ---- 3. APP.SETAGENTSKIN: the full round-trip — validate → persist-as-roster-property → live → re-render ---- */
 const am = /function setAgentSkin\(agentId, skin\)\s*\{([\s\S]*?)\n  \}/.exec(appSrc);
 A.ok(am, 'app.js still defines setAgentSkin(agentId, skin)');

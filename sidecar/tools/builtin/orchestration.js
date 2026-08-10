@@ -20,10 +20,13 @@
    transcript) to stay under the per-run tool-output cap. */
 'use strict';
 (function (root, factory) {
-  const api = factory();
+  const api = factory(
+    typeof require === 'function' ? require('../../domain-task.js') : (root.SK && root.SK.domainTask),
+    typeof require === 'function' ? require('../../../shared/schema.js') : (root.SK && root.SK.schema)
+  );
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { root.SK = root.SK || {}; root.SK.tools = root.SK.tools || {}; (root.SK.tools.builtin = root.SK.tools.builtin || {}).orchestration = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (domainTask, schemaLib) {
   'use strict';
 
   const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
@@ -38,6 +41,10 @@
   // the WORKBENCH (terminal). Paired with the SHARED lead consent broker, shell/writes follow the lead's APPROVAL
   // posture — so a worker has the same reach as the orchestrator, gated by the same approvals.
   const WORKER_KIT = [{ instanceId: 'wb_worker', objectType: 'workbench' }];
+  const boundedDomainTask = (text) => {
+    try { return domainTask && typeof domainTask.classify === 'function' ? domainTask.classify(text) : null; }
+    catch (_) { return null; }
+  };
 
   // abort without ever throwing out of a timer callback (AbortController.abort(reason) is not universal).
   function abort(ac) { try { ac.abort(new Error('worker wall clock')); } catch (_) { try { ac.abort(); } catch (_) {} } }
@@ -47,11 +54,18 @@
      dep-free UMD. Tolerates a non-AbortSignal parent (unit stubs) by simply not chaining. */
   function childAbort(parent) {
     const ac = new AbortController();
+    let detach = function () {};
     if (parent) {
       if (parent.aborted) abort(ac);
-      else if (typeof parent.addEventListener === 'function') parent.addEventListener('abort', () => abort(ac), { once: true });
+      else if (typeof parent.addEventListener === 'function') {
+        const onAbort = () => abort(ac);
+        try {
+          parent.addEventListener('abort', onAbort, { once: true });
+          detach = () => { try { parent.removeEventListener('abort', onAbort); } catch (_) {} };
+        } catch (_) {}
+      }
     }
-    return ac;
+    return { ac, detach };
   }
 
   function lastAssistant(messages) {
@@ -61,6 +75,76 @@
       if (m && m.role === 'assistant' && typeof m.content === 'string' && m.content.trim()) return m.content;
     }
     return '';
+  }
+
+  const RESULT_SCHEMA_KEYS = new Set(['type', 'enum', 'properties', 'required', 'items', 'additionalProperties']);
+  const RESULT_TYPES = new Set(['string', 'number', 'integer', 'boolean', 'object', 'array', 'null']);
+  function resultSchemaOf(raw) {
+    if (raw == null) return { ok: true, schema: null };
+    let chars = 0; try { chars = JSON.stringify(raw).length; } catch (_) { return { ok: false, error: 'resultSchema must be JSON' }; }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) || chars > 12000) return { ok: false, error: 'resultSchema must be a bounded JSON object' };
+    let nodes = 0;
+    function walk(s, depth, at) {
+      if (!s || typeof s !== 'object' || Array.isArray(s)) return at + ' must be an object';
+      if (++nodes > 120 || depth > 8) return 'resultSchema is too complex';
+      for (const k of Object.keys(s)) if (!RESULT_SCHEMA_KEYS.has(k)) return at + '.' + k + ' is not a supported schema keyword';
+      if (s.type !== undefined) {
+        const types = Array.isArray(s.type) ? s.type : [s.type];
+        if (!types.length || types.some(t => !RESULT_TYPES.has(t))) return at + '.type contains an unsupported type';
+      }
+      if (s.enum !== undefined && !Array.isArray(s.enum)) return at + '.enum must be an array';
+      if (s.required !== undefined && (!Array.isArray(s.required) || s.required.some(k => typeof k !== 'string'))) return at + '.required must be an array of strings';
+      if (s.properties !== undefined) {
+        if (!s.properties || typeof s.properties !== 'object' || Array.isArray(s.properties)) return at + '.properties must be an object';
+        for (const k of Object.keys(s.properties)) { const e = walk(s.properties[k], depth + 1, at + '.properties.' + k); if (e) return e; }
+      }
+      if (s.items !== undefined) { const e = walk(s.items, depth + 1, at + '.items'); if (e) return e; }
+      if (s.additionalProperties !== undefined && s.additionalProperties !== false) return at + '.additionalProperties may only be false';
+      return '';
+    }
+    const error = walk(raw, 0, '$');
+    return error ? { ok: false, error } : { ok: true, schema: JSON.parse(JSON.stringify(raw)) };
+  }
+  function inspectStructured(schema, text) {
+    if (!schema) return { ok: true, value: null, errors: [] };
+    let value;
+    try { value = JSON.parse(String(text == null ? '' : text).trim()); }
+    catch (e) { return { ok: false, value: null, errors: ['result is not strict JSON: ' + ((e && e.message) || e)] }; }
+    const checked = schemaLib && typeof schemaLib.validate === 'function' ? schemaLib.validate(schema, value) : { ok: true, errors: [] };
+    return { ok: checked.ok, value: checked.ok ? value : null, errors: checked.errors || [] };
+  }
+  async function enforceStructured(schema, text, repair) {
+    const first = inspectStructured(schema, text);
+    if (!schema || first.ok) return { ok: true, text: text, value: first.value, validation: schema ? { state: 'valid', attempts: [{ ok: true, errors: [] }] } : null };
+    let repaired = null;
+    try { repaired = typeof repair === 'function' ? await repair(first.errors) : null; } catch (_) { repaired = null; }
+    const repairedText = repaired && repaired.text != null ? String(repaired.text) : '';
+    const second = inspectStructured(schema, repairedText);
+    return {
+      ok: !!(repaired && second.ok), text: repaired ? repairedText : String(text || ''), value: second.value,
+      validation: { state: repaired && second.ok ? 'repaired' : 'invalid', attempts: [
+        { ok: false, errors: first.errors.slice(0, 20) },
+        { ok: !!(repaired && second.ok), errors: (repaired ? second.errors : ['repair run did not return a result']).slice(0, 20) }
+      ] },
+      repairResult: repaired && repaired.result, repairRunId: repaired && repaired.runId || ''
+    };
+  }
+  function markBatchQuality(rows) {
+    const seen = new Map();
+    for (const row of rows) {
+      if (row.error) continue;
+      const prompt = String(row.prompt || '').trim();
+      if (!prompt) { row.error = 'batch task rejected before spawn: prompt is empty'; continue; }
+      // The same focused prompt can be intentionally sent to two distinct named specialists for independent
+      // perspectives. Anonymous spawn rows have no agentId, so exact duplicate clone tasks are still rejected.
+      const key = String(row.agentId || '') + '\n' + prompt.toLowerCase().replace(/\s+/g, ' ');
+      if (seen.has(key)) {
+        row.error = 'batch task rejected before spawn: duplicate of task ' + (seen.get(key) + 1);
+        const first = rows[seen.get(key)];
+        if (first && !first.error) first.error = 'batch task rejected before spawn: duplicate task prompt';
+      } else seen.set(key, rows.indexOf(row));
+    }
+    return rows;
   }
 
   function makeOrchestrationTools(deps) {
@@ -259,6 +343,7 @@
               type: 'object', required: ['agentId', 'prompt'],
               properties: {
                 agentId: { type: 'string' }, prompt: { type: 'string' },
+                resultSchema: { type: 'object', description: 'Optional strict JSON result contract. The host validates the final result and allows one bounded repair; invalid output is never accepted as done.' },
                 // WHERE the work lands. A session NAME (what the Commander calls it) or its exact id. Omit to run
                 // in the current session — see resolveSessions for why an unmatched name never falls back to that.
                 session: { type: 'string' }
@@ -299,8 +384,11 @@
           if (!ID_RE.test(aid)) return { agentId: aid, error: 'invalid agentId' };
           if (aid === leadId) return { agentId: aid, error: 'cannot delegate to yourself' };
           if (!crew.has(aid)) return { agentId: aid, error: 'no such live worker — summon them first, or check the agentId against YOUR TEAM' };
-          return { agentId: aid, prompt: String((w && w.prompt) || ''), ident: crew.get(aid), session: session };
+          const contract = resultSchemaOf(w && w.resultSchema);
+          if (!contract.ok) return { agentId: aid, error: 'invalid result contract: ' + contract.error };
+          return { agentId: aid, prompt: String((w && w.prompt) || ''), ident: crew.get(aid), session: session, resultSchema: contract.schema };
         });
+        markBatchQuality(jobs);
         // WHERE before WHO does the work: an unresolvable session marks its job failed here, so that worker is
         // never started in the wrong place (see resolveSessions). One bridge round-trip for the whole dispatch.
         await resolveSessions(jobs);
@@ -317,11 +405,19 @@
           // straggler is stopped ALONE and comes back as one honest `timeout` row while its siblings' work survives.
           // Background workers pass no wallMs — outliving the tool call is the whole point of background:true.
           const parentSignal = o2.signal || (ctx && ctx.signal);
+          const bounded = boundedDomainTask(job.prompt);
           // minted up front (not inline in the runOnce call) so the row can carry the SAME id the run was filed
           // under — the page's delivery uses it to append the run to the session and to stay idempotent.
           const workerRunId = o2.runId || newId();
-          const wallMs = (typeof o2.wallMs === 'number' && isFinite(o2.wallMs) && o2.wallMs > 0) ? o2.wallMs : 0;
-          const ac = wallMs ? childAbort(parentSignal) : null;
+          const allottedWallMs = (typeof o2.wallMs === 'number' && isFinite(o2.wallMs) && o2.wallMs > 0) ? o2.wallMs : 0;
+          // A one-host inspection is never a ten-minute autonomous research job. Even if a lead explicitly
+          // delegates one (non-interactive callers can still do so), bind all three dimensions: turns, tools,
+          // and wall clock. The worker still gets a final synthesis turn after its direct fetch.
+          const wallMs = bounded
+            ? Math.min(allottedWallMs || bounded.workerMaxMs, bounded.workerMaxMs)
+            : allottedWallMs;
+          const child = wallMs ? childAbort(parentSignal) : null;
+          const ac = child && child.ac;
           let timedOut = false, timer = null;
           if (ac) timer = setTimeout(() => { timedOut = true; abort(ac); }, wallMs);
           const timeoutRow = (res) => {
@@ -336,6 +432,9 @@
             };
           };
           let result;
+          const contractedPrompt = job.resultSchema
+            ? job.prompt + '\n\n[STRUCTURED RESULT CONTRACT] Return ONLY strict JSON matching this schema: ' + JSON.stringify(job.resultSchema)
+            : job.prompt;
           noteSessionActivity('station.dispatch_start', job, workerRunId);
           try {
             result = await runOnce({
@@ -345,11 +444,12 @@
               reasoningEffort: (job.ident && job.ident.reasoningEffort) || reasoningEffort,
               model: wire.model,
               system: workerSystem((job.ident && job.ident.system) || ''),
-              messages: [{ role: 'user', content: job.prompt }],
+              messages: [{ role: 'user', content: contractedPrompt }],
               agentId: job.agentId, isTask: true,
               emit: o2.emit || childEmit,      // lifecycle/cost ride the lead/global stream -> the floor lights the worker
               signal: ac ? ac.signal : parentSignal,   // own controller when this worker has a wall clock (see above)
               runId: workerRunId, trigger: 'directive', surface: 'autonomous',
+              parentRunId: ctx && ctx.runId,
               // SESSION TARGETING: the run host files a run under its streamId (runStore.record + the durable
               // transcript) and scopes its working memory to that stream. Absent -> undefined, byte-identical to
               // the pre-2026-07-30 call. This is the DURABLE half; deliverToSession is the visible one.
@@ -366,7 +466,9 @@
               consent: ctx && ctx.consent,
               extraObjects: WORKER_KIT,
               maxCostUsd: perWorker,           // a runaway worker can't blow the lead's per-run ceiling
-              maxIters: workerMaxIters         // a runaway worker can't burn the lead's full iteration budget
+              maxIters: bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
+              maxToolCalls: bounded ? bounded.workerMaxTools : undefined,
+              steer: typeof o2.steer === 'function' ? o2.steer : undefined
             });
           } catch (e) {
             noteSessionActivity('station.dispatch_end', job, workerRunId);
@@ -374,16 +476,59 @@
             return { agentId: job.agentId, reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };
           } finally {
             if (timer) clearTimeout(timer);
+            if (child) child.detach();
           }
           noteSessionActivity('station.dispatch_end', job, workerRunId);
           if (timedOut) return timeoutRow(result);   // keep whatever partial text the aborted run did produce
           if (!result) return { agentId: job.agentId, reason: 'refused', result: 'worker could not start — the station\'s concurrent-agent cap was full at that instant, or a provider sign-in is needed. A parallel dispatch already runs in waves sized to the free capacity and retries a refusal once, so a refusal that survives means the cap is genuinely saturated: raise MAX_CONCURRENT_AGENTS in SETTINGS, or dispatch these workers in a follow-up call.', usd: 0 };
+          const firstText = lastAssistant(result.messages) || '(the worker returned no text)';
+          const contract = await enforceStructured(job.resultSchema, firstText, async (errors) => {
+            const spent = Number(result.usd) || 0;
+            const remaining = perWorker > 0 ? Math.max(0, perWorker - spent) : 0;
+            if (perWorker > 0 && remaining <= 0) return null;
+            const repairRunId = newId();
+            const repair = await runOnce({
+              key: wire.key, provider: wire.provider, baseUrl: wire.baseUrl,
+              reasoningEffort: (job.ident && job.ident.reasoningEffort) || reasoningEffort,
+              model: wire.model, system: workerSystem((job.ident && job.ident.system) || ''),
+              messages: [{ role: 'user', content: contractedPrompt }, { role: 'assistant', content: firstText },
+                { role: 'user', content: '[STRUCTURED RESULT REPAIR] The prior result failed host validation:\n- ' + errors.slice(0, 20).join('\n- ') + '\nReturn ONLY strict JSON matching: ' + JSON.stringify(job.resultSchema) }],
+              agentId: job.agentId, isTask: true, emit: o2.emit || childEmit,
+              signal: ac ? ac.signal : parentSignal, runId: repairRunId, trigger: 'directive', surface: 'autonomous',
+              parentRunId: ctx && ctx.runId, streamId: job.streamId || undefined,
+              sessionTitle: job.streamId ? (job.sessionTitle || job.session || '') : undefined,
+              consent: ctx && ctx.consent, extraObjects: WORKER_KIT,
+              maxCostUsd: perWorker > 0 ? remaining : 0,
+              maxIters: Math.min(4, bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters),
+              maxToolCalls: bounded ? bounded.workerMaxTools : undefined,
+              steer: typeof o2.steer === 'function' ? o2.steer : undefined
+            });
+            return repair ? { text: lastAssistant(repair.messages), result: repair, runId: repairRunId } : null;
+          });
+          const repaired = contract.repairResult || null;
+          const totalUsd = (Number(result.usd) || 0) + (Number(repaired && repaired.usd) || 0);
+          const artifacts = [].concat(Array.isArray(result.artifacts) ? result.artifacts : [], Array.isArray(repaired && repaired.artifacts) ? repaired.artifacts : []);
+          if (job.resultSchema && !contract.ok) return {
+            agentId: job.agentId, reason: 'invalid-result',
+            result: 'Worker output failed its result schema after one bounded repair attempt. No completion was accepted.',
+            usd: totalUsd, runId: workerRunId, repairRunId: contract.repairRunId || '', validation: contract.validation,
+            artifacts: artifacts.map(a => Object.assign({}, a, { agentId: job.agentId, workspace: job.agentId }))
+          };
+          const effective = repaired || result;
           const row = {
             agentId: job.agentId,
-            reason: result.reason || 'done',
-            result: lastAssistant(result.messages) || '(the worker returned no text)',
-            usd: result.usd || 0,
-            runId: workerRunId
+            reason: effective.reason || 'done',
+            result: contract.text,
+            structuredResult: job.resultSchema ? contract.value : null,
+            validation: contract.validation,
+            repairRunId: contract.repairRunId || '',
+            usd: totalUsd,
+            runId: workerRunId,
+            model: effective.model || wire.model,
+            reasoningEffort: effective.reasoningEffort || ((job.ident && job.ident.reasoningEffort) || reasoningEffort),
+            toolsOk: (Number(result.toolsOk) || 0) + (Number(repaired && repaired.toolsOk) || 0),
+            durationMs: (Number(result.durationMs) || 0) + (Number(repaired && repaired.durationMs) || 0),
+            tokens: (Number(result.tokens) || 0) + (Number(repaired && repaired.tokens) || 0)
           };
           if (wire.note) row.note = wire.note;   // honest credential-fallback disclosure (never silent)
           /* Show it where the Commander asked for it. Only a COMPLETED worker delivers: every other outcome
@@ -394,8 +539,8 @@
           // stamped with the OWNING agentId. Files live in the WORKER's private workspace — the lead cannot
           // fs.read them and must reference them as the worker's (they are already shown to the Commander as
           // cards via the forwarded deliverable events). Never invent paths beyond this list.
-          if (Array.isArray(result.artifacts) && result.artifacts.length) {
-            row.artifacts = result.artifacts.map(a => Object.assign({}, a, { agentId: job.agentId, workspace: job.agentId }));
+          if (artifacts.length) {
+            row.artifacts = artifacts.map(a => Object.assign({}, a, { agentId: job.agentId, workspace: job.agentId }));
           }
           return row;
         };
@@ -404,9 +549,10 @@
           if (!subagents || typeof subagents.start !== 'function') return { content: 'background subagents unavailable (no subagent manager)', summary: 'error' };
           const started = jobs.map(job => {
             if (job.error) return { agentId: job.agentId, reason: 'error', result: job.error };
-            return subagents.start({ leadId, agentId: job.agentId, prompt: job.prompt, runId: newId() }, async (h) => {
-              const r = await runWorker(job, { runId: h.runId, signal: h.signal, emit: h.emit });
-              return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd || 0 };
+            return subagents.start({ leadId, agentId: job.agentId, prompt: job.prompt, runId: newId(), resultSchema: job.resultSchema }, async (h) => {
+              const r = await runWorker(job, { runId: h.runId, signal: h.signal, emit: h.emit, steer: h.steer });
+              return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd || 0,
+                structuredResult: r.structuredResult, validation: r.validation, repairRunId: r.repairRunId, artifacts: r.artifacts };
             });
           });
           const startedRows = started.concat(overflowRows());
@@ -490,7 +636,10 @@
           tasks: {
             type: 'array', items: {
               type: 'object', required: ['prompt'],
-              properties: { prompt: { type: 'string' }, label: { type: 'string' } }
+              properties: {
+                prompt: { type: 'string' }, label: { type: 'string' },
+                resultSchema: { type: 'object', description: 'Optional strict JSON result contract. Invalid output gets one bounded repair and is never accepted as done.' }
+              }
             }
           },
           background: { type: 'boolean' }
@@ -503,7 +652,16 @@
         // NO SILENT CAPS — same rule as team.dispatch (see its note): the tasks past the cap come back as
         // explicit not-spawned rows instead of vanishing from a "N done" summary.
         const askedTasks = Array.isArray(args.tasks) ? args.tasks : [];
-        const reqs = askedTasks.slice(0, maxWorkers);
+        const reqs = askedTasks.slice(0, maxWorkers).map((task, i) => {
+          const contract = resultSchemaOf(task && task.resultSchema);
+          return {
+            prompt: String((task && task.prompt) || ''),
+            label: String((task && task.label) || ('subagent ' + (i + 1))).slice(0, 60),
+            resultSchema: contract.ok ? contract.schema : null,
+            error: contract.ok ? '' : 'invalid result contract: ' + contract.error
+          };
+        });
+        markBatchQuality(reqs);
         const overflow = askedTasks.slice(maxWorkers);
         if (!reqs.length) return { content: 'No tasks specified.', summary: 'noop' };
         const overflowRows = () => overflow.map((t, i) => ({
@@ -519,28 +677,38 @@
         const childEmit = (name, payload) => { if (FORWARD[name] && ctx && typeof ctx.emit === 'function') { try { ctx.emit(name, payload); } catch (_) {} } };
 
         const spawnOne = (task, i) => {
-          const label = String((task && task.label) || ('subagent ' + (i + 1))).slice(0, 60);
-          const prompt = String((task && task.prompt) || '');
+          const label = task.label;
+          const prompt = task.prompt;
+          if (task.error) {
+            const row = { label, reason: 'not-spawned', result: task.error, usd: 0 };
+            return { label, view: row, done: Promise.resolve(row), started: false };
+          }
           const ephemeralId = ('sub-' + newId()).slice(0, 40);   // anonymous, ID_RE-valid; NEVER a roster agentId
           let settle; const done = new Promise(res => { settle = res; });
           const runner = async (h) => {
-            if (!prompt.trim()) { const r = { label, agentId: ephemeralId, reason: 'error', result: 'empty subtask prompt', usd: 0 }; settle(r); return { status: 'error', reason: 'error', result: r.result, usd: 0 }; }
             let result;
+            const bounded = boundedDomainTask(prompt);
+            const contractedPrompt = task.resultSchema
+              ? prompt + '\n\n[STRUCTURED RESULT CONTRACT] Return ONLY strict JSON matching this schema: ' + JSON.stringify(task.resultSchema)
+              : prompt;
             try {
               result = await runOnce({
                 key, provider, baseUrl, reasoningEffort, model,      // the lead's OWN model - a clone of self
                 system: workerSystem(selfSystem),           // the lead's OWN identity plus settled task context
                                                             // composes its own caps for its (narrowed) toolset
-                messages: [{ role: 'user', content: prompt }],
+                messages: [{ role: 'user', content: contractedPrompt }],
                 agentId: ephemeralId, isTask: true,
                 emit: (n, p) => { try { h.emit(n, p); } catch (_) {} childEmit(n, p); },   // durable record + lead stream
                 signal: h.signal, runId: h.runId,
+                parentRunId: ctx && ctx.runId,
                 trigger: 'directive', surface: 'autonomous',
                 consent: ctx && ctx.consent,                // same approval posture as the orchestrator
                 extraObjects: WORKER_KIT,                   // WORKBENCH only — NO 'lead' → no orchestrator object →
                                                             // team.spawn never exposed to it → FLAT DEPTH (no re-spawn)
                 maxCostUsd: perWorker,                       // a runaway clone can't blow the lead's per-run ceiling
-                maxIters: workerMaxIters                     // a runaway clone can't burn the lead's full iteration budget
+                maxIters: bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
+                maxToolCalls: bounded ? bounded.workerMaxTools : undefined,
+                steer: h.steer
               });
             } catch (e) {
               const r = { label, agentId: ephemeralId, reason: 'error', result: 'subagent run failed: ' + ((e && e.message) || e), usd: 0 };
@@ -550,24 +718,54 @@
               const r = { label, agentId: ephemeralId, reason: 'refused', result: 'subagent could not start — the concurrency cap (STARNET_MAX_CONCURRENT_AGENTS) is full or a sign-in is needed. Try fewer at once.', usd: 0 };
               settle(r); return { status: 'error', reason: 'refused', result: r.result, usd: 0 };
             }
-            const r = { label, agentId: ephemeralId, reason: result.reason || 'done', result: lastAssistant(result.messages) || '(the subagent returned no text)', usd: result.usd || 0 };
+            const firstText = lastAssistant(result.messages) || '(the subagent returned no text)';
+            const contract = await enforceStructured(task.resultSchema, firstText, async (errors) => {
+              const spent = Number(result.usd) || 0;
+              const remaining = perWorker > 0 ? Math.max(0, perWorker - spent) : 0;
+              if (perWorker > 0 && remaining <= 0) return null;
+              const repairRunId = newId();
+              const repair = await runOnce({
+                key, provider, baseUrl, reasoningEffort, model, system: workerSystem(selfSystem),
+                messages: [{ role: 'user', content: contractedPrompt }, { role: 'assistant', content: firstText },
+                  { role: 'user', content: '[STRUCTURED RESULT REPAIR] The prior result failed host validation:\n- ' + errors.slice(0, 20).join('\n- ') + '\nReturn ONLY strict JSON matching: ' + JSON.stringify(task.resultSchema) }],
+                agentId: ephemeralId, isTask: true,
+                emit: (n, p) => { try { h.emit(n, p); } catch (_) {} childEmit(n, p); },
+                signal: h.signal, runId: repairRunId, parentRunId: ctx && ctx.runId,
+                trigger: 'directive', surface: 'autonomous', consent: ctx && ctx.consent,
+                extraObjects: WORKER_KIT, maxCostUsd: perWorker > 0 ? remaining : 0,
+                maxIters: Math.min(4, bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters),
+                maxToolCalls: bounded ? bounded.workerMaxTools : undefined, steer: h.steer
+              });
+              return repair ? { text: lastAssistant(repair.messages), result: repair, runId: repairRunId } : null;
+            });
+            const repaired = contract.repairResult || null;
+            const artifacts = [].concat(Array.isArray(result.artifacts) ? result.artifacts : [], Array.isArray(repaired && repaired.artifacts) ? repaired.artifacts : []);
+            const r = {
+              label, agentId: ephemeralId,
+              reason: task.resultSchema && !contract.ok ? 'invalid-result' : ((repaired || result).reason || 'done'),
+              result: task.resultSchema && !contract.ok ? 'Subagent output failed its result schema after one bounded repair attempt. No completion was accepted.' : contract.text,
+              structuredResult: task.resultSchema && contract.ok ? contract.value : null,
+              validation: contract.validation, repairRunId: contract.repairRunId || '',
+              usd: (Number(result.usd) || 0) + (Number(repaired && repaired.usd) || 0)
+            };
             // ghost-file fix (same as runWorker): the clone's proven outputs, stamped with the owning workspace.
-            if (Array.isArray(result.artifacts) && result.artifacts.length) r.artifacts = result.artifacts.map(a => Object.assign({}, a, { agentId: ephemeralId, workspace: ephemeralId }));
+            if (artifacts.length) r.artifacts = artifacts.map(a => Object.assign({}, a, { agentId: ephemeralId, workspace: ephemeralId }));
             settle(r);
-            return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd, artifacts: r.artifacts };
+            return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd,
+              structuredResult: r.structuredResult, validation: r.validation, repairRunId: r.repairRunId, artifacts: r.artifacts };
           };
-          const view = subagents.start({ leadId, agentId: ephemeralId, prompt: prompt, runId: newId() }, runner);
-          return { label, view, done };
+          const view = subagents.start({ leadId, agentId: ephemeralId, prompt: prompt, runId: newId(), resultSchema: task.resultSchema }, runner);
+          return { label, view, done, started: true };
         };
 
         const spawned = reqs.map(spawnOne);
         if (args.background) {
           const rows = spawned.map(s => Object.assign({ label: s.label }, s.view)).concat(overflowRows());
-          return { content: JSON.stringify(rows), summary: 'spawned ' + spawned.length + ' subagent(s)' + overflowNote };
+          return { content: JSON.stringify(rows), summary: 'spawned ' + spawned.filter(s => s.started).length + ' subagent(s)' + overflowNote };
         }
         const results = (await Promise.all(spawned.map(s => s.done))).concat(overflowRows());
         const ok = results.filter(r => r.reason === 'done').length;
-        return { content: JSON.stringify(results), summary: 'spawned ' + spawned.length + ' subagent(s), ' + ok + ' done' + overflowNote };
+        return { content: JSON.stringify(results), summary: 'spawned ' + spawned.filter(s => s.started).length + ' subagent(s), ' + ok + ' done' + overflowNote };
       }
     };
 
@@ -631,7 +829,7 @@
 
     const subagentsTool = {
       name: 'team.subagents', capability: 'orchestrator', scope: 'read', requiresConsent: false,
-      description: 'List or inspect your background subagents. Pass id for one worker, or omit id to list recent workers for this lead. Returned records include status, event tail, result, and whether they can be interrupted or resumed.',
+      description: 'List or inspect your background subagents. Pass id for one worker, or omit id to list recent workers for this lead. Returned records include the current generation, status, event tail, result, steering history, and whether they can be interrupted or resumed. Use the returned id + generation for team.steer.',
       schema: { type: 'object', properties: { id: { type: 'string' }, agentId: { type: 'string' }, status: { type: 'string' } } },
       run: async (args, ctx) => {
         if (!subagents) return { content: 'background subagents unavailable', summary: 'unavailable' };
@@ -646,6 +844,20 @@
       }
     };
 
+    const steerTool = {
+      name: 'team.steer', capability: 'orchestrator', scope: 'write', requiresConsent: false,
+      description: 'Send a follow-up instruction to one CURRENTLY RUNNING background subagent. First inspect it with team.subagents, then pass the exact id and generation shown there. The host durably queues the instruction for that generation only; a stale generation is rejected and can never land on a resumed worker.',
+      schema: {
+        type: 'object', required: ['id', 'generation', 'text'],
+        properties: { id: { type: 'string' }, generation: { type: 'integer' }, text: { type: 'string' } }
+      },
+      run: async (args, ctx) => {
+        if (!subagents || typeof subagents.steer !== 'function') return { content: 'background steering unavailable', summary: 'unavailable' };
+        const r = subagents.steer(String(args.id || ''), (ctx && ctx.agentId) || 'agent', args.generation, args.text);
+        return { content: JSON.stringify(r), summary: r.ok ? ('queued for generation ' + r.generation) : 'not queued' };
+      }
+    };
+
     function resumeRunnerFor(ctx) {
       return async function (h) {
         const rec = h.record || {};
@@ -654,26 +866,65 @@
         if (!ident) return { status: 'error', reason: 'error', result: 'worker is no longer in the live roster', usd: 0 };
         const wire = workerWire(ident);   // same cross-provider resolution as a fresh dispatch
         let result;
+        const bounded = boundedDomainTask(rec.prompt || '');
+        const contractedPrompt = rec.resultSchema
+          ? (rec.prompt || '') + '\n\n[STRUCTURED RESULT CONTRACT] Return ONLY strict JSON matching this schema: ' + JSON.stringify(rec.resultSchema)
+          : (rec.prompt || '');
         try {
           result = await runOnce({
             key: wire.key, provider: wire.provider, baseUrl: wire.baseUrl,
             reasoningEffort: (ident && ident.reasoningEffort) || reasoningEffort,   // Class Loadouts S1: worker's own class effort (see runWorker)
             model: wire.model,
             system: workerSystem((ident && ident.system) || ''),
-            messages: [{ role: 'user', content: rec.prompt || '' }],
+            messages: [{ role: 'user', content: contractedPrompt }],
             agentId: rec.agentId, isTask: true,
             emit: h.emit, signal: h.signal, runId: h.runId,
+            parentRunId: ctx && ctx.runId,
             trigger: 'directive', surface: 'autonomous',
             consent: ctx && ctx.consent,
             extraObjects: WORKER_KIT,
             maxCostUsd: perWorker,
-            maxIters: workerMaxIters
+            maxIters: bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
+            maxToolCalls: bounded ? bounded.workerMaxTools : undefined,
+            steer: h.steer
           });
         } catch (e) {
           return { status: 'error', reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };
         }
         if (!result) return { status: 'error', reason: 'refused', result: 'worker could not restart', usd: 0 };
-        return { status: result.reason === 'done' ? 'done' : 'error', reason: result.reason || 'done', result: lastAssistant(result.messages) || '(the worker returned no text)', usd: result.usd || 0 };
+        const firstText = lastAssistant(result.messages) || '(the worker returned no text)';
+        const contract = await enforceStructured(rec.resultSchema, firstText, async (errors) => {
+          const spent = Number(result.usd) || 0;
+          const remaining = perWorker > 0 ? Math.max(0, perWorker - spent) : 0;
+          if (perWorker > 0 && remaining <= 0) return null;
+          const repairRunId = newId();
+          const repair = await runOnce({
+            key: wire.key, provider: wire.provider, baseUrl: wire.baseUrl,
+            reasoningEffort: (ident && ident.reasoningEffort) || reasoningEffort,
+            model: wire.model, system: workerSystem((ident && ident.system) || ''),
+            messages: [{ role: 'user', content: contractedPrompt }, { role: 'assistant', content: firstText },
+              { role: 'user', content: '[STRUCTURED RESULT REPAIR] The prior result failed host validation:\n- ' + errors.slice(0, 20).join('\n- ') + '\nReturn ONLY strict JSON matching: ' + JSON.stringify(rec.resultSchema) }],
+            agentId: rec.agentId, isTask: true, emit: h.emit, signal: h.signal, runId: repairRunId,
+            parentRunId: ctx && ctx.runId, trigger: 'directive', surface: 'autonomous',
+            consent: ctx && ctx.consent, extraObjects: WORKER_KIT,
+            maxCostUsd: perWorker > 0 ? remaining : 0,
+            maxIters: Math.min(4, bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters),
+            maxToolCalls: bounded ? bounded.workerMaxTools : undefined, steer: h.steer
+          });
+          return repair ? { text: lastAssistant(repair.messages), result: repair, runId: repairRunId } : null;
+        });
+        const repaired = contract.repairResult || null;
+        const artifacts = [].concat(Array.isArray(result.artifacts) ? result.artifacts : [], Array.isArray(repaired && repaired.artifacts) ? repaired.artifacts : []);
+        const invalid = !!(rec.resultSchema && !contract.ok);
+        return {
+          status: invalid ? 'error' : (((repaired || result).reason || 'done') === 'done' ? 'done' : 'error'),
+          reason: invalid ? 'invalid-result' : ((repaired || result).reason || 'done'),
+          result: invalid ? 'Worker output failed its result schema after one bounded repair attempt. No completion was accepted.' : contract.text,
+          structuredResult: rec.resultSchema && contract.ok ? contract.value : null,
+          validation: contract.validation, repairRunId: contract.repairRunId || '',
+          usd: (Number(result.usd) || 0) + (Number(repaired && repaired.usd) || 0),
+          artifacts: artifacts.map(a => Object.assign({}, a, { agentId: rec.agentId, workspace: rec.agentId }))
+        };
       };
     }
 
@@ -703,8 +954,8 @@
     };
 
     return {
-      dispatchTool, spawnTool, summonTool, subagentsTool, interruptTool, resumeTool,
-      register(reg) { [dispatchTool, spawnTool, summonTool, subagentsTool, interruptTool, resumeTool].forEach(t => reg.register(t)); return reg; }
+      dispatchTool, spawnTool, summonTool, subagentsTool, steerTool, interruptTool, resumeTool,
+      register(reg) { [dispatchTool, spawnTool, summonTool, subagentsTool, steerTool, interruptTool, resumeTool].forEach(t => reg.register(t)); return reg; }
     };
   }
 

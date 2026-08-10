@@ -27,7 +27,6 @@
     researcher: '<svg viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M10.5 2.5 a8 8 0 1 0 0 16 a8 8 0 1 0 0 -16 Z M10.5 5.8 a4.7 4.7 0 1 1 0 9.4 a4.7 4.7 0 1 1 0 -9.4 Z"/><path fill="currentColor" d="M16 14.2 L22 20.2 L20.2 22 L14.2 16 Z"/></svg>',
     reviewer: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9.6 6.4 L7.4 4.2"/><path d="M14.4 6.4 L16.6 4.2"/><path d="M7.4 12 H3.6"/><path d="M16.6 12 H20.4"/><path d="M7.6 16 H4.4"/><path d="M16.4 16 H19.6"/></g><ellipse cx="12" cy="13.4" rx="4.9" ry="6" fill="currentColor"/><circle cx="12" cy="7.3" r="2.5" fill="currentColor"/><path d="M12 8.6 V18.4" stroke="' + D + '" stroke-width="1.4"/></svg>',
     operator: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="10.9" y="1.8" width="2.2" height="4.3" rx=".4"/><rect x="10.9" y="1.8" width="2.2" height="4.3" rx=".4" transform="rotate(45 12 12)"/><rect x="10.9" y="1.8" width="2.2" height="4.3" rx=".4" transform="rotate(90 12 12)"/><rect x="10.9" y="1.8" width="2.2" height="4.3" rx=".4" transform="rotate(135 12 12)"/><rect x="10.9" y="1.8" width="2.2" height="4.3" rx=".4" transform="rotate(180 12 12)"/><rect x="10.9" y="1.8" width="2.2" height="4.3" rx=".4" transform="rotate(225 12 12)"/><rect x="10.9" y="1.8" width="2.2" height="4.3" rx=".4" transform="rotate(270 12 12)"/><rect x="10.9" y="1.8" width="2.2" height="4.3" rx=".4" transform="rotate(315 12 12)"/><circle cx="12" cy="12" r="6.6"/></g><circle cx="12" cy="12" r="3.5" fill="' + D + '"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/></svg>',
-    scribe: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 21 l1.3-4.2 L16.5 4.6 l2.9 2.9 L7.2 19.7 Z"/><path fill="' + D + '" d="M4.6 18.4 l1 1 -1.8.6 Z"/><path fill="currentColor" d="M17.6 3.5 l1.4-1.4 a1.6 1.6 0 0 1 2.3 0 l.6.6 a1.6 1.6 0 0 1 0 2.3 l-1.4 1.4 Z"/></svg>',
     analyst: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3.5 19.4 H20.5 V21.4 H3.5 Z"/><rect x="5.4" y="12" width="3.5" height="7.4" rx=".6"/><rect x="10.3" y="6.4" width="3.5" height="13" rx=".6"/><rect x="15.2" y="9.4" width="3.5" height="10" rx=".6"/></svg>',
     scout: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 4.6 C5.6 4.6 2 11 2 12 C2 13 5.6 19.4 12 19.4 C18.4 19.4 22 13 22 12 C22 11 18.4 4.6 12 4.6 Z"/><circle cx="12" cy="12" r="4.4" fill="' + D + '"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
     archivist: '<svg viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="17" rx="2" fill="currentColor"/><g fill="' + D + '"><rect x="6" y="5.6" width="12" height="3.1" rx=".6"/><rect x="6" y="10.4" width="12" height="3.1" rx=".6"/><rect x="6" y="15.3" width="12" height="3.1" rx=".6"/></g><g fill="currentColor"><rect x="10.5" y="6.6" width="3" height="1.1" rx=".5"/><rect x="10.5" y="11.4" width="3" height="1.1" rx=".5"/><rect x="10.5" y="16.3" width="3" height="1.1" rx=".5"/></g></svg>',
@@ -75,6 +74,60 @@
     // "A" top-left, an abstract CJK mark bottom-right), not <text> — <text> was the only seal that rendered with a
     // system font, so it scaled + themed inconsistently against the other engraved paths.
     translator: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11 L5.5 3.6 L8 11 M3.9 8.6 H7.1"/><path d="M16 13.2 L18 14 M13.8 15.6 H20.2 M18 16 L14.2 21.4 M15.8 17.4 L20.2 21.4"/></g><g fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M13 5 H21 M18 2.4 L21 5 L18 7.6"/><path d="M11 19 H3 M6 16.4 L3 19 L6 21.6"/></g></svg>',
+    // ---- 2026-08-03 catalog expansion seals (same matte engraved-coin style: currentColor + deboss only) ----
+    // pilot: the ship's helm — hands actually on the controls of a live site.
+    pilot: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.4" fill="currentColor"/><circle cx="12" cy="12" r="6.2" fill="' + D + '"/><g fill="currentColor"><rect x="11" y="2.2" width="2" height="19.6" rx=".6"/><rect x="2.2" y="11" width="19.6" height="2" rx=".6"/><circle cx="12" cy="12" r="2.6"/></g></svg>',
+    // foreman: one line splitting into three parallel bars — the job cut into pieces that run at once.
+    foreman: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="2.2" y="10.6" width="7" height="2.8" rx=".6"/><rect x="14.4" y="3.2" width="7.4" height="2.8" rx=".6"/><rect x="14.4" y="10.6" width="7.4" height="2.8" rx=".6"/><rect x="14.4" y="18" width="7.4" height="2.8" rx=".6"/></g><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.4 12 H12.4 V4.6 H14.4"/><path d="M12.4 12 H14.4"/><path d="M10.4 12 H12.4 V19.4 H14.4"/></g></svg>',
+    // nightwatch: the crescent with a lit watch-eye — someone is awake while the station sleeps.
+    nightwatch: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M20.6 15.8 A9.6 9.6 0 1 1 11 3 A7.5 7.5 0 0 0 20.6 15.8 Z"/><circle cx="18.2" cy="5.2" r="1.7" fill="currentColor"/><ellipse cx="8.4" cy="11.2" rx="2.5" ry="1.6" fill="' + D + '"/><circle cx="8.4" cy="11.2" r="0.9" fill="currentColor"/></svg>',
+    // ghostwriter: the nib with a hollow shaft — the writer who is not there.
+    ghostwriter: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.8 21.2 L4.6 15.2 L16.4 3.4 L20.6 7.6 L8.8 19.4 Z"/><path fill="' + D + '" d="M6.2 16.4 L7.8 18 L5.4 18.8 Z"/><path fill="' + D + '" d="M14.6 7 L17 9.4 L9.6 16.8 L7.2 14.4 Z"/><circle cx="19" cy="18.8" r="2.8" fill="currentColor"/><circle cx="19" cy="18.8" r="1.2" fill="' + D + '"/></svg>',
+    // paralegal: the page with ONE clause struck out of the deboss — the line that will bite you.
+    paralegal: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M4.4 2.6 H15 L19.6 7.2 V21.4 H4.4 Z"/><path fill="' + D + '" d="M15 2.6 L19.6 7.2 H15 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.4" stroke-linecap="round"><path d="M7 10.2 H17"/><path d="M7 17 H14.6"/><path d="M7 19.4 H11.4"/></g><rect x="6.2" y="12.4" width="11.6" height="2.8" rx=".5" fill="' + D + '"/><rect x="6.9" y="13" width="1.3" height="1.6" rx=".3" fill="currentColor"/></svg>',
+    // negotiator: two block arrows aimed past each other — the offer and the counter.
+    negotiator: '<svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M1.6 7.2 H7.8 V3.9 L13.6 8.8 L7.8 13.7 V10.4 H1.6 Z"/><path d="M22.4 16.8 H16.2 V20.1 L10.4 15.2 L16.2 10.3 V13.6 H22.4 Z"/></g></svg>',
+    // jobhunter: the case, with the clasp carved out — the role, packed for.
+    jobhunter: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M8.6 3 h6.8 a1.8 1.8 0 0 1 1.8 1.8 V7.4 h-2.2 V5.2 h-6 V7.4 H6.8 V4.8 A1.8 1.8 0 0 1 8.6 3 Z"/><rect x="2.4" y="7.4" width="19.2" height="13.6" rx="1.8" fill="currentColor"/><path fill="' + D + '" d="M2.4 12.2 H10.2 V14 H2.4 Z"/><path fill="' + D + '" d="M13.8 12.2 H21.6 V14 H13.8 Z"/><rect x="10.4" y="11.2" width="3.2" height="3.8" rx=".6" fill="' + D + '"/></svg>',
+    // anchor: the studio microphone — the briefing spoken, not printed.
+    anchor: '<svg viewBox="0 0 24 24"><rect x="8.9" y="2.2" width="6.2" height="11.4" rx="3.1" fill="currentColor"/><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M5.2 11.6 a6.8 6.8 0 0 0 13.6 0"/><path fill="currentColor" d="M11 17.2 H13 V21 H11 Z"/><path fill="currentColor" d="M7.2 20.4 H16.8 V22 H7.2 Z"/><path fill="' + D + '" d="M10.2 4.6 H13.8 V6.1 H10.2 Z"/></svg>',
+    // ---- 2026-08-03 second wave (same matte engraved-coin style: currentColor + deboss only) ----
+    // drafter: the drafting triangle over a marked rule — the fuzzy idea squared up.
+    drafter: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.4 19.6 L12 3 L21.6 19.6 Z"/><path fill="' + D + '" d="M12 7.6 L18 18 H6 Z"/><rect x="2.2" y="19.8" width="19.6" height="2.6" rx=".7" fill="currentColor"/><g fill="none" stroke="' + D + '" stroke-width="1.3" stroke-linecap="round"><path d="M6.4 20.2 V22"/><path d="M9.6 20.2 V22"/><path d="M12.8 20.2 V22"/><path d="M16 20.2 V22"/></g></svg>',
+    // harvester: the filled table with its LAST cell missing — the honest gap that ships with the dataset.
+    harvester: '<svg viewBox="0 0 24 24"><rect x="2.6" y="4" width="18.8" height="16" rx="1.6" fill="currentColor"/><g fill="' + D + '"><rect x="4.6" y="8.4" width="4.6" height="2.6" rx=".3"/><rect x="10.2" y="8.4" width="4.6" height="2.6" rx=".3"/><rect x="15.8" y="8.4" width="3.6" height="2.6" rx=".3"/><rect x="4.6" y="12" width="4.6" height="2.6" rx=".3"/><rect x="10.2" y="12" width="4.6" height="2.6" rx=".3"/><rect x="15.8" y="12" width="3.6" height="2.6" rx=".3"/><rect x="4.6" y="15.6" width="4.6" height="2.6" rx=".3"/><rect x="10.2" y="15.6" width="4.6" height="2.6" rx=".3"/></g></svg>',
+    // sentinel: the radar sweep with one blip — what is already out there about you.
+    sentinel: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.6" fill="currentColor"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><circle cx="12" cy="12" r="6.4"/><circle cx="12" cy="12" r="3.2"/><path d="M12 12 L19.2 6.8"/></g><circle cx="16.8" cy="8.2" r="1.8" fill="' + D + '"/></svg>',
+    // registrar: the index card — one person, their face, what they said, and the line you owe them.
+    registrar: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6.4 3.2 H17.6 V5.6 H6.4 Z"/><rect x="3" y="6.2" width="18" height="14" rx="1.6" fill="currentColor"/><g fill="' + D + '"><rect x="5.4" y="9.2" width="4.6" height="4.6" rx="2.3"/><rect x="11.6" y="9.6" width="7" height="1.7" rx=".6"/><rect x="11.6" y="12.4" width="5.2" height="1.7" rx=".6"/><rect x="5.4" y="16" width="13.2" height="1.7" rx=".6"/></g></svg>',
+    // provisioner: the pot with its lid on — the week actually cooked, not the week imagined.
+    provisioner: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3.4 9.6 H20.6 V16.2 a3.6 3.6 0 0 1 -3.6 3.6 H7 a3.6 3.6 0 0 1 -3.6 -3.6 Z"/><path fill="currentColor" d="M1.8 7.2 H22.2 V9.2 H1.8 Z"/><path fill="currentColor" d="M11 4.2 H13 V6.9 H11 Z"/><rect x="6.2" y="12.2" width="11.6" height="1.7" rx=".6" fill="' + D + '"/><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M20.8 11.8 H22.4"/><path d="M3.2 11.8 H1.6"/></g></svg>',
+    // taskmaster: the stopwatch with the mark struck through it — the promise, and the date it carried.
+    taskmaster: '<svg viewBox="0 0 24 24"><circle cx="12" cy="13.4" r="8.4" fill="currentColor"/><path fill="currentColor" d="M9.6 1.6 H14.4 V4.2 H9.6 Z"/><path fill="currentColor" d="M18.4 4.8 L21 7.4 L19.1 9.3 L16.5 6.7 Z"/><path fill="none" stroke="' + D + '" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" d="M8.4 13.6 L11 16.2 L15.8 10.4"/></svg>',
+    // medic: the cross cut INTO the coin — clerical, not clinical; the record, not the diagnosis.
+    medic: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.6" fill="currentColor"/><path fill="' + D + '" d="M10.4 5.4 H13.6 V10.4 H18.6 V13.6 H13.6 V18.6 H10.4 V13.6 H5.4 V10.4 H10.4 Z"/></svg>',
+    // diplomat: the span holding between two sides — the message that keeps the relationship standing.
+    diplomat: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="2.4" y="8.8" width="3.2" height="11.4" rx=".6"/><rect x="18.4" y="8.8" width="3.2" height="11.4" rx=".6"/><rect x="1.4" y="19.6" width="21.2" height="2.4" rx=".6"/></g><path fill="none" stroke="currentColor" stroke-width="2.2" d="M4 9.6 a8 8 0 0 1 16 0"/><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 10.8 V19.6"/><path d="M12 8.9 V19.6"/><path d="M16 10.8 V19.6"/></g></svg>',
+    // ---- 2026-08-03 third wave: the build lane + marketing sub-niches (same engraved-coin style) ----
+    // apptester: the cursor caught mid-click on a live surface — the app used, not read.
+    apptester: '<svg viewBox="0 0 24 24"><rect x="2.4" y="3" width="19.2" height="15" rx="1.8" fill="currentColor"/><path fill="' + D + '" d="M4.4 7 H19.6 V15.6 H4.4 Z"/><path fill="currentColor" d="M9.6 9 L17 13.2 L13.6 14 L15.4 17.4 L13.6 18.4 L11.8 15 L9.6 17.4 Z"/><rect x="8.4" y="19.4" width="7.2" height="1.8" rx=".6" fill="currentColor"/></svg>',
+    // deployer: the payload leaving the pad — from your machine to live.
+    deployer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 1.6 L15.6 7.4 V14 H8.4 V7.4 Z"/><path fill="' + D + '" d="M10.6 6.6 a1.4 1.4 0 0 1 2.8 0 a1.4 1.4 0 0 1 -2.8 0 Z"/><path fill="currentColor" d="M8.4 10.4 L5.2 14.4 V17 L8.4 15.2 Z"/><path fill="currentColor" d="M15.6 10.4 L18.8 14.4 V17 L15.6 15.2 Z"/><g fill="currentColor"><rect x="10.8" y="16" width="2.4" height="3.4" rx=".8"/><rect x="7.6" y="20.2" width="8.8" height="1.8" rx=".7"/></g></svg>',
+    // dbhelper: the stacked drum with one band locked — the rows, and who may read them.
+    dbhelper: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8.4" ry="3.2" fill="currentColor"/><path fill="currentColor" d="M3.6 8 v4 a8.4 3.2 0 0 0 16.8 0 v-4 a8.4 3.2 0 0 1 -16.8 0 Z"/><path fill="currentColor" d="M3.6 14 v4 a8.4 3.2 0 0 0 16.8 0 v-4 a8.4 3.2 0 0 1 -16.8 0 Z"/><path fill="' + D + '" d="M10.6 15.4 h2.8 v3.4 h-2.8 Z"/><path fill="' + D + '" d="M11 14.2 a1 1 0 0 1 2 0 v1.4 h-2 Z"/></svg>',
+    // landingwriter: the page with the fold marked and one call to action under it.
+    copywriter: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 21 l1.3-4.2 L16.5 4.6 l2.9 2.9 L7.2 19.7 Z"/><path fill="' + D + '" d="M4.6 18.4 l1 1 -1.8.6 Z"/><path fill="currentColor" d="M17.6 3.5 l1.4-1.4 a1.6 1.6 0 0 1 2.3 0 l.6.6 a1.6 1.6 0 0 1 0 2.3 l-1.4 1.4 Z"/></svg>',
+    webdesigner: '<svg viewBox="0 0 24 24"><rect x="3" y="2.6" width="18" height="18.8" rx="1.6" fill="currentColor"/><g fill="' + D + '"><rect x="5.2" y="5" width="13.6" height="2.6" rx=".5"/><rect x="5.2" y="8.8" width="9.4" height="1.6" rx=".5"/></g><path fill="' + D + '" d="M4.4 12.4 H19.6 V13.4 H4.4 Z"/><rect x="7.6" y="15.6" width="8.8" height="3.4" rx="1.2" fill="' + D + '"/><rect x="9.2" y="16.8" width="5.6" height="1" rx=".4" fill="currentColor"/></svg>',
+    // support: the handset with the answered line.
+    support: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6.8 2.6 a2.2 2.2 0 0 1 2.6 1.2 l1.6 3.4 a2.2 2.2 0 0 1 -.6 2.6 L8.8 11 a13 13 0 0 0 4.2 4.2 l1.2-1.6 a2.2 2.2 0 0 1 2.6-.6 l3.4 1.6 a2.2 2.2 0 0 1 1.2 2.6 l-.6 2.2 a2.2 2.2 0 0 1 -2.4 1.6 C10.6 20.2 3.8 13.4 2.8 5.6 a2.2 2.2 0 0 1 1.6-2.4 Z"/><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M15.6 2.4 a6 6 0 0 1 6 6"/></g></svg>',
+    // a11y: the figure with arms out inside the ring — the standing accessibility mark.
+    a11y: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.6" fill="currentColor"/><circle cx="12" cy="6.6" r="1.9" fill="' + D + '"/><g fill="none" stroke="' + D + '" stroke-width="1.9" stroke-linecap="round"><path d="M5.6 10.2 H18.4"/><path d="M12 9.6 V14"/><path d="M12 14 L9 19.4"/><path d="M12 14 L15 19.4"/></g></svg>',
+    // hiring: two candidate cards, one marked.
+    hiring: '<svg viewBox="0 0 24 24"><rect x="2.2" y="4" width="9" height="16" rx="1.4" fill="currentColor"/><rect x="12.8" y="4" width="9" height="16" rx="1.4" fill="currentColor"/><circle cx="6.7" cy="9" r="2.1" fill="' + D + '"/><g fill="' + D + '"><rect x="3.8" y="13" width="5.8" height="1.5" rx=".5"/><rect x="3.8" y="16" width="4" height="1.5" rx=".5"/><circle cx="17.3" cy="9" r="2.1"/><rect x="14.4" y="13" width="5.8" height="1.5" rx=".5"/></g><path fill="none" stroke="' + D + '" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M14.8 17.2 L16.6 19 L20 15.6"/></svg>',
+    // processwriter: the numbered run of steps with a branch.
+    processwriter: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="2.4" y="3.4" width="4.4" height="4.4" rx="1.2"/><rect x="2.4" y="9.8" width="4.4" height="4.4" rx="1.2"/><rect x="2.4" y="16.2" width="4.4" height="4.4" rx="1.2"/><rect x="9.4" y="4.6" width="12.2" height="2" rx=".7"/><rect x="9.4" y="11" width="12.2" height="2" rx=".7"/><rect x="9.4" y="17.4" width="8.4" height="2" rx=".7"/></g><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4.6 7.8 V9.8"/><path d="M4.6 14.2 V16.2"/></g></svg>',
+    // pitchwriter: the deck on the easel — one slide, one argument.
+    pitchwriter: '<svg viewBox="0 0 24 24"><rect x="2.6" y="2.6" width="18.8" height="13" rx="1.4" fill="currentColor"/><g fill="' + D + '"><rect x="4.8" y="4.8" width="9.6" height="2.2" rx=".5"/><rect x="4.8" y="8.4" width="6.4" height="1.6" rx=".5"/></g><path fill="' + D + '" d="M13.4 12.8 L16.2 8.6 L19.2 12.8 Z"/><g fill="currentColor"><rect x="11.2" y="15.6" width="1.6" height="4" rx=".5"/><path d="M6.4 21.4 L11.6 16.4 L12.8 17.6 L7.6 22.4 Z"/><path d="M17.6 21.4 L12.4 16.4 L11.2 17.6 L16.4 22.4 Z"/></g></svg>',
     // herald: a banner/pennant on a staff — the periodic broadcast.
     herald: '<svg viewBox="0 0 24 24"><rect x="5" y="2.6" width="2" height="18.8" rx=".6" fill="currentColor"/><path fill="currentColor" d="M7 3.4 H20 L16.8 7.6 L20 11.8 H7 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.4" stroke-linecap="round"><path d="M9.6 6 H16"/><path d="M9.6 9 H14"/></g></svg>',
   };
@@ -84,13 +137,24 @@
      system again: clean, accent-themed, unique per class. Custom classes fall back to their emoji.) */
 
   const CODE = {
-    chief: 'CHF', engineer: 'ENG', researcher: 'RES', reviewer: 'REV', operator: 'OPR',
-    scribe: 'SCR', analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN',
-    broker: 'BRK', tutor: 'TUT', auditor: 'AUD', translator: 'XLT', herald: 'HLD',
-    navigator: 'NAV', curator: 'CUR', muse: 'MUS',
-    strategist: 'STG', marketer: 'MKT', publisher: 'PUB', producer: 'PRD', writer: 'WRT',
-    prospector: 'PRS', envoy: 'ENV', treasurer: 'TRE',
-    closer: 'CLO', steward: 'STW', optimizer: 'OPT', opportunist: 'OPP'
+    chief: 'CHF', engineer: 'ENG', researcher: 'RES', reviewer: 'REV', operator: 'AUT',
+    analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN',
+    broker: 'DLF', tutor: 'TCH', auditor: 'SEC', translator: 'XLT', herald: 'DGS',
+    navigator: 'TRP', curator: 'FIL', muse: 'BRN',
+    strategist: 'STG', marketer: 'MKT', publisher: 'CNT', producer: 'VID', writer: 'SCR',
+    prospector: 'LED', envoy: 'INB', treasurer: 'TRE',
+    closer: 'CLO', steward: 'COM', optimizer: 'SEO', opportunist: 'OPF',
+    // 2026-08-03 catalog expansion
+    pilot: 'VAS', foreman: 'TML', nightwatch: 'NGT', ghostwriter: 'GHW', paralegal: 'LGL',
+    negotiator: 'NEG', jobhunter: 'JOB', anchor: 'NWS',
+    // 2026-08-03 second wave
+    drafter: 'PDM', harvester: 'DAT', sentinel: 'PRG', registrar: 'REL', provisioner: 'HOM',
+    taskmaster: 'CCH', medic: 'HLT', diplomat: 'MED',
+    // 2026-08-03 third wave — the build lane, marketing sub-niches, and business roles
+    apptester: 'QAT', deployer: 'OPS', dbhelper: 'DBE', support: 'SUP', a11y: 'ACS', hiring: 'HIR', processwriter: 'SOP',
+    pitchwriter: 'PCH',
+    // 2026-08-03 consolidation: broad roles replace the marketing micro-classes
+    copywriter: 'CPY', webdesigner: 'WDS'
   };
 
   // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.

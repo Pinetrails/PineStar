@@ -4,6 +4,8 @@
    the General default always exists, per-stream cost is isolated (no double-count), and lanes are
    hybrid-honest (a real run auto-advances todo->active; 'shipped' is only ever set deliberately). */
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const A = require('./_assert.js');
 const W = require('../frontend/app/workstreams.js');
 
@@ -105,6 +107,51 @@ W.rename(nm2.id, W.deriveTitle('plan a weekend trip to portland with a food focu
 A.eq(W.needsModelTitle(nm2.id), false, 'a MANUAL rename to the exact placeholder text still locks it (titleAuto wins)');
 A.eq(W.needsModelTitle('ws_no_such'), false, 'unknown id is simply not eligible');
 
+/* ---------- isLowSignal + titleBasis: small talk never becomes a title ---------- */
+A.eq(W.isLowSignal('hey'), true, 'a bare greeting is low-signal');
+A.eq(W.isLowSignal('  Hi!!  '), true, 'punctuation/case around a greeting does not add signal');
+A.eq(W.isLowSignal('good morning, how are you doing'), true, 'a whole sentence of pleasantries is still low-signal');
+A.eq(W.isLowSignal('heyyy'), true, 'stretched greetings ("heyyy") are still greetings');
+A.eq(W.isLowSignal('ok thanks'), true, 'pure acks are low-signal');
+A.eq(W.isLowSignal('hey go do research on business ideas'), false, 'one content word flips the message substantive');
+A.eq(W.isLowSignal('summarize the news'), false, 'a terse directive is substantive');
+A.eq(W.isLowSignal(''), true, 'empty is low-signal');
+A.eq(W.isLowSignal('???'), true, 'punctuation-only is low-signal');
+
+W.reset();
+const tb = W.create(null);
+tb.history.push({ role: 'user', content: 'hey', ts: 1 });
+A.eq(W.titleBasis(tb.id), null, 'an all-small-talk session has NO title basis (no model call to make)');
+A.eq(W.titleBasis(tb.id, 'hi there'), null, 'a low-signal fallback text does not manufacture a basis');
+A.eq(W.titleBasis(tb.id, 'check why starnessos.com does not resolve'), 'check why starnessos.com does not resolve',
+  'a substantive fallback (this turn, not yet in history) becomes the basis');
+tb.history.push({ role: 'user', content: 'check why starnessos.com does not resolve', ts: 2 });
+tb.history.push({ role: 'user', content: 'thanks', ts: 3 });
+tb.history.push({ role: 'user', content: 'now check the www subdomain too', ts: 4 });
+const basis = W.titleBasis(tb.id);
+A.ok(basis.indexOf('starnessos.com') >= 0 && basis.indexOf('www subdomain') >= 0, 'basis = founding directive + latest substantive turns');
+A.ok(basis.indexOf('hey') !== 0 && basis.indexOf('thanks\n') < 0, 'small-talk turns are skipped from the basis');
+
+/* ---------- healing: a weak model title (minted from a small-talk opener) upgrades ONCE real work appears ---------- */
+W.reset();
+const hw = W.create(null);
+hw.history.push({ role: 'user', content: 'hey', ts: 1 });
+W.autoTitle(hw.id, 'hey');
+A.eq(W.needsModelTitle(hw.id), true, 'the machine placeholder is always upgrade-eligible');
+W.retitle(hw.id, 'Casual Greeting Exchange');   // what a pre-upgrade build minted from "hey"
+A.eq(W.needsModelTitle(hw.id), false, 'a greeting-only session does NOT churn retries on its weak title');
+hw.history.push({ role: 'user', content: 'research the best budget mechanical keyboards', ts: 2 });
+A.eq(W.needsModelTitle(hw.id), true, 'once real work lands, the weak small-talk title earns a healing upgrade');
+A.ok(W.retitle(hw.id, 'Budget Keyboard Research', true) === true, 'the healing upgrade applies (strong)');
+A.eq(hw.titleStrong, true, 'a strong retitle marks the terminal rung');
+A.eq(W.needsModelTitle(hw.id), false, 'a strong title never re-enters the upgrade ladder');
+hw.history.push({ role: 'user', content: 'also compare switch types in depth', ts: 3 });
+A.eq(W.needsModelTitle(hw.id), false, 'later substantive turns do not churn a strong title');
+const dumpedStrong = JSON.parse(JSON.stringify(W.serialize()));
+W.init(dumpedStrong);
+A.eq(W.get(hw.id).titleStrong, true, 'titleStrong survives a save/load round-trip');
+A.eq(W.needsModelTitle(hw.id), false, 'the strong lock still holds after reload');
+
 /* ---------- hybrid-honest lanes: a real run auto-advances todo->active ---------- */
 W.reset();
 const c = W.create('write a report');
@@ -170,6 +217,20 @@ const made = W.importTasks([
 A.eq(made.map(w => w.lane), ['todo', 'active', 'shipped', 'todo'], 'col->lane map (unknown col -> todo)');
 A.ok(made.every(w => w.history.length === 0), 'imported cards start with empty history');
 A.ok(W.list().some(w => w.title === 'doing card'), 'imported cards become real workstreams in the store');
+// every legacy kanban card was a BOARD card — without an explicit kind, make()'s lane inference read
+// the 'doing' (active-lane) card as a chat and silently dropped it off the board it was imported onto.
+A.ok(made.every(w => w.kind === 'task'), 'ALL imported kanban cards are kind:task (a doing card must not vanish from the board)');
+
+/* ---------- ensureGeneral never adopts a board task as the chat home ---------- */
+const gBefore = W.generalId();
+W.init({
+  workstreams: [{ id: 'orphan_task', title: null, lane: 'todo', kind: 'task' }],
+  activeId: null, generalId: null   // no General in the slice — ensureGeneral must MINT one
+});
+A.ok(W.generalId() !== 'orphan_task', 'an untitled board task is never adopted as General');
+A.eq(W.get(W.generalId()).kind, 'chat', 'the minted General is a chat');
+A.ok(W.get('orphan_task') && W.get('orphan_task').kind === 'task', 'the orphan task survives as a normal task');
+void gBefore;
 
 /* ---------- serialize round-trips ---------- */
 W.reset(); W.create('round trip');
@@ -302,5 +363,72 @@ A.eq(W.get('kept_chat').kind, 'chat', 'kind survives a serialize/init round-trip
   W.init(dumpedRoot);
   A.eq(W.get(anchored.id).projectRoot, 'C:\\proj\\repo', 'projectRoot survives a serialize/init round-trip');
 }
+
+/* ---------- lastRunOk: a run that DIED can never read as DONE on the board (truthful telemetry) ---------- */
+W.reset();
+const fr = W.create('failing task', { kind: 'task' });
+A.eq(fr.lastRunOk, null, 'a fresh stream has no run outcome (null = unknown)');
+W.appendRun(fr.id, 'run_f1');
+A.eq(fr.lastRunOk, null, 'a run in flight has no outcome yet');
+A.ok(W.noteRunEnd(fr.id, 'run_f1', false) === true, 'noteRunEnd settles the failure');
+A.eq(fr.lastRunOk, false, 'the failed outcome is stored');
+W.appendRun(fr.id, 'run_f2');
+A.eq(fr.lastRunOk, null, 'a NEW run resets the outcome to unknown (a retry must not inherit the old failure)');
+A.ok(W.noteRunEnd(fr.id, 'run_f1', true) === false, 'a STALE runId cannot settle the current run');
+A.eq(fr.lastRunOk, null, 'the stale callback was refused — outcome still unknown');
+A.ok(W.noteRunEnd(fr.id, 'run_f2', true) === true, 'the current run settles ok');
+A.eq(fr.lastRunOk, true, 'the success outcome is stored');
+A.ok(W.appendRun(fr.id, 'run_f2') === true && fr.lastRunOk === true, 'a dup re-file of the SAME run does not erase a settled outcome');
+A.ok(W.noteRunEnd(fr.id, 'run_never', false) === false, 'a runId that was never filed is refused (unanchored outcome)');
+A.ok(W.noteRunEnd('ws_no_such', 'run_f2', false) === false, 'unknown stream refused');
+const noRun = W.create('never ran', { kind: 'task', activate: false });
+A.ok(W.noteRunEnd(noRun.id, 'run_x', true) === false, 'a stream with NO filed runs cannot take an outcome');
+W.noteRunEnd(fr.id, 'run_f2', false);   // flip to failed, then prove it survives persistence
+const dumpedRun = JSON.parse(JSON.stringify(W.serialize()));
+W.init(dumpedRun);
+A.eq(W.get(fr.id).lastRunOk, false, 'lastRunOk survives a serialize/init round-trip');
+A.eq(W.get(noRun.id).lastRunOk, null, 'a never-ran stream round-trips as unknown (null), never invented');
+
+/* ---------- deleting a live stream fails closed at the destructive operation ---------- */
+const appSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'app.js'), 'utf8');
+const deleteWorkstreamSource = A.fnBody(appSource, 'function deleteWorkstream(id)');
+A.ok(deleteWorkstreamSource && deleteWorkstreamSource.length < 3000, 'deleteWorkstream source is extracted exactly');
+
+function deletionHarness(busy) {
+  const events = [];
+  const streams = new Map([['work-1', { id: 'work-1', title: 'Long task', agentId: 'scout' }]]);
+  const ctx = { events, streams, busy };
+  const remove = new Function('CTX', `
+    const Workstreams = {
+      get: id => CTX.streams.get(id),
+      activeId: () => 'work-1',
+      del: id => { CTX.events.push('del:' + id); return CTX.streams.delete(id); }
+    };
+    const Channels = { isBusy: id => { CTX.events.push('busy:' + id); return CTX.busy; } };
+    const SFX = { bad: () => CTX.events.push('sfx.bad') };
+    const StationUI = { notify: (message, tone) => CTX.events.push('notify:' + tone + ':' + message) };
+    function loadActiveStream() { CTX.events.push('loadActiveStream'); }
+    function renderRail() { CTX.events.push('rail'); }
+    function persist() { CTX.events.push('persist'); }
+    ${deleteWorkstreamSource}
+    return deleteWorkstream;
+  `)(ctx);
+  return { remove, streams, events };
+}
+
+const busyDeletion = deletionHarness(true);
+A.eq(busyDeletion.remove('work-1'), false, 'busy workstream deletion is refused');
+A.ok(busyDeletion.streams.has('work-1'), 'busy workstream remains in the rail store');
+A.eq(busyDeletion.events.filter(e => e.startsWith('del:')).length, 0, 'busy refusal never calls the destructive store operation');
+A.eq(busyDeletion.events.filter(e => e === 'persist').length, 0, 'busy refusal does not persist a tombstone');
+A.eq(busyDeletion.events.filter(e => e === 'loadActiveStream').length, 0, 'busy refusal does not change the active stream');
+A.ok(busyDeletion.events.some(e => e.includes('stop this session before deleting it')), 'busy refusal explains the required stop');
+
+const idleDeletion = deletionHarness(false);
+A.eq(idleDeletion.remove('work-1'), true, 'idle workstream deletion succeeds');
+A.ok(!idleDeletion.streams.has('work-1'), 'idle workstream is removed');
+A.eq(idleDeletion.events.filter(e => e === 'del:work-1').length, 1, 'idle path deletes exactly once');
+A.eq(idleDeletion.events.filter(e => e === 'persist').length, 1, 'idle deletion persists exactly once');
+A.eq(idleDeletion.events.filter(e => e === 'loadActiveStream').length, 1, 'deleting the open idle stream reloads General');
 
 A.report('workstreams.test');

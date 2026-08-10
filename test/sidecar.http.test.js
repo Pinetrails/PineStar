@@ -226,6 +226,13 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const diagBlob = JSON.stringify(diag.body);
     A.ok(diagBlob.indexOf('sk-or-v1-fake-discord') < 0, 'diagnostics never leaks the seeded provider key');
     A.ok(diagBlob.indexOf('discord-token') < 0, 'diagnostics never leaks the seeded channel token');
+    // LIVE doctor is never an accidental GET/background action: token + explicit second consent are both
+    // required before any provider/execution/connector/channel probe can start.
+    const doctorNoToken = await fetch(B + '/api/diagnostics/live', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    A.eq(doctorNoToken.status, 403, 'POST /api/diagnostics/live WITHOUT a token -> 403');
+    const doctorNoConsent = await j('POST', '/api/diagnostics/live', {});
+    A.eq(doctorNoConsent.status, 409, 'POST /api/diagnostics/live without explicit consent -> 409 before any probe');
+    A.eq(doctorNoConsent.body.code, 'LIVE_DOCTOR_CONSENT_REQUIRED', 'live doctor refusal names the missing consent gate');
 
     // ---- managed credits: UNCONFIGURED boot exposes ZERO surface (honesty law — no dead STORE, no fake balance) ----
     // This boot sets no STARNET_CREDITS_URL, so /api/credits must 404 with { configured: false } — the frontend
@@ -878,6 +885,11 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
        the wrong cause: the station HAS ears, this clip was just undecodable. So ask the station what it can
        actually do and hold it to the matching truth — asserting one fixed string would force a lie in whichever
        world it was not written for, and dropping to "some reason exists" would guard nothing. */
+    const sttStatus = await j('GET', '/api/stt/status');
+    A.eq(sttStatus.status, 200, 'GET /api/stt/status -> 200');
+    A.ok(['cloud', 'local', 'native', 'none'].includes(sttStatus.body.preferred), 'STT status names one supported classic provider leg');
+    A.eq(sttStatus.body.available, sttStatus.body.preferred !== 'none', 'STT status availability agrees with its preferred leg');
+    A.ok(['cloud', 'local', 'native'].every(k => typeof sttStatus.body[k] === 'boolean'), 'STT status exposes capability booleans without credentials');
     const localVoice = await j('GET', '/api/local-voice/status');
     const canHearKeyless = !!(localVoice.body && localVoice.body.available);
     if (canHearKeyless) {
@@ -1114,8 +1126,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
         A.eq(b2.equals(audioPayload), true, 'the cached edge clip is byte-identical');
         A.ok(/^edge:/.test(r2.headers.get('x-voice-provider') || ''), 'the serving tier names itself (X-Voice-Provider: edge:…)');
 
-        /* ---- THE SHIPPED SHAPE: local:true where the offline engine cannot load (every installed build —
-           the bundle ships no node_modules; reproduced here with the STARNET_LOCAL_VOICE=0 kill-switch).
+        /* ---- THE DEGRADED SHAPE: local:true where the staged offline engine cannot load (a damaged/custom
+           build, reproduced here with the STARNET_LOCAL_VOICE=0 kill-switch).
            ⛔ THE BUG THIS LOCKS OUT (2026-07-30, found by ear): this request used to fall through into the
            KEYED provider chain, so live voice silently spoke with a different provider's identity and the
            voice picker adjusted an engine that was not there. Now the picked voice maps onto the nearest

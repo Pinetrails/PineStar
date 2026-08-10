@@ -15,6 +15,10 @@ const T0 = 1700000000000;
   A.eq(s.id, 'abc123', 'id carried');
   A.eq(s.ts, T0, 'ts = injected now');
   A.eq(s.parentId, null, 'no parent by default');
+  const scoped = cp.makeSnapshot({ id: 'scope:abc123', scopeId: 'scope', workTree: '/project', gitCommit: 'abc123' }, { now: T0 });
+  A.eq(scoped.scopeId, 'scope', 'external root scope is preserved');
+  A.eq(scoped.workTree, '/project', 'external root identity is preserved');
+  A.eq(scoped.gitCommit, 'abc123', 'underlying scoped git commit is preserved');
   A.throws(() => cp.makeSnapshot({ runId: 'r' }, { now: T0 }), 'missing id rejected');
   A.throws(() => cp.makeSnapshot({ id: 'bad id!' }, { now: T0 }), 'invalid id rejected');
 }

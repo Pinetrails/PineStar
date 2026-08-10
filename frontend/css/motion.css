@@ -180,15 +180,32 @@ button:active {
 /* ONE rack width for the whole stack (align-items: stretch, not flex-start): shrink-to-fit cards
    turn a burst into a ragged staircase — a rack of instruments is flush, so the frames, blades,
    stamps and dwell rails all line up column-by-column no matter how long each message is. */
+/* The rack is sized so ordinary one-line prose still fits on one line: dropping below ~356px
+   starts wrapping, and a wrapped compact card is TALLER than the roomy one it was meant to shrink.
+
+   TEXT-SIZE geometry (the --cz law, app.css §1): this stack is a `body` CHILD, so body's zoom
+   multiplies into it — but the things it is parked BETWEEN (the CREW rail, the COMMS panel, the
+   dock) are cabinet, counter-zoomed to a fixed visual size. A plain `left: 268px` therefore
+   walked the rack deeper into the stage at every text step while the gap it had to fit in never
+   moved, and at HUGE it landed on COMMS. So the ANCHOR and the SPACE CAP are written in hardware
+   units (`* var(--cz)`) and only the 356px design width stays content-scaled — the card's type is
+   what you READ and still grows with the dial; where it sits and how much room it may claim do not. */
 #toast-stack {
-  position: fixed; left: 268px; bottom: 128px; z-index: var(--z-toast, 9600);
-  display: flex; flex-direction: column-reverse; gap: 7px; align-items: stretch;
-  pointer-events: none; width: min(392px, 44vw);
+  position: fixed; z-index: var(--z-toast, 9600);
+  left: calc(268px * var(--cz, 1)); bottom: calc(128px * var(--cz, 1));
+  display: flex; flex-direction: column-reverse; gap: 6px; align-items: stretch;
+  pointer-events: none; width: min(356px, calc(37vw * var(--cz, 1)));
 }
-@media (max-width: 900px) { #toast-stack { left: 12px; } }
+/* Below 1120px the cabinet stops counter-zooming (app.css §"1120" narrows the grid to
+   `200px 1fr var(--chat-w,300px)` with no `* var(--cz)`), so at a big text scale COMMS itself
+   swells leftward across the stage and the gap the rack was parked in disappears. Park it in the
+   left gutter from that breakpoint on — the same move the layout already makes at 900px. A
+   transient card briefly over the CREW list is strictly better than one over the live
+   conversation, and from the gutter it can never reach COMMS at any scale. */
+@media (max-width: 1120px) { #toast-stack { left: calc(12px * var(--cz, 1)); } }
 .toast {
   --sev: var(--ph);        /* the blade colour for this card — remapped per severity below */
-  --lamp-w: 26px;
+  --lamp-w: 22px;
   position: relative; display: flex; align-items: stretch; overflow: hidden;
   pointer-events: auto; width: 100%;
   border: 1px solid rgba(var(--ph-rgb), 0.16); border-radius: var(--r-sm);
@@ -209,16 +226,16 @@ button:active {
 /* the registration ticks (panelchrome §1), framing the readout area only — the blade owns the left edge */
 .toast::after {
   content: ''; position: absolute; pointer-events: none; opacity: 0.34;
-  top: 4px; right: 5px; bottom: 4px; left: calc(var(--lamp-w) + 4px);
+  top: 3px; right: 4px; bottom: 3px; left: calc(var(--lamp-w) + 3px);
   background:
-    linear-gradient(var(--ph-dim), var(--ph-dim)) left  top    / 6px 1px,
-    linear-gradient(var(--ph-dim), var(--ph-dim)) left  top    / 1px 6px,
-    linear-gradient(var(--ph-dim), var(--ph-dim)) right top    / 6px 1px,
-    linear-gradient(var(--ph-dim), var(--ph-dim)) right top    / 1px 6px,
-    linear-gradient(var(--ph-dim), var(--ph-dim)) left  bottom / 6px 1px,
-    linear-gradient(var(--ph-dim), var(--ph-dim)) left  bottom / 1px 6px,
-    linear-gradient(var(--ph-dim), var(--ph-dim)) right bottom / 6px 1px,
-    linear-gradient(var(--ph-dim), var(--ph-dim)) right bottom / 1px 6px;
+    linear-gradient(var(--ph-dim), var(--ph-dim)) left  top    / 5px 1px,
+    linear-gradient(var(--ph-dim), var(--ph-dim)) left  top    / 1px 5px,
+    linear-gradient(var(--ph-dim), var(--ph-dim)) right top    / 5px 1px,
+    linear-gradient(var(--ph-dim), var(--ph-dim)) right top    / 1px 5px,
+    linear-gradient(var(--ph-dim), var(--ph-dim)) left  bottom / 5px 1px,
+    linear-gradient(var(--ph-dim), var(--ph-dim)) left  bottom / 1px 5px,
+    linear-gradient(var(--ph-dim), var(--ph-dim)) right bottom / 5px 1px,
+    linear-gradient(var(--ph-dim), var(--ph-dim)) right bottom / 1px 5px;
   background-repeat: no-repeat;
 }
 
@@ -226,7 +243,7 @@ button:active {
 .toast-lamp {
   flex: 0 0 auto; width: var(--lamp-w); align-self: stretch;
   display: grid; place-items: center;
-  font-style: normal; font-size: 13px; line-height: 1;
+  font-style: normal; font-size: 11px; line-height: 1;
   color: var(--ink); text-shadow: none;
   background:
     repeating-linear-gradient(0deg, rgba(0,0,0,0.10) 0 1px, transparent 1px 3px),
@@ -257,16 +274,16 @@ button:active {
 /* ---- the readout face ---- */
 .toast-body {
   flex: 1 1 auto; min-width: 0;
-  display: flex; flex-direction: column; gap: 3px;
-  padding: 8px 54px 9px 11px;   /* right pad keeps the message clear of the corner stamp */
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 49px 7px 9px;   /* right pad keeps the message clear of the corner stamp */
 }
 .toast-kind {
-  font-size: 10px; letter-spacing: var(--ls-3); line-height: 1;
+  font-size: 9px; letter-spacing: 1.6px; line-height: 1;
   color: var(--ph-dim); text-shadow: none;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .toast-txt {
-  font-size: var(--fs-2); line-height: 1.24; letter-spacing: var(--ls-1);
+  font-size: var(--fs-1); line-height: 1.22; letter-spacing: var(--ls-1);
   color: var(--text); text-shadow: 0 0 5px var(--ph-glow2);
   overflow-wrap: anywhere;
 }
@@ -277,8 +294,8 @@ button:active {
    with no label there is no top row to join, so it centres on the message instead of floating
    above it. Kept clear of the right-hand registration ticks either way. */
 .toast-ts {
-  position: absolute; top: 8px; right: 16px; pointer-events: none;
-  font-size: 10px; letter-spacing: 1px; line-height: 1;
+  position: absolute; top: 6px; right: 12px; pointer-events: none;
+  font-size: 9px; letter-spacing: 1px; line-height: 1;
   color: var(--ph-dim); opacity: 0.62; text-shadow: none;
   font-variant-numeric: tabular-nums;
 }
@@ -514,6 +531,11 @@ button:active {
     background-color var(--t-fast) var(--ease-soft),
     transform var(--t-fast) var(--ease-out);
 }
+/* live task-board refresh (stationui refreshBoardLive): a background data poke rebuilds the board
+   in place — replaying the entrance stagger on every rail refresh reads as a full-board flicker.
+   Entrance motion belongs to user-initiated opens only. */
+.kb-live-refresh .kb-card, .kb-live-refresh .empty-state { animation: none; }
+
 /* hover lift — transform + border brighten + glow. Scoped to the interactive
    cards (crew/agent/kanban/quest/perk rows); .mc-row etc. inherit the entrance
    but a lift is applied only where the whole row is clickable. */

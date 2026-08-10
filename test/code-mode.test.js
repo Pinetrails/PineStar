@@ -67,6 +67,7 @@ async function expectReject(p, pattern, label) {
     const out = await capped.run({ code: `return 'x'.repeat(200);` }, { composeDispatch: async () => 'x' });
     A.ok(/truncated at 64 bytes/.test(out.content), 'final output cap is explicit');
     A.ok(Buffer.byteLength(out.content, 'utf8') <= 64, 'final output including its notice stays within the byte cap');
+    A.eq(out.fullContent, 'x'.repeat(200), 'the exact pre-cap code result crosses the registry persistence seam');
     const callCapped = Code.makeCodeTools({ limits: { timeoutMs: 3000, maxCalls: 2, maxOutputBytes: 1000 } }).codeTool;
     const calls = await callCapped.run({ code: `
       let denied='';
@@ -79,7 +80,12 @@ async function expectReject(p, pattern, label) {
     await expectReject(timed.run({ code: 'while (true) {}' }, { composeDispatch: async () => '' }), /timed out/, 'CPU loop is killed by the parent deadline');
 
     let deadlineAbortedNested = false;
-    const nestedTimed = Code.makeCodeTools({ limits: { timeoutMs: 100 } }).codeTool;
+    // This case needs the isolated child to START a nested dispatch before the deadline can abort it.
+    // 100ms is enough for the busy-loop case above (the parent timer needs no child handshake), but on
+    // Windows a clean child-process launch can itself exceed 100ms. Then there is no in-flight dispatch
+    // to observe and the test reports a false product failure. Keep the deadline short, but leave bounded
+    // startup headroom so this assertion measures cancellation rather than process-launch scheduling.
+    const nestedTimed = Code.makeCodeTools({ limits: { timeoutMs: 1000 } }).codeTool;
     await expectReject(nestedTimed.run({ code: `return await tool('slow.read', {});` }, {
       composeDispatch: async (_request, meta) => await new Promise((resolve, reject) => {
         meta.signal.addEventListener('abort', () => {

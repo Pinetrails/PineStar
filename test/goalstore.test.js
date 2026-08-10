@@ -30,6 +30,9 @@ const wqComplete = id => { wq[id].status = 'done'; };
 // capture the sidecar mirror + let a POST resolve
 const posts = [];
 global.fetch = (url, opts) => { posts.push({ url, body: JSON.parse((opts && opts.body) || '{}') }); return Promise.resolve({ ok: true }); };
+const journeyPosts = [];
+let journeyAvailable = false;
+global.JourneyStore = { noteMilestone: async d => { journeyPosts.push(Object.assign({}, d)); return journeyAvailable ? { ok: true } : { ok: false, error: 'offline' }; } };
 
 // a fake Harness returning a fixed decomposition (COUNTED — the spend-once cache is asserted on this counter)
 let harnessReply = '1. Set up the runtime\n2. Wire the event bus\n3. Build the first agent loop';
@@ -97,8 +100,14 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   wqComplete('wq:1');
   clock = 2000;
   GoalStore._onRunEnd({ reason: 'done', agentId: 'agent', runId: 'run_a' });
+  await new Promise(resolve => setImmediate(resolve));
   A.eq(GoalStore.activeGoal().milestones[0].status, 'done', 'completing the REAL work completes the milestone (never a manual tick)');
   A.ok(GoalStore.activeGoal().milestones[0].evidence, 'evidence is written onto the milestone node');
+  A.eq(GoalStore.activeGoal().milestones[0].journeySyncedAt, null, 'a failed journey fold remains durably pending');
+  journeyAvailable = true;
+  await GoalStore._syncJourneyMilestones();
+  A.ok(GoalStore.activeGoal().milestones[0].journeySyncedAt, 'a later sync retries and acknowledges the completed milestone');
+  A.eq(journeyPosts.filter(p => p.goalId === goal.id && p.milestoneId === goal.milestones[0].id).length, 2, 'the failed milestone is retried exactly once when service returns');
   const q2 = GoalStore.quests();
   A.ok(/1 of 3/.test(q2[0].desc), 'the arc meter advanced to 1 of 3 (honest)');
   const nextStep = q2.filter(q => q.kind === 'arc-step').find(s => s.isNext);
@@ -164,8 +173,10 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   clock = 9000; GoalStore._onRunEnd({ reason: 'done', agentId: 'agent', runId: 'run_p' });
   const prBefore = GoalStore.quests()[0].desc;
   GoalStore.init({ now: () => clock, getSystem: () => '', launchDirective: t => launches.push(t) });   // re-hydrate from the own key
+  await new Promise(resolve => setImmediate(resolve));
   A.ok(GoalStore.activeGoal() && GoalStore.activeGoal().id === gp.id, 'the goal tree survives a re-init (persisted, own key)');
   A.eq(GoalStore.quests()[0].desc, prBefore, 'progress + evidence round-trip through persistence');
+  A.ok(GoalStore.activeGoal().milestones[0].journeySyncedAt, 'journey acknowledgement survives the goal-store persistence round-trip');
 
   /* ====== 8. THE ONE-BEAT DISCIPLINE — BEHAVIORAL (memory wins, study second, arc third) ======
      The arc confirm beat is the LOWEST-priority participant on the pure beat-slot arbiter (Study.makeBeatSlot):
@@ -289,6 +300,36 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   goalsBeliefs = [{ id: 'cd_70', text: 'a goal whose proposal must not re-bill, changed' }];
   await GoalStore.proposeDecomposition();
   A.eq(chatCalls, callsBefore + 2, 'a CHANGED belief state is a fresh spend (the cache never leaks across states)');
+
+  /* ====== 11b. THE STUBBORN-BELIEF SPEND LEAK — an undecomposable belief stops re-billing ======
+     An unusable reply (parse failure, or a path shorter than the 3 the confirm panel requires) marked NOTHING
+     offered so "a later, better reply could still land" — which meant a belief this model simply cannot break
+     down re-paid the aux call at EVERY single run end, forever. Two failures on one belief fingerprint is
+     evidence enough: mark it offered, so it re-opens only when the belief itself changes. */
+  goalsBeliefs = [{ id: 'cd_80', text: 'a goal this model can never decompose properly' }];
+  harnessReply = 'I am not sure how to break that down.';        // parses to nothing usable
+  const stubbornBefore = chatCalls;
+  A.eq(await GoalStore.proposeDecomposition(), null, 'an unparseable reply yields no path');
+  A.eq(GoalStore.willOfferDecomposition(), true, 'ONE failure is a hiccup — the belief is still offerable');
+  A.eq(await GoalStore.proposeDecomposition(), null, 'the second attempt also fails');
+  A.eq(chatCalls, stubbornBefore + 2, 'exactly two aux calls were paid');
+  A.eq(GoalStore.willOfferDecomposition(), false, 'after two failures the belief is marked offered — it stops re-billing');
+  A.eq(await GoalStore.proposeDecomposition(), null, 'and a later run end does not even reach the model');
+  A.eq(chatCalls, stubbornBefore + 2, 'no third aux call is ever paid for this belief state');
+  // …but a CHANGED belief is a fresh question, and a good reply clears the failure memory
+  goalsBeliefs = [{ id: 'cd_80', text: 'a goal this model can never decompose properly, reworded by hand' }];
+  harnessReply = '1. first real step\n2. second real step\n3. third real step';
+  const revived = await GoalStore.proposeDecomposition();
+  A.ok(revived && revived.texts.length === 3, 'a changed belief re-opens the question and can succeed');
+  // a path SHORTER than the confirm panel's floor is a failure here too (it would have been dropped anyway)
+  goalsBeliefs = [{ id: 'cd_81', text: 'a goal that decomposes into only two steps somehow' }];
+  harnessReply = '1. only step one\n2. only step two';
+  const shortBefore = chatCalls;
+  A.eq(await GoalStore.proposeDecomposition(), null, 'an under-3-milestone path is unusable, not a proposal');
+  A.eq(await GoalStore.proposeDecomposition(), null, 'and it fails again');
+  A.eq(GoalStore.willOfferDecomposition(), false, 'two short paths also close the belief (no endless re-spend)');
+  A.eq(chatCalls, shortBefore + 2, 'the short-path belief cost exactly two calls, ever');
+  harnessReply = '1. Set up the runtime\n2. Wire the event bus\n3. Build the first agent loop';
 
   /* ====== 12. REVIEW FIX 5 — the offered-fingerprint memory is FIFO-capped (no unbounded growth) ====== */
   for (let i = 0; i < 120; i++) { goalsBeliefs = [{ id: 'cd_cap_' + i, text: 'capped goal number ' + i + ' distinct' }]; GoalStore.declineDecomposition(GoalStore.pendingDecomposition() || goalsBeliefs[0]); }

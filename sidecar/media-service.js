@@ -17,6 +17,48 @@ const STT_PROMPT = 'Transcribe this audio verbatim. Output ONLY the transcribed 
 const STT_GROQ_MODEL = 'whisper-large-v3-turbo';
 const STT_OPENAI_MODEL = 'whisper-1';
 
+let oggOpusDecoderModulePromise = null;
+
+/* Telegram voice notes are Ogg/Opus. The offline Whisper pipeline consumes 16 kHz Float32 PCM, so decode
+   that container in-process instead of depending on a machine-global ffmpeg install. Keep the ESM decoder
+   lazy: a damaged/custom installation must still boot and can truthfully fall through to keyed STT. */
+async function oggOpusToMono16kFloat32(buf, loadModule) {
+  if (!Buffer.isBuffer(buf) || buf.length < 4 || buf.toString('latin1', 0, 4) !== 'OggS') {
+    throw new Error('unreadable Ogg/Opus audio');
+  }
+  const loader = typeof loadModule === 'function'
+    ? loadModule
+    : () => {
+        if (!oggOpusDecoderModulePromise) oggOpusDecoderModulePromise = import('ogg-opus-decoder');
+        return oggOpusDecoderModulePromise;
+      };
+  const mod = await loader();
+  if (!mod || typeof mod.OggOpusDecoder !== 'function') throw new Error('Ogg/Opus decoder is unavailable');
+  const decoder = new mod.OggOpusDecoder({ sampleRate: 16000 });
+  try {
+    await decoder.ready;
+    const decoded = await decoder.decodeFile(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
+    const channels = Array.isArray(decoded && decoded.channelData) ? decoded.channelData : [];
+    const samples = Number(decoded && decoded.samplesDecoded) || 0;
+    if (!samples || !channels.length) {
+      const first = decoded && Array.isArray(decoded.errors) && decoded.errors[0];
+      throw new Error((first && first.message) || 'Ogg/Opus audio contained no decodable samples');
+    }
+    const usable = channels.filter(ch => ch && typeof ch.length === 'number');
+    if (!usable.length) throw new Error('Ogg/Opus audio contained no decodable channels');
+    const count = Math.min(samples, ...usable.map(ch => ch.length));
+    const mono = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      let sum = 0;
+      for (const ch of usable) sum += Number(ch[i]) || 0;
+      mono[i] = sum / usable.length;
+    }
+    return mono;
+  } finally {
+    try { decoder.free(); } catch (_) {}
+  }
+}
+
 function pcmToWav(pcm, sampleRate, channels) {
   const bits = 16;
   const blockAlign = channels * bits / 8;
@@ -105,6 +147,7 @@ function makeMediaService(options) {
   const processEnv = o.processEnv || {};
   const redact = typeof o.redact === 'function' ? o.redact : String;
   const logger = o.logger || console;
+  const decodeOggOpus = typeof o.decodeOggOpus === 'function' ? o.decodeOggOpus : oggOpusToMono16kFloat32;
   // The host owns wall time. A missing clock degrades deterministically instead of smuggling ambient time into
   // backend policy (tests and alternate compositions can then reproduce cache decisions exactly).
   const now = typeof o.now === 'function' ? o.now : (() => 0);
@@ -350,8 +393,13 @@ function makeMediaService(options) {
     };
 
     if (body && body.local) {
+      const localEngine = String(body.localEngine || '').trim().toLowerCase();
+      const localVoiceId = String(body.localVoice || localVoice.defaultVoice());
+      // Live Voice pins the engine that served its first audible chunk. Once Edge owns the room, do not
+      // probe Kokoro again between sentences; once Kokoro owns it, a transient miss must fail silent rather
+      // than substitute a different speaker for just that chunk.
+      if (localEngine === 'edge') return serveEdge(localVoice.edgeVoiceFor(localVoiceId), '');
       try {
-        const localVoiceId = String(body.localVoice || localVoice.defaultVoice());
         const localSpeed = Number(body.speed) || 1;
         const cacheKey = crypto.createHash('sha1').update(`local-kokoro/q4|${localVoiceId}|${localSpeed}|${text}`).digest('hex');
         const cachePath = path.join(voiceCacheDir, `local-${cacheKey}.wav`);
@@ -366,8 +414,9 @@ function makeMediaService(options) {
         return res.end(buf);
       } catch (error) {
         const why = 'local voice engine: ' + ((error && error.message) || error);
+        if (localEngine === 'local-kokoro') return fallback(why);
         logger.error('[tts] local Kokoro failed → edge-mapped floor:', (error && error.message) || error);
-        return serveEdge(localVoice.edgeVoiceFor(body.localVoice), why);
+        return serveEdge(localVoice.edgeVoiceFor(localVoiceId), why);
       }
     }
 
@@ -428,6 +477,22 @@ function makeMediaService(options) {
     return { ok: true, text: String((json && json.text) || '').trim() };
   }
 
+  // One truthful capability snapshot for the classic push-to-talk button. The client cannot infer these
+  // from browser APIs: desktop WebViews have MediaRecorder even when the only usable engine is native
+  // Windows dictation, while the bundled local engine accepts PCM rather than the recorder's WebM/MP4.
+  // Return booleans only — never provider credentials or paths.
+  function sttStatus() {
+    const cloud = !!(
+      providerRuntimeKey('groq', '') ||
+      providerRuntimeKey('openai', '') ||
+      (typeof o.getRuntimeKey === 'function' ? o.getRuntimeKey() : '')
+    );
+    const local = (() => { try { return !!localVoice.status().available; } catch (_) { return false; } })();
+    const native = (() => { try { return !!nativeStt.status().available; } catch (_) { return false; } })();
+    const preferred = cloud ? 'cloud' : local ? 'local' : native ? 'native' : 'none';
+    return { available: preferred !== 'none', preferred, cloud, local, native };
+  }
+
   async function transcribeAudioBuffer(audioBuf, format, apiKey) {
     if (!audioBuf || !audioBuf.length) return { ok: false, reason: 'no audio' };
     const key = String(apiKey || (typeof o.getRuntimeKey === 'function' ? o.getRuntimeKey() : '') || '');
@@ -475,19 +540,21 @@ function makeMediaService(options) {
       }
     }
     if (localReady) {
-      if (/^wav$/i.test(format)) {
+      if (/^(?:wav|ogg|opus)$/i.test(format)) {
         try {
-          const pcm = wavToMono16kFloat32(audioBuf);
+          const pcm = /^wav$/i.test(format)
+            ? wavToMono16kFloat32(audioBuf)
+            : await decodeOggOpus(audioBuf);
           if (pcm) {
             const text = await localVoice.transcribe(Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength));
             return { ok: true, text: String(text || '') };
           }
-          lastReason = 'local: unreadable wav';
+          lastReason = 'local: unreadable ' + format;
         } catch (error) { lastReason = 'local: ' + ((error && error.message) || error); }
       } else {
         lastReason = lastReason === 'no transcription'
-          ? 'local engine needs wav (got ' + format + ')'
-          : lastReason + '; local engine needs wav (got ' + format + ')';
+          ? 'local engine cannot decode ' + format
+          : lastReason + '; local engine cannot decode ' + format;
       }
     }
     return { ok: false, reason: lastReason };
@@ -530,6 +597,11 @@ function makeMediaService(options) {
     if (!audioB64) return degrade('no audio');
     const result = await transcribeAudioBuffer(Buffer.from(audioB64, 'base64'), format, key);
     return result.ok ? ok(result.text) : degrade(result.reason);
+  }
+
+  function handleSttStatus(req, res) {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(sttStatus()));
   }
 
   function handleNativeSttStatus(req, res) {
@@ -594,9 +666,11 @@ function makeMediaService(options) {
 
   return {
     synthesizeForAgent,
+    sttStatus,
     transcribeAudioBuffer,
     transcribeForMime,
     handleTts,
+    handleSttStatus,
     handleStt,
     handleNativeSttStatus,
     handleNativeStt,
@@ -613,6 +687,7 @@ module.exports = {
   makeMediaService,
   pcmToWav,
   wavToMono16kFloat32,
+  oggOpusToMono16kFloat32,
   sttMultipartBody,
   constants: { TTS_DEFAULT_MODEL, TTS_KEY_PROVIDERS, STT_MAX_BYTES, STT_GROQ_MODEL, STT_OPENAI_MODEL }
 };

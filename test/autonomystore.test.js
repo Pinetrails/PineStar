@@ -60,6 +60,11 @@ AutonomyStore.init();   // simulate a page reload (re-hydrate from the key)
 A.eq(AutonomyStore.get(), { v: 1, initiative: 'leash', reach: 'observe', leashPerDay: 7 }, 'a posture survives reload (re-hydrated from its own key)');
 A.eq(posturePosts[posturePosts.length - 1].resumeHalt, false, 'reload mirror cannot impersonate a deliberate dial write');
 
+/* ---------- station backup import: restores posture without lifting E-STOP ---------- */
+AutonomyStore.importState({ v: 1, initiative: 'leash', reach: 'sandbox', leashPerDay: 4 });
+A.eq(AutonomyStore.get(), { v: 1, initiative: 'leash', reach: 'sandbox', leashPerDay: 4 }, 'station backup import restores the posture');
+A.eq(posturePosts[posturePosts.length - 1].resumeHalt, false, 'station backup import is not consent to lift E-STOP');
+
 /* ---------- corrupt / old key → the safe floor, never a crash ---------- */
 mem[KEY] = '{not valid json';
 AutonomyStore.init();

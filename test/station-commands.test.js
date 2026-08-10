@@ -27,10 +27,18 @@ function boot(opts) {
   const Channels = require('../frontend/app/channels.js');
   Workstreams.reset();
   Channels.reset();
-  const page = { rail: 0, persisted: 0, loaded: [], acks: [] };
+  const page = { rail: 0, persisted: 0, loaded: [], acks: [], save: null };
   const sandbox = {
     Workstreams, Channels,
-    App: { refreshRail: () => page.rail++, persist: () => page.persisted++, agents: opts.agents || (() => []) },
+    App: {
+      refreshRail: () => page.rail++,
+      persist: () => { page.persisted++; page.save = JSON.parse(JSON.stringify(Workstreams.serialize())); },
+      agents: opts.agents || (() => [])
+    },
+    CloudSave: {
+      flush: async () => opts.saveFails ? false : true,
+      pull: async () => opts.readBackFails ? null : page.save
+    },
     Chat: { load: ws => page.loaded.push(ws.id) },
     U: { bus: { on: () => {} } },
     VoiceLive: opts.voiceLive,
@@ -93,6 +101,45 @@ async function call(env, verb, args) {
   A.ok(env.W.unread(ws.id), 'the rail flags it unread — the Commander has genuinely not seen this yet');
   A.ok(env.page.rail > before && env.page.persisted > 0, 'the rail re-renders and the save is written');
   A.eq(env.page.loaded.length, 0, 'a session that is NOT open is not force-rendered');
+}
+
+// ---- task board verbs: canonical kind:'task' Workstreams, durable read-back, and semantic idempotency ----
+{
+  const env = boot({ agents: () => [{ id: 'builder', name: 'BUILDER' }] });
+  const first = await call(env, 'station.new_task', { title: 'Fix release check', agentId: 'builder' });
+  A.eq(first.ok, true, 'a board card is durably created');
+  A.eq(first.result.durable, true, 'the ack says durability was read back, not merely attempted');
+  A.eq(first.result.created, true, 'the first request minted one card');
+  const card = env.W.get(first.result.id);
+  A.eq(card.kind, 'task', 'the authoritative workstream is explicitly a task');
+  A.eq(card.agentId, 'builder', 'assignment is stored on that same card');
+  const again = await call(env, 'station.new_task', { title: 'FIX RELEASE CHECK', agentId: 'builder' });
+  A.eq(again.ok, true, 'a repeated create is a successful idempotent read-back');
+  A.eq(again.result.duplicate, true, 'and reports that it reused the card');
+  A.eq(env.W.list({ includeArchived: true }).filter(w => w.kind === 'task').length, 1, 'the mutation happened exactly once');
+  const listed = await call(env, 'station.tasks', {});
+  A.eq(listed.result.tasks.length, 1, 'task.list projects the canonical board store');
+
+  const moved = await call(env, 'station.manage_task', { task: 'Fix release check', action: 'move', lane: 'active' });
+  A.eq(moved.ok, true, 'a task can move lanes');
+  A.eq(env.W.get(card.id).lane, 'active', 'the real board state changed');
+  const same = await call(env, 'station.manage_task', { task: card.id, action: 'move', lane: 'active' });
+  A.eq(same.result.changed, false, 'repeating a state-setting mutation is a no-op');
+  const restartSave = JSON.parse(JSON.stringify(env.page.save));
+  env.W.reset();
+  env.W.init(restartSave);
+  A.eq(env.W.get(card.id).lane, 'active', 'a fresh Workstreams boot restores the durable card and lane');
+  A.eq((await call(env, 'station.tasks', {})).result.tasks[0].id, card.id, 'the post-restart model read and UI store identify the same card');
+  const removed = await call(env, 'station.manage_task', { task: card.id, action: 'remove' });
+  A.eq(removed.ok, true, 'remove persists');
+  A.ok(env.page.save.deletedIds.indexOf(card.id) >= 0, 'its durable tombstone prevents restart resurrection');
+}
+
+{
+  const env = boot({ saveFails: true });
+  const out = await call(env, 'station.new_task', { title: 'Cannot claim this' });
+  A.eq(out.ok, false, 'a refused durable write is never reported as success');
+  A.ok(/do not report/.test(out.error), 'the refusal tells the model not to claim completion');
 }
 
 // two browser pages can hold different local ids for the SAME named session. Delivery resolves by the stable

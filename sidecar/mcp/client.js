@@ -35,6 +35,16 @@
   const DEFAULT_PROTOCOL = '2025-06-18';   // MCP revision; the server's echoed version wins after initialize
   const MAX_PAGES = 100;                   // a misbehaving server that always returns a cursor can't spin forever
 
+  // JSON-RPC error.message/data are remote-controlled. Only the tightly-shaped HTTP status emitted by our own
+  // transport is safe to retain; arbitrary server prose can contain credentials or prompt injection and must
+  // not flow into connector status, logs, or model-visible tool errors.
+  function safeRpcError(error) {
+    const code = error && error.code;
+    const raw = String((error && error.message) || '');
+    if (/^connector HTTP \d{3}(?: — [a-z0-9_.-]{1,64})?$/i.test(raw)) return raw;
+    return 'connector JSON-RPC error' + (code != null ? ' (' + String(code).slice(0, 24) + ')' : '');
+  }
+
   function makeMcpClient(deps) {
     deps = deps || {};
     const transport = deps.transport;
@@ -63,9 +73,8 @@
       if (!msg || typeof msg !== 'object') return;
       if (msg.id != null && (('result' in msg) || ('error' in msg))) {        // a response correlates by id
         if ('error' in msg && msg.error) {
-          const e = new Error((msg.error && msg.error.message) || 'JSON-RPC error');
+          const e = new Error(safeRpcError(msg.error));
           e.code = msg.error && msg.error.code;
-          e.data = msg.error && msg.error.data;
           settle(msg.id, p => p.reject(e));
         } else {
           settle(msg.id, p => p.resolve(msg.result));
@@ -192,5 +201,5 @@
     };
   }
 
-  return { makeMcpClient };
+  return { makeMcpClient, _internals: { safeRpcError } };
 });

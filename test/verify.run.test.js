@@ -15,8 +15,12 @@ const { makeVerifyTool } = require('../sidecar/tools/builtin/verify.js');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-vr-'));
   fs.mkdirSync(path.join(root, 'a1'), { recursive: true });
   const events = [];
+  const checkpoints = [];
   const tool = makeVerifyTool({ spawn, fs, pathMod: path, root, clock: makeClock(0), redact: (s) => s }).verifyTool;
-  const ctx = { agentId: 'a1', runId: 'r1', emit: (n, p) => events.push({ name: n, payload: p }) };
+  const ctx = {
+    agentId: 'a1', runId: 'r1', emit: (n, p) => events.push({ name: n, payload: p }),
+    checkpointMutation: async (candidate, label, opts) => checkpoints.push({ candidate, label, opts })
+  };
 
   try {
     // ---- a passing check -> PASSED verdict + verify.result{passed:true} ----
@@ -26,6 +30,14 @@ const { makeVerifyTool } = require('../sidecar/tools/builtin/verify.js');
     const okEv = events.find(e => e.name === 'verify.result');
     A.ok(okEv && okEv.payload.passed === true, 'verify.result emitted with passed:true');
     A.ok(okEv.payload.added === 0 && okEv.payload.removed === 0, 'test-runner path reports a zero diagnostics delta');
+    A.eq(checkpoints.length, 1, 'verify waits for a pre-execution checkpoint');
+    A.eq(path.resolve(checkpoints[0].candidate), path.resolve(root, 'a1'), 'verify checkpoints the effective project cwd');
+    A.eq(checkpoints[0].opts.always, true, 'verify preserves the always-checkpoint execution safety coupling');
+
+    const tinyTool = makeVerifyTool({ spawn, fs, pathMod: path, root, clock: makeClock(0), redact: s => s, limits: { maxBytes: 8 } }).verifyTool;
+    const capped = await tinyTool.run({ cmd: 'echo complete-verification-output' }, ctx);
+    A.ok(/output truncated/.test(capped.content), 'verify preview stays bounded');
+    A.ok(/complete-verification-output/.test(capped.fullContent), 'the complete verification output is recoverable without rerunning the check');
 
     // ---- a failing check -> FAILED verdict (a non-zero exit is a verdict, not a thrown tool error) ----
     events.length = 0;

@@ -27,7 +27,8 @@ const orch = fs.readFileSync(path.join(__dirname, '../sidecar/tools/builtin/orch
 
 // --- PRODUCER half: orchestration.js still computes and sends a per-worker ceiling ---
 A.ok(/workerMaxIters/.test(orch), 'orchestration.js still computes a per-worker iteration ceiling');
-A.ok(/maxIters:\s*workerMaxIters/.test(orch), 'orchestration.js passes it to runOnce as maxIters');
+A.ok(/maxIters:\s*bounded\s*\?\s*Math\.min\(workerMaxIters,\s*bounded\.workerMaxIters\)\s*:\s*workerMaxIters/.test(orch),
+  'orchestration.js passes the ordinary worker ceiling and only lowers it for a task-specific bound');
 
 // --- HOST half 1: the station actually SUPPLIES workerMaxIters (it previously never did) ---
 A.ok(/const\s+ORCH_WORKER_MAX_ITERS\s*=/.test(sidecar),

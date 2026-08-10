@@ -156,6 +156,17 @@ A.eq(makeRouter().stationFor('coder'), null, 'no posted plan -> stationFor null'
   A.ok(r.setStation(good).ok, 'good Station routing installs first');
   A.ok(!r.setStation(bad).ok, 'non-deployable Station routing update is refused');
   A.eq(r.resolveTarget({}), 'real', 'last-good Station routing survives the refused update');
+
+  /* refusal must NOT depend on install order (latent bug, fixed 2026-08-04): the old guard was
+     `!v.routingOk && stationPlan`, so the SAME cyclic doc refused above was ACCEPTED when it was the
+     FIRST install (no stationPlan yet) — claiming ok while arming no routing. A fresh router must
+     refuse it identically. */
+  const first = makeRouter();
+  const res = first.setStation(bad);
+  A.ok(!res.ok, 'a non-deployable Station is refused on FIRST install too (no prior station required)');
+  A.ok(Array.isArray(res.codes) && res.codes.indexOf('CYCLE') >= 0, 'the first-install refusal names the real blocker (CYCLE)');
+  A.eq(first.getStation(), null, 'the refused first install stores no station document');
+  A.eq(first.resolveTarget({}), null, '...and arms no routing (dispatch falls back)');
 }
 
 // a connector portal carries a per-instance binding: stationFor passes the rich object through verbatim, so the
@@ -173,7 +184,7 @@ A.eq(makeRouter().stationFor('coder'), null, 'no posted plan -> stationFor null'
   A.ok(res.hasCompute, 'the workstation still grants compute alongside the connector');
   // the computer contributes the quest.update freebie (QUEST V2 §B); the CONNECTOR itself adds no static tool
   // (its MCP tools are projected dynamically at run time). So the only static tool here is the computer's quest.update.
-  A.eq(res.tools.slice().sort(), ['code.run', 'quest.update', 'station.inspect', 'tool.search'], 'a connector adds NO static tool beyond the computer primitives (its MCP tools project dynamically at run time)');
+  A.eq(res.tools.slice().sort(), ['code.run', 'quest.update', 'routine.notepad', 'station.inspect', 'tool.search'], 'a connector adds NO static tool beyond the computer primitives (its MCP tools project dynamically at run time)');
 }
 
 // the router round-robins SPLITTER dispatch across both bound agents (stateful, matches the engine's spread)
@@ -189,9 +200,27 @@ A.eq(makeRouter().stationFor('coder'), null, 'no posted plan -> stationFor null'
   A.ok(r.setPlan(plan).ok, 'a splitter floor with two bound bays is deployable');
   const seq = [r.resolveTarget({}), r.resolveTarget({}), r.resolveTarget({}), r.resolveTarget({})];
   A.eq(seq.join(','), 'coder,researcher,coder,researcher', 'the router spreads splitter dispatch across both agents (' + seq.join(',') + ')');
-  // setPlan resets the round-robin (a new floor starts fresh)
-  r.setPlan(plan);
-  A.eq(r.resolveTarget({}), 'coder', 're-posting the plan resets the round-robin to the first lane');
+
+  /* ---- A NO-OP RE-POST KEEPS THE BALANCE (2026-08-07) ----
+     `rr` used to reset on EVERY accepted plan, so any re-post restarted every splitter at lane 0 — and
+     re-posts are cheap to provoke (they happen on each floor change, and until today a job-brief edit moved
+     the hash too). plan.hash IS the dispatch topology, so an identical hash guarantees the same splitter
+     tiles with the same lane counts and the counters stay meaningful. */
+  r.resolveTarget({});                                   // 5 dispatches so far -> the next lane owed is researcher
+  A.ok(r.setPlan(plan).ok, 'the same floor is re-posted');
+  A.eq(r.resolveTarget({}), 'researcher', 'an identical re-post KEEPS splitter balance — the next lane owed is still owed');
+
+  // a real topology change is a new floor and DOES start fresh
+  const moved = Pipeline.compileRoutingPlan({
+    belts: [{ x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' }, { x: 4, y: 0, dir: 'E' },
+            { x: 2, y: 1, dir: 'S' }, { x: 2, y: 2, dir: 'S' }, { x: 2, y: 3, dir: 'S' }, { x: 5, y: 1, dir: 'E' }],
+    props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 }, { id: 'sp', t: 'splitter', x: 2, y: 0, w: 1, h: 1 },
+            { id: 'bc', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'coder' },
+            { id: 'br', t: 'bay', x: 1, y: 4, w: 2, h: 2, agentId: 'researcher' }]
+  });
+  A.ok(moved.hash !== plan.hash, 'laying one more belt really is a different floor');
+  A.ok(r.setPlan(moved).ok, 'the edited floor deploys');
+  A.eq(r.resolveTarget({}), 'coder', 'a CHANGED floor resets the round-robin to the first lane');
 }
 
 A.report('routing.b5');

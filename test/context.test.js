@@ -93,6 +93,10 @@ A.eq(JSON.stringify(withTools), pcBefore, 'planCompaction does not mutate input'
 A.ok(redact('my key is sk-or-v1-abcdef0123456789zzzz here').indexOf('sk-or-v1-') < 0, 'openrouter key redacted');
 A.ok(redact('sk-ant-api03-AAAA1111BBBB2222').indexOf('sk-ant-') < 0, 'anthropic key redacted');
 A.ok(redact('Authorization: Bearer abcdef0123456789ABCDEF').indexOf('abcdef0123456789ABCDEF') < 0, 'bearer token redacted');
+A.ok(redact('password=synthetic-canary-value').indexOf('synthetic-canary-value') < 0, 'generic password assignment redacted');
+A.ok(redact('client_secret: local-fixture-secret').indexOf('local-fixture-secret') < 0, 'generic client secret assignment redacted');
+A.ok(redact('https://local.test/cb?access_token=synthetic-query-token&mode=test').indexOf('synthetic-query-token') < 0, 'secret-like URL query assignment redacted');
+A.eq(redact({ password: 'synthetic-object-secret', mode: 'test' }), { password: '[redacted-secret]', mode: 'test' }, 'secret-named object fields redact structurally');
 A.eq(redact('just a normal sentence'), 'just a normal sentence', 'non-secrets untouched');
 const obj = { note: 'token sk-or-v1-deadbeefdeadbeef99', list: ['sk-ant-zzzzzzzzzzzzzzzz', 'safe'] };
 const red = redact(obj);

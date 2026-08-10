@@ -245,7 +245,7 @@
         } catch (e) {
           if (isAbort(e, signal)) throw e;
           if (attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }
-          throw e;
+          throw provider.runtime.markPreStreamRetriesExhausted(e);
         } finally {
           guard.disarm();
         }
@@ -263,7 +263,7 @@
         const cls = classifyApiError(err, { model: body.model });
         err.transient = cls.retryable;
         if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(Math.min(60000, Math.max(RETRY_DELAYS[attempt], cls.retryAfterMs || 0)), signal); continue; }
-        throw err;
+        throw cls.retryable ? provider.runtime.markPreStreamRetriesExhausted(err) : err;
       }
     }
 

@@ -19,6 +19,7 @@
 
   const { parsePatch, hunkOldText, hunkNewText, addText } = require('./patchparse.js');
   const { fuzzyFindAndReplace } = require('./fuzzymatch.js');
+  const crypto = require('node:crypto');
 
   function safeAgentId(id) {
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(id || '')) throw new Error('bad agentId');
@@ -56,6 +57,67 @@
       && typeof deps.editDiagnostics.finishEdit === 'function'
       ? deps.editDiagnostics : null;
 
+    function sha256(data) {
+      return data == null ? null : crypto.createHash('sha256').update(data).digest('hex');
+    }
+    function sameBytes(a, b) {
+      if (a == null || b == null) return a == null && b == null;
+      return Buffer.isBuffer(a) && Buffer.isBuffer(b) && a.equals(b);
+    }
+    async function readBytesOrMissing(abs) {
+      try { return await fsp.readFile(abs); }
+      catch (e) { if (e && e.code === 'ENOENT') return null; throw e; }
+    }
+    function receiptLine(receipt) {
+      return '[mutation receipt: ' + receipt.state + '; attempted ' + receipt.attemptedBytes + ' bytes; written '
+        + receipt.writtenBytes + '; verified ' + receipt.verifiedBytes + '; sha256 ' + (receipt.sha256 || 'deleted') + ']';
+    }
+    function receiptError(message, receipt) {
+      const error = new Error(message + ' ' + receiptLine(receipt));
+      error.mutationReceipt = receipt;
+      // Alias retained for callers that use the shorter generic receipt field.
+      error.receipt = receipt;
+      return error;
+    }
+    async function verifiedMutation(spec) {
+      const expected = spec.expected == null ? null : Buffer.from(spec.expected);
+      const initial = spec.initial == null ? null : Buffer.from(spec.initial);
+      const receipt = {
+        operation: String(spec.operation), path: String(spec.path), state: 'attempted',
+        phases: ['attempted'], attemptedBytes: expected ? expected.length : 0,
+        writtenBytes: 0, verifiedBytes: 0, sha256: sha256(expected), actualSha256: null
+      };
+      try {
+        await spec.mutate();
+        receipt.state = 'written';
+        receipt.phases.push('written');
+        receipt.writtenBytes = expected ? expected.length : 0;
+        const actual = await readBytesOrMissing(spec.abs);
+        receipt.actualSha256 = sha256(actual);
+        if (!sameBytes(actual, expected)) throw new Error('read-back bytes differ from the intended mutation');
+        receipt.state = 'read-back-verified';
+        receipt.phases.push('read-back-verified');
+        receipt.verifiedBytes = expected ? expected.length : 0;
+        return receipt;
+      } catch (cause) {
+        let actual = null, inspectFailed = null;
+        try { actual = await readBytesOrMissing(spec.abs); } catch (e) { inspectFailed = e; }
+        receipt.actualSha256 = inspectFailed ? null : sha256(actual);
+        if (!inspectFailed && sameBytes(actual, expected)) {
+          receipt.state = 'read-back-verified';
+          if (receipt.phases.indexOf('written') < 0) receipt.phases.push('written');
+          if (receipt.phases.indexOf('read-back-verified') < 0) receipt.phases.push('read-back-verified');
+          receipt.writtenBytes = expected ? expected.length : 0;
+          receipt.verifiedBytes = expected ? expected.length : 0;
+          return receipt;
+        }
+        receipt.state = !inspectFailed && !sameBytes(actual, initial) ? 'partially-applied' : 'failed';
+        receipt.phases.push(receipt.state);
+        receipt.writtenBytes = actual ? actual.length : 0;
+        throw receiptError('filesystem mutation ' + receipt.state + ' for ' + spec.path + ': ' + ((cause && cause.message) || cause), receipt);
+      }
+    }
+
     async function workspaceRoot(agentId) {
       if (environment && typeof environment.ensureWorkspace === 'function') return environment.ensureWorkspace(safeAgentId(agentId || 'agent'));
       const dir = P.join(ROOT, safeAgentId(agentId || 'agent'));
@@ -81,6 +143,11 @@
         }
       }
     }
+    async function checkpointResolvedRoot(base, opts) {
+      const ctx = opts && opts.ctx;
+      if (!ctx || typeof ctx.checkpointMutation !== 'function' || (opts && opts.scope) !== 'write') return;
+      try { await ctx.checkpointMutation(base, 'fs mutation', { resolvedRoot: true }); } catch (_) {}
+    }
     // Resolve a path and PROVE it is reachable: a RELATIVE path must stay inside the agent's workspace
     // jail (the historic invariant); an ABSOLUTE path is illegal UNLESS a pathTrust guard is wired, in
     // which case it is mediated against the station's blessed project roots (NS-5). opts.scope ('read' |
@@ -94,7 +161,9 @@
       const isAbs = P.win32.isAbsolute(rel) || P.posix.isAbsolute(rel) || /^[A-Za-z]:/.test(rel);
       if (isAbs) {
         if (!pathTrust) throw new Error('illegal path: ' + rel);
-        return await pathTrust(rel, { scope: opts.scope === 'write' ? 'write' : 'read', agentId: agentId, ctx: opts.ctx });
+        const resolved = await pathTrust(rel, { scope: opts.scope === 'write' ? 'write' : 'read', agentId: agentId, ctx: opts.ctx });
+        await checkpointResolvedRoot(resolved && resolved.base, opts);
+        return resolved;
       }
       if (/(^|[\\/])\.\.([\\/]|$)/.test(rel)) throw new Error('illegal path: ' + rel);
       const base = await workspaceRoot(agentId);
@@ -104,6 +173,7 @@
       const existing = await deepestExisting(abs, base);
       const existingReal = await realpathOrSelf(existing);
       if (!pathInside(existingReal, baseReal)) throw new Error('path escapes workspace via symlink');
+      await checkpointResolvedRoot(base, opts);
       return { base, abs };
     }
 
@@ -199,22 +269,22 @@
         const data = Buffer.from(String(args.content), 'utf8');
         if (data.length > WRITE_BYTES) throw new Error('file too large (' + data.length + ' > ' + WRITE_BYTES + ' bytes)');
         await assertFresh(aid, abs, args.path);   // refuse to overwrite a file that moved under us
-        let before = '';
-        try { before = await fsp.readFile(abs, 'utf8'); } catch (e) { if (!(e && e.code === 'ENOENT')) throw e; }
-        const diagnosticTicket = await beginEditDiagnostics(aid, [{ abs, base, rel: String(args.path), text: before }], ctx);
+        let beforeBytes = null;
+        try { beforeBytes = await fsp.readFile(abs); } catch (e) { if (!(e && e.code === 'ENOENT')) throw e; }
+        const diagnosticTicket = await beginEditDiagnostics(aid, [{ abs, base, rel: String(args.path), text: beforeBytes ? beforeBytes.toString('utf8') : '' }], ctx);
         await fsp.mkdir(P.dirname(abs), { recursive: true });
-        await fsp.writeFile(abs, data);
+        const receipt = await verifiedMutation({ operation: 'write', path: args.path, abs, expected: data, initial: beforeBytes, mutate: () => fsp.writeFile(abs, data) });
         await stampSeen(aid, abs);                // our own write is the new baseline, so a rewrite never self-trips
         emitDeliverable(ctx, aid, args.path);
         return finishEditDiagnostics(diagnosticTicket,
-          { content: 'Wrote ' + args.path + ' (' + data.length + ' bytes).', summary: 'wrote ' + args.path + ' (' + kb(data.length) + ')' }, ctx);
+          { content: 'Wrote ' + args.path + ' (' + data.length + ' bytes).\n' + receiptLine(receipt), summary: 'wrote ' + args.path + ' (' + kb(data.length) + ')', mutationReceipt: receipt, receipt }, ctx);
       }
     };
 
     const readTool = {
       name: 'fs.read', capability: 'cabinet', scope: 'read', requiresConsent: false, timeoutMs: 10000,
-      description: 'Read a file from your workspace. Text files come back as text; Word (.docx), Excel (.xlsx) and Jupyter (.ipynb) files are extracted to readable text automatically; PNG/JPEG/GIF/WEBP images are shown to you as actual pixels so you can look at them directly.',
-      schema: { type: 'object', required: ['path'], properties: { path: { type: 'string' } } },
+      description: 'Read a file from your workspace. Text files come back as text; for large text use offset and limit to page character ranges without rerunning the command that produced the file. Word (.docx), Excel (.xlsx) and Jupyter (.ipynb) files are extracted to readable text automatically; PNG/JPEG/GIF/WEBP images are shown to you as actual pixels so you can look at them directly.',
+      schema: { type: 'object', required: ['path'], properties: { path: { type: 'string' }, offset: { type: 'number' }, limit: { type: 'number' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
         const { abs } = await resolveInside(aid, args.path, { scope: 'read', ctx });
@@ -255,8 +325,16 @@
         }
 
         const txt = raw.toString('utf8');
-        const out = txt.length > READ_RETURN ? txt.slice(0, READ_RETURN) + '\n…[truncated]' : txt;
-        return { content: out, summary: kb(Buffer.byteLength(txt)) + ' read' };
+        const offset = Math.min(txt.length, Math.max(0, Math.floor(Number(args.offset) || 0)));
+        const requested = args.limit == null ? READ_RETURN : Math.floor(Number(args.limit) || 0);
+        if (requested <= 0) throw new Error('limit must be a positive number');
+        const limit = Math.min(READ_RETURN, requested);
+        const end = Math.min(txt.length, offset + limit);
+        let out = txt.slice(offset, end);
+        if (end < txt.length) out += '\n[showing characters ' + offset + '-' + end + ' of ' + txt.length
+          + '; next: fs.read {"path":' + JSON.stringify(String(args.path)) + ',"offset":' + end + ',"limit":' + limit + '}]';
+        else if (offset > 0) out += '\n[showing characters ' + offset + '-' + end + ' of ' + txt.length + '; end of file]';
+        return { content: out, summary: kb(Buffer.byteLength(txt)) + ' read; characters ' + offset + '-' + end + ' of ' + txt.length };
       }
     };
 
@@ -298,18 +376,20 @@
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
         const { abs, base } = await resolveInside(aid, args.path, { scope: 'write', ctx });
-        let existing = '';
-        try { existing = await fsp.readFile(abs, 'utf8'); } catch (e) { if (!(e && e.code === 'ENOENT')) throw e; }
+        let existingBytes = null;
+        try { existingBytes = await fsp.readFile(abs); } catch (e) { if (!(e && e.code === 'ENOENT')) throw e; }
+        const existing = existingBytes ? existingBytes.toString('utf8') : '';
         const combined = existing + String(args.content);
         const bytes = Buffer.byteLength(combined, 'utf8');
         if (bytes > WRITE_BYTES) throw new Error('file too large after append (' + bytes + ' > ' + WRITE_BYTES + ' bytes)');
         const diagnosticTicket = await beginEditDiagnostics(aid, [{ abs, base, rel: String(args.path), text: existing }], ctx);
         await fsp.mkdir(P.dirname(abs), { recursive: true });
-        await fsp.writeFile(abs, Buffer.from(combined, 'utf8'));
+        const expected = Buffer.from(combined, 'utf8');
+        const receipt = await verifiedMutation({ operation: 'append', path: args.path, abs, expected, initial: existingBytes, mutate: () => fsp.writeFile(abs, expected) });
         emitDeliverable(ctx, aid, args.path);
         const added = Buffer.byteLength(String(args.content), 'utf8');
         return finishEditDiagnostics(diagnosticTicket,
-          { content: 'Appended to ' + args.path + ' (+' + added + ' bytes, now ' + bytes + ').', summary: 'appended ' + args.path + ' (+' + kb(added) + ')' }, ctx);
+          { content: 'Appended to ' + args.path + ' (+' + added + ' bytes, now ' + bytes + ').\n' + receiptLine(receipt), summary: 'appended ' + args.path + ' (+' + kb(added) + ')', mutationReceipt: receipt, receipt }, ctx);
       }
     };
 
@@ -320,9 +400,10 @@
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
         const { abs, base } = await resolveInside(aid, args.path, { scope: 'write', ctx });
-        let txt;
-        try { txt = await fsp.readFile(abs, 'utf8'); }
+        let initialBytes;
+        try { initialBytes = await fsp.readFile(abs); }
         catch (e) { if (e && e.code === 'ENOENT') throw new Error('no such file: ' + args.path); throw e; }
+        const txt = initialBytes.toString('utf8');
         const find = String(args.find);
         if (!find) throw new Error('"find" must be a non-empty string');
         if (txt.indexOf(find) < 0) throw new Error('"find" text not found in ' + args.path + ' — read the file and match it exactly');
@@ -331,10 +412,11 @@
         const bytes = Buffer.byteLength(next, 'utf8');
         if (bytes > WRITE_BYTES) throw new Error('file too large after edit (' + bytes + ' > ' + WRITE_BYTES + ' bytes)');
         const diagnosticTicket = await beginEditDiagnostics(aid, [{ abs, base, rel: String(args.path), text: txt }], ctx);
-        await fsp.writeFile(abs, Buffer.from(next, 'utf8'));
+        const expected = Buffer.from(next, 'utf8');
+        const receipt = await verifiedMutation({ operation: 'edit', path: args.path, abs, expected, initial: initialBytes, mutate: () => fsp.writeFile(abs, expected) });
         emitDeliverable(ctx, aid, args.path);
         return finishEditDiagnostics(diagnosticTicket,
-          { content: 'Edited ' + args.path + ' (' + count + ' replacement' + (count === 1 ? '' : 's') + ').', summary: 'edited ' + args.path + ' (' + count + 'x)' }, ctx);
+          { content: 'Edited ' + args.path + ' (' + count + ' replacement' + (count === 1 ? '' : 's') + ').\n' + receiptLine(receipt), summary: 'edited ' + args.path + ' (' + count + 'x)', mutationReceipt: receipt, receipt }, ctx);
       }
     };
 
@@ -436,18 +518,61 @@
         const touched = Array.from(plans.values()).filter(p => p.touched);
         const diagnosticTicket = await beginEditDiagnostics(aid,
           touched.map(plan => ({ abs: plan.abs, base: plan.base, rel: plan.rel, text: plan.initialContent == null ? '' : plan.initialContent })), ctx);
-        for (const plan of touched) {
-          if (plan.content == null) {
-            await fsp.rm(plan.abs, { force: true });
-          } else {
-            await fsp.mkdir(P.dirname(plan.abs), { recursive: true });
-            await fsp.writeFile(plan.abs, Buffer.from(plan.content, 'utf8'));
-            emitDeliverable(ctx, aid, plan.rel);
+        const patchReceipt = {
+          operation: 'patch', path: touched.map(p => p.rel).join(', '), state: 'attempted', phases: ['attempted'],
+          attemptedBytes: touched.reduce((n, p) => n + (p.content == null ? 0 : Buffer.byteLength(p.content, 'utf8')), 0), writtenBytes: 0, verifiedBytes: 0, sha256: null, files: []
+        };
+        try {
+          // Apply destinations/updated files before deletes. In particular, a move must never
+          // remove the last source copy until its destination was written and read back exactly.
+          const ordered = touched.filter(plan => plan.content != null)
+            .concat(touched.filter(plan => plan.content == null));
+          for (const plan of ordered) {
+            const expected = plan.content == null ? null : Buffer.from(plan.content, 'utf8');
+            const initial = plan.initialContent == null ? null : Buffer.from(plan.initialContent, 'utf8');
+            if (expected) await fsp.mkdir(P.dirname(plan.abs), { recursive: true });
+            const fileReceipt = await verifiedMutation({
+              operation: expected ? 'patch-write' : 'patch-delete', path: plan.rel, abs: plan.abs,
+              expected, initial, mutate: () => expected ? fsp.writeFile(plan.abs, expected) : fsp.rm(plan.abs, { force: true })
+            });
+            patchReceipt.files.push(fileReceipt);
           }
+          patchReceipt.state = 'read-back-verified';
+          patchReceipt.phases.push('written', 'read-back-verified');
+          patchReceipt.writtenBytes = patchReceipt.files.reduce((n, r) => n + r.writtenBytes, 0);
+          patchReceipt.verifiedBytes = patchReceipt.files.reduce((n, r) => n + r.verifiedBytes, 0);
+        } catch (cause) {
+          patchReceipt.files = [];
+          let expectedCount = 0, initialCount = 0;
+          for (const plan of touched) {
+            const expected = plan.content == null ? null : Buffer.from(plan.content, 'utf8');
+            const initial = plan.initialContent == null ? null : Buffer.from(plan.initialContent, 'utf8');
+            let actual = null, unreadable = false;
+            try { actual = await readBytesOrMissing(plan.abs); } catch (_) { unreadable = true; }
+            const state = !unreadable && sameBytes(actual, expected) ? 'read-back-verified'
+              : (!unreadable && sameBytes(actual, initial) ? 'failed' : 'partially-applied');
+            if (state === 'read-back-verified') expectedCount++;
+            if (state === 'failed') initialCount++;
+            patchReceipt.files.push({
+              operation: expected ? 'patch-write' : 'patch-delete', path: plan.rel, state,
+              phases: ['attempted', state], attemptedBytes: expected ? expected.length : 0,
+              writtenBytes: actual ? actual.length : 0, verifiedBytes: state === 'read-back-verified' && expected ? expected.length : 0,
+              sha256: sha256(expected), actualSha256: unreadable ? null : sha256(actual)
+            });
+          }
+          patchReceipt.state = expectedCount === touched.length ? 'read-back-verified'
+            : (initialCount === touched.length ? 'failed' : 'partially-applied');
+          patchReceipt.phases.push(patchReceipt.state);
+          patchReceipt.writtenBytes = patchReceipt.files.reduce((n, r) => n + r.writtenBytes, 0);
+          patchReceipt.verifiedBytes = patchReceipt.files.reduce((n, r) => n + r.verifiedBytes, 0);
+          throw receiptError('filesystem patch ' + patchReceipt.state + ': ' + ((cause && cause.message) || cause), patchReceipt);
         }
+        for (const plan of touched) if (plan.content != null) emitDeliverable(ctx, aid, plan.rel);
         return finishEditDiagnostics(diagnosticTicket, {
-          content: 'Applied patch: ' + touched.length + ' file' + (touched.length === 1 ? '' : 's') + ' changed.',
-          summary: 'patched ' + touched.length + ' file' + (touched.length === 1 ? '' : 's')
+          content: 'Applied patch: ' + touched.length + ' file' + (touched.length === 1 ? '' : 's') + ' changed.\n' + receiptLine(patchReceipt),
+          summary: 'patched ' + touched.length + ' file' + (touched.length === 1 ? '' : 's'),
+          mutationReceipt: patchReceipt,
+          receipt: patchReceipt
         }, ctx);
       }
     };

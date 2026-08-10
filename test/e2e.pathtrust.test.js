@@ -71,6 +71,12 @@ function boot(port, env, attemptsLeft) {
 (async () => {
   const mock = await startMockOpenRouter();
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'ptrust-ws-'));
+  const alphaWorkspace = path.join(ws, 'alpha');
+  const betaWorkspace = path.join(ws, 'beta');
+  fs.mkdirSync(alphaWorkspace, { recursive: true });
+  fs.mkdirSync(betaWorkspace, { recursive: true });
+  const alphaPrivate = path.join(alphaWorkspace, 'private.txt');
+  fs.writeFileSync(alphaPrivate, 'LIVE_ALPHA_PRIVATE_MARKER\n');
   // a real project OUTSIDE the workspaces jail: a git repo with two files + a protected .env.
   const proj = fs.mkdtempSync(path.join(os.tmpdir(), 'ptrust-proj-'));
   fs.mkdirSync(path.join(proj, '.git'), { recursive: true });
@@ -88,7 +94,7 @@ function boot(port, env, attemptsLeft) {
   const subDir = path.join(repo2, 'src');       // a folder INSIDE the repo — bless it, the repo ROOT gets trusted
   const looseFile = path.join(repo2, 'index.js');
 
-  const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base };   // NO FULL_ACCESS → the consent broker is live
+  const env = { SKYNET_WORKSPACES: ws, SKYNET_OPENROUTER_BASE: mock.base, STARNET_PROJECT_DISCOVERY_ROOTS: repo2 };   // NO FULL_ACCESS → the consent broker is live
   let running = await boot(8760 + (process.pid % 40), env, 25);
   let B = 'http://' + HOST + ':' + running.port;
   let token;
@@ -127,6 +133,34 @@ function boot(port, env, attemptsLeft) {
     // ---- projects store starts empty ----
     const p0 = await (await fetch(B + '/api/projects', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     A.eq((p0.projects || []).length, 0, 'GET /api/projects is empty before any bless');
+
+    // Agent workspaces are private even if one is accidentally recorded in the station-global project-grant
+    // store. A global `path:<WORKSPACES/alpha>` grant must never override beta's workspace boundary.
+    const blessWorkspace = await fetch(B + '/api/projects/bless', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
+      body: JSON.stringify({ path: alphaWorkspace })
+    });
+    A.eq(blessWorkspace.status, 200, 'setup: the current Projects doorway records the alpha workspace grant');
+    const workspaceGrant = 'path:' + path.resolve(alphaWorkspace);
+    const beforeIsolationRead = mock.requests.length;
+    const crossAgentRead = await driveRead('beta', alphaPrivate, 'deny');
+    A.eq(crossAgentRead.prompts.filter(p => p.tool === 'path.trust').length, 0,
+      'a sibling workspace is a hard floor, not a consent prompt');
+    const leakedAcrossAgents = mock.requests.slice(beforeIsolationRead).some(msgs =>
+      msgs.some(m => m && m.role === 'tool' && String(m.content).indexOf('LIVE_ALPHA_PRIVATE_MARKER') >= 0));
+    A.eq(leakedAcrossAgents, false, 'beta cannot read alpha private bytes through a station-global path grant');
+    await fetch(B + '/api/permissions/revoke', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
+      body: JSON.stringify({ key: workspaceGrant })
+    });
+
+    // Discovery is a read-only candidate scan. Even finding a real git repo must not mint path authority.
+    const discovered = await (await fetch(B + '/api/projects/discover', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B }, body: '{}' })).json();
+    A.eq(discovered.ok, true, 'project discovery route completes');
+    A.eq(discovered.grantsChanged, false, 'project discovery explicitly reports no authority change');
+    A.ok((discovered.candidates || []).some(x => path.resolve(x.root) === path.resolve(repo2) && x.kind === 'git'), 'bounded discovery finds the configured real git repo');
+    const permsBeforeDiscoverGrant = await (await fetch(B + '/api/permissions', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.eq((permsBeforeDiscoverGrant.grants || []).includes('path:' + repo2), false, 'discovering a project does not grant its path');
 
     // ---- NS-5c: POST /api/projects/bless is the ADD-a-project doorway (same grant machinery, honest errors) ----
     const bless = (p) => fetch(B + '/api/projects/bless', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B }, body: JSON.stringify({ path: p }) });

@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Connectors & interop — StarNet Docs</title>
+<meta name="description" content="StarNet built-in capabilities, MCP connectors, isolated local stdio servers, messaging channels, and harness interoperability.">
+<link rel="canonical" href="https://starnetos.com/docs/connectors.html">
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
 <link rel="stylesheet" href="docs.css?v=20260725">
 </head>
@@ -51,7 +53,7 @@ placing the gear, and you can revoke it the same way.</p>
 <tr><th>Family</th><th>What it grants</th></tr>
 <tr><td><b>Web &amp; browser</b></td><td>Search the web, fetch pages, and drive a real browser — navigate, read, click, type.</td></tr>
 <tr><td><b>File cabinet</b></td><td>Read, search, and write files in the agent's workspace.</td></tr>
-<tr><td><b>Workbench</b></td><td>Run shell commands, execute verification, and use the computer — the code-execution bench.</td></tr>
+<tr><td><b>Workbench</b></td><td>Run shell commands and verify code — the code-execution bench.</td></tr>
 <tr><td><b>Task delegation</b></td><td>Delegate subtasks to summoned crew, summon new agents, and schedule routines.</td></tr>
 <tr><td><b>Comms relay</b></td><td>Send a message out to a connected chat — only chats someone already opened with this station.</td></tr>
 <tr><td><b>Media studio</b></td><td>Generate images from text and analyse images, on the key the agent already uses.</td></tr>
@@ -76,9 +78,11 @@ ever having handled your credentials.</p>
 services with one-click setup; connectors that need auth use <b>OAuth 2.1 dynamic client
 registration</b> or a pasted key. Any third-party <b>remote http(s)</b> MCP server can be added by
 URL — your agents' reach grows with the ecosystem, not with our release schedule.</p>
-<p>Local <code>stdio</code> servers (<code>npx …</code>, <code>uvx …</code>) are <b>not</b> supported:
-StarNet will not spawn unsandboxed child processes on your machine. A service that ships only a local
-server is reached the other way — paste its API key and let the agent call the REST API directly.</p>
+<p>Local <code>stdio</code> servers (<code>npx …</code>, <code>uvx …</code>) are supported only through
+an agent-owned <b>SAFE CELL</b>. StarNet probes Docker before connecting, runs the server inside that
+isolated cell, keeps connector secrets out of process arguments, and never falls back to spawning the
+server directly on your host. If no real Safe Cell agent exists, the local-server route is unavailable
+rather than pretending the process is isolated.</p>
 <div class="callout"><b>Connecting a specific service?</b> <a href="connect-a-platform.html">CONNECT A
 PLATFORM</a> walks the whole decision end to end — which of the two routes applies, how a key is stored
 and substituted without the model ever seeing it, unattended use, and what each failure message means.</div>

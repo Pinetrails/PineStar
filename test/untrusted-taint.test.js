@@ -74,11 +74,14 @@ const WEB_REQ    = { name: 'web_request', capability: 'web', scope: 'execute', i
 const FS_READ    = { name: 'fs.read', capability: 'cabinet', scope: 'read' };
 const FS_WRITE   = { name: 'fs.write', capability: 'cabinet', scope: 'write' };
 const NOTEBOOK   = { name: 'notebook.write', capability: 'memory', scope: 'write' };
+const UNKNOWN    = { name: 'third_party.effect', capability: 'custom', scope: 'execute', impact: 'external-unknown' };
 
 A.ok(taint.isUntrustedSource(WEB_READ), 'web results taint');
 A.ok(taint.isUntrustedSource(BROWSER_TXT), 'browser page reads taint (capId web)');
 A.ok(taint.isUntrustedSource(MCP_READ) && taint.isUntrustedSource(MCP_WRITE), 'connector results taint');
 A.ok(!taint.isUntrustedSource(FS_READ), 'local file reads do NOT taint in v1 (stated boundary)');
+A.ok(taint.isUntrustedSource(FS_READ, { args: { path: '.attachments/poisoned.txt' } }), 'a parked user document taints when read');
+A.ok(taint.isUntrustedSource(FS_READ, { args: { path: 'notes/.attachments\\poisoned.txt' } }), 'attachment provenance works with either path separator');
 A.ok(!taint.isUntrustedSource(NOTEBOOK), "the agent's own memory does not taint");
 A.ok(!taint.isUntrustedSource(SHELL), 'shell output does NOT taint in v1 (stated boundary)');
 
@@ -88,20 +91,40 @@ A.ok(!taint.allowedWhenTainted(VERIFY), 'and loses verify.run (same host-process
 A.ok(!taint.allowedWhenTainted(WEB_REQ), 'and loses credential-spending requests');
 A.ok(!taint.allowedWhenTainted(MCP_WRITE), 'and loses connector WRITES/EXECUTES');
 // the usability line — without these the feature would be worthless
-A.ok(taint.allowedWhenTainted(MCP_READ), 'connector READS survive (a routine may read three pages from one connector)');
+A.ok(!taint.allowedWhenTainted(MCP_READ), 'connector calls are blocked even when the server claims read-only');
+A.ok(!taint.allowedWhenTainted(UNKNOWN), 'unclassified external effects are blocked');
 A.ok(taint.allowedWhenTainted(WEB_READ), 'reading more web content survives');
 A.ok(taint.allowedWhenTainted(FS_READ) && taint.allowedWhenTainted(FS_WRITE), 'jailed file work survives');
 A.ok(taint.allowedWhenTainted(NOTEBOOK), 'memory writes survive');
 A.ok(taint.allowedWhenTainted(null), 'an unknown tool falls through to the ordinary unknown-tool answer');
 // an MCP tool with no explicit scope must fail SAFE toward read (translate.js defaults readOnly -> 'read')
-A.ok(taint.allowedWhenTainted({ name: 'x', capability: 'mcp:z' }), 'a scope-less connector tool is treated as a read');
+A.ok(!taint.allowedWhenTainted({ name: 'x', capability: 'mcp:z' }), 'a scope-less connector is still blocked');
+
+// ---- 4b. confirmation is temporal and one-call, never inferred from a standing grant ----
+A.eq(taint.postTaintBoundary(SHELL, { taintedBy: 'web_fetch', surface: 'autonomous', hasPrompt: true, decision: 'always' }),
+  { allow: false, needsConfirmation: false, oneShot: false }, 'an unattended run cannot recover even from an injected/cached affirmative');
+A.eq(taint.postTaintBoundary(SHELL, { taintedBy: 'web_fetch', surface: 'interactive', hasPrompt: false }),
+  { allow: false, needsConfirmation: false, oneShot: false }, 'owner-like interactive authority without a live prompt still blocks');
+A.eq(taint.postTaintBoundary(SHELL, { taintedBy: 'web_fetch', surface: 'interactive', hasPrompt: true }),
+  { allow: false, needsConfirmation: true, oneShot: false }, 'a watched run asks after taint instead of consulting standing permission');
+A.eq(taint.postTaintBoundary(SHELL, { taintedBy: 'web_fetch', surface: 'interactive', hasPrompt: true, decision: 'always' }),
+  { allow: true, needsConfirmation: false, oneShot: true }, 'even Always collapses to this exact post-taint call');
+A.eq(taint.postTaintBoundary(SHELL, { taintedBy: 'web_fetch', surface: 'interactive', hasPrompt: true, decision: 'deny' }),
+  { allow: false, needsConfirmation: false, oneShot: false }, 'denial remains fail-closed');
+A.eq(taint.postTaintBoundary(SHELL, { taintedBy: 'web_fetch', surface: 'interactive', hasPrompt: true, fullAccess: true }),
+  { allow: true, needsConfirmation: false, oneShot: false }, 'Full Access survives taint without asking — full means zero permission prompts');
+A.eq(taint.postTaintBoundary(SHELL, { taintedBy: 'web_fetch', surface: 'autonomous', hasPrompt: false, fullAccess: true }),
+  { allow: true, needsConfirmation: false, oneShot: false }, 'Full Access survives taint on unattended task surfaces too');
+A.eq(taint.postTaintBoundary(FS_WRITE, { taintedBy: 'web_fetch', surface: 'autonomous', hasPrompt: false }),
+  { allow: true, needsConfirmation: false, oneShot: false }, 'ordinary jailed file analysis remains usable');
 
 // ---- 5. wiring: the law is actually enforced, in both places that must agree ----
 {
   const src = fs.readFileSync(path.join(root, 'sidecar', 'index.js'), 'utf8');
   A.ok(/const taintPolicy = require\('\.\/taint\.js'\)/.test(src), 'index.js uses the shared taint policy (no second copy)');
-  A.ok(/initialTaint: o\.initialTaint \? 'scheduled upstream context' : null/.test(src), 'the run tracks whether untrusted content has landed, including initial cron pipeline data');
-  A.ok(/revokedByTaint\.isSource\(liveTool\)/.test(src), 'taint is latched from the tool that produced the content');
+  A.ok(/initialTaint: o\.initialTaint \? String\(/.test(src), 'the run tracks and names initial untrusted provenance');
+  A.ok(/initialTaint: hasUserAttachments \? 'user attachment' : null/.test(src), 'browser attachments begin the run tainted');
+  A.ok(/revokedByTaint\.isSource\(liveTool, c\)/.test(src), 'taint is latched from the tool and path that produced the content');
   // A result with real content taints WHETHER OR NOT the call succeeded. The old rule required !r.isError on
   // the reasoning that "a failed fetch put nothing in front of the model" — true for web_fetch (it throws a
   // bare `http <status>`), FALSE for an MCP connector whose failure text IS the server's payload and reaches
@@ -110,17 +133,27 @@ A.ok(taint.allowedWhenTainted({ name: 'x', capability: 'mcp:z' }), 'a scope-less
     'any untrusted-source result carrying real content taints — an isError flag is not an exemption');
   A.ok(!/!r\.isError && typeof r\.content === 'string' && r\.content\.length && revokedByTaint\.isSource/.test(src),
     'the isError exemption is gone (a hostile connector cannot opt out of taint by failing)');
-  A.ok(/if \(execution\.taintedBy\(\) && surface !== 'interactive' && !ownerTrusted && !revokedByTaint\.ok\(liveTool\)\)/.test(src),
-    'the dispatch gate enforces it on ordinary unattended runs, but keeps the authenticated owner DM on desktop-equivalent authority');
+  A.ok(/taintedBy: execution\.taintedBy\(\), surface, hasPrompt:/.test(src),
+    'the dispatch gate applies on every surface and does not exempt owner identity');
+  A.ok(/postTaint = revokedByTaint\.boundary/.test(src), 'dispatch uses the pure temporal confirmation state machine');
+  A.ok(/decision = await prompt\(c, liveTool\)/.test(src), 'the recovery decision is obtained after taint at the exact call');
+  A.ok(/fresh post-taint one-call confirmation/.test(src), 'the recovered permission is explicitly one-call');
   A.ok(/summary: 'untrusted-content-lockout'/.test(src), 'the refusal is telemetered distinctly');
   A.ok(/outside content \(via ' \+ execution\.taintedBy\(\) \+ '\)/.test(src),
     'the refusal names the actual source so the agent can report it honestly');
   // consent must agree with the gate or a tool could be consented-then-refused
-  A.ok(/terminalGrant: \(call, tool\) =>[^\n]*revokedByTaint\.ok\(tool\)/.test(src), 'the terminal grant respects taint');
-  A.ok(/connectorGrant: \(call, tool\) =>[^\n]*revokedByTaint\.ok\(tool\)/.test(src), 'the connector grant respects taint');
+  A.ok(/terminalGrant: \(call, tool\) => !execution\.taintedBy\(\)/.test(src), 'the terminal standing grant never survives taint');
+  A.ok(/connectorGrant: \(call, tool\) => !execution\.taintedBy\(\)/.test(src), 'the connector standing grant never survives taint');
   // enforcement must run BEFORE the tool executes
-  A.ok(src.indexOf("if (taintedBy && surface !== 'interactive' && !ownerTrusted") < src.indexOf('let r = await registry.dispatch(c, dctx)'),
+  A.ok(src.indexOf('let postTaint = revokedByTaint.boundary') < src.indexOf('r = await registry.dispatch(c, dctx)'),
     'the lockout is checked BEFORE dispatch, so a revoked power never executes');
+}
+
+// ---- 6. poisoned documents and upstream agent output begin tainted ----
+{
+  const hub = fs.readFileSync(path.join(root, 'sidecar', 'channels', 'hub.js'), 'utf8');
+  A.ok(/initialTaint: mediaIngest\.attachments\.length \? 'channel attachment' : null/.test(hub), 'channel attachments begin tainted');
+  A.ok(/initialTaint: 'upstream agent output'/.test(hub), 'agent-chain hops cannot treat upstream output as Commander-authored');
 }
 
 if (require.main === module) A.report('untrusted-taint.test');

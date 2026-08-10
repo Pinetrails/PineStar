@@ -118,9 +118,12 @@ const UnderstandingStore = (() => {
       if (!best || d.conf < best.conf) best = { dim: k, conf: d.conf };
     }
     if (!best) return null;
-    let text = '';
-    try { const arr = (typeof DossierStore !== 'undefined' && DossierStore.beliefs) ? (DossierStore.beliefs(best.dim) || []) : []; if (arr[0] && arr[0].text) text = String(arr[0].text); } catch (_) {}
-    return text ? { dim: best.dim, text } : null;
+    let text = '', belief = null;
+    try { const arr = (typeof DossierStore !== 'undefined' && DossierStore.beliefs) ? (DossierStore.beliefs(best.dim) || []) : []; if (arr[0] && arr[0].text) { text = String(arr[0].text); belief = arr[0]; } } catch (_) {}
+    // `belief` is the WHOLE record (rec perfection W2), additively: a caller aiming an unspoken pitch at this
+    // belief must be able to ask whether it is STALE, and staleness is read from the record's own timestamps —
+    // which a {dim, text} pair cannot carry. Existing callers see the same two fields they always did.
+    return text ? { dim: best.dim, text, belief } : null;
   }
 
   // V3 §6: the live recommendation-gate read — the shared Understanding.readiness predicate over the live

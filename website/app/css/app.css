@@ -17,14 +17,40 @@
 @keyframes boot-fade { 0%, 100% { opacity: .62; } 50% { opacity: .9; } }
 @media (prefers-reduced-motion: reduce) { .boot-veil { animation: none; } .boot-dots::after { animation: none; } }
 #screen-connect.active { align-items: center; justify-content: center; }
+/* THE CABINET IS HARDWARE — TEXT SIZE is a type dial, not a magnifying glass.
+   body carries the TEXT SIZE zoom (stationui.js applySettings), and it multiplies into every
+   length below, so the whole frame used to swell with the text: at HUGE the crew rail went
+   232→336px and COMMS 360→522px, and the station view — the thing you are actually watching —
+   was squeezed 1279→995px (-29% area). --sn-unzoom is the exact reciprocal, so every CABINET
+   dimension here resolves back to the size it was designed at while the type inside still grows.
+   `1fr` then hands the reclaimed space to the stage automatically. Unset (the 100% default)
+   resolves to 1, i.e. these are the shipped numbers untouched.
+   --chat-w (chatresize.js, the draggable COMMS seam) and --crew-w (leftrail.js, the CREW seam) are
+   written in VISUAL px for the same reason, so a dragged width means the same thing at every text size. */
 #screen-game.active {
   display: grid;
-  grid-template-rows: 64px 1fr 44px;
-  /* COMMS width is a live var so the user can drag the stage/COMMS divider (chatresize.js) */
-  grid-template-columns: 232px 1fr var(--chat-w, 360px);
+  grid-template-rows: calc(64px * var(--cz)) 1fr calc(44px * var(--cz));
+  /* both side columns are live vars so the user can drag either divider (leftrail.js / chatresize.js) */
+  grid-template-columns: calc(var(--crew-w, 232px) * var(--cz)) 1fr calc(var(--chat-w, 360px) * var(--cz));
   grid-template-areas: "top top top" "left center chat" "bot bot bot";
-  padding: 11px; gap: 9px;
+  padding: calc(11px * var(--cz)); gap: calc(9px * var(--cz));
 }
+/* The cabinet BLOCKS whose whole content is hardware — the instrument bar, the dock, and the two
+   molded nameplates with their engraved labels. Their boxes are now fixed by the grid above, so
+   their contents have to come back to 1:1 too or they overflow a box that no longer grew with
+   them. One declaration each resets a whole subtree, which is why this is a `zoom` and not a
+   per-property counter-scale. #logo is a <body> child (hoisted over the CRT glass) rather than a
+   topbar descendant, so it needs its own — app.js positionLogo() measures the effective ratio off
+   the element, so it follows this either way.
+   `.ws-head` (SESSIONS / PROJECTS / + NEW) is here too, and that was measured rather than assumed:
+   it is a control strip, so the first pass let it scale with the type — and in a rail that no
+   longer widens, 45% bigger tabs ran straight off the edge and clipped "+ NEW". A view switcher
+   that loses a button is worse than one that stays the size it was drawn at, so it is furniture.
+   `--cz: 1` because these subtrees are already at 1:1: it keeps `calc(<designed>px * var(--cz))`
+   (style.css `body`) correct on BOTH sides of the counter-zoom line, so shared rules like the
+   panel bezel radius need no fork. */
+#topbar, #bottombar, #logo,
+#left > h3, #chat-panel > h3, .ws-head { zoom: var(--sn-unzoom, 1); --cz: 1; }
 .hidden { display: none !important; }
 
 /* visually-hidden but exposed to assistive tech (screen-reader-only live regions / labels) */
@@ -57,6 +83,60 @@
   background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%); color: var(--ink); border-color: var(--ph);
   text-shadow: none; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 10px var(--ph-glow2);
 }
+
+/* ---------- COMPACT CONSOLE KEYS — .bb.sm / .bb.xs ----------
+   The ~105 in-window action buttons (ADD KEY · SIGN IN · REVOKE · RUN NOW · REFRESH …). They
+   were the one control family that never got the material pass: flat hollow rectangles with hard
+   90° corners, sitting inside cards that are rounded and raised, and hanging off the surrounding
+   text's BASELINE. Reported 2026-08-03 (Andrew, SETTINGS ▸ PROVIDERS: "ugly and not even centered
+   correctly"). Both halves were measured live before this rule existed, not guessed:
+
+   1. GEOMETRY — every provider row read the button's centre 2.50px above its status text's centre.
+      The cause is baseline layout, and it cannot be nudged away with a margin: EVERY label in this
+      family mixes VT323 with a symbol glyph VT323 does not contain (＋ ⏼ ✕ ▸ ↻ ⌫ all fall back to
+      a system font — measured at 2.0–3.2× VT323's monospace advance), so the label carries two
+      different baselines before it even meets the text beside it. inline-flex + centre +
+      line-height:1 centres the label on the BOX instead, which is level by construction.
+   2. MATERIAL — the molded keycap the rest of the console already wears (.btn above, .bb-grp in
+      panelchrome.css): top light, phosphor body, shaded base, contact shadow, press sink. Matte,
+      never glossy. Only the surface and the radius change; the compact metrics stay compact so no
+      caller reflows.
+
+   Deliberately NOT the CONTROL FLOOR (see the block near line 100): that floor is element-level and
+   must never carry box metrics, radius or shadow. This is a real surface class, which is exactly
+   where material belongs. Per-surface skins still override (.mkt .bb.sm keeps the bay's tighter
+   metrics), and the canonical danger-armed rule still wins on !important. */
+.bb.sm, .bb.xs {
+  display: inline-flex; align-items: center; justify-content: center;
+  line-height: 1; vertical-align: middle; border-radius: 4px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ph) 6%, var(--panel2)) 0%,
+    var(--panel2) 58%,
+    color-mix(in srgb, #000 20%, var(--panel2)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-rgb), .08),
+    inset 0 -2px 0 rgba(0,0,0,.28),
+    0 1px 2px rgba(0,0,0,.45);
+}
+/* 5px, not the 3px this rule replaced, and not the 7px a first pass guessed at. Measured: the label's
+   line box is 17.05px at this font size (line-height:1 sets a 13px STRUT, but VT323's own ascent+descent
+   still win the line box, so line-height alone shrinks nothing). 17.05 + 10 + 2px border = 29.05px —
+   within a fifth of a pixel of the 28.88px key this replaced, so all ~105 call sites keep their rhythm. */
+.bb.sm { padding: 5px 12px; }
+.bb.sm:hover, .bb.xs:hover {
+  color: var(--ph-bright); border-color: var(--ph);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ph) 11%, var(--panel2)) 0%,
+    var(--panel2) 62%,
+    color-mix(in srgb, #000 16%, var(--panel2)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-rgb), .12),
+    inset 0 -2px 0 rgba(0,0,0,.28),
+    0 1px 2px rgba(0,0,0,.45),
+    0 0 10px var(--ph-glow2);
+}
+/* pressed = the key is DOWN: the seat sinks and the base light goes out (same verb as .bb-grp) */
+.bb.sm:active, .bb.xs:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0,0,0,.42); }
 
 input[type=text], input[type=password], input[type=url], input[type=search], input:not([type]), textarea.key-input {
   width: 100%; font-family: inherit; font-size: 19px; color: var(--ph-bright);
@@ -402,9 +482,11 @@ input[type=file]::file-selector-button:hover { border-color: var(--ph); backgrou
   --tube-inset: 40px;     /* the wrap's inner edge shadow (was 60px) */
 }
 #stage-wrap {
-  flex: 1; position: relative; min-width: 0; border-radius: 9px; overflow: hidden;
+  /* radius + the phosphor ring are the tube's CASING — hardware, so they hold their drawn size at
+     every TEXT SIZE (see the --cz note on `body` in style.css). */
+  flex: 1; position: relative; min-width: 0; border-radius: calc(9px * var(--cz)); overflow: hidden;
   background: var(--bg);
-  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 var(--tube-inset) rgba(0,0,0,.9);
+  box-shadow: 0 0 0 calc(2px * var(--cz)) var(--ph), 0 0 0 calc(3.5px * var(--cz)) rgba(0,0,0,.9), inset 0 0 var(--tube-inset) rgba(0,0,0,.9);
 }
 /* the live feed graded into the terminal (warms/tints the world so it reads as a
    security-cam picture inside the CRT, not a flat canvas). --cam-grade is themed. */
@@ -432,18 +514,30 @@ input[type=file]::file-selector-button:hover { border-color: var(--ph); backgrou
 .key-cta-act:hover { filter: brightness(1.12); }
 
 /* ---- CRT TUBE FACE: a curved-glass overlay so the feed reads as a convex tube.
-   Pure overlay (specular sweep + bowed corner vignette + edge rim) — the pixel
-   canvas underneath stays crisp; only the glass implies the bulge. Sits above the
-   canvas but UNDER .cam-hud (z3) so REC/FEED labels stay legible. Toggle off with
-   body.no-curve. True geometric barrel-warp would need a shader pass, not CSS. */
+   Pure overlay (bowed corner vignette + edge rim) — the pixel canvas underneath
+   stays crisp; only the glass implies the bulge. Sits above the canvas but UNDER
+   .cam-hud (z3) so REC/FEED labels stay legible. Toggle off with body.no-curve.
+   True geometric barrel-warp would need a shader pass, not CSS.
+
+   NO SPECULAR SWEEP (2026-08-07). There used to be a second gradient here —
+   `ellipse 72% 52% at 32% 3%, rgba(255,247,228,0.17)` — a big warm bloom pinned to
+   the upper-left of the glass. On a station-only frame it passes as a reflection;
+   over open void it is a fixed cream haze sitting in DEEP SPACE, brighter than the
+   nebulas it covers and nailed to the screen while the sky drifts under it. Andrew
+   called it out as "this prefixed light" and had it removed. The rim highlight in
+   the box-shadow below (inset 0 2px 1px) is the glass edge and STAYS — that is a
+   1-2px line on the bezel, not a light in the sky. Do not re-add a large soft
+   highlight to this overlay. */
 #stage-wrap::before {
   content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: 9px;
   background:
-    radial-gradient(ellipse 72% 52% at 32% 3%, rgba(255,247,228,0.17), transparent 52%),   /* bright specular sweep across the top of the glass */
     radial-gradient(ellipse 142% 136% at 50% 48%, transparent var(--tube-clear), rgba(0,0,0,var(--tube-mid-a)) var(--tube-mid), rgba(0,0,0,var(--tube-edge-a)) 100%);  /* bowed corner vignette → convex tube; stops are crtlab dials */
   box-shadow: inset 0 0 30px rgba(0,0,0,0.6), inset 0 2px 1px rgba(255,243,220,0.11), inset 0 0 0 1px rgba(255,238,210,0.04);   /* tube rim + top edge glass highlight */
 }
 body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
+/* NOTE: the Appearance CRT dial deliberately does NOT reach this rule. The tube glass over the feed
+   is part of the station being a tube, not a reading surface — DULLED thins the glass over the HTML
+   only (style.css body.crt-dull). `no-curve` above stays an internal/debug hatch. */
 
 /* NOTE: scanlines are painted IN-CANVAS now (world.js drawCRT — device-px integer lines, drawn OVER
    the warped feed). They are NOT a CSS overlay anymore: the old #stage-wrap::after gradient rasterised
@@ -459,9 +553,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
 /* chat panel */
 #chat-panel {
-  flex: 0 0 360px; display: flex; flex-direction: column; min-height: 0; border-radius: 9px;
+  flex: 0 0 360px; display: flex; flex-direction: column; min-height: 0; border-radius: calc(9px * var(--cz));
   background: var(--panel);
-  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 40px rgba(0,0,0,.8);
+  box-shadow: 0 0 0 calc(2px * var(--cz)) var(--ph), 0 0 0 calc(3.5px * var(--cz)) rgba(0,0,0,.9), inset 0 0 40px rgba(0,0,0,.8);
   isolation: isolate;
 }
 #chat-panel h3 {
@@ -614,6 +708,32 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .consent-btn:active { transform: translateY(1px); }
 .consent-btn:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
 .consent-btn:focus-visible { outline: none; color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); box-shadow: 0 0 8px var(--ph-glow2); }
+/* PRIMARY ACTION — at most ONE per card. Named friction (2026-08-04): every decision card rendered
+   its affirmative, its editor and its refusal as three identical outlined pills, so the eye had to
+   READ all three to find the "yes". The primary now carries a matte gold fill and reads first.
+   Matte law: the gradient spans 8% of the base tone, the top inset is .14, and hover is a FILL
+   change — never an outer glow. */
+.consent-btn.primary {
+  color: var(--ph-bright); border-color: var(--gold);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.20), rgba(var(--gold-rgb),.12));
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35);
+}
+.consent-btn.primary:hover,
+.consent-btn.primary:focus-visible {
+  color: var(--ph-bright); border-color: var(--gold); box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.30), rgba(var(--gold-rgb),.20));
+}
+/* QUIET SECONDARY — the third rank, below the ghost default. Named friction: the away digest put two
+   equally-weighted pills on every row, so three runs arrived as six identical buttons and the rows stopped
+   being distinguishable. The card's copy already states the order ("read each one, THEN rate it"), so the
+   later step recedes until it is earned. Chrome only — the control keeps its full hit area. */
+.consent-btn.quiet {
+  color: var(--ph-dim); border-color: rgba(var(--ph-rgb), .28); background: none;
+  box-shadow: none; text-shadow: none;
+}
+.consent-btn.quiet:hover, .consent-btn.quiet:focus-visible {
+  color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); box-shadow: none;
+}
 .consent-btn.danger { color: var(--gold); border-color: var(--gold); }
 .consent-btn.danger:hover { color: var(--ph-bright); background: rgba(var(--gold-rgb), 0.12); }
 .consent-btn.deny { color: var(--bad); border-color: var(--bad); }
@@ -689,59 +809,116 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .turnin-edit:focus { outline: none; border-color: var(--ph); }
 
+/* ── THE OFFER CARD (recommendation spine) ────────────────────────────────────────────────────────────
+   ONE shape for every proactive consent offer: eyebrow → evidence (the Commander's own words) → proposal
+   → consent. It is the SAME gold-inset .turnin hardware, not a new visual language — only the internal
+   rhythm is unified, which was the named friction (seven inconsistent card shapes). Matte throughout: no
+   gloss, no second box, no OS-painted control anywhere; the only additions are a quieter eyebrow, a lit
+   evidence line and a hairline rule that separates the citation from the ask. */
+.cmsg.turnin.rec { padding-top: 8px; }
+.cmsg.turnin.rec .body { gap: 5px; }
+/* the eyebrow is a LABEL, not a sentence — dim, tracked-out, small. It must never out-shout the evidence. */
+.rec-eyebrow {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; letter-spacing: 2.2px; line-height: 1;
+  color: var(--gold); opacity: .72;
+}
+/* ◈ is a fallback-font glyph under VT323 — give it its own BOX and centre it there. Never derive the
+   eyebrow's spacing from font-size: the two faces disagree and the label drifts off its baseline. */
+.rec-glyph {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 11px; height: 11px; flex: 0 0 11px; font-size: 10px; line-height: 1; letter-spacing: 0;
+}
+/* THE EVIDENCE — the Commander's own words. It is the reason the card exists, so it reads as the lit
+   line: full width, phosphor-bright, with a hairline beneath separating citation from proposal. */
+.rec-item > .rec-evidence {
+  grid-column: 1 / -1; min-width: 0; overflow-wrap: anywhere;
+  color: var(--ph-bright); font-size: 13px; line-height: 1.45; letter-spacing: .2px;
+  padding-bottom: 6px; margin-bottom: 1px;
+  border-bottom: 1px solid rgba(var(--gold-rgb), .18);
+}
+.rec-item { gap: 5px 8px; grid-template-columns: minmax(0, 1fr); }
+/* THE KIND RIDES THE EYEBROW. Named friction (2026-08-04): study / trust / thread all opened with the
+   same "◈ NOVA NOTICED" line, and the one word that says WHICH decision this is (WORKING STYLE / GRANT /
+   THREAD) sat four lines down as a chip in the item's first grid column — where it also crushed the
+   proposal into a narrow second column that wrapped mid-phrase. Lifted into the eyebrow it identifies
+   the card at a glance AND hands the proposal the card's full width. */
+.rec-kind { color: var(--gold); opacity: 1; letter-spacing: 2.2px; }
+.rec-who { opacity: .62; }
+.rec-eyebrow { opacity: 1; }
+/* the note ("raises the dial to FREE") is consequence, not evidence — it stays the dim aside it was. */
+.rec-item > .turnin-evidence { margin-top: 1px; }
+/* the ask itself carries the weight of a headline without any glow — matte CRT, not a web toast. */
+.rec-item > .turnin-text { font-size: 14.5px; }
+/* ENTRANCE — the mirror of .beat-vanish (.26s ease): a settled card leaves the way an offered card
+   arrives, so the feed has one motion vocabulary. Slides down out of the reply above it, never a pop. */
+@keyframes rec-card-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.cmsg.turnin.rec { animation: rec-card-in .26s var(--ease-out, ease) both; }
+@media (prefers-reduced-motion: reduce) { .cmsg.turnin.rec { animation: none; } }
+
 /* W3 — THE DELIVERY CARD (rendered inside the deliverable's OWN session, 2026-07-15). Rides the gold-inset
    turn-in family (.cmsg.turnin.workshop-return); a flat stack — headline, verify line, what/how lines, the
    Open-it action, the files pane, and one action row (optional message + Implement / Later / Discard). */
-.ws-verline { display:block; font-size:12px; letter-spacing:.3px; margin-top:-2px; }
+.ws-verline { display:block; font-size:13.5px; line-height:1.4; letter-spacing:.3px; margin-top:1px; }
 .ws-verline.ok { color:var(--gold); }
 .ws-verline.dim { color:var(--ph-dim); }
 /* the flat delivery card (2026-07-15, premium pass 2026-07-16): labeled sections in the dossier grammar —
    a gold uppercase micro-label over a bright value (the same ws-k/ws-v voice the config cards speak). */
-.workshop-return .ws-line { display:block; margin-top:2px; font-size:13px; line-height:1.4; overflow-wrap:anywhere; }
-.workshop-return .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1.2px; text-transform:uppercase; opacity:.92; margin-bottom:1px; }
+.workshop-return .ws-line { display:block; margin-top:4px; font-size:14px; line-height:1.45; overflow-wrap:anywhere; }
+.workshop-return .ws-k { display:block; color:var(--gold); font-size:11px; letter-spacing:1.6px; text-transform:uppercase; opacity:.92; margin-bottom:2px; }
 .workshop-return .ws-v { display:block; color:var(--ph-bright); }
-.workshop-return .ws-how .ws-v, .workshop-return .ws-notver .ws-v, .workshop-return .ws-because .ws-v { color:var(--ph-dim); font-size:12.5px; }
+.workshop-return .ws-how .ws-v, .workshop-return .ws-notver .ws-v, .workshop-return .ws-because .ws-v { color:var(--ph-dim); font-size:13.5px; line-height:1.45; }
 .workshop-return .ws-because .ws-v { font-style:italic; }   /* provenance reads as a quoted aside, not a claim */
 /* honest-brevity furniture (2026-07-17): verbose legacy manifests FOLD instead of walling — a quiet
    inline "+ more" reveal, and one gold-marked row per check-yourself item (the old semicolon join). */
-.workshop-return .ws-more { background:none; border:0; padding:0; margin-left:2px; font:inherit; font-size:11px;
+.workshop-return .ws-more { background:none; border:0; padding:0; margin-left:2px; font:inherit; font-size:12px;
   letter-spacing:.5px; color:var(--gold); cursor:pointer; opacity:.85; }
 .workshop-return .ws-more:hover { opacity:1; text-shadow:0 0 6px var(--ph-glow); }
-.workshop-return .ws-nvitem { display:block; padding-left:11px; position:relative; }
+.workshop-return .ws-nvitem { display:block; padding-left:13px; position:relative; }
 .workshop-return .ws-nvitem::before { content:'▸'; position:absolute; left:0; color:var(--gold); opacity:.7; }
 /* honest kind chip beside the headline — cf-badge vocabulary, gold edge */
-.ws-kindchip { margin-left:8px; font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--gold);
+.ws-kindchip { margin-left:8px; font-size:11px; letter-spacing:1.4px; text-transform:uppercase; color:var(--gold);
   border:1px solid rgba(var(--gold-rgb),.55); border-radius:2px; padding:0 5px; background:rgba(var(--gold-rgb),.06);
   vertical-align:2px; white-space:nowrap; }
 .ws-pane { min-width:0; background:var(--ph-faint); border:1px solid var(--ph-glow2);
   border-radius:3px; padding:7px 8px; box-sizing:border-box; margin-top:7px; }
 /* disk-proven input-capture notice (validateWorkshopManifest.capturesInput) — shown above the Open-it action */
-.ws-capture-warn { display:block; margin-top:6px; font-size:12px; line-height:1.35; color:var(--gold);
+.ws-capture-warn { display:block; margin-top:6px; font-size:13px; line-height:1.42; color:var(--gold);
   background:rgba(var(--gold-rgb),.07); border:1px solid rgba(var(--gold-rgb),.35); border-radius:3px; padding:4px 7px; }
 .ws-try { margin-top:7px; }
 /* the HERO action — the one click that runs the deliverable. Gold, bloomed, unmistakably primary. */
-.consent-btn.ws-openit { color:var(--gold); border-color:var(--gold); font-size:13px; padding:4px 14px;
-  background:rgba(var(--gold-rgb),.07); box-shadow:0 0 10px rgba(var(--gold-rgb),.16);
-  transition:box-shadow var(--t-fast) var(--ease-soft), background var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft); }
-.consent-btn.ws-openit:hover { color:var(--ph-bright); border-color:var(--gold); background:rgba(var(--gold-rgb),.16);
-  box-shadow:0 0 16px rgba(var(--gold-rgb),.34); }
+.consent-btn.ws-openit { color:var(--ph-bright); border-color:var(--gold); font-size:14px; padding:6px 16px;
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.22), rgba(var(--gold-rgb),.13));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.15), 0 1px 0 rgba(0,0,0,.35);
+  transition:background var(--t-fast) var(--ease-soft), color var(--t-fast) var(--ease-soft); }
+.consent-btn.ws-openit:hover { color:var(--ph-bright); border-color:var(--gold);
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.32), rgba(var(--gold-rgb),.21));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.15), 0 1px 0 rgba(0,0,0,.35); }
 /* the ACCEPT action — gold means "this really implements"; a fallback save stays neutral by design */
-.consent-btn.ws-primary { color:var(--gold); border-color:var(--gold); background:rgba(var(--gold-rgb),.06);
-  box-shadow:0 0 8px rgba(var(--gold-rgb),.12); }
-.consent-btn.ws-primary:hover { color:var(--ph-bright); background:rgba(var(--gold-rgb),.15); box-shadow:0 0 12px rgba(var(--gold-rgb),.28); }
-.ws-fhead { color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:4px; }
-.ws-flist { display:flex; flex-direction:column; gap:2px; margin-bottom:6px; }
+.consent-btn.ws-primary { color:var(--ph-bright); border-color:var(--gold);
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.20), rgba(var(--gold-rgb),.12));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35); }
+.consent-btn.ws-primary:hover { color:var(--ph-bright);
+  background:linear-gradient(180deg, rgba(var(--gold-rgb),.30), rgba(var(--gold-rgb),.20));
+  box-shadow:inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35); }
+.ws-fhead { color:var(--gold); font-size:11px; letter-spacing:1.6px; text-transform:uppercase; margin-bottom:6px; }
+.ws-flist { display:flex; flex-direction:column; gap:3px; margin-bottom:7px; }
 .ws-filerow { display:flex; align-items:center; gap:6px; }
 .ws-file { flex:1 1 auto; text-align:left; background:none; border:1px solid transparent; border-radius:2px; color:var(--ph);
-  font-family:inherit; font-size:12px; padding:2px 5px; cursor:pointer; overflow-wrap:anywhere; }
+  font-family:inherit; font-size:13.5px; padding:3px 5px; cursor:pointer; overflow-wrap:anywhere; }
 .ws-file:hover { border-color:var(--ph-glow2); color:var(--ph-bright); }
 .ws-file.sel { border-color:var(--gold); color:var(--ph-bright); background:rgba(var(--gold-rgb),.06); }
 /* W7: "view source" is the demoted, opt-in code reader — small and dim beside the primary open action. */
-.ws-viewsrc { flex:0 0 auto; background:none; border:none; color:var(--ph-glow2); font-family:inherit;
-  font-size:10px; letter-spacing:.5px; padding:2px 4px; cursor:pointer; opacity:.75; }
+/* demoted, but still READABLE — at .75 opacity on --ph-glow2 it had faded to near-invisible beside the
+   larger filenames, which is a hidden control, not a quiet one. */
+.ws-viewsrc { flex:0 0 auto; background:none; border:none; color:var(--ph-dim); font-family:inherit;
+  font-size:11px; letter-spacing:.5px; padding:2px 4px; cursor:pointer; opacity:.9; }
 .ws-viewsrc:hover { color:var(--ph-bright); opacity:1; text-decoration:underline; }
 .ws-fview { margin:0; max-height:180px; overflow:auto; background:var(--ink); border:1px solid var(--ph-glow2);
-  border-radius:2px; padding:6px 7px; color:var(--ph-bright); font-size:12px; line-height:1.4; white-space:pre-wrap;
+  border-radius:2px; padding:7px 8px; color:var(--ph-bright); font-size:12.5px; line-height:1.45; white-space:pre-wrap;
   overflow-wrap:anywhere; }
 /* the decide row — separated from the evidence above by a gold hairline; it is the card's consent moment */
 .workshop-return .ws-acts { margin-top:9px; padding-top:9px; border-top:1px solid rgba(var(--gold-rgb),.22);
@@ -751,20 +928,20 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .ws-msg { flex:1 1 200px; min-width:160px; width:auto; max-width:100%; }
 /* the pre-click consequence line ("implement → applies to a new branch in …") — an inset gold consent strip,
    the same left-edge voice as .cmsg.consent: this line IS the consent copy */
-.workshop-return .ws-plan { color:var(--gold); font-size:12px; line-height:1.4; margin-top:7px;
+.workshop-return .ws-plan { color:var(--gold); font-size:13px; line-height:1.45; margin-top:8px;
   border-left:2px solid var(--gold); border-radius:0 3px 3px 0; padding:5px 8px;
   background:rgba(var(--gold-rgb),.07); }
 /* copy-path / open-folder chips on the decided outcome line */
 .ws-destchips { display:inline-flex; gap:6px; margin-left:8px; vertical-align:middle; }
 /* per-command verification detail: the actual commands run + each one's pass/fail from the manifest */
 .ws-verdetail { margin-top:6px; }
-.ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:10px; letter-spacing:1px; text-transform:uppercase; margin-bottom:3px; }
-.ws-vcmd { display:flex; align-items:baseline; gap:6px; font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+.ws-verdetail > .ws-k { display:block; color:var(--gold); font-size:11px; letter-spacing:1.6px; text-transform:uppercase; margin-bottom:4px; }
+.ws-vcmd { display:flex; align-items:baseline; gap:6px; font-size:13px; line-height:1.45; overflow-wrap:anywhere; }
 .ws-vcmd .ws-vmark { flex:0 0 auto; }
 .ws-vcmd.ok  .ws-vmark { color:var(--gold); }
 .ws-vcmd.bad .ws-vmark { color:var(--bad); }
 .ws-vcmdtext { color:var(--ph-bright); font-family:inherit; }
-.ws-vexit { color:var(--bad); font-size:11px; }
+.ws-vexit { color:var(--bad); font-size:11.5px; }
 
 /* SILENT-SAVE receipt: a PASSIVE log of memories reflection auto-saved — one compact "◈ remembered: …" line per
    memory, kind tag, and a small ✕ to veto (undo the save). Non-blocking: no buttons demand action, it stays as a
@@ -809,7 +986,31 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   padding: 8px 11px; margin: 6px 0 2px; border-radius: 0 5px 5px 0;
 }
 .cmsg.agent.nudge .who { display: none; }
-.cmsg.agent.nudge .body { color: var(--ph-bright); font-size: 14.5px; }
+.cmsg.agent.nudge .body { color: var(--ph-bright); font-size: 15px; }
+/* A MULTI-LINE NUDGE IS A LIST. The marker owns a fixed box so the prose column can hang — a wrapped
+   "✓ drafted the note — waiting in your outbox" now stays visibly ONE item instead of splitting into two
+   at the left margin. Width is set in px, never derived from font-size: ✓ ✗ ⚒ render from the fallback
+   face under VT323 and the two faces disagree (the symbol-glyph law). */
+.nudge-lines { display: flex; flex-direction: column; gap: 4px; }
+/* one column by default — an UNMARKED line is just a row of prose. The marker column is opt-in via .nl-mk,
+   which chat.js sets only when it actually rendered a marker; keying it off the marker CLASSES instead let a
+   nested-but-unmarked line claim the 14px column and crushed its text to one character per line. */
+.nudge-line { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 8px; align-items: start; line-height: 1.42; }
+.nudge-line.nl-mk { grid-template-columns: 14px minmax(0, 1fr); }
+.nudge-line .nl-m { display: inline-flex; align-items: center; justify-content: center;
+  width: 14px; height: 1.42em; flex: 0 0 14px; font-size: 12px; line-height: 1; letter-spacing: 0; color: var(--gold); }
+.nudge-line .nl-t { min-width: 0; overflow-wrap: anywhere; }
+/* the opening line is the claim the whole beat makes — it reads first */
+.nl-first .nl-t, .nl-head .nl-t { color: var(--ph-bright); }
+.nl-first, .nl-head { margin-bottom: 2px; }
+/* a completed act and a REFUSED one must never look alike on a truthfulness surface */
+.nl-yes .nl-m { color: var(--gold); }
+.nl-no .nl-m { color: var(--bad); }
+.nl-no .nl-t { color: var(--ph-dim); }
+.nl-build .nl-m, .nl-file .nl-m { color: var(--gold); }
+/* nested rows sit under their parent's PROSE column, not under its marker */
+.nudge-line.nl-sub { padding-left: 22px; }
+.nudge-line.nl-sub .nl-t { color: var(--ph); }
 
 /* RETIRING A SETTLED BEAT (chat.js vanish()): a decided memory card / answered nudge fades and collapses to
    nothing, then drops from the DOM — so the COMMS feed only ever holds the conversation and PENDING prompts,
@@ -1058,6 +1259,21 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   text-shadow: 0 0 6px var(--ph-glow2); white-space: pre-wrap; min-height: 2.4em;
   display: flex; align-items: center;
 }
+/* the read-gate cue: hidden until a narration beat finishes typing; the beat then waits for the
+   Commander, so the blink is an invitation, not a countdown. Blink dies under reduced motion. */
+.fnv-more { display: none; flex: 0 0 auto; color: var(--ph-dim); font-size: 14px; letter-spacing: 1px; user-select: none; }
+.fnv-more.show { display: block; animation: fnv-more-blink 1.2s steps(2, start) infinite; }
+.fnv-dialogue.no-anim .fnv-more.show { animation: none; }
+.fnv-dialogue.fnv-wait { cursor: pointer; }
+@keyframes fnv-more-blink { 50% { opacity: .3; } }
+/* the ink stamp: a quiet receipt that an answer just landed in the operating file. Dim phosphor,
+   smaller than the beat line, fades in/out — a ledger note, never a toast. */
+.fnv-ink {
+  flex: 0 0 auto; color: var(--ph-dim); font-size: 13px; letter-spacing: .5px; user-select: none;
+  opacity: 0; transition: opacity .5s ease; min-height: 1.2em; text-shadow: 0 0 4px var(--ph-glow2);
+}
+.fnv-ink.show { opacity: 1; }
+.fnv-dialogue.no-anim .fnv-ink { transition: none; }
 .fnv-opts { flex: 0 0 auto; display: flex; flex-direction: column; gap: 7px; }
 .fnv-opt {
   display: flex; align-items: baseline; gap: 9px; width: 100%; text-align: left;
@@ -1126,21 +1342,36 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* .queued-x composes .x-btn (danger hover) — ghost delta only */
 .queued-x { border: none; background: transparent; color: var(--ph-dim); font-size: 12px; padding: 0 2px; border-radius: 3px; }
 
-/* INTERRUPT — the ⏹ Stop chip: matched to the voice chips but red, with a soft pulse so the live-stop reads
-   at a glance. Shown only while the displayed stream is running (chat.js toggles [hidden] via updateControls). */
+/* INTERRUPT — the HALT KEY. The one danger control in the composer row, shown only while the displayed
+   stream is running (chat.js toggles [hidden] via updateControls), so it has to read as ARMED without
+   smearing. What it replaced (and why): a borderless, radius-0 button wearing a pulsing `box-shadow`
+   painted a soft red RECTANGLE with no edge — a bleed, not a control — behind a ◉ ring-and-dot glyph
+   that reads RECORD in every UI vocabulary there is, at 16px inside a 38x34 box it did not fill.
+   The shape carries the meaning now: ONE solid halt square, 22px, nothing drawn around it — the plainest
+   thing that can only mean stop, sitting in the same bare-glyph register as the paperclip and mic beside
+   it. The live-run signal is a FLASH on the glyph, on the station's own terminal cadence: 1s `steps(1)`,
+   the same hard snap as the COMMS caret (@keyframes blink) — no easing, because RobCo terminals snap.
+   It flashes to a DIM FLOOR, never to 0: this is a control you are reaching for mid-run, and a target
+   that blinks out from under the cursor is a target you misclick. Hover/press take the RobCo invert
+   block (solid field, --ink glyph) like the voice chips, and HOLD the glyph lit — nothing you are
+   actively clicking should still be blinking. */
 .chat-stop {
-  flex: 0 0 auto; font-size: 16px; line-height: 0; color: var(--bad);
+  flex: 0 0 auto; font-size: 22px; line-height: 0; color: var(--bad);
   background: transparent; border: none; border-radius: 0;
   width: 38px; height: 34px; padding: 0; cursor: pointer; user-select: none;
   display: inline-flex; align-items: center; justify-content: center;
   transition: none;
-  animation: stop-pulse 1.2s ease-in-out infinite;
 }
 .chat-stop[hidden] { display: none; }
-.chat-stop svg { width: 1em; height: 1em; display: block; pointer-events: none; }
-.chat-stop:hover { background: var(--bad); color: var(--ink); }
-@keyframes stop-pulse { 0%, 100% { box-shadow: 0 0 2px var(--bad); } 50% { box-shadow: 0 0 11px var(--bad); } }
-@media (prefers-reduced-motion: reduce) { .chat-stop { animation: none; } }
+.chat-stop svg {
+  width: 1em; height: 1em; display: block; pointer-events: none;
+  animation: stop-flash 1s steps(1) infinite;
+}
+.chat-stop:hover, .chat-stop:active { background: var(--bad); color: var(--ink); }
+.chat-stop:hover svg, .chat-stop:active svg { animation: none; opacity: 1; }
+@keyframes stop-flash { 50% { opacity: .22; } }
+/* motion off: hold the square solid — the control must still read at full strength */
+@media (prefers-reduced-motion: reduce) { .chat-stop svg { animation: none; } }
 
 /* ---------- voice controls: a matched set of bordered phosphor chips in the COMMS input row.
    Defined dark boxes (not bare glyphs) so they punctuate the amber UI and read as real controls;
@@ -1355,6 +1586,15 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .voice-live[aria-pressed="true"] { color: var(--ink); background: var(--ph); box-shadow: 0 0 16px var(--ph-glow); }
 .voice-live[aria-pressed="true"] svg { filter: none; }
 
+/* Recovery candidate picker: explicit station generations, never an OS-native list control. */
+.lineage-candidates { display:grid; gap:7px; margin-top:12px; }
+.lineage-candidate { display:grid; grid-template-columns:1fr auto; gap:2px 12px; width:100%; padding:8px 10px; text-align:left; color:var(--ph-dim); border:1px solid color-mix(in srgb, var(--ph) 35%, transparent); background:color-mix(in srgb, var(--ink) 88%, var(--ph)); }
+.lineage-candidate b { color:var(--ph); letter-spacing:.06em; }
+.lineage-candidate span { grid-column:1/-1; overflow-wrap:anywhere; }
+.lineage-candidate small { grid-column:1/-1; color:var(--ph-dim); }
+.lineage-candidate.on, .lineage-candidate[aria-pressed="true"] { color:var(--ink); background:var(--ph); box-shadow:inset 0 0 0 2px var(--ink), 0 0 12px var(--ph-glow); }
+.lineage-candidate.on b, .lineage-candidate[aria-pressed="true"] b, .lineage-candidate.on small, .lineage-candidate[aria-pressed="true"] small { color:var(--ink); }
+
 /* ================= LOCAL LIVE VOICE — the pop-up mic module =================
    A SMALL WINDOW, not a typical one (Andrew, 2026-07-29). Two earlier passes missed on opposite
    sides: a 300-440px CRT panel with a bezel, a title bar and a three-row readout rail read as one
@@ -1541,6 +1781,8 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   text-shadow: 0 0 8px var(--ph-glow2);
 }
 .live-voice-panel:focus-within .lv-heard { display: -webkit-box; }
+.live-voice-panel[data-state="hearing"] .lv-heard,
+.live-voice-panel[data-state="transcribing"] .lv-heard { display: -webkit-box; }
 .lv-say { display: none; }
 .lv-say.on { display: none; }
 .live-voice-panel:focus-within .lv-say.on {
@@ -1549,6 +1791,13 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   color: var(--ph-dim); font-size: 10px; line-height: 1.3; letter-spacing: var(--ls-1);
 }
 .lv-say.on::before { content: '▸ '; color: var(--ph); }
+
+.lv-end-control {
+  position: relative; z-index: 7; flex: 1 0 100%; min-width: 0;
+  display: flex; align-items: center; gap: 5px; margin: 1px 1px 0;
+  color: var(--ph-dim); font-size: 9px; letter-spacing: var(--ls-2);
+}
+.lv-end-control span { flex: 0 0 auto; opacity: .65; }
 
 /* ---- ROUTE / SPEECH / TASK are diagnostics, not glanceable state, and carrying them at rest is
    what forced a 300px panel. Hidden at rest, wrapped onto one line on hover — HIDDEN, never faked:
@@ -1570,6 +1819,17 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--ph); font-size: 9px; letter-spacing: var(--ls-1);
 }
+.lv-endpoint {
+  flex: 1 1 auto; min-width: 0; max-width: 98px; padding: 0 13px 0 2px; border: 0; border-bottom: 1px solid var(--ph-faint);
+  color: var(--ph-bright); background: transparent; box-shadow: none; border-radius: 0;
+  font: inherit; letter-spacing: inherit; line-height: 1.2; appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--ph-dim) 50%),
+    linear-gradient(135deg, var(--ph-dim) 50%, transparent 50%);
+  background-position: calc(100% - 6px) 45%, calc(100% - 3px) 45%;
+  background-size: 3px 3px, 3px 3px; background-repeat: no-repeat;
+}
+.lv-endpoint:focus { outline: 1px solid var(--ph); outline-offset: 1px; }
 /* model download: a real fill sweeps the SPEECH row, driven by the sidecar's reported percent */
 .lv-row-dl::before {
   content: ''; position: absolute; left: -3px; top: -1px; bottom: -1px; width: var(--lv-dl);
@@ -1746,7 +2006,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   background: linear-gradient(180deg, var(--ph-bright) -40%, var(--ph) 60%); color: var(--ink); border-color: var(--ph);
   text-shadow: none; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 9px var(--ph-glow2);
 }
-/* the UNHINGED chip's armed state (two-press confirm — it swears for real): warn tint until the second press */
+/* the UNHINGED chip's armed state (two-press confirm — it swears for real): warn tint until the second press.
+   `.armed` is the same state under the shared ArmConfirm helper's class name — a chip wired through that
+   helper (the PERMISSIONS reach/approval chips) must wear the same warn face, not sit visually at rest. */
+.ov-vchip.armed,
 .ov-vchip.arm {
   color: var(--warn); border-color: var(--warn);
   box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.1), 0 0 9px color-mix(in srgb, var(--warn) 40%, transparent), 0 1px 0 rgba(0,0,0,.35);
@@ -1928,6 +2191,31 @@ input.field-locked { opacity: .55; filter: none; cursor: not-allowed; background
 body.col-resizing .col-resizer-grip {
   opacity: 1; background: var(--ph); box-shadow: 0 0 8px var(--ph-glow2);
 }
+/* ---------- CREW / stage divider: drag right to widen the crew rail (leftrail.js) ----------
+   THE HIT ZONE MUST SIT ON THE SEAM THE EYE SEES. #comms-resizer is a child of its panel at
+   left:-10px, so it straddles the 9px grid gap. The same trick on the left is impossible from
+   inside #stage-wrap — the tube casing is overflow:hidden and cuts away anything outside it —
+   and the first pass put the handle INSIDE the tube at left:0 instead. It worked, but the
+   cursor only turned to ↔ once you were already past the seam; Andrew: "it's a bit misaligned
+   when u put your mouse in between."
+   So it is a GRID CHILD sharing the centre area with the tube: justify-self pins it to the
+   stage's left edge, the negative margin walks it back over the gap. No arithmetic against
+   padding/gap/row heights — the grid places it, so it follows every breakpoint for free.
+   Same invisible-until-hovered grip vocabulary as .col-resizer. */
+.crew-resizer {
+  grid-area: center; justify-self: start; align-self: stretch;
+  position: relative; margin-left: -10px; width: 12px; z-index: 25;
+  cursor: col-resize; display: flex; align-items: center; justify-content: center;
+  touch-action: none; background: transparent; border: 0; padding: 0;
+}
+/* the rail is GONE, not narrow — there is no seam to drag, and the ▸ CREW tab owns this edge */
+body.crew-rail-off .crew-resizer { display: none; }
+/* cinema mode collapses both side columns to 0 and hides #left (warroom.css) — a seam over the
+   fullscreen feed would look like a control and move nothing */
+#screen-game.cinema .crew-resizer { display: none; }
+/* ≤1000px the columns are hard-coded to keep the stage alive (see the breakpoints below); the var
+   the seam writes has no effect there, so the handle must not pretend otherwise */
+@media (max-width: 1000px) { .crew-resizer { display: none; } }
 /* while dragging: column-resize cursor everywhere + no text selection + canvas ignores the pointer */
 body.col-resizing { cursor: col-resize; user-select: none; }
 body.col-resizing #stage { pointer-events: none; }
@@ -2105,12 +2393,45 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* TASK BOARD — add-row + per-card actions (new controls over v7 .kb-* cards) */
 .kb-add { display: flex; gap: 8px; margin-bottom: 10px; }
 .kb-add input { flex: 1; font-size: 15px; padding: 5px 8px; }
-.kb-acts { display: flex; gap: 5px; margin-top: 5px; flex-wrap: wrap; }
+.kb-acts { display: flex; gap: 4px; margin-top: 5px; flex-wrap: wrap; align-items: center; }
+/* the meta glyphs (rename/pin/archive) are ONE right-aligned cluster (.kb-meta-keys) that wraps as
+   a unit: verbs read left, housekeeping right, and a narrow card gets two structured rows — never a
+   stranded ⌫. Glyph-only keys sit in a tighter, equal box (single fallback-font symbols —
+   box-centred, never padded from font metrics). */
+.kb-acts .kb-meta-keys { margin-left: auto; display: inline-flex; gap: 4px; }
+.kb-acts .kb-meta-keys button { padding: 1px 0; min-width: 24px; }
+/* the card keys wear the SAME molded matte keycap as the console's .bb.sm/.bb.xs (the app.css:100
+   material block): top light, phosphor body, shaded base, contact shadow, press sink. Only the
+   surface + radius — the compact metrics stay exactly as they were so no card reflows. The base
+   shade is 1px (not the sm key's 2px): these keys are ~20px tall and a 2px base reads as a ledge. */
 .kb-acts button {
-  font-family: inherit; background: transparent; color: var(--ph-dim);
+  font-family: inherit; color: var(--ph-dim);
   border: 1px solid var(--ph-faint); cursor: pointer; font-size: 12px; padding: 1px 7px; letter-spacing: 1px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 3px;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ph) 6%, var(--panel2)) 0%,
+    var(--panel2) 58%,
+    color-mix(in srgb, #000 20%, var(--panel2)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-rgb), .08),
+    inset 0 -1px 0 rgba(0,0,0,.28),
+    0 1px 2px rgba(0,0,0,.45);
 }
-.kb-acts button:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
+.kb-acts button:hover {
+  color: var(--ph-bright); border-color: var(--ph);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--ph) 11%, var(--panel2)) 0%,
+    var(--panel2) 62%,
+    color-mix(in srgb, #000 16%, var(--panel2)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-rgb), .12),
+    inset 0 -1px 0 rgba(0,0,0,.28),
+    0 1px 2px rgba(0,0,0,.45),
+    0 0 10px var(--ph-glow2);
+}
+/* pressed = the key is DOWN: the seat sinks and the base light goes out (same verb as .bb.sm) */
+.kb-acts button:active { transform: translateY(1px); box-shadow: inset 0 2px 4px rgba(0,0,0,.42); }
 .kb-acts .assign { color: var(--gold); border-color: var(--ph-dim); }
 /* empty-state wrapper: NO dimming — the .empty-state component (glyph + copy + CTA) is already designed at the
    right strength; the old opacity:0.4 ghosted even the + ADD ONE call-to-action. */
@@ -2125,10 +2446,11 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .kb-state { display: flex; align-items: center; gap: 5px; margin-top: 4px; font-size: 11px; letter-spacing: 1px; }
 .kb-state.running { color: var(--ph-bright); }
 .kb-state.done { color: var(--gold); }
+.kb-state.failed { color: var(--bad); }
 .kb-live { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--ph-bright); animation: wsPulse 1.15s ease-in-out infinite; }
 
 /* SKILLS — honest capability readout (reuses v7 .perk-grid/.perk) */
-.term.skills-term { max-height: calc(100vh - 96px); }
+.term.skills-term { max-height: var(--term-band, calc(100vh * var(--sn-unzoom, 1) - 96px)); }
 .term.skills-term .term-body { flex: 1 1 auto; min-height: 0; }
 .sk-note { font-size: 12px; opacity: 0.62; margin-top: 12px; line-height: 1.45; }
 /* the locked status line ("○ NO CABINET AT DESK") reads at --ph, not --ph-dim: at the perk's 0.65 opacity a dim
@@ -2185,6 +2507,32 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .sk-card.held .sk-toggle { color: var(--warn); border-color: var(--warn); }
 .sk-attr.sk-held { opacity: 0.95; font-style: normal; color: var(--warn); letter-spacing: 0.3px; line-height: 1.4; }
 
+/* SKILL EXCHANGE — inspect-first distribution. Provenance is allowed to wrap instead of truncating:
+   the URL and digest are the evidence that the preview and installed bytes are the same artifact. */
+.sk-exchange-form { margin: 12px 0 10px; }
+.sk-exchange-form label { display: block; margin-bottom: 5px; color: var(--gold); font-size: 10px; letter-spacing: 1.8px; }
+.sk-exchange-row { display: flex; align-items: stretch; gap: 7px; }
+.sk-exchange-row input[type=url] { min-width: 0; font-size: 14px; padding: 7px 9px; }
+.sk-exchange-row .consent-btn { flex: 0 0 auto; margin: 0; }
+.sk-exchange-preview { margin-top: 8px; }
+.sk-prov { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px; margin: 0 0 6px; font-size: 10.5px; line-height: 1.35; }
+.sk-prov > span { color: var(--gold); letter-spacing: 0.8px; }
+.sk-prov a, .sk-prov code { color: var(--ph); font: inherit; overflow-wrap: anywhere; word-break: break-word; }
+.sk-prov a:hover { color: var(--ph-bright); }
+.sk-prov + .sk-body pre, .sk-prov ~ pre { margin-top: 10px; padding-top: 9px; border-top: 1px solid var(--ph-faint); }
+.sk-exchange-note { margin-top: 9px; padding: 7px 8px; border: 1px solid var(--ph-faint); background: rgba(0,0,0,.22); font-size: 11px; line-height: 1.4; }
+.sk-exchange-note.ok, .sk-exchange-done { color: var(--ok); border-color: var(--ok); }
+.sk-exchange-note.warn { color: var(--warn); border-color: var(--warn); }
+.sk-exchange-note.bad { color: var(--danger); border-color: var(--danger); }
+.sk-exchange-done { padding: 10px; border: 1px solid; font-size: 12px; letter-spacing: .4px; }
+.sk-update-slot:empty { display: none; }
+.sk-update-slot:not(:empty) { margin-top: 10px; }
+.sk-update-slot .sk-card { margin: 0; }
+@media (max-width: 620px) {
+  .sk-exchange-row { flex-direction: column; }
+  .sk-prov { grid-template-columns: 1fr; gap: 2px; }
+}
+
 /* SKILLS redesign (legibility) — a real ON/OFF pill SWITCH (the user's choice) + a SEPARATE readiness chip (the
    floor's grant), so the two axes never collapse into one ambiguous string. State sections group the library by
    READY / NEEDS GEAR / OFF; the PLACE button deep-links a locked card's missing gear into the real REFIT surface. */
@@ -2225,16 +2573,31 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .prov-card.soon { opacity: 0.45; border-color: var(--ph-faint); }          /* not-yet-shipped: fully locked */
 .prov-card.avail { opacity: 0.8; border-color: var(--ph-dim); }            /* live but keyless: actionable, not locked */
 .prov-card.conn { box-shadow: var(--raise), inset 0 0 12px var(--ph-glow2); }
+.prov-select {
+  display: flex; align-items: center; gap: 10px; flex: 1 1 auto; min-width: 0;
+  border: 0; background: transparent; padding: 0; color: inherit; font: inherit;
+  text-align: left; cursor: pointer;
+}
+.prov-select:focus-visible { outline: 1px solid var(--gold); outline-offset: 3px; }
 .conn-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ph-dim); flex: none; }
 .prov-card.conn .conn-dot, .key-row .conn-dot { background: var(--ok); box-shadow: 0 0 8px rgba(123, 200, 138, 0.7); }
 .prov-main, .key-main { flex: 1; min-width: 0; }
+.prov-select .prov-main, .prov-select .prov-ep { display: block; }
 .prov-name { font-size: 14px; color: var(--ph-bright); letter-spacing: 1px; display: flex; align-items: center; gap: 8px; }
 .prov-badge, .key-stat.on {
   font-size: 10px; letter-spacing: 1px; color: var(--ink); background: var(--gold);
   padding: 0 5px; text-shadow: none;
 }
 .prov-ep { font-size: 11px; color: var(--ph-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.prov-stat { font-size: 11px; color: var(--ph); text-align: right; letter-spacing: 1px; white-space: nowrap; }
+/* a flex ROW, not baseline-flowed inline content: the label and its action key centre against each
+   other by layout. As inline siblings the key sat a measured 2.50px off the label's centre on every
+   provider row, and no margin can fix that (the key's own label mixes two fonts — see COMPACT
+   CONSOLE KEYS). The text keeps its own span so the "N keys" <i> still stacks UNDER the label. */
+.prov-stat {
+  display: flex; align-items: center; justify-content: flex-end; gap: 12px;
+  font-size: 11px; color: var(--ph); text-align: right; letter-spacing: 1px; white-space: nowrap;
+}
+.prov-stat-t { min-width: 0; }
 .prov-card.soon .prov-stat { color: var(--ph-dim); }                       /* locked: muted */
 .prov-card.avail .prov-stat { color: var(--gold); }                        /* "NO KEY" is an action prompt, not a disabled state */
 .prov-stat i { display: block; font-style: normal; color: var(--ph-dim); font-size: 10px; }
@@ -2290,7 +2653,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
    same Harness.setKey path as the key list, so a beginner never hunts for where keys live. The card wraps so the
    editor sits on its own full-width line below the name/status; gold accent = actionable, matching "NO KEY". */
 .prov-card { flex-wrap: wrap; }
-.prov-addkey { margin-top: 4px; margin-left: 12px; }  /* breathing room between the status text and the inline action */
+.prov-addkey { flex: none; }  /* .prov-stat's flex gap owns the spacing now — a margin here would re-break the centring */
 .prov-key-edit { flex-basis: 100%; margin-top: 6px; }
 .prov-key-edit[hidden] { display: none; }
 
@@ -2308,14 +2671,27 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* ---------- WORKSTREAMS rail (left) ---------- */
 /* takes the left rail's slack (see the RAIL SPACE SPLIT note on #crew in style.css) */
 #ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+/* THE STRIP MAY NARROW, IT MAY NOT FOLD. SESSIONS/PROJECTS + NEW is three fixed labels in a
+   column the grid can make 200px wide (the ≤1120px breakpoint) and that the CREW seam can now
+   land anywhere in — and a squeezed flex item wraps its OWN text before the row ever admits it
+   is out of room: "+ NEW" broke across two lines, doubling the strip's height and blowing it
+   out of the molded head. Andrew: "it condenses horrendously." nowrap on the labels makes the
+   overflow HONEST (a strip that stays one line and tightens) instead of a folded button, and
+   the tabs give up their padding first because a view switcher survives being snug — the
+   action button does not survive being two lines. */
 .ws-head {
   display: flex; align-items: center; justify-content: space-between;
+  flex-wrap: nowrap; gap: 6px; min-width: 0;
   color: var(--ink); background: var(--ph); padding: 3px 10px; letter-spacing: 1px;
   font-size: 14px; border-radius: 6px 6px 0 0;
 }
+.ws-head .ws-view { flex: 0 1 auto; min-width: 0; }
+.ws-head .ws-head-acts { flex: 0 0 auto; }
+.ws-head .ws-tab, .ws-head .ws-head-acts > button { white-space: nowrap; }
 #ws-new {
   font-family: inherit; font-size: 12px; letter-spacing: 1px; color: var(--ink);
   background: transparent; border: 1px solid rgba(0,0,0,.45); cursor: pointer; padding: 0 6px;
+  white-space: nowrap; flex: 0 0 auto;
 }
 #ws-new:hover { background: rgba(0,0,0,.2); }
 /* RAIL SEARCH — search lives ON the rail (the SESSION TOOLS window is retired; its .ws-tools-* CSS is
@@ -2515,6 +2891,18 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* the head ✕ is a quiet bare glyph, not a boxed button */
 .proj-add button.proj-add-cancel { border: 0; padding: 0 2px; font-size: 11px; color: var(--ph-dim); }
 .proj-add button.proj-add-cancel:hover { color: var(--ph-bright); }
+.proj-discover-results {
+  max-height: 180px; overflow: auto; display: flex; flex-direction: column; gap: 4px;
+  padding: 4px; border: 1px solid var(--ph-faint); background: rgba(0,0,0,.2);
+}
+.proj-discover-results[hidden] { display: none; }
+.proj-add button.proj-discover-pick {
+  display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; width: 100%; text-align: left;
+  padding: 5px 7px; border-color: var(--ph-faint); text-transform: none; letter-spacing: 0;
+}
+.proj-discover-pick b { color: var(--ph-bright); font-weight: normal; }
+.proj-discover-pick span { grid-column: 1 / -1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ph-dim); font-size: 10px; }
+.proj-discover-pick em { grid-column: 2; grid-row: 1; color: var(--gold); font-size: 9px; font-style: normal; text-transform: uppercase; letter-spacing: 1px; }
 .proj-add-hint { font-size: 11px; color: var(--ph-dim); line-height: 1.3; }
 .proj-add-hint.err { color: var(--warn); }
 
@@ -2611,11 +2999,13 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   padding-bottom: 10px; margin-bottom: 2px;
   border-bottom: 1px solid var(--ph-faint);
 }
-.ag-portrait-wrap { flex: 0 0 88px; }
+/* 100px, matching PORTRAIT_W in stationui.js — the well is sized so the largest shipped character clears
+   an integer ×2 nearest-neighbour upscale (see the PORTRAIT_W comment; dev/skin-bounds.mjs measures it). */
+.ag-portrait-wrap { flex: 0 0 100px; }
 /* recessed portrait WELL (Phase-2 dossier hero): a dark inset floor the body glows out
    of, corner ticks, and a slow scan-sweep. Cosmetic overlays are pointer-events:none. */
 .ag-portrait-well {
-  position: relative; width: 88px; height: 112px; border-radius: var(--r-sm); overflow: hidden;
+  position: relative; width: 100px; height: 108px; border-radius: var(--r-sm); overflow: hidden;
   background: linear-gradient(180deg, #0a0602, #050301);
   box-shadow: var(--well), 0 0 11px var(--ph-glow2);
 }
@@ -2655,6 +3045,10 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   display: grid; grid-template-columns: 1fr 1fr 1fr;
   gap: 6px; margin: 10px 0 8px;
 }
+/* inside the dossier hero the wells share the info column with the name/status/model tags, so they sit tighter
+   and shed the bottom margin the hero's own padding already provides. */
+.ag-info > .stat-grid { margin: 9px 0 0; }
+.ag-info > .stat-grid .stat-cell { padding: var(--s-2) var(--s-2); }
 .stat-cell {
   background: linear-gradient(180deg, #0a0602, #050301); box-shadow: var(--well);
   padding: var(--s-3) var(--s-2); text-align: center; border-radius: var(--r-sm);
@@ -2671,6 +3065,29 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ag-mission-lbl { font-size: 10px; color: var(--ph-dim); letter-spacing: 2px; margin-bottom: 4px; }
 .ag-mission-text { font-size: 13px; color: var(--text); line-height: 1.5; user-select: text; }
 .ag-mission-cta { font-size: 12px; color: var(--ph-dim); font-style: italic; line-height: 1.45; }
+
+/* BRIEF section rules — the landing tab now carries three blocks (stats+purpose, SET UP AS, CAN DO), so it
+   needs the same .sec divider vocabulary the other panes use. Extra top margin only; .sec owns the rest. */
+.ag-brief-sec { margin-top: 16px; }
+
+/* SET UP AS — the five runtime decisions, shown as VALUES you can read, each a door into the CONFIG card that
+   owns it. A matte well per row (no gloss, no hover lift): this is a readout first and a link second. */
+.ag-setup { display: grid; gap: 3px; margin: 2px 0 4px; }
+.ag-setup-row {
+  display: grid; grid-template-columns: 84px 1fr 12px; align-items: baseline; gap: 10px;
+  width: 100%; text-align: left; font: inherit; cursor: pointer;
+  background: rgba(0,0,0,.22); border: 1px solid transparent; border-left: 2px solid var(--ph-dim);
+  padding: 5px 8px; border-radius: var(--r-sm);
+}
+.ag-setup-row:hover, .ag-setup-row:focus-visible {
+  background: var(--ph-faint); border-left-color: var(--ph-bright); color: var(--ph-bright);
+}
+.ag-setup-row:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
+.ag-setup-lbl { font-size: 10px; letter-spacing: 2px; color: var(--ph-dim); }
+.ag-setup-val { font-size: 13px; color: var(--ph-bright); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ag-setup-val.dim { color: var(--ph-dim); }
+.ag-setup-go { font-size: 13px; color: var(--ph-dim); text-align: right; }
+.ag-setup-row:hover .ag-setup-go { color: var(--ph-bright); }
 
 /* footer row */
 .ag-foot-row { font-size: 11px; color: var(--ph-dim); letter-spacing: .4px; margin-top: 4px; }
@@ -2719,7 +3136,9 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .gx { margin: 4px 0 2px; }
 .gx-mono { font-family: inherit; }
 
-.gx-head { display:flex; align-items:flex-start; justify-content:space-between;
+/* justify-content:flex-end — the dossier UX pass stripped the left half of this header (a kicker + the agent
+   name, both already carried by the window title and the roster rail), leaving only the LEVEL / TRACED chip. */
+.gx-head { display:flex; align-items:flex-start; justify-content:flex-end;
   border-bottom:1px solid var(--ph-glow2); padding-bottom:11px; margin-bottom:15px; }
 .gx-kicker { font-family:inherit; font-size:10px; letter-spacing:.16em; color:var(--ph-dim); opacity:.85; margin-bottom:5px; }
 .gx-name { font-size:26px; line-height:.9; color:var(--ph-bright); letter-spacing:1px; text-shadow:0 0 12px var(--ph-glow2); }
@@ -2844,6 +3263,29 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-oc-skipped, .q-oc-rejected { color:var(--ph-dim); }
 .q-oc-error  { color:#e88; border-color:#e88; }
 
+/* COMMANDER JOURNEY — three truthful, non-gating progression tracks. The card only renders the sidecar's
+   durable proof snapshot; controls are explicit Commander writes, never inferred engagement telemetry. */
+.q-journey-card { border:1px solid var(--ph-glow2); border-radius:2px; background:rgba(0,0,0,.18); padding:10px 11px; margin-bottom:12px; }
+.q-evolution { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:9px; margin-bottom:9px; border-bottom:1px solid var(--ph-glow2); }
+.q-evolution-name { margin-top:2px; color:var(--gold); font-family:inherit; font-size:17px; letter-spacing:.16em; text-shadow:0 0 8px rgba(var(--gold-rgb),.35); }
+.q-journey-goal { border-left:2px solid var(--gold); padding-left:9px; margin-bottom:11px; }
+.q-journey-title { margin:3px 0; color:var(--ph); font-size:12px; }
+.q-journey-subhead { margin:12px 0 6px; color:var(--ph-dim); font-size:9px; letter-spacing:.14em; }
+.q-metric { padding:7px 0; border-top:1px solid rgba(var(--ph-rgb),.12); }
+.q-metric:first-of-type { border-top:0; }
+.q-metric .gx-tag { margin-left:auto; }
+.q-metric-actions, .q-metric-create { display:grid; grid-template-columns:minmax(70px,.7fr) minmax(120px,1.6fr) auto auto; gap:5px; margin-top:6px; }
+.q-metric-create { grid-template-columns:minmax(150px,2fr) minmax(65px,.7fr) minmax(65px,.7fr) minmax(55px,.6fr) auto; padding-top:8px; }
+.q-metric-actions input, .q-metric-create input { min-width:0; border:1px solid var(--ph-glow2); border-radius:2px; background:rgba(0,0,0,.35); color:var(--ph); font:inherit; font-size:10px; padding:4px 6px; outline:none; }
+.q-metric-actions input:focus, .q-metric-create input:focus { border-color:var(--gold); }
+.q-mastery-grid { display:grid; gap:4px; }
+.q-mastery-row { display:grid; grid-template-columns:minmax(80px,1fr) minmax(90px,1fr) auto; align-items:center; gap:8px; padding:5px 7px; border:1px solid rgba(var(--ph-rgb),.14); border-radius:2px; font-size:10px; }
+.q-receipt { display:flex; align-items:flex-start; gap:8px; padding:7px 0; border-top:1px solid rgba(var(--ph-rgb),.12); }
+.q-receipt .sub { flex:1; }
+.q-receipt .consent-btn { flex:0 0 auto; }
+.q-proof-list { display:grid; gap:4px; margin-top:10px; }
+.q-journey-law { margin-top:11px; padding-top:8px; border-top:1px solid var(--ph-glow2); }
+
 /* TROPHY CASE card header — the kind tag (DOSSIER / MILESTONE / n× LIFETIME) pins to the top-right
    corner and never shrinks, so a long title wraps cleanly under it instead of jamming the tag
    mid-text in the narrow grid columns. */
@@ -2871,6 +3313,10 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 @media (max-width: 560px) {
   .gx-2 { grid-template-columns: 1fr; }
   .gx-tros { grid-template-columns: repeat(2, 1fr); }
+  .q-metric-actions, .q-metric-create { grid-template-columns:1fr 1fr; }
+  .q-mastery-row { grid-template-columns:1fr auto; }
+  .q-mastery-row .gx-tag { grid-column:1 / -1; justify-self:start; }
+  .q-receipt, .q-evolution { align-items:flex-start; flex-direction:column; }
 }
 
 /* responsive: degrade the game layout gracefully as the desktop window narrows.
@@ -2879,7 +3325,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 
 /* 1120px: keep all three columns, just tighten the side columns */
 @media (max-width: 1120px) {
-  #screen-game.active { grid-template-columns: 200px 1fr var(--chat-w, 300px); }
+  #screen-game.active { grid-template-columns: var(--crew-w, 200px) 1fr var(--chat-w, 300px); }
 }
 
 /* 1000px: squeeze gaps/padding + side columns further so the stage keeps room */
@@ -2961,16 +3407,39 @@ body.crew-rail-off #screen-game.active {
   background: linear-gradient(180deg, rgba(3,2,1,.92), rgba(3,2,1,.4) 78%, transparent);
 }
 .refit-title { color: var(--ink); background: var(--ph); padding: 3px 14px; letter-spacing: 3px; font-size: 18px; text-shadow: none; box-shadow: 0 0 14px var(--ph-glow2); }
-.refit-sub { color: var(--ph-dim); letter-spacing: 2px; font-size: 13px; }
+.refit-sub { color: var(--ph-dim); letter-spacing: 2px; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .refit-spacer { flex: 1; }
+/* WELDED CLUSTERS — controls that are ONE instrument look like one: zoom (– % +) and the history
+   pair (UNDO/REDO). Six identical loose keys made the deck read as a menu bar; four groups read as
+   an instrument panel. Zoom used to be wheel-only, discoverable only from a hint line. */
+.refit-zoom, .refit-cluster { display: flex; align-items: stretch; gap: 0; flex: 0 0 auto; }
+.refit-top .refit-zoom .bb, .refit-top .refit-cluster .bb { border-radius: 0; margin: 0; }
+.refit-top .refit-zoom .bb:first-child, .refit-top .refit-cluster .bb:first-child { border-radius: 4px 0 0 4px; }
+.refit-top .refit-zoom .bb:last-child, .refit-top .refit-cluster .bb:last-child { border-radius: 0 4px 4px 0; }
+.refit-top .refit-cluster .bb + .bb { border-left-color: rgba(120,200,255,.18); }
+/* DONE is the way out and the save — it gets weight the other five don't */
+.refit-top .refit-primary { padding-inline: 16px; letter-spacing: 2px; }
+.refit-zoomb { min-width: 26px; padding-inline: 0; justify-content: center; font-size: 17px; line-height: 1; }
+.refit-zoomlvl { min-width: 54px; justify-content: center; font-size: 12px; letter-spacing: 1px; border-inline: 0 !important; }
 
 /* The build panel — a full-height left sidebar in the station's premium window chrome.
    MODE (tool grid) is fixed at the top, OPTIONS is the ONE scroll region (the palette can
    grow forever — room kinds, the whole prop gallery), the hint is pinned at the foot. */
+/* Sized off the OVERLAY (100%), never the viewport (vh/vw): TEXT SIZE is a body zoom and a
+   vh length inside the zoomed subtree still computes against the REAL viewport — at AUTO
+   (115%) a vh-sized dock rendered ~15% past the glass and hid every palette's tail. The
+   overlay is inset:0, so 100% IS the glass in the dock's own (zoomed) coordinate space —
+   identical to 100vh at textScale 100. */
 .refit-dock {
   position: absolute; left: 14px; top: 54px; z-index: 2;
   display: flex; flex-direction: column; align-items: stretch;
-  width: min(306px, calc(100vw - 28px)); max-height: calc(100vh - 68px);
+  /* 376px, not 306 (2026-08-07 round 2). The BUILD KIT bands cost the OPTIONS palette ~90px of
+     height and pushed SURFACE's COLOUR row below the fold. Width buys that back several times
+     over, because both dense palettes are gated on exactly this number: at 356px of content the
+     material grid goes 4 → 5 columns (13 recipes in 3 rows, not 4) and the prop gallery 3 → 4
+     (a whole category visible without scrolling). 376 also still reads as a SIDEBAR to
+     viewInsets (< 60% of the glass), so FIT keeps framing the station in the visible half. */
+  width: min(380px, calc(100% - 28px)); max-height: calc(100% - 68px);
   padding: 0; border-radius: 9px; overflow: hidden;
   background: var(--panel);
   box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 0 22px var(--ph-glow2), inset 0 0 40px rgba(0,0,0,.85);
@@ -2996,7 +3465,11 @@ body.crew-rail-off #screen-game.active {
     letter-spacing: 2px;
   }
   .refit-sub,
-  .refit-spacer { display: none; }
+  .refit-spacer,
+  /* the phone deck is measured at EXACTLY six action columns (see mobile-control-reachability):
+     a fourth+fifth+sixth key from the zoom cluster would wrap the row past the 68px it is given.
+     Pinch and wheel still zoom; only the on-glass stepper stands down. */
+  .refit-zoom { display: none; }
   .refit-top .bb {
     width: 100%;
     min-width: 0;
@@ -3022,6 +3495,97 @@ body.crew-rail-off #screen-game.active {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: stretch; gap: 5px; min-width: 0;
 }
+
+/* ---------- THE BUILD KIT (2026-08-07 build-mode overhaul) ----------
+   The dock used to open with a tiny grey "MODE" caption over ten identical buttons — station
+   hardware with no faceplate. It now leads with an inverse-phosphor header plate (the same
+   vocabulary as .refit-title and every window titlebar), and the ten verbs are banded into four
+   named groups, each with the QUESTION it answers in lowercase under the band name. */
+.refit-dock-head {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
+  padding: 7px 10px 6px; border-bottom: 1px solid var(--ph-faint);
+  background: linear-gradient(180deg, rgba(120,200,255,.07), transparent);
+}
+.refit-dock-head-t {
+  color: var(--ink); background: var(--ph); padding: 2px 10px;
+  font-size: 13px; letter-spacing: 3px; text-shadow: none;
+  box-shadow: 0 0 12px var(--ph-glow2);
+}
+#refit-tools { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.refit-toolgroup { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.refit-group-label {
+  display: flex; align-items: baseline; gap: 6px; min-width: 0;
+  font-size: 9.5px; letter-spacing: 2px; color: var(--ph); opacity: .6;
+  border-bottom: 1px dashed rgba(120,200,255,.13); padding-bottom: 1px; line-height: 1.15;
+}
+.refit-group-why {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  text-align: right; font-size: 9.5px; letter-spacing: .6px; text-transform: lowercase; opacity: .7;
+}
+/* The bands cost vertical room the OPTIONS palette used to have. Give it back here: the tool rows
+   are the one thing in this dock whose height is pure padding, and they still clear the 26px
+   touch-row the mobile sheet is measured against. */
+.refit-dock .refit-tool { min-height: 25px; padding: 2px 7px; }
+.refit-dock-section { padding: 8px 10px 9px; }
+.refit-dock-head { padding: 6px 10px 5px; }
+/* SELECT owns a full-width row: it is the cursor you fall back to, not a fifth kind of building */
+.refit-tools-sel { grid-template-columns: 1fr; }
+/* RECLAIM is destructive — its own full-width row, so it is never a mis-click neighbour */
+.refit-tool-reclaim { grid-column: 1 / -1; }
+/* NOT image-rendering:pixelated — the canvas is an 8× supersample downscaled to this box, and a
+   nearest-neighbour downscale is what makes a bitmap icon look lopsided (see build.js toolBtn). */
+.refit-toolicon { flex: 0 0 auto; width: 16px; height: 16px; pointer-events: none; opacity: .8; }
+
+/* ---------- THE TOOLS AS HARDWARE (2026-08-07 round 2) ----------
+   Ten flat outlines on a flat field read as a list. These read as KEYS on a panel: a matte
+   top-lit face (a 1px highlight over a dark base — panel shading, never a gloss ramp), a seated
+   shadow under them, and a lit rim + a phosphor edge-bar when armed. Every value is a theme var
+   or a tint of one, so a theme switch carries it. */
+.refit-dock .refit-tool {
+  position: relative;
+  background: linear-gradient(180deg, rgba(120,200,255,.055), rgba(0,0,0,.30));
+  box-shadow: inset 0 1px 0 rgba(120,200,255,.11), 0 1px 0 rgba(0,0,0,.55);
+  border-radius: 4px;
+}
+.refit-dock .refit-tool:hover {
+  background: linear-gradient(180deg, rgba(120,200,255,.13), rgba(0,0,0,.22));
+  border-color: var(--ph-dim);
+}
+/* ARMED: the key is lit and carries a phosphor edge-bar on its leading edge — visible from the
+   corner of your eye, which a 2px inset rim alone was not. */
+.refit-tool.active::before {
+  content: ''; position: absolute; left: 0; top: 3px; bottom: 3px; width: 3px;
+  border-radius: 3px 0 0 3px; background: var(--ph); box-shadow: 0 0 8px var(--ph-glow);
+}
+.refit-dock .refit-tool.active {
+  background: linear-gradient(180deg, rgba(120,200,255,.17), rgba(0,0,0,.18));
+  padding-left: 12px;
+}
+.refit-tool-reclaim.active::before { background: var(--bad); box-shadow: 0 0 8px rgba(255,92,77,.5); }
+
+/* ---------- OPTIONS header: `ROOM ▸ TYPE` ---------- */
+#refit-palette-label { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+.refit-pl-tool { color: var(--ph-bright); text-shadow: 0 0 8px var(--ph-glow2); }
+.refit-pl-sep { opacity: .4; font-size: 9px; }
+.refit-pl-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- the status strip: the VERB, then the standing keys ---------- */
+.refit-hint-verb {
+  display: block; color: var(--ph-bright); font-size: 13.5px; letter-spacing: 1.2px;
+  line-height: 1.25; text-shadow: 0 0 8px var(--ph-glow2);
+}
+.refit-hint-keys {
+  display: block; margin-top: 3px; color: var(--ph-dim); opacity: .72;
+  font-size: 11px; letter-spacing: 1px; line-height: 1.2;
+}
+.refit-tool.active .refit-toolicon { opacity: 1; }
+.refit-toolname { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+/* the one destructive verb reads red the whole time, not only once it is armed */
+.refit-tool-reclaim { color: rgba(255,150,138,.85); border-color: rgba(255,92,77,.22) !important; }
+.refit-tool-reclaim:hover { color: #ffb0a8; border-color: var(--bad) !important; background: rgba(255,92,77,.08) !important; }
+.refit-tool-reclaim.active { box-shadow: inset 0 0 0 2px var(--bad), 0 0 10px rgba(255,92,77,.3) !important; color: #ffb0a8; }
+/* SELECT is the resting state — phosphor-cool, so an armed build tool is the only warm thing here */
+.refit-tools-sel .refit-tool.active { box-shadow: inset 0 0 0 2px var(--ph-dim), 0 0 8px var(--ph-glow2); opacity: .92; }
 /* THE scroll fix: the palette owns the panel's remaining height and scrolls as one column —
    nothing in the options region is ever clipped again. */
 .refit-palette {
@@ -3066,6 +3630,12 @@ body.crew-rail-off #screen-game.active {
   font-family: 'VT323', monospace; color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
 }
 .refit-searchnote.none { color: var(--bad); text-shadow: none; }
+/* SELECT (the default mode) has no palette — a quiet one-liner explains the click contract */
+.refit-selectnote {
+  width: 100%; margin: 4px 0 2px; font-size: 12px; letter-spacing: 1px; line-height: 1.35;
+  font-family: 'VT323', monospace; color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
+  white-space: normal;
+}
 /* The gallery's wrapper MUST claim the full column. .refit-palette is a wrapping FLEX row, so an
    undeclared child shrink-wraps to its content — and .refit-propgrid's own `width:100%` then resolves
    against that shrunken box, collapsing repeat(auto-fill, 84px) from four columns to ONE. Every other
@@ -3137,8 +3707,8 @@ body.crew-rail-off #screen-game.active {
    a recipe is not). Sized so six tiles of the bake fit at 1:1 — pixel art is never scaled. */
 /* FIXED 66px tracks (the prop gallery's idiom), sized so the 60px patch sits in its cell with no
    dead air — four across keeps ten materials to three rows, which is what stops the dock from
-   growing past the bottom of the screen. The dock's max-height is in `vh` but the whole overlay is
-   uiZoom-scaled, so a palette that merely fits on paper can still run off the glass. */
+   growing past the bottom of the screen. (The dock's max-height is now %-of-overlay, so it caps
+   correctly at every TEXT SIZE — but a short palette still beats a scrollbar.) */
 .refit-matgrid { display: grid; grid-template-columns: repeat(auto-fill, 66px); gap: 6px; width: 100%; }
 .refit-mattile {
   display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0;
@@ -3180,6 +3750,67 @@ body.crew-rail-off #screen-game.active {
 .refit-hue-auto:hover { color: var(--ph-bright); }
 .refit-hue-auto.active { color: var(--ph-bright); }
 .refit-hue-auto .refit-matname { font-size: 11px; letter-spacing: 1.2px; }
+
+/* STARTER LINES — one-click pre-wired layouts (the beginner onramp) + the belt tool's intro line.
+   v2: a single column of UNIFORM cards, each the same anatomy top-to-bottom — schematic viewport
+   (a fixed-height dark stage so every card is the same size no matter the blueprint's footprint),
+   NAME + a derived footprint/dock chip, one dim purpose line. Hover speaks the gallery's phosphor
+   hover language (.refit-proptile), not a private green. The intro stays THE ONE SENTENCE and
+   doubles as the belt palette's idle state. */
+.refit-lineintro {
+  width: 100%; margin: 2px 0 4px; font-size: 12px; line-height: 1.35; letter-spacing: .6px;
+  color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
+}
+.refit-linegrid { display: flex; flex-direction: column; gap: 7px; width: 100%; }
+.refit-linetile {
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%; min-width: 0;
+  padding: 5px 6px 6px; cursor: pointer; border-radius: 5px; font-family: inherit; text-align: left;
+  background: rgba(0,0,0,.34); border: 1.5px solid var(--ph-faint); color: var(--ph);
+}
+.refit-linetile:hover { border-color: var(--ph); color: var(--ph-bright); background: var(--ph-faint); }
+.refit-linetile.active {
+  border-color: var(--ph-bright); color: var(--ph-bright);
+  box-shadow: 0 0 10px var(--ph-glow), inset 0 0 14px rgba(0,0,0,.55);
+}
+/* the schematic stage: fixed height = uniform cards; the canvas centres inside at 1:1 */
+.refit-linetile-view {
+  display: flex; align-items: center; justify-content: center; width: 100%; height: 70px;
+  border-radius: 3px; background: #0b0f0e; box-shadow: inset 0 0 0 1px rgba(0,0,0,.55);
+}
+.refit-linetile-cv { display: block; max-width: 100%; image-rendering: pixelated; pointer-events: none; }
+.refit-linetile-hd { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; }
+.refit-linetile .refit-matname { font-size: 12px; letter-spacing: 1.1px; text-align: left; }
+/* the stat chip mixes VT323 with fallback-font glyphs ('×' '·') — BOX-centred, never padded by
+   font metrics (the symbol-glyph law) */
+.refit-linetile-stat {
+  flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center;
+  padding: 1px 5px; border: 1px solid var(--ph-faint); border-radius: 3px;
+  font-size: 10.5px; letter-spacing: 1px; line-height: 1.4;
+  color: var(--ph-dim); background: rgba(0,0,0,.3); white-space: nowrap;
+}
+/* one line of WHAT IT DOES; 2-line floor keeps every card the same height when a purpose wraps */
+.refit-linetile-why {
+  font-size: 11px; line-height: 1.3; letter-spacing: .4px; min-height: 29px;
+  color: var(--ph-dim); opacity: .9;
+}
+/* DECK-FIT HONESTY: a blueprint the current floor has nowhere to put. The card stays armable
+   (never gate the sandbox) — it just stops pretending. Dimmed schematic + the reason in the
+   warn amber the rest of REFIT uses for "this won't work yet", matte: no glow, no fill. */
+.refit-linetile.nofit { border-style: dashed; opacity: .82; }
+.refit-linetile.nofit .refit-linetile-view { opacity: .5; }
+.refit-linetile-nofit {
+  width: 100%; margin-top: 1px; font-family: 'VT323', monospace;
+  font-size: 10.5px; letter-spacing: 1px; line-height: 1.3;
+  color: var(--warn); opacity: .9;
+}
+/* the operational footing sits INSIDE the shelf, directly under the cards */
+.refit-linenote {
+  width: 100%; margin-top: 2px; padding-top: 5px; border-top: 1px solid var(--ph-faint);
+  font-size: 10.5px; letter-spacing: 1.2px; line-height: 1.3;
+  font-family: 'VT323', monospace; color: var(--ph-dim); opacity: .85;
+}
+/* the guide card's lead — THE ONE SENTENCE above the three beats */
+.refit-guide-lead { margin: 2px 0 8px; font-size: 13px; line-height: 1.4; color: var(--ph-dim); }
 
 /* DECK / WALLS target toggle — the same lit-frame treatment the prop TIER toggle uses */
 .refit-painttarget.active {
@@ -3227,11 +3858,25 @@ body.crew-rail-off #screen-game.active {
 
 /* narrow screens: the panel becomes a bottom sheet — same zones, same single scroll region */
 @media (max-width: 760px) {
-  .refit-dock { left: 10px; right: 10px; top: auto; bottom: 10px; width: auto; max-height: min(48vh, 380px); }
+  .refit-dock { left: 10px; right: 10px; top: auto; bottom: 10px; width: auto; max-height: min(48%, 380px); }  /* % of the overlay, not vh — same zoom law as the desktop dock */
   .refit-dock-section { gap: 5px; padding: 7px 8px; }
   .refit-section-label { font-size: 10px; }
   .refit-tool { min-width: 0; font-size: 13px; }
   .refit-hint { min-height: 32px; }
+  /* THE BOTTOM SHEET DISSOLVES THE BANDS. It has only 48% of the glass, and the desktop's four
+     named groups cost it two ways: the captions eat rows, and a two-tool group inside a
+     three-column grid leaves a dead third column on every one of them. So on a narrow sheet the
+     group wrappers go `display: contents` and #refit-tools itself becomes the three-column grid —
+     all ten modes flow into FOUR dense rows in the same order, and OPTIONS keeps a real scroll
+     viewport (the property test/mobile-control-reachability.test.js exists to guard).
+     The BUILD KIT plate goes too: on a phone it sits directly under the ▮ REFIT MODE title and
+     says the same thing twice, for 31px the palette needs more. */
+  .refit-group-label, .refit-dock-head { display: none; }
+  .refit-toolgroup, .refit-tools { display: contents; }
+  #refit-tools { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .refit-toolname { letter-spacing: .5px; }
+  /* in one flat grid RECLAIM is no longer a lone widow — let it sit in the flow */
+  .refit-tool-reclaim { grid-column: auto; }
 }
 
 /* disabled undo/redo (and any .bb) */
@@ -3257,6 +3902,32 @@ body.crew-rail-off #screen-game.active {
 .refit-guide-card b { color: var(--ph-bright); font-weight: normal; }
 .refit-guide-card .g-ok { color: #aaffc8; } .refit-guide-card .g-bad { color: #ffb0a8; }
 .refit-guide-card #refit-guide-go { width: 100%; }
+
+/* ---------- FIRST-RUN GUIDE: the three beats, side by side (2026-08-07) ----------
+   Wider than the picker cards that share .refit-guide, because it holds three illustrated steps
+   instead of a form. Stacks to one column when the glass can't hold three. */
+.refit-guide-wide { width: min(700px, 92vw); }
+.refit-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 4px 0 12px; }
+.refit-step {
+  position: relative; display: flex; flex-direction: column; gap: 4px; min-width: 0;
+  padding: 8px 9px 9px; border-radius: 6px;
+  background: rgba(0,0,0,.34); border: 1.5px solid var(--ph-faint);
+}
+.refit-step-art {
+  width: 100%; height: auto; aspect-ratio: 128 / 72; display: block; border-radius: 3px;
+  margin-bottom: 2px; background: rgba(0,0,0,.45);
+}
+.refit-step-n {
+  position: absolute; top: 6px; right: 8px; font-size: 15px; line-height: 1;
+  color: var(--ph); opacity: .45;
+}
+.refit-step b { color: var(--ph-bright); font-weight: normal; font-size: 14px; letter-spacing: 1.4px; }
+.refit-step > span:not(.refit-step-n) { color: var(--text); font-size: 13px; line-height: 1.3; }
+.refit-guide-foot { margin: 0 0 10px; font-size: 12px; line-height: 1.4; color: var(--ph-dim); }
+@media (max-width: 640px) {
+  .refit-steps { grid-template-columns: 1fr; gap: 7px; }
+  .refit-step-art { max-width: 168px; }
+}
 /* connector-portal bind editor (rides the refit-guide card) */
 .refit-conn-rows { display: flex; flex-direction: column; gap: 5px; margin: 4px 0 2px; max-height: 240px; overflow: auto; }
 .refit-conn-rows .conn-row { text-align: left; display: flex; align-items: baseline; gap: 6px; }
@@ -3295,14 +3966,33 @@ body.crew-rail-off #screen-game.active {
 .mc-enable input[type=checkbox] { margin: 0; }
 
 /* ===== TOOLSETS console: one CRT pill-switch row per capability family ===== */
+/* COMPUTE is the always-on core: seated INTO the panel (a well, not a raised tile) so it reads as
+   part of the chassis rather than as one more switchable row. Dashed edge keeps "not a control". */
 .ts-core { align-items: center; gap: 8px; border: 1px dashed var(--ph-dim); border-radius: var(--r-sm);
-  padding: 8px 10px; margin-bottom: 8px; background: rgba(0,0,0,.28); opacity: .85; }
+  padding: 9px 11px; margin-bottom: 8px; background: rgba(0,0,0,.30); box-shadow: var(--well); opacity: .9; }
+.ts-core .ts-glyph { color: var(--ph); text-shadow: 0 0 8px var(--ph-glow); }
 .ts-core-tag { font-size: 10px; letter-spacing: 1.5px; color: var(--gold); border: 1px solid var(--gold);
   border-radius: 3px; padding: 0 4px; margin-left: 6px; vertical-align: middle; }
 #ts-list { display: flex; flex-direction: column; gap: 8px; }
+/* Same depth language as the front door and the catalog cards — one top-left light, matte. Scoped to
+   `.ts-row`/`.ts-core` and NOT the shared `.set-row`, which every other settings console also uses. */
 .ts-row { align-items: flex-start; gap: 8px; border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
-  padding: 8px 10px; background: rgba(0,0,0,.35); box-shadow: var(--raise);
+  padding: 8px 10px; box-shadow: var(--raise); position: relative; overflow: hidden;
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.36) 62%);
+  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out),
+              background var(--t-fast) var(--ease-out);
   animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 34ms); }
+/* the live spine: a lit edge on a granting toolset, dark on one that is off or inert. It states the
+   row's REAL state at a glance, which the checkbox alone only says up close. */
+.ts-row::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+  background: var(--ph); opacity: .55; transition: background var(--t-fast) var(--ease-out),
+  opacity var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out); }
+.ts-row:hover { border-color: var(--ph);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .09), rgba(0,0,0,.32) 62%);
+  box-shadow: var(--raise), 0 0 16px var(--ph-glow2), 0 6px 14px rgba(0,0,0,.5); }
+.ts-row:hover::before { opacity: 1; box-shadow: 0 0 10px var(--ph-glow); }
+/* off or inert = the spine goes dark. Truthful telemetry, in the paint. */
+.ts-row.ts-off::before, .ts-row.ts-inert-row::before { background: var(--ph-dim); opacity: .35; box-shadow: none; }
 .ts-row > input[type=checkbox] { margin-top: 2px; }
 .ts-glyph { font-size: 15px; color: var(--ph); line-height: 1.4; flex: 0 0 auto; }
 .ts-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
@@ -3311,10 +4001,22 @@ body.crew-rail-off #screen-game.active {
 .ts-desc { font-size: 12px; }
 .ts-tag { font-size: 10px; letter-spacing: 1px; color: var(--warn); border: 1px solid var(--warn);
   border-radius: 3px; padding: 0 4px; }
-.ts-inert { display: block; font-size: 11px; color: var(--gold); margin-top: 3px; letter-spacing: .3px; }
+/* the inert notice now carries its own cure button, so it is a flex line rather than a bare block */
+.ts-inert { display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+  font-size: 11px; color: var(--gold); margin-top: 3px; letter-spacing: .3px; }
+.ts-place { flex: 0 0 auto; }
+/* "+28 more" — a chip that reads as the continuation of the chip row it ends, not as a command button.
+   Dashed so it never competes with the real `.bb` actions elsewhere on the row. */
+.ts-more { font-family: inherit; font-size: 11px; letter-spacing: .5px; cursor: pointer;
+  color: var(--ph-dim); background: rgba(0,0,0,.4); border: 1px dashed var(--ph-dim);
+  border-radius: 4px; padding: 1px 6px; transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out); }
+.ts-more:hover { color: var(--ph-bright); border-color: var(--ph); }
 .ts-tools { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+/* each tool name is a key set into the row — recessed, so the chips read as an inventory strip
+   rather than as a row of buttons competing with the real actions */
 .ts-tools code { font-size: 11px; color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 4px;
-  padding: 1px 5px; background: rgba(0,0,0,.4); }
+  padding: 1px 5px; background: rgba(0,0,0,.42);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.6), inset 0 -1px 0 rgba(var(--ph-bright-rgb), .04); }
 .ts-row.ts-off { opacity: .62; }
 .ts-row.ts-off .ts-name { color: var(--ph-dim); }
 .ts-row.ts-inert-row .ts-glyph { color: var(--ph-dim); }
@@ -3322,7 +4024,10 @@ body.crew-rail-off #screen-game.active {
 /* SKILLS capabilities perk dimmed when its toolset is switched off (honesty parity with the TOOLSETS console) */
 .perk.ts-disabled { opacity: .55; }
 .perk.ts-disabled .perk-stat { color: var(--ph-dim); }
-.bb.xs { font-size: 11px; padding: 2px 7px; }
+/* padding-block grew 2px→5px when .bb.xs went line-height:1 (see COMPACT CONSOLE KEYS): the old
+   value leaned on the inherited 1.6 line-height for its vertical breathing room, so keeping it
+   would have crushed the key to a 13px slab. Net box height is within a pixel of before. */
+.bb.xs { font-size: 11px; padding: 5px 9px; }
 /* connector add/edit form: one-line help, transport toggle, key:value textareas, transport tag on a row */
 .mc-hint { font-size: 11px; color: var(--ph-dim); margin: -2px 0 2px; line-height: 1.35; }
 .mc-hint code { color: var(--ph); }
@@ -3397,19 +4102,147 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
   border-radius: 3px; padding: 0 4px; margin-right: 4px; text-transform: uppercase;
 }
 
+/* ===== ABILITIES front door: "what are you trying to connect?" =====
+   Six routes above the panes. Styled as pressable rows rather than the card grid so it reads as a
+   MENU (pick one and move on), not as more content to study — the whole point is to be left behind. */
+/* ⛔⛔ LIFT WITH `translate`, NEVER `transform`. Every card here carries `animation: cardIn … both`,
+   and a FINISHED fill:both animation retains its final keyframe — `transform: translateY(0)` — which
+   outranks even an INLINE style (probed live: setting el.style.transform moved the box 0px). The old
+   `.ab-route:active { transform: translateY(1px) }` here was dead CSS for exactly that reason. The
+   independent `translate` property is a separate animatable property cardIn never touches, so it
+   composes freely (probed: a real 6px move). Same family as the `.cc-card.added` opacity trap. */
+
+/* The front door is seated in a RECESSED WELL — the station's own `--well` recipe — so the six routes
+   read as keys set into a console face rather than as six more paragraphs. Matte: an inset floor and
+   one top-left light, no specular sheen (`--glass` is the tube in front of the picture, not a panel). */
+.ab-router {
+  margin: 0 0 16px; padding: 12px 12px 13px; border-radius: var(--r-sm);
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px calc(3px * var(--cz, 1))),
+    linear-gradient(180deg, rgba(var(--ph-rgb), .045), transparent 62%),
+    rgba(0,0,0,.30);
+  box-shadow: var(--well);
+}
+.ab-router-q {
+  color: var(--ph-bright); letter-spacing: 2px; font-size: 15px; margin: 0 0 10px;
+  display: flex; align-items: center; gap: 9px; text-shadow: 0 0 8px var(--ph-glow);
+}
+/* a phosphor rule that fades out — the console's section grammar, not a new ornament */
+.ab-router-q::after {
+  content: ''; flex: 1; height: 1px;
+  background: linear-gradient(90deg, var(--ph-dim), transparent);
+  opacity: .75;
+}
+.ab-router-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(268px, 1fr)); gap: 7px; }
+.ab-route {
+  display: flex; align-items: flex-start; gap: 10px; text-align: left; cursor: pointer;
+  font-family: inherit; font-size: 13px; letter-spacing: .5px; padding: 9px 11px;
+  color: var(--ph); border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.34) 70%);
+  box-shadow: var(--raise);
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out),
+              box-shadow var(--t-fast) var(--ease-out), translate var(--t-fast) var(--ease-out);
+  animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 34ms);
+  position: relative; overflow: hidden;
+}
+/* the spine: a dark phosphor edge that IGNITES on hover. One element, no extra markup. */
+.ab-route::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 2px;
+  background: var(--ph-dim); opacity: .5;
+  transition: background var(--t-fast) var(--ease-out), opacity var(--t-fast) var(--ease-out),
+              box-shadow var(--t-fast) var(--ease-out);
+}
+.ab-route:hover {
+  border-color: var(--ph); color: var(--ph-bright);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .13), rgba(0,0,0,.30) 70%);
+  box-shadow: var(--raise), 0 0 18px var(--ph-glow2), 0 6px 14px rgba(0,0,0,.55);
+  translate: 0 -1px;
+}
+.ab-route:hover::before { background: var(--ph); opacity: 1; box-shadow: 0 0 10px var(--ph-glow); }
+.ab-route:active { translate: 0 1px; box-shadow: var(--well); }
+.ab-route:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
+/* the glyph sits on its own recessed KEY PLATE — the single strongest "this is hardware" cue here */
+.ab-route-glyph {
+  flex: 0 0 auto; font-size: 15px; line-height: 1; color: var(--ph);
+  width: calc(26px * var(--cz, 1)); height: calc(26px * var(--cz, 1));
+  display: grid; place-items: center; border-radius: 3px;
+  background: rgba(0,0,0,.42); box-shadow: var(--well);
+  text-shadow: 0 0 7px var(--ph-glow);
+  transition: color var(--t-fast) var(--ease-out), text-shadow var(--t-fast) var(--ease-out);
+}
+.ab-route:hover .ab-route-glyph { color: var(--ph-bright); text-shadow: 0 0 12px var(--ph-glow); }
+.ab-route-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1; }
+.ab-route-title { color: var(--ph-bright); letter-spacing: .5px; text-shadow: 0 0 6px var(--ph-glow2); }
+.ab-route-blurb { font-size: 11px; line-height: 1.45; letter-spacing: .2px; }
+.ab-route-blurb b { color: var(--ph); font-weight: normal; }
+/* the affordance carries the DESTINATION: › stays in this console, ↗ opens another window */
+.ab-route-go { flex: 0 0 auto; color: var(--ph-dim); font-size: 14px; line-height: 1.3;
+  transition: color var(--t-fast) var(--ease-out), translate var(--t-fast) var(--ease-out); }
+.ab-route:hover .ab-route-go { color: var(--ph-bright); translate: 2px 0; }
+/* Searching means the Commander already named the thing — the results are the answer, so the
+   question stops taking up the top of the pane. */
+.con-searching .ab-router { display: none; }
+
 /* ===== CONNECTOR CATALOG: one-click, vetted MCP servers (browse-and-add cards) ===== */
 /* setup-type legend — color-coded to the per-card auth chips (green no-setup · gold key · dim OAUTH). Single-weight
    font, so no faux-bold; the color carries the emphasis. */
+/* tier filter — the legend's own vocabulary turned into controls. Each chip wears the colour of the
+   tier it selects, so the row reads as the legend it replaces rather than as a new set of buttons. */
+/* Seated in a recessed TRACK so the row reads as one segmented control — a single instrument with a
+   lit segment — instead of five loose buttons floating on the pane. */
+.cc-filters {
+  display: flex; flex-wrap: wrap; gap: 4px; margin: 2px 0 10px;
+  padding: 4px; border-radius: var(--r-sm); width: fit-content; max-width: 100%;
+  background: rgba(0,0,0,.30); box-shadow: var(--well);
+}
+.cc-filter {
+  font-family: inherit; font-size: 11px; letter-spacing: 1px; cursor: pointer; text-transform: uppercase;
+  color: var(--ph-dim); background: transparent; border: 1px solid transparent;
+  border-radius: 3px; padding: 3px 10px;
+  transition: color var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out),
+              background var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
+}
+.cc-filter:hover { color: var(--ph-bright); border-color: var(--ph-dim); background: rgba(var(--ph-rgb), .08); }
+.cc-filter:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 1px; }
+/* the selected chip inverts and BLOOMS — the same "this one is live" grammar the console rail uses,
+   plus the phosphor halo that says the segment is energised rather than merely filled */
+.cc-filter.active {
+  color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none;
+  box-shadow: 0 0 12px var(--ph-glow2), inset 0 1px 0 rgba(255,255,255,.14);
+}
+/* each tier chip carries its own tier colour (the `.cc-lg-*` rules below are scoped to `.cc-legend`,
+   so the filter row states them again rather than inheriting from prose it is not inside) */
+.cc-filter.cc-lg-none { color: var(--ok); border-color: var(--ok); }
+.cc-filter.cc-lg-none.active { color: var(--ink); background: var(--ok); border-color: var(--ok); }
+.cc-filter.cc-lg-key { color: var(--gold); border-color: var(--gold); }
+.cc-filter.cc-lg-key.active { color: var(--ink); background: var(--gold); border-color: var(--gold); }
+.cc-filter.cc-f-on { color: var(--ok); border-color: var(--ok); }
+.cc-filter.cc-f-on.active { color: var(--ink); background: var(--ok); border-color: var(--ok); }
+
 .cc-legend .cc-lg-none { color: var(--ok); font-weight: normal; }
 .cc-legend .cc-lg-key { color: var(--gold); font-weight: normal; }
 .cc-legend .cc-lg-oauth { color: var(--ph-dim); font-weight: normal; letter-spacing: .5px; }
 .cc-list { display: flex; flex-direction: column; gap: 14px; margin: 4px 0 10px; }
 .cc-group { display: flex; flex-direction: column; gap: 8px; }
+/* ⛔ A CLASS THAT SETS `display` DEFEATS THE `hidden` ATTRIBUTE. The UA sheet's `[hidden]{display:none}`
+   is a bare type-less rule, so the `display:flex` on `.cc-card`/`.cc-group` outranks it: the tier filter
+   set `.hidden = true` on 28 of 37 cards and every one of them stayed painted. It read as working only
+   because the first category happens to be entirely one tier. Restate the rule at class specificity. */
+.cc-group[hidden], .cc-card[hidden] { display: none; }
 .cc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(224px, 1fr)); gap: 8px; }
 .cc-card { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
-  padding: 9px 11px; background: rgba(0,0,0,.35); box-shadow: var(--raise);
+  padding: 9px 11px; box-shadow: var(--raise);
+  /* one top-left light: a faint phosphor wash at the head falling to the dark card floor */
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.36) 62%);
+  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out),
+              background var(--t-fast) var(--ease-out), translate var(--t-fast) var(--ease-out);
   animation: cardIn var(--t-med) var(--ease-out) both; animation-delay: calc(var(--ci, 0) * 28ms); }
-.cc-card.cc-on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok); }
+/* lift on hover via `translate` — `transform` is retained by cardIn and cannot win (see the front-door note) */
+.cc-card:hover { border-color: var(--ph); translate: 0 -1px;
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .10), rgba(0,0,0,.32) 62%);
+  box-shadow: var(--raise), 0 0 16px var(--ph-glow2), 0 6px 14px rgba(0,0,0,.5); }
+/* a connected card is LIT, not merely outlined — the green edge plus its own faint halo */
+.cc-card.cc-on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok), 0 0 14px rgba(123,200,138,.16); }
 .cc-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cc-head b { color: var(--ph-bright); font-weight: normal; letter-spacing: .5px; }
 .cc-badge { font-size: 10px; letter-spacing: .5px; border-radius: 3px; padding: 0 4px; text-transform: uppercase; }
@@ -3425,6 +4258,44 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 /* "VIA <name>" jump landing: the aggregator card flashes gold — a MOMENT (same 2.4s gold-flash
    vocabulary as q-celebrate), never a lingering state. */
 .cc-card.cc-jump { border-color: var(--gold); animation: q-celebrate 2.4s ease-out 1; }
+
+/* ---- KEYS "PICK A PLATFORM" cards ----
+   These three classes shipped with NO RULE AT ALL. `.cc-top` is the KEYS directory's head row, and with
+   no `display:flex` its <b> and its tier chip collapsed together into one run of text: every card in the
+   directory rendered its name welded to its badge — "EtsyAPI key", "PrintfulAPI key". The cards also sat
+   in a bare `.cc-group` (no `.cc-grid`), so eleven of them stacked full-width down the pane while the
+   CATALOG's identical cards tiled three-up. Same card family, two different unstyled fates.
+   `.cc-top` mirrors `.cc-head` rather than aliasing it: the KEYS chip is a bordered tier badge that sits
+   hard right, where the catalog's `.cc-chip` is plain colour-coded text. */
+.cc-top { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.cc-top b { color: var(--ph-bright); font-weight: normal; letter-spacing: .5px; }
+.cc-tier { margin-left: auto; font-size: 10px; letter-spacing: .5px; white-space: nowrap;
+  border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; }
+.cc-tier.cc-lg-none { color: var(--ok); }
+.cc-tier.cc-lg-key { color: var(--gold); }
+.cc-tier.cc-lg-oauth { color: var(--ph-dim); }
+/* An already-keyed platform is context, not an offer.
+   ⛔ NOT VIA `opacity`: `.cc-card` carries `animation: cardIn … both`, and cardIn's retained final
+   keyframe (`opacity:1`) BEATS any normal opacity declaration in the cascade — the rule computed to
+   1 and the state was invisible. Recede through colour + the same green edge `.cc-on` uses, which
+   are not animated, rather than adding an `!important` to out-shout the animation. */
+.cc-card.added { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok); cursor: default; }
+.cc-card.added .cc-top b { color: var(--ph-dim); }
+.cc-card.added .cc-blurb, .cc-card.added .mc-url { color: var(--ph-dim); }
+/* …and it must not ANSWER the pointer. The depth pass gave every `.cc-card` a hover lift + phosphor
+   edge; inherited here it made an already-keyed platform rear up like an offer while `cursor:default`
+   said the opposite. A card that cannot be clicked must not animate as though it can. */
+.cc-card.added:hover { border-color: var(--ok); translate: none;
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.36) 62%);
+  box-shadow: var(--raise), inset 0 0 0 1px var(--ok); }
+/* the directory's own category strip. The CATALOG uses the full `.sec` rule here; KEYS emits a bare
+   label, so it gets the same engraved-label grammar without the rule/diamond furniture. */
+.cc-cat { color: var(--ph); letter-spacing: 2px; font-size: 12px; text-transform: uppercase;
+  margin: 2px 0 1px; opacity: .85; }
+/* the KEYS directory card is a PICK, so it must read as pressable — the catalog card is a container
+   whose button does the pressing. Hover lifts it the way the shared card language lifts everything else. */
+[data-ky-pick] { cursor: pointer; transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out); }
+[data-ky-pick]:hover:not(.added) { border-color: var(--ph); background: rgba(0,0,0,.5); }
 
 .rt-agent-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 5px; }
 .rt-agent-btn {
@@ -3502,11 +4373,37 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    cross-section search. Kills the small-window scroll tunnel. Phosphor vars
    only; motion (the .swap-in crossfade) rides motion.css.
    ============================================================ */
+/* HEIGHT FITS THE CONTENT (UI audit 2026-08-03). This used to be a FLAT `height: min(78vh,720px)`, so every
+   console panel opened at the same 720px box no matter what was in it — measured at 1600x1000 that left LOOPS
+   84% empty, LOGBOOK 82%, ROUTINES 79%, and 650px of blank rail under a two-item list. Only SETTINGS ever
+   filled it. Now the box grows with its section and stops at the SAME ceiling, so a dense panel is unchanged
+   and a sparse one reads as a deliberate window instead of an empty hangar.
+   - min-height keeps a one-line panel a credible window rather than a slit, and holds the box steady while an
+     async section is still fetching (LOGBOOK/ROUTINES/LOOPS/ABILITIES all paint "loading…" first).
+   - max-height is the old fixed value: nothing that used to fit can now overflow.
+   - a user drag writes inline width/height (.term-sized), which still wins over both.
+   NO height transition here: the window already animates open via term-power (scaleY 0.012->1), and adding a
+   height tween on top left the box measurable at ~4px mid-animation. The entrance covers the open; the async
+   loading… -> rows growth snaps, which is the safe trade. */
 .term.console {
-  width: min(1060px, 88vw);
-  height: min(78vh, 720px);
-  max-width: 88vw; max-height: min(78vh, 720px);
+  /* The width and height limits are expressed in the counter-zoomed window coordinate space and
+     bound to the measured strip between the chrome bars. This retains content-fit consoles while
+     preventing large TEXT SIZE from placing their titlebar underneath fixed chrome. */
+  --con-w: min(1060px, calc(88vw * var(--sn-unzoom, 1)));
+  --con-h: min(var(--term-band, calc(78vh * var(--sn-unzoom, 1))), 720px);
+  width: var(--con-w);
+  height: auto;
+  /* the floor yields to a short viewport — a flat 320px would out-size the window on a <=380px-tall screen
+     (and out-size the 84vh narrow-breakpoint height below), pushing the panel past the frame. */
+  min-height: min(320px, var(--con-h));
+  max-width: var(--con-w); max-height: var(--con-h);
 }
+/* STEADY SHELL (dossier). A content-fit console is fine for a single-shape panel, but the AGENT DOSSIER
+   is a TAB SET: its seven sections differ by 300px of height, and because a never-moved window is
+   CSS-centred (translate(-50%,-50%)), every switch re-centres the whole box — measured live, the tab strip
+   moved from y=236 to y=387 between sections. The tab you are aiming at must not move when you hit it,
+   so this window holds one height and lets the pane scroll. */
+.term.console.dossier { height: var(--con-h); }
 .term.console .term-body.term-console-body {
   display: flex; flex-direction: row; gap: 0;
   padding: 0; overflow: hidden;              /* the content pane owns the scroll, not the body */
@@ -3606,15 +4503,19 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    .con-rail-item for base type/colour, then .con-toptab reshapes it horizontal: the active state is a
    hairline phosphor underline + inverted chip (echoes the vertical rail's inset-left edge, turned to the
    bottom). The strip is sticky so the tabs stay put while a long section pane scrolls under them. */
+/* tabsTop column: a fixed strip above a scrolling pane. The strip is OUTSIDE the scrollport (see mountConsole),
+   so it can no longer be scrolled under, past, or through — it is chrome, and chrome does not move. */
+.con-col { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.con-col > .con-pane { flex: 1 1 auto; min-height: 0; }
 .con-toptabs {
-  position: sticky; top: 0; z-index: 3;
+  flex: 0 0 auto;
   display: flex; flex-wrap: wrap; gap: 4px; align-items: stretch;
-  margin: 0 0 var(--s-3); padding-bottom: 8px;
+  padding: var(--s-3) var(--s-4) 8px;
   border-bottom: 1px solid var(--ph-dim);
-  /* the pane's own top padding is var(--s-3); the sticky strip masks scrolled content behind it */
-  background: linear-gradient(180deg, rgba(0,0,0,0.92) 70%, transparent),
-              linear-gradient(180deg, var(--ph-glow2), transparent 60%);
+  background: linear-gradient(180deg, var(--ph-glow2), transparent 60%);
 }
+/* the pane no longer owns the gap under the strip (the strip's border is the divider) */
+.con-col > .con-pane { padding-top: var(--s-3); }
 .con-rail-item.con-toptab {
   width: auto; flex: 0 1 auto; position: relative;
   padding: 8px 14px; border-radius: var(--r-sm) var(--r-sm) 0 0;
@@ -3640,21 +4541,217 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .con-sec-hidden { display: none; }
 .con-sec-head { margin-top: 2px; }
 /* the section's one-line self-explanatory description under its header */
+/* 86ch, not 62ch: a section desc sat in a ~50-character column while the `.set-about` paragraphs
+   directly beneath it ran the full pane width. Two prose blocks stacked against the same left margin
+   disagreeing about their measure is what read as broken layout — not the measure itself. Both are
+   capped together below so the column edge is consistent down the pane. */
 .con-sec-desc {
   color: var(--ph-dim); font-size: var(--fs-1); letter-spacing: var(--ls-1);
-  margin: -4px 0 12px; line-height: 1.4; max-width: 62ch;
+  margin: -4px 0 12px; line-height: 1.4; max-width: 86ch;
 }
+/* Keep every console prose block on the same readable measure as its section description. */
+.con-sec-body .set-about,
+.term.console .sk-note,
+.term.console .ch-note,
+.term.console .ch-headless { max-width: 86ch; }
 /* the section head is a click target only while searching (jump-to-section) */
 .con-searching .con-sec-head { cursor: pointer; }
 .con-searching .con-sec-head:hover .sec-l { color: var(--ph-bright); }
+/* ---------- SETTINGS ▸ PERMISSIONS ----------
+   The pane answers three questions in order (who asks first · how far it may go unattended · what is
+   already blessed), topped by the FULL BYPASS master switch. Before this block it was one undifferentiated
+   column of .set-row prose: block labels rendered at body weight, and because .set-row is display:block
+   the flip buttons sat INLINE after variable-length sentences — five ragged left edges, text touching the
+   button. These rules are scoped to the permissions ids/classes only; the shared .set-row / .key-list
+   vocabulary every other settings section uses is untouched. */
+/* The prose measure. NOT expressed in `ch`: VT323's advance is only ~4.8px, so a "92ch" that reads as a
+   sane 92-character measure in a proportional font resolves to 442px here — half of an 860px pane, which
+   left every paragraph orphaned against a wide empty gutter (live-measured 2026-08-05). Set in px, and
+   generous: the paragraphs fill the pane like every sibling settings section, and the cap only bites when
+   the console is dragged very wide. */
+:root { --perm-measure: 760px; }
+.perm-master {
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.35); border-radius: var(--r-sm); box-shadow: var(--raise);
+  padding: 10px 13px 11px; margin: 2px 0 6px;
+}
+/* ON is the loudest state in the product — the card says so with the alarm accent, not with more words. */
+.perm-master.on { border-left-color: var(--bad); box-shadow: var(--raise), 0 0 14px rgba(var(--bad-rgb), 0.16); }
+.perm-m-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.perm-m-title { font-size: 15px; color: var(--ph-bright); letter-spacing: 2px; }
+.perm-m-chip {
+  font-size: 10px; letter-spacing: 1px; padding: 1px 7px; border-radius: var(--r-sm);
+  border: 1px solid var(--ph-dim); color: var(--ph-dim);
+}
+.perm-m-chip.on { border-color: var(--bad); color: var(--bad); box-shadow: 0 0 8px rgba(var(--bad-rgb), 0.28); }
+.perm-m-desc { font-size: 12px; color: var(--ph-dim); line-height: 1.5; margin: 6px 0 9px; max-width: var(--perm-measure); }
+.perm-m-desc code { color: var(--ph); }
+.perm-m-act { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.perm-m-act .bb[disabled] { opacity: 0.5; pointer-events: none; }
+/* a refused flip reports AT the switch, in the error palette the rest of the app uses for a real failure */
+.perm-m-err {
+  font-size: 12px; line-height: 1.4; margin: 0 0 9px; padding: 6px 8px; color: #ffb0a8;
+  border: 1px solid rgba(255, 120, 100, 0.45); background: rgba(80, 10, 5, 0.18); border-radius: var(--r-sm);
+}
+.perm-m-floor {
+  font-size: 11px; color: var(--ph-dim); line-height: 1.4; margin: 0; padding-top: 8px;
+  border-top: 1px solid var(--ph-faint); max-width: var(--perm-measure); opacity: 0.85;
+}
+/* the per-agent APPROVAL list: name + state left, the flip button in its own right-aligned column */
+.perm-list { display: flex; flex-direction: column; gap: 5px; margin: 9px 0 10px; }
+.perm-agent {
+  display: flex; align-items: center; gap: 10px;
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.22); border-radius: var(--r-sm); padding: 6px 11px;
+}
+.perm-agent.full { border-left-color: var(--gold); }
+.perm-agent .pa-name { flex: 0 0 auto; min-width: 88px; color: var(--ph-bright); letter-spacing: 1px; font-size: 14px; }
+/* the MODE tag carries the state as a word, in a fixed column, so the list can be read down the
+   left edge without parsing five sentences (it replaced a ⚡/✋ pictograph — see paintApproval) */
+.perm-agent .pa-mode {
+  flex: 0 0 auto; min-width: 92px; font-size: 10px; letter-spacing: 1px;
+  color: var(--ph-dim); border: 1px solid var(--ph-faint); border-radius: var(--r-sm);
+  padding: 1px 6px; text-align: center;
+}
+.perm-agent.full .pa-mode { color: var(--gold); border-color: rgba(var(--gold-rgb), 0.45); }
+.perm-agent .pa-state { flex: 1 1 auto; min-width: 0; font-size: 12px; color: var(--ph-dim); line-height: 1.35; }
+.perm-agent .bb { flex: 0 0 auto; margin-left: auto; }
+/* the two whole-station switches sit clear of the row list they act on */
+.perm-allacts { margin-top: 10px; }
+/* the lede under each numbered header: same dim body copy, but measured and spaced as a paragraph
+   (.set-about alone carries a 12px top margin tuned for the bottom of a long section) */
+.set-about.perm-lede { margin: 0 0 9px; max-width: var(--perm-measure); line-height: 1.5; opacity: 0.62; }
+.set-about.perm-lede:empty { display: none; }
+/* The STANDING APPROVALS ledger speaks the SAME row language as the APPROVAL list above, so the two
+   lists read as one pane instead of "cards up top, loose prose down here". CSS-only: renderGrants keeps
+   emitting .set-row + a button, and :has() picks out exactly the rows that HAVE a control — the
+   "— pre-approve a capability —" separator and the teaching empty state stay plain text. */
+.perm-grants { margin-top: 2px; display: flex; flex-direction: column; gap: 5px; }
+.perm-grants .set-row:has(> .bb) {
+  display: flex; align-items: center; gap: 10px; margin: 0;
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.22); border-radius: var(--r-sm); padding: 6px 11px;
+}
+.perm-grants .set-row:has(> .bb) > span:first-child { flex: 1 1 auto; min-width: 0; font-size: 13px; }
+.perm-grants .set-row:has(> .bb) > .bb { flex: 0 0 auto; margin-left: auto; }
+.perm-grants .set-about { margin-top: 4px; }
+.perm-grants .set-row:not(:has(> .bb)) { margin: 4px 0 0; opacity: 0.75; }
+
+/* ── PERMISSIONS · the plain-language pass (2026-08-07) ─────────────────────────────────────────────
+   The pane opened onto four numbered blocks of vocabulary and two separate crew tables. Three shapes
+   fix that: an AT A GLANCE card that says the posture in one sentence, ONE crew row carrying both
+   per-agent axes, and a labelled question in front of each control. Scoped to the permissions ids/
+   classes only — the shared .set-row / .ov-vchip vocabulary is untouched. */
+.perm-glance {
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph);
+  background: rgba(0, 0, 0, 0.3); border-radius: var(--r-sm); box-shadow: var(--raise);
+  padding: 10px 13px 11px; margin: 2px 0 14px;
+}
+/* the override being ON is the loudest fact on the pane — the glance wears the alarm accent too, so
+   the summary and the switch in block 2 can never disagree at a glance. */
+.perm-glance.loud { border-left-color: var(--bad); box-shadow: var(--raise), 0 0 14px rgba(var(--bad-rgb), 0.16); }
+.perm-glance .pg-line { margin: 0; font-size: 15px; line-height: 1.4; color: var(--ph-bright); letter-spacing: 0.5px; max-width: var(--perm-measure); }
+.perm-glance.loud .pg-line { color: var(--bad); }
+.perm-glance .pg-reach { margin: 7px 0 0; font-size: 12px; line-height: 1.45; color: var(--ph-dim); max-width: var(--perm-measure); }
+.perm-glance .pg-reach b { color: var(--ph); }
+.perm-glance .pg-floor {
+  margin: 9px 0 0; padding-top: 8px; border-top: 1px solid var(--ph-faint);
+  font-size: 11px; line-height: 1.45; color: var(--ph-dim); opacity: 0.85; max-width: var(--perm-measure);
+}
+.perm-glance .pg-floor code { color: var(--ph); }
+/* ── THE POSTURE FRONT DOOR ───────────────────────────────────────────────────────────────────────
+   Three cards answering ONE question, so a newcomer never has to compose four dials. This is the only
+   thing the pane asks of them; everything else lives in the closed fold below. */
+.perm-postures { margin: 0 0 12px; }
+.pp-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.pp-q { font-size: 13px; letter-spacing: 1px; color: var(--ph-bright); }
+/* CUSTOM is the honest resting state of a hand-tuned station — dim, not an error. A matched posture
+   is the only thing that lights, because a card may never claim a state it does not hold. */
+.pp-state { font-size: 10px; letter-spacing: 1px; color: var(--ph-dim); opacity: 0.8; }
+.pp-state.matched { color: var(--ph); opacity: 1; }
+.pp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.pp-card {
+  display: flex; flex-direction: column; gap: 5px; text-align: left; cursor: pointer;
+  font-family: inherit; padding: 10px 12px 11px;
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.28); border-radius: var(--r-sm); box-shadow: var(--raise);
+  transition: border-color .12s ease, background .12s ease;
+}
+.pp-card:hover { border-color: var(--ph-dim); border-left-color: var(--ph); background: rgba(0, 0, 0, 0.4); }
+.pp-card.sel { border-left-color: var(--ph); background: rgba(0, 0, 0, 0.45); }
+.pp-card.danger.sel, .pp-card.danger:hover { border-left-color: var(--bad); }
+.pp-card.armed { border-color: var(--bad); border-left-color: var(--bad); box-shadow: var(--raise), 0 0 12px rgba(var(--bad-rgb), 0.22); }
+.pp-card[disabled] { opacity: 0.45; pointer-events: none; }
+.pp-name { font-size: 14px; letter-spacing: 1.5px; color: var(--ph-bright); }
+.pp-card.sel .pp-name { color: var(--ph); }
+.pp-card.danger .pp-name { color: var(--bad); }
+.pp-blurb { font-size: 12px; line-height: 1.4; color: var(--ph-dim); }
+.pp-who { font-size: 10px; letter-spacing: 1px; color: var(--ph-dim); opacity: 0.7; }
+.pp-foot { margin: 8px 0 0; font-size: 11px; color: var(--ph-dim); opacity: 0.8; }
+/* the hairline between tier 1 (station-wide) and tier 2 (per-agent): the two are the same question
+   at two scopes, so they need a seam, not a heading, to say "and now the exceptions". */
+.perm-tier-rule { border-top: 1px solid var(--ph-faint); margin: 14px 0 2px; }
+/* tier 3: real controls, rarely touched. ONE fold — never a fold inside a fold. */
+.perm-fold { margin: 14px 0 0; border-top: 1px solid var(--ph-faint); padding-top: 10px; }
+.perm-fold > summary {
+  cursor: pointer; font-size: 12px; letter-spacing: 1px; color: var(--ph-dim);
+  list-style: none; padding: 4px 0;
+}
+.perm-fold > summary::-webkit-details-marker { display: none; }
+.perm-fold > summary::before { content: '▸ '; color: var(--ph); }
+.perm-fold[open] > summary::before { content: '▾ '; }
+.perm-fold > summary:hover { color: var(--ph-bright); }
+/* the reach chip carries the plain meaning big and the house name small underneath */
+.pc-reach-chip { align-items: flex-start !important; }
+.pc-rl { display: flex; flex-direction: column; gap: 1px; line-height: 1.15; text-align: left; }
+.pc-rh { font-size: 9px; letter-spacing: 1px; opacity: 0.55; font-style: normal; }
+/* the merged crew row: a header line, then one labelled block per axis. Stacked, not columnar — each
+   axis owns a chip strip AND a plain sentence, which cannot share a row honestly at this width. */
+.perm-crew-row { display: block; padding: 9px 12px 10px; }
+.perm-crew-row .pc-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.perm-crew-row .pc-head .pa-name { min-width: 0; }
+.perm-crew-row .pc-head .pa-state { flex: 1 1 180px; }
+.perm-crew-row .pc-axis { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--ph-faint); }
+/* the question in front of the control — the pane's whole teaching move is that every control is
+   preceded by the question it answers, in the label voice the rest of settings uses. */
+.perm-crew-row .pc-q {
+  display: block; font-size: 10px; letter-spacing: 2px; color: var(--ph); opacity: 0.75; margin-bottom: 5px;
+}
+/* the block-2 override outranks this axis: the question says so, and the chips read as the setting
+   that is currently NOT in force — dimmed, but still legible and still clickable (they select what
+   the agent goes back to). The row's own accent is already the effective-posture colour. */
+.perm-crew-row .pc-ovr { color: var(--bad); letter-spacing: 1px; }
+.perm-crew-row.overridden .pc-ask-axis .pc-chips { opacity: 0.55; }
+.perm-crew-row.overridden .pc-ask-axis .pc-chips:hover { opacity: 1; }
+.perm-crew-row .pc-chips { margin: 0; gap: 5px; flex-wrap: wrap; }
+.perm-crew-row .pc-chips .ov-vchip { display: inline-flex; align-items: center; gap: 6px; }
+/* the reach meter: filled rungs in phosphor, hollow ones faded, so the ladder reads left-to-right
+   without parsing the labels. Fixed advance (VT323 is monospace) keeps the chips' text aligned. */
+.pc-dots { font-size: 11px; letter-spacing: 1px; opacity: 0.5; }
+.ov-vchip.sel .pc-dots { opacity: 0.9; }
+.perm-crew-row .pc-plain { margin: 6px 0 0; font-size: 12px; line-height: 1.45; color: var(--ph-dim); max-width: var(--perm-measure); }
+/* the routing truth line stays visible (truthful telemetry) but demoted below the plain sentence —
+   it answers "is this actually happening", which is the second question, never the first. */
+.perm-crew-row .pc-truth { margin-top: 5px; opacity: 0.6; }
+.perm-crew-row .pc-truth b { color: var(--ph); }
+.perm-crew-row .pc-more { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--ph-faint); }
+.perm-crew-row .pc-more .mc-acts { margin: 0 0 6px; }
+.perm-crew-row .pc-more .mc-acts:last-child { margin-bottom: 0; }
+.perm-crew-row .exec-ssh { margin: 0; }
+/* the fold closes the pane, so it gets a rule above it — otherwise it floats loose under the ledger */
+.perm-adv { margin-top: 18px; padding-top: 12px; border-top: 1px solid var(--ph-faint); }
+.perm-adv .perm-policy-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.perm-adv .perm-policy-row .key-input { width: 90px; flex: 0 0 auto; }
+
 /* while searching: every section is shown, non-matching rows fade, empty sections collapse their body */
 .con-searching .con-miss { opacity: .18; }
 .con-searching .con-sec-nomatch { display: none; }
 .con-searching .con-sec + .con-sec { margin-top: 18px; }
+.con-search-empty { margin: 28px 20px; padding: 18px; border: 1px dashed var(--ph-dim); color: var(--ph-bright); text-align: center; letter-spacing: .6px; }
 
 /* responsive: on a narrow viewport the rail sits on top as a horizontal strip */
 @media (max-width: 720px) {
-  .term.console { width: 94vw; height: 84vh; }
+  .term.console { --con-w: calc(94vw * var(--sn-unzoom, 1)); --con-h: var(--term-band, calc(84vh * var(--sn-unzoom, 1))); }
   .term.console .term-body.term-console-body { flex-direction: column; }
   .con-rail { flex: 0 0 auto; border-right: none; border-bottom: 1px solid var(--ph-dim); }
   .con-rail-list { flex-direction: row; flex-wrap: wrap; overflow-x: auto; }
@@ -3847,3 +4944,17 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
 .lp-checkline code { background: rgba(0,0,0,.35); border: 1px solid var(--ph-faint); padding: 1px 6px; color: var(--gold); }
 .lp-link { font-family: inherit; font-size: 11px; color: var(--ph-dim); background: none; border: 0; border-bottom: 1px dotted var(--ph-faint); cursor: pointer; padding: 0; margin-left: 4px; }
 .lp-link:hover { color: var(--ph-bright); border-bottom-color: var(--ph); }
+/* (`.exec-policy` retired — the idle-cell policy is no longer a row in the crew list; it is the body
+   of the ADVANCED fold at the foot of the pane, styled by .perm-adv above.) */
+/* The crew row STACKS (header → axis → axis → advanced): each axis owns a chip strip AND a plain
+   sentence, which no 3-column grid can carry honestly. The old grid packed name/mode/state across
+   three columns and dropped every control onto a full-bleed row; the flat `display:flex` inherited
+   from .perm-agent would otherwise put the axes side by side, so the block wins explicitly here at
+   matching specificity. Its own children keep the full-width lane the SSH disclosure relies on. */
+.perm-agent[data-profile-agent]{display:block}
+.perm-agent[data-profile-agent]>.pc-axis,.perm-agent[data-profile-agent]>.pc-more,.perm-agent[data-profile-agent] .ov-vchips,.perm-agent[data-profile-agent] .mc-acts,.perm-agent[data-profile-agent] .exec-ssh{min-width:0}
+.perm-agent[data-profile-agent] .mc-acts .bb,.perm-agent[data-profile-agent] .exec-ssh .bb{margin-left:0}
+.exec-ssh{width:100%;box-sizing:border-box;margin-top:8px;padding-top:5px;border-top:1px dashed color-mix(in srgb,var(--ph) 28%,transparent)}
+.exec-ssh .set-row{display:grid;grid-template-columns:minmax(100px,130px) minmax(0,1fr);gap:8px;align-items:center}
+.exec-ssh .key-input{width:100%;min-width:0}
+.exec-ssh .mc-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}

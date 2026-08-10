@@ -262,6 +262,15 @@
     // TASK BRIEF v2 (additive dep): read the durable brief so the channel fallback can carry the host-validated
     // recommendation. Optional — a hub built without it renders the plain numbered choices exactly as before.
     const briefFor = typeof o.briefFor === 'function' ? o.briefFor : null;
+    /* UNADDRESSED BY CONSTRUCTION (bindChats:false — the sample proof, 2026-08-07). A real channel chat REMEMBERS
+       which agent it talks to: the hub saves the resolution onto any unbound chat so the autonomous notifier knows
+       where to ping. For a hub whose "chat" is not a conversation at all — the POST /api/routing/sample proof crate,
+       which exists to prove the floor sorts UNADDRESSED work — that bookkeeping is fatal: sample #1 saved a binding,
+       so sample #2 took resolveTarget's ADDRESSED branch and rode straight to the remembered dock, bypassing the
+       FILTER/SPLITTER the route claims it exercises. The proof quietly stopped proving anything from its second run
+       on. With bindChats:false the hub neither READS nor WRITES a binding for this chat, so every dispatch is
+       genuinely unaddressed — including on a station whose store already holds a stale 'sample' record. */
+    const bindChats = o.bindChats !== false;
     const groundedFor = typeof o.groundedFor === 'function' ? o.groundedFor : null;
     const newId = typeof o.newId === 'function' ? o.newId : (() => { let n = 0; return () => channel + '-run-' + (++n); })();
     // INJECTED wall-clock — no ambient fallback (this module is pure/deterministic; the determinism gate bans a bare
@@ -286,11 +295,33 @@
     const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
     const getTag = typeof o.getTag === 'function' ? o.getTag : null;                     // FILTER content-routing key (B3 classifier)
     const resolveStation = typeof o.resolveStation === 'function' ? o.resolveStation : null;   // B5: per-bay capability station
+    // STEP EDITOR (2026-08-05): stageBriefFor(agentId) -> the standing job brief of the dock this agent crews,
+    // or null. PROMPT TEXT ONLY — appended to the entry run's system context below; it never widens grants,
+    // tools, or routing (those stay with resolveStation/resolveAgent). Chain hops get theirs inside chain.js.
+    const stageBriefFor = typeof o.stageBriefFor === 'function' ? o.stageBriefFor : null;
     // AGENTIC GRAPHS: the dock resolveAgent picked is stage ONE; the belts drawn PAST it say where its output
     // goes. `chain` is the injected executor (sidecar/routing/chain.js) already bound to the floor's edge
     // function — the hub hands it a way to run one hop and stays require-free. Absent -> a single-stage run,
     // byte-identical to the behaviour before work lines existed.
     const chain = (o.chain && typeof o.chain.advance === 'function') ? o.chain : null;
+    /* WORK BELONGS TO A LINE (2026-08-07): lineOriginFor(agentId) -> the lineId work ARRIVING at this dock
+       belongs to, or null when nothing triggered a workflow. Injected (index.js passes router.lineOriginFor)
+       so the compiled plan alone decides; absent -> null -> the chain never advances, the safe default. */
+    const lineOriginFor = typeof o.lineOriginFor === 'function' ? o.lineOriginFor : null;
+    // Target-agent runtime identity for downstream work-line hops. The connection's own secrets belong only
+    // to stage one; reusing them would silently run every later dock on the upstream model/provider.
+    const resolveRunConfig = typeof o.resolveRunConfig === 'function' ? o.resolveRunConfig : null;
+    const onLineOutcome = typeof o.onLineOutcome === 'function' ? o.onLineOutcome : null;
+    // SAMPLE/PROOF SEAM (additive, 2026-08-05): an optional streamId (string, or fn(chatId) -> string) stamped
+    // onto every runOnce this hub fires (entry dock AND chain hops). With it, the host records the runs +
+    // transcripts under that workstream (runs.jsonl streamId -> a readable OUTBOX crate); WITHOUT it — every
+    // existing channel — runOnce receives streamId undefined, which the host already reads exactly like the
+    // old absent property ('' / 'global' fallbacks), so behaviour is unchanged.
+    const streamIdFor = typeof o.streamId === 'function' ? o.streamId
+      : (o.streamId ? function () { return String(o.streamId); } : null);
+    // Canonical transcript projection. Ordinary channel chats share the durable workstream ledger used by
+    // desktop COMMS; the legacy channel history remains an offline fallback only.
+    const historyFor = typeof o.historyFor === 'function' ? o.historyFor : null;
     // ONE-RESOLVER LAW: any telemetry that attributes an inbound message to an agent (workitem crates, queue
     // HUD) must come from THIS hub's resolution, never a parallel guess. onResolved fires once per real message
     // (never for /commands) with the exact agentId the run will execute as, in onInbound's first synchronous
@@ -432,6 +463,19 @@
     function agentIdFor(chatId) {
       const tail = String(chatId).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40 - agentPrefix.length);
       return agentPrefix + (tail || '0');
+    }
+    function resolvedStreamId(chatId) {
+      let explicit = '';
+      try { if (streamIdFor) explicit = String(streamIdFor(chatId) || ''); } catch (_) { explicit = ''; }
+      if (/^[A-Za-z0-9_-]{1,64}$/.test(explicit)) return explicit;
+      if (!bindChats) return null;
+      try {
+        const rec = typeof store.getChatRecord === 'function' ? store.getChatRecord(chatId) : null;
+        const bound = rec && String(rec.streamId || '');
+        if (/^[A-Za-z0-9_-]{1,64}$/.test(bound)) return bound;
+      } catch (_) {}
+      const base = ('channel_' + channel + '_' + String(chatId)).replace(/[^A-Za-z0-9_-]/g, '_');
+      return base.slice(0, 64) || null;
     }
 
     /* ---- ROUTE: answer WHERE the question was asked -------------------------------------------------------
@@ -1210,7 +1254,7 @@
       // The chat's own persisted binding (set by /talk) — the user's explicit choice of which roster agent this
       // chat talks to. Read it once here so both command handling (below) and run resolution can honor it.
       let boundRec = null;
-      try { if (typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
+      try { if (bindChats && typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
       const boundAgentId = (boundRec && boundRec.agentId && AID_RE.test(String(boundRec.agentId))) ? String(boundRec.agentId) : null;
       let ownerTrusted = false;
       try { ownerTrusted = ownerTrustedFor(msg) === true; } catch (_) { ownerTrusted = false; }
@@ -1280,6 +1324,7 @@
         : boundAgentId
         ? boundAgentId
         : (sec.agentId && AID_RE.test(String(sec.agentId))) ? String(sec.agentId) : agentIdFor(chatId);
+      const canonicalStreamId = resolvedStreamId(chatId);
 
       // B4 — persist the chat→agent binding (+ this hub's channel) so the autonomous notifier can find which chat to
       // ping for a given agent when a cron run produces work. Best-effort: a store hiccup must never block the reply.
@@ -1287,7 +1332,8 @@
       // belt-routed message used to silently rebind the whole chat to whatever bay the belts picked, so /whoami,
       // /model and the notifier all started asserting an agent the user never chose. Persist only when the chat is
       // unbound or the resolution agrees with the binding.
-      try { if (typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel }); } catch (_) {}
+      // (bindChats:false — an ephemeral proof chat never becomes addressed; see the option note above.)
+      try { if (bindChats && typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel, streamId: canonicalStreamId || undefined }); } catch (_) {}
 
       // announce the SINGLE resolution to the host (workitem crate + queue HUD attribution — one truth).
       // isTask rides along: the BELT IS WORK-ONLY (Andrew's ruling 2026-07-05) — the host places a crate only
@@ -1298,7 +1344,17 @@
       // exist. (The belt crate + onResolved fire here, before the audio is downloaded, so a spoken directive
       // still visualizes as talk — visualization only; the RUN gets the right prompt.)
       let isTask = !!classify(msg.text);
-      const resolvedInfo = { chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask };
+      /* THE WORK'S ORIGIN LINE, or null (work belongs to a line, 2026-08-07 — Andrew's ruling). A channel
+         message is OUTSIDE work arriving at the station, so if the dock that will run it is one a line's
+         own INBOX feeds, this IS that line running and its drawn stages may follow. Asked of the FINAL
+         agentId — however it was resolved — because the per-agent bots deliberately hard-lock stage one to
+         their bound agent and never consult floor routing; keying this on the resolution would have said
+         "no line" for exactly the floor the Commander drew. The seam is injected (router.lineOriginFor) so
+         the compiled plan stays the only authority; absent -> null -> every dock terminal, which is the
+         safe direction. It rides `resolvedInfo` (so the host stamps the crate with it) and the chain seed
+         below (so the gate can read it). */
+      const lineId = lineOriginFor ? (lineOriginFor(agentId) || null) : null;
+      const resolvedInfo = { chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask, lineId: lineId };
       if (onResolved) { try { onResolved(resolvedInfo); } catch (_) {} }
       if (intake && typeof intake.onResolved === 'function') { try { intake.onResolved(resolvedInfo); } catch (_) {} }
 
@@ -1380,7 +1436,10 @@
       // turn carries the media notes (with saved .attachments/ paths), so an agent in a LATER turn can still reach
       // the files through its workspace tools even though history replays as plain text.
       let history = [];
-      try { history = store.loadHistory(agentId); } catch (_) {}
+      try {
+        history = canonicalStreamId && historyFor ? historyFor(canonicalStreamId, agentId) : store.loadHistory(agentId);
+        if (!Array.isArray(history)) history = [];
+      } catch (_) { try { history = store.loadHistory(agentId); } catch (_) { history = []; } }
       try { store.appendTurn(agentId, 'user', turnText || '[the user sent a media message]'); } catch (_) {}
       const userTurn = { role: 'user', content: turnText };
       if (mediaIngest.attachments.length) userTurn.attachments = mediaIngest.attachments;
@@ -1397,7 +1456,14 @@
 
       const rec = store.getChatRecord ? store.getChatRecord(chatId) : null;
       const persona = sec.system || personaFor(agentId, rec);   // the agent's REAL composed prompt when configured
-      const system = persona + (isTask ? TASK_SUFFIX : '');
+      // the dock's standing brief (step editor): when the router holds one for this agent's dock, the run's
+      // system context carries it — the SAME section header the chain handoff turn uses. Null-safe: no seam /
+      // no floor / no brief composes the exact pre-brief system string.
+      let dockBrief = null;
+      if (stageBriefFor) { try { dockBrief = stageBriefFor(agentId); } catch (_) { dockBrief = null; } }
+      const system = persona
+        + (dockBrief ? '\n\nYOUR STANDING BRIEF FOR THIS STATION:\n' + String(dockBrief).slice(0, 2000) : '')
+        + (isTask ? TASK_SUFFIX : '');
 
       // B5: if this agent runs at a bound BAY, its tools are that bay room's objects (resolveStation), not the
       // default office — so a routed agent's reach is exactly what the floor granted it. null -> office default.
@@ -1457,6 +1523,7 @@
           // The reply is already being assembled here, delta by delta — so this is also where it can be SHOWN.
           // stream.push is fire-and-forget and throttled; it can never delay or fail the run.
           else if (name === 'agent.token') { state.buf += (p.delta || ''); if (stream) stream.push(state.buf); }
+          else if (name === 'agent.tool_call') state.buf = '';
           else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
           else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
           else if (name === 'agent.run.end') { state.reason = p.reason; state.budgetScope = p.budgetScope || null; state.budgetCapUsd = (typeof p.budgetCapUsd === 'number' && isFinite(p.budgetCapUsd)) ? p.budgetCapUsd : null; }
@@ -1479,6 +1546,8 @@
           await runOnce({
             key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
             emit: sink, signal: ac.signal, runId, trigger: 'event',
+            streamId: canonicalStreamId || undefined,
+            initialTaint: mediaIngest.attachments.length ? 'channel attachment' : null,
             surface: wantApprovals ? 'interactive' : 'autonomous',
             ownerTrusted: ownerTrusted,
             // ...but ONLY for who answers a consent prompt. A phone has no floor to place props on, so this run
@@ -1531,17 +1600,32 @@
       if (chain && !state.errMsg && !myRec.superseded && String(state.buf || '').trim()) {
         const line = await chain.advance({
           agentId: agentId, text: state.buf, originalText: msg.text,
+          // WORK BELONGS TO A LINE: only work the floor routed in through this line's own INBOX advances it.
+          // A /talk-bound or fallback-resolved message carries no lineId and stops at the dock that answered.
+          lineId: lineId,
           signal: myRec.abort ? myRec.abort.signal : null,
           runAgent: async function (h) {
             // a hop is a plain autonomous run of ANOTHER agent: its OWN composed persona (never this channel's
             // configured system prompt — that belongs to the agent the connection names), its OWN bay station,
             // its OWN durable transcript. No consent keyboard: a downstream stage is machine-to-machine.
+            // GRANTS LAW (2026-08-04): unattended grants never flow down a line — this call deliberately passes
+            // NO unattendedGrants (a routine's grant names ONE agent; see cron-driver.js). `ownerTrusted` below
+            // is different by design and stays: the owner initiated this line on their own channel.
             const hopRunId = newId();
             myRec.runId = hopRunId; myRec.agentId = h.agentId; myRec.startedAt = now ? now() : null;
             const hs = { buf: '', errMsg: null, usd: 0 };
+            let hopConfig = {};
+            if (resolveRunConfig) {
+              try { hopConfig = resolveRunConfig(h.agentId); }
+              catch (e) { return { text: '', usd: 0, error: 'target agent configuration failed: ' + ((e && e.message) || e) }; }
+              if (!hopConfig || hopConfig.ok === false) {
+                return { text: '', usd: 0, error: (hopConfig && hopConfig.error) || ('target agent ' + h.agentId + ' is not configured') };
+              }
+            }
             const hopSink = (name, payload) => {
               let p; try { p = redact(payload); } catch (_) { p = payload; }
               if (name === 'agent.token') hs.buf += (p.delta || '');
+              else if (name === 'agent.tool_call') hs.buf = '';
               else if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
               else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
               else if (name === 'agent.run.end') { if (typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd; }
@@ -1551,9 +1635,12 @@
             try { store.appendTurn(h.agentId, 'user', h.text); } catch (_) {}
             try {
               await runOnce({
-                key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort,
-                system: personaFor(h.agentId, rec), messages: hist.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: h.text }]),
+                key: hopConfig.key, model: hopConfig.model, provider: hopConfig.provider,
+                baseUrl: hopConfig.baseUrl || hopConfig.base_url || '', reasoningEffort: hopConfig.reasoningEffort || hopConfig.reasoning_effort,
+                system: hopConfig.system || personaFor(h.agentId, rec), messages: hist.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: h.text }]),
                 agentId: h.agentId, isTask: true, emit: hopSink, signal: h.signal, runId: hopRunId, trigger: 'event',
+                streamId: canonicalStreamId || undefined,   // the whole line shares one canonical transcript
+                initialTaint: 'upstream agent output',
                 surface: 'autonomous', ownerTrusted: ownerTrusted, broadcast: true, reflect: true,
                 station: (resolveStation ? resolveStation(h.agentId) : null) || undefined,
                 taskKey: 'chain:' + channel + ':' + chatId + ':' + h.agentId, taskSource: channel
@@ -1563,6 +1650,9 @@
             return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
           }
         });
+        if (onLineOutcome) {
+          try { onLineOutcome({ agentId: line.agentId, stopped: line.stopped || null, hops: line.hops.slice(), usd: line.usd }); } catch (_) {}
+        }
         if (!myRec.superseded && line.hops.length) {
           // the line's answer replaces the first stage's — and the floor/channel agree on who produced it
           firstStageText = state.buf;

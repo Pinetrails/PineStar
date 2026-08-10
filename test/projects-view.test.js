@@ -121,6 +121,20 @@ A.ok(/!r\.blessed[\s\S]{0,260}\/api\/projects\/forget/.test(removeProject),
 A.ok(/trust revoked for/.test(removeProject) && /forgot/.test(removeProject),
   'success telemetry distinguishes trust revocation from an actually forgotten project');
 
+/* ---------- bounded discovery: candidate selection is separate from authority ---------- */
+const addProject = appSrc.slice(
+  appSrc.indexOf('function beginAddProject()'),
+  appSrc.indexOf('// disconnect()', appSrc.indexOf('function beginAddProject()'))
+);
+A.ok(/proj-add-discover/.test(addProject) && /\/api\/projects\/discover/.test(addProject),
+  'Add Project offers an explicit bounded discovery action');
+A.ok(/Candidate selected\. ADD grants this folder/.test(addProject),
+  'candidate selection says plainly that it has not granted access yet');
+A.ok(/const submit = \(\) =>[\s\S]{0,500}\/api\/projects\/bless/.test(addProject),
+  'only the separate ADD submit reaches the durable path-grant route');
+A.ok(/filter\(x => x && x\.root && !x\.blessed\)/.test(addProject),
+  'discovery suggestions omit already-granted roots');
+
 /* ---------- project rail accessibility: every clickable row is keyboard + AT reachable ---------- */
 A.ok(/class="ws-row proj-row[\s\S]{0,300}tabindex="0" role="button" aria-label=/.test(appSrc),
   'project overview rows are named keyboard buttons');

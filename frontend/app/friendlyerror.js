@@ -115,7 +115,7 @@
     // real second half of the unlock chain. The door is TOOLSETS (its JUKEBOX row carries ▶ CONNECT SPOTIFY —
     // Settings has NO spotify surface; the old 'settings' door landed on PROVIDERS with no connect control),
     // NOT REFIT (the gear is already on station) — distinct from `capdenied` which fires when no JUKEBOX exists.
-    spotify_not_connected: { retryable: false, action: 'toolsets', msg: 'The JUKEBOX is on station, but Spotify isn’t connected yet — connect it in TOOLSETS, then try again.' },
+    spotify_not_connected: { retryable: false, action: 'toolsets', msg: 'The JUKEBOX is on station, but Spotify isn’t connected yet — connect it in ABILITIES, then try again.' },
     // the one-run-at-a-time mutex: the SIDECAR message names the holder (age/source) + the doors (ROUTINES,
     // E-STOP) — friendlyError passes it through verbatim instead of flattening to `unknown` (2026-07-07 escape:
     // the user got "Something went wrong" in a loop while the real answer was one sentence away).
@@ -448,9 +448,10 @@
       case 'refit':
         return { label: '⚒ Open REFIT', run: () => { try { if (typeof Build !== 'undefined' && Build.open) Build.open(); else if (typeof Build !== 'undefined' && Build.toggle && !(Build.isOpen && Build.isOpen())) Build.toggle(); } catch (_) {} } };
       case 'toolsets':
-        // spotify_not_connected: the connect flow lives on the TOOLSETS window's JUKEBOX row (setupSpotify) —
-        // the only surface with a ▶ CONNECT SPOTIFY control. Same registerWindow key as the ⇄ TOOLSETS dock button.
-        return { label: '⇄ OPEN TOOLSETS', run: () => { try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('connectors'); } catch (_) {} } };
+        // spotify_not_connected: the connect flow lives on the ABILITIES window's JUKEBOX row (setupSpotify) —
+        // the only surface with a ▶ CONNECT SPOTIFY control. The action KEY stays 'toolsets' (internal, and the
+        // shelf inside is still called TOOLSETS); only the LABEL follows the dock button, which reads ABILITIES.
+        return { label: '⇄ OPEN ABILITIES', run: () => { try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('connectors'); } catch (_) {} } };
       case 'settings':
         // Grok's OAuth sign-in is 403-allowlisted off for this account — the honest door is the xAI (API KEY)
         // provider, not a doomed reconnect. Lands on the PROVIDERS section where the xAI key row lives.
@@ -491,7 +492,7 @@
         // this door opens the PROVIDERS section (there is no "store") — name it truthfully with a CRT glyph.
         return { label: '▸ OPEN PROVIDERS', run: () => openSettings('providers') };
       case 'skills':
-        return { label: '✦ Open SKILLS', run: () => { try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); } catch (_) {} } };
+        return { label: '✦ OPEN SKILL LIBRARY', run: () => { try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); } catch (_) {} } };   // 'skills' aliases into ABILITIES ▸ SKILL LIBRARY (NAV CONDENSE 2)
       default:
         return null;
     }

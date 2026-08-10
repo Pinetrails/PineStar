@@ -43,22 +43,22 @@
     {
       name: 'research',
       triggers: ['research', 'news', 'latest', 'source', 'sources', 'web', 'paper', 'papers', 'arxiv', 'scan', 'monitor', 'brief'],
-      roles: ['research', 'researcher', 'scout', 'analyst', 'intelligence', 'web', 'prospector', 'strategist']
+      roles: ['research', 'researcher', 'scout', 'analyst', 'intelligence', 'web', 'prospector', 'strategist', 'paralegal', 'jobhunter', 'opportunist', 'sentinel', 'harvester', 'hiring', 'pitchwriter']
     },
     {
       name: 'engineering',
       triggers: ['code', 'repo', 'bug', 'test', 'build', 'implement', 'fix', 'debug', 'ci'],
-      roles: ['engineer', 'engineering', 'developer', 'coder', 'reviewer']
+      roles: ['engineer', 'engineering', 'developer', 'coder', 'reviewer', 'drafter', 'apptester', 'auditor', 'deployer', 'dbhelper', 'a11y']
     },
     {
       name: 'writing',
       triggers: ['write', 'draft', 'copy', 'post', 'email', 'newsletter', 'document', 'summary', 'script', 'publish'],
-      roles: ['scribe', 'writer', 'editor', 'publisher', 'envoy', 'marketer']
+      roles: ['scribe', 'writer', 'editor', 'publisher', 'envoy', 'marketer', 'ghostwriter', 'negotiator', 'anchor', 'diplomat', 'copywriter', 'webdesigner', 'support', 'processwriter']
     },
     {
       name: 'ops',
       triggers: ['check', 'remind', 'watch', 'backup', 'sync', 'ops', 'operate', 'admin'],
-      roles: ['operator', 'ops', 'chief', 'treasurer']
+      roles: ['operator', 'ops', 'chief', 'treasurer', 'nightwatch', 'foreman', 'pilot', 'taskmaster', 'registrar', 'provisioner', 'medic']
     },
     {
       name: 'design',
@@ -181,7 +181,7 @@
      added to the store later is then withheld by default instead of quietly becoming agent-writable.
      (test/tool-withheld-message.test.js additionally source-greps this file to prove no code path here even
      NAMES that grant field — which is why the sentence above describes it instead of spelling it.) */
-  const AGENT_PATCHABLE = ['name', 'prompt', 'schedule', 'model', 'provider', 'repeatTimes', 'timezone'];
+  const AGENT_PATCHABLE = ['name', 'prompt', 'schedule', 'model', 'provider', 'repeatTimes', 'timezone', 'monitorMode'];
 
   function makeRoutineTools(deps) {
     deps = deps || {};
@@ -195,6 +195,8 @@
     const removeRoutine = deps.removeRoutine;
     const setRoutineEnabled = deps.setRoutineEnabled;
     const triggerRoutine = deps.triggerRoutine;
+    const getRoutineNotepad = deps.getRoutineNotepad;
+    const setRoutineNotepad = deps.setRoutineNotepad;
     const armScheduler = deps.armScheduler;
     const schedulerState = typeof deps.schedulerState === 'function' ? deps.schedulerState : function () { return false; };
     /* THE E-STOP IS A SECOND, INDEPENDENT FACT. `schedulerArmed` reports the arm INTENT, which E-STOP deliberately
@@ -269,6 +271,7 @@
           ,attachToSession: { type: 'boolean', description: 'Keep delivered results in the origin conversation so replies can continue from them.' }
           ,skills: { type: 'array', items: { type: 'string' }, maxItems: 8, description: 'Saved runtime skills to preload on every run.' }
           ,contextFrom: { type: 'array', items: { type: 'string' }, maxItems: 8, description: 'Routine ids whose latest successful outputs feed this routine.' }
+          ,monitorMode: { type: 'boolean', description: 'When true with contextFrom, run only after the durable upstream source hash changes.' }
           ,enabledToolsets: { type: 'array', items: { type: 'string' }, maxItems: 16, description: 'Optional restriction-only list of capability families for this routine.' }
         }
       },
@@ -301,6 +304,7 @@
           attachToSession: !!(args && args.attachToSession),
           skills: Array.isArray(args && args.skills) ? args.skills.slice(0, 8) : [],
           contextFrom: Array.isArray(args && args.contextFrom) ? args.contextFrom.slice(0, 8) : null,
+          monitorMode: !!(args && args.monitorMode),
           enabledToolsets: Array.isArray(args && args.enabledToolsets) ? args.enabledToolsets.slice(0, 16) : null,
           repeat: { times: repeatTimes == null ? null : Math.max(1, parseInt(repeatTimes, 10) || 1) }
         };
@@ -382,6 +386,7 @@
           provider: { type: 'string', enum: providerEnum },
           model: { type: 'string' },
           repeatTimes: { type: ['integer', 'null'], description: 'update: null for recurring forever.' }
+          ,monitorMode: { type: 'boolean', description: 'update: suppress runs while contextFrom source bytes are unchanged.' }
         }
       },
       run: async (args) => {
@@ -443,6 +448,7 @@
           set('schedule', args.schedule, 200);
           set('timezone', args.timezone, 80);
           set('model', args.model, 120);
+          if (Object.prototype.hasOwnProperty.call(args, 'monitorMode')) patch.monitorMode = args.monitorMode === true;
         }
         /* A TIMEZONE ONLY MEANS SOMETHING WITH A SCHEDULE. The host resolves tz inside the schedule parse
            (parseCronScheduleOr400(schedule, now, tz)), so a patch carrying tz and no schedule reaches the store
@@ -467,13 +473,39 @@
       }
     };
 
+    const notepadTool = {
+      name: 'routine.notepad', capability: 'routinescratch', scope: 'write', requiresConsent: false,
+      description: 'Read or replace the bounded private scratchpad for THIS scheduled routine. The host selects the job from the current scheduled run; no job id is accepted, so one routine cannot read or write another routine\'s notes. Notes survive restart. Use action=write with empty text to clear it.',
+      schema: {
+        type: 'object', required: ['action'],
+        properties: { action: { type: 'string', enum: ['read', 'write'] }, text: { type: 'string' } }
+      },
+      run: async (args, ctx) => {
+        const jobId = String((ctx && ctx.cronJobId) || '');
+        if (!jobId) return { content: 'routine.notepad is available only inside a scheduled routine run', summary: 'unavailable' };
+        const action = lower(clean(args && args.action, 20));
+        if (action === 'read') {
+          if (typeof getRoutineNotepad !== 'function') return { content: 'routine notepad unavailable', summary: 'unavailable' };
+          const note = await getRoutineNotepad(jobId);
+          return { content: String(note == null ? '' : note).slice(0, 8000), summary: String(note || '').length + ' character(s)' };
+        }
+        if (action !== 'write') throw new Error('action must be read or write');
+        if (typeof setRoutineNotepad !== 'function') return { content: 'routine notepad unavailable', summary: 'unavailable' };
+        const note = String(args && args.text != null ? args.text : '').slice(0, 8000);
+        const saved = await setRoutineNotepad(jobId, note);
+        if (saved === false) throw new Error('routine notepad could not be persisted');
+        return { content: JSON.stringify({ ok: true, characters: note.length }), summary: note ? 'routine notepad saved' : 'routine notepad cleared' };
+      }
+    };
+
     return {
       listTool: listTool,
       createTool: createTool,
       manageTool: manageTool,
+      notepadTool: notepadTool,
       _chooseAgent: chooseAgent,
       _resolveJobRef: resolveJobRef,
-      register(reg) { reg.register(listTool); reg.register(createTool); reg.register(manageTool); return reg; }
+      register(reg) { reg.register(listTool); reg.register(createTool); reg.register(manageTool); reg.register(notepadTool); return reg; }
     };
   }
 

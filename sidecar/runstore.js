@@ -35,7 +35,7 @@
 
   // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
   // silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
-  const REASONS = new Set(['done', 'max_iters', 'budget', 'cancelled', 'error', 'refusal']);
+  const REASONS = new Set(['done', 'max_iters', 'budget', 'cancelled', 'error', 'empty', 'refusal', 'clarifying']);
   const DEFAULT_LIMIT = 200;        // a sane cap so list() never returns an unbounded history
   const TITLE_MAX = 120;
   const UNKNOWN_MODEL = '(unknown)';
@@ -45,7 +45,10 @@
   const SESSION_TITLE_MAX = 80;
   const DELIVERY_PROMPT_MAX = 4000;
   const DELIVERY_TEXT_MAX = 24000;
+  const TOOL_TRACE_MAX = 200;
+  const TOOL_SUMMARY_MAX = 240;
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
+  function nonnegative(v) { return Math.max(0, num(v)); }
   function str(v) { return v == null ? '' : String(v); }
   function modelName(v) { const s = str(v).trim(); return (s || UNKNOWN_MODEL).slice(0, 80); }
   // sanitize the collector's artifact records at the persistence boundary (defense in depth: the collector
@@ -65,12 +68,30 @@
     return out;
   }
 
+  function toolTraceList(v) {
+    if (!Array.isArray(v)) return [];
+    const out = [];
+    for (const t of v) {
+      if (out.length >= TOOL_TRACE_MAX) break;
+      if (!t || typeof t !== 'object') continue;
+      const callId = str(t.callId).slice(0, 100);
+      const name = str(t.name).slice(0, 80);
+      if (!callId || !name) continue;
+      out.push({
+        callId, name, ok: !!t.ok, isError: !!t.isError,
+        ms: nonnegative(t.ms), summary: str(t.summary).slice(0, TOOL_SUMMARY_MAX),
+        startedAt: nonnegative(t.startedAt), endedAt: nonnegative(t.endedAt)
+      });
+    }
+    return out;
+  }
+
   // RAM mirror ceiling: the largest served query is list({ limit: 1000 }) (insights) / 500 (run list), so keep
   // generous headroom (~3x) and splice the oldest off when the in-process mirror grows past it. On-disk history
   // stays complete (the append-only log + its rotated segment); only the RAM mirror is bounded so a 24/7 process
   // can't grow it without limit. Disk boot-load is already bounded (readBoundedJsonl), so this matches behavior:
   // the whole-station insights fold already reads only the most-recent bounded window, never lifetime history.
-  const RAM_ROWS_MAX = 3000;
+  const RAM_ROWS_MAX = 10000;       // matches the browser progression catch-up's bounded replay horizon
 
   function makeRunStore(opts) {
     opts = opts || {};
@@ -88,7 +109,7 @@
     function record(e) {
       e = e || {};
       const entry = {
-        runId: str(e.runId), agentId: str(e.agentId),
+        runId: str(e.runId), parentRunId: str(e.parentRunId).slice(0, 100), agentId: str(e.agentId),
         reason: REASONS.has(e.reason) ? e.reason : 'done',     // clamp to the known enum (matches agent.run.end)
         turns: num(e.turns), tokens: num(e.tokens), usd: num(e.usd),
         title: str(e.title).slice(0, TITLE_MAX),
@@ -99,11 +120,16 @@
         deliveryPrompt: str(e.deliveryPrompt).slice(0, DELIVERY_PROMPT_MAX),
         deliveryText: str(e.deliveryText).slice(0, DELIVERY_TEXT_MAX),
         recipeId: str(e.recipeId).slice(0, 60),   // provenance spine (additive): WHICH recipe launched this run ('' for non-recipe runs; old rows lack it and default '')
+        reasoningEffort: str(e.reasoningEffort).trim().slice(0, 20),
         model: modelName(e.model),   // H3.3/G6: actual model used, or explicit (unknown) as a last resort
         unmetered: !!e.unmetered,    // G6.2: subscription usage is counted, not summed as $0 spend
         artifacts: artifactList(e.artifacts),   // work-visibility: what the run PRODUCED (additive; [] default)
         toolsOk: num(e.toolsOk),                // crate-honesty (additive): successful tool results — proven work, not just talk. Old rows default 0.
         identityFallback: !!e.identityFallback, // P1.2 (additive): TRUE when this run's agentId was MISSING from the roster and it ran on the station-persona/default-model fallback — an honest marker that it was NOT the named specialist. Old rows lack it and default false.
+        internal: !!e.internal,                 // progression catch-up excludes harness self-talk from agent work
+        clarifying: !!e.clarifying,             // additive outcome truth; `reason` remains the execution terminal
+        toolTrace: toolTraceList(e.toolTrace),
+        startedAt: nonnegative(e.startedAt), endedAt: nonnegative(e.endedAt), durationMs: nonnegative(e.durationMs),
         ts: num(e.ts) || clock.now()
       };
       rows.push(entry);
@@ -119,9 +145,21 @@
       o = o || {};
       const limit = num(o.limit) > 0 ? num(o.limit) : cap;
       const want = agentId == null ? null : str(agentId);
+      const beforeRunId = o.beforeRunId == null ? '' : str(o.beforeRunId);
+      const since = num(o.since);
+      const through = num(o.through);
       const out = [];
+      let afterCursor = !beforeRunId;
       for (let i = rows.length - 1; i >= 0 && out.length < limit; i--) {   // newest-first
-        if (want == null || rows[i].agentId === want) out.push(Object.assign({}, rows[i]));
+        const row = rows[i];
+        if (!afterCursor) {
+          if (row.runId === beforeRunId) afterCursor = true;
+          continue;
+        }
+        if (want != null && row.agentId !== want) continue;
+        if (since > 0 && num(row.ts) <= since) continue;
+        if (through > 0 && num(row.ts) > through) continue;
+        out.push(Object.assign({}, row));
       }
       return out;
     }

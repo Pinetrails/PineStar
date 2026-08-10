@@ -37,4 +37,54 @@ A.ok(/setTimeout\(/.test(runSeg), 'placements are staggered so each ✓ + chime 
 /* ---------- the tutorial hands off to the quest log (the durable "what next" surface) ---------- */
 A.ok(/⚑ QUESTS/.test(tut), 'the classic close points at the quest log by name');
 
+/* ---------- P0: REFIT's first-run card must never stack on the tour (2026-08-03 audit) ----------
+   The kit-out ALWAYS causes the first REFIT open, so an ungated showGuide() put a full-viewport modal
+   over the ⚇ PROP button the tour's ring was pulsing on — teaching a different lesson underneath. */
+A.ok(/if\s*\(!hasSeen\(\)\s*&&\s*!tutorialCoaching\(\)\)\s*showGuide\(\)/.test(build),
+  'the REFIT first-run card stands down while the tutorial is coaching');
+A.ok(/function tutorialCoaching\(\)[\s\S]{0,200}Tutorial\.isCoaching\(\)/.test(build),
+  'that gate reads Tutorial.isCoaching() (the same coordination dockglow.js uses)');
+A.ok(/markSeen\(\);\s*if \(g\.parentNode\)/.test(build),
+  'markSeen still fires only on DISMISS — so a deferred card is not lost, it shows on the next open');
+A.ok(/g\.className = 'refit-guide refit-firstrun'/.test(build),
+  'the first-run card carries its own refit-firstrun marker (the pickers/editors share .refit-guide)');
+A.ok(/document\.querySelector\('#terms \.term'\) \|\| document\.querySelector\('\.refit-firstrun'\)/.test(tut),
+  'showCoach defers over the first-run card too, so the deferred open does not stack card + coachmark');
+
+/* ---------- P0: one failed first paint must not strand REFIT on a black overlay ----------
+   requestAnimationFrame does not continue after an exception. The next frame must therefore be scheduled by a
+   finally-owned supervisor, with a bounded retry and a fresh canonical bake/camera instead of requiring DONE +
+   reopen to manufacture a new loop. */
+const frameStart = build.indexOf('function frame(now)');
+A.ok(frameStart >= 0, 'REFIT render frame exists');
+const frameSeg = build.slice(frameStart, build.indexOf('\n  function drawGrid', frameStart));
+A.ok(/try\s*\{[\s\S]*catch \(err\)[\s\S]*finally\s*\{[\s\S]*scheduleFrame\(failed\)/.test(frameSeg),
+  'the REFIT frame is supervised and schedules its successor from finally even after a draw exception');
+A.ok(/function scheduleFrame\(failed\)[\s\S]{0,600}Math\.min\(1000,[\s\S]{0,600}requestAnimationFrame\(frame\)/.test(build),
+  'failed frames retry with bounded backoff instead of a 60fps error loop');
+const recoverStart = build.indexOf('function recoverFrame(err)');
+const recoverSeg = build.slice(recoverStart, build.indexOf('\n  function frame(now)', recoverStart));
+A.ok(/cache = null; cacheGeo = null/.test(recoverSeg) && /bakeDirty = true/.test(recoverSeg),
+  'recovery discards the suspect derived bake and rebuilds from canonical station state');
+A.ok(/resize\(\); fitCamera\(\)/.test(recoverSeg),
+  'recovery re-measures and re-fits the station after a first-layout race');
+
+/* ---------- P1: the kit-out is opt-IN, so it must be opt-OUT-able at any moment ---------- */
+A.ok(/function kitBail\(\)/.test(tut), 'the kit-out has a bail');
+const bailSeg = tut.slice(tut.indexOf('function kitBail()'), tut.indexOf('function beatFullyEquipped('));
+A.ok(/Build\.isOpen\(\)\s*&&\s*Build\.close\)\s*\{\s*Build\.close\(\);\s*return;/.test(bailSeg),
+  'inside REFIT the bail just closes it — kitTick reads that as the normal exit (no double dialogue)');
+A.ok(/kitClosedDuringPlace\(\)/.test(bailSeg), 'outside REFIT it lands on the same honest wired-vs-dark accounting');
+A.ok(/class = 'tut-coach-bail'|className = 'tut-coach-bail'/.test(tut), 'every kit-out step renders a visible way out');
+A.ok(/e\.key !== 'Escape'[\s\S]{0,200}\.refit-overlay'\)[\s\S]{0,80}#terms \.term'\)\) return;\s*kitBail\(\)/.test(tut),
+  'Esc bails only when nothing else claims the key — not over REFIT, not over an open station panel');
+
+/* ---------- P1: the tour's two closing surfaces must not cover each other ----------
+   (the GEOMETRY itself is unit-tested for real in test/coach-dodge.test.js — these only lock the wiring) */
+A.ok(/function dodgeBrief\(/.test(tut), 'the coachmark measures the live FIRST STEPS brief');
+A.ok(/dodgeBrief\(\{ left, top, w: bw, h: bh \}, vw, vh\)/.test(tut), 'placeCoach routes its computed box through the dodge');
+A.ok(/^function dodgeRect\(box, brief, vw, vh\)/m.test(tut), 'the geometry is a pure top-level fn, not trapped in the IIFE');
+A.ok(/typeof module !== 'undefined' && module\.exports\) module\.exports = \{ dodgeRect \}/.test(tut),
+  'and it is exported under the same browser-safe guard stationui.js uses, so the gate can run it');
+
 A.report('kitout.test');

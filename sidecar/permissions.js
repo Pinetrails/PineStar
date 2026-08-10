@@ -7,7 +7,7 @@
    the sidecar edge (index.js) so the same module is deterministic and headless-testable.
 
    makeConsentBroker({ bypass, hardline, sessionKey, grantsSession, grantsPermanent, persist,
-                       networkOf, surface, prompt, grantsBlanket }) -> consent
+                       networkOf, surface, prompt }) -> consent
      consent(call, tool)              -> { allow, reason, scope } | Promise<…>   // the four-tier ladder
      consent.grant(decision,call,tool)-> { allow, reason, scope }   // record a human once/session/always/full decision
      consent.snapshot()               -> { permanent:[...], session:{...} }   // read-only, for tests/telemetry
@@ -15,9 +15,9 @@
    The ladder, in FIXED order (each tier short-circuits):
      1. HARDLINE — an injected, unconditional deny floor; checked FIRST so no flag can reach past it.
                    Its reason carries an anti-retry suffix so the model stops re-attempting it.
-     2. BYPASS   — Full Access: allow anything NOT on the hardline floor (flag frozen at boot upstream).
-     3. CACHE    — allow if this dangerKey was previously granted for THIS session, permanently, or under
-                   a blanket full-access grant ('*' in grantsBlanket).
+     2. BYPASS   — Full Access: allow anything NOT on the hardline floor. The host injects a live predicate
+                   so persisted per-agent approval changes and revocations take effect on the next call.
+     3. CACHE    — allow if this dangerKey was previously granted for THIS session or permanently.
      4. RESOLVE  — a read-only, non-network call auto-allows; a mutation with no grant DEFAULT-DENIES
                    under an autonomous surface ('silence is not consent'). Under an INTERACTIVE surface
                    with a wired prompt(), it asks the human and routes the answer back through grant();
@@ -55,7 +55,14 @@
 
   function makeConsentBroker(opts) {
     opts = opts || {};
-    const bypass = !!opts.bypass;
+    /* `bypass` accepts a boolean (the boot-frozen env flag — unchanged) OR a function re-read on every call
+       (MASTER BYPASS, 2026-08-05): the user's runtime FULL BYPASS switch must take effect — and, more
+       importantly, REVOKE — on the very next tool call without a sidecar restart. The function is host-injected
+       from a persisted, token-gated store; nothing the model emits can reach it, so the frozen-at-boot
+       injection-safety property is preserved (the model still cannot flip the flag — only the /api route can). */
+    const bypassFn = typeof opts.bypass === 'function' ? opts.bypass : null;
+    const bypass = bypassFn ? false : !!opts.bypass;
+    const bypassNow = () => { if (bypassFn) { try { return bypassFn() === true; } catch (_) { return false; } } return bypass; };
     const hardline = typeof opts.hardline === 'function' ? opts.hardline : null;
     const sessionKey = opts.sessionKey || 'default';
     const grantsSession = opts.grantsSession instanceof Map ? opts.grantsSession : new Map();
@@ -64,7 +71,6 @@
     const networkOf = typeof opts.networkOf === 'function' ? opts.networkOf : defaultNetworkOf;
     const surface = opts.surface || 'autonomous';
     const prompt = typeof opts.prompt === 'function' ? opts.prompt : null;                     // (call,tool) -> Promise<decision>
-    const grantsBlanket = opts.grantsBlanket instanceof Set ? opts.grantsBlanket : null;       // full-access wildcard store ('*')
     // AWAY WORKSHOP (W1): an injected predicate — the Commander's recorded "build things while I'm away" grant for
     // THIS agent. When present and true, an AUTONOMOUS run may WRITE, but ONLY inside its own jail: the tool must be
     // a jail-scoped capability (cabinet = files, notebook = memory). This is a per-agent recorded consent, wired in
@@ -131,8 +137,8 @@
          • the injected predicate must confirm THIS RUN carries the Commander's recorded per-routine grant
        Unlike every other allow-tier this one is NOT reachable by a cached/permanent `always` grant, by prompt
        text, or by anything the model emits — index.js sources it from the persisted cron job alone. That is
-       precisely why it may do what "Full Access implies shell" deliberately must not. No grant -> false ->
-       the lockout stands. */
+       In ASK mode this is the explicit route for a routine to use shell. Full Access is evaluated earlier by
+       the host-injected bypass predicate. No grant -> false -> the lockout stands. */
     function terminalAutonomy(call, tool) {
       if (!terminalGrant) return false;
       if (surface !== 'autonomous') return false;
@@ -161,7 +167,6 @@
       return s;
     }
     function granted(key) {
-      if (grantsBlanket && grantsBlanket.has('*')) return true;   // full-access (blanket) grant covers every danger class
       if (grantsPermanent.has(key)) return true;
       const s = grantsSession.get(sessionKey);
       return !!(s && s.has(key));
@@ -172,8 +177,8 @@
       // 1. HARDLINE — unreachable past any flag.
       const hr = hardline ? hardline(call, tool) : null;
       if (hr) return { allow: false, scope: scope, hardline: true, reason: String(hr) + ANTI_RETRY };
-      // 2. BYPASS — Full Access.
-      if (bypass) return { allow: true, scope: scope, reason: 'full-access' };
+      // 2. BYPASS — boot Full Access, live master bypass, or persisted per-agent Full Access.
+      if (bypassNow()) return { allow: true, scope: scope, reason: 'full-access' };
       // 2.4 UNATTENDED TERMINAL GRANT — checked BEFORE the exec lockout because opening that lockout for exactly
       // this case IS the feature (see terminalAutonomy). Ordering is load-bearing: below tier 2.5 it would be
       // dead code. Still below the hardline floor (tier 1), so protected paths remain unwritable.
@@ -224,10 +229,8 @@
         return { allow: true, scope: scope, reason: 'granted permanently' };
       }
       if (decision === 'full') {
-        // blanket "full access": allow EVERY danger class for the life of the injected grantsBlanket store. The
-        // sidecar wires it to an in-memory per-agent set, so it lasts the session and RESETS on restart — never
-        // persisted to disk. Still sits BELOW the hardline floor (tier 1 is checked before the cache tier).
-        if (grantsBlanket) grantsBlanket.add('*');
+        // The host persists this agent posture before completing the pending prompt. This pure broker resolves
+        // the current call; every later call observes the host-injected live bypass predicate.
         return { allow: true, scope: scope, reason: 'full access granted' };
       }
       return { allow: false, scope: scope, reason: 'denied' };

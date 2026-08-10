@@ -79,7 +79,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.ok(apiToken.length >= 32, 'served index.html carried a high-entropy API token');
 
     // ---- the auth seam gates these data routes (spot-check across GET + POST; the finding notes none are exempt) ----
-    for (const [m, p] of [['GET', '/api/quests'], ['GET', '/api/toolsets'], ['GET', '/api/widgets'], ['GET', '/api/workspace/dir?agent=agent'], ['POST', '/api/activity'], ['POST', '/api/dev/inbound']]) {
+    for (const [m, p] of [['GET', '/api/quests'], ['GET', '/api/journey'], ['GET', '/api/toolsets'], ['GET', '/api/widgets'], ['GET', '/api/workspace/dir?agent=agent'], ['POST', '/api/activity'], ['POST', '/api/dev/inbound']]) {
       const g = await raw(m, p, m === 'POST' ? {} : undefined);
       A.eq(g.status, 403, m + ' ' + p + ' WITHOUT a token -> 403 (auth seam holds)');
     }
@@ -132,6 +132,28 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const dism = await j('POST', '/api/quests/dismiss', { id: questId });
     A.eq(dism.status, 200, 'POST /api/quests/dismiss {id} -> 200');
     A.eq(typeof dism.body.ok, 'boolean', 'dismiss returns an ok boolean');
+
+    // ---- Commander journey: durable metric round-trip + honest invalid operation ----
+    const journey0 = await j('GET', '/api/journey');
+    A.eq(journey0.status, 200, 'GET /api/journey -> 200');
+    A.eq(journey0.body.journey.evolution.goalsReached, 0, 'fresh journey makes no progress claim');
+    const metric = await j('POST', '/api/journey', { op: 'metric.create', goalId: 'goal:http', label: 'Paying users', baseline: 0, target: 10, unit: 'users' });
+    A.eq(metric.status, 200, 'POST /api/journey metric.create -> 200');
+    A.ok(metric.body.ok && metric.body.metric.id, 'metric.create returns the durable metric id');
+    const metricReached = await j('POST', '/api/journey', { op: 'metric.update', id: metric.body.metric.id, current: 10, note: 'Commander checked billing' });
+    A.eq(metricReached.status, 200, 'POST /api/journey metric.update -> 200');
+    A.eq(metricReached.body.journey.evolution.goalsReached, 0, 'reaching one metric cannot overclaim the whole life goal');
+    A.eq(metricReached.body.journey.outcomes[0].kind, 'metric', 'reached metric still lands as a provenance-bearing outcome');
+    const journey1 = await j('GET', '/api/journey');
+    A.eq(journey1.body.journey.metrics[0].current, 10, 'journey metric survives a real HTTP read-after-write');
+    const journeyBad = await j('POST', '/api/journey', { op: 'invent.level' });
+    A.eq(journeyBad.status, 400, 'unknown journey operation -> 400');
+    const journeyReset = await j('POST', '/api/journey', { op: 'journey.reset', epoch: 2 });
+    A.eq(journeyReset.status, 200, 'journey reset advances to a new Commander generation');
+    const staleJourney = await j('POST', '/api/journey', { op: 'metric.create', epoch: 1, label: 'Stale tab metric', baseline: 0, target: 1 });
+    A.eq(staleJourney.status, 409, 'a stale Commander generation cannot mutate the new journey');
+    const currentJourney = await j('POST', '/api/journey', { op: 'metric.create', epoch: 2, label: 'Current tab metric', baseline: 0, target: 1 });
+    A.eq(currentJourney.status, 200, 'the active Commander generation can mutate its journey');
 
     // ---- (7) POST /api/activity — arrival IS the signal; always 200 with the recorded timestamp ----
     const before = Date.now();

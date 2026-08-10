@@ -36,6 +36,7 @@ const Updates = (() => {
     error: '',
     downloaded: 0,
     contentLength: 0,
+    preparationReceipt: null,
     lastCheckedAt: prefs.lastCheckAt || 0,
     confirmRuns: 0
   };
@@ -174,9 +175,8 @@ const Updates = (() => {
     return snapshot();
   }
 
-  // P1.3: bound any promise so a hung sidecar can't stall the update. Resolves to `fallback` on timeout/throw.
-  // No AbortController here on purpose — CloudSave.flush()/App.pushRoster() already own their own fetch; we only
-  // need to STOP WAITING on them, not cancel them (a slow write that lands after we move on is harmless).
+  // Bound any promise so a hung sidecar cannot stall the update. Timeout/throw returns an explicit failure
+  // marker; the installer never starts unless both final browser-owned writes are confirmed.
   function withTimeout(promise, ms, fallback) {
     return Promise.race([
       Promise.resolve().then(() => promise).catch(() => fallback),
@@ -184,21 +184,48 @@ const Updates = (() => {
     ]);
   }
 
-  // P1.3: flush the durable mirror + push the roster BEFORE the installer kills us, each time-boxed. Exposed on the
-  // module API so it is unit-testable and CDP-drivable (prove the mirror advances before the install invoke fires).
+  // Flush the durable mirror + push the roster before the mutation barrier, each time-boxed and fail-closed.
   async function preInstallDrain(ms) {
     const budget = Math.max(250, +ms || 3000);
-    const jobs = [];
-    // force:true bypasses the backoff-hold — this is the app's last breath, attempt the write regardless of the
-    // retry clock. A missing CloudSave (browser preview) just yields a resolved no-op.
-    if (typeof CloudSave !== 'undefined' && CloudSave && typeof CloudSave.flush === 'function') {
-      jobs.push(withTimeout(CloudSave.flush({ force: true }), budget, false));
+    const failed = { ok: false, timeout: true };
+    // flushForUpdate distinguishes "nothing pending" from "pending write failed"; only the latter blocks.
+    const save = (typeof CloudSave !== 'undefined' && CloudSave && typeof CloudSave.flushForUpdate === 'function')
+      ? await withTimeout(CloudSave.flushForUpdate(), budget, failed) : failed;
+    // App.pushRoster() returns true only after the sidecar accepts and parses the full roster replacement.
+    const roster = (typeof App !== 'undefined' && App && typeof App.pushRoster === 'function')
+      ? await withTimeout(App.pushRoster(), budget, false) : false;
+    return { ok: !!(save && save.ok === true && roster === true), save, roster: roster === true };
+  }
+
+  function browserStoreSnapshot() {
+    const out = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!/^(?:starnet|skynet)\./i.test(String(key || ''))) continue;
+        const value = localStorage.getItem(key);
+        if (value != null) out[key] = String(value);
+      }
+    } catch (_) {}
+    return out;
+  }
+
+  async function prepareUpdate(force) {
+    const r = await fetch('/api/update/prepare', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetVersion: state.update && state.update.version || '', force: force === true, browserStore: browserStoreSnapshot() })
+    });
+    let body = null;
+    try { body = await r.json(); } catch (_) {}
+    if (!r.ok || !body || body.ok !== true || !body.receipt) {
+      throw new Error((body && (body.error || body.code)) || ('update preparation HTTP ' + r.status));
     }
-    // App.pushRoster() returns the in-flight roster POST promise (app.js). Missing/older App -> resolved no-op.
-    if (typeof App !== 'undefined' && App && typeof App.pushRoster === 'function') {
-      jobs.push(withTimeout(App.pushRoster(), budget, undefined));
-    }
-    try { await Promise.all(jobs); } catch (_) {}
+    state.preparationReceipt = body.receipt;
+    return body.receipt;
+  }
+
+  function cancelPreparation() {
+    return fetch('/api/update/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => null);
   }
 
   // Count of sidecar-CONFIRMED live runs (Channels.busy flips on real agent.run.start/end,
@@ -235,18 +262,36 @@ const Updates = (() => {
     }
     state.confirmRuns = 0;
     busy = true;
-    state.phase = 'downloading';
+    state.phase = 'preparing';
     state.downloaded = 0;
     state.contentLength = 0;
     state.error = '';
     const onEvent = new Channel(event => handleInstallEvent(event));
     emit();
-    // P1.3 (UPDATE_STATE_SAFETY_AUDIT): the NSIS installer kills the running app (CheckIfAppIsRunning), so the
-    // last ~1.2s debounce window of world changes — and the newest roster — would be LOST on every in-app update.
-    // Drain them FIRST: force one immediate durable-mirror flush + a roster push. Each is bounded (Promise.race
-    // with a timeout) so a dead/slow sidecar can NEVER hang the update — a lost drain is strictly better than a
-    // frozen updater. Best-effort throughout: any failure just proceeds to install (localStorage is intact).
-    await preInstallDrain();
+    // The installer can kill this process. First prove the newest save + roster landed, then ask the sidecar to
+    // freeze every mutation, wait for quiescence, snapshot workspace + browser state, read it back, and issue a
+    // durable receipt. Any failed proof leaves the current version running and writable.
+    const drained = await preInstallDrain();
+    if (!drained.ok) {
+      state.phase = 'available';
+      state.error = 'State could not be verified on disk. The update was not installed; your current StarNet remains open.';
+      busy = false;
+      notify('Update paused - state verification failed', 'warn');
+      emit();
+      return snapshot();
+    }
+    try {
+      await prepareUpdate(!!opts.force);
+    } catch (e) {
+      state.phase = 'available';
+      state.error = 'Pre-update recovery point failed - ' + cleanError(e);
+      busy = false;
+      notify('Update paused - no verified recovery point was created', 'warn');
+      emit();
+      return snapshot();
+    }
+    state.phase = 'downloading';
+    emit();
     installing = true;   // from here a close-requested is the update restart — quit guard must allow it
     try {
       await invoke('starnet_update_install', { onEvent });
@@ -254,6 +299,8 @@ const Updates = (() => {
       notify('StarNet update installed - restarting', 'good');
     } catch (e) {
       installing = false;   // install failed; the app lives on, so the quit guard resumes normally
+      await cancelPreparation();
+      state.preparationReceipt = null;
       state.phase = 'available';
       state.error = cleanError(e);
       notify('Update install failed - ' + state.error, 'warn');
@@ -309,6 +356,7 @@ const Updates = (() => {
   function phaseLabel() {
     if (state.phase === 'unsupported') return 'desktop updater unavailable';
     if (state.phase === 'checking') return 'checking for updates';
+    if (state.phase === 'preparing') return 'verifying state and creating recovery point';
     if (state.phase === 'available') return 'update ready';
     if (state.phase === 'downloading') return 'downloading update';
     if (state.phase === 'installing') return 'preparing installer';
@@ -378,7 +426,7 @@ const Updates = (() => {
     } else {
       out += '<div class="up-empty">No update is pending. StarNet will keep checking in the background while automatic checks are on.</div>';
     }
-    if (state.phase === 'downloading' || state.phase === 'installing' || state.phase === 'restarting') {
+    if (state.phase === 'preparing' || state.phase === 'downloading' || state.phase === 'installing' || state.phase === 'restarting') {
       out += '<div class="up-progress"><div style="width:' + pct + '%"></div></div>' +
         '<div class="up-meta">' + (state.contentLength ? (pct + '% downloaded') : phaseLabel()) + '</div>';
     }

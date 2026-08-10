@@ -280,7 +280,7 @@ const root = path.resolve(__dirname, '..');
   A.ok(/SIDECAR_CHANNEL_TOKEN_ENVS/.test(credentialsRs), 'credentials.rs declares the channel-token env table');
   A.ok(/"telegram",\s*"SKYNET_TELEGRAM_TOKEN"/.test(credentialsRs) && /"discord",\s*"SKYNET_DISCORD_TOKEN"/.test(credentialsRs), 'credentials.rs maps both channels to their spawn env vars');
   A.ok(/format!\("channel:\{channel\}"\)/.test(credentialsRs), 'credentials.rs uses the channel:<id> keychain account');
-  A.ok(/read_channel_token\(channel\)/.test(nativeRs) && /cmd\.env\(env_name, token\)/.test(mainRs), 'main.rs injects module-owned keychain tokens into the sidecar env at spawn');
+  A.ok(/read_channel_token\(channel\)/.test(nativeRs) && /set_sidecar_branded_env\(&mut cmd, env_name, token\)/.test(mainRs), 'main.rs injects module-owned keychain tokens into both branded sidecar env aliases at spawn');
   A.ok(/fn migrate_channel_tokens_from_plaintext/.test(credentialsRs), 'credentials.rs migrates plaintext channel tokens into the keychain');
   A.ok(/fn harness_store_channel_token/.test(mainRs) && /fn harness_has_channel_token/.test(mainRs), 'main.rs preserves the store/has channel-token commands');
   A.ok(/harness_store_channel_token,\s*\n\s*harness_has_channel_token/.test(mainRs), 'both channel-token commands are registered in the invoke handler');

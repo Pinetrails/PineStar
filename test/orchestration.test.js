@@ -7,6 +7,7 @@ const A = require('./_assert.js');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { getEventListeners } = require('events');
 const { makeOrchestrationTools } = require('../sidecar/tools/builtin/orchestration.js');
 const { makeSubagentManager } = require('../sidecar/subagents.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
@@ -114,6 +115,21 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), workerMaxIters: 6 });
   await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }] }, { agentId: 'lead', emit: () => {} });
   A.eq(ro.calls[0].maxIters, 6, 'deps.workerMaxIters overrides the default worker loop cap');
+}
+
+// ---- a narrow one-host check gets task-specific turn/tool/time budgets even if a lead delegates it ----
+{
+  const ro = fakeRunOnce(() => ({ reason: 'done', messages: [{ role: 'assistant', content: 'missing' }], usd: 0, model: 'm', reasoningEffort: 'medium', toolsOk: 1, durationMs: 12 }));
+  const roster = new Map([['researcher', { system: 'R' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), workerMaxIters: 16 });
+  const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'Check starnessos.com and read its docs.' }] }, { agentId: 'lead', runId: 'lead-run', emit: () => {} });
+  A.eq(ro.calls[0].maxIters, 3, 'direct-domain worker gets a three-turn cap');
+  A.eq(ro.calls[0].maxToolCalls, 3, 'direct-domain worker gets a three-tool cap');
+  A.eq(ro.calls[0].parentRunId, 'lead-run', 'child records its durable parent run id');
+  const row = JSON.parse(out.content)[0];
+  A.eq(row.model, 'm', 'dispatch result exposes the actual worker model');
+  A.eq(row.reasoningEffort, 'medium', 'dispatch result exposes worker reasoning effort');
+  A.eq(row.durationMs, 12, 'dispatch result exposes worker elapsed time');
 }
 
 // ---- child emit forwarding: ONLY lifecycle/cost reach the lead bus (no token/COMMS pollution) ----
@@ -627,11 +643,13 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   const ro = fakeRunOnce();
   const roster = new Map([['a', {}], ['b', {}], ['c', {}], ['d', {}]]);
   let clock = 0;
+  const parent = new AbortController();
   const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), dispatchTimeoutMs: 4000, now: () => clock });
-  await dispatchTool.run({ workers: ['a', 'b', 'c', 'd'].map(a => ({ agentId: a, prompt: 'p' })) }, { agentId: 'lead', emit: () => {} });
+  await dispatchTool.run({ workers: ['a', 'b', 'c', 'd'].map(a => ({ agentId: a, prompt: 'p' })) }, { agentId: 'lead', signal: parent.signal, emit: () => {} });
   A.eq(ro.calls.length, 4, 'all four sequential workers ran');
   // clock never advances in this stub, so each worker sees the full remaining budget / workers remaining
   A.ok(ro.calls[0].signal && ro.calls[3].signal, 'every sequential worker got its own signal');
+  A.eq(getEventListeners(parent.signal, 'abort').length, 0, 'settled workers detach their parent abort listeners');
 }
 
 // ---- abort PROPAGATION survives the per-worker controller: E-STOP on the lead still stops the worker ----
@@ -900,6 +918,64 @@ const leadCtx = () => ({ agentId: 'agent', emit: () => {} });
   A.ok(/history\.push/.test(page) && !/ws\.history = next/.test(page), 'delivery APPENDS — it never replaces a session\'s existing thread');
   const mirror = fs.readFileSync(path.join(__dirname, '..', 'website', 'app', 'app', 'stationcommands.js'), 'utf8');
   A.eq(mirror, page, 'the website mirror of stationcommands.js is in sync');
+}
+
+// ---- G6 structured contracts: validate, repair once, and never accept invalid completion ----
+{
+  let n = 0;
+  const ro = fakeRunOnce(async () => (++n === 1
+    ? { reason: 'done', messages: [{ role: 'assistant', content: 'not json' }], usd: 0.2, artifacts: [{ path: 'draft.txt' }] }
+    : { reason: 'done', messages: [{ role: 'assistant', content: '{"answer":"fixed"}' }], usd: 0.1, artifacts: [{ path: 'fixed.txt' }] }));
+  const roster = new Map([['worker', { system: 'W', model: 'm' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), perWorker: 1 });
+  const out = await dispatchTool.run({ workers: [{ agentId: 'worker', prompt: 'answer', resultSchema: {
+    type: 'object', required: ['answer'], properties: { answer: { type: 'string' } }, additionalProperties: false
+  } }] }, { agentId: 'lead', emit: () => {} });
+  const row = JSON.parse(out.content)[0];
+  A.eq(ro.calls.length, 2, 'invalid structured output receives exactly one repair run');
+  A.eq(row.validation.state, 'repaired', 'the host identifies a repaired result');
+  A.eq(row.structuredResult, { answer: 'fixed' }, 'the repaired strict JSON value is returned separately');
+  A.ok(Math.abs(row.usd - 0.3) < 1e-9, 'initial and repair costs are both retained');
+  A.eq(row.artifacts.length, 2, 'artifacts from initial and repair runs are retained');
+}
+
+{
+  const ro = fakeRunOnce(async () => ({ reason: 'done', messages: [{ role: 'assistant', content: 'still invalid' }], usd: 0.1 }));
+  const roster = new Map([['worker', { system: 'W', model: 'm' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), perWorker: 1 });
+  const out = await dispatchTool.run({ workers: [{ agentId: 'worker', prompt: 'answer', resultSchema: { type: 'object' } }] }, { agentId: 'lead', emit: () => {} });
+  const row = JSON.parse(out.content)[0];
+  A.eq(ro.calls.length, 2, 'an invalid result is never repaired more than once');
+  A.eq(row.reason, 'invalid-result', 'invalid output after repair is not accepted as done');
+  A.eq(row.validation.state, 'invalid', 'the terminal validation state is explicit');
+}
+
+// ---- G6 spawn quality gate and generation-bound steering tool ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-orch-g6-'));
+  try {
+    let T = 1, seq = 0, release;
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'subagents.json'),
+      clock: { now: () => T++ }, emit: () => {}, newId: () => 'reg_' + (++seq) });
+    const ro = fakeRunOnce(async (o) => { await new Promise(resolve => { release = resolve; }); return { reason: 'done', messages: [{ role: 'assistant', content: 'ok' }], usd: 0 }; });
+    const tools = makeOrchestrationTools({ runOnce: ro, roster: () => new Map(), key: 'k', model: 'm', newId: counter(), subagents });
+    const rejected = await tools.spawnTool.run({ tasks: [{ prompt: 'same' }, { prompt: ' same ' }, { prompt: '   ' }] }, { agentId: 'lead', emit: () => {} });
+    A.eq(ro.calls.length, 0, 'empty and duplicate clone tasks are rejected before any provider run');
+    A.eq(JSON.parse(rejected.content).filter(r => r.reason === 'not-spawned').length, 3, 'every rejected batch row is reported');
+    const started = await tools.spawnTool.run({ tasks: [{ prompt: 'unique' }], background: true }, { agentId: 'lead', emit: () => {} });
+    const worker = JSON.parse(started.content)[0]; await tick();
+    const stale = await tools.steerTool.run({ id: worker.id, generation: worker.generation + 1, text: 'wrong' }, { agentId: 'lead' });
+    A.eq(stale.summary, 'not queued', 'team.steer refuses a stale generation');
+    const queued = await tools.steerTool.run({ id: worker.id, generation: worker.generation, text: 'follow up' }, { agentId: 'lead' });
+    A.ok(/queued for generation/.test(queued.summary), 'team.steer queues for the inspected generation');
+    release(); await tick(); await tick();
+  } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
+{
+  const registryRows = require('../sidecar/capability/registry.js').CAP_REGISTRY.orchestrator;
+  const steer = registryRows.find(r => r.tool === 'team.steer');
+  A.ok(steer && steer.scope === 'write' && steer.requiresConsent === false, 'capability registry exposes generation-bound steering without a spend grant');
 }
 
 A.report('orchestration.test');

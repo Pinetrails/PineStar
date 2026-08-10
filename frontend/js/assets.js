@@ -3,8 +3,17 @@
 
 const SPRITES = (() => {
   let ready = false;
+  let loading = false;
   const frames = {};   // key "minion.walk.south" -> [Image]
   const tinted = {};   // key "FORGE|minion.walk.south" -> [canvas]
+  // null means the manifest has not been planned yet. This distinction matters: World starts drawing
+  // immediately while init() is still awaiting manifest.json, so an existing non-default crew skin can
+  // reach loadSet() before its tracks exist. Memoizing that empty pre-init lookup as a finished set job
+  // poisoned the skin for the whole page session; the default/maintainer skin still worked because init()
+  // explicitly loads it after planning, and changing the affected agent to a new skin later also worked.
+  let tracksBySet = null;
+  const setJobs = {};
+  const loadedSets = new Set();
   let meta = { minion: { fw: 0, fh: 0 }, ultron: { fw: 0, fh: 0 } };
 
   /* the crew base is a white space-suit astronaut with glowing CYAN visor eyes
@@ -43,6 +52,15 @@ const SPRITES = (() => {
   function drawScaleFor(setName) {
     return SCALE[setName] || (DATA.SKINS[setName] && DATA.SKINS[setName].scale) || 2 / 3;
   }
+  /* The set drawBody will resolve for this body, and the scale it will draw at. Exported (bodyScale)
+     because a surface that wants the master at its NATIVE resolution — the dossier portrait, which is a
+     still, not a floor body — has to cancel this scale out exactly. Re-deriving it in the UI would drift
+     the moment ULTRON, a new set, or the DATA.SKINS fallback changed; asking the engine cannot. */
+  function setForBody(b) {
+    return (b && b.id === 'ULTRON') ? 'ultron'
+      : ((DATA.SKINS[b && b.skin] && DATA.SKINS[b.skin].set) || DATA.SKINS[DATA.DEFAULT_SKIN].set);
+  }
+  function bodyScale(b) { return drawScaleFor(setForBody(b)); }
 
   /* foot-line measurement — every PixelLab master leaves transparent padding BELOW the feet
      (the crew sets all sit ~23px up from the 92px canvas bottom). The contact shadow is drawn
@@ -295,6 +313,7 @@ const SPRITES = (() => {
   function drawBody(ctx, b, nowMs) {
     const set = b.id === 'ULTRON' ? 'ultron'
       : ((DATA.SKINS[b.skin] && DATA.SKINS[b.skin].set) || DATA.SKINS[DATA.DEFAULT_SKIN].set);
+    if (!loadedSets.has(set)) { loadSet(set); return null; }
     const glancing = b.glance && b.glance.until > nowMs;   // brief look-up: overrides facing & typing
     const meeting = b.meet && b.meet.until > nowMs;        // hallway chat: stand still, face partner
     const dir = glancing ? b.glance.dir : (b.dir || 'south');
@@ -348,6 +367,10 @@ const SPRITES = (() => {
     // agent like the blink so the crew never moves in unison. The index is derived from the
     // window's own progress (fixedIdx), NOT the free-running clock — a clock index would enter
     // the animation mid-cycle. Sets without a gesture track skip this entirely.
+    /* This track is a STRETCH. It is fired here, on its own slow ambient clock, and nowhere else:
+       an attempt to reuse it on demand (reaching for a prop, working an arcade cabinet, waving)
+       was removed 2026-08-08 because a stretch played at those moments reads as a glitch. New
+       meanings need new frames, not this one re-labelled. */
     let fixedIdx = null;
     if (key && key.indexOf('.rot.') !== -1 && b.state !== 'walk'
         && !b.working && !b.sitting && !b.speaking && !meeting && !glancing) {
@@ -387,6 +410,10 @@ const SPRITES = (() => {
       }
     }
     if (!key) return null;
+    // the pose this body is ACTUALLY being drawn in, recorded read-only for live verification
+    // (dev/idlesoak.mjs asserts a waving body resolves to a `.gesture.` track). Nothing reads it
+    // to make a decision — a rendering claim has to be provable from the render, not re-derived.
+    b._pose = key;
 
     const fr = tintFrames(b.id, key);
     if (!fr || !fr.length) return null;
@@ -466,30 +493,72 @@ const SPRITES = (() => {
     });
   }
 
+  function loadTrack(track, paths) {
+    return Promise.all(paths.map(p => loadImage('assets/sprites/' + p))).then(imgs => {
+      const ok = imgs.filter(Boolean);
+      if (ok.length) frames[track] = ok;
+      return ok.length;
+    });
+  }
+
+  function loadSet(set) {
+    const key = String(set || '').trim();
+    if (!key) return Promise.resolve(false);
+    // Do not cache a request until the manifest is ready and proves the set has tracks. drawBody calls us
+    // again on the next frame, so a pre-init request naturally recovers as soon as init() installs the plan.
+    if (!tracksBySet) return Promise.resolve(false);
+    const tracks = tracksBySet[key] || [];
+    if (!tracks.length) return Promise.resolve(false);
+    if (setJobs[key]) return setJobs[key];
+    setJobs[key] = Promise.all(tracks.map(([track, paths]) => loadTrack(track, paths))).then(counts => {
+      const loaded = counts.reduce((n, count) => n + count, 0);
+      if (loaded) loadedSets.add(key);
+      return loaded > 0;
+    });
+    return setJobs[key];
+  }
+
+  function setForSkin(skin) {
+    const catalog = (typeof DATA !== 'undefined' && DATA.SKINS) || {};
+    const fallback = typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '';
+    const picked = catalog[skin] || catalog[fallback];
+    return picked && picked.set ? picked.set : '';
+  }
+
+  function ensureSkin(skin) { return loadSet(setForSkin(skin)); }
+  function isSkinReady(skin) { return loadedSets.has(setForSkin(skin)); }
+
   async function init() {
+    loading = true;
     try {
       const resp = await fetch('assets/sprites/manifest.json', { cache: 'no-store' });
       if (!resp.ok) return;
       const man = await resp.json();
-      const jobs = [];
-      for (const [key, paths] of Object.entries(man.sprites)) {
-        jobs.push(Promise.all(paths.map(p => loadImage('assets/sprites/' + p))).then(imgs => {
-          const ok = imgs.filter(Boolean);
-          if (ok.length) frames[key] = ok;
-        }));
-      }
-      await Promise.all(jobs);
+      tracksBySet = SpriteLoadPlan.groupTracks(man.sprites);
       // ready when the DEFAULT skin's base pose loaded (the old `minion` astronaut set
       // was retired in favour of DATA.SKINS — gating on it left ready=false forever, so
       // every body fell through to the procedural fallback regardless of picked skin).
       const defSet = (typeof DATA !== 'undefined' && DATA.SKINS && DATA.DEFAULT_SKIN
         && DATA.SKINS[DATA.DEFAULT_SKIN] && DATA.SKINS[DATA.DEFAULT_SKIN].set) || 'bear';
-      if (frames[defSet + '.rot.south'] || frames['ultron.rot.south'] || Object.keys(frames).length) {
+      // FIRST PAINT needs one honest body, not every animation. Fetch the default south pose first,
+      // then let the other 106 default frames and ULTRON warm in parallel behind it. On the website
+      // this cuts the cyan procedural placeholder from ~20 seconds to one image request.
+      const primeTrack = defSet + '.rot.south';
+      const primePaths = man.sprites && man.sprites[primeTrack];
+      if (Array.isArray(primePaths) && await loadTrack(primeTrack, primePaths)) {
+        loadedSets.add(defSet);
         ready = true;
-        console.log('[SPRITES] crew loaded:', Object.keys(frames).length, 'animation tracks (default skin:', defSet + ')');
+        loading = false;
       }
+      const startup = Promise.all([loadSet(defSet), loadSet('ultron')]).then(() => {
+        if (frames[defSet + '.rot.south'] || frames['ultron.rot.south'] || Object.keys(frames).length) ready = true;
+        console.log('[SPRITES] startup sets loaded:', Array.from(loadedSets).join(', '), '—', Object.keys(frames).length, 'animation tracks');
+      });
+      if (!ready) await startup;
     } catch (e) { console.warn('[SPRITES] manifest missing — procedural fallback', e); }
+    finally { loading = false; }
   }
 
-  return { init, drawBody, groundShadow, get ready() { return ready; } };
+  return { init, drawBody, groundShadow, ensureSkin, isSkinReady, bodyScale,
+    get ready() { return ready; }, get loading() { return loading; } };
 })();

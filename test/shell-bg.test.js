@@ -11,7 +11,9 @@ const { makeShellTool } = require('../sidecar/tools/builtin/shell.js');
 
 // a fake spawn: each child exposes _emit(data) and _close(code) so the test drives the lifecycle by hand.
 function makeFakeSpawn() {
-  const spawn = function (cmd, opts) {
+  const spawn = function (cmd, argsOrOpts, maybeOpts) {
+    const args = Array.isArray(argsOrOpts) ? argsOrOpts : null;
+    const opts = args ? (maybeOpts || {}) : (argsOrOpts || {});
     if (cmd === 'taskkill') {
       spawn.taskkills++;
       spawn.order.push('taskkill');
@@ -19,7 +21,7 @@ function makeFakeSpawn() {
     }
     let dataCb = null, closeCb = null, errCb = null;
     const child = {
-      cmd, opts, pid: 1000 + spawn.children.length, killed: false, unrefed: false,
+      cmd, args, opts, pid: 1000 + spawn.children.length, killed: false, unrefed: false,
       stdout: { on: (ev, fn) => { if (ev === 'data') dataCb = fn; } },
       stderr: { on: () => {} },
       on: (ev, fn) => { if (ev === 'close') closeCb = fn; else if (ev === 'error') errCb = fn; },
@@ -38,11 +40,29 @@ function makeFakeSpawn() {
 
 let T = 1000; const clock = { now: () => T };
 
+// ---- argv-form backend children never cross a host shell parser ----
+{
+  const spawn = makeFakeSpawn();
+  const bg = makeShellBg({ spawn, clock, maxPerAgent: 5, isWin: true });
+  const started = bg.start({
+    agentId: 'docker', cmd: 'printf "$VALUE"', cwd: '/host/workspace',
+    file: 'dockerx', args: ['exec', '-i', 'owned-container', 'sh', '-lc', 'printf "$VALUE"'],
+    env: { VALUE: 'safe' }
+  });
+  A.ok(started.ok, 'argv-form backend background process starts');
+  A.eq(spawn.children[0].cmd, 'dockerx', 'backend executable is passed separately');
+  A.eq(spawn.children[0].args[0], 'exec', 'backend argv is preserved');
+  A.eq(spawn.children[0].opts.shell, false, 'backend child never crosses a host shell parser');
+  A.eq(spawn.children[0].opts.env.VALUE, 'safe', 'backend child receives its explicit client environment');
+}
+
 // ---- start / status / streaming / natural exit ----
 {
   const spawn = makeFakeSpawn();
   const exits = [];
-  const bg = makeShellBg({ spawn, clock, onExit: (e) => exits.push(e), maxPerAgent: 2, isWin: true });
+  let full = '';
+  const bg = makeShellBg({ spawn, clock, onExit: (e) => exits.push(e), maxPerAgent: 2, isWin: true,
+    spill: e => { full += e.text; return { path: '.output/shell-bg-' + e.id + '.txt', bytes: Buffer.byteLength(full) }; } });
 
   T = 1000;
   const s1 = bg.start({ agentId: 'a', cmd: 'npm run dev', cwd: '/ws/a' });
@@ -55,6 +75,9 @@ let T = 1000; const clock = { now: () => T };
 
   spawn.children[0]._emit('Server listening on :3000\n');
   A.ok(bg.status('a', 'bg_1').tail.indexOf('listening on :3000') >= 0, 'stdout streams into the status tail');
+  A.eq(full, 'Server listening on :3000\n', 'background output is appended whole to the durable spill seam');
+  A.eq(bg.status('a', 'bg_1').outputPath, '.output/shell-bg-bg_1.txt', 'status exposes the exact recoverable log path');
+  A.eq(bg.status('a', 'bg_1').outputSpillVerified, true, 'status distinguishes a verified spill from a bounded memory tail');
 
   // cap: a 2nd is fine, a 3rd is refused
   A.ok(bg.start({ agentId: 'a', cmd: 'sleep 99' }).ok, 'second within cap');
@@ -149,6 +172,15 @@ let T = 1000; const clock = { now: () => T };
   const k = await tools.bgKillTool.run({ id: 'bg_1' }, ctx);
   A.ok(/Killed/.test(k.content), 'shell.bg.kill stops it');
   A.eq(bg.count('a'), 0, 'the slot is freed after kill');
+
+  const asyncEnvironment = {
+    backendId: 'docker',
+    ensureWorkspace: () => '/host/a', getCwd: () => '/workspace', workspaceRoot: () => '/host/a',
+    startBackground: () => Promise.resolve({ ok: true, bgId: 'bg_remote' })
+  };
+  const asyncTools = makeShellTool({ environment: asyncEnvironment, fs, pathMod: path, root: path.join('root'), clock, platform: 'win32' });
+  const remote = await asyncTools.execTool.run({ cmd: 'node server.js', background: true }, ctx);
+  A.ok(/Started background process bg_remote/.test(remote.content), 'shell tool awaits an async persistent-backend startup');
 
   A.report('shell-bg.test');
 })().catch(function (e) { console.error(e); process.exit(1); });

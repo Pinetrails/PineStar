@@ -615,6 +615,24 @@ const Voice = (() => {
   function localVoiceId() {
     try { return String(localStorage.getItem(LOCAL_VOICE_KEY) || '').trim(); } catch (_) { return ''; }
   }
+  // A Live Voice room has ONE speaker. Snapshot the selected identity when it opens, then pin whichever
+  // engine actually serves the first audible chunk (Kokoro or its mapped Edge floor). Without both locks,
+  // every streamed sentence independently reread Settings and retried the ladder, so one transient model
+  // failure could make the same reply alternate between two people. A locked engine may miss a chunk, but
+  // it may never impersonate another speaker mid-session.
+  let sessionLocalVoiceId = '';
+  let sessionVoiceEngine = '';
+  function setLocalTts(value) {
+    const next = !!value;
+    if (next && !preferLocalTts) {
+      sessionLocalVoiceId = localVoiceId();
+      sessionVoiceEngine = '';
+    } else if (!next) {
+      sessionLocalVoiceId = '';
+      sessionVoiceEngine = '';
+    }
+    preferLocalTts = next;
+  }
   let playIdx = 0;        // next job to PLAY
   let synthIdx = 0;       // next job to begin SYNTHESIZING (runs ahead of playIdx for prefetch)
   let draining = false;   // a reply is in progress (queue non-empty or awaiting more chunks)
@@ -642,9 +660,21 @@ const Voice = (() => {
       body: JSON.stringify({
         key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(),
         text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style,
-        local: preferLocalTts, localVoice: localVoiceId(), speed: cfg.speed
+        local: preferLocalTts,
+        localVoice: preferLocalTts ? sessionLocalVoiceId : localVoiceId(),
+        localEngine: preferLocalTts ? sessionVoiceEngine : '',
+        speed: cfg.speed
       })
     }).then(async r => {
+      if (preferLocalTts && job.seq === speakSeq && !sessionVoiceEngine) {
+        const servedBy = String(r.headers.get('X-Voice-Provider') || '').toLowerCase();
+        const engine = servedBy === 'local-kokoro' ? 'local-kokoro' : (servedBy.indexOf('edge:') === 0 ? 'edge' : '');
+        if (engine) {
+          sessionVoiceEngine = engine;
+          // The first request runs alone until it establishes the speaker. Resume normal prefetch now.
+          pumpSynth();
+        }
+      }
       const ct = r.headers.get('Content-Type') || '';
       if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) return { kind: 'neural', blob }; }
       let reason = 'http ' + r.status;
@@ -685,7 +715,10 @@ const Voice = (() => {
         return { kind: 'silent' };
       });
   }
-  function pumpSynth() { while (synthIdx < jobs.length && (synthIdx - playIdx) < MAX_INFLIGHT) startSynth(jobs[synthIdx++]); }
+  function pumpSynth() {
+    const limit = preferLocalTts && !sessionVoiceEngine ? 1 : MAX_INFLIGHT;
+    while (synthIdx < jobs.length && (synthIdx - playIdx) < limit) startSynth(jobs[synthIdx++]);
+  }
 
   function pumpPlay() {
     if (playing) return;
@@ -910,8 +943,8 @@ const Voice = (() => {
        • webSpeechProvider — browser-native SpeechRecognition (real interim results, but Google-censored).
                              The FALLBACK: no MediaRecorder, `?stt=web`, or a keyless sidecar (the 'no key'
                              latch).
-     `activeStt` is chosen once at module load and used everywhere; nothing else in this file references SR
-     or MediaRecorder directly. */
+     The sidecar capability probe selects the classic provider; Local Live may temporarily install its own
+     coordinator provider, then restores the classic choice on teardown. */
   const webSpeechProvider = {
     name: 'web-speech',
     start(cbs) {
@@ -982,8 +1015,12 @@ const Voice = (() => {
   const GUM_TIMEOUT_MS = 12000;
   const recorderProvider = (() => {
     let stream = null, mr = null, chunks = [], ac = null, analyser = null, rafId = null;
+    let pcmProcessor = null, pcmSink = null, pcmFrames = [], pcmSamples = 0, pcmRate = 0, takeSttMode = 'cloud';
+    let previewPending = false, previewAbort = null, previewSeq = 0, previewLastAt = 0;
     let cb = null, mime = '', startedAt = 0, floor = null, lastVoiceAt = 0, calibrateUntil = 0, silenceTimer = null;
     let aborted = false, delivered = false, hardCapTimer = null;
+    const LOCAL_PREVIEW_MIN_MS = 650;
+    const LOCAL_PREVIEW_INTERVAL_MS = 900;
 
     function pickMime() {
       const prefs = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
@@ -1001,6 +1038,11 @@ const Voice = (() => {
       if (rafId) { try { cancelAnimationFrame(rafId); } catch (_) {} rafId = null; }
       if (silenceTimer) { clearTimeout(silenceTimer); silenceTimer = null; }
       if (hardCapTimer) { clearTimeout(hardCapTimer); hardCapTimer = null; }
+      try { if (pcmProcessor) pcmProcessor.disconnect(); } catch (_) {}
+      try { if (pcmSink) pcmSink.disconnect(); } catch (_) {}
+      pcmProcessor = pcmSink = null;
+      if (previewAbort) { try { previewAbort.abort(); } catch (_) {} previewAbort = null; }
+      previewPending = false;
       if (ac) { try { ac.close(); } catch (_) {} ac = null; }
       analyser = null;
       if (stream) { try { stream.getTracks().forEach(t => t.stop()); } catch (_) {} stream = null; }
@@ -1024,13 +1066,68 @@ const Voice = (() => {
           // never-voiced take → give up early instead of sitting hot until HARD_CAP (see REC.NOSPEECH_MS)
           if (!lastVoiceAt && (now - startedAt) > REC.NOSPEECH_MS) { stop(); return; }
         }
-        // surface a coarse "still listening" pulse (no real interim text on this path) — dots by elapsed seconds
-        if (cb && cb.onInterim) { const secs = Math.floor((now - startedAt) / 1000); cb.onInterim(secs > 0 ? '·'.repeat(Math.min(secs, 8)) : ''); }
         rafId = requestAnimationFrame(tick);
       };
       rafId = requestAnimationFrame(tick);
     }
+    function mono16k(frames, fromRate) {
+      let total = 0;
+      for (const frame of frames) total += frame.length;
+      if (!total) return new Float32Array(0);
+      const input = new Float32Array(total);
+      let offset = 0;
+      for (const frame of frames) { input.set(frame, offset); offset += frame.length; }
+      if (fromRate === 16000) return input;
+      const ratio = fromRate / 16000;
+      const output = new Float32Array(Math.floor(input.length / ratio));
+      for (let i = 0; i < output.length; i++) {
+        const start = Math.floor(i * ratio), end = Math.min(input.length, Math.floor((i + 1) * ratio));
+        let sum = 0;
+        for (let j = start; j < end; j++) sum += input[j];
+        output[i] = sum / Math.max(1, end - start);
+      }
+      return output;
+    }
+    async function transcribeLocalFrames(frames, signal) {
+      const pcm = mono16k(frames, pcmRate || 48000);
+      if (!pcm.length) return { text: '', reason: 'local microphone capture produced no audio', failed: true };
+      const r = await fetch('/api/local-voice/transcribe', {
+        method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: pcm.buffer, signal
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) return { text: '', reason: (j && (j.error || j.reason)) || ('local transcription unreachable (HTTP ' + r.status + ')'), failed: true };
+      return { text: String((j && j.text) || ''), reason: j && (j.error || j.reason) };
+    }
+    async function transcribeLocalPcm() {
+      const frames = pcmFrames.slice();
+      pcmFrames = []; pcmSamples = 0;
+      return transcribeLocalFrames(frames);
+    }
+    function requestLocalPreview() {
+      if (takeSttMode !== 'local' || previewPending || delivered || aborted || !cb || !cb.onInterim) return;
+      const capturedMs = pcmSamples / Math.max(1, pcmRate || 48000) * 1000;
+      const now = Date.now();
+      if (capturedMs < LOCAL_PREVIEW_MIN_MS || (previewLastAt && now - previewLastAt < LOCAL_PREVIEW_INTERVAL_MS)) return;
+      previewLastAt = now;
+      previewPending = true;
+      const seq = previewSeq;
+      const ac = new AbortController();
+      previewAbort = ac;
+      transcribeLocalFrames(pcmFrames.slice(), ac.signal).then(({ text }) => {
+        if (!text || ac.signal.aborted || seq !== previewSeq || delivered || aborted) return;
+        cb && cb.onInterim && cb.onInterim(String(text).trim());
+      }).catch(error => {
+        if (!error || error.name !== 'AbortError') console.warn('[voice] local preview failed:', (error && error.message) || error);
+      }).finally(() => {
+        if (previewAbort === ac) previewAbort = null;
+        previewPending = false;
+      });
+    }
     async function transcribe(blob) {
+      // The bundled macOS/local engine consumes mono Float32 PCM. MediaRecorder emits WebM/MP4, so sending
+      // its container bytes guarantees an honest but useless "local engine needs wav" response. Capture PCM
+      // from the same stream and use the local endpoint only when the sidecar proved that is the selected leg.
+      if (takeSttMode === 'local') return transcribeLocalPcm();
       const fmt = fmtFromMime(mime || blob.type || '');
       // desktop: apiKey() is '' (key is in the sidecar env) — send it as a header when we DO have one (browser).
       const key = apiKey();
@@ -1057,7 +1154,10 @@ const Voice = (() => {
     }
     function finish() {
       if (delivered) return; delivered = true;
-      const blob = chunks.length ? new Blob(chunks, { type: mime || 'audio/webm' }) : null;
+      // Local STT consumes the parallel PCM capture, so a WebView that withholds its final MediaRecorder
+      // chunk must not discard audio we demonstrably captured through WebAudio.
+      const blob = chunks.length ? new Blob(chunks, { type: mime || 'audio/webm' })
+        : (takeSttMode === 'local' && pcmFrames.length ? new Blob([new Uint8Array(1)], { type: 'audio/wav' }) : null);
       chunks = [];
       if (aborted || !blob || !blob.size) { cb && cb.onEnd && cb.onEnd(); return; }
       transcribe(blob).then(({ text, reason }) => {
@@ -1074,7 +1174,9 @@ const Voice = (() => {
       });
     }
     async function start(cbs) {
-      cb = cbs; chunks = []; aborted = false; delivered = false; floor = null; lastVoiceAt = 0;
+      cb = cbs; chunks = []; pcmFrames = []; pcmSamples = 0; pcmRate = 0; takeSttMode = classicSttMode;
+      previewSeq++; previewPending = false; previewAbort = null; previewLastAt = 0;
+      aborted = false; delivered = false; floor = null; lastVoiceAt = 0;
       try {
         // DEAD-BUTTON GUARD: getUserMedia can hang forever if the mic-permission prompt is DISMISSED (not
         // answered) — WebView2 and some browsers never settle the promise. Without a ceiling, `listening`
@@ -1108,6 +1210,22 @@ const Voice = (() => {
           const AC = window.AudioContext || window.webkitAudioContext;
           ac = new AC(); const src = ac.createMediaStreamSource(stream);
           analyser = ac.createAnalyser(); analyser.fftSize = 2048; src.connect(analyser);
+          // ScriptProcessor remains available in the embedded WebViews we support and is already the proven
+          // capture seam used by Local Live. A silent gain keeps it clocked without feeding the mic to output.
+          if (ac.createScriptProcessor) {
+            pcmProcessor = ac.createScriptProcessor(2048, 1, 1);
+            pcmSink = ac.createGain(); pcmSink.gain.value = 0;
+            pcmProcessor.onaudioprocess = e => {
+              const samples = e && e.inputBuffer && e.inputBuffer.getChannelData(0);
+              if (samples && samples.length) {
+                pcmFrames.push(new Float32Array(samples));
+                pcmSamples += samples.length;
+                requestLocalPreview();
+              }
+            };
+            src.connect(pcmProcessor); pcmProcessor.connect(pcmSink); pcmSink.connect(ac.destination);
+            pcmRate = ac.sampleRate || 48000;
+          }
         } catch (_) { ac = null; analyser = null; }
         startedAt = Date.now(); calibrateUntil = startedAt + REC.CALIBRATE_MS; lastVoiceAt = 0;
         mr.start();
@@ -1162,16 +1280,38 @@ const Voice = (() => {
     return { name: 'native', start, stop, abort };
   })();
 
-  /* provider selection: prefer the RECORDER (server Whisper via /api/stt) wherever the mic can be recorded.
-     Browser-native SpeechRecognition (Chrome) is Google-served and CENSORS profanity to asterisks with no
-     opt-out — the station must transcribe what you actually said, so web-speech is only the fallback:
-     no MediaRecorder, `?stt=web`, or a sidecar with no STT credential (see the 'no key' latch below —
-     keyless voice keeps working through the browser engine). `let`, not `const`: the latch swaps it. */
-  let sttProvider =
+  /* Classic provider selection starts with browser feature detection, then the sidecar's truthful capability
+     snapshot chooses cloud recorder, local PCM, or native Windows dictation. Browser SpeechRecognition is the
+     fallback for a keyless browser. `?stt=recorder` and `?stt=web` remain explicit diagnostic overrides. */
+  let classicSttProvider =
     forceRecorder  ? (canRecordMic ? recorderProvider : webSpeechProvider) :
     forceWebSpeech ? webSpeechProvider :
     (canRecordMic ? recorderProvider : webSpeechProvider);
-  const usingRecorder = () => sttProvider === recorderProvider;
+  let sttProvider = classicSttProvider;
+  let classicSttMode = 'cloud';
+  let classicProviderReady = !!(forceRecorder || forceWebSpeech);
+  let classicProviderProbe = null;
+  let startAfterProbe = false;
+  function applyClassicSttStatus(status) {
+    const preferred = String((status && status.preferred) || '');
+    if (!forceRecorder && !forceWebSpeech) {
+      if (preferred === 'native') { classicSttProvider = nativeSpeechProvider; classicSttMode = 'native'; }
+      else if (preferred === 'local' && canRecordMic) { classicSttProvider = recorderProvider; classicSttMode = 'local'; }
+      else if (preferred === 'cloud' && canRecordMic) { classicSttProvider = recorderProvider; classicSttMode = 'cloud'; }
+      else if (preferred === 'none' && SR) { classicSttProvider = webSpeechProvider; classicSttMode = 'web'; }
+    }
+    classicProviderReady = true;
+    if (!coordinator && !listening) sttProvider = classicSttProvider;
+  }
+  function probeClassicStt() {
+    if (forceRecorder || forceWebSpeech || typeof fetch === 'undefined') { classicProviderReady = true; return Promise.resolve(); }
+    classicProviderReady = false;
+    classicProviderProbe = fetch('/api/stt/status', { method: 'GET' })
+      .then(r => r.ok ? r.json() : null)
+      .then(applyClassicSttStatus)
+      .catch(() => { classicProviderReady = true; });
+    return classicProviderProbe;
+  }
   /* the 'no key' latch: /api/stt fail-opens with {text:'', reason:'no key'} when the sidecar has NO
      transcription credential (no Groq/OpenAI/OpenRouter key). A keyless browser session would otherwise
      get silent empty listens forever — fall back to browser-native SR (censored, but working) for the
@@ -1180,14 +1320,25 @@ const Voice = (() => {
   function maybeFallbackToWebSpeech(reason) {
     if (String(reason || '') !== 'no key') return;
     if (forceRecorder || !SR || sttProvider !== recorderProvider) return;
-    sttProvider = webSpeechProvider;
+    classicSttProvider = webSpeechProvider; classicSttMode = 'web';
+    if (!coordinator) sttProvider = classicSttProvider;
     console.warn('[voice] server STT has no credential — falling back to browser speech recognition (it censors profanity; add a Groq/OpenAI/OpenRouter key for verbatim transcripts)');
   }
 
   function busyNow() { return typeof Chat !== 'undefined' && Chat.isBusy && Chat.isBusy(); }
 
   function startListening() {
+    // init probes the sidecar in the background. If the first click wins that race, preserve the click and
+    // begin as soon as the truthful provider snapshot arrives instead of guessing from WebView browser APIs.
+    if (!coordinator && !classicProviderReady && classicProviderProbe) {
+      if (!startAfterProbe) {
+        startAfterProbe = true;
+        classicProviderProbe.finally(() => { startAfterProbe = false; startListening(); });
+      }
+      return;
+    }
     if (!canListen() || listening) return;
+    if (!coordinator) sttProvider = classicSttProvider;
     if (busyNow() && !coordinator) { setStatus('busy — wait for the reply'); return; }  // classic mode stays half-duplex
     clearTimeout(rearmTimer); rearmTimer = null;
     stopSpeaking();                       // don't let the agent's voice bleed into the mic
@@ -1303,6 +1454,7 @@ const Voice = (() => {
   function stopCoordinator() {
     if (convoMode) stopConvo();
     coordinator = null;
+    sttProvider = classicSttProvider;
   }
   // The downloaded local speech surface owns its persistent microphone/VAD loop, but still needs the mature
   // reply-stream hooks (captions, speaking state, barge-in) from this module.
@@ -1429,6 +1581,9 @@ const Voice = (() => {
     // awakening, which owns the COMMS input). Never auto-starts; the click is the required mic-permission gesture.
     if (opts.resumeCue !== false && canListen() && loadPref(LS_CONVO, false)) showResumeCue();
     else clearResumeCue();
+    // Browser feature detection cannot tell whether compressed cloud STT, bundled local PCM, or native
+    // Windows dictation is the working leg. Ask the sidecar once per init; the mic still waits for a click.
+    probeClassicStt();
     // if the speaker is already on for this agent AND the harness is configured, warm the stock lines now
     // (background, fire-and-forget) so the very first mutter/sample plays from cache. No key → no-op.
     prewarmedFor = null;   // new agent/persona → allow a fresh warm
@@ -1449,7 +1604,7 @@ const Voice = (() => {
     toggleVoiceMode, stopConvo, onTurnEnd,
     canListen, canSpeak, startCoordinator, stopCoordinator, attachCoordinator, detachCoordinator,
     canOAuthLive: () => !!SR || typeof fetch !== 'undefined', personaId: () => activePersonaId,
-    setLocalTts: value => { preferLocalTts = !!value; },
+    setLocalTts,
     /* LIVE VOICE MUST ARRIVE AUDIBLE. Opening a hands-free session with the speaker muted is a room where you
        talk and nothing answers — the Commander then has to find a toggle to make the feature work at all.
        Classic voice mode already force-enables the speaker in toggleVoiceMode(); the Local Live panel does not

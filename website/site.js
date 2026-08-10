@@ -2,7 +2,9 @@
 (function(){
   'use strict';
 
-  var FALLBACK_VERSION = '0.8.5';
+  // The network lookup below remains authoritative. This is the last signed public
+  // release so an offline/rate-limited page never falls back to an older train.
+  var FALLBACK_VERSION = '0.9.0';
 
   // Pricing page is written but deliberately NOT deployed (Andrew, 2026-08-02). Every link to
   // it is marked data-pricing-link and hidden while this is false, so the site never offers a
@@ -16,22 +18,9 @@
   var PRICING_LIVE = false;
   // Mark the whole sentence, not just the <a>, wherever pricing is mentioned mid-paragraph —
   // hiding a bare link would leave the surrounding prose referring to a page nobody can reach.
-  if(!PRICING_LIVE){
-    document.querySelectorAll('[data-pricing-link]').forEach(function(el){ el.hidden = true; });
-  }
+  document.querySelectorAll('[data-pricing-link]').forEach(function(el){ el.hidden = !PRICING_LIVE; });
 
-  // Community links — paste real URLs here and the DISCORD / X links appear
-  // everywhere automatically. Empty string keeps them hidden (no dead links).
-  var SOCIAL = {
-    discord: '',   // e.g. 'https://discord.gg/xxxxxxx'
-    x: ''          // e.g. 'https://x.com/yourhandle'
-  };
-  document.querySelectorAll('.social-link').forEach(function(a){
-    var url = SOCIAL[a.getAttribute('data-social')];
-    if(url){ a.href = url; a.hidden = false; a.target = '_blank'; a.rel = 'noopener'; }
-  });
   var RELEASES_REPO = 'androoAGI/starnet-releases';
-  var RELEASES_PAGE = 'https://github.com/' + RELEASES_REPO + '/releases/latest';
 
   // StarNet Credits (managed plans). The billing service is a separate host; until it is
   // deployed `live:false` keeps every buy button honest — no button on this site may imply

@@ -102,8 +102,8 @@ A.ok(/connectorAutonomy\(call, tool\)\) return \{ allow: true/.test(perms), 'the
 A.ok(perms.indexOf('connectorAutonomy(call, tool)) return { allow: true') <
      perms.indexOf("surface === 'autonomous' && scope === 'execute'"),
   'the connector tier also sits ABOVE the exec lockout (a non-read MCP tool is scope execute)');
-A.ok(/connectorGrant: \(call, tool\) => \(ownerTrusted \|\| unattendedGrants\.indexOf\('connectors'\) >= 0\) && \(!execution\.taintedBy\(\) \|\| ownerTrusted \|\| revokedByTaint\.ok\(tool\)\)/.test(src),
-  'consent grants connectors only to an owner DM or an explicit routine grant, taint included');
+A.ok(/connectorGrant: \(call, tool\) => !execution\.taintedBy\(\) && \(ownerTrusted \|\| unattendedGrants\.indexOf\('connectors'\) >= 0\)/.test(src),
+  'connector standing grants apply only before untrusted content, including for an owner DM');
 A.ok(/stationWithConnectors\(station, agentId, connectors\.ids\(\)\)/.test(src),
   'connector portals are injected into a bay-docked room too (composeOffice is bypassed there)');
 // the capability note must not re-assert the old blanket "no connectors unattended" lie
@@ -111,16 +111,20 @@ const capsum = fs.readFileSync(path.join(root, 'sidecar', 'capability', 'capsumm
 A.ok(!/shell\/terminal, desktop control and live connector tools/.test(capsum),
   'the unattended note no longer hardcodes a blanket no-shell/no-connector claim');
 A.ok(/lackAutonomous/.test(capsum), 'the unattended note names only what is genuinely absent from THIS run');
-A.ok(/if \(!ownerTrusted && surface !== 'interactive' && impact === IMPACTS\.MEDIA_CONTROL\) return false;/.test(policy),
-  'media-control stays denied to ordinary unattended automation — only a host-admitted owner DM widens it');
+// `trustedNow()` includes only host-sourced wideners: admitted owner DM, persisted master bypass, or the
+// persisted per-agent Full Access posture. None is reachable from prompt text.
+A.ok(/if \(!trusted && surface !== 'interactive' && impact === IMPACTS\.MEDIA_CONTROL\) return false;/.test(policy),
+  'media-control stays denied to ordinary ASK-mode unattended automation');
+A.ok(/const trustedNow = \(\) => ownerTrusted \|\| masterBypass \|\| fullAccessNow\(\);/.test(policy),
+  'trusted is exactly the three host-sourced authority postures, including persisted per-agent Full Access');
 A.ok(/terminalAutonomy\(call, tool\)\) return \{ allow: true/.test(perms), 'the consent broker has the matching grant tier');
 // ORDERING IS LOAD-BEARING: below the exec lockout the tier would be dead code.
 A.ok(perms.indexOf('terminalAutonomy(call, tool)) return { allow: true') <
      perms.indexOf("surface === 'autonomous' && scope === 'execute'"),
   'the grant tier sits ABOVE the exec lockout');
 // the grant must never be derivable from anything the model can influence
-A.ok(/terminalGrant: \(call, tool\) => \(ownerTrusted \|\| unattendedGrants\.indexOf\('workbench'\) >= 0\) && \(!execution\.taintedBy\(\) \|\| ownerTrusted \|\| revokedByTaint\.ok\(tool\)\)/.test(src),
-  'consent grants terminal only to an owner DM or an explicit routine grant, taint included');
+A.ok(/terminalGrant: \(call, tool\) => !execution\.taintedBy\(\) && \(ownerTrusted \|\| unattendedGrants\.indexOf\('workbench'\) >= 0\)/.test(src),
+  'terminal standing grants apply only before untrusted content, including for an owner DM');
 A.ok(/surface === 'interactive' \? \[\] : Array\.from\(normalizeUnattendedGrants\(o\.unattendedGrants\)\)/.test(src),
   'the grant is ignored on the watched surface, where floor placement governs');
 

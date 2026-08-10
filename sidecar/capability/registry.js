@@ -41,7 +41,10 @@
       // HARNESS SELF-KNOWLEDGE: reading the station's own secret-free status is part of being able to
       // operate at all, not a power the Commander should have to unlock with a DISH, CABINET or WORKBENCH.
       // A distinct capId is required because `compute` is the non-callable model gate in resolve.js.
-      { capId: 'stationinfo', tool: 'station.inspect', scope: 'read', requiresConsent: false, network: false }
+      { capId: 'stationinfo', tool: 'station.inspect', scope: 'read', requiresConsent: false, network: false },
+      // Host-scoped scheduled scratchpad: the computer is present on every runnable station, while the tool
+      // itself refuses any run without a host-minted cronJobId. This does not grant general notebook access.
+      { capId: 'routinescratch', tool: 'routine.notepad', scope: 'write', requiresConsent: false, network: false }
     ],
     notebook: [
       { capId: 'memory', tool: 'notebook.write', scope: 'write', requiresConsent: false, network: false },   // private sandboxed memory — no consent gate (see notebook.js)
@@ -185,7 +188,16 @@
       // H2.3: stdin. CONSENT-GATED unlike its bg siblings — a line sent to a shell or REPL executes like a
       // command, so it carries shell.exec's gate, not shell.bg.status's.
       { capId: 'workbench', tool: 'shell.bg.write', scope: 'execute', requiresConsent: true, network: true },
-      { capId: 'workbench', tool: 'shell.bg.kill', scope: 'write', requiresConsent: false, network: false }      // H2.2: stop a background process you started
+      { capId: 'workbench', tool: 'shell.bg.kill', scope: 'write', requiresConsent: false, network: false },     // H2.2: stop a background process you started
+      // A real PTY/ConPTY rail for interactive programs. Start + input carry the same execution/consent posture
+      // as shell.exec; observation, resize, Ctrl-C and stop remain agent-owned control operations.
+      { capId: 'workbench', tool: 'terminal.start', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'workbench', tool: 'terminal.status', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'workbench', tool: 'terminal.read', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'workbench', tool: 'terminal.write', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'workbench', tool: 'terminal.resize', scope: 'write', requiresConsent: false, network: false },
+      { capId: 'workbench', tool: 'terminal.interrupt', scope: 'write', requiresConsent: false, network: false },
+      { capId: 'workbench', tool: 'terminal.stop', scope: 'write', requiresConsent: false, network: false }
     ],
     // ORCHESTRATOR (Stage 2): grants team.dispatch — the LEAD delegates subtasks to summoned worker agents,
     // each of which runs its OWN real agent loop. dispatch/spawn are CONSENT-GATED (2026-07-14, closes the parked
@@ -201,6 +213,7 @@
       // orchestrator conferral; a delegated worker never gets the orchestrator object and so can never summon.
       { capId: 'orchestrator', tool: 'team.summon', scope: 'write', requiresConsent: true, network: false },
       { capId: 'orchestrator', tool: 'team.subagents', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'team.steer', scope: 'write', requiresConsent: false, network: false },
       { capId: 'orchestrator', tool: 'team.interrupt', scope: 'write', requiresConsent: false, network: false },
       { capId: 'orchestrator', tool: 'team.resume', scope: 'execute', requiresConsent: false, network: true },
       // ROUTINES: create StarNet scheduled jobs through the built-in cron store (the same surface as the
@@ -224,7 +237,18 @@
       // session.peek reads another session's recent turns — the anti-guessing verb: without it a lead asked
       // "what did the researcher do?" answered from assumption and denied real finished work (2026-07-30).
       { capId: 'orchestrator', tool: 'session.peek', scope: 'read', requiresConsent: false, network: false },
-      { capId: 'orchestrator', tool: 'session.focus', scope: 'write', requiresConsent: false, network: false }
+      { capId: 'orchestrator', tool: 'session.focus', scope: 'write', requiresConsent: false, network: false },
+      // TASK BOARD: cards are the page's canonical kind:'task' Workstreams and are persisted through the same
+      // agent save the board renders. Creation is reversible and spends nothing; management is consent-gated
+      // because its action set includes shipping, archiving, reassignment, and deletion.
+      { capId: 'orchestrator', tool: 'task.list', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'task.create', scope: 'write', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'task.manage', scope: 'write', requiresConsent: true, network: false },
+      // LOOPS: standing objective iteration through loops.json. Both mutations require consent because they
+      // create or alter future autonomous work. Model tools never accept the host-run check command.
+      { capId: 'orchestrator', tool: 'loop.list', scope: 'read', requiresConsent: false, network: false },
+      { capId: 'orchestrator', tool: 'loop.create', scope: 'write', requiresConsent: true, network: false },
+      { capId: 'orchestrator', tool: 'loop.manage', scope: 'write', requiresConsent: true, network: false }
     ],
     // STUDIO (media skills): text->image generation + image vision analysis, both on the SAME BYOK OpenRouter
     // key the agent already uses (no new provider). image_generate WRITES a file into the agent's workspace, so

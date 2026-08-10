@@ -35,6 +35,13 @@ for (const id of hostedProviders) {
 }
 ok(/PROVIDERS\.forEach\(p\s*=>\s*addProvider\(p\.id\)\)/.test(station), 'Settings lists any configured provider, not only the active provider');
 
+// Provider cards contain their own ADD KEY / SIGN IN / SAVE controls. The selectable card surface must therefore
+// be a separate native button, not a role=button ancestor that creates nested interactive controls in the a11y tree.
+ok(!/class="prov-card[^\n]+role="button"/.test(station), 'provider card container is not an interactive ancestor');
+ok(/role="group" aria-label="[^\n]+ provider"/.test(station), 'provider card is exposed as a named group');
+ok(/<button class="prov-select" data-act="prov-select" aria-label="Select /.test(station), 'provider selection has a dedicated native button');
+ok(/providerSelect\.addEventListener\('click', activate\)/.test(station), 'dedicated provider button owns activation');
+
 // settings-truth: the credential list must reflect ACTUALLY-stored keys, never DEVMODE-fabricated ones.
 // The honest getter (hasStoredCredential) is exported and used by the Settings list; configured() (which
 // reports true in DEVMODE for auto-resume) must NOT be the credential-list gate.
@@ -46,6 +53,9 @@ ok(/DEVMODE\s*&&\s*DEV\s*&&\s*DEV\.hasKey\s*===\s*true\s*&&\s*normalizeProviderI
 ok(/hasKey:\s*!!runtimeKey/.test(fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8')),
   'the DEV boot payload carries the honest hasKey (no secret, just the boolean)');
 ok(/const\s+set\s*=\s*h\.hasStoredCredential\s*\?\s*h\.hasStoredCredential\(provider\)/.test(station), 'Settings credential list gates rows on hasStoredCredential, not the DEVMODE-fabricated configured()');
+ok(/stored:\s*!!set/.test(station), 'credential rows preserve the stored-key fact when desktop keychain values are intentionally unreadable');
+ok(/k\.baseUrl\s*\|\|\s*\(k\.stored\s*\?\s*'stored securely'\s*:\s*'keyless endpoint'\)/.test(station),
+  'a stored desktop credential is labeled stored securely, never as a keyless endpoint');
 // armed REMOVE must be unmistakable: filled --bad button + row hairline + inline confirm hint.
 ok(/b\.classList\.add\('armed'\)/.test(station) && /rowEl\.classList\.add\('rm-armed'\)/.test(station), 'REMOVE arm marks both the button and its row');
 ok(/click again to confirm removal/.test(station), 'armed REMOVE shows an inline confirm hint');

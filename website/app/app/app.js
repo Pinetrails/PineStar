@@ -102,6 +102,8 @@ const App = (() => {
   let station = null;         // the canonical WorldModel station (the builder's source of truth)
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
   let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
+  let pendingGrowthSyncAt = 0;    // durable-run catch-up floor (server snapshot; legacy saves use their write time once)
+  let pendingRatingSyncAt = 0;    // authoritative work-rating ledger floor (repairs stale/rolled-back XP projections)
   let pendingProfile = null;      // a saved user-affinity profile slice awaiting ProfileStore.init() in enterGame()
   let pendingWorkSignal = null;   // a saved capability-usage histogram slice awaiting WorkSignalStore.init() in enterGame()
   let pendingDossier = null;      // a saved Commander-dossier slice awaiting DossierStore.init() in enterGame()
@@ -115,20 +117,49 @@ const App = (() => {
   // the hoisted brand mark (#logo — fixed above the CRT glass, see style.css) tracks the seat
   // #logo-anchor reserves in the topbar: the anchor takes the logo's natural width so the gauge
   // cluster never slides under it, and the logo takes the anchor's on-screen spot.
+  /* The EFFECTIVE zoom #logo renders at. The mark is CABINET — app.css counter-zooms it back to
+     1:1 while <body> stays zoomed by TEXT SIZE — so U.uiZoom() is the wrong divisor for it; see
+     the U.elZoom note in js/util.js. */
+  function logoZoom(logo) {
+    if (typeof U !== 'undefined' && U.elZoom) return U.elZoom(logo);
+    return (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+  }
   function positionLogo() {
     const logo = el('logo'), anchor = el('logo-anchor'), bar = el('topbar');
     if (!logo || !anchor || !bar) return;
     const game = el('screen-game');
     if (!game || !game.classList.contains('active')) return;   // hidden screens have no geometry
     anchor.style.width = logo.offsetWidth + 'px';
-    // TEXT SIZE coordinate law (stationui.js uiZoom): rects are VISUAL px, but #logo lives inside
-    // the zoomed body so its style.left/top are ZOOMED-space px — divide, or on any station where
-    // AUTO resolves ≠100% the logo lands off by the zoom factor (worst in windowed mode, where the
-    // titlebar strip makes b.top large; the 2026-07-20 misaligned-logo report on other hardware).
-    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+    // TEXT SIZE coordinate law (stationui.js uiZoom): rects are VISUAL px, but #logo's style.left/
+    // top are its OWN layout px — divide by whatever zoom it actually renders at, or on any station
+    // where AUTO resolves ≠100% the mark lands off by that factor (worst in windowed mode, where
+    // the titlebar strip makes b.top large; the 2026-07-20 misaligned-logo report on other
+    // hardware). That factor is no longer just U.uiZoom(): the mark is CABINET, so app.css
+    // counter-zooms it back to 1:1 while <body> stays zoomed. Measure the ratio off the element
+    // instead of assuming either one — rect/offsetWidth is the engine's own answer, so this stays
+    // correct whether or not the counter-zoom applied.
+    const z = logoZoom(logo);
     const a = anchor.getBoundingClientRect(), b = bar.getBoundingClientRect();
-    logo.style.left = (a.left / z) + 'px';
-    logo.style.top = (b.top / z + (b.height / z - logo.offsetHeight) / 2) + 'px';
+    // DEVICE-PIXEL SNAP: the seat lands on fractions (a themed topbar, a zoom that is not 1, an odd
+    // window width), and a mark parked on a half pixel is antialiased across two — the whole mark
+    // goes soft with nothing in the markup to blame. Round the VISUAL position to a whole device
+    // pixel, then convert to the mark's own layout px (uiZoom law: divide by z exactly once).
+    const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+    const snap = v => Math.round(v * dpr) / dpr;
+    const wantLeft = snap(a.left);
+    const wantTop = snap(b.top + (b.height - logo.offsetHeight * z) / 2);
+    logo.style.left = (wantLeft / z) + 'px';
+    logo.style.top = (wantTop / z) + 'px';
+    // ONE correction pass. z is MEASURED off the element (rect/offsetWidth), so it carries a little
+    // float error, and the counter-zoom multiplies that error back into the landed position — the
+    // mark came down ~0.02px off its target, which is exactly the half-pixel smear the snap exists
+    // to remove. Read where it actually landed and subtract the residual; the map is affine, so one
+    // pass drives it to nothing. Never loop: a second pass would chase float noise forever.
+    const got = logo.getBoundingClientRect();
+    if (Math.abs(got.left - wantLeft) > 0.005 || Math.abs(got.top - wantTop) > 0.005) {
+      logo.style.left = ((wantLeft - (got.left - wantLeft)) / z) + 'px';
+      logo.style.top = ((wantTop - (got.top - wantTop)) / z) + 'px';
+    }
     queueLogoOcclusion();   // the mark moved — its clip is stale
   }
 
@@ -143,8 +174,9 @@ const App = (() => {
     const logo = el('logo'), host = el('terms');
     if (!logo || typeof LogoClip === 'undefined') return;
     const box = logo.getBoundingClientRect();
-    // uiZoom law: rects are VISUAL px, clip-path coordinates are the element's own LAYOUT px.
-    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+    // uiZoom law: rects are VISUAL px, clip-path coordinates are the element's own LAYOUT px —
+    // and the mark is cabinet, so it renders at its own counter-zoomed scale (see logoZoom).
+    const z = logoZoom(logo);
     const rects = host ? Array.prototype.map.call(host.querySelectorAll('.term'), w => w.getBoundingClientRect()) : [];
     logo.style.clipPath = LogoClip.clipFor(box, rects, z);
   }
@@ -175,13 +207,13 @@ const App = (() => {
       host.addEventListener('animationend', queueLogoOcclusion);
     }
   }
-  // boot-settle re-seats: positionLogo's first run happens before VT323 lands and before the logo
-  // image has dimensions — both move the topbar/logo geometry with NO resize event, which left the
-  // mark visibly off-seat until the first manual resize (part of the 2026-07-20 misalignment report).
+  // boot-settle re-seat: positionLogo's first run happens before VT323 lands, which moves the
+  // topbar/logo geometry with NO resize event and left the mark off-seat until the first manual
+  // resize (the 2026-07-20 misalignment report). The mark itself no longer needs a settle hook —
+  // it is a masked <span> sized by CSS aspect-ratio, so it has its full width at first layout;
+  // the old `img.load` re-seat existed only because an <img> has no dimensions until it decodes.
   if (typeof document !== 'undefined') {
     try { if (document.fonts && document.fonts.ready && document.fonts.ready.then) document.fonts.ready.then(() => positionLogo()); } catch (_) {}
-    const li = document.querySelector('#logo .logo-img');
-    if (li && !li.complete) li.addEventListener('load', () => positionLogo(), { once: true });
   }
 
   function refreshUsage() {
@@ -263,9 +295,17 @@ const App = (() => {
   // the APPROVAL clause folded into the system prompt — it MUST match the real consent broker (sidecar) so the
   // agent's words and its actual behaviour never diverge (truthful-telemetry law). 'full' = the broker bypasses
   // the consent gate; 'ask' = the broker prompts the Commander on any mutation/network call.
+  const EXECUTION_PROFILE_IDS = ['station-gear', 'safe-cell', 'remote-ssh', 'trusted-project', 'this-computer'];
+  function executionProfileOf(a) {
+    const id = String((a && a.executionProfile) || '');
+    if (EXECUTION_PROFILE_IDS.indexOf(id) >= 0) return id;
+    // Legacy saves had only approvalMode. Preserve their exact object=capability behavior; choosing one of the
+    // new named profiles is the explicit act that adds its advertised baseline tools and scope.
+    return 'station-gear';
+  }
   function approvalClause(a) {
     const full = a && a.approvalMode === 'full';
-    if (full) return '\n\nAPPROVAL — FULL ACCESS: the Commander has granted you full access. Run your tools directly — file writes, shell commands, network — without pausing to ask; never request approval in a chat message, and never wait for a go-ahead before acting. A hard safety floor in the harness still blocks the most dangerous actions automatically. For anything truly irreversible (deleting data, messaging outside the station, spending money), briefly state what you are doing AS you do it — the way to act is always the tool call itself, never a request for permission.';
+    if (full) return '\n\nAPPROVAL — RUN WITHOUT PROMPTS: the Commander chose the zero-prompt posture. Run the tools this execution profile actually grants without pausing to ask; never request approval in a chat message. This posture does not add tools, widen filesystem scope, choose a runtime, or grant real screen/input control. The hard safety floor still blocks protected actions automatically.';
     return '\n\nAPPROVAL — ASK FIRST: actions that write files, run commands, or reach the network need the Commander\'s approval — but you NEVER ask for it in a chat message. The approval system cannot see chat text; typed replies like "I approve" grant nothing. Instead, just make the tool call: the harness pauses it and shows the Commander a real approval prompt with Approve/Deny buttons, and the decision comes back to you automatically. Reasoning over what you already have needs no approval.';
   }
   // an always-appended SYSTEM truth: what the agent ACTUALLY runs on. Mirrors approvalClause — derived fresh each
@@ -386,6 +426,9 @@ const App = (() => {
       if (typeof patch.approvalMode === 'string') {
         a.approvalMode = patch.approvalMode === 'full' ? 'full' : 'ask';
       }
+      if (typeof patch.executionProfile === 'string' && EXECUTION_PROFILE_IDS.indexOf(patch.executionProfile) >= 0) {
+        a.executionProfile = patch.executionProfile;
+      }
       // REASONING EFFORT: a real per-provider dial (Harness scopes it by provider and every run payload carries
       // it). Mirrors what the model dock does when it sets model+provider+effort together — the harness store is
       // what the next run reads, and the copy on the agent is what persists + reaches the sidecar roster below.
@@ -498,6 +541,22 @@ const App = (() => {
     return true;
   }
 
+  // Execution profile is runtime/capability/filesystem scope only. It never changes approvalMode and never
+  // grants the physical-desktop lease. The roster POST is the backend authority; local save keeps the control
+  // stable across a renderer reload while the sidecar mirror provides restart durability.
+  function setAgentExecutionProfile(agentId, profileId) {
+    const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
+    const id = String(profileId || '');
+    if (!a || EXECUTION_PROFILE_IDS.indexOf(id) < 0) return Promise.resolve(false);
+    const before = executionProfileOf(a);
+    a.executionProfile = id;
+    return Promise.resolve(pushRoster()).then(ok => {
+      if (!ok) { a.executionProfile = before; persist(); return false; }
+      persist();
+      return true;
+    }).catch(() => { a.executionProfile = before; persist(); return false; });
+  }
+
   // Rename an agent from its dossier. The name is DISPLAY identity only — the agentId (the `agents` Map key, the
   // sidecar roster key, the workstream binding) never changes, so a rename cannot break any lookup. We recompose
   // the system prompt (the default identity embeds the name), retarget the live COMMS labels when this is the
@@ -527,6 +586,8 @@ const App = (() => {
     renderRail();
     pushRoster();
     persist();
+    // COMMS caches option labels + the focused speaker name; invalidate both for overseer and crew renames.
+    if (typeof Chat !== 'undefined' && Chat.refreshAgentIdentity) Chat.refreshAgentIdentity();
     return true;
   }
 
@@ -548,9 +609,8 @@ const App = (() => {
 
   // DOSSIER › DELETE AGENT: remove a SUMMONED specialist from the crew for real — the roster, the world body, and
   // the server-side stores (archived, not wiped, by /api/agent/delete). Refuses to delete the hero or the LAST
-  // remaining agent (the UI disables the button with a reason; this is the matching hard guard). The frontend
-  // owns the roster, so we mutate the live registry, re-push the surviving set, drop the floor body, retire any
-  // workstreams bound to the gone agent, then fire the server archive. Returns a Promise<bool>.
+  // remaining agent (the UI disables the button with a reason; this is the matching hard guard). The server
+  // authorizes first; only an accepted archive commits the matching browser mutation. Returns a Promise<bool>.
   function deleteAgent(agentId) {
     const id = String(agentId || '');
     const a = agents.get(id);
@@ -559,33 +619,35 @@ const App = (() => {
     if (a.role === 'orchestrator') return Promise.resolve(false);   // the overseer is the founder — undeletable
     if (agents.size <= 1) return Promise.resolve(false);   // never the last agent on station
     // if the deleted agent is currently focused, hand COMMS back to the hero BEFORE dropping it.
-    const wasFocused = agent && agent.id === id;
-    agents.delete(id);
-    if (wasFocused) focusAgent('agent');
-    if (typeof World !== 'undefined' && World.despawnAgent) World.despawnAgent(id);   // pull its floor body
-    // unbind every prop still assigned to the gone agent (its bay above all): a stale bay→agentId binding
-    // re-mints a floor body for a DELETED agent on the next floor rederive (ghost crew) and keeps claiming
-    // the dock in REFIT. assignPropAgent fires station.onChange, so the world rederives on its own.
-    try {
-      if (station && station.propsByAgent && station.assignPropAgent) {
-        for (const p of station.propsByAgent(id)) station.assignPropAgent(p.id, '');
-      }
-    } catch (_) {}
-    // retire workstreams bound to the gone agent so the rail can't reopen a stream with no agent behind it.
-    try {
-      if (typeof Workstreams !== 'undefined' && Workstreams.removeByAgent) Workstreams.removeByAgent(id);
-    } catch (_) {}
-    recomposeOrchestrators();   // the lead's YOUR CREW clause must drop the removed specialist
-    if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
-    renderRail();
-    pushRoster();   // the surviving crew replaces the whole server roster
-    persist();
-    // fire-and-honest: archive the server-side stores. The roster is already correct locally + re-pushed; this
-    // resolves off the real route so the caller can surface a truthful result, but a failure here never resurrects
-    // the agent (its stores just stay retained on disk, which is the safe direction).
     return fetch('/api/agent/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: id }) })
-      .then(r => r.json().catch(() => null))
-      .then(j => !!(j && j.ok))
+      .then(r => (r && r.ok) ? r.json().catch(() => null) : null)
+      .then(j => {
+        // The lifecycle authority must accept the delete before any browser-owned state changes. An active-agent
+        // refusal, malformed response, or unavailable server therefore leaves the roster and its bindings intact.
+        if (!j || !j.ok) return false;
+        const wasFocused = agent && agent.id === id;
+        agents.delete(id);
+        if (wasFocused) focusAgent('agent');
+        if (typeof World !== 'undefined' && World.despawnAgent) World.despawnAgent(id);   // pull its floor body
+        // unbind every prop still assigned to the gone agent (its bay above all): a stale bay→agentId binding
+        // re-mints a floor body for a DELETED agent on the next floor rederive (ghost crew) and keeps claiming
+        // the dock in REFIT. assignPropAgent fires station.onChange, so the world rederives on its own.
+        try {
+          if (station && station.propsByAgent && station.assignPropAgent) {
+            for (const p of station.propsByAgent(id)) station.assignPropAgent(p.id, '');
+          }
+        } catch (_) {}
+        // retire workstreams bound to the gone agent so the rail can't reopen a stream with no agent behind it.
+        try {
+          if (typeof Workstreams !== 'undefined' && Workstreams.removeByAgent) Workstreams.removeByAgent(id);
+        } catch (_) {}
+        recomposeOrchestrators();   // the lead's YOUR CREW clause must drop the removed specialist
+        if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
+        renderRail();
+        pushRoster();   // the surviving crew replaces the whole server roster
+        persist();
+        return true;
+      })
       .catch(() => false);
   }
 
@@ -594,6 +656,15 @@ const App = (() => {
      builder / dossier read. focusAgent(id) repoints COMMS + the run identity at one crew member — the
      focus follows whichever workstream is active (switchWorkstream calls it with the stream's agentId). */
   function liveAgents() { return [...agents.values()]; }
+  // Canvas bodies carry stable agent ids, while the dossier owns a roster index. Resolve at click time from
+  // the same live registry StationUI receives so a summoned specialist opens its own record without changing
+  // COMMS focus. Unknown/stale bodies fail closed instead of silently opening the Overseer.
+  function openWorldAgent(agentId) {
+    const i = liveAgents().findIndex(a => a && a.id === agentId);
+    if (i < 0 || typeof StationUI === 'undefined' || !StationUI.openAgent) return false;
+    StationUI.openAgent(i);
+    return true;
+  }
   function registerHero(a) { agents.clear(); agents.set(a.id, a); }   // wake/resume: the hero founds the registry
   // rosterClause() reads the LIVE registry, so every orchestrator prompt must be recomposed whenever the roster
   // changes shape (summon; crew rehydrate on resume; a crew rename) — this is the cached-systemPrompt trap: the
@@ -780,7 +851,7 @@ const App = (() => {
   function serializeAgentLite(a) {
     return { id: a.id, name: a.name, color: a.color, skin: a.skin || DATA.DEFAULT_SKIN, model: a.model, provider: a.provider || null, reasoningEffort: a.reasoningEffort || null, personaId: a.personaId,
              role: a.role || (a.id === 'agent' ? 'orchestrator' : 'specialist'), voiceTraits: a.voiceTraits || null, customVoice: a.customVoice || '',
-             approvalMode: a.approvalMode || 'ask', workshop: !!a.workshop, purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
+             approvalMode: a.approvalMode || 'ask', executionProfile: executionProfileOf(a), workshop: !!a.workshop, purpose: a.purpose || null, specialtyId: a.specialtyId || null, docs: a.docs,
              skills: Array.isArray(a.skills) ? a.skills.slice() : [],   // Class Loadouts S1: per-agent skill package persists
              stats: a.stats || null, createdAt: a.createdAt };
   }
@@ -793,7 +864,7 @@ const App = (() => {
       const a = { id: s.id, name: s.name, color: s.color, skin: s.skin || DATA.DEFAULT_SKIN, model: s.model || (agent && agent.model),
                   provider: s.provider || (agent && agent.provider) || null, reasoningEffort: s.reasoningEffort || (agent && agent.reasoningEffort) || null,   // #4: per-agent provider+effort (fall back to the hero's)
                   personaId: s.personaId, role: s.role || 'specialist', voiceTraits: s.voiceTraits || null, customVoice: s.customVoice || '',
-                  approvalMode: s.approvalMode || 'ask', workshop: !!s.workshop, purpose: s.purpose || null, specialtyId: s.specialtyId || null,
+                  approvalMode: s.approvalMode || 'ask', executionProfile: executionProfileOf(s), workshop: !!s.workshop, purpose: s.purpose || null, specialtyId: s.specialtyId || null,
                   skills: Array.isArray(s.skills) ? s.skills.slice() : [],   // Class Loadouts S1: restore the per-agent skill package
                   docs: s.docs, stats: (s.stats && typeof s.stats === 'object') ? s.stats : null, createdAt: s.createdAt || Date.now() };
       agentDocs(a);
@@ -946,6 +1017,7 @@ const App = (() => {
       provider: (pin && pin.provider) || agent.provider || null,
       reasoningEffort: (pin && pin.effort) || agent.reasoningEffort || null,
       personaId: (spec && spec.persona && typeof Personas !== 'undefined' && Personas.exists(spec.persona)) ? spec.persona : agent.personaId,
+      approvalMode: 'ask', executionProfile: 'trusted-project',
       purpose: null, createdAt: Date.now()
     };
     agentDocs(a);
@@ -995,15 +1067,13 @@ const App = (() => {
       // desk placement teed up. FINALE (Lane D): the toast is ONE line now — the desk requirement + its door move
       // into the diegetic line + chip below (the standing record no longer duplicates the whole instruction).
       _notify(a.name + ' summoned — type to task it now.', 'good');
-      // …unless its desk already came with it (opts.desk): the "nowhere to sit" line would then be a lie, and
-      // the chip would open REFIT to place a SECOND desk the agent can't own (one workstation per agent).
-      if (!(desk && desk.ok) && typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())
-          && (typeof Chat.beatBusy !== 'function' || !Chat.beatBusy())) {   // a pending question/beat owns the COMMS moment — its chips must survive; the desk line stays available via REFIT
-        Chat.localLine(a.name + ' is here — but it has nowhere to sit yet. it needs a desk of its own before it can take floor work. want to place one?');
-        Chat.choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
-          if (item && item.value === 'desk') openDeskPlacement();
-        });
-      }
+      // WHERE THAT LINE COMES FROM (2026-08-03): the Chat.load(ws) above opened the new agent's session, and the
+      // desk prompt is now a property of THAT SESSION (chat.js maybeDeskPrompt → App.needsWorkstation), not a
+      // one-shot printed here. It used to be printed once, DOM-only: the first stream switch (or any reload) wiped
+      // the only place the required step was ever stated, and a live beat could drop it outright — leaving a brand
+      // new agent's session showing nothing but the generic starter hint. Re-derived from the live floor on every
+      // open instead, so it stands until the desk actually exists, and it never fires when the desk came with the
+      // agent (opts.desk) — "nowhere to sit" would then be a lie about the floor.
       // land the cursor in the COMMS composer so "type to task it now" is literal. Deferred a tick so it wins over
       // the bay's close() focus-restore (which runs synchronously right after this returns, sending focus to the
       // RECRUIT dock button). Guarded on visibility so a closed COMMS panel is a no-op.
@@ -1023,6 +1093,18 @@ const App = (() => {
     const lo = loadoutSummary(a, spec);
     if (lo) _notify(a.name + ' loadout - ' + lo, 'info');
     return a;
+  }
+  // DOES THIS CREW MEMBER STILL HAVE NOWHERE TO SIT? A truthful read of the LIVE FLOOR, never a flag: a
+  // specialist owns exactly one prop — its workstation (capForProp === 'computer') — so "no such prop bound to
+  // it" IS "no desk". Re-derived every time it's asked, which is what lets the COMMS prompt stand until the desk
+  // exists and then vanish for good, in the same tick the Commander places it. Excludes the hero (its starter
+  // desk is seeded at wake, and its stream owns the first-run hint) and any id that isn't on the live roster.
+  // Fails CLOSED on a missing station: the app must never claim a floor state it cannot prove.
+  function needsWorkstation(agentId) {
+    const id = String(agentId || '');
+    if (!id || id === 'agent' || !agents.has(id)) return false;
+    if (!station || typeof station.propsByAgent !== 'function' || typeof station.capForProp !== 'function') return false;
+    try { return !station.propsByAgent(id).some(p => station.capForProp(p.t) === 'computer'); } catch (_) { return false; }
   }
   // OPEN REFIT WITH DESK PLACEMENT TEED UP — the target of the post-summon "PLACE ITS DESK" chip. Opens the
   // builder (the same door the ⚒ BUILD dock opens) and, once its DOM is up, drives it to the PROP tool on the
@@ -1081,11 +1163,22 @@ const App = (() => {
   // <current agent> (deploySpecialty). The old split (ROSTER=deploy door, SUMMON=new-agent door)
   // was two dock buttons opening the same screen; the verbs now live on the card, not the dock.
   let concurrentCap = null;   // server MAX_CONCURRENT_AGENTS (how many agents RUN at once) — fetched once, kept honest
-  function openSummonBay() {
+  // the ONE recruit door. Wired directly to a click handler (#bb-recruit), so it takes NO arguments — an
+  // optional first param would receive the DOM event. Deep-links pass through openClassDossier instead.
+  function openSummonBay() { openSummonBayWith(null); }
+  // INTENT OFFER deep-link: open the same bay already focused on ONE class's dossier (the class a COMMS offer
+  // named). Without this the accept dumps the Commander on the roster's default card and they have to hunt for
+  // the class that was just offered to them — the exact friction the offer exists to remove.
+  function openClassDossier(classId) {
+    if (!classId) return openSummonBay();
+    openSummonBayWith({ id: String(classId) });
+  }
+  function openSummonBayWith(classSeed) {
     if (typeof Marketplace === 'undefined' || !agent) return;
     SFX.click();
     const go = () => Marketplace.open({
       mode: 'pick', summon: true, concurrentCap: concurrentCap,
+      classSeed: classSeed || null,   // one-shot: the bay focuses this class's dossier on open (maybeConsumeClassSeed)
       notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null,
       onPick: summonAgent,
       // deploy-to-current context (the merged ROSTER verb): who the current agent is + what it
@@ -1265,7 +1358,7 @@ const App = (() => {
   function pushRoster() {
     try {
       const fallbackProv = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
-      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'),
+      const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'), executionProfile: executionProfileOf(a),
         track: rosterTrack(a),    // S3: this agent's EARNED track record, so the lead's dispatch briefing can pick on evidence (see rosterTrack)
         workshop: !!a.workshop,   // W3: the away-build grant travels with the roster so the consent broker can honor it
         skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // #4: each agent's OWN provider; Class Loadouts S1: per-agent skill package + applied effort
@@ -1288,12 +1381,14 @@ const App = (() => {
             throw new Error('roster refused: ' + (body.error || (body.stale ? 'stale push' : 'unknown')));
           }
           if (rosterPushFailed) { rosterPushFailed = false; try { console.info('[roster] sidecar roster sync recovered.'); } catch (_) {} }
+          return true;
         })
         .catch(() => {
           if (!rosterPushFailed) { rosterPushFailed = true; try { console.warn('[roster] sidecar roster sync failed; will retry on next persist. Local roster is intact.'); } catch (_) {} }
+          return false;
         });
       return lastRosterPush;
-    } catch (_) { return Promise.resolve(); }
+    } catch (_) { return Promise.resolve(false); }
   }
 
   // BACKEND-INITIATED SUMMON (crew.summon.request): the orchestrator's team.summon tool asked the station to
@@ -1318,7 +1413,9 @@ const App = (() => {
     let a = null;
     try { a = summonAgent(spec, { activate: false, desk: true }); } catch (_) { a = null; }
     if (!a) return null;
-    try { await lastRosterPush; } catch (_) {}   // the worker is now in the backend roster → safe to delegate
+    let rosterLanded = false;
+    try { rosterLanded = (await lastRosterPush) === true; } catch (_) {}
+    if (!rosterLanded) return null;   // fail closed: never tell the Commander it can dispatch an unregistered worker
     // READ BACK what actually landed, so the ack can tell the lead where the desk is. Deliberately a PURE
     // read (propsByAgent), never a second ensureWorkstation call: re-running the seeder here could place a
     // desk AFTER summonAgent's persist() — a floor change that would not be saved until the next write.
@@ -1477,7 +1574,7 @@ const App = (() => {
   // mutation/network call), threaded through pushRoster → /api/roster. `np` is the nameplate readout.
   const APPROVAL = Object.freeze([
     Object.freeze({ id: 'ask',  label: 'ASK FOR APPROVAL', icon: '✋', desc: 'stops to check with you before it writes, runs, or reaches out', np: 'asks for approval' }),
-    Object.freeze({ id: 'full', label: 'FULL ACCESS',      icon: '⚡', desc: 'runs everything itself — no approval prompts',                  np: 'full access' })
+    Object.freeze({ id: 'full', label: 'RUN WITHOUT PROMPTS', icon: '⚡', desc: 'uses its execution profile without approval prompts',          np: 'no prompts' })
   ]);
   const approvalById = id => APPROVAL.find(a => a.id === id) || APPROVAL[0];
   function applyTheme(t) {
@@ -1496,11 +1593,12 @@ const App = (() => {
       const b = document.createElement('button'); b.type = 'button';
       b.className = 'swatch' + (t === cur ? ' sel' : ''); b.dataset.t = t;
       b.style.setProperty('--sw', c); b.title = t.toUpperCase() + ' phosphor'; b.setAttribute('aria-label', t + ' phosphor');
+      b.setAttribute('aria-pressed', String(t === cur));
       b.onclick = () => {
         applyTheme(t);
         try { if (typeof StationUI !== 'undefined' && StationUI.setTheme) StationUI.setTheme(t); } catch (_) {}   // persist + keep Settings in sync
         SFX.click();
-        [...wrap.children].forEach(x => x.classList.toggle('sel', x === b));
+        [...wrap.children].forEach(x => { const on = x === b; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
       };
       wrap.appendChild(b);
     });
@@ -2400,6 +2498,16 @@ const App = (() => {
     // leaves the prior station intact, and keeps its confirmed grant visible instead of commissioning a fresh
     // Commander who silently inherited cabinet:write. Saved-station resume returns above and keeps its grants.
     if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();
+    const newCommanderEpoch = Date.now();
+    if (typeof JourneyStore !== 'undefined' && JourneyStore.reset) {
+      const journeyResetResult = await JourneyStore.reset(newCommanderEpoch);
+      if (!journeyResetResult || !journeyResetResult.ok) {
+        wakeBtnBusy(false);
+        msg.className = 'msg bad';
+        msg.textContent = 'the prior Commander journey could not be cleared safely. retry WAKE before commissioning this agent.';
+        return false;
+      }
+    }
 
     // the FIRST agent is always the station's OVERSEER — the orchestrating lead the Commander commissions before
     // any specialist. Its voice is the archetype + fine-tune dials + free-text note; its APPROVAL mode (ask vs
@@ -2408,7 +2516,7 @@ const App = (() => {
               provider: (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter',   // #4: stamp the chosen provider+effort onto the hero so a later agent-switch can restore them
               reasoningEffort: (typeof Harness !== 'undefined' && Harness.getReasoningEffort) ? Harness.getReasoningEffort() : 'medium',
               personaId: pickedPersona, voiceTraits: Object.assign({}, pickedTraits), customVoice: pickedCustomVoice.trim(),
-              approvalMode: (pickedApproval === 'full' ? 'full' : 'ask'), purpose: null, onboarded: false, createdAt: Date.now() };   // onboarded flips true only when the awakening's finish() lands — so a refresh mid-awakening replays it instead of stranding (see resumeInto)
+              approvalMode: (pickedApproval === 'full' ? 'full' : 'ask'), executionProfile: (pickedApproval === 'full' ? 'this-computer' : 'trusted-project'), purpose: null, onboarded: false, createdAt: newCommanderEpoch };   // legacy approval choice seeds an honest host profile; the two axes are independently changeable in the dossier
     agentDocs(agent);                              // seed identity.md (overseer-aware) / purpose.md / operating-manual.md
     registerHero(agent);   // found the multi-agent registry with the hero BEFORE composing — rosterClause reads the registry, and a same-session re-wake must not see the prior crew
     agent.systemPrompt = composeSystemPrompt(agent);
@@ -2419,6 +2527,7 @@ const App = (() => {
     if (typeof SeedStore !== 'undefined') SeedStore.reset();   // …and a fresh seed-offer budget
     if (typeof LaunchMemory !== 'undefined') LaunchMemory.reset();   // …and no inherited last-used recipe inputs (own key)
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.reset();   // …no inherited waved-off dimensions (own key)
+    if (typeof RecQualityStore !== 'undefined') RecQualityStore.reset();   // …and no inherited recommendation-quality history (own key)
     if (typeof StudyStore !== 'undefined') StudyStore.reset();   // …and a fresh STUDY state — a new Commander never inherits the prior hero's studyDeclined denylist / ignore tallies / rating streaks (own key)
     if (typeof ThreadStore !== 'undefined') ThreadStore.reset();   // …and a fresh THREAD turn-in gate — a new Commander never inherits the prior hero's resolved/ignored mined ideas (the ledger itself is server-side, station-wide)
     if (typeof QuestStateStore !== 'undefined') QuestStateStore.reset();   // …and a fresh quest memory — a new Commander never inherits dismissed/completed quest history (own key)
@@ -2445,6 +2554,8 @@ const App = (() => {
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame
+    pendingGrowthSyncAt = 0;
+    pendingRatingSyncAt = 0;
     enterGame({ awaitingPurpose: true, wake: true });   // the Orchestrator authors its mission in the awakening (no pre-spec)
     persist();   // so a refresh mid-onboarding resumes to the purpose step
     return true;
@@ -2453,6 +2564,7 @@ const App = (() => {
   /* ---------- resume ---------- */
   function resumeInto(saved) {
     agent = saved.agent;
+    if (!(Number(agent.createdAt) > 0)) agent.createdAt = Math.max(1, Number(saved.updatedAt) || Date.now());
     if (!agent.role) agent.role = 'orchestrator';  // older hero saves predate the role field — the first agent is the lead
     agentDocs(agent);                              // seed config docs for older saves that predate them
     stripLegacyVoiceBlock(agent);                  // one-time: drop the old awakening's inline VOICE & MANNER so it doesn't double up with the archetype layer
@@ -2470,6 +2582,11 @@ const App = (() => {
     Workstreams.init({ workstreams: saved.workstreams, activeId: saved.activeId, generalId: saved.generalId, sessionUndo: saved.sessionUndo, deletedIds: saved.deletedIds });
     pendingStationDoc = saved.station || null;   // restore the built station (if any)
     pendingStationStats = saved.stationStats || null;   // restore the station-growth rollup (XP/level/confidence)
+    pendingGrowthSyncAt = Math.max(0, Number((saved.stationStats && saved.stationStats.runSyncAt) || saved.updatedAt || 0));
+    // A legacy/stale projection with no dedicated rating watermark must replay this station generation from
+    // its beginning. Using save.updatedAt here can skip a rating that the server accepted before that stale
+    // local document was written (the exact multi-tab clobber this ledger exists to repair).
+    pendingRatingSyncAt = Math.max(1, Number(saved.stationStats && saved.stationStats.ratingSyncAt) || 1);
     pendingProfile = saved.profile || null;   // restore the learned user-affinity profile
     pendingWorkSignal = saved.worksignal || null;   // restore the capability-usage histogram (adaptive recruitment)
     pendingDossier = saved.dossier || null;   // restore the station-wide Commander dossier
@@ -2490,7 +2607,7 @@ const App = (() => {
     SPRITES.init();
     World.init(el('stage'));
     World.spawn(agent);
-    World.setOnClick(() => { if (typeof StationUI !== 'undefined') StationUI.openAgent(0); });
+    World.setOnClick(openWorldAgent);
     World.setOnArcade(() => { if (typeof StationUI !== 'undefined' && StationUI.openArcade) StationUI.openArcade(); });   // click a cabinet → BREACH PROTOCOL
     // 2026-07-16 UX fix: the OUTBOX click opens the OUTBOX window — one clean list of ALL uncollected
     // finished work, readable + rateable in place (the old path fired a one-crate chat beat, which read
@@ -2500,6 +2617,7 @@ const App = (() => {
     if (World.setOnTrophyCase) World.setOnTrophyCase(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('trophies'); });   // G3b: click the TROPHY CASE → the TROPHY surface (a projection of real completions, never a gate)
     if (World.setOnBayAssign) World.setOnBayAssign(pid => { if (typeof Build !== 'undefined' && Build.openAssign) Build.openAssign(pid); });   // belt legibility: click an unbound BAY's "NO AGENT" nag → REFIT opens straight into its agent picker
     if (World.setOnIntakeFeed) World.setOnIntakeFeed(() => { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('messaging'); });   // belt legibility: click a starved INTAKE's "NO FEED" nag → the CHANNELS panel (wire a real feed)
+    if (World.setOnIntakeSample) World.setOnIntakeSample(o => { if (typeof Chat !== 'undefined' && Chat.sampleCard) Chat.sampleCard(o); });   // guided workflow Phase 4: click the INBOX on a COMPLETE line → the RUN-A-SAMPLE-JOB card (POST /api/routing/sample)
     if (opts.awaitingPurpose) World.beginAwakening();        // wake in darkness — the awakening lifts the room to first light (set BEFORE start so there's no flash of the lit room)
     else if (opts.wake) { World.wakeIn(); SFX.level(); }
     // the canonical station the builder edits — restored from the save, or a fresh starter room. LOAD it
@@ -2514,6 +2632,10 @@ const App = (() => {
         return s ? { mount: s.mount || null, stack: !!s.stack, surface: !!s.surface } : null;
       });
     }
+    // STATION IDENTITY: did the save we are loading already carry one? (worldmodel stamps meta.createdAt
+    // at create AND backfills it on migrate — a stamp that is never SAVED would re-roll on every reload,
+    // and every per-station REFIT latch keyed on it would be lost. Read before deserialize mutates it.)
+    const hadStationId = !!(pendingStationDoc && pendingStationDoc.meta && pendingStationDoc.meta.createdAt);
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
     pendingStationDoc = null;
     // THE OVERSEER'S DESK IS A REAL PROP: materialize the starter workstation the world used to merely
@@ -2523,7 +2645,9 @@ const App = (() => {
     // only for the pathological no-space floor.
     if (agent && agent.id && typeof station.ensureWorkstation === 'function') {
       const seeded = station.ensureWorkstation(agent.id);
-      if (seeded && seeded.ok && !seeded.existing) persist();   // a real floor change — save it like any placement
+      // a real floor change, OR a save that just received its station id — either way the doc on disk is
+      // now behind the doc in memory, and the id in particular MUST be durable (see hadStationId above).
+      if (!hadStationId || (seeded && seeded.ok && !seeded.existing)) persist();
     }
     if (typeof World.loadStation === 'function') World.loadStation(station);   // the live world IS the built station
     // give resumed summoned crew their real floor bodies now that the station/geo is loaded (no-op for a
@@ -2535,7 +2659,10 @@ const App = (() => {
       // agents: the live multi-agent roster the BAY agent-picker / builder offer. The bay->agent binding
       // persists via station.serialize (prop.agentId round-trips), so the routing floor is saved per agent.
       Build.init({ getStation: () => station, persist: persist, world: World,
-        agents: () => liveAgents().map(a => ({ id: a.id, name: a.name, color: a.color, model: a.model })) });
+        agents: () => liveAgents().map(a => ({ id: a.id, name: a.name, color: a.color, model: a.model })),
+        // A workstation can be placed while its owning COMMS stream stays open. Reconcile the derived
+        // "nowhere to sit" row after REFIT commits so the transcript cannot outlive the floor truth.
+        onClose: () => { if (typeof Chat !== 'undefined' && Chat.retireDeskPrompt) Chat.retireDeskPrompt(); } });
       const bbBuild = el('bb-build');
       if (bbBuild) {
         let seenBuild = false; try { seenBuild = !!localStorage.getItem('starnet.refit.seen'); } catch (e) {}
@@ -2551,9 +2678,17 @@ const App = (() => {
     if (typeof StationUI !== 'undefined') {
       StationUI.enter(liveAgents(), {
         totals: () => Harness.totals(),
-        context: () => Harness.contextState(agent ? agent.id : 'agent'),
+        // CONTEXT is a property of the conversation ON SCREEN, not of the primary agent: ask Chat which
+        // workstream is open and hand the gauge that stream's own agent + message array. Binding this to
+        // `agent.id` alone is what made a fresh session inherit the previous chat's fill, and made a crew
+        // member's chat report the overseer's occupancy. Falls back to the old shape if Chat isn't up yet.
+        context: () => {
+          const ref = (typeof Chat !== 'undefined' && Chat.contextRef) ? Chat.contextRef() : null;
+          return ref ? Harness.contextState(ref.agentId, ref.streamId, ref.messages)
+            : Harness.contextState(agent ? agent.id : 'agent');
+        },
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
-        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setPersona: setAgentPersona, setName: setAgentName, setWorkshop: setAgentWorkshop, setApproval: setAgentApproval, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setPersona swaps the personality voice from the dossier; setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
+        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setPersona: setAgentPersona, setName: setAgentName, setWorkshop: setAgentWorkshop, setApproval: setAgentApproval, setExecutionProfile: setAgentExecutionProfile, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // approval posture and execution profile are independent controls; both persist through the roster
         comms: { openWorkstream: openWorkstream }   // the while-you're-away card's "review" jumps straight to a deliverable's session (2026-07-15)
       });
       // Presence is already proven by the live roster, link indicator, and COMMS state. Do not
@@ -2564,7 +2699,7 @@ const App = (() => {
     // S3: onCredential fires only on a coarse track-record change (tier crossing / band flip), and re-pushes
     // the roster so the lead's next dispatch briefing describes its crew truthfully. Rare by construction.
     // S4: `agents` lets the boot-time trophy reconcile reach every specialist's case, not just the hero's.
-    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, agents: () => Array.from(agents.values()), station: pendingStationStats, persist: persist, onCredential: () => pushRoster() }); pendingStationStats = null; }
+    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, agents: () => Array.from(agents.values()), station: pendingStationStats, syncSince: pendingGrowthSyncAt, syncRatingsSince: pendingRatingSyncAt, persist: persist, onCredential: () => pushRoster() }); pendingStationStats = null; pendingGrowthSyncAt = 0; pendingRatingSyncAt = 0; }
     // PERSONALIZATION: the local user-affinity profile — folds the interest tag of each task + shipped work
     // into a tiny histogram (profile.js engine). Resume the saved slice, else start fresh + seed cold-start
     // from the agent's deployed specialty domain so day-one suggestions aren't blank.
@@ -2624,6 +2759,16 @@ const App = (() => {
     // CURIOSITY: the gentle one-per-session "tell me about X" nudge (curiosity.js). Self-persists its
     // dismissals to its own key (rides the backup prefix); init just hydrates + resets the session budget.
     if (typeof CuriosityStore !== 'undefined') CuriosityStore.init();
+    // THE RECOMMENDATION QUALITY LOOP (outcome attribution): per-channel EWMA weights over what the station's
+    // accepted offers actually PRODUCED — read by the spine's scorer, moved only by real attributed outcomes
+    // (a clean run, the Commander's 👍/👌/👎, an explicit decline). Self-persists its own key; read-only bus
+    // citizen. Init here, alongside the other proactive-channel stores, so the first pass already sees it.
+    if (typeof RecQualityStore !== 'undefined') RecQualityStore.init({ now: () => Date.now() });
+    // ONE RECOMMENDATION MEMORY: the spine's wire into the durable cross-surface ledger every other recommendation
+    // surface already writes and reads. Its init fires the one read (declined titles + the learned preference
+    // model) the ranking consults; every step of it fails open, so a cold or unreachable ledger simply leaves the
+    // spine ranking exactly as it did before this existed.
+    if (typeof RecLedger !== 'undefined') RecLedger.init({ now: () => Date.now() });
     // QUEST MEMORY (G1a): durable quest state — firstSeenAt/completedAt per quest + dismissed-forever — and
     // the open→done completion celebration (quest sting + gold toast + row flourish; NEVER XP). Self-persists
     // to its own key. Init AFTER XpStore/DossierStore so its first fold sees the real projection as a quiet
@@ -2636,6 +2781,10 @@ const App = (() => {
     // QUEST V3 — the standing quest-REFRESH engine's frontend citizen: polls /api/quests/refresh (throttled on
     // the tick) for the north star + attempt ledger + due state, and owns the manual REFRESH QUESTS write.
     if (typeof QuestRefreshStore !== 'undefined') QuestRefreshStore.init();
+    // COMMANDER JOURNEY: the durable sidecar-owned loop connecting goal metrics + verified outcomes to
+    // agent-domain mastery, visible adaptation receipts, and expressive station evolution. Separate from XP;
+    // never grants capabilities. Init before GoalStore so a just-folded milestone can post immediately.
+    if (typeof JourneyStore !== 'undefined') JourneyStore.init({ epoch: () => agent && agent.createdAt });
     // G1b STATION-QUEST GENERATOR: subscribe to agent.tool_call and mint a fix-it quest when an agent reaches
     // for a tool its room can't grant (capdenied → playable direction). Init AFTER World.loadStation (its gap
     // check + resolution read World.heroCaps / the live floor) and after QuestStateStore so a resumed save's
@@ -2654,7 +2803,12 @@ const App = (() => {
     if (typeof GoalStore !== 'undefined') GoalStore.init({
       now: () => Date.now(),
       getSystem: () => agent ? agent.systemPrompt : '',
-      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('Goal milestone', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); },
+      // UNION of two same-day fixes: title = deriveTitle(directive) (every milestone card used to read the
+      // literal 'Goal milestone', so three goals were three identical cards; the derived placeholder rides the
+      // normal model-title upgrade ladder) — AND returns TRUE only when a run really kicked off, because a
+      // mid-run send silently no-ops and callers that record a launch (the outcome loop's attribution stamp)
+      // must never count one that never happened.
+      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create((Workstreams.deriveTitle && Workstreams.deriveTitle(text)) || 'Goal milestone', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); let sent = false; if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) { Chat.send(text); sent = true; } persist(); return sent; },
       getRunSummary: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; return (m && m.title) ? m.title : ''; }
     });
     // UNDERSTANDING: the one honest, adaptive "how well the station understands the Commander" read
@@ -2702,7 +2856,23 @@ const App = (() => {
       // can't mislabel it), falling back to the active workstream when the runId is unknown (e.g. a direct call).
       getRecentTask: (runId) => { const m = (runId && typeof Chat !== 'undefined' && Chat.runMeta) ? Chat.runMeta(runId) : null; if (m && m.title) return m.title; const ws = (typeof Workstreams !== 'undefined' && Workstreams.active) ? Workstreams.active() : null; return ws ? (ws.title || '') : ''; },
       launchRecipe: launchRecipe,
-      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create('First build', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) Chat.send(text); persist(); }
+      /* THE EVIDENCE POOL the suggestion's quote is vetoed against (rec perfection W2). The SAME shape and the
+         same dimensions AutoJobStore reads for its own grounding veto — one accessor idiom, so the two channels
+         can never disagree about what the station "knows". A cold dossier returns {}, which grounds nothing:
+         fail-closed is the point (the failure it replaces was quoting the Commander words they never said). */
+      getBeliefs: () => {
+        const out = {};
+        if (typeof DossierStore === 'undefined' || !DossierStore.beliefs) return out;
+        for (const k of ['goals', 'pain', 'ambition', 'stack', 'standing_orders']) {
+          const arr = (DossierStore.beliefs(k) || []).map(b => b && b.text).filter(Boolean);
+          if (arr.length) out[k] = arr;
+        }
+        return out;
+      },
+      // UNION (see the goal-milestone twin above): derived title from the directive + returns TRUE only when a
+      // run really kicked off — the suggestion's attribution stamp is armed off this answer, so a busy stream
+      // must report the no-op honestly.
+      launchDirective: (text) => { const ws = (typeof Workstreams !== 'undefined') ? Workstreams.create((Workstreams.deriveTitle && Workstreams.deriveTitle(text)) || 'First build', { kind: 'task' }) : null; if (ws && typeof Chat !== 'undefined' && Chat.load) Chat.load(ws); let sent = false; if (typeof Chat !== 'undefined' && Chat.send && !Chat.isBusy()) { Chat.send(text); sent = true; } persist(); return sent; }
     };
     if (typeof PitchStore !== 'undefined') PitchStore.init(adviceDeps);
     if (typeof SuggestStore !== 'undefined') SuggestStore.init(adviceDeps);
@@ -2787,7 +2957,8 @@ const App = (() => {
       api: {
         load: () => fetch('/api/permissions', { cache: 'no-store' }).then(r => r.ok ? r.json() : { ok: false, reason: 'permissions service unavailable' }).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
         grant: (key) => fetch('/api/permissions/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission grant failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
-        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission revoke failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' }))
+        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission revoke failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
+        bypass: (on) => fetch('/api/permissions/bypass', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: on === true }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'bypass switch failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' }))
       }
     });
     // GROWTH Tier 3 — EARNED AUTONOMY (track record → trust): folds the SAME run outcomes xpstore folds into a
@@ -3351,8 +3522,14 @@ const App = (() => {
   function deleteWorkstream(id) {
     const w = Workstreams.get(id); const label = w ? (w.title || 'General') : '';
     const agentId = w ? (w.agentId || 'agent') : 'agent';
+    // Recheck after the destructive-confirmation click: a session may have started while its menu was open.
+    if (w && typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(id)) {
+      SFX.bad();
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('stop this session before deleting it', 'bad');
+      return false;
+    }
     const wasActive = (id === Workstreams.activeId());
-    if (!Workstreams.del(id)) { SFX.bad(); return; }
+    if (!Workstreams.del(id)) { SFX.bad(); return false; }
     SFX.bad();
     if (wasActive) loadActiveStream();   // deleting the OPEN stream falls back to General
     renderRail(); persist();
@@ -3363,6 +3540,7 @@ const App = (() => {
       WorkshopStore.discardIfPending(agentId, String(id).slice('workshop-'.length)).catch(() => {});
     }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('deleted “' + label + '”', 'warn');
+    return true;
   }
   // re-open whatever the store now treats as active (after archive/delete bumps the open stream to General)
   function loadActiveStream() {
@@ -3787,12 +3965,15 @@ const App = (() => {
       '<input type="text" spellcheck="false" placeholder="C:\\Users\\you\\project" aria-label="project folder path">' +
       '<div class="proj-add-row">' +
         '<button class="proj-add-pick" title="browse for a folder with the system dialog">BROWSE…</button>' +
+        '<button class="proj-add-discover" title="scan common project folders; grants nothing">DISCOVER</button>' +
         '<button class="proj-add-go">ADD</button>' +
       '</div>' +
+      '<div class="proj-discover-results" hidden></div>' +
       '<div class="proj-add-hint" hidden></div>';
     ul.insertBefore(li, ul.firstChild);
     const input = li.querySelector('input');
     const hint = li.querySelector('.proj-add-hint');
+    const discovered = li.querySelector('.proj-discover-results');
     const showHint = (msg, isErr) => { hint.hidden = !msg; hint.textContent = msg || ''; hint.classList.toggle('err', !!isErr); };
     const cancel = () => { li.remove(); };
     const submit = () => {
@@ -3821,6 +4002,29 @@ const App = (() => {
             else if (!hint.classList.contains('err') || hint.hidden) showHint('', false);   // cancel: clear the "open…" note, keep any real error
           })
           .finally(() => { if (pk.isConnected) pk.disabled = false; input.focus(); });
+      };
+    }
+    { const db = li.querySelector('.proj-add-discover');
+      if (db) db.onclick = () => {
+        if (db.disabled) return;
+        db.disabled = true; showHint('scanning common project folders…', false);
+        fetch('/api/projects/discover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+          .then(res => res.json().then(j => ({ ok: res.ok, j })).catch(() => ({ ok: false, j: null })))
+          .then(({ ok, j }) => {
+            if (!ok || !j || !j.ok) { showHint((j && j.reason) || 'could not discover projects', true); return; }
+            const rows = (j.candidates || []).filter(x => x && x.root && !x.blessed).slice(0, 24);
+            if (!rows.length) {
+              discovered.hidden = true; discovered.innerHTML = '';
+              showHint('No ungranted projects found in the common folders. Browse or type a path instead.', false);
+              return;
+            }
+            discovered.innerHTML = rows.map(x => '<button type="button" class="proj-discover-pick" data-path="' + U.esc(x.root) + '"><b>' + U.esc(x.name || x.root) + '</b><span>' + U.esc(x.root) + '</span><em>' + U.esc(x.kind || 'project') + '</em></button>').join('');
+            discovered.hidden = false;
+            discovered.querySelectorAll('.proj-discover-pick').forEach(b => { b.onclick = () => { input.value = b.dataset.path || ''; showHint('Candidate selected. ADD grants this folder to StarNet.', false); input.focus(); }; });
+            showHint('Found ' + rows.length + ' candidate' + (rows.length === 1 ? '' : 's') + '. Select one, then ADD to grant access.' + (j.truncated ? ' Search stopped at its safety limit.' : ''), false);
+          })
+          .catch(() => showHint('could not reach the station', true))
+          .finally(() => { if (db.isConnected) db.disabled = false; });
       };
     }
     input.focus();
@@ -4018,6 +4222,108 @@ const App = (() => {
     show('screen-unreachable');
   }
 
+  // PRIOR-INSTALL LINEAGE GATE: both active save sources are definitively empty, yet the sidecar found bounded
+  // evidence in a legacy workspace, a pending migration, the current profile, or a verified update snapshot.
+  // This is read-only Recovery Mode: no path reaches startCreation(), and therefore onboarding cannot create a
+  // replacement station while prior state remains unaccounted for. Restore uses the existing validated backup
+  // importer; retry reloads the entire boot chain after an external/manual recovery.
+  function showPriorStateGate(lineage) {
+    gateActive = true;
+    try { if (World && World.stop) World.stop(); } catch (_) {}
+    const rows = lineage && Array.isArray(lineage.evidence) ? lineage.evidence : [];
+    const recovery = lineage && lineage.recovery && typeof lineage.recovery === 'object' ? lineage.recovery : {};
+    const candidates = Array.isArray(recovery.candidates) ? recovery.candidates : [];
+    let selected = recovery.automaticCandidateId || null;
+    const box = el('lineage-evidence');
+    if (box) {
+      const evidenceHtml = rows.slice(0, 8).map(row => {
+        const kind = String(row && row.kind || 'prior-state').replace(/-/g, ' ').toUpperCase();
+        const root = String(row && row.root || 'local StarNet storage');
+        const examples = Array.isArray(row && row.examples) && row.examples.length ? ' · ' + row.examples.slice(0, 4).join(', ') : '';
+        return '<div><b>' + U.esc(kind) + '</b> — <code>' + U.esc(root) + '</code>' + U.esc(examples) + '</div>';
+      }).join('') || '<div><b>PRIOR STATE MARKER</b> — local StarNet storage</div>';
+      const candidateHtml = candidates.map(row => {
+        const when = row && row.updatedAt ? new Date(row.updatedAt).toLocaleString() : 'time unavailable';
+        const size = row && row.bytes ? Math.max(1, Math.ceil(row.bytes / 1024)) + ' KB' : 'size unavailable';
+        const on = !!(row && row.id === selected);
+        return '<button class="lineage-candidate' + (on ? ' on' : '') + '" data-candidate-id="' + U.esc(row && row.id || '') + '" aria-pressed="' + (on ? 'true' : 'false') + '"' + (row && row.recoverable ? '' : ' disabled') + '>' +
+          '<b>' + U.esc(row && row.stationName || 'Prior station') + '</b>' +
+          '<span>' + U.esc(row && row.displayRoot || 'local StarNet storage') + '</span>' +
+          '<small>' + U.esc(row && row.recoverable ? when + ' · ' + size : row && row.reason || 'unreadable save') + '</small></button>';
+      }).join('');
+      box.innerHTML = evidenceHtml + (candidateHtml ? '<div class="lineage-candidates" aria-label="Recoverable stations">' + candidateHtml + '</div>' : '');
+    }
+    const status = el('lineage-status');
+    const recover = el('btn-lineage-recover');
+    const validCandidates = candidates.filter(row => row && row.recoverable);
+    const refreshRecover = () => {
+      if (!recover) return;
+      recover.hidden = validCandidates.length === 0;
+      recover.disabled = !selected;
+      recover.textContent = validCandidates.length === 1 ? '⟳ RECOVER AUTOMATICALLY' : '⟳ RECOVER SELECTED STATION';
+    };
+    if (box) Array.from(box.querySelectorAll('.lineage-candidate')).forEach(btn => {
+      btn.onclick = () => {
+        selected = btn.getAttribute('data-candidate-id') || null;
+        Array.from(box.querySelectorAll('.lineage-candidate')).forEach(other => {
+          const on = other === btn; other.classList.toggle('on', on); other.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        refreshRecover();
+      };
+    });
+    refreshRecover();
+    if (recover) recover.onclick = async () => {
+      if (!selected || recover.disabled) return;
+      recover.disabled = true;
+      if (status) status.textContent = '＋ staging verified recovery; the prior source will be preserved';
+      try {
+        const response = await fetch('/api/lineage/recover', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidateId: selected })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.ok) throw new Error(result.error || 'recovery request refused');
+        if (status) status.textContent = result.desktopWillRestart
+          ? '＋ recovery accepted — station service restarting now…'
+          : '＋ recovery accepted — restart the manual sidecar; this screen will resume automatically';
+        const timer = setInterval(async () => {
+          try {
+            const probe = await fetch('/api/save?agent=agent', { cache: 'no-store' });
+            const body = probe.ok ? await probe.json() : null;
+            if (body && body.save && body.save.agent) { clearInterval(timer); location.reload(); }
+          } catch (_) {}
+        }, 1500);
+      } catch (error) {
+        recover.disabled = false;
+        if (status) status.textContent = '＋ recovery paused — ' + String(error && error.message || error);
+      }
+    };
+    const report = el('btn-lineage-report');
+    if (report) report.onclick = async () => {
+      report.disabled = true;
+      if (status) status.textContent = '＋ preparing redacted recovery report…';
+      try {
+        const response = await fetch('/api/lineage/report', { cache: 'no-store' });
+        if (!response.ok) throw new Error('report unavailable');
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = url; a.download = 'starnet-recovery-report.json'; a.style.display = 'none';
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+        if (status) status.textContent = '＋ redacted recovery report exported — no credentials or save contents included';
+      } catch (error) {
+        if (status) status.textContent = '＋ report export failed — ' + String(error && error.message || error);
+      } finally { report.disabled = false; }
+    };
+    const retry = el('btn-lineage-retry');
+    if (retry) retry.onclick = () => { SFX.click && SFX.click(); try { location.reload(); } catch (_) {} };
+    const restore = el('btn-lineage-restore');
+    if (restore) restore.onclick = () => {
+      SFX.click && SFX.click();
+      const input = el('file-import');
+      if (input) { input.value = ''; input.click(); }
+    };
+    show('screen-lineage');
+  }
+
   /* ---------- boot ---------- */
   async function init() {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
@@ -4072,6 +4378,7 @@ const App = (() => {
         : (r.memories ? r.memories + ' in file' : 0);
       dataStatus('restored ' + (r.agentName || 'agent') + ' — ' + (r.records == null ? r.keys : r.records) + ' records'
         + (mem ? ' + ' + mem + ' memories' : ''));
+      gateActive = false;
       reentry();   // resume straight into the restored agent (or its RESUME screen if creds are still missing)
     };
 
@@ -4143,6 +4450,13 @@ const App = (() => {
       show('screen-connect'); initConnect(saved.agent.name, true, saved.agent);
       return;
     }
+    // A definitive empty active save is not automatically a first run. If the host proves prior-install
+    // lineage elsewhere, hold in read-only Recovery Mode. This check is immediately before showSplash(), so
+    // every onboarding path is structurally dominated by it.
+    const lineage = (typeof CloudSave !== 'undefined' && CloudSave.lineage) ? CloudSave.lineage() : null;
+    if (lineage && lineage.priorInstallEvidence === true) {
+      showPriorStateGate(lineage); return;
+    }
     // FIRST RUN (no save) — the key-art boot splash, then PRESS ANY KEY → CREATE YOUR OVERSEER.
     showSplash();
   }
@@ -4162,7 +4476,14 @@ const App = (() => {
     currentAgent: () => agent,
     agents: () => liveAgents().map(serializeAgentLite),
     selectAgent: selectAgent,   // COMMS top-bar agent selector: switch to (or mint) a workstream bound to agentId
+    // THE POST-SUMMON DESK STEP, owned by the session (chat.js maybeDeskPrompt): the read that decides whether a
+    // stream still owes its agent a workstation, and the door its chip opens (REFIT, armed on WORKSTATIONS).
+    needsWorkstation: needsWorkstation,
+    openDeskPlacement: openDeskPlacement,
     openSummonBay: openSummonBay,   // adaptive-recruitment beat: accepting the recruit nudge deep-links into the bay's summon flow
+    openClassDossier: openClassDossier,   // intent-offer beat: accepting a class offer opens the bay ON that class's dossier
     openRecipeLaunch: openRecipeLaunch,   // routine-nudge beat (lane D): accepting deep-links into the recipe's SCHEDULE IT form
-    applyConfig: applyAgentConfig };
+    applyConfig: applyAgentConfig,
+    setApproval: setAgentApproval,
+    setExecutionProfile: setAgentExecutionProfile };
 })();

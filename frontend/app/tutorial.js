@@ -20,10 +20,37 @@
    P2 = just-in-time coachmarks (seen()/markSeen()); P3 = the Field Manual codex + Station Briefing. */
 'use strict';
 
+/* DON'T BURY THE MAP — pure geometry, hoisted out of the IIFE so the gate can actually exercise it
+   (test/coach-dodge.test.js), the same shape stationui.js uses for clampTerminalSize.
+
+   finishUp() spawns BOTH the FIRST STEPS brief and the ⚑ QUESTS coachmark, and both want the bottom-left:
+   the brief clamps against #left/#chat-panel, the coach clamps against the viewport, and neither knew the
+   other existed — so at 1280×720 the coach (z 99000) landed square on the checklist (z 1300) the tour had
+   just handed over. The brief is the DURABLE surface, so the COACH dodges.
+
+   Four candidates in preference order, and one is only taken if it BOTH clears the brief and fits on
+   screen — a fallback that merely "probably" clears is how a short viewport ends up overlapping anyway.
+   ABOVE comes first: it keeps the bubble in the same column as the ring it belongs to (these fire on
+   bottom-bar anchors) and off COMMS. If nothing clean fits, leave the box where the anchor put it rather
+   than fling it somewhere worse. `box` is mutated and returned; `brief` is a visual-px rect. */
+function dodgeRect(box, brief, vw, vh) {
+  const clears = b => b.left + box.w <= brief.left || b.left >= brief.right || b.top + box.h <= brief.top || b.top >= brief.bottom;
+  const fits = b => b.left >= 8 && b.left + box.w <= vw - 8 && b.top >= 8 && b.top + box.h <= vh - 8;
+  if (clears(box)) return box;
+  const tries = [
+    { left: box.left,                top: brief.top - box.h - 12 },   // above — same column as the anchor, clear of COMMS
+    { left: brief.right + 12,        top: box.top },                  // right of it
+    { left: box.left,                top: brief.bottom + 12 },        // below
+    { left: brief.left - box.w - 12, top: box.top }                   // left of it
+  ];
+  for (const c of tries) if (clears(c) && fits(c)) { box.left = c.left; box.top = c.top; return box; }
+  return box;
+}
+
 const Tutorial = (() => {
   const KEY = 'starnet.tutorial.v1';
   let state = load();
-  let active = false, wired = false, finished = false;
+  let active = false, wired = false, finished = false, replayMode = false;
   let agentName = 'AGENT';
   // one-shot latches so a repeated bus event can never double-narrate a beat
   let sawStart = false, sawPermission = false, sawEnd = false, sawDeny = false;
@@ -131,9 +158,11 @@ const Tutorial = (() => {
   function dsay(text, cps, hold) { return hasDialogue() ? Dialogue.say([seg(text, cps, hold)]) : Promise.resolve(); }
 
   function firstCommand(opts) {
-    if (state.firstCommandDone) return;       // learned once, never again
+    // Automatic onboarding is one-shot. The Field Manual may deliberately replay the same real tour.
+    if (state.firstCommandDone && !(opts && opts.replay)) return;
     if (!hasChat()) return;
     agentName = (opts && opts.name) || agentName;
+    replayMode = !!(opts && opts.replay);
     active = true; finished = false; sawStart = sawPermission = sawEnd = sawDeny = false; cleanRunId = null;   // C1: un-latch finishUp for this fresh run (it's symmetric with the saw-flags; without it a prior agent's completed lesson left finishUp a no-op)
     kitMode = false; kitComplete = false; kitWasOpen = false; kitNeeded = null;
     wireBus();
@@ -346,6 +375,21 @@ const Tutorial = (() => {
     });
   }
 
+  /* THE BAIL — the kit-out is opt-IN, so it must be opt-OUT-able at any moment (sandbox law: never a mode the
+     Commander can't leave). Before this, the only exits were "place all four" or "open REFIT then close it":
+     a Commander who accepted the tour and changed their mind at the very first step — the BUILD-dock glow,
+     OUTSIDE REFIT — had no dismiss button and no Esc, just a permanent half-dimmed station.
+     Inside REFIT we simply close it and let the tick take the normal exit (REFIT owns Esc there); outside, we
+     run the same accounting directly. Either way the Commander lands on kitClosedDuringPlace's honest
+     "here's what's wired, here's what's still dark — keep going or stop here" choice, never a dead end. */
+  function kitBail() {
+    if (!active || !kitMode) return;
+    sfx('click');
+    if (typeof Build !== 'undefined' && Build.isOpen && Build.isOpen() && Build.close) { Build.close(); return; }   // kitTick sees the close → kitClosedDuringPlace
+    kitWasOpen = false;
+    kitClosedDuringPlace();
+  }
+
   // FULLY EQUIPPED — the completion beat. Every capability prop is placed; the agent is whole. Offer the
   // optional "watch me actually use it" demo, then hand the Commander the free station. This is where the
   // tutorial ENDS (the user's bar: end the tour when full capability is placed).
@@ -433,10 +477,26 @@ const Tutorial = (() => {
       act.onclick = () => { sfx('click'); try { if (opts.action.onClick) opts.action.onClick(); } catch (_) {} };
       bubble.appendChild(act);
     }
+    // THE VISIBLE WAY OUT (see kitBail). Every kit-out step carries it, because the coach is the only UI the
+    // Commander can reach over the scrim — without it, accepting the tour was a one-way door.
+    const bail = document.createElement('button'); bail.className = 'tut-coach-bail'; bail.type = 'button'; bail.textContent = '✕ not now';
+    bail.onclick = kitBail;
+    bubble.appendChild(bail);
     document.body.appendChild(bubble);
     let ring = null;
     if (target) { ring = document.createElement('div'); ring.className = 'tut-ring' + (reduceMotion() ? ' no-anim' : ''); document.body.appendChild(ring); }
-    coach = { bubble, ring, anchor: target, raf: 0, onKey: null, kit: true };
+    // Esc bails too — but only when nothing else claims the key, matching briefKey's guard below. Inside
+    // REFIT, build.js's own Esc closes the builder and kitTick reads that close as the very same exit
+    // (double-handling would fire kitClosedDuringPlace twice and stack two dialogue nodes); over an open
+    // station panel, Esc belongs to the panel — the bottom bar stays live under the scrim, so a Commander
+    // really can open one mid-kit-out, and one keypress must not both close it and end the tour.
+    const onKey = e => {
+      if (e.key !== 'Escape') return;
+      if (document.querySelector('.refit-overlay') || document.querySelector('#terms .term')) return;
+      kitBail();
+    };
+    window.addEventListener('keydown', onKey);
+    coach = { bubble, ring, anchor: target, raf: 0, onKey, kit: true };
     placeCoach();
     sfx('open');
   }
@@ -592,8 +652,13 @@ const Tutorial = (() => {
     // REAL run drove it (a demo's post-run state is owned by the harness — don't yank it).
     if (!sawStart) { try { if (typeof World !== 'undefined' && World.setActivity) World.setActivity('idle'); } catch (_) {} }
     state.firstCommandDone = true;
-    if (skipped) state.briefDismissed = true;     // opting out of the tour opts out of the nag — reopen in § FIELD MANUAL
+    if (skipped && !replayMode) state.briefDismissed = true;     // replay never rewrites the saved first-steps preference
     save();
+    if (replayMode) {
+      replayMode = false;
+      if (hasChat()) Chat.localLine(skipped ? 'quick tour closed — your progress is unchanged.' : 'quick tour complete — your progress is unchanged.');
+      return;
+    }
     if (skipped) { if (hasChat()) Chat.localLine('right. i’m here when you need me — just type. the field manual’s in the bottom bar when you want it.'); }
     else { sfx('level'); if (!state.briefDismissed && !state.briefComplete) setTimeout(showBrief, 600); }   // hand them the first-steps map
     // THE FLOOR — the tour NEVER ends in silence, the skip path included. Two guaranteed beats, both
@@ -605,7 +670,7 @@ const Tutorial = (() => {
     setTimeout(() => {
       if (typeof PitchStore !== 'undefined' && PitchStore.offerStarter) PitchStore.offerStarter();
       showCoach('quests', '.bb-group[data-group="work"] .bb-grp',
-        'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. the same dock holds ❒ RECIPES (ready-made jobs), ☑ TASKS (where running work lives) and ⏱ ROUTINES (any job on a schedule). nothing in there is ever gated.');
+        'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. the same dock holds ❒ RECIPES (ready-made jobs), ☑ TASKS (where running work lives) and ∞ AUTOMATION (routines & loops — standing work). nothing in there is ever gated.');
     }, skipped ? 900 : 1400);
   }
 
@@ -634,6 +699,13 @@ const Tutorial = (() => {
     if (coach.ring) coach.ring.remove();
     if (coach.bubble) coach.bubble.remove();
     coach = null;
+  }
+  // measure the live brief and hand the geometry to the pure dodgeRect above. No-op when no brief is showing.
+  function dodgeBrief(box, vw, vh) {
+    if (!briefEl || !document.contains(briefEl)) return box;
+    const z = overlayScale(), r0 = briefEl.getBoundingClientRect();
+    if (!r0.width || !r0.height) return box;
+    return dodgeRect(box, { left: r0.left / z, top: r0.top / z, right: r0.right / z, bottom: r0.bottom / z }, vw, vh);
   }
   // glue the bubble (and ring) to the anchor every frame — survives camera/layout shifts and self-clears
   // the moment the surface is gone (e.g. REFIT closed out from under a REFIT coach).
@@ -667,7 +739,8 @@ const Tutorial = (() => {
       const left = Math.max(8, Math.min(r.left, vw - bw - 8));               // clamp-min last: never below 8, even in a narrow window
       let top = r.bottom + gap;
       if (top + bh > vh - 8) top = Math.max(8, r.top - bh - gap);            // flip above if it would clip the bottom
-      b.style.left = left + 'px'; b.style.top = top + 'px';
+      const box = dodgeBrief({ left, top, w: bw, h: bh }, vw, vh);
+      b.style.left = box.left + 'px'; b.style.top = box.top + 'px';
     }
     coach.raf = requestAnimationFrame(placeCoach);
   }
@@ -676,7 +749,12 @@ const Tutorial = (() => {
     if (active || seen(key)) return;     // never during the First Command; once ever
     // don't paint over an open panel (e.g. the Field Manual) — defer (not marked seen) until it's closed.
     // EXCEPT a one-shot whose trigger never re-fires (level-up): show it over the panel rather than lose it forever.
-    if (!opts.overTerms && document.querySelector('#terms .term')) return;
+    // Same rule for REFIT's first-run card (.refit-firstrun): it now waits for the tour to finish, so the very
+    // open that finally shows it is also the one that fires the 'build' coachmark — defer rather than stack.
+    // (.refit-firstrun, not .refit-guide: the bay/workstation/flow/junction/connector editors share that class,
+    // and the WORKFLOW coaches fire from commitPropStamp BEFORE openPropEditor runs — suppressing on the bare
+    // class would silently kill the whole belt-teach chain.)
+    if (!opts.overTerms && (document.querySelector('#terms .term') || document.querySelector('.refit-firstrun'))) return;
     markSeen(key);                       // mark on SHOW so an ignored hint still never repeats
     clearCoach();
     const anchor = anchorSel ? (typeof anchorSel === 'string' ? document.querySelector(anchorSel) : anchorSel) : null;
@@ -702,7 +780,7 @@ const Tutorial = (() => {
   function onBuildOpen() {
     if (kitMode) return;   // during the guided kit-out, kitTick drives REFIT — don't stack the generic coachmark on top
     showCoach('build', '#refit-tools',
-      'this is REFIT — the floor isn’t decoration. where you put things changes what i can do. keys 1–7 up top: 6 places gear, 7 lays belts.');
+      'this is REFIT — your floor is a flowchart: work arrives at the INBOX, every BAY is an agent doing one step, and the belts you draw are the order the work flows. keys 1–9 up top: 6 places gear, 7 lays belts, 9 stamps a whole starter line.');
   }
   /* WORKFLOW COACHES (2026-07-05 belt-teach): each routing prop teaches ITS role in the two-trip story the
      first time it's placed — one line, at the moment of need, in the agent's voice. Each has its own
@@ -713,7 +791,8 @@ const Tutorial = (() => {
     outbox: 'the OUTBOX is the loading dock — every job we actually FINISH ships a crate here onto the pallet. hit ▸ TEST to watch the whole loop once.',
     filter: 'a FILTER sorts UNOWNED work by what it is — code down one lane, research down another. work that already belongs to someone rides straight home past it. click it to set the lanes.',
     splitter: 'a SPLITTER spreads unowned work across its lanes — several agents working the same stream in parallel. it needs at least two out-going lanes.',
-    merger: 'a MERGER holds crates until it has a full batch, then sends ONE combined crate on — a join point for fan-in work.'
+    // truthful telemetry (2026-07-26 mechanic removal): a merger is a LANE FUNNEL — it never batches or combines
+    merger: 'a MERGER is a lane funnel — several lanes converge into one and every crate rides straight on, K in K out. it tidies the lanes; it never combines the jobs riding them.'
   };
   function onPropPlaced(propType) {
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(propType) : null;
@@ -869,19 +948,19 @@ const Tutorial = (() => {
       return '<p class="fm-lead">one loop runs everything here, and it’s all real:</p>'
         + fmEntry('REAL', '1 · ASK', 'type a job in COMMS. small talk i answer in place; a real task and i get up.')
         + fmEntry('REAL', '2 · WALK', 'i cross to my workstation. that desk is where i actually go to work, on your machine.')
-        + fmEntry('REAL', '3 · CONSENT', 'before i touch a file or reach out i stop and ask — approve once, always, or kill it.')
+        + fmEntry('REAL', '3 · CONSENT', 'local file reads and private notebook saves do not prompt. for other file changes or network actions, i ask unless that class is already approved or FULL ACCESS is on; protected actions stay blocked.')
         + fmEntry('REAL', '4 · RUN', 'i execute the real tools you’ve granted me — web search, file read/write — and stream the result to COMMS.')
         + fmEntry('REAL', '5 · PROVE', 'i verify the work and show the outcome instead of just claiming it.')
-        + '<p class="fm-note">the crew in the left rail are echoes for now — placeholders until you recruit more minds. today it’s one of me, running the whole loop.</p>';
+        + '<p class="fm-note">every crew member you recruit is a real, separate agent with its own identity, workspace, memory, and sessions. right now one agent runs the loop; recruit more and each runs its own work.</p>';
     }
     if (tab === 'GEAR') {
-      return '<p class="fm-lead">a prop in my room is a PERMISSION. drop these in a bay’s room to grant a power; most other furniture is set dressing.</p>'
+      return '<p class="fm-lead">a prop grants a CAPABILITY — what i can attempt, not blanket consent. Settings &gt; Permissions decides whether an action asks or runs without another prompt; most other furniture is set dressing.</p>'
         + fmEntry('REAL', 'WORKSTATION → a desk to work at', 'desk · console · bench · pixel rig. compute to think is always mine — a workstation just gives my body a real desk to walk to and sit at, and its screens light while i work.')
         + fmEntry('REAL', 'CABINET → files', 'intel cab · safe · vault · rack · shelf. read &amp; write files in my workspace.')
         + fmEntry('REAL', 'DISH → web', 'comms dish · uplink · beacon. reach the live web.')
         + fmEntry('REAL', 'SERVER → memory + skills', 'server cart · relay stack · core. a notebook that survives restarts — and the skill library where i save &amp; reload reusable procedures.')
         + fmEntry('REAL', 'CONNECTOR PORTAL → live tools', 'binds one MCP server; its tools land in my hands. lamp = health: green live, amber warming, red broken.')
-        + fmEntry('REAL', 'WORKBENCH → terminal', 'the powered bench. place it in my room and i can run real shell commands and verify what they did — consent-gated, like every tool. it glows while i’m running code.')
+        + fmEntry('REAL', 'WORKBENCH → terminal', 'the powered bench. place it in my room and i can run real shell commands and verify what they did — under your Settings &gt; Permissions posture and the protected-action floor. it glows while i’m running code.')
         + fmEntry('SHOW', 'everything else', 'plants, rugs, screens, lounge gear — flavour. they grant nothing; place them because the place is yours.');
     }
     if (tab === 'WIRING') {
@@ -905,11 +984,24 @@ const Tutorial = (() => {
     body.classList.add('fm-body');
     const render = () => {
       body.innerHTML =
-        '<div class="fm-tabs">' + FM_TABS.map(t => '<button class="fm-tab' + (t === curTab ? ' on' : '') + '" data-t="' + t + '">' + t + '</button>').join('') +
-        '</div><div class="fm-content">' + fmContent(curTab) + '</div>';
-      body.querySelectorAll('.fm-tab').forEach(b => { b.onclick = () => { curTab = b.dataset.t; sfx('click'); render(); }; });
+        '<div class="fm-tabs">' + FM_TABS.map(t => '<button class="fm-tab' + (t === curTab ? ' on' : '') + '" aria-pressed="' + (t === curTab ? 'true' : 'false') + '" data-t="' + t + '">' + t + '</button>').join('') +
+        '</div><div class="fm-content">' + fmContent(curTab)
+        + (curTab === 'FIRST STEPS' ? '<button class="fm-tab fm-replay" type="button">REPLAY QUICK TOUR</button>' : '')
+        + '</div>';
+      body.querySelectorAll('.fm-tab[data-t]').forEach(b => { b.onclick = () => { curTab = b.dataset.t; sfx('click'); render(); }; });
+      const replay = body.querySelector('.fm-replay');
+      if (replay) replay.onclick = () => { sfx('click'); replayFirstCommand(); };
     };
     render();
+  }
+
+  function replayFirstCommand() {
+    if (active) return false;
+    hideBrief(); clearCoach(); clearSpot();
+    // The manual is a real floating window; close it before opening the Dialogue tour so it cannot cover the lesson.
+    try { if (typeof StationUI !== 'undefined' && StationUI.closeTerm) StationUI.closeTerm('manual'); } catch (_) {}
+    firstCommand({ name: agentName, replay: true });
+    return active;
   }
 
   /* lifecycle entry from app.js enterGame: arm the bus ticks (even for skippers/returners) and, for a
@@ -934,8 +1026,11 @@ const Tutorial = (() => {
   function isCoaching() { return !!(active || kitMode || coach); }
 
   return {
-    firstCommand, spotlight, seen, markSeen, _state: () => state,
+    firstCommand, replayFirstCommand, spotlight, seen, markSeen, _state: () => state,
     onBuildOpen, onPropPlaced, onBeltPlaced, onConnectorPlaced, onLevelUp, clearCoach,
     onEnterGame, fillFieldManual, showBrief, tickBrief, teardown, isCoaching
   };
 })();
+
+// browser-safe node shim (guarded exactly like stationui.js) so the gate can unit-test the pure geometry
+if (typeof module !== 'undefined' && module.exports) module.exports = { dodgeRect };

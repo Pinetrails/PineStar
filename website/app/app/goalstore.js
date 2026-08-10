@@ -36,7 +36,16 @@ const GoalStore = (() => {
   let deps = {};                // { getSystem, getName, getCaps } injected by app.js (all optional; fail-open)
   let bound = false;
   let firing = false;           // re-entrancy guard while a decomposition confirm is mid-flight
+  /* THE STUBBORN-BELIEF SPEND LEAK (fixed 2026-08-04). A reply that parses to fewer than MIN_PATH milestones is
+     unusable, and the old code marked NOTHING offered so a later, better reply could still land — which meant a
+     belief the model simply cannot decompose re-paid the aux call at EVERY run end, forever. Two failed attempts
+     on one belief fingerprint is enough evidence: mark it offered, so it re-offers only when the belief itself
+     changes (exactly what a not-now does). In-memory per session; markOffered is what persists. */
+  const DECOMP_FAIL_LIMIT = 2;
+  const MIN_PATH = 3;           // the floor the confirm panel itself enforces — a shorter path is a failure here too
+  let decompFails = {};         // beliefFingerprint -> consecutive unusable decomposition attempts
   let cachedProposal = null;    // { fp, texts } — the last USABLE decomposition the model produced, keyed by the belief fingerprint. If the beat moment was lost after the (paid) aux call, the next offer for the SAME belief state reuses it instead of re-spending. In-memory only; cleared on confirm/decline/init/reset.
+  const journeySyncing = new Set(); // completed milestone outbox keys awaiting sidecar acknowledgement
 
   const now = () => { try { if (typeof deps.now === 'function') return deps.now(); } catch (_) {} return (typeof Date !== 'undefined' && Date.now) ? Date.now() : 0; };
   const ready = () => typeof Goals !== 'undefined' && state;
@@ -60,7 +69,8 @@ const GoalStore = (() => {
             status: (m && m.status === 'done') ? 'done' : 'open',
             questRef: (m && m.questRef != null) ? String(m.questRef) : null,
             evidence: String((m && m.evidence) || '').slice(0, 160),
-            doneAt: (m && Number.isFinite(Number(m.doneAt))) ? Number(m.doneAt) : null
+            doneAt: (m && Number.isFinite(Number(m.doneAt))) ? Number(m.doneAt) : null,
+            journeySyncedAt: (m && m.journeySyncedAt != null && Number.isFinite(Number(m.journeySyncedAt))) ? Number(m.journeySyncedAt) : null
           })).filter(m => m.id) : [];
           if (!ms.length) continue;
           const status = (g.status === 'done' || g.status === 'retired') ? g.status : 'active';
@@ -112,7 +122,8 @@ const GoalStore = (() => {
       if (g) {
         const pr = Goals.progress(g);
         const next = Goals.nextMilestone(g);
-        payload = { text: g.text, done: pr.done, total: pr.total, pct: pr.pct, next: next ? next.text : null };
+        payload = { id: g.id, text: g.text, done: pr.done, total: pr.total, pct: pr.pct,
+          next: next ? next.text : null, milestoneId: next ? next.id : null };
       }
       fetch('/api/goals', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ goal: payload }) }).catch(() => {});
     } catch (_) {}
@@ -153,22 +164,35 @@ const GoalStore = (() => {
   // (paid) aux call (memory/study claimed it mid-round-trip), the next offer for the SAME belief state reuses the
   // cached path instead of re-calling the model. The cache clears the moment the belief is decided (markOffered).
   async function proposeDecomposition() {
-    if (!ready() || firing) return null;
+    // NOTE: no `firing` guard here — the offer flow (chat.js offerArc) sets firing BEFORE this call, so
+    // gating on it deadlocked the arc into always returning null (re-entry is already blocked by
+    // willOfferDecomposition + offerArc's isFiring() entry check).
+    if (!ready()) return null;
     if (typeof Harness === 'undefined' || !Harness.chat) return null;
     const belief = pendingDecomposition();
     if (!belief) return null;
     const fp = beliefFingerprint(belief);
     if (cachedProposal && cachedProposal.fp === fp) return { belief, texts: cachedProposal.texts.slice() };   // reuse the already-paid-for path
+    // one unusable attempt is a hiccup; DECOMP_FAIL_LIMIT of them is a belief this model cannot decompose —
+    // stop paying for it and let a change to the belief re-open it (see DECOMP_FAIL_LIMIT).
+    const failed = () => {
+      decompFails[fp] = (decompFails[fp] || 0) + 1;
+      if (decompFails[fp] >= DECOMP_FAIL_LIMIT) { markOffered(belief); save(); }
+      return null;
+    };
     try {
       const directive = Goals.buildDirective(belief.text);
       const system = deps.getSystem ? deps.getSystem() : '';
-      const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true });
-      if (!res || res.error) return null;
+      // evidence:true (W2): a decomposition proposes the MILESTONES of the Commander's own goal — the open
+      // threads and recent activity are exactly what makes those milestones theirs rather than generic.
+      const res = await Harness.chat({ system, messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true, evidence: true });
+      if (!res || res.error) return failed();
       const texts = Goals.parseDecomposition(res.text, { redact: deps.redact });
-      if (!texts.length) return null;   // under-decomposed / unusable — leave un-offered so a later belief change retries
+      if (texts.length < MIN_PATH) return failed();   // under-decomposed / unusable — the confirm panel would drop it anyway
+      delete decompFails[fp];
       cachedProposal = { fp, texts: texts.slice() };
       return { belief, texts };
-    } catch (_) { return null; }
+    } catch (_) { return failed(); }
   }
 
   // CONFIRM a decomposition: persist the goal tree from the (possibly edited) milestone texts, bound to the belief.
@@ -181,15 +205,22 @@ const GoalStore = (() => {
     state.goals.push(goal);
     while (state.goals.length > GOAL_CAP) state.goals.shift();
     markOffered(belief);
+    // NB the double save(): markOffered persists on its own (its null-path caller has no other save), so this one
+    // is redundant for the offered set — it is kept because it is THIS function's save of the pushed goal, and
+    // localStorage.setItem of one small object is cheaper than a subtle ordering dependency between the two.
     save(); pushToSidecar(); poke();
     return goal;
   }
   // NOT-NOW: mark this belief state offered so it re-surfaces only after the belief changes (never nags). The
   // Commander can still return to the arc anytime; this just stops the proactive confirm beat for this belief.
-  function declineDecomposition(belief) { if (ready() && belief) { markOffered(belief); save(); } }
+  function declineDecomposition(belief) { if (ready() && belief) { markOffered(belief); } }   // markOffered saves
   // record the belief state as decided (FIFO-capped, mirrors studystore's resolved set) + drop the spend-once cache
   // for it — a decided belief's cached path can never leak into a later, different offer.
+  // PUBLIC (2026-08-04): the re-confirm card's "not now" chip records the belief state as decided through this
+  // same door, so a question the Commander deferred re-surfaces only when the belief itself changes — one
+  // not-now discipline for every proactive ask about a goals belief, not two.
   function markOffered(belief) {
+    if (!ready() || !belief) return;
     const fp = beliefFingerprint(belief);
     if (!fp) return;
     if (cachedProposal && cachedProposal.fp === fp) cachedProposal = null;
@@ -198,6 +229,7 @@ const GoalStore = (() => {
       state.offeredOrder.push(fp);
       while (state.offeredOrder.length > OFFERED_CAP) { const old = state.offeredOrder.shift(); delete state.offered[old]; }
     }
+    save();   // a decision this durable is never left in memory only (confirm()'s null-path used to drop it)
   }
 
   /* ---------- THE MILESTONE → WORK-QUEST BINDING ---------- */
@@ -249,6 +281,35 @@ const GoalStore = (() => {
   }
 
   /* ---------- CHAINING + EVIDENCE (the honesty core) ---------- */
+  // Save completed milestones locally first, then acknowledge their journey fold. A failed/lost POST remains
+  // pending and retries on init or quest sync; the backend's goal+milestone key makes every replay idempotent.
+  async function syncJourneyMilestones() {
+    if (!ready() || typeof JourneyStore === 'undefined' || !JourneyStore.noteMilestone) return { acknowledged: 0, pending: 0 };
+    let acknowledged = 0, pending = 0;
+    for (const g of state.goals) {
+      if (!g || !Array.isArray(g.milestones)) continue;
+      for (let i = 0; i < g.milestones.length; i++) {
+        const m = g.milestones[i];
+        if (!m || m.status !== 'done' || m.journeySyncedAt != null) continue;
+        pending++;
+        const key = String(g.id) + ':' + String(m.id);
+        if (journeySyncing.has(key)) continue;
+        journeySyncing.add(key);
+        try {
+          const r = await JourneyStore.noteMilestone({
+            goalId: g.id, goalText: g.text, milestoneId: m.id, milestoneText: m.text,
+            evidence: m.evidence || ('completed: ' + String(m.text || '')).slice(0, 160), agentId: 'agent',
+            goalDone: g.status === 'done' && i === g.milestones.length - 1
+          });
+          if (r && r.ok) { m.journeySyncedAt = now(); acknowledged++; save(); }
+        } catch (_) { /* stays pending */ }
+        finally { journeySyncing.delete(key); }
+      }
+    }
+    return { acknowledged, pending };
+  }
+  function queueJourneySync() { syncJourneyMilestones().catch(() => {}); }
+
   // after a clean run, re-read WorkQuestStore's projection: any bound milestone whose work quest went DONE folds
   // the milestone done, writes the run-summary evidence, advances the bar, and — on the last one — completes the
   // goal. Only REAL completed work moves the bar (never a manual tick). Fail-open + idempotent.
@@ -271,10 +332,13 @@ const GoalStore = (() => {
         if (!doneWq[String(m.questRef)]) continue;
         const ev = clipEvidence(runSummary, m.text);
         const r = Goals.foldMilestoneDone(g, m.id, ev, now());
-        if (r.changed) { changed = true; if (r.goalDone) anyGoalDone = true; bumpStudySalience(g, m); }
+        if (r.changed) {
+          changed = true; if (r.goalDone) anyGoalDone = true; bumpStudySalience(g, m);
+          // Journey progression folds through the durable outbox after this local goal state is saved.
+        }
       }
     }
-    if (changed) { save(); pushToSidecar(); poke(); }
+    if (changed) { save(); pushToSidecar(); poke(); queueJourneySync(); }
     if (anyGoalDone) celebrateGoalDone();
   }
   // a goal completing (all milestones done): the whole-arc celebration — sound + a gold toast (a MOMENT, never a
@@ -343,16 +407,17 @@ const GoalStore = (() => {
   function init(opts) {
     deps = opts || {};
     state = hydrate(load());
-    firing = false; cachedProposal = null;
+    firing = false; cachedProposal = null; decompFails = {}; journeySyncing.clear();
     bind();
     pushToSidecar();
+    queueJourneySync();
   }
   // a brand-new hero starts with no goals (own key; Save.clear only wipes the main envelope — mirrors the siblings).
-  function reset() { state = hydrate(null); firing = false; cachedProposal = null; try { localStorage.removeItem(KEY); } catch (_) {} pushToSidecar(); }
+  function reset() { state = hydrate(null); firing = false; cachedProposal = null; decompFails = {}; journeySyncing.clear(); try { localStorage.removeItem(KEY); } catch (_) {} pushToSidecar(); }
 
   // re-read on the quest-log heartbeat: retire drift + reconcile completed work before the fold (like the sibling
   // sync()s buildQuests calls). Cheap + idempotent.
-  function sync() { if (!ready()) return; syncDrift(); reconcile(''); }
+  function sync() { if (!ready()) return; syncDrift(); reconcile(''); queueJourneySync(); }
 
   /* ---------- the projection consumed by QuestStore.view ---------- */
   // questLive rides in so an in-flight bound milestone renders IN PROGRESS (no Accept) while a stalled/dismissed/
@@ -366,9 +431,9 @@ const GoalStore = (() => {
 
   return {
     init, reset, sync, quests, activeGoal, pushToSidecar,
-    willOfferDecomposition, pendingDecomposition, proposeDecomposition, confirm, declineDecomposition,
+    willOfferDecomposition, pendingDecomposition, proposeDecomposition, confirm, declineDecomposition, markOffered,
     acceptMilestone, reconcile, syncDrift, setFiring, isFiring, beliefFingerprint, questLive,
-    _state: () => state, _onRunEnd: onRunEnd
+    _state: () => state, _onRunEnd: onRunEnd, _syncJourneyMilestones: syncJourneyMilestones
   };
 })();
 

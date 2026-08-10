@@ -134,14 +134,28 @@
   font-family: inherit; color: var(--ph-bright); background: rgba(var(--ph-rgb),.10);
   border: 1px solid var(--ph-faint); border-radius: 3px; padding: 0 4px;
 }
+.cmsg .body .md-pre-wrap {
+  display: block; position: relative; margin: 4px 0;
+}
 .cmsg .body .md-pre {
-  display: block; margin: 4px 0; padding: 6px 9px; white-space: pre; overflow-x: auto;
+  display: block; margin: 0; padding: 6px 36px 6px 9px; white-space: pre; overflow-x: auto;
   font-family: inherit; font-size: 13.5px; color: var(--ph-bright);
   background: rgba(var(--ph-rgb),.07); border: 1px solid var(--ph-faint);
   border-left: 2px solid var(--ph-dim); border-radius: 4px;
 }
 .cmsg .body .md-pre::-webkit-scrollbar { height: 7px; }
 .cmsg .body .md-pre::-webkit-scrollbar-thumb { background: var(--ph-faint); border-radius: 4px; }
+.cmsg .body .md-copy {
+  position: absolute; top: 4px; right: 5px; z-index: 1;
+  border: 1px solid var(--ph-dim); background: var(--panel2); color: var(--ph-dim);
+  font: inherit; font-size: 12px; line-height: 1; padding: 2px 5px; border-radius: 4px; cursor: pointer;
+  opacity: .72; transition: opacity .12s, color .12s, border-color .12s;
+}
+.cmsg .body .md-copy:hover, .cmsg .body .md-copy:focus-visible {
+  color: var(--ph-bright); border-color: var(--ph); opacity: 1;
+}
+.cmsg .body .md-copy.copied { color: var(--ph); border-color: var(--ph); opacity: 1; }
+.cmsg .body .md-copy.copy-failed { color: var(--bad); border-color: var(--bad); opacity: 1; }
 
 /* ENTRANCE — a one-time subtle fade/slide for a newly-added message card (motion tokens). Applied to
    prose cards only; work-log beats (tool/consent/turn-in/nudge/deliverable) keep their own beat motion. */
@@ -306,6 +320,15 @@
 .run-fold { margin: 0 0 2px 11px; }
 .run-fold[hidden] { display: none; }
 .run-fold .tool-rail { margin-left: 0; }
+.run-telemetry {
+  margin: 4px 0 7px; padding: 6px 9px;
+  border-left: 1px solid color-mix(in srgb, var(--ph-dim) 55%, transparent);
+  color: var(--ph-dim); font-size: 11px; letter-spacing: .45px;
+}
+.rt-run + .rt-run { margin-top: 7px; padding-top: 6px; border-top: 1px solid color-mix(in srgb, var(--ph-dim) 20%, transparent); }
+.rt-run-head { color: var(--ph); }
+.rt-tool { margin: 2px 0 0 10px; opacity: .82; }
+.rt-tool.err { color: var(--bad); }
 
 /* ============================================================
    4 · JUMP-TO-LATEST PILL — while scrolled up: a dim, persistent
@@ -413,9 +436,11 @@
 }
 .cmsg.broadcast .bc-line {
   flex: 0 0 auto;
+  min-width: 0; max-width: 100%;
   font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase;
   color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
-  white-space: nowrap; font-variant-numeric: tabular-nums;
+  text-align: center; white-space: normal; overflow-wrap: anywhere; word-break: break-word;
+  font-variant-numeric: tabular-nums;
 }
 .cmsg.broadcast .bc-glyph { color: var(--ph); opacity: .8; }
 /* .bc-name carries its per-agent suit colour inline (chat.js) — that tint IS its emphasis;
@@ -531,7 +556,7 @@
 .chat-send:active { background: var(--ph-bright); }
 .chat-send:focus-visible { outline: 1px solid var(--ph-bright); outline-offset: 2px; }
 
-/* CHAR COUNTER — dim, right-aligned, appears only as the message nears the 4000-char cap so it never
+/* CHAR COUNTER — dim, right-aligned, appears only as the message nears the 100,000-char cap so it never
    competes for attention on a normal message. --warn tint at the edge. [hidden] until chat.js shows it. */
 .chat-charcount {
   font-size: 11px; letter-spacing: .5px; text-align: right; color: var(--ph-dim); opacity: .75;

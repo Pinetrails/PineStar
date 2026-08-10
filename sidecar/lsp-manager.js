@@ -159,7 +159,16 @@ function makeLspManager(deps) {
 
     touch() {
       if (this.idleTimer) clearTimeout(this.idleTimer);
-      this.idleTimer = setTimeout(() => { this.close().catch(() => {}); }, idleMs);
+      this.idleTimer = setTimeout(() => {
+        this.idleTimer = null;
+        const hasWaiters = Array.from(this.waiters.values()).some(rows => rows && rows.length);
+        // Idle means no work is outstanding, not merely that the wall clock reached the reap interval. A slow
+        // language server can legitimately hold an initialize request or diagnostic publish past `idleMs`; closing
+        // it here turns a real edit check into a false "LSP unavailable" result. Re-arm from this point and let the
+        // request/diagnostic timeout remain the sole authority over in-flight work.
+        if (this.pending.size || hasWaiters) { this.touch(); return; }
+        this.close().catch(() => {});
+      }, idleMs);
       if (this.idleTimer && typeof this.idleTimer.unref === 'function') this.idleTimer.unref();
     }
 

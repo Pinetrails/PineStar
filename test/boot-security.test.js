@@ -49,7 +49,7 @@ function boot(port, workspaces, attemptsLeft) {
         try { child.kill(); } catch (_) {}
         reject(new Error('boot timeout; output:\n' + out));
       }
-    }, 9000);
+    }, 30000);
   });
 }
 

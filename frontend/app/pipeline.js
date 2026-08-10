@@ -35,6 +35,9 @@
         if (map[key(xx, yy)]) return { x: xx, y: yy };
     return null;
   }
+  // every feed mouth of an INTAKE source: `tiles` when compiled by this version, `tile` alone when the plan
+  // was persisted by an older compile (the sidecar restores plans from disk — never assume the new shape).
+  const srcTiles = s => (s.tiles && s.tiles.length) ? s.tiles : (s.tile ? [s.tile] : []);
   // small deterministic FNV-1a hash of the plan topology (frontend<->sidecar agree they hold the same plan)
   function hashStr(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 0x01000193) >>> 0; } return ('0000000' + h.toString(16)).slice(-8); }
 
@@ -86,16 +89,31 @@
         // refuses wholesale — taking per-bay capability isolation down with it (see router.stationFor).
         // Same standing as its neighbours ORPHAN_BAY / BAY_NOT_FED: the floor still nags, it just isn't fatal.
         if (!t) { errors.push({ code: 'ORPHAN_SOURCE', propId: p.id, warn: true }); continue; }
-        sources.push({ propId: p.id, tile: t });
+        // EVERY ring belt tile is a feed mouth (2026-08-04 audit — same multi-hookup rule bays and outboxes
+        // already follow): a single recorded tile left an intake's SECOND lane dark and unroutable whenever
+        // the reaching lane started on a later-scanned ring tile. `tile` stays = first hit (back compat:
+        // persisted plans and older callers read it); every walker fans out from `tiles`.
+        const iw = p.w || 1, ih = p.h || 1, tiles = [];
+        for (let yy = p.y - 1; yy <= p.y + ih; yy++)
+          for (let xx = p.x - 1; xx <= p.x + iw; xx++)
+            if (map[key(xx, yy)]) tiles.push({ x: xx, y: yy });
+        sources.push({ propId: p.id, tile: t, tiles });
       } else if (p.t === 'splitter' || p.t === 'filter' || p.t === 'merger') {
         const t = map[key(p.x, p.y)] ? { x: p.x, y: p.y } : beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
-        if (!t) continue;   // a junction on no belt is inert
+        // a junction touching NO belt routes nothing — it silently compiled to nothing, which after a MOVE
+        // one tile too far read as "my filter stopped working" with zero feedback. Warn (not a blocker: an
+        // unattached junction can neither loop nor void work) so REFIT can nag it back onto the line.
+        if (!t) { errors.push({ code: 'ORPHAN_JUNCTION', propId: p.id, warn: true }); continue; }
         const kind = p.t === 'splitter' ? 'split' : p.t === 'merger' ? 'merge' : 'filter';
         const cfg = { kind };
         if (kind === 'filter') {
           cfg.routes = (p.routes && typeof p.routes === 'object') ? p.routes : {};   // {tag -> out-lane dir}
           cfg.def = p.def || null;                                                    // default out-lane dir
-          if (!cfg.def) errors.push({ code: 'FILTER_NO_DEFAULT', propId: p.id });
+          // WARN, never a blocker (2026-08-04 audit): a def-less filter never drops or loops work — the
+          // engine and resolveTarget share the same fallback (routed lane -> def -> FIRST lane), so every
+          // crate still lands somewhere deterministic. That fails the bar a blocking error must meet
+          // ("genuinely able to loop or void work"); the floor nags the missing default, it isn't fatal.
+          if (!cfg.def) errors.push({ code: 'FILTER_NO_DEFAULT', propId: p.id, warn: true });
         }
         // a MERGE carries no config: it is a LANE FUNNEL (several lanes converge, every crate rides on).
         // The old `bufferSize` K described a hold-K-then-combine barrier the harness never performed —
@@ -122,6 +140,24 @@
           if (map[key(xx, yy)]) outs.push({ propId: p.id, tile: { x: xx, y: yy } });
     }
 
+    /* A SOLID PROP BURIES THE LINE (2026-08-04 legibility audit): a blocking prop placed over a belt run
+       used to be silently legal — the line stayed compiled + energized and crates drew straight over the
+       prop. Warn, never a blocker (transport still conserves every crate; the floor just looks wrong).
+       Only an EXPLICIT blocks:true prop counts: belt machines (intake/bay/outbox/junctions) legitimately
+       sit on/next to the line, and flat decor (block:false) buries nothing. geo already carries `block`
+       per prop (worldmodel.projectGeometry emits it) — no contract change; a geo without the field
+       (older callers/tests) simply never trips this. Anchored on the first covered belt tile. */
+    const BELT_MACHINES = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
+    for (const p of props) {
+      if (p.block !== true || BELT_MACHINES[p.t]) continue;
+      const pw = p.w || 1, ph = p.h || 1;
+      let hit = null;
+      for (let yy = p.y; yy < p.y + ph && !hit; yy++)
+        for (let xx = p.x; xx < p.x + pw && !hit; xx++)
+          if (map[key(xx, yy)]) hit = { x: xx, y: yy };
+      if (hit) errors.push({ code: 'BELT_BURIED', propId: p.id, tile: hit, warn: true });
+    }
+
     const seenAgent = {}, unboundBays = [], dockBays = [];
     const hasLine = sources.length > 0;   // an INTAKE line exists — only then can "not fed by it" be a finding
     for (const p of props) {
@@ -136,7 +172,14 @@
       }
       // EVERY bound bay is a working dock (legibility list; NOT the dispatch `bays` — router semantics untouched).
       // A LONE assigned bay is a COMPLETE build: work addressed to its agent arrives at the dock, no belts needed.
-      dockBays.push({ propId: p.id, agentId: p.agentId, x: p.x, y: p.y, w: p.w || 1, h: p.h || 1 });
+      // `brief` (step editor, 2026-08-05) rides THIS list only — the Commander's standing job brief for this
+      // station, PROMPT TEXT ONLY: it never touches routing (resolveTarget/chainNext ignore it) or capability
+      // (stationFor reads objects, never brief), and `dockBays` is outside the hash so it cannot move dispatch
+      // either. Bounded here so no surface can post an unbounded blob.
+      const brief = (typeof p.brief === 'string' && p.brief.trim()) ? p.brief.trim().slice(0, 2000) : null;
+      const dockRec = { propId: p.id, agentId: p.agentId, x: p.x, y: p.y, w: p.w || 1, h: p.h || 1 };
+      if (brief) dockRec.brief = brief;
+      dockBays.push(dockRec);
       const t = beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
       if (!t) {
         // beltless bound bay: valid alone; merely "not on the line" (warn) when an intake line exists elsewhere
@@ -153,6 +196,11 @@
       for (let yy = p.y - 1; yy <= p.y + bh; yy++)
         for (let xx = p.x - 1; xx <= p.x + bw; xx++)
           if (map[key(xx, yy)]) tiles.push({ x: xx, y: yy });
+      // NO BRIEF ON THE DISPATCH RECORD. `bays` is a HASH INPUT, and prompt text is not dispatch topology:
+      // carrying the brief here made typing one word into a step editor move plan.hash, which re-posts the
+      // plan, which resets the router's splitter round-robin balance — an edit to what an agent is TOLD
+      // perturbing which agent work is SENT to. The brief still reaches the sidecar on `dockBays` (the
+      // legibility list, outside the hash) and router.stageBrief reads it from there (2026-08-07).
       bays.push({ agentId: p.agentId, propId: p.id, tile: t, tiles });
       for (const ht of tiles) bayTileToAgent[key(ht.x, ht.y)] = p.agentId;
     }
@@ -165,7 +213,7 @@
     for (const b of bays) reach[b.agentId] = false;
     if (!cyc) {
       const seen = {}, q = [];
-      for (const s of sources) { const sk = key(s.tile.x, s.tile.y); if (!seen[sk]) { seen[sk] = true; q.push(s.tile); } }
+      for (const s of sources) for (const st of srcTiles(s)) { const sk = key(st.x, st.y); if (!seen[sk]) { seen[sk] = true; q.push(st); } }
       while (q.length) {
         const t = q.shift(), k = key(t.x, t.y);
         if (bayTileToAgent[k]) { reach[bayTileToAgent[k]] = true; continue; }
@@ -216,16 +264,89 @@
       errors.push(onLoop ? { code: 'CHAIN_CYCLE', agents: cc, propId: onLoop.propId } : { code: 'CHAIN_CYCLE', agents: cc });
     }
 
-    plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));   // hash excludes the legibility extras: same dispatch topology, same hash
+    /* ---------- LINE IDENTITY — WORK BELONGS TO A LINE (2026-08-07, Andrew's ruling) ----------
+       "each conveyor system built has a purpose and a different workflow — the conveyor system should
+       visually run ONLY when the specific workflow is running."
+
+       Every belt machine on a floor belongs to exactly ONE physical line (lineComponents: the connected
+       component over belt tiles, plus every machine touching it through its footprint + 1-tile ring).
+       `lineId` names that line. It is computed HERE, on the compiled plan, so the browser and the sidecar
+       answer "which line does this dock belong to?" from the SAME artifact — the one-compiler law. There
+       is no second derivation anywhere.
+
+       DERIVATION: lineId === the component's key === the OLDEST member PROP id, ordered by the numeric
+       suffix of the minted id and NOT by string order (propIdCmp — 'p9' is older than 'p10'). Prop ids are
+       stable in the save doc, so a line keeps its identity across reloads and across every edit that keeps
+       THE KEYING PROP; deleting that prop re-keys the line to its next-oldest machine (work already in
+       flight then carries a lineId that no longer names it, and the gate stops it — that is the honest
+       cost of identity-by-member). Pure: no clock, no RNG, no iteration luck (components are sorted by
+       key, bays within a component by propId, and an agent takes the FIRST line that claims it).
+
+       Attached AFTER the hash inputs are fixed, and only onto the LEGIBILITY list (`dockBays`) plus these
+       lookup maps — the dispatch topology is unchanged, so the same floor keeps the same plan.hash it had
+       before line identity existed and no station needlessly re-arms on upgrade. */
+    const lines = [], lineOfProp = {}, lineOfAgent = {};
+    for (const c of lineComponents(geo)) {
+      const lineId = c.key, rec = { lineId, propIds: c.props.slice(), intakes: c.intakes.slice(), outboxes: c.outboxes.slice(), agents: [] };
+      for (const pid of c.props) lineOfProp[pid] = lineId;
+      for (const b of c.bays) if (b.agentId && !lineOfAgent[b.agentId]) { lineOfAgent[b.agentId] = lineId; rec.agents.push(b.agentId); }
+      rec.agents.sort();
+      lines.push(rec);
+    }
+    plan.lines = lines;
+    plan.lineOfProp = lineOfProp;     // propId  -> lineId
+    plan.lineOfAgent = lineOfAgent;   // agentId -> the lineId of the dock it crews
+    for (const d of dockBays) { const l = lineOfProp[d.propId]; if (l) d.lineId = l; }
+
+    // THE HASH IS DISPATCH TOPOLOGY, NOTHING ELSE — sources, dispatch bays, junctions, belts. Every legibility
+    // extra (dockBays + their briefs, unboundBays, outs, reach, chains, lines) is OUTSIDE it, so the same floor
+    // keeps the same hash and no station needlessly re-arms: typing a job brief, naming a line or upgrading to
+    // line identity moves nothing here. Verified by test/pipeline.test.js ("a brief edit does not move the hash").
+    plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));
     return plan;
+  }
+
+  /* lineOf(plan, agentId) -> the lineId of the dock this agent crews, or null. The ONE reader every
+     surface uses (router.lineOfAgent, the gate below, the floor's crate honesty) so "which line is this"
+     can never be answered two different ways. A plan compiled before line identity existed answers null,
+     which the gate reads as TERMINAL — see chainNext. */
+  function lineOf(plan, agentId) {
+    if (!plan || !agentId || !plan.lineOfAgent) return null;
+    return plan.lineOfAgent[agentId] || null;
+  }
+
+  /* lineOriginOf(plan, agentId) -> the lineId that work ARRIVING FROM OUTSIDE at this dock belongs to, or
+     null. Asked of the agent that actually RUNS, never of how the message was addressed — the per-agent
+     channel bots deliberately hard-lock stage one to their bound agent and consult no floor routing at all,
+     so a resolution-flavoured answer would have said "no line" for exactly the case the belts were drawn for.
+
+     WHAT COUNTS AS "THE LINE'S OWN TRIGGER" is the station's existing law, not a new idea: **work handed
+     over in person skips the ride in.** The REFIT flow strip has said so since belt-teach — "COMMS orders
+     skip the ride in — you gave them in person" — and world.js already refuses to spawn an INTAKE crate for
+     a kind:'directive' work-item. So the test is "did it ride in through this line's front door?": the dock
+     must be one the plan's INBOX sources actually REACH. A dock no door feeds — a lone dock, or a MID-LINE
+     stage a message merely named — was not triggered by anything, so its work is terminal and buys nothing
+     downstream.
+
+     Deliberately NOT keyed on a chat's agent binding. That binding cannot distinguish the Commander's
+     explicit /talk from the hub's own bookkeeping — hub.js auto-saves the floor's pick onto any previously
+     unbound chat (as a notifier index), so every channel chat looks "bound" from its second message on.
+     Denying the line on that silently stopped channels from driving their lines after one message, which
+     test/routing.sample.e2e.test.js reproduces exactly. An in-app COMMS directive stays terminal by a much
+     stronger route than any heuristic: chat.js sends no lineId at all. */
+  function lineOriginOf(plan, agentId) {
+    if (!plan || !agentId || !plan.reach || !plan.reach[agentId]) return null;
+    return lineOf(plan, agentId);
   }
 
   /* ---------- the chain layer: a dock's OUTPUT is another dock's INPUT ----------
 
      A DOCK NEVER EATS ITS OWN OUTPUT. A handoff crate leaves its producer's dock and rides THROUGH every other
      hookup tile of that same bay (a lane running along a dock's edge touches several ring tiles) — it is consumed
-     only by a FOREIGN bound bay. The engine enforces the identical rule (`fromAgentId === stopOwner` rides on),
-     which is what makes a self-loop structurally impossible rather than merely unlikely. */
+     only by a FOREIGN bound bay. The engine enforces the identical rule since 2026-08-04: world.js stamps the
+     producer on the crate (`payload.fromAgentId`) and conveyor.js's dock-delivery check rides a crate past any
+     stop whose owner IS its producer — physics, which is what makes a self-loop structurally impossible rather
+     than merely unlikely. */
 
   // walk the flow from `starts`, fanning ALL junction lanes: which foreign docks / outboxes can this reach?
   function chainWalk(plan, agentId, starts) {
@@ -297,9 +418,27 @@
      a fan-out to every lane): follows the belt from the ship tile, a FILTER branches on the OUTPUT's tag (this is
      how you draw "route the result by what it turned out to be"), a SPLIT round-robins through `pick`, own-dock
      hookups are ridden through, the first foreign dock consumes. null = the handoff ships out / dead-ends, i.e.
-     this dock is a terminal stage and its reply is the pipeline's answer. */
+     this dock is a terminal stage and its reply is the pipeline's answer.
+
+     THE GATE (work belongs to a line, 2026-08-07 — Andrew's ruling). A dock's output advances the work
+     line ONLY when the run carries the lineId of THIS dock's line, i.e. only when the work entered
+     through that line's own trigger (its INBOX / a channel routed down its belts / one of its routines /
+     its sample job). A run with no lineId — a direct COMMS order, a /talk task, any ad-hoc job — is
+     TERMINAL: the agent answers, and nothing downstream fires or spends. Living HERE, in the one module
+     every surface already loads, is what makes the rule un-drift-able: the browser's COMMS line, the
+     channel hub, cron and run-now all ask this same function, so no surface can disagree.
+
+     OLD PLANS DEGRADE TO TERMINAL, ON PURPOSE. A plan compiled before line identity existed (one restored
+     from disk at boot, say) has no lineOfAgent, so `own` is null and every dock is terminal until the app
+     posts a fresh plan. That is the SAFER of the two defaults: the failure mode is "a line did not run",
+     which the Commander can see and re-trigger, versus "money was spent on stages the user never asked
+     for", which is silent and unrefundable. It is also self-healing — world.js re-posts the compiled plan
+     on the first floor change after the app opens. */
   function chainNext(plan, agentId, ctx, pick) {
     if (!plan || !plan.chains || !plan.belts) return null;
+    const carried = (ctx && ctx.lineId != null && String(ctx.lineId)) || null;
+    const own = lineOf(plan, agentId);
+    if (!carried || !own || carried !== own) return null;
     const rec = plan.chains[agentId];
     if (!rec || !rec.tile || !rec.next.length) return null;
     const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
@@ -364,7 +503,11 @@
     // inbound: intake sources -> bound-bay hookups
     const bayTiles = [];
     for (const k in bayAt) { const p = k.split(','); bayTiles.push({ x: +p[0], y: +p[1] }); }
-    if (plan.sources && plan.sources.length && bayTiles.length) segment(plan.sources.map(s => s.tile), true, bayTiles);
+    if (plan.sources && plan.sources.length && bayTiles.length) {
+      const starts = [];   // EVERY feed mouth of every source — a second lane off a later ring tile is just as live
+      for (const s of plan.sources) for (const st of srcTiles(s)) starts.push(st);
+      segment(starts, true, bayTiles);
+    }
     // outbound: bound-bay hookups -> outbox hookups
     const outTiles = (plan.outs || []).map(o => o.tile);
     if (bayTiles.length && outTiles.length) segment(bayTiles, false, outTiles);
@@ -459,22 +602,28 @@
     if (!plan || !plan.sources || !plan.sources.length || !agentId) return null;
     const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
     for (const s of plan.sources) {
-      const seen = {}, q = [s.tile];
-      seen[key(s.tile.x, s.tile.y)] = true;
-      let hit = false;
-      while (q.length && !hit) {
-        const t = q.shift(), k = key(t.x, t.y);
-        if (bayAt[k] === agentId) { hit = true; break; }
-        // a FOREIGN dock hookup does not consume an addressed crate — keep riding
-        for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
+      // walk each feed mouth SEPARATELY (ring-scan order): the tile returned is the mouth whose lane
+      // actually leads home, so an addressed crate spawns on the reaching lane — not on a first-recorded
+      // mouth that feeds a different lane entirely (the 2026-08-04 multi-lane-intake fix).
+      for (const st of srcTiles(s)) {
+        const seen = {}, q = [st];
+        seen[key(st.x, st.y)] = true;
+        let hit = false;
+        while (q.length && !hit) {
+          const t = q.shift(), k = key(t.x, t.y);
+          if (bayAt[k] === agentId) { hit = true; break; }
+          // a FOREIGN dock hookup does not consume an addressed crate — keep riding
+          for (const nt of nextTiles(map, junctions, t)) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
+        }
+        if (hit) return st;
       }
-      if (hit) return s.tile;
     }
     return null;
   }
 
   // round-robin picker so autonomous dispatch genuinely SPREADS splitter work across agents, matching the
   // engine's load-balance intent instead of always running the first lane.
+
   function resolveTarget(plan, ctx, pick) {
     if (!plan) return null;
     // ADDRESSED WORK GOES TO ITS ADDRESSEE (2026-07-05, Andrew's consistency ruling): when the message is
@@ -490,10 +639,12 @@
     if (!plan.sources || !plan.sources.length) return null;
     const tag = (ctx && ctx.tag) || 'general';
     const map = plan.belts, junctions = plan.junctions, bayAt = plan.bayTileToAgent;
-    // walk EVERY source in plan order (not just sources[0] — a second room's network was invisible);
-    // the first lane that lands on a bound bay wins. Deterministic: plan order + lane rules are fixed.
-    for (const s of plan.sources) {
-      let t = s.tile, guard = 0; const seen = {};
+    // walk EVERY source in plan order (not just sources[0] — a second room's network was invisible), and
+    // EVERY feed mouth of each source in ring-scan order (not just the first — an intake touching two lanes
+    // could only ever dispatch down the first-recorded one). The first lane that lands on a bound bay wins.
+    // Deterministic: plan order + ring-scan order + lane rules are all fixed.
+    for (const s of plan.sources) for (const st of srcTiles(s)) {
+      let t = st, guard = 0; const seen = {};
       let hitAgent = null;
       while (t && guard++ < 4096) {
         const k = key(t.x, t.y);
@@ -532,15 +683,101 @@
      NOT the user, it is a machine being handed material, so the turn names the line explicitly. Carrying the
      ORIGINAL request as well as the upstream output is load-bearing: a writer handed only research has no
      idea what was asked and invents one. */
-  function handoffPrompt(originalText, fromAgentId, upstream, hop) {
+  function handoffPrompt(originalText, fromAgentId, upstream, hop, stageBrief) {
+    // stageBrief (step editor, 2026-08-05): the RECEIVING dock's standing job brief — optional 5th param so
+    // every existing caller composes byte-identical turns. Prompt text only; bounded like the compiled copy.
+    const brief = (typeof stageBrief === 'string' && stageBrief.trim()) ? stageBrief.trim().slice(0, 2000) : '';
     return 'PIPELINE HANDOFF — you are stage ' + (hop + 1) + ' of a work line on this station.\n\n'
       + 'The original request was:\n' + String(originalText || '(none recorded)') + '\n\n'
       + 'The upstream stage (' + fromAgentId + ') produced:\n' + String(upstream) + '\n\n'
+      + (brief ? 'YOUR STANDING BRIEF FOR THIS STATION:\n' + brief + '\n\n' : '')
       + 'Do YOUR part of this work and produce the output for the next stage. Do not restate the upstream '
       + 'output — build on it. Answer with the work itself, not a description of what you would do.';
   }
 
   const ok = plan => !plan.errors.some(e => !e.warn);   // a plan is deployable iff it has no non-warning errors
 
-  return { compileRoutingPlan, resolveTarget, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom } };
+  /* ---------- LINE COMPONENTS (guided workflows, 2026-08-05) ----------
+     Groups the floor's belt machinery into physical LINES: connected components over belt tiles
+     (4-neighbour adjacency, direction-blind — a lane and its return leg are one line) plus every
+     machine (intake/bay/outbox/junction) that touches a component through its footprint + 1-tile
+     ring — the exact hookup semantics compileRoutingPlan's passes use. Pure + deterministic
+     (no RNG, no clock, inputs unmutated); the finish-the-line card derives its checklist from
+     these against the compiled plan, and the delivery-retirement hook hit-tests `tiles`.
+     `key` = the OLDEST member PROP id — oldest by the monotonic counter the save doc mints ids from
+     (`p1`, `p2`, … `p10`), NOT by string order. See propIdCmp: a default string sort puts 'p10'
+     BEFORE 'p9', so the tenth prop on a line would silently steal the key from the ninth and rename
+     the whole line. Prop ids are stable in the save doc, so a line keeps its identity across reloads
+     and across every edit that keeps THE KEYING PROP. It does NOT survive deleting that prop: the
+     line then re-keys to its next-oldest member, and anything latched on the old key (a lineId a
+     run is carrying, a localStorage entry) no longer names it. That is the real behaviour — a line's
+     identity is its oldest surviving machine, not the line itself. */
+  /* PROP-ID ORDER (2026-08-07 conveyor audit). Ids come from worldmodel's monotonic `_nid` as
+     'p' + N, so numeric order IS creation order. Compare the suffix numerically; anything that is
+     not 'p<N>' (a legacy/hand-authored id) falls back to a plain string compare and sorts AFTER the
+     minted ids, so the answer stays total and deterministic on any doc. */
+  const PROP_ID_N = /^p(\d+)$/;
+  function propIdCmp(a, b) {
+    const ma = PROP_ID_N.exec(a), mb = PROP_ID_N.exec(b);
+    if (ma && mb) { const d = (+ma[1]) - (+mb[1]); return d || (a < b ? -1 : a > b ? 1 : 0); }
+    if (ma) return -1;
+    if (mb) return 1;
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+  function lineComponents(geo) {
+    const props = (geo && geo.props) || [];
+    const map = buildBeltMap(geo && geo.belts);
+    const MACH = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
+    // union-find over belt-tile keys
+    const parent = {};
+    const find = k => { let r = k; while (parent[r] !== r) r = parent[r]; let c = k; while (parent[c] !== r) { const n = parent[c]; parent[c] = r; c = n; } return r; };
+    const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[rb] = ra; };
+    for (const k in map) parent[k] = k;
+    for (const k in map) {
+      const p = k.split(','), x = +p[0], y = +p[1];
+      for (const d of LANE_ORDER) { const v = DIRV[d], nk = key(x + v[0], y + v[1]); if (map[nk]) union(k, nk); }
+    }
+    // a machine joins (and can BRIDGE) every component its footprint+ring touches
+    const propTiles = {};   // propId -> [belt keys]
+    for (const pr of props) {
+      if (!MACH[pr.t]) continue;
+      const w = pr.w || 1, h = pr.h || 1, hits = [];
+      for (let yy = pr.y - 1; yy <= pr.y + h; yy++)
+        for (let xx = pr.x - 1; xx <= pr.x + w; xx++)
+          if (map[key(xx, yy)]) hits.push(key(xx, yy));
+      if (!hits.length) continue;   // a beltless machine is on no line
+      for (let i = 1; i < hits.length; i++) union(hits[0], hits[i]);
+      propTiles[pr.id] = hits;
+    }
+    // fold members per root
+    const byRoot = {};
+    const compOf = r => byRoot[r] || (byRoot[r] = { key: null, props: [], bays: [], intakes: [], outboxes: [], tiles: {}, beltCount: 0, bbox: null });
+    const grow = (c, x, y) => { const b = c.bbox; if (!b) c.bbox = { x1: x, y1: y, x2: x, y2: y }; else { if (x < b.x1) b.x1 = x; if (y < b.y1) b.y1 = y; if (x > b.x2) b.x2 = x; if (y > b.y2) b.y2 = y; } };
+    for (const k in map) {
+      const c = compOf(find(k)), p = k.split(',');
+      c.tiles[k] = true; c.beltCount++; grow(c, +p[0], +p[1]);
+    }
+    for (const pr of props) {
+      const hits = propTiles[pr.id];
+      if (!hits) continue;
+      const c = compOf(find(hits[0]));
+      c.props.push(pr.id);
+      if (pr.t === 'bay') c.bays.push({ propId: pr.id, agentId: pr.agentId || null, role: pr.role || null, x: pr.x, y: pr.y, w: pr.w || 1, h: pr.h || 1 });
+      else if (pr.t === 'intake') c.intakes.push(pr.id);
+      else if (pr.t === 'outbox') c.outboxes.push(pr.id);
+      grow(c, pr.x, pr.y); grow(c, pr.x + (pr.w || 1) - 1, pr.y + (pr.h || 1) - 1);
+    }
+    const out = [];
+    for (const r in byRoot) {
+      const c = byRoot[r];
+      if (!c.props.length) continue;              // bare belt scribbles are not a line
+      c.props.sort(propIdCmp); c.key = c.props[0];
+      c.bays.sort((a, b) => propIdCmp(a.propId, b.propId));
+      out.push(c);
+    }
+    out.sort((a, b) => propIdCmp(a.key, b.key));
+    return out;
+  }
+
+  return { compileRoutingPlan, resolveTarget, lineOf, lineOriginOf, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, lineComponents, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom, propIdCmp } };
 });

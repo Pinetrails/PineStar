@@ -58,15 +58,22 @@ const SLEEP = process.platform === 'win32' ? 'ping -n 5 127.0.0.1 > NUL' : 'slee
 
     // The paired Telegram owner is the person sitting at the machine: their shell may deliberately use a host
     // directory outside the agent workspace. Ordinary calls above remain jailed and screened.
+    const checkpointRoots = [];
     const remote = await tool.run({ cmd: 'echo remote-owner-host-shell', cwd: root }, ctx({
-      ownerTrusted: true, remoteDesktopAuthorized: true, inputMode: 'remote-owner', surface: 'interactive'
+      ownerTrusted: true, remoteDesktopAuthorized: true, inputMode: 'remote-owner', surface: 'interactive',
+      checkpointMutation: async (candidate, label, opts) => checkpointRoots.push({ candidate, label, opts })
     }));
     A.ok(/remote-owner-host-shell/.test(remote.content), 'remote-owner shell runs from an explicit host directory');
+    A.eq(checkpointRoots.length, 1, 'shell waits for one pre-execution checkpoint');
+    A.eq(path.resolve(checkpointRoots[0].candidate), path.resolve(root), 'shell checkpoints the effective host cwd');
+    A.eq(checkpointRoots[0].opts.always, true, 'shell execution keeps the always-checkpoint safety coupling');
 
     // ---- 5. output cap: a tiny maxBytes truncates ----
     const small = makeShellTool({ spawn, fs, pathMod: path, root, clock: makeClock(0), limits: { maxBytes: 5 } }).execTool;
     const r5 = await small.run({ cmd: 'echo hello world this is long' }, ctx());
     A.ok(/truncated/.test(r5.content), 'oversized output truncated');
+    A.ok(/hello world this is long/.test(r5.fullContent), 'the full shell bytes survive the intrinsic preview ceiling');
+    A.ok(/\[exit 0\]$/.test(r5.fullContent), 'the recoverable shell artifact includes the real terminal exit receipt');
 
     /* ---- 5b. ANSI STRIP (ref-parity). npm/git/cargo/pytest emit colour whenever they think a TTY is
        attached, and the model reads the control bytes as tokens — '[32m' is billed content meaning

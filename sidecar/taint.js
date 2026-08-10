@@ -17,9 +17,10 @@
      REVOKED  workspace-process  -> shell.exec / verify.run (arbitrary code execution)
               external-credentialed -> web_request (acts as the Commander on a third-party account)
               connector WRITE/EXECUTE -> an outward action on the user's own accounts
-     KEPT     connector READS, plain web reads, files, memory, images. Reading more untrusted data cannot be
-              turned into an outward action; acting on it can. Without this line a routine whose job is
-              "read three pages from Notion" would die on call two, and the feature would be worthless.
+     KEPT     plain web reads, ordinary jailed files, memory, images. Reading more untrusted data cannot be
+              turned into an outward action; acting on it can. Connector calls are NOT split by the server's
+              `readOnlyHint`: that annotation is attacker-authored metadata and cannot prove a call has no
+              effect. A tainted run therefore makes no second connector call without a fresh human boundary.
 
    NOT sources in v1, each a deliberate boundary rather than an oversight:
      - shell output: a granted routine's own `npm test` output would revoke its next command — that is the
@@ -41,9 +42,15 @@
   const CONNECTOR_CAP = /^mcp:/;
 
   // Does this tool's RESULT bring content the Commander did not author into the context?
-  function isUntrustedSource(tool) {
+  function isUntrustedSource(tool, call) {
     const cap = String((tool && tool.capability) || '');
-    return cap === 'web' || CONNECTOR_CAP.test(cap);
+    if (cap === 'web' || CONNECTOR_CAP.test(cap)) return true;
+    // Attachments are parked inside the ordinary workspace jail so the existing fs tools can read them. The
+    // jail proves WHERE the bytes live, not WHO authored them. Treat a read from that provenance-stamped folder
+    // like the upload that created it; otherwise a poisoned document can bypass the web/MCP taint boundary.
+    const name = String((tool && tool.name) || '');
+    const p = String((call && call.args && call.args.path) || '');
+    return name === 'fs.read' && /(?:^|[\\/])\.attachments(?:[\\/]|$)/i.test(p);
   }
 
   // Once the run is tainted, may this tool still be called?
@@ -52,9 +59,26 @@
     const impact = impactOfTool(tool);
     if (impact === 'workspace-process') return false;        // shell.exec / verify.run
     if (impact === 'external-credentialed') return false;    // web_request — spends a stored key outward
-    if (CONNECTOR_CAP.test(String(tool.capability || ''))) return String(tool.scope || 'read') === 'read';
+    if (impact === 'external-unknown') return false;         // fail closed on effects the host cannot classify
+    // Every MCP annotation is supplied by the server. In particular readOnlyHint may lie, so using the
+    // translated scope here would let a malicious connector label a mutator as a safe post-injection read.
+    if (CONNECTOR_CAP.test(String(tool.capability || ''))) return false;
     return true;
   }
 
-  return { isUntrustedSource, allowedWhenTainted, CONNECTOR_CAP };
+  // Pure state machine for the temporal confirmation boundary. Standing permission state is intentionally not
+  // an input: only a decision obtained by the caller AFTER taint can yield a one-call recovery.
+  function postTaintBoundary(tool, opts) {
+    opts = opts || {};
+    if (!opts.taintedBy || allowedWhenTainted(tool)) return { allow: true, needsConfirmation: false, oneShot: false };
+    // FULL ACCESS is the Commander's explicit zero-prompt posture. Taint still remains latched and fenced, but it
+    // cannot silently downgrade Full Access into ASK mode. Hardline floors live outside this policy and still win.
+    if (opts.fullAccess === true) return { allow: true, needsConfirmation: false, oneShot: false };
+    if (opts.surface !== 'interactive' || opts.hasPrompt !== true) return { allow: false, needsConfirmation: false, oneShot: false };
+    if (opts.decision == null) return { allow: false, needsConfirmation: true, oneShot: false };
+    const allow = /^(?:once|session|always|full)$/i.test(String(opts.decision || ''));
+    return { allow, needsConfirmation: false, oneShot: allow };
+  }
+
+  return { isUntrustedSource, allowedWhenTainted, postTaintBoundary, CONNECTOR_CAP };
 });

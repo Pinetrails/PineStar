@@ -34,6 +34,50 @@ const StationCommands = (() => {
       : 'there is no session called "' + want + '"' + (names ? '. Open sessions: ' + names : ''));
   }
 
+  function taskRows(includeArchived) {
+    if (typeof Workstreams === 'undefined' || !Workstreams.list) throw new Error('task board is not ready yet');
+    return (Workstreams.list({ includeArchived: !!includeArchived }) || []).filter(w => w && w.kind === 'task');
+  }
+
+  function taskView(w) {
+    return {
+      id: w.id, title: w.title || 'Untitled task', agentId: w.agentId || 'agent',
+      lane: w.lane || 'todo', archived: !!w.archived, projectRoot: w.projectRoot || null
+    };
+  }
+
+  function resolveTask(want, includeArchived) {
+    want = String(want || '').trim();
+    if (!want) throw new Error('name which task');
+    const rows = taskRows(includeArchived);
+    const lower = want.toLowerCase();
+    const byId = rows.filter(w => w.id === want);
+    const byTitle = rows.filter(w => String(w.title || '').trim().toLowerCase() === lower);
+    const byPart = rows.filter(w => String(w.title || '').toLowerCase().indexOf(lower) >= 0);
+    const hits = byId.length ? byId : (byTitle.length ? byTitle : byPart);
+    if (hits.length === 1) return hits[0];
+    const names = rows.map(w => w.title).filter(Boolean).join(', ');
+    throw new Error(hits.length > 1
+      ? 'more than one task matches "' + want + '" - name it exactly. Board tasks: ' + names
+      : 'there is no task called "' + want + '"' + (names ? '. Board tasks: ' + names : ''));
+  }
+
+  /* A model-facing board mutation is not complete when localStorage changed; it is complete only after the
+     sidecar accepted the save and a fresh GET returned the expected workstream/tombstone. A retry after an
+     ambiguous transport failure is safe because create and every state-setting manage action are idempotent. */
+  async function persistWorkstreams(proof) {
+    if (typeof App === 'undefined' || !App.persist) throw new Error('the station cannot save task changes right now');
+    if (typeof CloudSave === 'undefined' || !CloudSave.flush || !CloudSave.pull) {
+      throw new Error('durable task storage is unavailable - no change can be reported as complete');
+    }
+    App.persist();
+    const landed = await CloudSave.flush({ force: true });
+    if (!landed) throw new Error('durable task save was refused or unreachable - do not report this change as complete');
+    const saved = await CloudSave.pull();
+    if (!saved || !proof(saved)) throw new Error('durable task read-back did not confirm the change - do not report it as complete');
+    try { if (App.refreshRail) App.refreshRail(); } catch (_) {}
+  }
+
   /* Delivery crosses browser pages, and frontend workstream ids are page-local until their saves converge.
      Prefer the id that launched the run; if this page does not know it, heal ONLY by a unique exact title.
      Substring matching is deliberately forbidden here: an automatic fold must never guess its destination. */
@@ -123,12 +167,77 @@ const StationCommands = (() => {
       };
     },
 
+    'station.tasks': () => {
+      const rows = taskRows(false).map(taskView);
+      return { count: rows.length, tasks: rows };
+    },
+
+    'station.new_task': async (a) => {
+      if (typeof Workstreams === 'undefined' || !Workstreams.create) throw new Error('task board is not ready yet');
+      const title = String((a && a.title) || '').trim().slice(0, 80);
+      if (!title) throw new Error('a task needs a title');
+      const existing = taskRows(true).find(w => String(w.title || '').trim().toLowerCase() === title.toLowerCase());
+      const agentId = String((a && a.agentId) || '').trim();
+      if (agentId && typeof App !== 'undefined' && App.agents && !(App.agents() || []).some(x => x && x.id === agentId)) {
+        throw new Error('no crew member with id "' + agentId + '" - use station.crew for the roster, or omit agentId');
+      }
+      const ws = existing || Workstreams.create(title, { kind: 'task', activate: false, agentId: agentId || undefined });
+      if (!ws) throw new Error('the station could not create the task');
+      if (existing && existing.archived) Workstreams.archive(existing.id, false);
+      if (agentId && ws.agentId !== agentId && !Workstreams.setAgent(ws.id, agentId)) throw new Error('the task could not be assigned');
+      await persistWorkstreams(save => (save.workstreams || []).some(w => w && w.id === ws.id && w.kind === 'task' && !w.archived));
+      return Object.assign({ created: !existing, duplicate: !!existing, durable: true }, taskView(Workstreams.get(ws.id)));
+    },
+
+    'station.manage_task': async (a) => {
+      const action = String((a && a.action) || '');
+      const task = resolveTask(a && a.task, action === 'restore');
+      const before = taskView(task);
+      let removed = false;
+      if (action === 'move') {
+        const lane = String((a && a.lane) || '');
+        if (['todo', 'active', 'shipped'].indexOf(lane) < 0) throw new Error('task lane must be todo, active, or shipped');
+        if (task.lane !== lane && !Workstreams.setLane(task.id, lane)) throw new Error('the task could not move');
+      } else if (action === 'rename') {
+        const title = String((a && a.title) || '').trim().slice(0, 80);
+        if (!title) throw new Error('a renamed task needs a title');
+        const clash = taskRows(true).find(w => w.id !== task.id && String(w.title || '').trim().toLowerCase() === title.toLowerCase());
+        if (clash) throw new Error('a task called "' + title + '" already exists');
+        if (task.title !== title && !Workstreams.rename(task.id, title)) throw new Error('the task could not be renamed');
+      } else if (action === 'assign') {
+        const agentId = String((a && a.agentId) || '').trim();
+        if (!agentId) throw new Error('assign needs an agentId');
+        if (typeof App !== 'undefined' && App.agents && !(App.agents() || []).some(x => x && x.id === agentId)) throw new Error('no crew member with id "' + agentId + '"');
+        if (task.agentId !== agentId && !Workstreams.setAgent(task.id, agentId)) throw new Error('the task could not be assigned');
+      } else if (action === 'archive' || action === 'restore') {
+        const archived = action === 'archive';
+        if (task.archived !== archived && !Workstreams.archive(task.id, archived)) throw new Error('the task could not be ' + action + 'd');
+      } else if (action === 'remove') {
+        if (!Workstreams.del(task.id)) throw new Error('the task could not be removed');
+        removed = true;
+      } else {
+        throw new Error('task action must be move, rename, assign, archive, restore, or remove');
+      }
+      await persistWorkstreams(save => {
+        const rows = save.workstreams || [];
+        if (removed) return !rows.some(w => w && w.id === task.id) && (save.deletedIds || []).indexOf(task.id) >= 0;
+        const w = rows.find(x => x && x.id === task.id);
+        if (!w) return false;
+        if (action === 'move') return w.lane === String(a.lane);
+        if (action === 'rename') return w.title === String(a.title).trim().slice(0, 80);
+        if (action === 'assign') return w.agentId === String(a.agentId).trim();
+        return !!w.archived === (action === 'archive');
+      });
+      const current = removed ? null : Workstreams.get(task.id);
+      return { changed: removed || JSON.stringify(before) !== JSON.stringify(taskView(current)), removed, durable: true, task: current ? taskView(current) : null, id: task.id };
+    },
+
     /* Create a NAMED session. Refuses a duplicate title rather than minting a twin: two sessions with one
        name would make every later name-addressed action (dispatch's `session`, switch below) AMBIGUOUS and
        therefore refused — a create that quietly poisons the namespace is worse than telling the agent to
        reuse what exists. `focus` is honored only when explicitly asked, so an agent opening sessions in the
        background can never steal what the Commander is looking at. */
-    'station.new_session': (a) => {
+    'station.new_session': async (a) => {
       if (typeof Workstreams === 'undefined' || !Workstreams.create) throw new Error('sessions are not ready yet');
       const title = String((a && a.title) || '').trim().slice(0, 80);
       if (!title) throw new Error('a session needs a title');
@@ -141,27 +250,26 @@ const StationCommands = (() => {
       const ws = Workstreams.create(title, { agentId: agentId || undefined, activate: !!(a && a.focus) });
       if (!ws) throw new Error('the station could not create the session');
       if (a && a.focus && typeof Chat !== 'undefined' && Chat.load) { try { Chat.load(ws); } catch (_) {} }
-      try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
-      try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
-      return { id: ws.id, title: ws.title, agentId: ws.agentId || 'agent', focused: !!(a && a.focus) };
+      await persistWorkstreams(save => (save.workstreams || []).some(w => w && w.id === ws.id && w.kind === 'chat')
+        && (!(a && a.focus) || save.activeId === ws.id));
+      return { id: ws.id, title: ws.title, agentId: ws.agentId || 'agent', focused: !!(a && a.focus), durable: true };
     },
 
     /* Focus an existing session by the name the Commander says (or exact id) — resolveSession's shared law,
        because a switch that lands on a plausible-but-wrong session moves the Commander's eyes somewhere
        they did not ask to be. */
-    'station.switch_session': (a) => {
+    'station.switch_session': async (a) => {
       const hit = resolveSession(a && a.session);
       const ws = Workstreams.switch(hit.w.id);
       if (!ws) throw new Error('the station could not switch sessions');
       if (typeof Chat !== 'undefined' && Chat.load) { try { Chat.load(ws); } catch (_) {} }
-      try { if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } catch (_) {}
-      try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
-      try { reconcile(ws.id); } catch (_) {}
+      await persistWorkstreams(save => save.activeId === ws.id && (save.workstreams || []).some(w => w && w.id === ws.id));
+      try { await reconcile(ws.id); } catch (_) {}
       /* A switch that happens DURING a live voice call came through the call (the Commander said "open X"),
          so the call follows the Commander there. A UI click never routes through this verb, so browsing
          other sessions while speaking can never re-target the call (VoiceLive holds its own binding). */
       try { if (typeof VoiceLive !== 'undefined' && VoiceLive.isActive && VoiceLive.isActive() && VoiceLive.rebind) VoiceLive.rebind(ws.id); } catch (_) {}
-      return { id: ws.id, title: ws.title != null ? ws.title : 'General' };
+      return { id: ws.id, title: ws.title != null ? ws.title : 'General', durable: true };
     },
 
     /* Read a session's recent visible conversation — the agent's EYES into work that happened elsewhere.

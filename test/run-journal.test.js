@@ -54,8 +54,47 @@ const unknownIo = memoryIo();
 const unknown = J.makeRunJournal({ io: unknownIo, clock: { now: () => 2 } });
 unknown.begin({ runId: 'unknown', messages: [] });
 unknown.toolIntent('unknown', { callId: 'side-effect', name: 'shell.exec', mutating: true });
-unknown.finish('unknown', { reason: 'error' });
-A.eq(unknown.inspect('unknown').status, 'needs_review', 'run.end cannot erase an unknown side-effect outcome');
+const uncertainRetirement = unknown.finishAndRetire('unknown', { reason: 'error', transcriptAck: true });
+A.eq(uncertainRetirement.retired, false, 'an unmatched side-effect intent is never retired');
+A.eq(uncertainRetirement.state.status, 'needs_review', 'run.end cannot erase an unknown side-effect outcome');
+A.ok(unknownIo.files.has('unknown'), 'the review-required journal remains durable and discoverable');
+const resolved = unknown.resolve('unknown', {
+  resolutionId: 'resolution-1', operator: 'local',
+  outcomes: [{ callId: 'side-effect', outcome: 'happened' }],
+  note: 'verified in the target system'
+});
+A.eq(resolved.status, 'resolved', 'an explicit operator verdict closes review without replaying the tool');
+A.eq(resolved.uncertain.length, 1, 'resolution retains the original uncertain boundary as audit evidence');
+A.eq(resolved.resolution.outcomes[0].outcome, 'happened', 'the verified outcome is durable and inspectable');
+A.eq(resolved.finish.reason, 'error', 'the original terminal evidence remains inspectable after an additive resolution');
+A.eq(unknown.resolve('unknown', {
+  resolutionId: 'resolution-1', operator: 'local',
+  outcomes: [{ callId: 'side-effect', outcome: 'happened' }],
+  note: 'verified in the target system'
+}).records, resolved.records, 'retrying the same resolution id is idempotent and appends nothing');
+A.throws(() => unknown.resolve('unknown', {
+  resolutionId: 'resolution-2', operator: 'local',
+  outcomes: [{ callId: 'side-effect', outcome: 'did_not_happen' }]
+}), 'a different verdict cannot overwrite the durable operator resolution');
+
+const retiredIo = memoryIo();
+const retired = J.makeRunJournal({ io: retiredIo, clock: { now: () => 2 } });
+retired.begin({ runId: 'retired', messages: [] });
+retired.toolIntent('retired', { callId: 'read', name: 'station.inspect', mutating: false });
+retired.toolResult('retired', { callId: 'read', ok: true, content: 'ok' });
+const cleanRetirement = retired.finishAndRetire('retired', { reason: 'done', transcriptAck: true });
+A.eq(cleanRetirement.retired, true, 'a fully paired, transcript-acknowledged journal retires');
+A.eq(retiredIo.files.has('retired'), false, 'clean retirement removes the redundant journal');
+
+const readIo = memoryIo();
+const read = J.makeRunJournal({ io: readIo, clock: { now: () => 2 } });
+read.begin({ runId: 'read', agentId: 'a', messages: [] });
+read.checkpoint('read', { phase: 'assistant', messages: [{ role: 'assistant', content: '', tool_calls: [{ id: 'read-1', type: 'function', function: { name: 'fs.read', arguments: '{"path":"notes.txt"}' } }] }] });
+read.toolIntent('read', { callId: 'read-1', name: 'fs.read', mutating: false });
+const readState = read.inspect('read');
+A.eq(readState.status, 'resumable', 'an unmatched explicitly read-only intent is safe to replay from its checkpoint');
+A.eq(readState.uncertain.length, 0, 'a read-only intent is not misreported as an unknown side effect');
+A.eq(readState.replayableReads.map(x => x.callId), ['read-1'], 'recovery retains the exact read call to replay once');
 
 const pendingIo = memoryIo();
 const pending = J.makeRunJournal({ io: pendingIo, clock: { now: () => 3 } });

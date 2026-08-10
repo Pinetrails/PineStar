@@ -2,6 +2,7 @@
 const A = require('./_assert.js');
 const { makeRunJournal, _internals } = require('../sidecar/run-journal.js');
 const { runAgentLoop } = require('../sidecar/loop.js');
+const { makeRunExecutionState } = require('../sidecar/run-execution-state.js');
 
 function memoryIo() {
   const files = new Map();
@@ -58,12 +59,36 @@ function provider() {
     onCheckpoint({ phase, messages: current }) { uncertain.checkpoint('u', { phase, messages: current }); },
     async dispatch(call) {
       uncertain.toolIntent('u', { callId: call.id, name: call.name, mutating: true });
-      throw new Error('process lost result boundary');
+      const boundary = new Error('process lost result boundary');
+      boundary.fatalToRun = true;
+      throw boundary;
     }, capCtx: {}
   });
   uncertain.finish('u', { reason: failed.reason });
-  A.eq(failed.reason, 'done', 'the loop may recover from a thrown dispatch and still answer');
+  A.eq(failed.reason, 'error', 'a lost durable tool boundary terminates the run instead of allowing false success');
   A.eq(uncertain.inspect('u').status, 'needs_review', 'terminal error never makes an unmatched mutation replayable');
+
+  // Production host behavior when the TOOL returned but its durable result append failed: stop immediately as
+  // error and retain the unmatched intent. The model never gets another turn in which it could claim success or
+  // repeat the effect.
+  const io3 = memoryIo();
+  const boundary = makeRunJournal({ io: io3, clock: { now: () => 1 } });
+  const execution = makeRunExecutionState();
+  boundary.begin({ runId: 'boundary', agentId: 'a' });
+  const boundaryResult = await runAgentLoop({
+    messages: [{ role: 'user', content: 'mutate safely' }], provider: provider(), emit() {},
+    model: 'm', agentId: 'a', runId: 'boundary', capCtx: {},
+    async dispatch(call) {
+      boundary.toolIntent('boundary', { callId: call.id, name: call.name, mutating: true });
+      // The underlying tool completed here. Simulate runJournal.toolResult throwing at the production seam.
+      return execution.failJournal(new Error('journal disk full'));
+    }
+  });
+  A.eq(boundaryResult.reason, 'error', 'a failed durable result boundary cannot end done');
+  const boundaryRetirement = boundary.finishAndRetire('boundary', { reason: boundaryResult.reason, transcriptAck: true });
+  A.eq(boundaryRetirement.retired, false, 'the unmatched intent remains after terminal error');
+  A.eq(boundaryRetirement.state.status, 'needs_review', 'the retained outcome is explicitly review-required');
+  A.ok(io3.files.has('boundary'), 'the recovery evidence remains on disk');
 
   A.report('run-journal.loop.test');
 })().catch(e => { console.error(e && e.stack || e); process.exit(1); });

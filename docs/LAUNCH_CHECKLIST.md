@@ -3,13 +3,14 @@
 One page. Every public-facing artifact and its status, so launch day is a checklist — not a
 memory test. Update the Status column as things land.
 
-_Last updated: 2026-07-06._
+_Last updated: 2026-08-04. This checklist records the release-train contract; unchecked rows
+still require evidence from the exact candidate and must not be inferred from workflow code._
 
 ## Launch scope
 
 | Decision | Value | Notes |
 | --- | --- | --- |
-| **Advertised platforms** | **Windows + macOS + Linux** | Andrew's decision 2026-07-06. INSTALL.md and DOWNLOAD_PAGE.md advertise all three; the release train builds and signs all four legs (win-x64, darwin-arm64, darwin-x64, linux-x64). macOS + Linux carry an honest "less-tested-than-Windows" note pointing to androo.agi@gmail.com. |
+| **Advertised platforms** | **Windows + macOS** | The tagged public train builds win-x64, darwin-arm64, and darwin-x64. Linux remains a manual/internal artifact only and is not assembled or published by the public train. |
 
 ## Release channel
 
@@ -21,10 +22,9 @@ Updater endpoint (baked into the app, `src-tauri/tauri.conf.json`):
 
 | # | Artifact | Location | Status | Notes |
 | - | --- | --- | --- | --- |
-| 1 | **Windows installer** `StarNet_<ver>_x64-setup.exe` (+ `.sig`) | GitHub release asset | ☐ TODO | Windows x64 NSIS. **Unsigned** — SmartScreen/SAC caveats apply (see INSTALL.md). |
-| 1a | **macOS DMG** `StarNet_<ver>_aarch64.dmg` + `StarNet_<ver>_x64.dmg` | GitHub release asset | ☐ TODO | Apple Silicon + Intel. **Unsigned + un-notarized** — Gatekeeper "Open Anyway" caveat (INSTALL.md). Updater artifact is the paired per-arch `*.app.tar.gz` + `.sig`. |
-| 1b | **Linux** `StarNet_<ver>_amd64.deb` + `StarNet_<ver>_amd64.AppImage` (+ `.sig` each) | GitHub release asset | ☐ TODO | x64. Needs WebKitGTK 4.1 at runtime. BOTH `.sig`s are updater artifacts — .deb installs update via the `linux-x86_64-deb` manifest key. |
-| 2 | **`latest.json`** update manifest (multi-platform) | GitHub release asset (root of endpoint above) | ☐ TODO | ONE manifest covering windows-x86_64, darwin-aarch64, darwin-x86_64, linux-x86_64, linux-x86_64-deb. Assembled by `release-assemble-manifest.mjs`, which also CRYPTOGRAPHICALLY verifies every artifact/.sig pair against the pubkey baked in `tauri.conf.json` before emitting. |
+| 1 | **Windows installer** `StarNet_<ver>_x64-setup.exe` (+ `.sig`) | GitHub release asset | ☐ EVIDENCE REQUIRED | Windows x64 NSIS. The public train requires Authenticode publisher/timestamp verification plus a signed updater artifact. A workflow requirement is not installed proof. |
+| 1a | **macOS DMG** `StarNet_<ver>_aarch64.dmg` + `StarNet_<ver>_x64.dmg` | GitHub release asset | ☐ EVIDENCE REQUIRED | Apple Silicon + Intel. The public train requires Developer ID signing, signed/timestamped nested native dependencies, Apple acceptance/stapling, and paired per-arch `*.app.tar.gz` + `.sig`. |
+| 2 | **`latest.json`** update manifest (Windows + macOS) | GitHub release asset (root of endpoint above) | ☐ EVIDENCE REQUIRED | ONE manifest covering windows-x86_64, darwin-aarch64, and darwin-x86_64. Linux keys are explicitly allowed to be absent. The assembler verifies every included artifact/signature pair against the updater pubkey before emitting. |
 | 3 | **Updater signature key** | `~/.tauri/starnet-updater.key` (Andrew's machine) | ☐ VERIFY | Pubkey is committed in `tauri.conf.json`; private key must sign every `latest.json`. |
 | 4 | **INSTALL.md** | repo root — SHIPPED on trunk | ✅ DONE | SmartScreen + SAC honesty; download + update + uninstall. Public copy must match repo. |
 | 5 | **PRIVACY.md** | repo root | ✅ DRAFTED | Audited 2026-07-03. No telemetry; local-first; keychain vs plaintext honest. |
@@ -38,7 +38,7 @@ Updater endpoint (baked into the app, `src-tauri/tauri.conf.json`):
 | --- | --- | --- |
 | **Support email** | ✅ DONE 2026-07-04: `androo.agi@gmail.com` in diagnostics.js + PRIVACY.md + TERMS.md + DOWNLOAD_PAGE.md (Andrew's pick; supersedes the earlier gmail swap). | ✅ DONE |
 | **License decision** | ✅ DONE 2026-07-04: MIT (reaffirmed 2026-07-22, Hermes-style: MIT code + branding not licensed). `LICENSE` at repo root; TERMS.md §7 points to it. | ✅ DONE |
-| **Code signing** (optional but removes the SmartScreen/SAC wall) | Procure an Authenticode cert; sign the installer. Until then INSTALL.md + DOWNLOAD_PAGE.md must keep the unsigned caveat. | ☐ FUTURE |
+| **Public OS trust** | Public train must fail closed on missing/invalid Windows Authenticode, Mac Developer ID, nested-native signing, or Apple notarization. Manual test builds may degrade only when labelled internal/unsigned. | ☐ EXACT-CANDIDATE EVIDENCE REQUIRED |
 
 ## Cut & publish order (the installer bakes the frontend — order matters)
 
@@ -56,14 +56,13 @@ Updater endpoint (baked into the app, `src-tauri/tauri.conf.json`):
 
 ## Consistency gates (do NOT ship until true)
 
-- ☐ **Cross-platform smoke test BEFORE clicking Publish on the draft:** install and launch one
-  **macOS** build (Andrew's brother's Mac) and one **Linux** build (a VM) from the staged draft
-  assets, and confirm each opens past its OS first-run wall (mac "Open Anyway"; Linux
-  `.deb`/AppImage runs). We advertise all three platforms — do not publish a draft where mac or
-  linux was never launched once.
+- ☐ **Cross-platform smoke test BEFORE clicking Publish on the draft:** install and launch the
+  exact staged Windows artifact and both Mac architectures on disposable test machines. Record
+  Authenticode publisher/timestamp, Gatekeeper notarization verdict, launch, and updater behavior.
+  Workflow checks alone do not satisfy this row.
 - ☐ SmartScreen / SAC / Gatekeeper wording is **identical in spirit** across INSTALL.md and
-  DOWNLOAD_PAGE.md (unsigned/un-notarized builds, Windows "More info → Run anyway", SAC hard
-  block, macOS "Open Anyway").
+  DOWNLOAD_PAGE.md: SmartScreen reputation can still warn, while a public Mac Gatekeeper trust
+  failure is unexpected and must not be bypassed.
 - ☐ The `latest.json` uploaded matches the version of the installer asset in the same release.
 - ☐ `ANDREW_SUPPORT_EMAIL` no longer appears anywhere (grep returns nothing).
 - ☐ `LICENSE` file exists and TERMS.md §7 points to it.

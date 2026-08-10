@@ -4,7 +4,8 @@
    servers, which all implement it identically: an unauthenticated request 401s with
    `WWW-Authenticate: Bearer ... resource_metadata="<url>"`, the PRM lists an `authorization_servers[0]`, and
    its AS metadata exposes authorization/token/registration endpoints with S256 PKCE. ONE flow drives them all —
-   no per-provider client id or secret, because the AS mints a public client via dynamic registration.
+   no preconfigured per-provider client credentials: the AS dynamically registers either a public PKCE client or,
+   where its metadata requires one, a per-install confidential client whose issued secret stays in protected state.
 
    PURE + injected: every network call takes an injected `fetchImpl`; the current time is an injected `now`; the
    random PKCE bytes are injected by the composition root (sidecar/index.js owns crypto.randomBytes). node:crypto
@@ -14,10 +15,10 @@
    The flow, end to end (the routes layer in index.js orchestrates it):
      1. discover(serverUrl[, wwwAuthenticate]) -> { authorizationServer, authorizationEndpoint, tokenEndpoint,
         registrationEndpoint, codeChallengeMethods, resource }
-     2. registerClient(registrationEndpoint, redirectUri) -> { clientId }              (cache per AS)
+     2. registerClient(registrationEndpoint, redirectUri) -> { clientId, clientSecret, tokenEndpointAuthMethod }
      3. makeVerifier(randomBytes) + challengeOf(verifier); buildAuthorizeUrl(...) -> open in the browser
-     4. exchangeCode(tokenEndpoint, code, redirectUri, clientId, verifier, resource, now) -> tokens
-     5. refreshTokens(tokenEndpoint, refreshToken, clientId, now) -> tokens   (when needsRefresh) */
+     4. exchangeCode(tokenEndpoint, code, redirectUri, client credentials, verifier, resource, now) -> tokens
+     5. refreshTokens(tokenEndpoint, refreshToken, client credentials, now) -> tokens   (when needsRefresh) */
 'use strict';
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('node:crypto'));
@@ -139,9 +140,24 @@
     return u.origin + '/.well-known/oauth-protected-resource' + path;
   }
   function asMetadataUrls(authServer) {
-    const base = String(authServer).replace(/\/$/, '');
-    // RFC 8414 places the well-known between host and path; we probe the common host-level forms first, then OIDC.
-    return [base + '/.well-known/oauth-authorization-server', base + '/.well-known/openid-configuration'];
+    const u = new URL(String(authServer));
+    const path = u.pathname && u.pathname !== '/' ? u.pathname.replace(/\/$/, '') : '';
+    const base = u.origin + path;
+    // RFC 8414 inserts the well-known segment between the authority and an issuer path. This matters for
+    // providers such as monday.com, whose protected-resource metadata advertises
+    // `https://auth.monday.com/mcp`: its metadata lives at
+    // `https://auth.monday.com/.well-known/oauth-authorization-server/mcp`, not below `/mcp/.well-known/`.
+    // OIDC discovery keeps its established issuer-relative form as the compatibility fallback.
+    return [u.origin + '/.well-known/oauth-authorization-server' + path, base + '/.well-known/openid-configuration'];
+  }
+
+  function chooseTokenEndpointAuthMethod(methods) {
+    const supported = Array.isArray(methods) ? methods.map(String) : [];
+    // Prefer a public PKCE client. A few hosted MCP providers require a dynamically-issued confidential client.
+    if (!supported.length || supported.indexOf('none') >= 0) return 'none';
+    if (supported.indexOf('client_secret_post') >= 0) return 'client_secret_post';
+    if (supported.indexOf('client_secret_basic') >= 0) return 'client_secret_basic';
+    throw new Error('authorization server requires an unsupported token endpoint authentication method');
   }
 
   // DISCOVERY: server URL (+ optional WWW-Authenticate header) -> the AS endpoints the flow needs.
@@ -167,33 +183,48 @@
       tokenEndpoint: String(asMeta.token_endpoint),
       registrationEndpoint: asMeta.registration_endpoint ? String(asMeta.registration_endpoint) : '',
       codeChallengeMethods: Array.isArray(asMeta.code_challenge_methods_supported) ? asMeta.code_challenge_methods_supported : ['S256'],
+      tokenEndpointAuthMethods: Array.isArray(asMeta.token_endpoint_auth_methods_supported) ? asMeta.token_endpoint_auth_methods_supported : [],
       scopesSupported: Array.isArray(asMeta.scopes_supported) ? asMeta.scopes_supported : null,
       resource: serverUrl,                 // RFC 8707 resource indicator = the canonical MCP server URL
       resourceMetadataUrl: prmUrl
     };
   }
 
-  // RFC 7591 DYNAMIC CLIENT REGISTRATION: mint a public client (no secret; PKCE) bound to our loopback redirect.
+  // RFC 7591 DYNAMIC CLIENT REGISTRATION: mint a PKCE client bound to our loopback redirect. Prefer public
+  // clients, but retain a provider-issued secret when AS metadata requires confidential token authentication.
   async function registerClient(opts) {
     opts = opts || {};
     const fetchImpl = opts.fetchImpl; if (typeof fetchImpl !== 'function') throw new Error('registerClient: fetchImpl required');
     if (!opts.registrationEndpoint) throw new Error('registerClient: registrationEndpoint required (server has no dynamic registration)');
     if (!opts.redirectUri) throw new Error('registerClient: redirectUri required');
+    const requestedAuthMethod = ['none', 'client_secret_post', 'client_secret_basic'].indexOf(String(opts.tokenEndpointAuthMethod || '')) >= 0
+      ? String(opts.tokenEndpointAuthMethod) : 'none';
     const body = {
       client_name: opts.clientName || 'StarNet',
       redirect_uris: [opts.redirectUri],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
-      token_endpoint_auth_method: 'none',   // public client — PKCE is the proof, never a secret
+      token_endpoint_auth_method: requestedAuthMethod,
       application_type: 'native'
     };
     assertSafeUrl(opts.registrationEndpoint, 'client registration');
     try { return await withDeadline(opts, async signal => {
       const res = await fetchImpl(opts.registrationEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }, body: JSON.stringify(body), redirect: 'manual', signal });
-      if (!res || res.status < 200 || res.status >= 300) { let d = ''; try { d = (await res.text()).slice(0, 160); } catch (_) {} throw new Error('client registration HTTP ' + (res && res.status) + (d ? ' — ' + d : '')); }
+      if (!res || res.status < 200 || res.status >= 300) {
+        let d = '';
+        try {
+          const j = JSON.parse(await res.text());
+          if (j && typeof j.error === 'string' && /^[a-z0-9_.-]{1,64}$/i.test(j.error)) d = j.error;
+        } catch (_) {}
+        throw new Error('client registration HTTP ' + (res && res.status) + (d ? ' — ' + d : ''));
+      }
       let j; try { j = await res.json(); } catch (e) { throw new Error('client registration returned non-JSON'); }
       if (!j.client_id) throw new Error('client registration response had no client_id');
-      return { clientId: String(j.client_id), clientSecret: j.client_secret ? String(j.client_secret) : '', raw: j };
+      const responseMethod = ['none', 'client_secret_post', 'client_secret_basic'].indexOf(String(j.token_endpoint_auth_method || '')) >= 0
+        ? String(j.token_endpoint_auth_method) : requestedAuthMethod;
+      const clientSecret = responseMethod === 'none' ? '' : (j.client_secret ? String(j.client_secret) : '');
+      if (responseMethod !== 'none' && !clientSecret) throw new Error('client registration response had no client_secret for ' + responseMethod);
+      return { clientId: String(j.client_id), clientSecret, tokenEndpointAuthMethod: responseMethod, raw: j };
     }, 'client registration'); }
     catch (e) { throw new Error('client registration failed: ' + ((e && e.message) || e)); }
   }
@@ -236,11 +267,43 @@
     return now >= (expiresAt - (skewMs == null ? 60000 : skewMs));
   }
 
+  function formEncode(value) {
+    return new URLSearchParams({ v: String(value == null ? '' : value) }).toString().slice(2);
+  }
+
+  function authenticateTokenRequest(params, opts) {
+    const method = String((opts && opts.tokenEndpointAuthMethod) || 'none');
+    const secret = String((opts && opts.clientSecret) || '');
+    const headers = {};
+    if (['none', 'client_secret_post', 'client_secret_basic'].indexOf(method) < 0) {
+      throw new Error('unsupported token endpoint authentication method');
+    }
+    if (method === 'client_secret_post') {
+      if (!secret) throw new Error('token request needs a client secret');
+      params.client_secret = secret;
+    } else if (method === 'client_secret_basic') {
+      if (!secret) throw new Error('token request needs a client secret');
+      headers.Authorization = 'Basic ' + Buffer.from(formEncode(params.client_id) + ':' + formEncode(secret)).toString('base64');
+      delete params.client_id;
+    }
+    return headers;
+  }
+
   async function postForm(fetchImpl, tokenEndpoint, params, label, net) {
     assertSafeUrl(tokenEndpoint, label);
+    const authHeaders = authenticateTokenRequest(params, net);
     try { return await withDeadline(net, async signal => {
-      const res = await fetchImpl(tokenEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, body: new URLSearchParams(params).toString(), redirect: 'manual', signal });
-      if (!res || res.status < 200 || res.status >= 300) { let d = ''; try { d = (await res.text()).slice(0, 200); } catch (_) {} throw new Error((label || 'token request') + ' HTTP ' + (res && res.status) + (d ? ' — ' + d : '')); }
+      const res = await fetchImpl(tokenEndpoint, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' }, authHeaders), body: new URLSearchParams(params).toString(), redirect: 'manual', signal });
+      if (!res || res.status < 200 || res.status >= 300) {
+        // Token endpoints may echo submitted fields in a free-form error body. Keep a bounded OAuth error code
+        // only; descriptions and raw bodies never enter logs, connector status, or model-visible tool results.
+        let d = '';
+        try {
+          const j = JSON.parse(await res.text());
+          if (j && typeof j.error === 'string' && /^[a-z0-9_.-]{1,64}$/i.test(j.error)) d = j.error;
+        } catch (_) {}
+        throw new Error((label || 'token request') + ' HTTP ' + (res && res.status) + (d ? ' — ' + d : ''));
+      }
       try { return await res.json(); } catch (e) { throw new Error((label || 'token request') + ' returned non-JSON'); }
     }, label); }
     catch (e) { throw new Error((label || 'token request') + ' failed: ' + ((e && e.message) || e)); }
@@ -273,8 +336,8 @@
   return {
     base64url, makeVerifier, challengeOf, parseWwwAuthenticate,
     defaultResourceMetadataUrl, discover, registerClient, buildAuthorizeUrl,
-    exchangeCode, refreshTokens, tokensFromResponse, needsRefresh, withDeadline,
+    exchangeCode, refreshTokens, tokensFromResponse, needsRefresh, withDeadline, chooseTokenEndpointAuthMethod,
     DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS,
-    _internals: { asMetadataUrls, getJson, postForm }
+    _internals: { asMetadataUrls, getJson, postForm, authenticateTokenRequest }
   };
 });

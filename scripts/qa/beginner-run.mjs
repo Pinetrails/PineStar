@@ -118,6 +118,25 @@ export function uiOnlyProviderBaseEnv(mode, base) {
   };
 }
 
+// A production-mode sidecar deliberately scans the canonical OS app-data roots for prior-station
+// evidence. The Beginner Run must exercise that behavior without seeing the Commander's real profile,
+// so the child process gets an empty OS-data namespace as well as its own SKYNET_WORKSPACES root.
+export function isolatedOsDataEnv(root, pathMod = path) {
+  const base = String(root || '').trim();
+  if (!base) return {};
+  return {
+    LOCALAPPDATA: pathMod.join(base, 'Local'),
+    APPDATA: pathMod.join(base, 'Roaming'),
+    XDG_DATA_HOME: pathMod.join(base, 'Xdg'),
+  };
+}
+
+// Dialogue narration has an explicit read gate. The detector may advance only while the DOM proves
+// that gate is armed; otherwise a synthetic key could skip or answer unrelated UI.
+export function ceremonyAdvanceKey(readGateArmed) {
+  return readGateArmed === true ? ' ' : '';
+}
+
 export function startUiOnlyOpenRouter(model) {
   return new Promise((resolve, reject) => {
     const server = createServer((req, res) => {
@@ -349,6 +368,9 @@ if (INVOKED_DIRECTLY) (async () => {
   // touches the real user workspace. Empty → the connect screen shows.
   const TEMP_WS = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-beginner-ws-'));
   const PROFILE = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-beginner-profile-'));
+  const OS_DATA_ROOT = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-beginner-osdata-'));
+  const OS_DATA_ENV = isolatedOsDataEnv(OS_DATA_ROOT, path);
+  for (const dir of Object.values(OS_DATA_ENV)) fs.mkdirSync(dir, { recursive: true });
 
   const PLACEHOLDER_MODEL = process.env.STARNET_DEFAULT_MODEL || process.env.SKYNET_DEFAULT_MODEL || 'anthropic/claude-3.5-sonnet';
   const UI_ONLY_KEY = 'sk-or-beginner-ui-only-placeholder';   // dummy; never a real secret
@@ -361,7 +383,7 @@ if (INVOKED_DIRECTLY) (async () => {
       console.error('[qa:beginner] --live needs a real key in env ' + KEY_ENV + ' (or STARNET_OPENROUTER_KEY). None found — refusing to run.');
       // nothing has booted yet (no sidecar/chrome); just drop the just-created scratch dirs. Don't call
       // cleanup() here — its `let sidecar/chromeProc/cdp` are still in the TDZ at this point.
-      if (!KEEP) { try { fs.rmSync(TEMP_WS, { recursive: true, force: true }); } catch {} try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch {} try { fs.rmSync(RUN_DIR, { recursive: true, force: true }); } catch {} }
+      if (!KEEP) { try { fs.rmSync(TEMP_WS, { recursive: true, force: true }); } catch {} try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch {} try { fs.rmSync(OS_DATA_ROOT, { recursive: true, force: true }); } catch {} try { fs.rmSync(RUN_DIR, { recursive: true, force: true }); } catch {} }
       process.exit(1);
     }
   }
@@ -373,7 +395,7 @@ if (INVOKED_DIRECTLY) (async () => {
   const isUp = async () => { try { const r = await fetch(APP_URL); return r.ok; } catch { return false; } };
 
   function bootFreshSidecar() {
-    const env = Object.assign({}, process.env, uiOnlyProviderBaseEnv(MODE, uiOnlyProvider && uiOnlyProvider.base), {
+    const env = Object.assign({}, process.env, OS_DATA_ENV, uiOnlyProviderBaseEnv(MODE, uiOnlyProvider && uiOnlyProvider.base), {
       SKYNET_WORKSPACES: TEMP_WS,          // → persistence into the throwaway dir, never %LOCALAPPDATA%
       SKYNET_PORT: String(PORT),
       SKYNET_DEFAULT_MODEL: PLACEHOLDER_MODEL,
@@ -402,6 +424,7 @@ if (INVOKED_DIRECTLY) (async () => {
     if (!KEEP) {
       try { fs.rmSync(TEMP_WS, { recursive: true, force: true }); } catch {}
       try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch {}
+      try { fs.rmSync(OS_DATA_ROOT, { recursive: true, force: true }); } catch {}
     }
   }
 
@@ -532,6 +555,11 @@ if (INVOKED_DIRECTLY) (async () => {
     const opts = document.querySelectorAll('#chat-panel .fnv-opts button, #chat-panel .fnv-custom-in, .fnv-opts button');
     return opts.length > 0;
   } catch (e) { return false; } })()`;
+  const ceremonyReadGate = `(() => { try {
+    const panel = document.querySelector('#chat-panel .fnv-dialogue.fnv-wait, .fnv-dialogue.fnv-wait');
+    const cue = panel && panel.querySelector('.fnv-more.show');
+    return !!cue;
+  } catch (e) { return false; } })()`;
 
   async function waitFor(expr, budgetMs, pollMs = 500) {
     const deadline = now() + budgetMs;
@@ -571,6 +599,25 @@ if (INVOKED_DIRECTLY) (async () => {
       ok: false,
       reason: 'per-step budget of ' + budgetMs + 'ms exhausted (last active screen=' + title.lastScreen() + ')'
     };
+  }
+
+  async function waitForFirstDirective(budgetMs, pollMs = 250) {
+    const deadline = now() + budgetMs;
+    let advances = 0;
+    while (now() < deadline) {
+      if (acct.overTotal()) return { ok: false, advances, reason: 'total 10-minute budget exceeded' };
+      if (await evalJS(cdp, directiveInteractive).catch(() => false)) return { ok: true, advances };
+
+      const key = ceremonyAdvanceKey(await evalJS(cdp, ceremonyReadGate).catch(() => false));
+      if (key) {
+        const keyEvent = { key, code: 'Space', windowsVirtualKeyCode: 32, nativeVirtualKeyCode: 32 };
+        await cdp.send('Input.dispatchKeyEvent', Object.assign({ type: 'keyDown' }, keyEvent));
+        await cdp.send('Input.dispatchKeyEvent', Object.assign({ type: 'keyUp' }, keyEvent));
+        advances++;
+      }
+      await sleep(pollMs);
+    }
+    return { ok: false, advances, reason: 'per-step budget of ' + budgetMs + 'ms exhausted' };
   }
 
   /* ---- the run ---- */
@@ -684,12 +731,13 @@ if (INVOKED_DIRECTLY) (async () => {
     // In UI-only this is the BOUNDARY: the ceremony chips are reachable without an LLM; the FIRST real
     // /api/run is the tutorial's first-command. Reaching an interactive directive point = PASS.
     acct.startStep('first-directive');
-    const interactive = await waitFor(directiveInteractive, STEP_DEFS[5].budgetMs * STEP_SCALE);
+    const interactive = await waitForFirstDirective(STEP_DEFS[5].budgetMs * STEP_SCALE);
     await shoot('first-directive');
     if (!interactive.ok) {
-      await fail('first-directive', STEP_DEFS[5].label, 'no interactive directive point (awakening option chips / custom input) appeared — ' + interactive.reason);
+      await fail('first-directive', STEP_DEFS[5].label, 'no interactive directive point (awakening option chips / custom input) appeared after ' + interactive.advances + ' explicit dialogue advance(s) — ' + interactive.reason);
       throw new Error('directive-failed');
     }
+    log('advanced ' + interactive.advances + ' explicit dialogue read gate(s)');
     acct.endStep();
     if (MODE !== 'live') {
       log('first-directive ok — REACHED THE UI-ONLY LLM BOUNDARY (the awakening is client-scripted; the first real /api/run is the tutorial first-command, which needs a live model). Treating boundary as PASS.');

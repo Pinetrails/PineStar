@@ -1,0 +1,51 @@
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const { spawnSync } = require('child_process');
+const A = require('./_assert.js');
+
+const root = path.join(__dirname, '..');
+const staged = path.join(root, 'website-deploy');
+const run = spawnSync(process.execPath, ['scripts/stage-website-deploy.mjs'], { cwd: root, encoding: 'utf8' });
+A.eq(run.status, 0, 'guarded website staging completes');
+A.eq(fs.existsSync(path.join(staged, 'pricing.html')), false, 'held-back pricing page is absent from deploy artifact');
+A.ok(fs.existsSync(path.join(staged, '404.html')), 'staged artifact carries a real not-found page');
+A.eq(fs.existsSync(path.join(staged, 'app', 'assets', 'sprites', '_assembly')), false, 'sprite assembly sources are absent from deploy artifact');
+A.ok(fs.existsSync(path.join(staged, 'app', 'index.html')), 'staged artifact retains the embedded app');
+const stagedApp = fs.readFileSync(path.join(staged, 'app', 'index.html'));
+const stagedEmbed = fs.readFileSync(path.join(staged, 'app', 'embed.htm'));
+A.ok(stagedEmbed.equals(stagedApp), 'staged artifact carries a unique dashboard-upload-safe embed entry');
+
+const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'deploy-website.yml'), 'utf8');
+A.ok(/run: npm run website:stage/.test(workflow), 'Pages workflow builds the guarded artifact');
+A.ok(/path: website-deploy/.test(workflow), 'Pages workflow uploads only the guarded artifact');
+const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+A.eq(pkg.scripts['website:stage'], 'node scripts/stage-website-deploy.mjs', 'staging has one package entry point');
+
+const home = fs.readFileSync(path.join(root, 'website', 'index.html'), 'utf8');
+const pricingTags = home.match(/<[^>]+data-pricing-link[^>]*>/g) || [];
+A.ok(pricingTags.length > 0 && pricingTags.every(tag => /\shidden(?:\s|>)/.test(tag)), 'held-back pricing is hidden in raw HTML before JavaScript runs');
+A.ok(/rel="canonical" href="https:\/\/starnetos\.com\/"/.test(home), 'homepage publishes its canonical URL');
+A.ok(/og-card\.png\?v=\d+/.test(home), 'social card URL is cache-busted for share crawlers');
+A.ok(!/v0\.8\.5/.test(home), 'raw homepage no longer falls back to the obsolete 0.8.5 train');
+A.ok(/current source build/.test(home) && /Current stable version/.test(home), 'preview and stable release train are labeled separately');
+A.ok(/github\.com\/androoAGI\/starnet\/issues/.test(home), 'community support points at a real public destination');
+A.eq(/data-social|discord\.gg|x\.com\/yourhandle/.test(home), false, 'homepage carries no dormant or invented social links');
+const site = fs.readFileSync(path.join(root, 'website', 'site.js'), 'utf8');
+A.ok(/el\.hidden = !PRICING_LIVE/.test(site), 'the release flag explicitly reveals or hides every pricing fragment');
+A.eq(/RELEASES_PAGE/.test(site), false, 'unused release-page alias is gone');
+A.ok(/FALLBACK_VERSION = '0\.9\.0'/.test(site), 'offline release fallback is the latest signed train');
+
+const privacy = fs.readFileSync(path.join(root, 'website', 'legal', 'privacy.html'), 'utf8');
+A.ok(/Edge Read Aloud/.test(privacy) && !/Live Voice works with no network at all/.test(privacy), 'public voice disclosure names the network fallback without an absolute offline claim');
+const connectors = fs.readFileSync(path.join(root, 'website', 'docs', 'connectors.html'), 'utf8');
+const toolsets = fs.readFileSync(path.join(root, 'sidecar', 'capability', 'toolsets.js'), 'utf8');
+const workbench = 'Run shell commands and verify code — the code-execution bench.';
+A.ok(connectors.includes(workbench) && toolsets.includes(workbench), 'public and in-app workbench descriptions match actual granted tools');
+A.ok(/Local <code>stdio<\/code> servers[\s\S]*SAFE CELL/.test(connectors) && !/stdio<\/code> servers[\s\S]{0,120}<b>not<\/b> supported/.test(connectors), 'connector docs describe the isolated Safe Cell stdio path');
+const providers = fs.readFileSync(path.join(root, 'website', 'docs', 'providers.html'), 'utf8');
+A.ok(/ChatGPT \(Codex\)/.test(providers) && /Ollama/.test(providers) && /Perplexity/.test(providers), 'provider docs name the current first-class roster');
+const sidecar = fs.readFileSync(path.join(root, 'sidecar', 'index.js'), 'utf8');
+A.eq(/function saveConnectorOauth\(/.test(sidecar), false, 'unused connector OAuth persistence wrapper is removed');
+
+A.report('website-deploy-staging.test');

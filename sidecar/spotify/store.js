@@ -64,9 +64,16 @@
 
     async function clear() {
       await load();
-      const clientId = state.clientId;   // keep the app's clientId for an easy reconnect
+      const prior = state;
+      const clientId = prior.clientId;   // keep the app's clientId for an easy reconnect
       state = Object.assign({}, EMPTY, { clientId });
-      await persist();
+      try { await persist(); }
+      catch (e) {
+        // A failed durable clear did not disconnect anything. Restore the live view so the status route and
+        // tools keep reporting the credential that will still exist after restart, then let the caller fail.
+        state = prior;
+        throw e;
+      }
       return status();
     }
 

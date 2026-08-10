@@ -18,17 +18,17 @@
 .mkt-scrim::after {
   content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 20;
   /* screen-space glass, same law as `body::after` — TEXT SIZE's body zoom multiplies into every
-     hard px here too, so each stop carries the same --cz reciprocal (stationui's --crt-unzoom).
+     hard px here too, so each stop carries the same --cz reciprocal (stationui's --sn-unzoom).
      Without it the bay's beam pitch stretched with the text while the rest of the station's did
      not, which is exactly the "one surface whose glass doesn't match" this layer exists to avoid. */
-  --cz: var(--crt-unzoom, 1);
+  --cz: var(--sn-unzoom, 1);
   background:
     repeating-linear-gradient(0deg,
       rgba(0,0,0,0) 0px,
       rgba(0,0,0,0) calc(1px * var(--cz)),
-      rgba(0,0,0,0.13) calc(1.5px * var(--cz)),
-      rgba(0,0,0,0.30) calc(2px * var(--cz)),
-      rgba(0,0,0,0.13) calc(2.5px * var(--cz)),
+      rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(1.5px * var(--cz)),
+      rgba(0,0,0,var(--scan-core, 0.30)) calc(2px * var(--cz)),
+      rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(2.5px * var(--cz)),
       rgba(0,0,0,0) calc(3px * var(--cz))),
     repeating-linear-gradient(90deg,
       rgba(255,80,40,0.03) 0 calc(1px * var(--cz)),
@@ -41,9 +41,9 @@
       repeating-linear-gradient(0deg,
         rgba(0,0,0,0) 0px,
         rgba(0,0,0,0) calc(1.5px * var(--cz)),
-        rgba(0,0,0,0.13) calc(2.2px * var(--cz)),
-        rgba(0,0,0,0.28) calc(3px * var(--cz)),
-        rgba(0,0,0,0.13) calc(3.8px * var(--cz)),
+        rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(2.2px * var(--cz)),
+        rgba(0,0,0,var(--scan-core-hi, 0.28)) calc(3px * var(--cz)),
+        rgba(0,0,0,var(--scan-shoulder, 0.13)) calc(3.8px * var(--cz)),
         rgba(0,0,0,0) calc(4.5px * var(--cz))),
       repeating-linear-gradient(90deg,
         rgba(255,80,40,0.03) 0 calc(1.5px * var(--cz)),
@@ -52,6 +52,9 @@
   }
 }
 body.no-scan .mkt-scrim::after { display: none; }
+/* the CRT dial needs no rule here: --scan-* are set on `body.crt-dull` and custom properties
+   INHERIT, so the bay scrim thins with the rest of the glass automatically. That is the
+   "retune both together" law held structurally instead of by memory. */
 @keyframes mkt-fade { from { opacity: 0; } to { opacity: 1; } }
 
 /* ---- the console frame ---- */
@@ -229,7 +232,7 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-tag { color: color-mix(in srgb, var(--accent, var(--ph)) 78%, var(--text)); font-size: 12px; letter-spacing: .3px; opacity: .95; }
 .mkt-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: auto; padding-top: 5px; }
 .mkt-meta .mkt-tier { color: var(--ph-dim); font-size: 10px; letter-spacing: 1px; }
-.mkt-badge { font-size: 10px; letter-spacing: 1px; color: var(--ink); background: var(--gold); padding: 1px 5px; text-shadow: none; }
+.mkt-badge { font-size: 11px; letter-spacing: 1px; color: var(--ink); background: var(--gold); padding: 1px 5px; text-shadow: none; }
 .mkt-badge.mkt-here { background: var(--accent, var(--ph)); color: var(--ink); }
 /* chips = TERMINAL TAGS: debossed bracketed stamps, never pastel web pills. The lane tag reads in the
    class's own colour on the bare plate — ink-on-fill is reserved for the ON filter / inverted plates. */
@@ -390,9 +393,14 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-foot .reg { display: flex; align-items: center; gap: 8px; }
 .mkt-foot .reg .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 7px var(--ok); }
 
-/* the bay reuses the global .bb button; .sm is a compact variant local to the bay */
-.mkt .bb.sm { font-family: inherit; font-size: 11.5px; padding: 5px 10px; letter-spacing: .5px; cursor: pointer;
-  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 2px; }
+/* the bay reuses the global .bb button; .sm is a compact variant local to the bay.
+   METRICS ONLY. It used to re-declare `background: var(--panel2)` + `border-radius: 2px`, which
+   (higher specificity, later sheet) held the bay's ~34 keys flat and square-cornered after the
+   global .bb.sm gained the console's molded-keycap material — one control family wearing two
+   different surfaces in the same product. Dropping those two lines is the whole fix; the padding
+   grew to hold the box height now that the shared rule sets line-height:1. */
+.mkt .bb.sm { font-family: inherit; font-size: 11.5px; padding: 7px 11px; letter-spacing: .5px; cursor: pointer;
+  color: var(--ph); border: 1px solid var(--ph-dim); }
 .mkt .bb.sm:hover { color: var(--ph-bright); border-color: var(--ph); }
 .mkt .bb.sm.danger:hover { color: var(--bad); border-color: var(--bad); }
 .mkt-do-save, .mkt-do-recipe-save, .mkt-do-launch { color: var(--ink) !important; background: var(--ph) !important; border-color: var(--ph) !important; text-shadow: none !important; }
@@ -497,7 +505,9 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-r-lastrun-k { color: var(--ph-dim); }
 .mkt-r-lastrun.bad { color: var(--bad); border-left-color: var(--bad); }
 /* FOR YOU: the named reason a card is in the row (a matched goal keyword / affinity / your own launches). */
-.mkt-foryou-why { color: var(--ph-dim); font-size: 10.5px; letter-spacing: .3px; }
+/* the reason line is the ARGUMENT for the card, not a footnote — it was 10.5px and unreadable at a glance.
+   Sized above the tagline (11.5px) so the eye lands on the evidence, which is the point of these shelves. */
+.mkt-foryou-why { color: var(--ph-dim); font-size: 12.5px; letter-spacing: .3px; line-height: 1.45; }
 /* the slim learning disclosure above the personalized shelf (until acknowledged); the full console stays below. */
 .mkt-consent-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 11.5px; line-height: 1.5;
   color: var(--ph); background: rgba(0,0,0,.18); border-left: 3px solid var(--ph-dim); border-radius: 3px;
@@ -609,7 +619,14 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-rec-name { color: var(--ph-bright); font-size: 14px; letter-spacing: .6px; }
 .mkt-rec-tag { color: var(--accent, var(--ph)); font-size: 11.5px; letter-spacing: .3px; margin-top: 1px; }
 .mkt-rec-why { font-size: 11.5px; line-height: 1.4; color: var(--text, var(--ph)); opacity: .85; }
-.mkt-rec-why-k { color: var(--gold); font-size: 10px; letter-spacing: 1.5px; padding: 0 4px; margin-right: 4px; border: 1px solid rgba(var(--gold-rgb),.4); border-radius: 3px; }
+/* the shelf-card ✕ — "not interested, stop recommending this". A span (the card itself is a <button>), quiet
+   until the card is hovered/focused, matte phosphor throughout (never a white control). */
+.mkt-rec-decline { position: absolute; top: 3px; right: 5px; z-index: 2; padding: 1px 5px; border-radius: 2px;
+  font-size: 11px; line-height: 1.4; color: var(--ph-dim); opacity: 0; cursor: pointer;
+  transition: opacity .12s, color .12s, background .12s; }
+.mkt-rec:hover .mkt-rec-decline, .mkt-rec:focus-within .mkt-rec-decline, .mkt-rec-decline:focus { opacity: .85; }
+.mkt-rec-decline:hover, .mkt-rec-decline:focus { color: var(--ph-bright); background: rgba(0,0,0,.45); opacity: 1; outline: none; }
+.mkt-rec-why-k { color: var(--gold); font-size: 11px; letter-spacing: 1.5px; padding: 0 4px; margin-right: 4px; border: 1px solid rgba(var(--gold-rgb),.4); border-radius: 3px; }
 .mkt-suggest { border-color: var(--gold); }
 .mkt-suggest::before { background: var(--gold); }
 .mkt-suggest-spark { color: var(--gold); font-size: 18px; flex: 0 0 auto; filter: drop-shadow(0 0 7px rgba(var(--gold-rgb),.6)); }
@@ -800,3 +817,52 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
   .mkt-grid { grid-template-columns: 1fr; }
   .mkt-foot .reg { display: none; }
 }
+
+/* ---------- READY ON THIS STATION — the context-bound recipe shelf ----------
+   Reuses .mkt-rec/.mkt-foryou wholesale (markup, focus, click) and only adds what this shelf says that the
+   others cannot: the audit strip naming what was read, the cadence chip, and the pre-fill line. Deliberately
+   sober — this shelf is a claim about the Commander's own station, so it should read as instrumentation
+   rather than a promotion. Matte, never glossy. */
+.mkt-sect-h.mkt-ready-sect { color: var(--gold); display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+/* the audit trail: exactly what the station looked at to produce the cards below */
+.mkt-ready-basis { color: var(--ph-dim); font-size: 11.5px; letter-spacing: .4px; text-transform: none; opacity: .85; }
+.mkt-ready-card { border-color: rgba(var(--gold-rgb), .38); }
+.mkt-ready-card:hover { border-color: rgba(var(--gold-rgb), .7); }
+.mkt-ready-card .mkt-rec-why-k { color: var(--gold); border-color: rgba(var(--gold-rgb), .45); }
+/* the evidence line carries this shelf's whole argument, so it reads brighter than a generic why */
+.mkt-ready-card .mkt-ready-why { color: var(--ph-bright); opacity: .95; }
+/* ⛔ .mkt-badge is already SOLID gold with ink text — restating `color: var(--gold)` here painted gold on
+   gold and the chip rendered as a blank bar. Caught only by looking at a screenshot; the DOM read its text
+   back correctly the whole time. Keep the badge's own contrast and change only the fill. */
+.mkt-ready-cad { background: transparent; color: var(--gold); border: 1px solid rgba(var(--gold-rgb), .45);
+  border-radius: 3px; }
+/* what the station pre-filled, stated plainly — a silently filled form is one that gets launched unread */
+.mkt-ready-fill { margin-top: 6px; font-size: 11.5px; letter-spacing: .3px; color: var(--ph-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- A DEEP SHELF SCROLLS SIDEWAYS, IT DOES NOT WRAP ----------
+   ⛔ THE CABINET HEIGHT IS HARDWARE. The roster pane is ~646px at 1440x900, so every card row a shelf spends
+   is a row the RECIPE LIBRARY loses. Raising the shelves to six cards each made them wrap to two rows apiece
+   and pushed the library — the 101 recipes this whole tab exists for — to 874px: fully offscreen, 1.35
+   screens of scrolling before the catalog. That is the same failure a previous pass hit at four cards, and
+   wrapping is the mechanism both times.
+
+   So a shelf holding more than one row's worth becomes a horizontal scroller: all six stay reachable, the
+   shelf still costs exactly ONE row, and the library stays above the fold. The 4th card deliberately peeks
+   at the right edge — that overflow is the affordance telling the reader to scroll. Scrolling is contained
+   to the rail (overscroll-behavior) so it never turns into a page-level horizontal scroll. */
+.mkt-rec-rail.mkt-rail-deep {
+  grid-template-columns: none;                 /* override the wrapping auto-fill grid */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(232px, 1fr);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  padding-bottom: 6px;                          /* room for the scrollbar so it never overlaps a card */
+}
+.mkt-rec-rail.mkt-rail-deep > * { scroll-snap-align: start; }
+/* a thin, matte scrollbar — the station's chrome, never a glossy OS default */
+.mkt-rec-rail.mkt-rail-deep::-webkit-scrollbar { height: 6px; }
+.mkt-rec-rail.mkt-rail-deep::-webkit-scrollbar-track { background: rgba(var(--ph-rgb), .08); }
+.mkt-rec-rail.mkt-rail-deep::-webkit-scrollbar-thumb { background: rgba(var(--ph-rgb), .35); border-radius: 3px; }
+.mkt-rec-rail.mkt-rail-deep::-webkit-scrollbar-thumb:hover { background: rgba(var(--ph-rgb), .55); }

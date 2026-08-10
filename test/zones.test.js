@@ -228,6 +228,66 @@ A.eq(Z.inZone(COUCH_ZONE, 27, 3), true, 'rightmost in-wall cushion (col 27) is i
 A.eq(Z.inZone(COUCH_ZONE, 28, 3), false, 'a cushion column past the east wall is OUT-of-zone (cushion sx,sy must be gated, not the corner)');
 A.eq(Z.inZone(COUCH_ZONE, 28, 3), false, 'the EAST approach (sx+1) of the rightmost cushion is OUT-of-zone (approach ax,ay must be gated too)');
 
+// ---- TRUE ROAM RADIUS (2026-08-08): station floor ∩ Chebyshev radius around the DESK ----
+// Room identity is irrelevant once roamR is present. Walkability/pathfinding remains the caller's
+// reachability gate; this primitive owns only the stable distance boundary and floor membership.
+A.eq(Z.ROAM_RADIUS, 14, 'exports the bounded 14-tile station roam radius');
+A.eq(zMain.roam, undefined, 'a zone computed WITHOUT roamR carries no roam field (original caging preserved)');
+A.eq(Z.inZone(zMain, 25, 2), false, 'and without roamR a tile in the NEXT room stays out-of-zone');
+
+const zRoamFar = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a2', anchorTile: { x: 8, y: 6 }, roamR: 14 });
+A.eq(zRoamFar.kind, 'room', 'a roam zone is still kind:room — zoneRect()/border-meeting consumers keep working');
+A.eq(zRoamFar.rect, { x1: 0, y1: 0, x2: 20, y2: 12 }, 'the home room rect is unchanged by roamR');
+A.eq(zRoamFar.roam, { cx: 8, cy: 6, r: 14, rects: [{ x1: 0, y1: 0, x2: 20, y2: 12 }, { x1: 22, y1: 0, x2: 27, y2: 5 }] },
+  'roam is centered on the desk and considers every station floor plate');
+A.eq(Z.inZone(zRoamFar, 20, 12), true, 'a home-room tile inside the radius is in-zone');
+A.eq(Z.inZone(zRoamFar, 22, 2), true, 'another room is admitted exactly by distance, without a room-identity clip');
+A.eq(Z.inZone(zRoamFar, 23, 2), false, 'one tile past the desk radius is out even when it belongs to a room plate');
+
+const zRoamNear = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a1', anchorTile: { x: 24, y: 3 }, roamR: 9 });
+A.eq(Z.inZone(zRoamNear, 24, 3), true, 'the body stands in-zone on its own desk tile');
+A.eq(Z.inZone(zRoamNear, 27, 5), true, 'a home-room tile inside the radius is in-zone');
+A.eq(Z.inZone(zRoamNear, 18, 3), true, 'a different room inside the radius is in-zone regardless of room identity');
+A.eq(Z.inZone(zRoamNear, 15, 3), true, 'the exact west radius edge is admitted');
+A.eq(Z.inZone(zRoamNear, 14, 3), false, 'one tile past the radius is out');
+A.eq(Z.inZone(zRoamNear, 24, 12), false, 'off-room floor is not admitted merely because it is close');
+A.eq(Z.inZone(zRoamNear, 24, 13), false, 'one tile past the radius to the south is out (both axes gate the roam)');
+A.eq(Z.inZone(zRoamNear, 15, 13), false, 'in-range X but out-of-range Y is out (both axes required)');
+A.eq(Z.inZone(zRoamNear, 21, 3), false, 'a gap/wall between rooms is never part of a room zone');
+
+// A typical 18x11 home room now reaches across its seam by radius alone. The whole home plate is
+// NOT automatically admitted: the far edge must also remain inside the configured distance.
+const ABUT = [
+  { z: 0, x1: 0,  y1: 0, x2: 17, y2: 10 },   // home
+  { z: 1, x1: 18, y1: 0, x2: 27, y2: 10 },   // next door, sharing the x=17|18 seam
+];
+const zAcross = Z.computeZone({ rects: ABUT, anchorTile: { x: 4, y: 5 }, roamR: 14 });
+A.eq(Z.inZone(zAcross, 18, 5), true, 'the adjacent room begins exactly on the radius edge and is admitted');
+A.eq(Z.inZone(zAcross, 19, 5), false, 'one tile beyond the radius remains out even in the adjacent room');
+A.eq(Z.inZone(zAcross, 17, 10), true, 'the in-radius edge of the home room remains available');
+const zWideHome = Z.computeZone({ rects: [{ x1: 0, y1: 0, x2: 30, y2: 10 }], anchorTile: { x: 4, y: 5 }, roamR: 14 });
+A.eq(Z.inZone(zWideHome, 18, 5), true, 'the exact radius edge remains in-zone inside the home room');
+A.eq(Z.inZone(zWideHome, 19, 5), false, 'the home room itself grants no exception one tile past the radius');
+
+// guards: a non-positive / fractional roamR
+A.eq(Z.computeZone({ rects: RECTS, anchorTile: { x: 8, y: 6 }, roamR: 0 }).roam, undefined, 'roamR:0 adds no roam field');
+A.eq(Z.computeZone({ rects: RECTS, anchorTile: { x: 8, y: 6 }, roamR: -4 }).roam, undefined, 'a negative roamR adds no roam field');
+A.eq(Z.computeZone({ rects: RECTS, anchorTile: { x: 8, y: 6 }, roamR: 6.9 }).roam.r, 6, 'a fractional roamR is floored to whole tiles');
+
+// an OFF-ROOM anchor with roamR widens the leash instead (same distance from the desk either way)
+const zRoamLeash = Z.computeZone({ rects: RECTS, anchorTile: { x: 40, y: 40 }, roamR: 9 });
+A.eq(zRoamLeash.kind, 'leash', 'an anchor outside every room is still a leash zone');
+A.eq(zRoamLeash.r, 9, 'roamR widens the open-floor leash to the same roam distance');
+A.eq(Z.computeZone({ rects: RECTS, anchorTile: { x: 40, y: 40 }, leashR: 12, roamR: 9 }).r, 12, 'an explicitly LARGER leashR wins over roamR (max, never a downgrade)');
+
+// roamR never grants a zone to an unplaced agent. When explicitly present it also wins over the
+// legacy solo whole-floor widening: every placed body follows the same distance rule.
+A.eq(Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'ghost', roamR: 9 }), null, 'roamR does NOT grant a zone to an unanchored agent');
+const zSoloRoam = Z.computeZone({ rects: RECTS, props: PROPS, agentId: 'a1', anchorTile: { x: 24, y: 3 }, solo: true, roamR: 9 });
+A.eq(zSoloRoam.kind, 'room', 'an explicit roam radius replaces the solo whole-floor widening');
+A.eq(zSoloRoam.roam.r, 9, 'the sole owner receives the same configured radius as every crew body');
+A.eq(Z.inZone(zSoloRoam, 8, 3), false, 'a far station tile outside that radius remains out for the sole owner');
+
 // ---- inZone: leash membership (Chebyshev square) ----
 const lz = { kind: 'leash', cx: 10, cy: 10, r: 3 };
 A.eq(Z.inZone(lz, 10, 10), true, 'leash center is in-zone');

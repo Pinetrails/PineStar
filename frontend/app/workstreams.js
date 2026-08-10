@@ -76,6 +76,11 @@
       projectRoot: opts.projectRoot != null ? String(opts.projectRoot) : null,
       history: Array.isArray(opts.history) ? opts.history.slice() : [],
       runIds: Array.isArray(opts.runIds) ? opts.runIds.slice() : [],
+      // outcome of the stream's MOST RECENT run: true = it completed (in-band stream finished, even via a
+      // stop/cut-short), false = it DIED in flight (chat.js's in-band `error` branch), null = unknown — no
+      // run yet, a run currently in flight (appendRun resets it), or a pre-upgrade save. The board's DONE
+      // chip reads this so a run that died can never wear "DONE — REVIEW & SHIP" (truthful telemetry).
+      lastRunOk: opts.lastRunOk === true ? true : (opts.lastRunOk === false ? false : null),
       deliverables: Array.isArray(opts.deliverables) ? opts.deliverables.slice() : [],
       cost: { tokens: +c.tokens || 0, usd: +c.usd || 0, calls: +c.calls || 0 },
       pinned: !!opts.pinned,
@@ -84,6 +89,10 @@
       // stream's first run. A manual rename() flips it false so the upgrade (and any future auto-title) can
       // never stomp a title the human chose. Defaults true; preserved verbatim through init()'s re-normalize.
       titleAuto: opts.titleAuto != null ? !!opts.titleAuto : true,
+      // true = the current auto title was model-written FROM substantive content — the terminal state of
+      // the auto-title ladder (needsModelTitle stops here). False/absent (incl. every pre-upgrade save)
+      // leaves a small-talk-born title eligible for ONE healing upgrade once the session does real work.
+      titleStrong: !!opts.titleStrong,
       // /goal AUTONOMOUS LOOP state (chat.js owns the shape via GoalLoop.normalize) — carried through verbatim so a
       // standing goal survives a reload/switch exactly like the thread history. Undefined for a stream with no loop.
       goalLoop: (opts.goalLoop && typeof opts.goalLoop === 'object') ? opts.goalLoop : undefined,
@@ -98,9 +107,12 @@
 
   // ---------- lifecycle ----------
   // adopt or mint the General default; guarantees there is always exactly one home for casual chat.
+  // Only a CHAT may be adopted as General: an untitled board task (e.g. a legacy kanban import that
+  // never got a title) is a directive, not the chat home — adopting one would drag a task card into
+  // the never-archivable, never-deletable General slot forever.
   function ensureGeneral() {
     let g = generalId ? find(generalId) : null;
-    if (!g) g = ws.filter(w => w.title == null && !w.archived)[0] || null;
+    if (!g) g = ws.filter(w => w.title == null && !w.archived && w.kind !== 'task')[0] || null;
     if (!g) { g = make({ title: null, lane: 'active' }); ws.push(g); }
     generalId = g.id;
     return g;
@@ -273,6 +285,32 @@
     if (sp > 0) cut = cut.slice(0, sp);             // never cut mid-word
     return cut.replace(/[\s,.;:!?-]+$/, '') + '…';
   }
+  // SMALL-TALK DETECTOR: true when every word of the message is greeting/ack filler ("hey", "good
+  // morning", "how are you", "ok thanks") — i.e. there is nothing here a title could be made OF.
+  // One content word ("hey, research keyboards") flips the message substantive.
+  const FILLER_WORD = /^(?:h+e+y+a*|h+i+y*a*|he+l+o+|yo+|su+p+|howdy|hola|greetings|gm|gn|good|morning|afternoon|evening|night|day|there|and|or|so|well|just|whats|what's|up|new|how|hows|how's|are|is|it|its|it's|going|goes|you|ya|u|r|doing|been|wyd|hbu|wbu|test|testing|ping|ok+|o+k+a+y+|k+|cool|nice|great|awesome|sweet|wow|lol|lmao|ha+|he+h+e*|hm+|mm+|um+|uh+|yes|yea+h*|yep|yup|no+|nah|nope|sure|thanks|thank|thx|ty|tysm|please|pls|plz|dude|bro|man|buddy|friend|wassup|anyone|anybody|home)$/;
+  function isLowSignal(text) {
+    const t = String(text == null ? '' : text).toLowerCase().replace(/[^a-z0-9\s']/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!t) return true;
+    return t.split(' ').every(w => FILLER_WORD.test(w));
+  }
+
+  // What a model title should be written FROM: a compact digest of the session's SUBSTANTIVE user
+  // messages (small-talk filler skipped) — the founding directive plus the latest turns, so the title
+  // names what the session became, not whatever pleasantry happened to open it. Returns null when the
+  // session holds no substance yet: the caller must NOT spend a model call — the instant placeholder
+  // stays (an honest "hey" beats a minted "Casual Greeting Exchange" that locks in forever).
+  function titleBasis(id, fallbackText) {
+    const w = find(id);
+    const msgs = w ? (w.history || []).filter(m => m && m.role === 'user' && typeof m.content === 'string').map(m => m.content) : [];
+    let subs = msgs.filter(t => !isLowSignal(t));
+    if (!subs.length && fallbackText != null && !isLowSignal(fallbackText)) subs = [String(fallbackText)];
+    if (!subs.length) return null;
+    const pick = [];
+    for (const t of [subs[0]].concat(subs.slice(-2))) if (pick.indexOf(t) < 0) pick.push(t);
+    return pick.map(t => t.replace(/\s+/g, ' ').trim().slice(0, 300)).join('\n');
+  }
+
   // name an untitled, non-General stream from its first user message (no-op otherwise). This is the INSTANT
   // placeholder (first-sentence truncation); retitle() later upgrades it to a model-written summary.
   function autoTitle(id, text) {
@@ -290,20 +328,28 @@
   function needsModelTitle(id) {
     const w = find(id);
     if (!w || w.id === generalId || w.titleAuto === false || w.title == null) return false;
+    if (w.titleStrong) return false;   // already model-titled from real content — the ladder's terminal rung
     const first = (w.history || []).find(m => m && m.role === 'user' && typeof m.content === 'string');
     if (!first) return false;
-    return w.title === deriveTitle(first.content);
+    if (w.title === deriveTitle(first.content)) return true;
+    // HEAL a weak model title: a session OPENED with small talk wears whatever the model made of "hey"
+    // (pre-upgrade builds minted "Casual Greeting Exchange"-style titles from it). Once the session
+    // holds a substantive user message, it earns one upgrade pass — which lands strong and stops here.
+    return isLowSignal(first.content)
+      && (w.history || []).some(m => m && m.role === 'user' && typeof m.content === 'string' && !isLowSignal(m.content));
   }
   // UPGRADE an auto-derived placeholder to a concise model-written summary (chat.js fires this once, after a
   // new stream's first run, passing a 3-6 word LLM title). Honors the human: a stream whose title was MANUALLY
   // renamed (titleAuto === false) is never stomped, and General is never titled. Returns false (no change) when
   // locked / General / the summary is empty — so a model hiccup just leaves the instant placeholder in place.
-  function retitle(id, title) {
+  function retitle(id, title, strong) {
     const w = find(id);
     if (!w || w.id === generalId || w.titleAuto === false) return false;
     const tt = clamp(String(title == null ? '' : title).trim().replace(/\s+/g, ' '), 80);
     if (!tt) return false;
-    w.title = tt; w.titleAuto = true; return true;
+    w.title = tt; w.titleAuto = true;
+    if (strong) w.titleStrong = true;   // written from substantive content — no further auto passes
+    return true;
   }
 
   // ---------- runs · deliverables · cost (filed onto the stream that spawned them) ----------
@@ -312,10 +358,22 @@
   // the rail's "last worked" stamp never reads as boot/poll time (timestamp-honesty law, 2026-07-19).
   function appendRun(id, runId, at) {
     const w = find(id); if (!w || !runId) return false;
-    if (w.runIds.indexOf(runId) < 0) w.runIds.push(runId);   // tolerate dup / no-op runs (e.g. the no-tool-support early error)
+    // tolerate dup / no-op runs (e.g. the no-tool-support early error); only a NEW run resets the
+    // outcome to unknown — a dup re-file of an already-settled run must not erase its truth.
+    if (w.runIds.indexOf(runId) < 0) { w.runIds.push(runId); w.lastRunOk = null; }
     if (w.lane === 'todo') w.lane = 'active';                // hybrid-honest: a REAL run fired
     w.lastActiveAt = Number(at) > 0 ? Number(at) : now();
     if (id === activeId) w.lastReadAt = w.lastActiveAt;      // the open stream is being watched, not unread
+    return true;
+  }
+  // settle the REAL outcome of a finished run (chat.js's two terminal branches call this): ok=false only
+  // when the run errored in flight, ok=true when the stream completed. Only the stream's CURRENT (last-filed)
+  // run may settle the flag — a stale callback from an older run is refused so it can never overwrite the
+  // newer run's truth, and an outcome with no filed run is unanchored and refused too.
+  function noteRunEnd(id, runId, ok) {
+    const w = find(id); if (!w || !runId) return false;
+    if (!w.runIds.length || w.runIds[w.runIds.length - 1] !== runId) return false;
+    w.lastRunOk = ok === true;
     return true;
   }
   function recordDeliverable(id, d) {
@@ -445,7 +503,12 @@
       const title = safeTitle(w), ti = title.toLowerCase().indexOf(q);
       if (ti >= 0) { out.push({ id: w.id, title: w.title, snippet: 'title match', match: 'title' }); continue; }
       for (const m of visibleMessages(w)) {
-        const body = scrubSecrets(m.content), i = body.toLowerCase().indexOf(q); if (i < 0) continue;
+        // Most queries do not occur in most turns. Check the raw text first so a miss does not pay
+        // for every credential-redaction regex across the whole session archive. A raw candidate is
+        // still scrubbed and checked again before it can become a hit: text inside a secret remains
+        // unsearchable and snippets remain safe.
+        const raw = m.content, rawIndex = raw.toLowerCase().indexOf(q); if (rawIndex < 0) continue;
+        const body = scrubSecrets(raw), i = body.toLowerCase().indexOf(q); if (i < 0) continue;
         const start = Math.max(0, i - 20);
         out.push({ id: w.id, title: w.title, snippet: body.slice(start, start + 60).replace(/\s+/g, ' ').trim(), match: 'transcript' });
         break;
@@ -474,10 +537,14 @@
 
   // one-shot import of the legacy station kanban tasks[] into real workstreams (col -> lane,
   // empty history). The caller (slice 3) guards this to run exactly once, then clears tasks[].
+  // Every legacy kanban card was a BOARD card, so kind is passed explicitly: without it, make()'s
+  // lane inference read a 'doing' card (lane active) as kind:'chat' and silently dropped it off
+  // the board it was being imported onto.
   function importTasks(tasks) {
     const created = (Array.isArray(tasks) ? tasks : []).map(tk => make({
       title: (tk && tk.title) || null,
       lane: LANE_OF_COL[tk && tk.col] || 'todo',
+      kind: 'task',
       createdAt: (tk && tk.t) || now(), lastActiveAt: (tk && tk.t) || now()
     }));
     for (const w of created) ws.push(w);
@@ -490,8 +557,8 @@
     previewArchive, archivePreview, canUndo, undoLast,
     create, startSession, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
     switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, isDeleted, touch, markUnread, markRead, unread: isUnread,
-    autoTitle, retitle, deriveTitle, needsModelTitle,
-    appendRun, recordDeliverable, addCost, costOf,
+    autoTitle, retitle, deriveTitle, needsModelTitle, isLowSignal, titleBasis,
+    appendRun, noteRunEnd, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,
     LANES
   };

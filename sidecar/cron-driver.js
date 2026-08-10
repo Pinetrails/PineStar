@@ -38,6 +38,11 @@
                                                  //   a getter is re-read each fire so it can fold in the live
                                                  //   Commander dossier (Phase C). Both forms stay determinism-clean.
      deps.maxRunMs         -> int                // self-healing lease ceiling: a run older than this is reclaimed
+     deps.stageBriefFor   -> (agentId) -> string|null
+                                                 // OPTIONAL: the standing job brief of the dock this agent
+                                                 //   crews (index.js injects router.stageBrief). Appended to
+                                                 //   the entry run's system context under the hub's exact
+                                                 //   section header. PROMPT TEXT ONLY — never grants/tools.
      deps.placeWorkitem(agentId, prompt, runId)
                            -> void               // OPTIONAL: ride the routine's instruction onto the CONVEYOR as a
                                                  //   box bound for its agent (the SAME workitem.placed plumbing a
@@ -92,6 +97,13 @@
     // message gets — resolveStation(agentId) -> the bay room's objects, else null -> the host's default office.
     // Optional + injected so this module stays determinism-clean; absent -> pre-fix behavior.
     const resolveStation = typeof d.resolveStation === 'function' ? d.resolveStation : null;
+    // THE DOCK'S STANDING BRIEF (inbox-trigger, 2026-08-05): stageBriefFor(agentId) -> the standing job brief
+    // of the dock this agent crews (index.js injects router.stageBrief — the SAME seam hub entry runs and
+    // chain handoffs read), or null. A scheduled fire was the ONE entry-run path that never briefed its dock:
+    // the same agent ran with its brief from a routed message and without it from a routine. PROMPT TEXT ONLY —
+    // a brief never changes who runs, what tools they hold, or what grants apply. Optional + injected so this
+    // file stays determinism-clean; absent -> pre-brief behavior, byte-identical.
+    const stageBriefFor = typeof d.stageBriefFor === 'function' ? d.stageBriefFor : null;
     const maxRunMs = d.maxRunMs || (8 * 60 * 1000);
     // NS-0 LEASE HEARTBEAT knobs (all injected, determinism-clean; host threads env). The lease sweep no
     // longer reclaims on a fixed wall-clock age — it reclaims only when a run's HEARTBEAT is stale (the run
@@ -126,6 +138,11 @@
     const advanceChain = typeof d.advanceChain === 'function' ? d.advanceChain : null;
     const contextFor = typeof d.contextFor === 'function' ? d.contextFor : function () { return ''; };
     const deliverResult = typeof d.deliverResult === 'function' ? d.deliverResult : null;
+    const preflightConfig = typeof d.preflightConfig === 'function' ? d.preflightConfig : null;
+    const hashText = typeof d.hashText === 'function' ? d.hashText : function (s) { return String(s == null ? '' : s); };
+    const blockedRetryMs = (function () { const n = parseInt(d.blockedRetryMs, 10); return Number.isFinite(n) && n > 0 ? n : 60000; })();
+    // Fault-injection seam: false models a process stop after the final receipt is durable, before delivery.
+    const afterFinalizationCommitted = typeof d.afterFinalizationCommitted === 'function' ? d.afterFinalizationCommitted : null;
     if (typeof getJobs !== 'function' || typeof setJobs !== 'function') throw new Error('cron-driver: getJobs/setJobs are required');
     if (typeof runOnce !== 'function') throw new Error('cron-driver: runOnce is required');
     if (typeof newId !== 'function' || typeof newAbort !== 'function' || typeof now !== 'function') throw new Error('cron-driver: newId/newAbort/now are required');
@@ -142,6 +159,34 @@
     // (jobId, nextRunAt) window: once the job's due instant changes (re-enabled+re-armed, edited) or the job
     // goes away, the key changes / is pruned and a fresh disabled window can report again. Keyed jobId->dueKey.
     const disabledNotified = new Map();
+
+    async function deliverFinalization(job) {
+      const f = job && job.finalization;
+      if (!f || f.state !== 'pending') return false;
+      if (!deliverResult) {
+        setJobs(cronStore.markDelivery(getJobs(), job.id, { ok: true, runId: f.runId }, { now: now() }));
+        return true;
+      }
+      // Use the destination snapshot committed with the result, not an edited job's newer routing fields.
+      const deliveryJob = Object.assign({}, job, { deliver: f.deliver, origin: f.origin });
+      let out;
+      try { out = await deliverResult(deliveryJob, { runId: f.runId, outcome: f.outcome, text: f.result || '', error: f.error || null }); }
+      catch (e) { out = { ok: false, error: (e && e.message) || String(e) }; }
+      const live = cronStore.getJob(getJobs(), job.id);
+      const deliveryOk = !out || out.ok !== false;
+      if (live && live.finalization && live.finalization.state === 'pending' && live.finalization.runId === f.runId) {
+        setJobs(cronStore.markDelivery(getJobs(), job.id, { ok: deliveryOk, error: out && out.error, runId: f.runId }, { now: now() }));
+      }
+      return deliveryOk;
+    }
+
+    async function recoverFinalizations() {
+      let count = 0;
+      for (const job of getJobs().slice()) if (job && job.finalization && job.finalization.state === 'pending') {
+        if (await deliverFinalization(job)) count++;
+      }
+      return count;
+    }
 
     /* renewLease — NS-0: a run proved it is alive (a progress event arrived), so bump its lease heartbeat to
        `now`. For a ONE-SHOT run, ALSO refresh the DURABLE per-job heartbeat (so a fresh liveness signal
@@ -163,9 +208,14 @@
     /* finishFire — record a fired run's outcome once it settles: markRun (the reducer owns the transient-backoff
        / one-shot-finalize math) → persist → cron.result → release the lease (only if it is still ours). */
     function finishFire(jobId, runId, state, threw) {
-      const at = now();
+      const currentLease = leases.get(jobId);
+      const pending = currentLease && currentLease.runId === runId ? currentLease.settlement : null;
+      const at = pending ? pending.at : now();
       const reply = (state.buf || '').trim();
-      const errMsg = state.errMsg || (threw ? ('run failed: ' + ((threw && threw.message) || threw)) : null);
+      const terminalReason = String(state.reason || '');
+      const errMsg = state.errMsg
+        || (threw ? ('run failed: ' + ((threw && threw.message) || threw)) : null)
+        || (terminalReason === 'done' ? null : ('run ended without completion: ' + (terminalReason || 'missing terminal outcome')));
       const ok = !errMsg;
       const transient = !!(state.transient || (threw && threw.transient));
       // GENERATION FENCE (2026-07-15 reliability audit): only the run that STILL OWNS the job's lease may
@@ -174,25 +224,39 @@
       // replacement's fresher state (nextRunAt / retryCount / lastRunId — the "stale completion clobbers
       // the replacement" bug). The stale run still emits an honest cron.result (reason suffixed
       // 'stale-lease') so its outcome is observable, but the STORE belongs to the current lease holder.
-      const lease = leases.get(jobId);
+      const lease = currentLease;
       const owned = !!(lease && lease.runId === runId);
+      let committed = false;
       if (owned) {
         try {
           const next = cronStore.markRun(getJobs(), jobId, {
             runId: runId, status: ok ? 'ok' : 'error',
             reason: state.reason || (ok ? 'done' : 'error'),
-            error: errMsg || undefined, transient: transient, output: ok ? reply : undefined
+            error: errMsg || undefined, transient: transient, output: ok ? reply : undefined, usd: state.usd || 0,
+            monitorHash: ok ? state.monitorHash : undefined
           }, { now: at });
-          setJobs(next);
-        } catch (_) { /* a persist/markRun failure must never crash a settling run */ }
+          committed = setJobs(next) !== false;
+        } catch (_) { committed = false; }
+        if (!committed) {
+          // The run is over, but its outcome is not durable yet. Keep ownership and retry the SETTLEMENT on the
+          // next tick; releasing the lease here lets a one-shot's still-persisted fireClaim age into a zombie and
+          // execute the already-completed work again. Do not emit cron.result until its backing record exists.
+          if (!lease.settlement) lease.settlement = { at: at, state: Object.assign({}, state), threw: threw || null };
+          if (!lease.persistNotified) {
+            lease.persistNotified = true;
+            warn('[cron] settlement persist failed for ' + jobId + ' (' + runId + '); retaining lease and retrying');
+          }
+          return false;
+        }
       }
       // job-level outcome: a FAILED run always reports (never silent); SILENT only on a clean, exactly-"[SILENT]" reply.
       const outcome = !ok ? 'failed' : (reply === SILENT_MARKER ? 'silent' : 'ok');
       const baseReason = state.reason || (errMsg ? 'error' : 'done');
-      try { emit('cron.result', { jobId: jobId, runId: runId, outcome: outcome, reason: owned ? baseReason : (baseReason + ' (stale-lease)') }); } catch (_) {}
-      if (owned && deliverResult) {
+      if (!owned || committed) try { emit('cron.result', { jobId: jobId, runId: runId, outcome: outcome, reason: owned ? baseReason : (baseReason + ' (stale-lease)') }); } catch (_) {}
+      const continueAfterCommit = !(owned && committed && afterFinalizationCommitted && afterFinalizationCommitted(cronStore.getJob(getJobs(), jobId)) === false);
+      if (owned && committed && continueAfterCommit) {
         const liveJob = cronStore.getJob(getJobs(), jobId) || { id: jobId };
-        Promise.resolve(deliverResult(liveJob, { runId: runId, outcome: outcome, text: reply, error: errMsg || null }))
+        Promise.resolve(deliverFinalization(liveJob))
           .catch(function (e) { warn('[cron] result delivery failed for ' + jobId + ': ' + ((e && e.message) || e)); });
       }
       if (owned) leases.delete(jobId);   // a stale-lock sweep may have reclaimed+replaced it — never delete a successor's lease
@@ -219,9 +283,10 @@
          lands in job.lastError, which the ROUTINES row already renders. cron.result's `reason` is a free string
          in the owned event contract, so this needs no schema change. */
       let assembledPrompt = String(job.prompt || '');
+      let upstreamContext = '';
       try {
-        const upstream = contextFor(job, getJobs()) || '';
-        if (upstream) assembledPrompt = String(upstream) + '\n\n## ROUTINE DIRECTIVE\n' + assembledPrompt;
+        upstreamContext = String(contextFor(job, getJobs()) || '');
+        if (upstreamContext) assembledPrompt = upstreamContext + '\n\n## ROUTINE DIRECTIVE\n' + assembledPrompt;
       } catch (e) {
         const blockedRunId = newId();
         const msg = 'context pipeline unavailable: ' + ((e && e.message) || e);
@@ -249,7 +314,56 @@
       const model = (job.model && String(job.model).trim()) || (ident.model && String(ident.model).trim()) || defaultModel;
       const provider = providerForJob(job, ident) || 'openrouter';
       const key = getKey(provider, job);
-      if (!job.noAgent && (!model || !hasCredential(provider, key, job))) { try { emit('cron.skipped', { jobId: job.id, reason: 'no-capability' }); } catch (_) {} return false; }
+      let configIssue = null;
+      if (!job.noAgent && !model) configIssue = { code: 'missing-model', reason: 'no model is configured; choose a model for this routine or its assigned agent' };
+      else if (!job.noAgent && !hasCredential(provider, key, job)) configIssue = { code: 'missing-credential', reason: 'provider "' + provider + '" has no usable credential; connect it or choose a configured provider' };
+      if (!configIssue && preflightConfig) {
+        try {
+          const checked = preflightConfig(job, { provider: provider, model: model, key: key, identity: ident });
+          if (checked && checked.ok === false) configIssue = { code: String(checked.code || 'invalid-delivery'), reason: String(checked.reason || checked.error || 'routine delivery is not configured') };
+        } catch (e) { configIssue = { code: 'config-check-error', reason: 'configuration could not be verified: ' + ((e && e.message) || e) }; }
+      }
+      if (configIssue) {
+        const live = cronStore.getJob(getJobs(), job.id) || job;
+        const fingerprint = String(hashText([configIssue.code, provider, model || '', String(job.deliver || 'local'), configIssue.reason].join('\n'))).slice(0, 200);
+        const alreadyAlerted = !!(live.blockedConfig && live.blockedConfig.fingerprint === fingerprint && live.blockedConfig.alertedAt);
+        let persisted = false;
+        try {
+          persisted = setJobs(cronStore.markBlockedConfig(getJobs(), job.id, {
+            fingerprint: fingerprint, reason: configIssue.reason, alerted: !alreadyAlerted, retryAt: nowMs + blockedRetryMs
+          }, { now: nowMs })) !== false;
+        } catch (_) { persisted = false; }
+        // One durable alert per unchanged fingerprint. No provider call and no delivery attempt occur on this path.
+        if (persisted && !alreadyAlerted) try {
+          emit('cron.result', { jobId: job.id, runId: newId(), outcome: 'failed', reason: 'blocked_config: ' + configIssue.reason });
+        } catch (_) {}
+        return false;
+      }
+
+      // Configuration recovered: clear the durable block before any spend. A failed receipt keeps the run closed.
+      {
+        const live = cronStore.getJob(getJobs(), job.id);
+        if (live && (live.blockedConfig || live.state === 'blocked_config')) {
+          let cleared = false;
+          try { cleared = setJobs(cronStore.clearBlockedConfig(getJobs(), job.id)) !== false; } catch (_) { cleared = false; }
+          if (!cleared) return false;
+        }
+      }
+
+      let sourceHash = null;
+      // A monitor can suppress only source bytes the host can observe before a model call. contextFrom is that
+      // durable source; a prompt that tells the model to fetch a URL cannot be hashed without spending, so it is
+      // deliberately not guessed/suppressed here.
+      if (job.monitorMode === true && upstreamContext.trim()) {
+        sourceHash = String(hashText(upstreamContext)).slice(0, 200);
+        const live = cronStore.getJob(getJobs(), job.id) || job;
+        if (live.monitorHash && live.monitorHash === sourceHash) {
+          try { setJobs(cronStore.markMonitorCheck(getJobs(), job.id, {
+            hash: sourceHash, commit: false, unchanged: true, retryAt: nowMs + blockedRetryMs
+          }, { now: nowMs })); } catch (_) {}
+          return false;
+        }
+      }
 
       const runId = newId();
       const ac = newAbort();
@@ -270,7 +384,7 @@
       // redaction so an unattended run is observable live in the SAME redacted shape a routed channel run ships
       // (tool_call name-only, tool_result outcome-only, metadata events whole; token deltas dropped to stay quiet,
       // and any event runTeeView maps to null — e.g. the noisy inner streams — is dropped rather than leaked raw).
-      const state = { buf: '', errMsg: null, reason: null, transient: false };
+      const state = { buf: '', errMsg: null, reason: null, transient: false, usd: 0, monitorHash: sourceHash };
       const sink = function (name, payload) {
         const p = payload || {};
         // NS-0 HEARTBEAT: every run-progress event proves this run is still alive → renew the in-RAM lease
@@ -279,13 +393,27 @@
         // from persisting on every delta: only persist once the durable heartbeat is older than heartbeatMs.
         renewLease(job.id, runId);
         if (name === 'agent.token') { state.buf += (p.delta || ''); return; }   // token stream never leaves the driver
+        if (name === 'agent.tool_call') state.buf = '';   // prior prose was narration; only the terminal segment is deliverable
         if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
         else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
-        else if (name === 'agent.run.end') state.reason = p.reason;
+        else if (name === 'agent.run.end') {
+          state.reason = p.reason;
+          // A duplicated terminal event must not erase an already-observed non-zero cost. Providers and
+          // test/recovery hosts can both close a stream; cost is cumulative and therefore monotonic.
+          if (typeof p.usd === 'number' && isFinite(p.usd)) state.usd = Math.max(state.usd, p.usd);
+        }
         // forward only what the shared egress policy permits, in its redacted shape (B4). null -> not teed.
         const view = runTeeView(name, p);
         if (view) { try { emit(name, view); } catch (_) {} }
       };
+
+      // the dock's standing brief rides the run's SYSTEM context — the SAME section header the hub's entry
+      // runs use (hub.js), so a routine's agent is briefed exactly like a routed message's agent. Null-safe:
+      // no seam / no floor / no brief composes the exact pre-brief system string.
+      let dockBrief = null;
+      if (stageBriefFor) { try { dockBrief = stageBriefFor(job.agentId); } catch (_) { dockBrief = null; } }
+      const system = ((ident.system && String(ident.system)) || personaOf(job.agentId, job))
+        + (dockBrief ? '\n\nYOUR STANDING BRIEF FOR THIS STATION:\n' + String(dockBrief).slice(0, 2000) : '');
 
       const messages = [{ role: 'user', content: assembledPrompt }];
       // launch the run SYNCHRONOUSLY (so the fire is ordered with the lease/cron.fire), but route both a
@@ -293,7 +421,7 @@
       let p;
       try {
         p = runOnce({
-          key: key, model: model, system: (ident.system && String(ident.system)) || personaOf(job.agentId, job), messages: messages,
+          key: key, model: model, system: system, messages: messages,
           agentId: job.agentId, isTask: true, emit: sink, signal: ac.signal,
           // streamId 'cron-'+runId makes this run's transcript durable under a per-RUN named stream (runId is a
           // fresh newId() already in scope — determinism-clean). Without it the reply is buffered into `state.buf`
@@ -336,13 +464,29 @@
           Promise.resolve(advanceChain({
             agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''),
             signal: ac.signal, streamId: 'cron-' + runId, key: key, model: model, provider: provider,
+            /* ONLY A ROUTINE THAT BELONGS TO A LINE RUNS THE LINE (Andrew's ruling, 2026-08-07). Read straight
+               off the durable job record — true only for a routine created from a line's own INBOX trigger
+               zone. The seam (index.js) turns it into the lineId the chain gate needs; false/absent means the
+               seam passes none and every dock downstream is terminal, so a routine that predates the workflow
+               keeps buying exactly ONE run. Never inferred from the dock: that is what made a months-old
+               routine start spending three runs the moment its agent was crewed onto a line. */
+            runsLine: job.runsLine === true,
+            // skills/workdir/toolsets are the ROUTINE's configuration, deliberately kept on downstream hops for
+            // now so multi-stage routines keep working (flagged 2026-08-04: applying a foreign agent's workdir/
+            // toolsets to a hop is a misdirection risk — revisit under the narrower-fallback law).
             preloadSkills: Array.isArray(job.skills) ? job.skills.slice() : [], requiredPreloads: true, workdir: job.workdir || null,
             enabledToolsets: Array.isArray(job.enabledToolsets) ? job.enabledToolsets.slice() : null,
             initialTaint: !!(job.contextFrom && job.contextFrom.length),
-            unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : [],
+            /* GRANTS NEVER FLOW DOWN A LINE (2026-08-04). The unattended terminal/verify grant the Commander
+               recorded is an approval of ONE agent — this routine's own dock, which already ran above with
+               job.unattendedGrants. A belt drawn to another dock must not silently extend that approval to a
+               different agent (capability may never silently widen; the fallback direction is NARROWER). A
+               downstream hop that needed a grant fails honestly under the existing chain law: last good
+               output + stop note. */
+            unattendedGrants: [],
             onHop: function () { renewLease(job.id, runId); }
           })).then(
-            function (line) { if (line && String(line.text || '').trim()) state.buf = line.text; finishFire(job.id, runId, state, null); },
+            function (line) { if (line && String(line.text || '').trim()) state.buf = line.text; if (line && typeof line.usd === 'number' && isFinite(line.usd)) state.usd += line.usd; finishFire(job.id, runId, state, null); },
             // A CHAIN FAILURE NEVER CHANGES THE ROUTINE'S OUTCOME: stage one really did run and really did
             // produce work. Same law the channel path holds — the line is never a gate on the answer.
             // It is still SAID OUT LOUD: a silently swallowed chain error is indistinguishable from a floor
@@ -374,6 +518,15 @@
     function applyTickInner(nowMs) {
       let skips = 0, fires = 0;
 
+      // Retry completed-but-not-yet-durable outcomes before planning new work. These leases are settlement
+      // receipts, not live processes: they must never enter the stale-run reclaim path and re-execute the job.
+      for (const entry of Array.from(leases.entries())) {
+        const jobId = entry[0], lease = entry[1];
+        if (!lease || !lease.settlement) continue;
+        const settlement = lease.settlement;
+        finishFire(jobId, lease.runId, settlement.state, settlement.threw);
+      }
+
       // 1. SELF-HEALING LEASE (NS-0 heartbeat-based): reclaim a run ONLY when its HEARTBEAT is stale — i.e. it
       //    stopped proving liveness (crashed / the emit stream died), not merely because it is taking a long
       //    time. A genuinely-live long run keeps renewing lease.heartbeatAt on every progress event, so it is
@@ -382,6 +535,7 @@
       //    reclaimed after heartbeatStaleMs (>= the old maxRunMs by default) rather than the old fixed ceiling.
       for (const entry of leases) {
         const jobId = entry[0], lease = entry[1];
+        if (lease.settlement) continue;
         const beatAge = nowMs - (lease.heartbeatAt != null ? lease.heartbeatAt : lease.startedAt);
         if (beatAge > heartbeatStaleMs) {
           try { lease.ac.abort(); } catch (_) {}
@@ -529,7 +683,8 @@
       return n;
     }
 
-    return { applyTick: applyTick, leases: leases, abortAllLeases: abortAllLeases, _internals: { fireJob: fireJob, finishFire: finishFire } };
+    return { applyTick: applyTick, leases: leases, abortAllLeases: abortAllLeases, recoverFinalizations: recoverFinalizations,
+      _internals: { fireJob: fireJob, finishFire: finishFire, deliverFinalization: deliverFinalization } };
   }
 
   return { makeCronDriver: makeCronDriver, SILENT_MARKER: SILENT_MARKER };

@@ -9,8 +9,12 @@
 
    The shape of a zone (a tiny tagged union):
      • { kind:'room', rect:{x1,y1,x2,y2} } — the agent's bay/workstation sits inside an
-       enclosing room rect; roam that rect. A SOLO agent whose room spans the whole station
-       yields a large rect, so its rich station-wide behavior is NOT regressed (invariant I2/A3).
+       enclosing room rect; without `roamR`, roam that rect (the legacy behavior).
+       OPTIONALLY carries `roam:{cx,cy,r,rects}` (see `roamR` below) — a Chebyshev radius around
+       the stable desk/spawn anchor, intersected with the station's floor rects. It is deliberately
+       independent of room identity, so nearby reachable floor in another room is admitted. The
+       zone `kind` stays 'room' precisely so every
+       existing consumer (world.js `zoneRect`, the D3 border-meeting geometry) keeps working.
      • { kind:'leash', cx,cy,r }           — no enclosing room found around the anchor; roam a
        bounded leash radius (Chebyshev) around the workstation/bay foot tile.
      • { kind:'multi', rects:[...] }        — SOLE-OWNERSHIP widening (invariant A3/I2): when one
@@ -35,6 +39,11 @@
   'use strict';
 
   const DEFAULT_LEASH = 5;   // Chebyshev tiles around the anchor when there is no enclosing room
+  /* ROAM_RADIUS — the genuine stable-anchor idle leash (Chebyshev tiles). Fourteen tiles reaches
+     beyond a typical 18x11 room from a centrally placed desk without opening the whole 64x48
+     station. Room plates do not alter the distance; geo.walkable/pathfinding still decide whether
+     a destination is physically reachable. */
+  const ROAM_RADIUS = 14;
 
   // ---- small geometry helpers (LOCAL-frame, inclusive rects) ----
   function isRect(r) {
@@ -106,22 +115,27 @@
   //   agentId    : the agent's id (to match bound props); may be null/undefined
   //   anchorTile : {x,y} the agent's bay/workstation foot tile (preferred input)
   //   leashR     : Chebyshev radius for the open-floor fallback (default DEFAULT_LEASH)
+  //   roamR      : Chebyshev radius around the stable anchor. When present, it REPLACES room-plate
+  //                membership with radius ∩ station-floor membership. A room zone gains
+  //                `roam:{cx,cy,r,rects}`; an open-floor leash widens to max(leashR, roamR).
   //   solo       : when truthy, this agent effectively OWNS the whole space (no other bound
   //                bay/crew). Per A3/I2 its zone widens to the UNION of all room rects (the whole
   //                reachable floor) so its rich station-wide behavior is never caged — even in a
   //                multi-room station where its desk room is only one of several. (Applies only
-  //                when there IS an anchor — an unplaced agent still gets no zone.)
+  //                when there IS an anchor and roamR is omitted; an explicit radius wins.)
   //
   // Resolution order (matches the plan A2/A3):
   //   1. resolve an anchor tile (explicit anchorTile, else from a bound prop)
   //   2. no anchor at all -> unassigned/unplaced -> null (does not roam)
-  //   3. SOLE OWNERSHIP (solo) with >=1 room rect -> { kind:'multi', rects:[...] } (whole floor)
-  //   4. anchor inside an enclosing room rect -> { kind:'room', rect }
+  //   3. SOLE OWNERSHIP (solo) with >=1 room rect and NO roamR -> { kind:'multi', rects:[...] }
+  //   4. anchor inside an enclosing room rect -> { kind:'room', rect } (+ true radius with roamR)
   //   5. anchor on open floor (no enclosing rect) -> { kind:'leash', cx,cy,r }
   function computeZone(opts) {
     opts = opts || {};
     const rects = opts.rects;
-    const r = Number.isFinite(opts.leashR) && opts.leashR > 0 ? Math.floor(opts.leashR) : DEFAULT_LEASH;
+    let r = Number.isFinite(opts.leashR) && opts.leashR > 0 ? Math.floor(opts.leashR) : DEFAULT_LEASH;
+    const roamR = Number.isFinite(opts.roamR) && opts.roamR > 0 ? Math.floor(opts.roamR) : 0;
+    if (roamR > r) r = roamR;   // a desk-anchored body off-rect roams the same distance it would from a room
 
     // 1) anchor tile
     let a = null;
@@ -137,12 +151,19 @@
     // exact target set the pre-change idle pickers drew from (geo.allRects), so a SOLO agent keeps
     // every previously-valid cross-room target — invariant I2/A3 held for the realistic solo case
     // (a built-out solo station where the desk room != the whole station).
-    const multi = soloMulti(rects, opts.solo);
+    const multi = roamR > 0 ? null : soloMulti(rects, opts.solo);
     if (multi) return multi;
 
-    // 4) enclosing room
+    // 4) enclosing room (+ optional true stable-anchor radius over all station floor rects)
     const room = smallestEnclosing(rects, a.x, a.y);
-    if (room) return { kind: 'room', rect: room };
+    if (room) {
+      const z = { kind: 'room', rect: room };
+      if (roamR > 0) {
+        const floor = soloMulti(rects, true);
+        z.roam = { cx: a.x, cy: a.y, r: roamR, rects: floor ? floor.rects : [room] };
+      }
+      return z;
+    }
 
     // 5) open-floor leash around the anchor
     return { kind: 'leash', cx: a.x, cy: a.y, r };
@@ -161,12 +182,21 @@
   }
 
   // ---- membership test ----
-  // inZone(null, ..) -> false (an agent with no zone roams nowhere). For a room zone: inclusive
-  // rect contains. For a leash zone: Chebyshev (square) radius around the center.
+  // inZone(null, ..) -> false (an agent with no zone roams nowhere). For a room zone without roam,
+  // the rect contains; with roam, floor-rect membership AND the desk radius are required.
   function inZone(zone, tx, ty) {
     if (!zone) return false;
     if (!Number.isFinite(tx) || !Number.isFinite(ty)) return false;
-    if (zone.kind === 'room') return rectHas(zone.rect, tx, ty);
+    if (zone.kind === 'room') {
+      const rm = zone.roam;
+      if (rm) {
+        if (Math.abs(tx - rm.cx) > rm.r || Math.abs(ty - rm.cy) > rm.r) return false;
+        if (!Array.isArray(rm.rects)) return false;
+        for (const r of rm.rects) if (rectHas(r, tx, ty)) return true;
+        return false;
+      }
+      return rectHas(zone.rect, tx, ty);               // legacy opt-out: no roamR means the room plate
+    }
     if (zone.kind === 'leash') {
       return Math.abs(tx - zone.cx) <= zone.r && Math.abs(ty - zone.cy) <= zone.r;
     }
@@ -198,6 +228,6 @@
     computeZone, inZone, clampPickable,
     // exposed for tests / reuse — pure geometry helpers
     rectHas, rectArea, smallestEnclosing, anchorFromProps,
-    DEFAULT_LEASH,
+    DEFAULT_LEASH, ROAM_RADIUS,
   };
 });

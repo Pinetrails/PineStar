@@ -147,6 +147,16 @@
   function isAbort(error, signal) {
     return !!((signal && signal.aborted) || (error && error.name === 'AbortError'));
   }
+  // A provider adapter owns the cheap pre-stream retry ladder because it can safely repeat a request before
+  // any response bytes reach the loop. Once that ladder is exhausted, the loop must not unknowingly run the
+  // whole adapter ladder again: OpenRouter's 3 attempts multiplied by the loop's 5 attempts into 15 identical
+  // requests and ~24s of silent "working" against an immediately-broken API. Mid-stream failures never carry
+  // this marker, so the loop keeps its separate recovery ladder for a stream that actually started.
+  function markPreStreamRetriesExhausted(error) {
+    const e = (error && typeof error === 'object') ? error : new Error(String(error || 'provider request failed'));
+    try { e.preStreamRetriesExhausted = true; } catch (_) {}
+    return e;
+  }
   function abortableDelay(ms, signal) {
     return new Promise((resolve, reject) => {
       if (signal && signal.aborted) return reject(makeAbortError());
@@ -222,7 +232,7 @@
   }
 
   const timeouts = { envInt, connectMs, idleMs, connectSignal, connectGuard, idleGuardedReader, timeoutError, makeAbortError };
-  const runtime = { isAbort, abortableDelay };
+  const runtime = { isAbort, abortableDelay, markPreStreamRetriesExhausted };
 
   return { EVENT_TYPES, FINISH, normalizeFinish, timeouts, runtime };
 });

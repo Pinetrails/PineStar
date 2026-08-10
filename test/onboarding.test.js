@@ -11,6 +11,7 @@
 const A = require('./_assert.js');
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const D = require('../frontend/app/dossier.js');
 
 const src = fs.readFileSync(path.join(__dirname, '../frontend/app/onboarding.js'), 'utf8');
@@ -153,8 +154,38 @@ A.ok(/llmCall\(WakeMind\.buildDigReply\(\{\s*tuesday:\s*tuesdayT/.test(src),
 A.ok(/say i work for you for a year\. free\. tireless\./.test(src), 'the year question is the signature ask');
 A.ok(/Direction open — wants the station to help discover what to build\.[\s\S]{0,80}weight:\s*'seed'/.test(src),
   'the no-idea-yet out lands as a seed note (LOW-BY-CHOICE, hunt mode inherits)');
+// B4 cadence (2026-08-03): every scripted pain steer also surfaces HOW OFTEN — the fact that turns a
+// chore into a routine. The generated ask carries the same instruction in wakemind's buildPainReply.
+A.ok(/how often does that trip happen\?/.test(src) && /how often do you end up sending it\?/.test(src) && /how often does the hunt happen\?/.test(src),
+  'all three scripted pain steers fold cadence into the ask');
+A.ok(/and how often it comes back\.'/.test(src), 'the dig-personalized pain steer folds cadence in too');
+// B4b the stack (2026-08-03): a plain direct question — honestly askable on a quiet mind — whose answer
+// lands verbatim as a stated `stack` belief (the dim the COMMANDER panel renders as "Stack & tools").
+A.ok(/dossierDim:\s*'stack'/.test(src) && /which apps or tools does that actually happen in\? name them\./.test(src),
+  'the stack question exists and writes through the dossier chokepoint');
+A.ok(/if \(!loose && painT\) \{[\s\S]{0,400}dossierDim:\s*'stack'/.test(src),
+  'the stack ask is deep-path only and grounded on a given pain (never a cold non sequitur)');
+// B5 loose honesty (2026-08-03): the fork promises "two small ones" — so loose asks exactly pain + year.
+A.ok(/let lostT = '';\s*\n\s*if \(!loose\) \{/.test(src.replace(/\r/g, '')),
+  'lost-time is deep-path only, keeping the two-small-ones promise true');
 // B7 the mirror: offers are generated (possibility-space teaching); a grab arms the proof beat.
 A.ok(/llmCall\(WakeMind\.buildMirror\(/.test(src), 'the mirror offers are generated, never canned');
+A.ok(/World\.heroCaps\('agent'\)/.test(src) && /capabilities:\s*liveCaps/.test(src),
+  'the mirror sees the agent\'s REAL placed caps, not a hardcoded empty list');
+{
+  const start = src.indexOf('const liveCaps = (() => {');
+  const exprStart = src.indexOf('(() => {', start);
+  const exprEnd = src.indexOf('})();', exprStart);
+  A.ok(start >= 0 && exprStart >= 0 && exprEnd >= 0, 'the live capability projection remains executable as one bounded expression');
+  const expr = src.slice(exprStart, exprEnd + 4);
+  const caps = vm.runInNewContext(expr, {
+    World: { heroCaps: () => [{ objectType: 'dish' }, 'cabinet', null] },
+    WorldModel: { CAP_LABEL: { dish: 'WEB', cabinet: 'FILES' } }
+  });
+  A.eq(caps, [{ id: 'dish', label: 'WEB' }, { id: 'cabinet', label: 'FILES' }],
+    'the mirror unwraps World.heroCaps {objectType} records before resolving their power labels');
+}
+A.ok(/stack:\s*stackT/.test(src), 'the stated stack rides into the mirror/year/synthesis contexts');
 A.ok(/PitchStore\.armFirstMove\(grabbedMove\)/.test(src),
   'a grabbed offer arms the post-tour first move (the one below-gate starter allowed)');
 // B8 thin honesty: a loose/empty run synthesizes with thin:true and its purpose lands as a SEED belief.
@@ -223,5 +254,27 @@ A.ok(/else if \(!opts\.wake\)[\s\S]{0,700}reignite\(\)/.test(src),
   A.ok(!/theFlood|firstContact|theMandate|waitBirth/.test(rSeg),
     'the re-wake never replays the flood/contact/mandate birth monologue');
 }
+
+/* ---------- THE BENCH + ADAPTIVE FOLLOW-UPS + THE INK (Andrew 2026-08-05) ---------- */
+// B4c the bench: a plain direct question about the projects actually in flight — honestly askable on a
+// quiet mind — whose answer lands verbatim as a stated `goals` belief through askStep's chokepoint.
+A.ok(/dossierDim:\s*'goals'[\s\S]{0,200}what are you actually building or working on right now\?/.test(src),
+  'the bench question exists and writes through the dossier chokepoint');
+A.ok(/let projT = '', benchT = '';\s*\n\s*if \(!loose\) \{/.test(src), 'the bench ask is deep-path only');
+A.ok(/projects:\s*projT/.test(src) && /bench:\s*benchT/.test(src), 'the bench rides into the year/mirror/synthesis contexts');
+// the follow-up wallet: generated digs are budget-gated at EVERY site (dig/pain/bench/year), so the
+// mind's judgment (ASK: NONE) plus the wallet keep depth adaptive without blowing the runtime.
+A.ok(/const FOLLOWUP_BUDGET = \d/.test(src), 'the follow-up budget exists');
+{
+  const gates = (src.match(/followupsLeft > 0/g) || []).length;
+  const spends = (src.match(/followupsLeft--/g) || []).length;
+  A.ok(gates >= 4 && spends >= 4, 'all four generated-follow-up sites are wallet-gated and spend on use (' + gates + '/' + spends + ')');
+}
+// the ink: every REAL dossier write beside the ceremony shows its receipt — and only real writes do.
+A.ok(/function ink\(dim, text\)/.test(src) && /Dialogue\.ink\(/.test(src), 'the ink helper exists and drives Dialogue.ink');
+A.ok(/DossierStore\.upsert\(s\.dossierDim[\s\S]{0,120}ink\(s\.dossierDim, text\)/.test(src),
+  'the askStep chokepoint inks the stated write');
+A.ok(!/ink\('identity', 'Chose to be figured out/.test(src) && /never inked/.test(src),
+  'seed-weight mechanical notes are never inked (nothing was learned)');
 
 A.report('onboarding.test');

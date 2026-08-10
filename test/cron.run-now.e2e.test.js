@@ -20,6 +20,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 function startMockOpenRouter() {
   const requests = [];
+  let hold = null;
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       if (req.url.indexOf('/models') >= 0) {
@@ -32,6 +33,12 @@ function startMockOpenRouter() {
         req.on('data', d => { body += d; });
         req.on('end', () => {
           try { requests.push(JSON.parse(body)); } catch (_) {}
+          if (hold) {
+            const h = hold;
+            hold = null;
+            h();
+            return;
+          }
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'AI news found' } }] }) + '\n\n');
           res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
@@ -42,7 +49,12 @@ function startMockOpenRouter() {
       }
       res.writeHead(404); res.end();
     });
-    server.listen(0, HOST, () => resolve({ server, requests, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
+    server.listen(0, HOST, () => resolve({
+      server,
+      requests,
+      base: 'http://' + HOST + ':' + server.address().port + '/api/v1',
+      holdNext() { return new Promise(resolveHold => { hold = resolveHold; }); }
+    }));
   });
 }
 
@@ -155,7 +167,10 @@ async function readNdjson(res) {
     const create = await fetch(B + '/api/cron', {
       method: 'POST',
       headers,
-      body: JSON.stringify({ name: 'AI news', prompt: 'gather relevant AI news', schedule: 'every 1h', agentId: 'research-agent', model: 'test/model', provider: 'openrouter' })
+      // runsLine:true — created from a line's INBOX trigger zone, so this routine IS one of that line's own
+      // triggers and firing it runs the drawn stages (work belongs to a line, 2026-08-07). The opposite case
+      // (a routine that predates the workflow) gets its own block below.
+      body: JSON.stringify({ name: 'AI news', prompt: 'gather relevant AI news', schedule: 'every 1h', agentId: 'research-agent', model: 'test/model', provider: 'openrouter', runsLine: true })
     });
     A.eq(create.status, 200, 'created routine');
     const job = (await create.json()).job;
@@ -187,7 +202,7 @@ async function readNdjson(res) {
     const belt = (x, y, dir) => ({ x, y, dir });
     const plan = Pipeline.compileRoutingPlan({
       props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
-              { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'research-agent' },
+              { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'research-agent', brief: 'Dig three primary sources and cite them.' },
               { id: 'b2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer-agent' },
               { id: 'o', t: 'outbox', x: 10, y: 0, w: 1, h: 1 }],
       belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E'), belt(8, 0, 'E'), belt(9, 0, 'E')]
@@ -207,6 +222,44 @@ async function readNdjson(res) {
     A.ok(mock.requests.length >= callsBefore + 2, 'two provider calls — the line really bought both runs');
     await sse.waitFor(events => events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.agentId === 'writer-agent' && e.payload.kind === 'chain'), 5000, 'the handoff rides as a chain crate');
 
+    /* THE DOCK'S STANDING BRIEF RIDES A CRON ENTRY RUN (inbox-trigger, 2026-08-05). The posted plan carries
+       b1's brief (pipeline bays.brief -> router.stageBrief); Run Now — and the scheduled fire, same seam —
+       must append it to stage one's SYSTEM under the hub's exact section header. Recorded off the REAL
+       provider request. And the FIRST fire (no plan posted yet) must have carried NO brief header at all —
+       a floorless routine's system is byte-identical to the pre-brief behavior. */
+    const sysOf = req => ((req.messages || []).find(m => m.role === 'system') || {}).content || '';
+    const preFloor = mock.requests.slice(0, callsBefore);
+    A.ok(preFloor.length >= 1 && preFloor.every(r => sysOf(r).indexOf('YOUR STANDING BRIEF FOR THIS STATION') < 0),
+      'before a floor is posted, a Run Now carries NO brief header (pre-brief behavior intact)');
+    const stage1 = mock.requests.slice(callsBefore).find(r =>
+      (r.messages || []).some(m => m.role === 'user' && String(m.content || '').indexOf('gather relevant AI news') >= 0));
+    A.ok(stage1, "found stage one's recorded provider request");
+    A.ok(sysOf(stage1).indexOf('YOUR STANDING BRIEF FOR THIS STATION:\nDig three primary sources and cite them.') >= 0,
+      "stage one's system carries the dock's standing brief under the hub's exact section header");
+
+    /* ---- A ROUTINE THAT DOES NOT BELONG TO THE LINE BUYS EXACTLY ONE RUN (2026-08-07, Andrew's ruling) ----
+       THE MONEY CASE, on the real Run Now path and the same armed two-stage floor. Deciding "does this fire a
+       line?" from the DOCK alone meant a routine created months before the workflow started spending a run per
+       drawn stage the moment its agent was crewed onto the line — and delivering the LAST stage's text instead
+       of its own answer. Without the durable marker it must stay terminal, and pressing the button must cost
+       exactly one provider call. */
+    {
+      const mk = await fetch(B + '/api/cron', {
+        method: 'POST', headers,
+        body: JSON.stringify({ name: 'legacy digest', prompt: 'gather relevant AI news for the legacy digest', schedule: 'every 1h', agentId: 'research-agent', model: 'test/model', provider: 'openrouter' })
+      });
+      A.eq(mk.status, 200, 'a routine created WITHOUT the marker is accepted');
+      const legacy = (await mk.json()).job;
+      A.eq(legacy.runsLine, false, 'and it is terminal by default — the durable record says so');
+      const before = mock.requests.length;
+      const r = await fetch(B + '/api/cron/run', { method: 'POST', headers, body: JSON.stringify({ id: legacy.id }) });
+      A.eq(r.status, 200, 'Run Now streams');
+      const ev = await readNdjson(r);
+      const ran = ev.filter(e => e.name === 'agent.run.start').map(e => e.payload.agentId);
+      A.eq(ran, ['research-agent'], 'ONLY the routine\'s own dock ran — the drawn stages downstream did not fire');
+      A.eq(mock.requests.length - before, 1, 'PROVIDER CALLS: exactly ONE — a pre-existing routine never buys a whole line');
+    }
+
     /* A SESSION IS NAMED AFTER THE RUN IT IS NAMED AFTER. Hops share the routine's 'cron-<runId>' stream so the
        session shows the whole line — which means that stream now holds SEVERAL run rows, and the frontend used
        to title/attribute the session from whichever row it read first. That titled the Commander's routine
@@ -224,6 +277,21 @@ async function readNdjson(res) {
     A.ok(defining, 'that stream still carries the run it is NAMED after');
     A.ok(defining && String(defining.title || '').indexOf('PIPELINE HANDOFF') < 0,
       'and the defining row is the ROUTINE, never a stage handoff — internal plumbing must not become a session title');
+    /* Disconnecting the Run Now watcher cancels the run. Cancellation has no agent.run.error by design, so
+       success must be derived from the terminal reason, not merely the absence of an error event. */
+    const resultCount = sse.events.filter(e => e.name === 'cron.result' && e.payload && e.payload.jobId === job.id).length;
+    const held = mock.holdNext();
+    const cancel = new AbortController();
+    const cancelledRun = fetch(B + '/api/cron/run', {
+      method: 'POST', headers, body: JSON.stringify({ id: job.id }), signal: cancel.signal
+    }).catch(() => null);
+    await held;
+    cancel.abort();
+    await cancelledRun;
+    await sse.waitFor(events => events.filter(e => e.name === 'cron.result' && e.payload && e.payload.jobId === job.id).length > resultCount, 5000, 'cancelled cron result');
+    const cancelledResult = sse.events.filter(e => e.name === 'cron.result' && e.payload && e.payload.jobId === job.id).slice(-1)[0];
+    A.eq(cancelledResult.payload.outcome, 'failed', 'cancelled Run Now is never announced as successful');
+    A.eq(cancelledResult.payload.reason, 'cancelled', 'cancelled Run Now retains its terminal reason');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}

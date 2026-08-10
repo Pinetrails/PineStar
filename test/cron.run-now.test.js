@@ -31,4 +31,19 @@ A.ok(/placeCronWorkitem\s*\(\s*job\.agentId\s*,\s*job\.prompt\s*,\s*runId\s*\)/.
 A.ok(/broadcast:\s*true/.test(runNowBlock), 'manual Run Now opts into SSE lifecycle broadcast');
 A.ok(/manual[\s/]+Run Now[\s/]+opts into broadcast/i.test(runOnceBlock), 'runOnce comment documents manual cron broadcast reason');
 
+/* GRANTS NEVER FLOW DOWN A LINE (2026-08-04). The routine's unattended grant was approved for ONE agent —
+   its own dock. Stage one keeps it; every chain hop must run UNGRANTED, on BOTH fire paths (scheduled goes
+   through the driver's advanceChain seam; Run Now calls chainRunner.advance directly). Lock the exact text
+   so a refactor that quietly re-inherits job.unattendedGrants into a hop turns this red. */
+// stage one of Run Now still runs with the routine's own recorded grant…
+A.ok(/unattendedGrants:\s*Array\.isArray\(job\.unattendedGrants\)/.test(runNowBlock), "Run Now stage one keeps the routine's own unattended grant");
+// …but its chain hop (inside the same handler, after chainRunner.advance) passes an empty list…
+const runNowHopBlock = sliceBetween(runNowBlock, /chainRunner\.advance\(/, /markRun/);
+A.ok(/unattendedGrants:\s*\[\]/.test(runNowHopBlock), 'the Run Now chain hop passes NO unattended grants');
+A.ok(!/unattendedGrants:\s*Array\.isArray\(job\.unattendedGrants\)/.test(runNowHopBlock), "the Run Now chain hop never inherits the routine's grant");
+// …and the scheduled path's advanceChain seam hard-codes the same law for every hop it executes.
+const seamBlock = sliceBetween(driverBlock, /advanceChain:\s*\(o\)\s*=>\s*chainRunner\.advance\(/, /^\}\);/m);
+A.ok(/unattendedGrants:\s*\[\]/.test(seamBlock), 'the scheduled advanceChain seam runs every hop with NO unattended grants');
+A.ok(!/unattendedGrants:\s*o\.unattendedGrants/.test(seamBlock), 'the seam never forwards caller-supplied grants into a hop');
+
 if (require.main === module) A.report('cron.run-now.test');

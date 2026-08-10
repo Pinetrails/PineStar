@@ -12,7 +12,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod credentials;
+mod lifecycle_preferences;
 
+use std::collections::BTreeMap;
+use std::ffi::OsStr;
 use std::io::Read;
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
@@ -21,12 +24,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{
-    ipc::Channel, AppHandle, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    ipc::Channel, AppHandle, Manager, RunEvent, State, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent,
 };
 use tauri_plugin_updater::{Update, UpdaterExt};
 
@@ -35,7 +39,12 @@ use credentials::{
     keychain_entry, keychain_entry_for, keychain_pool_entry_for,
     migrate_channel_tokens_from_plaintext, migrate_credits_token_from_plaintext,
     normalize_provider, read_channel_token, read_credits_token, read_key, read_key_for,
-    read_key_pool_for, KEYCHAIN_PROVIDERS, SIDECAR_CHANNEL_TOKEN_ENVS, SIDECAR_PROVIDER_KEY_ENVS,
+    read_key_pool_for, restore_credential, rollback_error, KEYCHAIN_PROVIDERS,
+    SIDECAR_CHANNEL_TOKEN_ENVS, SIDECAR_PROVIDER_KEY_ENVS,
+};
+use lifecycle_preferences::{
+    load as load_lifecycle_preferences, save_verified as save_lifecycle_preferences,
+    LifecyclePreferences,
 };
 
 /// Shared runtime state: the fixed sidecar port, the per-launch IPC token (shared
@@ -49,6 +58,9 @@ struct AppState {
     startup_log: Option<PathBuf>,
     sidecar: Mutex<Option<Child>>,
     keep_awake: Mutex<KeepAwakeState>,
+    lifecycle_preferences_path: PathBuf,
+    lifecycle_preferences: Mutex<LifecyclePreferences>,
+    close_exit_pending: AtomicBool,
     // Flipped true the instant the app starts exiting, so the guardian thread stops
     // respawning the sidecar during an intentional quit.
     shutting_down: AtomicBool,
@@ -123,20 +135,19 @@ unsafe impl Send for KeepAwakeHandle {}
 #[cfg(windows)]
 impl KeepAwakeHandle {
     fn create() -> Result<Self, String> {
-        use windows_sys::Win32::Foundation::{
-            CloseHandle, GetLastError, INVALID_HANDLE_VALUE,
-        };
+        use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, INVALID_HANDLE_VALUE};
         use windows_sys::Win32::System::Power::{
-            PowerCreateRequest, PowerSetRequest, PowerRequestSystemRequired,
+            PowerCreateRequest, PowerRequestSystemRequired, PowerSetRequest,
         };
         use windows_sys::Win32::System::Threading::{
-            REASON_CONTEXT, REASON_CONTEXT_0, POWER_REQUEST_CONTEXT_SIMPLE_STRING,
+            POWER_REQUEST_CONTEXT_SIMPLE_STRING, REASON_CONTEXT, REASON_CONTEXT_0,
         };
 
-        let mut reason: Vec<u16> = "StarNet scheduled tasks are allowed to run while the app is open"
-            .encode_utf16()
-            .chain(std::iter::once(0))
-            .collect();
+        let mut reason: Vec<u16> =
+            "StarNet scheduled tasks are allowed to run while the app is open"
+                .encode_utf16()
+                .chain(std::iter::once(0))
+                .collect();
         let context = REASON_CONTEXT {
             Version: 0,
             Flags: POWER_REQUEST_CONTEXT_SIMPLE_STRING,
@@ -147,7 +158,9 @@ impl KeepAwakeHandle {
         let handle = unsafe { PowerCreateRequest(&context) };
         if handle.is_null() || handle == INVALID_HANDLE_VALUE {
             let code = unsafe { GetLastError() };
-            return Err(format!("PowerCreateRequest failed with Windows error {code}"));
+            return Err(format!(
+                "PowerCreateRequest failed with Windows error {code}"
+            ));
         }
         if unsafe { PowerSetRequest(handle, PowerRequestSystemRequired) } == 0 {
             let code = unsafe { GetLastError() };
@@ -167,9 +180,7 @@ impl KeepAwakeHandle {
 impl Drop for KeepAwakeHandle {
     fn drop(&mut self) {
         use windows_sys::Win32::Foundation::CloseHandle;
-        use windows_sys::Win32::System::Power::{
-            PowerClearRequest, PowerRequestSystemRequired,
-        };
+        use windows_sys::Win32::System::Power::{PowerClearRequest, PowerRequestSystemRequired};
 
         unsafe {
             let _ = PowerClearRequest(self.handle, PowerRequestSystemRequired);
@@ -222,7 +233,9 @@ impl KeepAwakeState {
             desktop: true,
             supported: false,
             enabled: false,
-            message: Some("Keep Computer Awake is currently supported on Windows desktop builds.".to_string()),
+            message: Some(
+                "Keep Computer Awake is currently supported on Windows desktop builds.".to_string(),
+            ),
         }
     }
 
@@ -309,6 +322,18 @@ fn startup_log_path(app: &tauri::AppHandle) -> Option<PathBuf> {
     })
 }
 
+fn lifecycle_preferences_path(app: &tauri::AppHandle) -> PathBuf {
+    app.path()
+        .app_data_dir()
+        .unwrap_or_else(|_| {
+            workspace_path(app)
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("."))
+        })
+        .join("lifecycle.json")
+}
+
 fn workspace_path(app: &tauri::AppHandle) -> PathBuf {
     app.path()
         .app_data_dir()
@@ -342,12 +367,20 @@ fn push_unique_path(out: &mut Vec<PathBuf>, path: PathBuf) {
 
 fn legacy_workspace_paths(root: &Path, current: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let appdata_bases = [
-        std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
-        std::env::var_os("APPDATA").map(PathBuf::from),
-        std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
-    ];
-    for base in appdata_bases.into_iter().flatten() {
+    let mut appdata_bases = ["LOCALAPPDATA", "APPDATA", "XDG_DATA_HOME"]
+        .into_iter()
+        .filter_map(|name| std::env::var_os(name).map(PathBuf::from))
+        .collect::<Vec<_>>();
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        // Tauri's live macOS root is ~/Library/Application Support/<bundle-id>, while old/manual Node
+        // sidecars used ~/.local/share/{StarNet,Skynet}. Both are migration sources; the current root is
+        // filtered below. Linux receives the same POSIX fallback that sidecar/workspace-safety.js protects.
+        if cfg!(target_os = "macos") {
+            appdata_bases.push(home.join("Library").join("Application Support"));
+        }
+        appdata_bases.push(home.join(".local").join("share"));
+    }
+    for base in appdata_bases {
         push_unique_path(&mut out, base.join("StarNet").join("workspaces"));
         push_unique_path(&mut out, base.join("Skynet").join("workspaces"));
         push_unique_path(&mut out, base.join("ai.skynet.harness").join("workspaces"));
@@ -391,6 +424,197 @@ fn copy_missing_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
 /// successful legacy migration. Its presence is the sole signal to never migrate again.
 const MIGRATION_MARKER: &str = ".migrated";
 const MIGRATION_PENDING_MARKER: &str = ".migration-pending";
+const MIGRATION_STAGE_SUFFIX: &str = ".migration-stage";
+const MIGRATION_ROLLBACK_SUFFIX: &str = ".migration-rollback";
+const MIGRATION_RECEIPT: &str = ".migration-receipt.json";
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrationFileReceipt {
+    path: String,
+    bytes: u64,
+    sha256: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MigrationReceipt {
+    version: u8,
+    validated: bool,
+    source_roots: Vec<String>,
+    files: Vec<MigrationFileReceipt>,
+}
+
+fn migration_sibling(current: &Path, suffix: &str) -> PathBuf {
+    let name = current
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("workspaces");
+    current.with_file_name(format!("{name}{suffix}"))
+}
+
+fn unique_migration_sibling(current: &Path, suffix: &str) -> PathBuf {
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    migration_sibling(current, &format!("{suffix}-{}-{stamp}", std::process::id()))
+}
+
+fn is_migration_internal(path: &Path) -> bool {
+    path.components().count() == 1
+        && matches!(
+            path.file_name().and_then(|value| value.to_str()),
+            Some(MIGRATION_MARKER | MIGRATION_PENDING_MARKER | MIGRATION_RECEIPT)
+        )
+}
+
+fn hash_file(path: &Path) -> std::io::Result<(u64, String)> {
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut bytes = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        bytes += read as u64;
+        hasher.update(&buffer[..read]);
+    }
+    Ok((bytes, format!("{:x}", hasher.finalize())))
+}
+
+/// A legacy root becomes an automatic station source only when its canonical save is readable and proves the
+/// StarNet save contract. This is intentionally stronger than "some JSON object": migration may carry other
+/// durable stores, but it must never choose between two different stations by directory enumeration order.
+fn valid_station_save_hash(root: &Path) -> Option<String> {
+    for name in ["agent.save.json", "agent.save.json.bak"] {
+        let file = root.join(name);
+        let Ok(bytes) = std::fs::read(&file) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            continue;
+        };
+        let doc = value.get("doc").unwrap_or(&value);
+        if doc.get("schema").and_then(|v| v.as_str()) != Some("starnet.save")
+            || !doc.get("agent").map(|v| v.is_object()).unwrap_or(false)
+        {
+            continue;
+        }
+        return hash_file(&file).ok().map(|(_, digest)| digest);
+    }
+    None
+}
+
+fn collect_expected_files(
+    root: &Path,
+    relative: &Path,
+    files: &mut BTreeMap<String, MigrationFileReceipt>,
+) -> std::io::Result<()> {
+    let path = root.join(relative);
+    let metadata = std::fs::symlink_metadata(&path)?;
+    if metadata.file_type().is_symlink() || is_migration_internal(relative) {
+        return Ok(());
+    }
+    if metadata.is_file() {
+        let key = relative.to_string_lossy().replace('\\', "/");
+        if !files.contains_key(&key) {
+            let (bytes, sha256) = hash_file(&path)?;
+            files.insert(
+                key.clone(),
+                MigrationFileReceipt {
+                    path: key,
+                    bytes,
+                    sha256,
+                },
+            );
+        }
+        return Ok(());
+    }
+    if metadata.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            let entry = entry?;
+            collect_expected_files(root, &relative.join(entry.file_name()), files)?;
+        }
+    }
+    Ok(())
+}
+
+fn migration_inventory(root: &Path) -> std::io::Result<Vec<MigrationFileReceipt>> {
+    let mut files = BTreeMap::new();
+    if root.is_dir() {
+        collect_expected_files(root, Path::new(""), &mut files)?;
+    }
+    Ok(files.into_values().collect())
+}
+
+fn expected_migration_inventory(sources: &[PathBuf]) -> std::io::Result<Vec<MigrationFileReceipt>> {
+    let mut files = BTreeMap::new();
+    for source in sources {
+        if source.is_dir() {
+            collect_expected_files(source, Path::new(""), &mut files)?;
+        }
+    }
+    Ok(files.into_values().collect())
+}
+
+fn validate_migration_semantics(
+    stage: &Path,
+    files: &[MigrationFileReceipt],
+) -> std::io::Result<()> {
+    for file in files {
+        let name = Path::new(&file.path)
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        if name == "agent.roster.json" || name.ends_with(".save.json") {
+            let value: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(stage.join(&file.path))?)
+                    .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+            if !value.is_object() {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("{} must contain a JSON object", file.path),
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_staged_generation(stage: &Path, receipt: &MigrationReceipt) -> std::io::Result<()> {
+    if receipt.version != 1 || !receipt.validated {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "migration receipt is not validated version 1",
+        ));
+    }
+    let actual = migration_inventory(stage)?;
+    if actual != receipt.files {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "staged workspace inventory does not match its receipt",
+        ));
+    }
+    validate_migration_semantics(stage, &actual)
+}
+
+fn activate_staged_generation(current: &Path, stage: &Path) -> std::io::Result<PathBuf> {
+    let rollback = unique_migration_sibling(current, MIGRATION_ROLLBACK_SUFFIX);
+    let had_current = current.exists();
+    if had_current {
+        std::fs::rename(current, &rollback)?;
+    }
+    if let Err(error) = std::fs::rename(stage, current) {
+        if had_current {
+            let _ = std::fs::rename(&rollback, current);
+        }
+        return Err(error);
+    }
+    Ok(rollback)
+}
 
 /// True when the live workspace root already holds real data (anything other than our own
 /// marker file). A pre-existing populated root means an earlier install/migration already ran,
@@ -399,9 +623,12 @@ fn workspace_has_content(current: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(current) else {
         return false;
     };
-    entries
-        .flatten()
-        .any(|e| e.file_name() != std::ffi::OsStr::new(MIGRATION_MARKER))
+    entries.flatten().any(|entry| {
+        let name = entry.file_name();
+        name != std::ffi::OsStr::new(MIGRATION_MARKER)
+            && name != std::ffi::OsStr::new(MIGRATION_PENDING_MARKER)
+            && name != std::ffi::OsStr::new(MIGRATION_RECEIPT)
+    })
 }
 
 /// One-time import of data from legacy workspace roots into the live one. THIS RUNS ONCE, EVER.
@@ -413,78 +640,253 @@ fn workspace_has_content(current: &Path) -> bool {
 ///   1. If the `.migrated` marker exists in the live root, skip entirely (the definitive signal).
 ///   2. Belt-and-suspenders: if the live root already has real content, skip and drop the marker
 ///      so a first-run-with-marker-missing but already-populated install never migrates either.
-/// A pending marker is written BEFORE copying. A crash or returned I/O error therefore retries
-/// the idempotent, copy-missing-only pass instead of mistaking its partial tree for live data.
+/// Copies land in a sibling generation first. A hash inventory, semantic state validation, and a
+/// durable receipt must all agree before directory renames activate it; the prior generation is
+/// retained as rollback evidence.
 fn migrate_workspace_data(
     current: &Path,
     legacy_roots: &[PathBuf],
     startup_log: &Option<PathBuf>,
 ) -> Vec<PathBuf> {
     let mut migrated = Vec::new();
-    let _ = std::fs::create_dir_all(current);
+    if let Some(parent) = current.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
     let marker = current.join(MIGRATION_MARKER);
     let pending = current.join(MIGRATION_PENDING_MARKER);
+    let stage = migration_sibling(current, MIGRATION_STAGE_SUFFIX);
 
     // (1) Already migrated once — never touch legacy roots again.
     if marker.exists() {
         let _ = std::fs::remove_file(&pending);
         return migrated;
     }
-    // (2) Live root already populated (upgrade from a pre-marker build, or a manual copy): treat
-    //     as already-migrated. Stamp the marker so future boots take the fast path at (1).
+    // A populated live root predating migration receipts remains authoritative. Never let a
+    // stale sibling generation replace it; only an explicit pending marker permits recovery.
     if !pending.exists() && workspace_has_content(current) {
         let _ = std::fs::write(&marker, b"1");
         return migrated;
     }
+    let staged_receipt = std::fs::read(stage.join(MIGRATION_RECEIPT))
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<MigrationReceipt>(&bytes).ok());
+    if let Some(receipt) = staged_receipt {
+        if validate_staged_generation(&stage, &receipt).is_ok() {
+            match activate_staged_generation(current, &stage) {
+                Ok(rollback) => {
+                    log_startup(
+                        startup_log,
+                        format!(
+                            "workspace-migration: activated verified staged generation; rollback={}",
+                            rollback.display()
+                        ),
+                    );
+                    return receipt
+                        .source_roots
+                        .into_iter()
+                        .map(PathBuf::from)
+                        .collect();
+                }
+                Err(error) => {
+                    log_startup(
+                        startup_log,
+                        format!(
+                            "workspace-migration: RETRY required; staged activation failed: {error}"
+                        ),
+                    );
+                    return migrated;
+                }
+            }
+        }
+    }
+    // Invalid or incomplete stages are preserved for forensics before a clean retry.
+    if stage.exists() {
+        let quarantine = unique_migration_sibling(current, ".migration-invalid");
+        if let Err(error) = std::fs::rename(&stage, &quarantine) {
+            log_startup(
+                startup_log,
+                format!(
+                    "workspace-migration: RETRY required; could not quarantine invalid stage: {error}"
+                ),
+            );
+            return migrated;
+        }
+    }
 
-    // Stamp BEFORE copying so both a process crash and a returned I/O error remain retryable
-    // even when the partial pass created directories or copied some files.
-    if let Err(error) = std::fs::write(&pending, b"1") {
+    // One valid legacy station is safe to self-heal. Two different valid saves are a product decision, not a
+    // filesystem merge: leave both byte-untouched and let Recovery Mode's candidate picker choose explicitly.
+    let valid_legacy = legacy_roots
+        .iter()
+        .filter(|root| root.is_dir())
+        .filter_map(|root| valid_station_save_hash(root).map(|digest| (root.clone(), digest)))
+        .collect::<Vec<_>>();
+    let distinct_saves = valid_legacy
+        .iter()
+        .map(|(_, digest)| digest.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    if distinct_saves.len() > 1 {
         log_startup(
             startup_log,
             format!(
-                "workspace-migration: RETRY required; could not create pending marker {}: {error}",
-                pending.display()
+                "workspace-migration: CONFLICT — {} different valid legacy stations found; awaiting explicit Recovery Mode selection",
+                distinct_saves.len()
             ),
         );
         return migrated;
     }
+    if let Err(error) = std::fs::create_dir_all(&stage)
+        .and_then(|_| std::fs::write(stage.join(MIGRATION_PENDING_MARKER), b"1"))
+    {
+        log_startup(
+            startup_log,
+            format!("workspace-migration: RETRY required; could not create stage: {error}"),
+        );
+        return migrated;
+    }
+
+    let mut sources = Vec::new();
+    if current.is_dir() {
+        sources.push(current.to_path_buf());
+    }
+    if let Some((selected, _)) = valid_legacy.first() {
+        // If duplicate roots carry the same save, choose one complete generation deterministically rather than
+        // merging unrelated sibling files. The selected root itself remains unchanged as the recovery source.
+        sources.push(selected.clone());
+    } else {
+        sources.extend(legacy_roots.iter().filter(|root| root.is_dir()).cloned());
+    }
+    let expected = match expected_migration_inventory(&sources) {
+        Ok(files) => files,
+        Err(error) => {
+            let source_roots = sources
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            log_startup(
+                startup_log,
+                format!(
+                    "workspace-migration: RETRY required; source inventory failed for {source_roots}: {error}"
+                ),
+            );
+            return migrated;
+        }
+    };
 
     let mut copy_failed = false;
-    for legacy in legacy_roots {
-        if !legacy.is_dir() {
-            continue;
-        }
-        match copy_missing_dir(legacy, current) {
-            Ok(()) => migrated.push(legacy.clone()),
+    for source in &sources {
+        match copy_missing_dir(source, &stage) {
+            Ok(()) => {
+                if !same_path(source, current) {
+                    migrated.push(source.clone());
+                }
+            }
             Err(error) => {
                 copy_failed = true;
                 log_startup(
                     startup_log,
                     format!(
                         "workspace-migration: RETRY required; copy from {} failed: {error}",
-                        legacy.display()
+                        source.display()
                     ),
                 );
             }
         }
     }
     if copy_failed {
+        migrated.clear();
         return migrated;
     }
-    // Marker written LAST, after all copies land: crash-safe (a mid-copy crash leaves no marker,
-    // so the idempotent copy-missing pass simply re-runs next boot).
-    match std::fs::write(&marker, b"1") {
-        Ok(()) => {
-            let _ = std::fs::remove_file(&pending);
+
+    let _ = std::fs::remove_file(stage.join(MIGRATION_PENDING_MARKER));
+    let _ = std::fs::remove_file(stage.join(MIGRATION_MARKER));
+    let actual = match migration_inventory(&stage) {
+        Ok(files) => files,
+        Err(error) => {
+            log_startup(
+                startup_log,
+                format!("workspace-migration: RETRY required; staged inventory failed: {error}"),
+            );
+            migrated.clear();
+            return migrated;
         }
-        Err(error) => log_startup(
+    };
+    if actual != expected {
+        log_startup(
+            startup_log,
+            "workspace-migration: RETRY required; staged inventory differs from source inventory",
+        );
+        migrated.clear();
+        return migrated;
+    }
+    if let Err(error) = validate_migration_semantics(&stage, &actual) {
+        log_startup(
+            startup_log,
+            format!("workspace-migration: RETRY required; semantic validation failed: {error}"),
+        );
+        migrated.clear();
+        return migrated;
+    }
+
+    let receipt = MigrationReceipt {
+        version: 1,
+        validated: true,
+        source_roots: migrated
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
+        files: actual,
+    };
+    let receipt_bytes = match serde_json::to_vec_pretty(&receipt) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            log_startup(
+                startup_log,
+                format!(
+                    "workspace-migration: RETRY required; receipt serialization failed: {error}"
+                ),
+            );
+            migrated.clear();
+            return migrated;
+        }
+    };
+    if let Err(error) = std::fs::write(stage.join(MIGRATION_RECEIPT), receipt_bytes)
+        .and_then(|_| std::fs::write(stage.join(MIGRATION_MARKER), b"1"))
+    {
+        log_startup(
             startup_log,
             format!(
-                "workspace-migration: RETRY required; could not write completion marker {}: {error}",
-                marker.display()
+                "workspace-migration: RETRY required; could not seal staged generation: {error}"
+            ),
+        );
+        migrated.clear();
+        return migrated;
+    }
+    if let Err(error) = validate_staged_generation(&stage, &receipt) {
+        log_startup(
+            startup_log,
+            format!(
+                "workspace-migration: RETRY required; sealed generation validation failed: {error}"
+            ),
+        );
+        migrated.clear();
+        return migrated;
+    }
+    match activate_staged_generation(current, &stage) {
+        Ok(rollback) => log_startup(
+            startup_log,
+            format!(
+                "workspace-migration: activated verified generation; rollback={}",
+                rollback.display()
             ),
         ),
+        Err(error) => {
+            log_startup(
+                startup_log,
+                format!("workspace-migration: RETRY required; activation failed: {error}"),
+            );
+            migrated.clear();
+        }
     }
     migrated
 }
@@ -527,25 +929,159 @@ mod workspace_migration_tests {
             std::slice::from_ref(&legacy),
             &Some(startup_log.clone()),
         );
-        assert!(migrated.is_empty(), "a failed legacy root is not reported as migrated");
+        assert!(
+            migrated.is_empty(),
+            "a failed legacy root is not reported as migrated"
+        );
         assert!(
             !current.join(MIGRATION_MARKER).exists(),
             "a failed copy must not stamp the one-shot marker"
         );
-        assert!(current.join(MIGRATION_PENDING_MARKER).exists());
+        assert!(
+            !current.exists(),
+            "a failed copy must not expose a partial live workspace"
+        );
+        assert!(
+            migration_sibling(&current, MIGRATION_STAGE_SUFFIX)
+                .join(MIGRATION_PENDING_MARKER)
+                .exists(),
+            "the failed sibling generation remains retryable"
+        );
         let failure_log = std::fs::read_to_string(&startup_log).unwrap();
         assert!(failure_log.contains("RETRY required"));
         assert!(failure_log.contains(&legacy.display().to_string()));
 
         drop(lock);
         let retried = migrate_workspace_data(&current, std::slice::from_ref(&legacy), &None);
-        assert_eq!(retried, vec![legacy.clone()], "the next boot retries the legacy root");
+        assert_eq!(
+            retried,
+            vec![legacy.clone()],
+            "the next boot retries the legacy root"
+        );
         assert_eq!(
             std::fs::read(current.join("sessions").join("history.jsonl")).unwrap(),
             b"important session"
         );
         assert!(current.join(MIGRATION_MARKER).exists());
         assert!(!current.join(MIGRATION_PENDING_MARKER).exists());
+        assert!(current.join(MIGRATION_RECEIPT).exists());
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn verified_generation_preserves_prior_live_tree_as_rollback() {
+        let base = temp_dir("rollback");
+        let legacy = base.join("legacy");
+        let current = base.join("current");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::create_dir_all(&current).unwrap();
+        std::fs::write(current.join(MIGRATION_PENDING_MARKER), b"1").unwrap();
+        std::fs::write(current.join("agent.save.json"), br#"{"version":1}"#).unwrap();
+        std::fs::write(legacy.join("agent.roster.json"), br#"{"agents":[]}"#).unwrap();
+
+        let migrated = migrate_workspace_data(&current, std::slice::from_ref(&legacy), &None);
+        assert_eq!(migrated, vec![legacy.clone()]);
+        assert!(current.join(MIGRATION_MARKER).exists());
+        assert!(current.join(MIGRATION_RECEIPT).exists());
+        assert!(current.join("agent.save.json").exists());
+        assert!(current.join("agent.roster.json").exists());
+
+        let rollback = std::fs::read_dir(&base)
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.path())
+            .find(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(|name| name.starts_with("current.migration-rollback-"))
+                    .unwrap_or(false)
+            })
+            .expect("activation retains the prior live generation");
+        assert!(rollback.join("agent.save.json").exists());
+        assert!(rollback.join(MIGRATION_PENDING_MARKER).exists());
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn invalid_semantic_state_never_activates() {
+        let base = temp_dir("invalid-json");
+        let legacy = base.join("legacy");
+        let current = base.join("current");
+        std::fs::create_dir_all(&legacy).unwrap();
+        std::fs::write(legacy.join("agent.save.json"), b"{not-json").unwrap();
+
+        let migrated = migrate_workspace_data(&current, std::slice::from_ref(&legacy), &None);
+        assert!(migrated.is_empty());
+        assert!(!current.exists(), "invalid state is never made live");
+        assert!(
+            migration_sibling(&current, MIGRATION_STAGE_SUFFIX).exists(),
+            "invalid stage is retained for recovery and forensics"
+        );
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    fn station_save(name: &str, updated_at: u64) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "version": 1,
+            "doc": {
+                "schema": "starnet.save",
+                "version": 5,
+                "updatedAt": updated_at,
+                "agent": { "id": "agent", "name": name }
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn distinct_valid_legacy_stations_wait_for_explicit_selection() {
+        let base = temp_dir("station-conflict");
+        let first = base.join("first");
+        let second = base.join("second");
+        let current = base.join("current");
+        let startup_log = base.join("startup.log");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        std::fs::write(first.join("agent.save.json"), station_save("NOVA", 1)).unwrap();
+        std::fs::write(second.join("agent.save.json"), station_save("ORION", 2)).unwrap();
+
+        let migrated = migrate_workspace_data(
+            &current,
+            &[first.clone(), second.clone()],
+            &Some(startup_log.clone()),
+        );
+        assert!(migrated.is_empty());
+        assert!(
+            !current.exists(),
+            "conflicting stations never create an active generation"
+        );
+        assert!(first.join("agent.save.json").exists());
+        assert!(second.join("agent.save.json").exists());
+        assert!(std::fs::read_to_string(startup_log)
+            .unwrap()
+            .contains("awaiting explicit Recovery Mode selection"));
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn one_valid_legacy_station_is_selected_without_merging_noise() {
+        let base = temp_dir("single-station");
+        let station = base.join("station");
+        let unrelated = base.join("unrelated");
+        let current = base.join("current");
+        std::fs::create_dir_all(&station).unwrap();
+        std::fs::create_dir_all(&unrelated).unwrap();
+        std::fs::write(station.join("agent.save.json"), station_save("NOVA", 1)).unwrap();
+        std::fs::write(unrelated.join("unrelated.cache"), b"not station state").unwrap();
+
+        let migrated = migrate_workspace_data(&current, &[station.clone(), unrelated], &None);
+        assert_eq!(migrated, vec![station]);
+        assert!(current.join("agent.save.json").exists());
+        assert!(!current.join("unrelated.cache").exists());
 
         let _ = std::fs::remove_dir_all(base);
     }
@@ -886,7 +1422,10 @@ fn reap_orphan_sidecars(node: &Path, startup_log: &Option<PathBuf>) -> usize {
 
     let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) };
     if snapshot == INVALID_HANDLE_VALUE {
-        log_startup(startup_log, "sidecar-reap: snapshot failed — skipped (fail-open)");
+        log_startup(
+            startup_log,
+            "sidecar-reap: snapshot failed — skipped (fail-open)",
+        );
         return 0;
     }
 
@@ -972,14 +1511,22 @@ fn reap_orphan_sidecars(node: &Path, startup_log: &Option<PathBuf>) -> usize {
     0
 }
 
+/// The sidecar accepts both the canonical STARNET_* names and legacy SKYNET_* aliases. Replace both
+/// spellings for every shell-owned value so an inherited stale variable cannot split the WebView from
+/// its sidecar or override a per-launch credential.
+fn set_sidecar_branded_env<V: AsRef<OsStr>>(cmd: &mut Command, legacy_name: &str, value: V) {
+    let value = value.as_ref();
+    cmd.env(legacy_name, value);
+    if let Some(suffix) = legacy_name.strip_prefix("SKYNET_") {
+        cmd.env(format!("STARNET_{suffix}"), value);
+    } else if let Some(suffix) = legacy_name.strip_prefix("STARNET_") {
+        cmd.env(format!("SKYNET_{suffix}"), value);
+    }
+}
+
 fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
     let mut cmd = Command::new(node);
     cmd.arg(entry)
-        .env("SKYNET_PORT", state.port.to_string())
-        .env("SKYNET_IPC_TOKEN", &state.ipc_token)
-        .env("SKYNET_API_TOKEN", &state.api_token)
-        .env("STARNET_WORKSPACES", state.workspaces.as_os_str())
-        .env("SKYNET_WORKSPACES", state.workspaces.as_os_str())
         // The sidecar can load the native Windows desktop driver, but that alone grants nothing:
         // only a locally paired Telegram owner receives the per-run remote-owner lease. Ordinary
         // agent runs remain synthetic/headless by policy in the sidecar.
@@ -1007,25 +1554,32 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         )
         .env("STARNET_BUILD_DIRTY", env!("STARNET_BUILD_DIRTY"))
         .current_dir(&state.root);
+    set_sidecar_branded_env(&mut cmd, "SKYNET_PORT", state.port.to_string());
+    set_sidecar_branded_env(&mut cmd, "SKYNET_IPC_TOKEN", &state.ipc_token);
+    set_sidecar_branded_env(&mut cmd, "SKYNET_API_TOKEN", &state.api_token);
+    set_sidecar_branded_env(&mut cmd, "SKYNET_WORKSPACES", state.workspaces.as_os_str());
     if let Some(key) = read_key() {
-        cmd.env("SKYNET_OPENROUTER_KEY", key);
+        set_sidecar_branded_env(&mut cmd, "SKYNET_OPENROUTER_KEY", key);
     }
     for (provider, env_name) in SIDECAR_PROVIDER_KEY_ENVS {
         if let Some(key) = read_key_for(provider) {
-            cmd.env(env_name, key);
+            set_sidecar_branded_env(&mut cmd, env_name, key);
         }
     }
     for provider in KEYCHAIN_PROVIDERS {
         let pool = read_key_pool_for(provider);
         if !pool.is_empty() {
-            let env_name = format!("SKYNET_KEY_POOL_{}", provider.to_ascii_uppercase().replace('-', "_"));
-            cmd.env(env_name, pool.join(","));
+            let env_name = format!(
+                "SKYNET_KEY_POOL_{}",
+                provider.to_ascii_uppercase().replace('-', "_")
+            );
+            set_sidecar_branded_env(&mut cmd, &env_name, pool.join(","));
         }
     }
     // Channel bot tokens (Telegram/Discord) inject the same way — keychain -> env -> sidecar runtime layer.
     for (channel, env_name) in SIDECAR_CHANNEL_TOKEN_ENVS {
         if let Some(token) = read_channel_token(channel) {
-            cmd.env(env_name, token);
+            set_sidecar_branded_env(&mut cmd, env_name, token);
         }
     }
     // StarNet Cloud device token, same path. Because EVERY sidecar spawn goes through this builder,
@@ -1123,9 +1677,7 @@ fn show_startup_failure_dialog(startup_log: &Option<PathBuf>) -> bool {
          {log_line}\n\n\
          Click Retry to try starting the engine again, or Cancel to close StarNet."
     );
-    let to_wide = |s: &str| -> Vec<u16> {
-        s.encode_utf16().chain(std::iter::once(0)).collect()
-    };
+    let to_wide = |s: &str| -> Vec<u16> { s.encode_utf16().chain(std::iter::once(0)).collect() };
     let text = to_wide(&body);
     let caption = to_wide("StarNet — startup failed");
     // SYSTEMMODAL + SETFOREGROUND so the box is seen even though the main window isn't up yet.
@@ -1164,7 +1716,10 @@ fn spawn_sidecar_with_retry(state: &AppState) -> bool {
             // User chose Cancel — stop prompting; the guardian may still recover it silently.
             return false;
         }
-        log_startup(&state.startup_log, "startup: user chose Retry — respawning sidecar");
+        log_startup(
+            &state.startup_log,
+            "startup: user chose Retry — respawning sidecar",
+        );
     }
     log_startup(
         &state.startup_log,
@@ -1264,7 +1819,6 @@ fn push_provider_config(
     key: Option<&str>,
     base_url: Option<&str>,
 ) -> Result<(), String> {
-    use std::io::{Read, Write};
     let mut payload = serde_json::Map::new();
     payload.insert(
         "provider".to_string(),
@@ -1283,25 +1837,7 @@ fn push_provider_config(
         );
     }
     let body = serde_json::Value::Object(payload).to_string();
-    let head = format!(
-        "POST /api/key HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        state.ipc_token,
-        body.as_bytes().len()
-    );
-    let mut s = TcpStream::connect(("127.0.0.1", state.port))
-        .map_err(|e| format!("sidecar key push connect failed: {e}"))?;
-    s.set_read_timeout(Some(Duration::from_secs(5)))
-        .map_err(|e| format!("sidecar key push timeout setup failed: {e}"))?;
-    s.write_all(head.as_bytes()).map_err(|e| format!("sidecar key push header failed: {e}"))?;
-    s.write_all(body.as_bytes()).map_err(|e| format!("sidecar key push body failed: {e}"))?;
-    s.flush().map_err(|e| format!("sidecar key push flush failed: {e}"))?;
-    let mut buf = [0u8; 96];
-    let n = s.read(&mut buf).map_err(|e| format!("sidecar key push acknowledgement failed: {e}"))?;
-    let head = String::from_utf8_lossy(&buf[..n]);
-    if !head.starts_with("HTTP/1.1 200") && !head.starts_with("HTTP/1.0 200") {
-        return Err(format!("sidecar rejected provider configuration: {}", head.lines().next().unwrap_or("no response")));
-    }
-    Ok(())
+    post_sidecar_json(state, "/api/key", &body, "provider configuration")
 }
 
 fn push_key(state: &AppState, key: &str) -> Result<(), String> {
@@ -1309,30 +1845,112 @@ fn push_key(state: &AppState, key: &str) -> Result<(), String> {
 }
 
 fn push_provider_key_pool(state: &AppState, provider: &str, keys: &[String]) -> Result<(), String> {
-    use std::io::{Read, Write};
     let body = serde_json::json!({
         "provider": normalize_provider(provider),
         "keyPool": keys,
-    }).to_string();
+    })
+    .to_string();
+    post_sidecar_json(state, "/api/key", &body, "provider key pool")
+}
+
+fn parse_sidecar_status(response: &[u8]) -> Result<u16, String> {
+    let header_end = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .ok_or_else(|| "incomplete HTTP acknowledgement".to_string())?;
+    let head = std::str::from_utf8(&response[..header_end])
+        .map_err(|_| "non-UTF-8 HTTP acknowledgement".to_string())?;
+    let line = head
+        .lines()
+        .next()
+        .ok_or_else(|| "empty HTTP acknowledgement".to_string())?;
+    let mut parts = line.split_whitespace();
+    let version = parts.next().unwrap_or("");
+    if version != "HTTP/1.1" && version != "HTTP/1.0" {
+        return Err(format!("invalid HTTP acknowledgement: {line}"));
+    }
+    parts
+        .next()
+        .ok_or_else(|| format!("missing HTTP status: {line}"))?
+        .parse::<u16>()
+        .map_err(|_| format!("invalid HTTP status: {line}"))
+}
+
+/// Send one authenticated JSON mutation and wait for a complete, bounded HTTP response head. TCP reads are not
+/// message-framed: a successful status line may arrive in several packets, so one small read cannot prove an ack.
+fn post_sidecar_json(
+    state: &AppState,
+    path: &str,
+    body: &str,
+    operation: &str,
+) -> Result<(), String> {
+    use std::io::Write;
+    const MAX_RESPONSE_HEAD: usize = 8192;
     let head = format!(
-        "POST /api/key HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "POST {path} HTTP/1.1\r\nHost: 127.0.0.1\r\nX-Skynet-Token: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         state.ipc_token,
         body.as_bytes().len()
     );
     let mut s = TcpStream::connect(("127.0.0.1", state.port))
-        .map_err(|e| format!("sidecar key-pool push connect failed: {e}"))?;
+        .map_err(|e| format!("sidecar {operation} connect failed: {e}"))?;
     s.set_read_timeout(Some(Duration::from_secs(5)))
-        .map_err(|e| format!("sidecar key-pool timeout setup failed: {e}"))?;
-    s.write_all(head.as_bytes()).map_err(|e| format!("sidecar key-pool header failed: {e}"))?;
-    s.write_all(body.as_bytes()).map_err(|e| format!("sidecar key-pool body failed: {e}"))?;
-    s.flush().map_err(|e| format!("sidecar key-pool flush failed: {e}"))?;
-    let mut buf = [0u8; 96];
-    let n = s.read(&mut buf).map_err(|e| format!("sidecar key-pool acknowledgement failed: {e}"))?;
-    let response = String::from_utf8_lossy(&buf[..n]);
-    if !response.starts_with("HTTP/1.1 200") && !response.starts_with("HTTP/1.0 200") {
-        return Err(format!("sidecar rejected provider key pool: {}", response.lines().next().unwrap_or("no response")));
+        .map_err(|e| format!("sidecar {operation} read-timeout setup failed: {e}"))?;
+    s.set_write_timeout(Some(Duration::from_secs(5)))
+        .map_err(|e| format!("sidecar {operation} write-timeout setup failed: {e}"))?;
+    s.write_all(head.as_bytes())
+        .map_err(|e| format!("sidecar {operation} header failed: {e}"))?;
+    s.write_all(body.as_bytes())
+        .map_err(|e| format!("sidecar {operation} body failed: {e}"))?;
+    s.flush()
+        .map_err(|e| format!("sidecar {operation} flush failed: {e}"))?;
+
+    let mut response = Vec::with_capacity(512);
+    let mut chunk = [0u8; 512];
+    while !response.windows(4).any(|window| window == b"\r\n\r\n") {
+        let n = s
+            .read(&mut chunk)
+            .map_err(|e| format!("sidecar {operation} acknowledgement failed: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        if response.len() + n > MAX_RESPONSE_HEAD {
+            return Err(format!(
+                "sidecar {operation} acknowledgement exceeded {MAX_RESPONSE_HEAD} bytes"
+            ));
+        }
+        response.extend_from_slice(&chunk[..n]);
     }
-    Ok(())
+    let status = parse_sidecar_status(&response)
+        .map_err(|e| format!("sidecar {operation} acknowledgement invalid: {e}"))?;
+    if status == 200 {
+        Ok(())
+    } else {
+        Err(format!("sidecar rejected {operation}: HTTP {status}"))
+    }
+}
+
+#[cfg(test)]
+mod sidecar_ack_tests {
+    use super::*;
+
+    #[test]
+    fn parses_complete_http_status_after_arbitrary_headers() {
+        assert_eq!(
+            parse_sidecar_status(b"HTTP/1.1 200 OK\r\nX-Long: value\r\n\r\n").unwrap(),
+            200
+        );
+        assert_eq!(
+            parse_sidecar_status(b"HTTP/1.0 409 Conflict\r\n\r\n").unwrap(),
+            409
+        );
+    }
+
+    #[test]
+    fn rejects_partial_or_malformed_acknowledgements() {
+        assert!(parse_sidecar_status(b"HTTP/1.1 200 OK\r\nX-Part: yes\r\n").is_err());
+        assert!(parse_sidecar_status(b"NOTHTTP 200 OK\r\n\r\n").is_err());
+        assert!(parse_sidecar_status(b"HTTP/1.1 nope\r\n\r\n").is_err());
+    }
 }
 
 /// Push a channel bot token to the already-running sidecar (no restart), authenticated by the per-launch IPC
@@ -1486,6 +2104,28 @@ fn show_main_window(app: &AppHandle) {
     }
 }
 
+fn lifecycle_preferences_snapshot(state: &AppState) -> LifecyclePreferences {
+    match state.lifecycle_preferences.lock() {
+        Ok(value) => value.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    }
+}
+
+fn update_lifecycle_preferences(
+    state: &AppState,
+    update: impl FnOnce(&mut LifecyclePreferences),
+) -> Result<LifecyclePreferences, String> {
+    let mut current = state
+        .lifecycle_preferences
+        .lock()
+        .map_err(|_| "lifecycle preferences are temporarily unavailable".to_string())?;
+    let mut next = current.clone();
+    update(&mut next);
+    save_lifecycle_preferences(&state.lifecycle_preferences_path, &next)?;
+    *current = next.clone();
+    Ok(next)
+}
+
 /// Tray menu dispatch. Open reveals the window; Pause Automation fires the E-STOP so background work stops even
 /// with the window closed; Quit drains + kills the sidecar and exits the app (no daemon left behind).
 /// Pause/Quit run their bounded network work on a worker thread — tray menu events arrive on the main loop and
@@ -1527,7 +2167,9 @@ fn spawn_tray_updater(app: AppHandle) {
             if state.shutting_down.load(Ordering::SeqCst) {
                 break;
             }
-            let probe = probe_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500));
+            let close_to_tray = lifecycle_preferences_snapshot(state.inner()).close_to_tray;
+            let probe =
+                probe_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500));
             let (tooltip, status_text) = match probe {
                 LifecycleProbe::Armed(l) if l.armed => {
                     let summary = if l.reasons.is_empty() {
@@ -1540,6 +2182,14 @@ fn spawn_tray_updater(app: AppHandle) {
                         format!("Background: {summary}"),
                     )
                 }
+                LifecycleProbe::Armed(_) if close_to_tray => (
+                    "StarNet — idle in tray".to_string(),
+                    "Background: idle — close keeps StarNet running".to_string(),
+                ),
+                LifecycleProbe::NotRunning if close_to_tray => (
+                    "StarNet — engine offline (kept in tray)".to_string(),
+                    "Background: engine offline — close keeps StarNet running".to_string(),
+                ),
                 LifecycleProbe::Armed(_) | LifecycleProbe::NotRunning => (
                     // Nothing armed (or no engine at all): closing quits — the same rule the close path applies.
                     "StarNet — idle (closing quits)".to_string(),
@@ -1577,11 +2227,14 @@ fn harness_store_key(key: String, state: State<AppState>) -> Result<(), String> 
         entry.set_password(trimmed).map_err(|e| e.to_string())?;
     }
     if let Err(e) = push_key(&state, trimmed) {
-        match previous.as_deref() {
-            Some(old) => { let _ = entry.set_password(old); let _ = push_key(&state, old); }
-            None => { let _ = delete_credential_honest(&entry); let _ = push_key(&state, ""); }
+        let mut failures = Vec::new();
+        if let Err(restore) = restore_credential(&entry, previous.as_deref()) {
+            failures.push(format!("keychain restore failed: {restore}"));
         }
-        return Err(e);
+        if let Err(restore) = push_key(&state, previous.as_deref().unwrap_or("")) {
+            failures.push(format!("sidecar restore failed: {restore}"));
+        }
+        return Err(rollback_error(e, failures));
     }
     Ok(())
 }
@@ -1601,7 +2254,11 @@ fn harness_store_provider_key(
     if let Some(ref key_value) = key_trimmed {
         // codex + the device-OAuth providers (grok/kimi) authenticate by OAuth token (sidecar-owned), not a
         // keychain API key; ollama is keyless. None of them get a keychain entry.
-        if provider_id != "codex" && provider_id != "ollama" && provider_id != "grok" && provider_id != "kimi" {
+        if provider_id != "codex"
+            && provider_id != "ollama"
+            && provider_id != "grok"
+            && provider_id != "kimi"
+        {
             let entry = keychain_entry_for(provider_id).map_err(|e| e.to_string())?;
             let previous = entry.get_password().ok().filter(|v| !v.trim().is_empty());
             if key_value.is_empty() {
@@ -1620,10 +2277,19 @@ fn harness_store_provider_key(
         base_trimmed.as_deref(),
     ) {
         if let Some((entry, previous)) = rollback {
-            match previous.as_deref() {
-                Some(old) => { let _ = entry.set_password(old); let _ = push_provider_config(&state, provider_id, Some(old), None); }
-                None => { let _ = delete_credential_honest(&entry); let _ = push_provider_config(&state, provider_id, Some(""), None); }
+            let mut failures = Vec::new();
+            if let Err(restore) = restore_credential(&entry, previous.as_deref()) {
+                failures.push(format!("keychain restore failed: {restore}"));
             }
+            if let Err(restore) = push_provider_config(
+                &state,
+                provider_id,
+                Some(previous.as_deref().unwrap_or("")),
+                None,
+            ) {
+                failures.push(format!("sidecar restore failed: {restore}"));
+            }
+            return Err(rollback_error(e, failures));
         }
         return Err(e);
     }
@@ -1631,7 +2297,7 @@ fn harness_store_provider_key(
 }
 
 /// Replace the complete alternate-key pool for exactly one provider. The old keychain value and live sidecar
-/// pool are restored if either half cannot be acknowledged, so the UI observes one atomic result.
+/// pool restoration is attempted if the live update cannot be acknowledged; any incomplete rollback is reported.
 #[tauri::command]
 fn harness_store_provider_key_pool(
     provider: String,
@@ -1645,8 +2311,12 @@ fn harness_store_provider_key_pool(
     let mut cleaned: Vec<String> = Vec::new();
     for key in keys {
         let trimmed = key.trim().to_string();
-        if !trimmed.is_empty() && !cleaned.contains(&trimmed) { cleaned.push(trimmed); }
-        if cleaned.len() == 8 { break; }
+        if !trimmed.is_empty() && !cleaned.contains(&trimmed) {
+            cleaned.push(trimmed);
+        }
+        if cleaned.len() == 8 {
+            break;
+        }
     }
     let entry = keychain_pool_entry_for(provider_id).map_err(|e| e.to_string())?;
     let previous_raw = entry.get_password().ok();
@@ -1658,12 +2328,14 @@ fn harness_store_provider_key_pool(
         entry.set_password(&encoded).map_err(|e| e.to_string())?;
     }
     if let Err(e) = push_provider_key_pool(&state, provider_id, &cleaned) {
-        match previous_raw.as_deref() {
-            Some(raw) => { let _ = entry.set_password(raw); }
-            None => { let _ = delete_credential_honest(&entry); }
+        let mut failures = Vec::new();
+        if let Err(restore) = restore_credential(&entry, previous_raw.as_deref()) {
+            failures.push(format!("keychain restore failed: {restore}"));
         }
-        let _ = push_provider_key_pool(&state, provider_id, &previous);
-        return Err(e);
+        if let Err(restore) = push_provider_key_pool(&state, provider_id, &previous) {
+            failures.push(format!("sidecar restore failed: {restore}"));
+        }
+        return Err(rollback_error(e, failures));
     }
     Ok(cleaned.len())
 }
@@ -1767,6 +2439,321 @@ fn harness_store_channel_token(
 fn harness_has_channel_token(channel: String) -> bool {
     let channel = channel.trim().to_ascii_lowercase();
     is_known_channel(&channel) && read_channel_token(&channel).is_some()
+}
+
+fn path_is_within(path: &Path, root: &Path) -> bool {
+    let path = strip_verbatim(path);
+    let root = strip_verbatim(root);
+    #[cfg(windows)]
+    {
+        let path = path.to_string_lossy().to_lowercase();
+        let root = root.to_string_lossy().to_lowercase();
+        path == root || path.starts_with(&(root + "\\"))
+    }
+    #[cfg(not(windows))]
+    {
+        path == root || path.starts_with(&root)
+    }
+}
+
+fn artifact_path_hits_hard_floor(path: &Path) -> bool {
+    path.components().any(|component| {
+        let value = component.as_os_str().to_string_lossy().to_ascii_lowercase();
+        value == ".git" || value == ".env" || value.starts_with(".env.")
+    })
+}
+
+fn artifact_roots(workspaces: &Path) -> Vec<PathBuf> {
+    let mut roots = vec![workspaces.to_path_buf()];
+    let home = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from);
+    if let Some(home) = home {
+        roots.push(home);
+    }
+
+    // The workspace and home roots cover agent-owned files plus user-chosen local output
+    // folders. Standing path:<root> grants extend that set to trusted projects or drives.
+    // Read the same secret-free allowlist the sidecar owns so those deliverables can still
+    // be opened from COMMS. A missing/torn file contributes no extra roots: fail closed.
+    let allow_file = workspaces.join("permissions.allow.json");
+    if let Ok(raw) = std::fs::read_to_string(allow_file) {
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) {
+            if let Some(rows) = value.get("allow").and_then(|row| row.as_array()) {
+                for row in rows.iter().filter_map(|row| row.as_str()) {
+                    if let Some(root) = row.strip_prefix("path:") {
+                        if !root.trim().is_empty() {
+                            roots.push(PathBuf::from(root));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    roots
+}
+
+fn resolve_artifact_path(
+    workspaces: &Path,
+    agent_id: Option<&str>,
+    raw_path: &str,
+) -> Result<PathBuf, String> {
+    let raw = raw_path.trim();
+    if raw.is_empty() || raw.contains('\0') {
+        return Err("artifact path is empty or invalid".to_string());
+    }
+    if raw.starts_with("\\\\") || raw.starts_with("//") {
+        return Err("network artifact paths are not supported".to_string());
+    }
+
+    let supplied = PathBuf::from(raw);
+    let supplied_is_absolute = supplied.is_absolute();
+    let relative_root;
+    let candidate = if supplied_is_absolute {
+        relative_root = None;
+        supplied
+    } else {
+        let agent = agent_id.unwrap_or("agent");
+        if !agent
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+            || agent.is_empty()
+            || agent.len() > 40
+        {
+            return Err("invalid artifact owner".to_string());
+        }
+        let root = workspaces.join(agent);
+        relative_root = Some(root.clone());
+        root.join(supplied)
+    };
+    if artifact_path_hits_hard_floor(&candidate) {
+        return Err("protected station paths cannot be opened".to_string());
+    }
+
+    let canonical = std::fs::canonicalize(&candidate)
+        .map(|path| strip_verbatim(&path))
+        .map_err(|_| "the saved artifact no longer exists".to_string())?;
+    if artifact_path_hits_hard_floor(&canonical) {
+        return Err("protected station paths cannot be opened".to_string());
+    }
+
+    let mut allowed = false;
+    if let Some(root) = relative_root {
+        if let Ok(root) = std::fs::canonicalize(root).map(|path| strip_verbatim(&path)) {
+            allowed = path_is_within(&canonical, &root);
+        }
+    } else {
+        for root in artifact_roots(workspaces) {
+            if let Ok(root) = std::fs::canonicalize(root).map(|path| strip_verbatim(&path)) {
+                if path_is_within(&canonical, &root) {
+                    allowed = true;
+                    break;
+                }
+            }
+        }
+    }
+    if !allowed {
+        return Err("artifact is outside the station workspace and trusted folders".to_string());
+    }
+    Ok(canonical)
+}
+
+fn safe_native_artifact_extension(path: &Path) -> bool {
+    let ext = path
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    matches!(
+        ext.as_str(),
+        "md" | "markdown"
+            | "txt"
+            | "rst"
+            | "pdf"
+            | "csv"
+            | "tsv"
+            | "json"
+            | "yaml"
+            | "yml"
+            | "doc"
+            | "docx"
+            | "xls"
+            | "xlsx"
+            | "ppt"
+            | "pptx"
+            | "odt"
+            | "ods"
+            | "odp"
+            | "rtf"
+            | "png"
+            | "jpg"
+            | "jpeg"
+            | "gif"
+            | "webp"
+            | "bmp"
+            | "svg"
+            | "mp3"
+            | "m4a"
+            | "ogg"
+            | "wav"
+            | "flac"
+            | "opus"
+            | "mp4"
+            | "webm"
+            | "mov"
+            | "mkv"
+            | "avi"
+    )
+}
+
+/// Open a proven, non-executable deliverable with the user's OS file association. The
+/// renderer supplies the artifact identity, not an unrestricted command: this re-resolves
+/// relative paths beneath the owning agent workspace, canonicalizes symlinks, and accepts
+/// absolute paths only beneath the user's home or a standing trusted-project root.
+#[tauri::command]
+fn starnet_open_artifact(
+    path: String,
+    agent_id: Option<String>,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let artifact = resolve_artifact_path(&state.workspaces, agent_id.as_deref(), &path)?;
+    if !artifact.is_file() {
+        return Err("that artifact is not a file".to_string());
+    }
+    if !safe_native_artifact_extension(&artifact) {
+        return Err("that file type stays in the station preview for safety".to_string());
+    }
+
+    #[cfg(windows)]
+    Command::new("rundll32.exe")
+        .arg("url.dll,FileProtocolHandler")
+        .arg(&artifact)
+        .spawn()
+        .map_err(|e| format!("Failed to open artifact: {e}"))?;
+
+    #[cfg(target_os = "macos")]
+    Command::new("open")
+        .arg(&artifact)
+        .spawn()
+        .map_err(|e| format!("Failed to open artifact: {e}"))?;
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    Command::new("xdg-open")
+        .arg(&artifact)
+        .spawn()
+        .map_err(|e| format!("Failed to open artifact: {e}"))?;
+
+    Ok(())
+}
+
+/// Reveal a proven deliverable in Explorer/Finder (or open its containing directory on
+/// Linux). Directories are opened directly so the existing Workshop "open folder" action
+/// uses the same constrained command.
+#[tauri::command]
+fn starnet_reveal_path(
+    path: String,
+    agent_id: Option<String>,
+    state: State<AppState>,
+) -> Result<(), String> {
+    let artifact = resolve_artifact_path(&state.workspaces, agent_id.as_deref(), &path)?;
+    let is_dir = artifact.is_dir();
+
+    #[cfg(windows)]
+    {
+        let mut command = Command::new("explorer.exe");
+        if is_dir {
+            command.arg(&artifact);
+        } else {
+            command.arg(format!("/select,{}", artifact.display()));
+        }
+        command
+            .spawn()
+            .map_err(|e| format!("Failed to reveal artifact: {e}"))?;
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = Command::new("open");
+        if !is_dir {
+            command.arg("-R");
+        }
+        command
+            .arg(&artifact)
+            .spawn()
+            .map_err(|e| format!("Failed to reveal artifact: {e}"))?;
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    Command::new("xdg-open")
+        .arg(if is_dir {
+            artifact.clone()
+        } else {
+            artifact
+                .parent()
+                .map(Path::to_path_buf)
+                .ok_or_else(|| "artifact has no containing folder".to_string())?
+        })
+        .spawn()
+        .map_err(|e| format!("Failed to reveal artifact: {e}"))?;
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod artifact_open_tests {
+    use super::{resolve_artifact_path, safe_native_artifact_extension, strip_verbatim};
+    use std::path::Path;
+
+    fn temp_root() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "starnet-artifact-open-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|duration| duration.as_nanos())
+                .unwrap_or(0)
+        ))
+    }
+
+    #[test]
+    fn resolves_only_existing_files_inside_the_owning_agent_workspace() {
+        let root = temp_root();
+        let workspaces = root.join("workspaces");
+        let owned = workspaces.join("nova").join("reports").join("handoff.md");
+        let escaped = workspaces.join("outside.md");
+        std::fs::create_dir_all(owned.parent().unwrap()).unwrap();
+        std::fs::write(&owned, b"handoff").unwrap();
+        std::fs::write(&escaped, b"outside").unwrap();
+
+        let resolved = resolve_artifact_path(&workspaces, Some("nova"), "reports/handoff.md")
+            .expect("owned deliverable resolves");
+        assert_eq!(
+            resolved,
+            strip_verbatim(&std::fs::canonicalize(&owned).unwrap())
+        );
+        assert!(resolve_artifact_path(&workspaces, Some("nova"), "../outside.md").is_err());
+        assert!(
+            resolve_artifact_path(&workspaces, Some("../../bad"), "reports/handoff.md").is_err()
+        );
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn refuses_protected_and_executable_artifacts() {
+        let root = temp_root();
+        let workspaces = root.join("workspaces");
+        let protected = workspaces.join("nova").join(".env");
+        std::fs::create_dir_all(protected.parent().unwrap()).unwrap();
+        std::fs::write(&protected, b"secret").unwrap();
+
+        assert!(resolve_artifact_path(&workspaces, Some("nova"), ".env").is_err());
+        assert!(safe_native_artifact_extension(Path::new("handoff.md")));
+        assert!(!safe_native_artifact_extension(Path::new("installer.exe")));
+        assert!(!safe_native_artifact_extension(Path::new("script.ps1")));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
 }
 
 /// Open an OAuth/device-auth URL in the user's default system browser.
@@ -2121,22 +3108,45 @@ struct LifecycleView {
     supervised: bool,
     armed: bool,
     reasons: Vec<String>,
+    start_minimized: bool,
+    close_to_tray: bool,
 }
 
 #[tauri::command]
 fn starnet_lifecycle_status(state: State<AppState>) -> LifecycleView {
+    let preferences = lifecycle_preferences_snapshot(state.inner());
     match query_lifecycle_armed(state.port, &state.api_token, Duration::from_millis(1500)) {
         Some(l) => LifecycleView {
             supervised: true,
             armed: l.armed,
             reasons: l.reasons,
+            start_minimized: preferences.start_minimized,
+            close_to_tray: preferences.close_to_tray,
         },
         None => LifecycleView {
             supervised: true,
             armed: false,
             reasons: Vec::new(),
+            start_minimized: preferences.start_minimized,
+            close_to_tray: preferences.close_to_tray,
         },
     }
+}
+
+#[tauri::command]
+fn starnet_set_start_minimized(
+    state: State<AppState>,
+    enabled: bool,
+) -> Result<LifecyclePreferences, String> {
+    update_lifecycle_preferences(state.inner(), |value| value.start_minimized = enabled)
+}
+
+#[tauri::command]
+fn starnet_set_close_to_tray(
+    state: State<AppState>,
+    enabled: bool,
+) -> Result<LifecyclePreferences, String> {
+    update_lifecycle_preferences(state.inner(), |value| value.close_to_tray = enabled)
 }
 
 fn main() {
@@ -2170,6 +3180,8 @@ fn main() {
             harness_adopt_credits_token,
             harness_has_credits_token,
             harness_clear_credits_token,
+            starnet_open_artifact,
+            starnet_reveal_path,
             open_external_url,
             starnet_toggle_fullscreen,
             starnet_set_keep_awake,
@@ -2180,7 +3192,9 @@ fn main() {
             starnet_build_info,
             starnet_autostart_status,
             starnet_set_autostart,
-            starnet_lifecycle_status
+            starnet_lifecycle_status,
+            starnet_set_start_minimized,
+            starnet_set_close_to_tray
         ])
         .setup(|app| {
             let root = project_root(app.handle());
@@ -2191,6 +3205,9 @@ fn main() {
             let api_token = uuid::Uuid::new_v4().to_string();
             let startup_log = startup_log_path(app.handle());
             let workspaces = workspace_path(app.handle());
+            let lifecycle_preferences_path = lifecycle_preferences_path(app.handle());
+            let lifecycle_preferences = load_lifecycle_preferences(&lifecycle_preferences_path);
+            let start_minimized = lifecycle_preferences.start_minimized;
             let migrated_workspaces = migrate_workspace_data(
                 &workspaces,
                 &legacy_workspace_paths(&root, &workspaces),
@@ -2199,13 +3216,15 @@ fn main() {
             log_startup(
                 &startup_log,
                 format!(
-                    "startup exe={:?} resource_dir={:?} root={} workspaces={} migrated_from={:?} port={}",
+                    "startup exe={:?} resource_dir={:?} root={} workspaces={} migrated_from={:?} port={} start_minimized={} close_to_tray={}",
                     std::env::current_exe(),
                     app.path().resource_dir(),
                     root.display(),
                     workspaces.display(),
                     migrated_workspaces,
-                    port
+                    port,
+                    lifecycle_preferences.start_minimized,
+                    lifecycle_preferences.close_to_tray
                 ),
             );
             // One-time: lift any plaintext channel bot tokens into the keychain and strip them from the file,
@@ -2223,6 +3242,9 @@ fn main() {
                 startup_log,
                 sidecar: Mutex::new(None),
                 keep_awake: Mutex::new(KeepAwakeState::new()),
+                lifecycle_preferences_path,
+                lifecycle_preferences: Mutex::new(lifecycle_preferences),
+                close_exit_pending: AtomicBool::new(false),
                 shutting_down: AtomicBool::new(false),
             };
             // Before spawning OUR sidecar: terminate any orphan sidecars left behind by a
@@ -2322,8 +3344,10 @@ fn main() {
                 .center()
                 .visible(false)
                 // Reveal only after the document paints — avoids a white flash.
-                .on_page_load(|window, _payload| {
-                    let _ = window.show();
+                .on_page_load(move |window, _payload| {
+                    if !start_minimized {
+                        let _ = window.show();
+                    }
                 });
             // Windows: drop the stock titlebar/border — the frontend draws its own themed
             // chrome (titlebar.js, gated on __STARNET_CUSTOM_CHROME__ above). shadow(true)
@@ -2334,7 +3358,7 @@ fn main() {
             let main_window = main_window.decorations(false).shadow(true);
             let main_window = main_window.build()?;
 
-            // ---- Lane 4D: close-to-tray, gated on REAL armed work ----
+            // ---- Lane 4D: close-to-tray, explicitly selected or gated on REAL armed work ----
             // On a close request: ALWAYS intercept + hide immediately (instant feedback, and the poll must not
             // block the UI thread — review m1), then decide on a worker thread from the classified probe (M2):
             //   Armed{armed:true}  -> keep the ONE sidecar running, window lives in the tray (explicit there).
@@ -2350,6 +3374,9 @@ fn main() {
                 let app_handle = app.handle().clone();
                 main_window.on_window_event(move |event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
+                        if let Some(state) = app_handle.try_state::<AppState>() {
+                            state.close_exit_pending.store(true, Ordering::SeqCst);
+                        }
                         api.prevent_close();
                         if let Some(win) = app_handle.get_webview_window("main") {
                             let _ = win.hide();
@@ -2357,10 +3384,21 @@ fn main() {
                         let app2 = app_handle.clone();
                         std::thread::spawn(move || {
                             let Some(state) = app2.try_state::<AppState>() else {
+                                log_startup(&None, "close-request: managed app state unavailable; exiting");
                                 app2.exit(0);
                                 return;
                             };
                             let st = state.inner();
+                            let close_to_tray = lifecycle_preferences_snapshot(st).close_to_tray;
+                            log_startup(
+                                &st.startup_log,
+                                format!("close-request: close_to_tray={close_to_tray}"),
+                            );
+                            if close_to_tray {
+                                // Explicit authority to keep the supervised process alive even when no scheduled
+                                // work is armed. Tray Quit remains the only full-stop action in this mode.
+                                return;
+                            }
                             let mut probe = probe_lifecycle_armed(
                                 st.port,
                                 &st.api_token,
@@ -2394,7 +3432,20 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("failed to build the StarNet desktop shell")
         .run(|app, event| {
-            if let RunEvent::ExitRequested { .. } = event {
+            if let RunEvent::ExitRequested { api, code, .. } = event {
+                // Window close and event-loop exit are separate decisions in Tauri. Hold only the exit paired
+                // with our main window's CloseRequested event while its worker decides from the explicit
+                // preference / armed-work proof. A second-instance process has no pending close, while the
+                // worker's full-quit branch (and Tray Quit / updater) calls app.exit(0) with Some(0).
+                let close_exit_pending = code.is_none()
+                    && app
+                        .try_state::<AppState>()
+                        .map(|state| state.close_exit_pending.swap(false, Ordering::SeqCst))
+                        .unwrap_or(false);
+                if close_exit_pending {
+                    api.prevent_exit();
+                    return;
+                }
                 if let Some(state) = app.try_state::<AppState>() {
                     // Stop the guardian from respawning before we kill the child.
                     state.shutting_down.store(true, Ordering::SeqCst);
@@ -2407,6 +3458,40 @@ fn main() {
 #[cfg(test)]
 mod sidecar_reap_tests {
     use super::*;
+
+    #[test]
+    fn desktop_owned_env_replaces_poisoned_brand_aliases() {
+        fn explicit_env(command: &Command, name: &str) -> Option<String> {
+            command
+                .get_envs()
+                .find(|(key, _)| *key == OsStr::new(name))
+                .and_then(|(_, value)| value)
+                .map(|value| value.to_string_lossy().into_owned())
+        }
+
+        let mut command = Command::new("node");
+        command.env("STARNET_PORT", "poisoned-parent-value");
+        set_sidecar_branded_env(&mut command, "SKYNET_PORT", "60874");
+        assert_eq!(
+            explicit_env(&command, "SKYNET_PORT").as_deref(),
+            Some("60874")
+        );
+        assert_eq!(
+            explicit_env(&command, "STARNET_PORT").as_deref(),
+            Some("60874")
+        );
+
+        command.env("SKYNET_API_TOKEN", "stale-legacy-value");
+        set_sidecar_branded_env(&mut command, "STARNET_API_TOKEN", "fresh-launch-token");
+        assert_eq!(
+            explicit_env(&command, "SKYNET_API_TOKEN").as_deref(),
+            Some("fresh-launch-token")
+        );
+        assert_eq!(
+            explicit_env(&command, "STARNET_API_TOKEN").as_deref(),
+            Some("fresh-launch-token")
+        );
+    }
 
     #[test]
     fn dev_path_fallback_is_never_reapable() {
@@ -2466,7 +3551,10 @@ mod sidecar_reap_tests {
         std::thread::sleep(Duration::from_millis(400));
 
         let reaped = reap_orphan_sidecars(&bundled, &None);
-        assert!(reaped >= 1, "expected at least the planted orphan to be reaped");
+        assert!(
+            reaped >= 1,
+            "expected at least the planted orphan to be reaped"
+        );
 
         std::thread::sleep(Duration::from_millis(400));
         assert!(
@@ -2526,16 +3614,33 @@ mod lifecycle_probe_tests {
     fn rejects_non_200_status() {
         // A 403 (token mismatch) or 500 must NOT read as a snapshot — the caller classifies it Ambiguous
         // (alive but unwell), never "not armed".
-        assert!(parse_lifecycle_response("HTTP/1.1 403 Forbidden\r\n\r\nforbidden token").is_none());
-        assert!(parse_lifecycle_response("HTTP/1.1 500 Internal Server Error\r\n\r\n{\"error\":\"x\"}").is_none());
+        assert!(
+            parse_lifecycle_response("HTTP/1.1 403 Forbidden\r\n\r\nforbidden token").is_none()
+        );
+        assert!(parse_lifecycle_response(
+            "HTTP/1.1 500 Internal Server Error\r\n\r\n{\"error\":\"x\"}"
+        )
+        .is_none());
     }
 
     #[test]
     fn rejects_missing_or_garbage_body() {
-        assert!(parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n").is_none(), "empty body");
-        assert!(parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\nnot-json").is_none(), "garbage body");
-        assert!(parse_lifecycle_response("HTTP/1.1 200 OK").is_none(), "no header/body separator");
-        assert!(parse_lifecycle_response("").is_none(), "empty response (read timeout yielded nothing)");
+        assert!(
+            parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n").is_none(),
+            "empty body"
+        );
+        assert!(
+            parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\nnot-json").is_none(),
+            "garbage body"
+        );
+        assert!(
+            parse_lifecycle_response("HTTP/1.1 200 OK").is_none(),
+            "no header/body separator"
+        );
+        assert!(
+            parse_lifecycle_response("").is_none(),
+            "empty response (read timeout yielded nothing)"
+        );
     }
 
     #[test]
@@ -2548,7 +3653,8 @@ mod lifecycle_probe_tests {
 
     #[test]
     fn tolerates_missing_reasons() {
-        let l = parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n{\"armed\":true}").expect("armed without reasons parses");
+        let l = parse_lifecycle_response("HTTP/1.1 200 OK\r\n\r\n{\"armed\":true}")
+            .expect("armed without reasons parses");
         assert!(l.armed);
         assert!(l.reasons.is_empty());
     }

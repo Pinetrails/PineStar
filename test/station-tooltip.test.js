@@ -65,6 +65,7 @@ for (const rel of ['frontend/app/deliverables.js', 'frontend/app/stationui.js'])
 // ---- 3. the tooltip controller is shipped, wired, and adopts every title -------------------
 const tooltip = read('frontend/app/tooltip.js');
 const indexHtml = read('frontend/index.html');
+const stationUi = read('frontend/app/stationui.js');
 A.ok(/<script src="app\/tooltip\.js">/.test(indexHtml), 'tooltip.js is loaded by index.html');
 A.ok(/removeAttribute\('title'\)/.test(tooltip), 'the controller REMOVES title — that is what silences the OS bubble');
 A.ok(/data-tip/.test(tooltip), 'the adopted text lives on data-tip');
@@ -79,6 +80,17 @@ A.ok(/\.station-tip\s*\{/.test(read('frontend/css/app.css')), 'the station toolt
 const titlesInHtml = (indexHtml.match(/\stitle="/g) || []).length;
 A.ok(!/id="model-dock-toggle"[^>]*\stitle="/.test(indexHtml),
   'the model dock keeps no native title (it owns .model-dock-tip and opted out)');
+
+// A repeating renderer must never write `title` back after Tooltip.adopt() removes it. The context
+// gauge repaints every second, so a `g.title = ...` assignment recreates the OS bubble while the pointer
+// is already resting on the gauge (there is no second pointerover for Tooltip to adopt it again).
+const ctxStart = stationUi.indexOf('  function ctxTick() {');
+const ctxEnd = stationUi.indexOf('\n  let compactWired', ctxStart);
+A.ok(ctxStart >= 0 && ctxEnd > ctxStart, 'the context gauge ticker remains locatable');
+const ctxTick = stationUi.slice(ctxStart, ctxEnd);
+A.ok(!/\bg\.title\s*=/.test(ctxTick), 'the repeating context ticker never recreates a native title');
+A.ok(/setAttribute\(['"]data-tip['"]/.test(ctxTick), 'the repeating context ticker updates the station tooltip source');
+A.ok(/id="ctx-gauge"[^>]*\sdata-tip="/.test(indexHtml), 'the context gauge starts with a station tooltip, not an OS title');
 
 // ---- 4. the pure geometry, exercised ------------------------------------------------------
 const T = require('../frontend/app/tooltip.js');

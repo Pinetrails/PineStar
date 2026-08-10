@@ -48,12 +48,33 @@
   const GEAR_TYPES = ['dish', 'cabinet', 'notebook', 'workbench', 'studio', 'computer', 'connector'];
   // the SUGGESTED-cadence ids a recipe may carry (mirrors autojobs.js CADENCES). null = one-shot by nature.
   const CADENCES = ['morning', 'weekly', 'sixhourly', 'hourly'];
-  // browse buckets for the marketplace category rail (R6 discovery front: developer / research / creator / ops /
-  // general). The R4 persona catalog (dev.js / creator.js / ops.js) authors 'developer'/'creator'/'ops' — they
-  // MUST be known buckets or normCategory collapses them to 'general' and the rail can't group them. 'code',
-  // 'writing' and 'planning' stay valid legacy aliases (older customs) that the rail maps into developer/general.
+  // browse buckets for the marketplace category rail (the R6 discovery front). A persona catalog module authors
+  // one of these — it MUST be a known bucket or normCategory collapses it to 'general' and the rail can't group
+  // it. 'code' and 'planning' stay valid legacy aliases (older customs) that the rail folds into developer/ops.
   // 'general' is the catch-all fallback. Additive only — no bucket is ever renamed or removed.
-  const CATEGORIES = ['developer', 'research', 'creator', 'ops', 'general', 'code', 'writing', 'planning'];
+  //
+  // STANDING-AUTOMATION BUCKETS (2026-08-04): the catalog is a use-case dictionary for someone who cannot yet
+  // name their own use case, so the buckets are the areas a StarNet user actually works in. A bucket only
+  // exists if a real shelf of recipes stands behind it — an empty or one-item bucket reads as broken next to
+  // a full one, so a bucket is added WITH its module and removed when its module goes.
+  const CATEGORIES = ['developer', 'research', 'creator', 'writing', 'ops', 'business', 'money',
+    'data', 'general', 'code', 'planning'];
+  /* THE VISIBLE buckets, in rail order, and the fold from a raw category onto one. Two categories can be
+     DIFFERENT values and the same bucket ('code' and 'developer' both render under DEVELOPER), so anything
+     reasoning about what the Commander actually SEES must fold first — the marketplace rail delegates here
+     rather than keeping its own copy, so the rail and the recommender can never disagree about what "one
+     per category" means. Legacy aliases fold; an unknown value falls back to 'general'. */
+  const RAIL_BUCKETS = ['developer', 'research', 'creator', 'ops', 'business', 'money', 'data', 'general'];
+  // 'writing' stays a valid stored category (core's draft-reply / tighten-writing carry it) but folds into
+  // CREATOR on the rail: a two-item chip beside a thirteen-item one reads as broken, and both recipes are
+  // squarely content work. Same treatment as 'code' -> developer and 'planning' -> ops.
+  const CAT_TO_RAIL = { developer: 'developer', code: 'developer', research: 'research', writing: 'creator',
+    creator: 'creator', ops: 'ops', planning: 'ops', business: 'business', money: 'money',
+    data: 'data', general: 'general' };
+  function railBucket(r) {
+    const c = (r && typeof r === 'object') ? r.category : r;
+    return CAT_TO_RAIL[String(c == null ? '' : c)] || 'general';
+  }
   // provenance: where a recipe came from. 'builtin' = curated; 'custom' = hand-authored; 'fork' = tweaked from another.
   const SOURCES = ['builtin', 'custom', 'fork'];
 
@@ -653,7 +674,7 @@
     'like', 'just', 'also', 'one', 'two', 'per', 'via', 'not', 'new', 'own', 'make', 'made', 'work', 'working',
     // filler that survived the first pass: function words a goal sentence carries but no recipe is ABOUT.
     'always', 'ready', 'fully', 'really', 'very', 'much', 'many', 'every', 'each', 'other', 'same', 'thing',
-    'things', 'stuff', 'something', 'anything', 'someone', 'anyone', 'around', 'about', 'because', 'been',
+    'things', 'stuff', 'something', 'anything', 'someone', 'anyone', 'around', 'about', 'because', 'been', 'help',
     'being', 'doing', 'does', 'did', 'able', 'good', 'well', 'back', 'keep', 'give', 'take', 'know', 'let']);
   const GOAL_SUFFIX = new Set(['', 's', 'es', 'ed', 'er', 'ers', 'ing', 'ly']);
   // split any text into its lowercase word tokens (>= 3 chars — shorter words are noise at this scale).
@@ -728,7 +749,7 @@
     const m = topicMatch(recipe, opts.topics);
     if (m && TopicMatch && TopicMatch.reason) { const r = TopicMatch.reason(m); if (r) return r; }
     const gh = namableGoalHits(goalKeywordHits(recipe, opts.goalText || ''));
-    if (gh.length) return 'matches your goal: “' + gh[0] + '”';
+    if (gh.length) return 'it matches your goal: “' + gh[0] + '”';
     const u = (opts.launches && typeof opts.launches === 'object') ? opts.launches[recipe.id] : null;
     const rated = (u && typeof u === 'object' && u.rated && typeof u.rated === 'object') ? u.rated : null;
     const great = rated && Number.isFinite(rated.great) && rated.great > 0 ? Math.floor(rated.great) : 0;
@@ -757,7 +778,28 @@
   // + no goal match + never launched), we fall back to an HONEST category spread — one recipe per distinct category
   // in catalog order — so a cold-start user still sees a varied, non-arbitrary row (never a fake "popular"
   // ordering; truthful-telemetry law — the launch counts are the user's OWN real launches, never anyone else's).
-  function rankRecipes(items, opts) {
+  /* rankRecipesExplained — the ranker, plus the ONE fact its caller cannot otherwise recover: did any real signal
+     produce this row, or is it the cold-start category spread? (2026-08-05)
+
+     The bay printed its personalized "◈ FOR YOU" header off `UnderstandingStore.readiness()` alone. Readiness
+     says the station has learned enough to be ASKED; it does not say this particular row used any of it. A
+     Commander with a filled dossier but no profile signal, no goal keyword that hits any of ~100 recipe names,
+     no launches and no warm topic gets `anySignal === false` and a category spread drawn in catalog order — and
+     a header claiming those three cards are FOR THEM. That is the product's core law broken by a string.
+
+     rankRecipes keeps its exact old signature and return value (an array) so every existing caller and test is
+     byte-unaffected; this is the same function with the fact attached. `personalized` is true only when a real
+     term fired AND survived the sink — a row that is entirely spread reports false, and the top-up case (≥1 real
+     card, the rest spread) reports true, because at least one card genuinely is for them.
+
+     ⛔ AND `personalized` ALONE STILL OVERCLAIMS ON THE TOP-UP PATH (2026-08-05). "at least one card is for them"
+     is not "this row was picked from your real work", and the header was reading the boolean as if it were. A
+     one-hit row tops up from the SAME catalog spread the cold start uses, and those filler cards carry no why at
+     all — so a plural, whole-row claim sat over two cards the station had never seen the Commander touch. So the
+     count rides out too: `scored` is how many cards a real term actually produced, `items.length` how many are
+     shown. Equal → the whole row is earned. Fewer → the caller owes MIXED phrasing, not the full claim. */
+  function rankRecipes(items, opts) { return rankRecipesExplained(items, opts).items; }
+  function rankRecipesExplained(items, opts) {
     opts = opts || {};
     const list0 = Array.isArray(items) ? items : builtins();
     const exclude = opts.exclude || null;
@@ -817,39 +859,61 @@
       // scores only a handful of recipes — which used to render a lonely one- or two-card shelf. Fill the rest
       // from the SAME honest category spread the cold start uses, drawing only on recipes that scored EXACTLY
       // zero: a recipe the Commander rated 👎 carries a negative score and must stay sunk, never quietly readmitted.
+      const earned = top.length;   // how many cards a real term actually produced, BEFORE any filler
       if (top.length && top.length < limit) {
         const inRow = {}; top.forEach(r => { inRow[r.id] = true; });
         const spare = scored.filter(x => x.s === 0 && !inRow[x.r.id]).map(x => x.r);
-        top = top.concat(categorySpread(spare, limit - top.length));
+        top = top.concat(categorySpread(spare, limit - top.length, opts.spreadOffset));
       }
       // …unless the SINK TOOK EVERYTHING. The outcome term is negative-heavy on purpose, so a station whose only
       // engagement on record is a 👎 (launched one recipe, rated it miss — the exact first-session shape: no
       // profile affinity, no goal text) scores every candidate <= 0 and this filter returns NOTHING. The caller
       // renders no row at all, so honest feedback would DELETE the FOR YOU shelf. Fall through to the cold-start
       // spread instead: "nothing has earned the row yet" is the same honest state as never having launched one.
-      if (top.length) return top;
+      if (top.length) return { items: top, personalized: true, scored: earned };
     }
-    // honest cold-start fallback: a category spread (first recipe of each distinct category, catalog order), topped
-    // up with the next recipes in order if there aren't enough distinct categories to fill the row.
-    return categorySpread(pool, limit);
+    // honest cold-start fallback: a bucket spread (first recipe of each distinct browse bucket), topped up with
+    // the next recipes in order if there aren't enough distinct buckets to fill the row. NOTHING here is about
+    // this Commander — which is exactly what `personalized: false` tells the caller to say out loud.
+    return { items: categorySpread(pool, limit, opts.spreadOffset), personalized: false, scored: 0 };
   }
-  // one recipe per distinct category in catalog order, then the remainder in order, clipped to n. Shared by the
-  // cold-start row and the thin-signal top-up so "varied" means the same thing in both places.
-  function categorySpread(pool, n) {
-    const byCat = [], usedCat = {}, rest = [];
-    (pool || []).forEach(r => {
-      const c = (r && r.category) || 'general';
-      if (!usedCat[c]) { usedCat[c] = true; byCat.push(r); } else rest.push(r);
-    });
-    return byCat.concat(rest).slice(0, Math.max(0, n));
+  /* One recipe per distinct BROWSE BUCKET, then the remainder, clipped to n. Shared by the cold-start row and
+     the thin-signal top-up so "varied" means the same thing in both places.
+
+     ⛔ SPREAD BY BUCKET, NOT BY RAW CATEGORY. This walked `r.category` and it quietly broke as the catalog
+     grew: core.js owns four legacy categories (research/code/writing/planning) and sits FIRST in the aggregate,
+     so a 4-card cold-start row was filled entirely from core.js before any persona module was reached — the
+     other hundred-odd recipes could never appear on a cold station no matter how many were added. It was not
+     even varied in the way the Commander sees it, since code+developer and writing+planning+ops each render
+     under ONE rail chip. Folding to the bucket first fixes both: the row spans what the rail actually shows.
+
+     `offset` rotates WHICH bucket the row starts from. Selection stays pure and deterministic — the same
+     offset always yields the same row, so tests and the all-sunk fallback are unaffected — but a caller that
+     passes a real, changing counter (the marketplace passes how many times this Commander has opened the
+     recipes tab) shows a different corner of the library on each visit instead of the same four cards forever.
+     This claims nothing: the row is labelled as a varied lineup, never as popular or recommended, so rotating
+     it stays inside the truthful-telemetry law — there is no assertion here that could become false. */
+  function categorySpread(pool, n, offset) {
+    const list = pool || [];
+    const firstOf = [], seen = {}, rest = [];
+    for (const r of list) {
+      const b = railBucket(r);
+      if (!seen[b]) { seen[b] = true; firstOf.push({ b, r }); } else rest.push(r);
+    }
+    // rotate the one-per-bucket head so a repeat visitor starts on a different bucket; the remainder keeps
+    // catalog order so the tail is still stable and the whole result is a pure function of (pool, n, offset).
+    const k = firstOf.length;
+    const off = (Number.isFinite(offset) && k > 0) ? (((Math.floor(offset) % k) + k) % k) : 0;
+    const head = off ? firstOf.slice(off).concat(firstOf.slice(0, off)) : firstOf;
+    return head.map(x => x.r).concat(rest).slice(0, Math.max(0, n));
   }
 
   return {
-    TAGS, GEAR_TYPES, CADENCES, CATEGORIES, SOURCES, PARAM_TYPES,
+    TAGS, GEAR_TYPES, CADENCES, CATEGORIES, SOURCES, PARAM_TYPES, RAIL_BUCKETS, railBucket,
     list, builtins, customs: customList, get, exists,
     fillTask, requiredMissing, paramsFromTemplate, draft, forkFrom, mintFromRun, saveCustom, removeCustom, impliesOutbound,
     // R6 marketplace surface
-    EXPORT_FORMAT, exportRecipe, validateImport, importRecipe, rankRecipes, goalKeywordScore,
+    EXPORT_FORMAT, exportRecipe, validateImport, importRecipe, rankRecipes, rankRecipesExplained, goalKeywordScore,
     goalKeywordHits, forYouReason, topicScore, TOPIC_SCALE, TOPIC_CAP
   };
 });

@@ -516,4 +516,17 @@ function cycle(loops, res, at) {
   A.eq(one(nog).iterations[0].diff, null, 'no diff is invented when none was captured');
 }
 
+// ---- 26. RESTART CONTEXT: an interrupted pass is never silently forgotten -------------------------------
+{
+  let loops = S.startIteration(S.claimFire(mk(), 'l1', { now: T0 }), 'l1', { runId: 'lost-run', now: T0 });
+  loops = S.settleIteration(loops, 'l1', {
+    runId: 'lost-run', status: 'error', cancelled: true, error: 'interrupted by sidecar restart'
+  }, { now: T0 + MIN });
+  const d = LJ.digest(one(loops), {});
+  A.ok(/INTERRUPTED/.test(d), 'the next pass is told that prior work was interrupted');
+  A.ok(/inspect|verify/i.test(d), 'the next pass is told to inspect current state before repeating actions');
+  A.ok(/#1/.test(d), 'the durable interrupted iteration number anchors the warning');
+  A.ok(!/ALREADY DONE AND APPROVED/.test(d), 'an interrupted pass is never represented as completed work');
+}
+
 A.report('loopjob (pure LOOP core)');

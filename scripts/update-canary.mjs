@@ -43,6 +43,7 @@
  */
 
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync
 } from 'node:fs';
@@ -51,6 +52,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connectCDP, evalJS, sleep } from './lib/cdp.mjs';
+import { buildReceipt, populatedFixture, validateReceipt } from './lib/update-continuity.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -63,9 +65,12 @@ const PORT = +argVal('--port', '8799');
 const DIR = resolve(ROOT, argVal('--dir', '.canary'));
 const FEED = join(DIR, 'feed');
 const OLD = join(DIR, 'old');
+const RECEIPT_FILE = join(DIR, 'update-receipt.json');
+const INJECT = argVal('--inject', '');
 
 function log(m) { process.stdout.write(m + '\n'); }
 function fail(m) { process.stderr.write('update-canary: ' + m + '\n'); process.exit(1); }
+function sha256File(file) { return createHash('sha256').update(readFileSync(file)).digest('hex'); }
 
 function conf() {
   return JSON.parse(readFileSync(join(ROOT, 'src-tauri', 'tauri.conf.json'), 'utf8').replace(/^﻿/, ''));
@@ -220,20 +225,53 @@ function installOld() {
   log('next: keep serve running, then `node scripts/update-canary.mjs drive`');
 }
 
+async function attachCanary() {
+  for (let i = 0; i < 60; i++) {
+    try { return await connectCDP(CDP_PORT); } catch (_) { await sleep(500); }
+  }
+  return null;
+}
+
+async function seedPopulatedState(cdp) {
+  const nonce = randomUUID();
+  const fixture = populatedFixture(nonce);
+  const source = `(async()=>{const save=${JSON.stringify(fixture)};const sentinel={nonce:${JSON.stringify(nonce)},purpose:'update-continuity'};localStorage.setItem('starnet.save',JSON.stringify(save));localStorage.setItem('starnet.canary.continuity',JSON.stringify(sentinel));const response=await fetch('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(save)});const body=await response.json();if(!response.ok||!body||body.ok!==true)throw new Error('durable canary seed refused: '+JSON.stringify(body));return JSON.stringify({nonce});})()`;
+  await evalJS(cdp, source);
+  return snapshotPopulatedState(cdp);
+}
+
+async function snapshotPopulatedState(cdp) {
+  const raw = await evalJS(cdp, `(async()=>{let local=null,sentinel=null;try{local=JSON.parse(localStorage.getItem('starnet.save')||'null');sentinel=JSON.parse(localStorage.getItem('starnet.canary.continuity')||'null')}catch(_){}const response=await fetch('/api/save?agent=agent',{cache:'no-store'});const body=await response.json();return JSON.stringify({local,durable:body&&body.save||null,sentinel});})()`);
+  return JSON.parse(raw || '{}');
+}
+
+async function provePreparationFailure(cdp, startVersion) {
+  const result = await evalJS(cdp, `(async()=>{const original=window.fetch;window.fetch=(input,init)=>String(input).includes('/api/update/prepare')?Promise.resolve(new Response(JSON.stringify({ok:false,code:'CANARY_INJECTED'}),{status:503,headers:{'Content-Type':'application/json'}})):original(input,init);try{await Updates.install();return JSON.stringify(Updates.snapshot())}finally{window.fetch=original}})()`);
+  const snap = JSON.parse(result || '{}');
+  if (installedVersion() !== startVersion) fail('prepare-failure injection changed the installed version');
+  if (snap.phase !== 'available' || !/recovery point|verification/i.test(String(snap.error || ''))) {
+    fail('prepare-failure injection did not fail closed: ' + result);
+  }
+  writeFileSync(RECEIPT_FILE, JSON.stringify({ schema: 'starnet.update-canary-failure.v1', generatedAt: new Date().toISOString(), injection: 'prepare-failure', outcome: 'pass', installedVersion: startVersion, phase: snap.phase, errorClass: 'recovery-point-refused' }, null, 2) + '\n');
+  log('FAIL-CLOSED CANARY PROVEN: preparation unavailable; installer not invoked; current version stayed open.');
+  log('receipt: ' + RECEIPT_FILE);
+  process.exit(0);
+}
+
 // CDP-drive the running canary through the real Update Center flow and print receipts.
 async function drive() {
   const startVersion = installedVersion();
   log('installed exe version before update: ' + startVersion);
   log('attaching to CDP :' + CDP_PORT + ' …');
-  let cdp = null;
-  for (let i = 0; i < 20 && !cdp; i++) {
-    try { cdp = await connectCDP(CDP_PORT); } catch (_) { await sleep(500); }
-  }
+  let cdp = await attachCanary();
   if (!cdp) fail('cannot attach to the canary app on :' + CDP_PORT + ' — launch it via install-old (or set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS yourself)');
 
   const origin = await evalJS(cdp, 'location.origin');
   const appVer = await evalJS(cdp, '(typeof Updates!=="undefined" && Updates.snapshot) ? Updates.snapshot().currentVersion : "no-updates-module"');
   log('attached: origin=' + JSON.stringify(origin) + ' app-reported version=' + JSON.stringify(appVer));
+
+  log('seeding a populated two-agent station, prop, workstream, message, usage, and durable sentinel ...');
+  const beforeState = await seedPopulatedState(cdp);
 
   log('driving Updates.check(true) …');
   await evalJS(cdp, 'Updates.check(true, "canary")');
@@ -247,6 +285,8 @@ async function drive() {
   }
   const seen = JSON.parse(snap || '{}');
   if (!(seen.phase === 'available' && seen.update)) fail('update never became available; last snapshot: ' + snap);
+  if (INJECT === 'prepare-failure') await provePreparationFailure(cdp, startVersion);
+  if (INJECT) fail('unknown failure injection "' + INJECT + '" (supported: prepare-failure)');
 
   log('driving Updates.install() — the app will exit, NSIS installs passively, then it relaunches …');
   // Fire-and-forget: the webview dies mid-install, so the eval may never return.
@@ -275,6 +315,23 @@ async function drive() {
       '  The fix is on_before_exit killing the sidecar before the plugin exits (src-tauri/src/main.rs, starnet_update_check).');
   }
   if (!relaunched) log('NOTE: version flipped and installer exited, but no relaunched app seen yet (it may still be starting).');
+  if (!relaunched) fail('new version did not relaunch; state parity cannot be proven');
+  const relaunchedCdp = await attachCanary();
+  if (!relaunchedCdp) fail('new app process exists but CDP never became ready; state parity is unproved');
+  const afterState = await snapshotPopulatedState(relaunchedCdp);
+  const artifacts = existsSync(FEED) ? readdirSync(FEED).filter(name => name.endsWith('-setup.exe')) : [];
+  if (artifacts.length !== 1) fail('expected exactly one canary installer artifact for the receipt; found ' + artifacts.length);
+  const artifactPath = join(FEED, artifacts[0]);
+  const receipt = buildReceipt({
+    path: startVersion === conf().version ? 'latest-to-next' : 'n-minus-one-to-next',
+    before: beforeState, after: afterState,
+    beforeVersion: startVersion, targetVersion: seen.update.version, afterVersion: after,
+    installerArtifact: artifacts[0], installerArtifactSha256: sha256File(artifactPath), installerGone,
+    relaunched, installedExeSha256: sha256File(INSTALLED_EXE)
+  });
+  const verdict = validateReceipt(receipt);
+  if (!verdict.ok) fail('update receipt failed closed: ' + verdict.errors.join(', '));
+  writeFileSync(RECEIPT_FILE, JSON.stringify(receipt, null, 2) + '\n');
   log('');
   log('================ CANARY RECEIPT ================');
   log(' installed exe version: ' + startVersion + '  →  ' + after + '   [version resource advanced]');
@@ -282,6 +339,8 @@ async function drive() {
   log(' app relaunched       : ' + (relaunched ? 'yes (new version is running)' : 'not yet'));
   log(' endpoint used        : http://127.0.0.1:' + PORT + '/latest.json (see serve log for the GET hits)');
   log(' signature check      : performed by the installed app against the baked pubkey (a bad sig would have failed the install)');
+  log(' populated state      : byte-stable semantic fingerprint ' + receipt.state.afterFingerprint);
+  log(' exact receipt        : ' + RECEIPT_FILE);
   log('================================================');
   log('CLEAN UPDATE PROVEN end-to-end. Uninstall "StarNet Canary" from Windows when done.');
   process.exit(0);
@@ -308,7 +367,7 @@ function hangDiagnostic() {
 }
 
 if (cmd === 'build-old') {
-  const v = conf().version;
+  const v = argVal('--version', conf().version);
   buildCanary(v, OLD);
   log('OLD canary staged at v' + v + '. Next: build-new.');
 } else if (cmd === 'build-new') {

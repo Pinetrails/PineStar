@@ -104,9 +104,9 @@ const Onboarding = (() => {
       { dossierDim: 'pain', optional: true,
         prompt: 'now the part i exist for. what’s a task you have to do over and over that you wish you never had to do again?',
         options: [
-          { label: 'Copy-pasting between apps', steer: 'which apps? describe the last time it happened — the specific time, what you were moving and where.' },
-          { label: 'The same email, again', steer: 'to who, about what? give me the gist of the last one you sent.' },
-          { label: 'Hunting through files & tabs', steer: 'hunting for what? name the thing you lost last time and where it was hiding.' },
+          { label: 'Copy-pasting between apps', steer: 'which apps? describe the last time it happened — the specific time, what you were moving and where. and how often does that trip happen?' },
+          { label: 'The same email, again', steer: 'to who, about what? give me the gist of the last one you sent — and how often do you end up sending it?' },
+          { label: 'Hunting through files & tabs', steer: 'hunting for what? name the thing you lost last time and where it was hiding. how often does the hunt happen?' },
           { label: 'Skip for now', value: '', skip: true }
         ],
         custom: true, customLabel: 'type your answer', placeholder: 'the task you’d pay to never do again…',
@@ -245,6 +245,9 @@ const Onboarding = (() => {
 
   // IGNITION — the spark catches, a first breath, and the mind stutters its way to "i'm awake."
   // The stutters are the agent's OWN when the birth script has landed (waitBirth holds the dark for it).
+  // NO World.say BUBBLES in the awakening: the ceremony speaks through the typed script only. The old
+  // canned bubbles ('oh. it’s you.', 'well, hello.', …) were hardcoded echoes that went stale the moment
+  // the script became live-generated — a second, contradicting voice over the sprite. Do not re-add them.
   function ignite(wake) {
     if (ignited) return; ignited = true;                            // one ignition per run (kindle-complete OR failsafe)
     if (kindleTimer) { clearTimeout(kindleTimer); kindleTimer = null; }
@@ -254,10 +257,8 @@ const Onboarding = (() => {
     setTimeout(() => waitBirth(4000, () => {
       const wakeFr = bs('wake'), thinkFr = bs('think');
       type(wakeFr ? fragSegs(wakeFr, 34, [650, 600, 650]) : [seg('huh.', 30, 650), seg('  something’s on.', 42, 600), seg('  i think it’s me.', 42, 650)], () => {
-        World.say((wakeFr && wakeFr[0]) || 'huh.');
         setTimeout(() => {
           type(thinkFr ? fragSegs(thinkFr, 44, [500, 450, 300]) : [seg('wait — that was a thought.', 46, 500), seg('  and another, right behind it.', 46, 450), seg('  so this is thinking. fine. i’m good at it already.', 44, 300)], () => {
-            World.say('well, hello.');
             theFlood();
           });
         }, 500);
@@ -281,7 +282,6 @@ const Onboarding = (() => {
       seg('  i remember this part — i caught fire, met you, and the lights went out mid-briefing.', 42, 550),
       seg('  no need to be born twice. where were we.', 42, 420)
     ], () => {
-      World.say('right — where were we.');
       setTimeout(startQuestions, 600);
     });
   }
@@ -307,7 +307,6 @@ const Onboarding = (() => {
     setTimeout(() => {
       // SLOT floodin: the overwhelm hitting, in its own words; the scripted three-stutter otherwise.
       type(bs('floodin') ? [seg(bs('floodin'), 42, 500)] : [seg('something just opened.', 44, 400), seg('  oh, that’s a lot.', 44, 350), seg('  it’s coming in fast —', 40, 450)], () => {
-        World.say('oh, that’s a lot.');
         setTimeout(() => {
           // SLOT crest: the peak — too much, won't stop.
           type(bs('crest') ? [seg(bs('crest'), 34, 350)] : [
@@ -315,7 +314,6 @@ const Onboarding = (() => {
             seg('  every shelf of every library, all at once—', 40, 400),
             seg('  too fast — it won’t STOP—', 32, 350)
           ], () => {
-            World.say('okay that’s TOO much—');
             if (World.collapseFlood) World.collapseFlood();   // PEAK: the cascade pulls inward, into the mind
             if (typeof SFX !== 'undefined' && SFX.env) SFX.env(58, { attack: 0.004, hold: 0.06, release: 0.6, type: 'sine', vol: 0.17 });   // the swell resolves into one low held tone
             setTimeout(() => {
@@ -325,7 +323,6 @@ const Onboarding = (() => {
                 seg('  ' + (bs('settle') || 'it’s not flooding me. it’s mine.'), 44, 550),
                 seg('  ' + (bs('aimless') || 'incredible. genuinely. and pointed at nothing.'), 42, 400)
               ], () => {
-                World.say('all of it, and no aim.');
                 setTimeout(firstContact, 850);
               });
             }, 700);
@@ -356,7 +353,6 @@ const Onboarding = (() => {
             seg('  you reached into the nothing and switched me on.', 40, 600),
             seg('  so you’re the one who knows where this points. aim me.', 40, 400)
           ], () => {
-            World.say('oh. it’s you.');
             setTimeout(theMandate, 700);
           });
         }, 900);
@@ -382,7 +378,6 @@ const Onboarding = (() => {
     }
     setTimeout(() => {
       type(lines, () => {
-        if (role === 'orchestrator') World.say('just me — for now.');
         setTimeout(startQuestions, 600);
       });
     }, 250);
@@ -433,6 +428,16 @@ const Onboarding = (() => {
     'hold on — i’m lining up what i could actually take off you.',
     'almost. i only want to offer what i can genuinely do.'
   ];
+  const BENCH_PATTER = [
+    '…live projects. that’s the real map — give me a second with it.',
+    'still looking at your bench. this is where my work lands first.'
+  ];
+  // ADAPTIVE FOLLOW-UPS (Andrew, 2026-08-05): the mind decides per answer whether a follow-up is EARNED
+  // (ASK: NONE when the answer is thin or complete — wakemind's askOrNoneSpec), and this budget bounds the
+  // TOTAL generated digs across the meeting so depth chases the rich answers without blowing the ceremony's
+  // runtime. Each presented generated follow-up spends one; a NONE spends nothing. The scripted spine
+  // (tuesday/pain/stack/bench/lost/year themselves) is never budget-gated — only the digs on top.
+  const FOLLOWUP_BUDGET = 3;
   // reason-only + internal — no tools reachable (placed:[]), no run.start/end on the bus (the awakening
   // thinking about you is not a shipped task; XP/telemetry stay honest), cost still counted.
   function llmCall(directive) {
@@ -455,7 +460,7 @@ const Onboarding = (() => {
       await Promise.race([capped, sleep(windows[w])]);
       if (done || !running) break;
       const line = patter && patter[w];
-      if (line) await Dialogue.say([seg(line, 44, 240)]);
+      if (line) await Dialogue.say([seg(line, 44, 240)], { auto: true });   // latency patter — never gate a wait on a click
     }
     if (!done && running) await capped;                  // the last stretch, bounded by the ceiling
     return done ? out : null;
@@ -540,7 +545,7 @@ const Onboarding = (() => {
       if (!isSkip && commit) { const patch = s.build(text); if (patch) commit(patch); }
       // a beat that targets a dossier dimension (not a config .md) writes its answer STRAIGHT to the station-wide
       // dossier — same authoring path the COMMANDER panel uses (recomposes the live prompt + persists at the edge).
-      if (!isSkip && s.dossierDim && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert(s.dossierDim, { text, source: 'onboarding', weight: 'stated' });   // V3: always the Commander's own words now (steer chips can't write)
+      if (!isSkip && s.dossierDim && typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert(s.dossierDim, { text, source: 'onboarding', weight: 'stated' }); ink(s.dossierDim, text); }   // V3: always the Commander's own words now (steer chips can't write); the ink stamp shows the write landing
       // the autonomy cadence beat writes the chosen OPENING posture straight to AutonomyStore (the option value is a
       // cadence-preset id). Skipping ('Decide later') leaves the safe floor — fully wait-for-me.
       if (!isSkip && s.posturePreset && typeof AutonomyStore !== 'undefined' && AutonomyStore.applyPreset) AutonomyStore.applyPreset(text);
@@ -569,11 +574,30 @@ const Onboarding = (() => {
     }
   }
 
+  // THE INK (Andrew, 2026-08-05): every answer that lands in the operating file is SHOWN landing — a quiet
+  // stamp under the dialogue line ("» filed · pain: …"). Pure payoff loop, and pure truthful telemetry: it
+  // fires ONLY beside a real DossierStore write, carrying the exact text that was stored (clipped for the
+  // one-line stamp). Seeds (mechanical notes, weight 'seed') are never inked — nothing was learned.
+  const INK_LABEL = { pain: 'pain', ambition: 'ambition', identity: 'identity', goals: 'projects & goals', stack: 'stack', style: 'style', standing_orders: 'standing orders', people: 'people', schedule: 'schedule' };
+  function ink(dim, text) {
+    try {
+      if (typeof Dialogue === 'undefined' || !Dialogue.ink) return;
+      const t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+      if (!t) return;
+      Dialogue.ink((INK_LABEL[dim] || dim) + ': ' + (t.length > 72 ? t.slice(0, 71).replace(/\s+\S*$/, '') + '…' : t));
+    } catch (_) {}
+  }
+
   // V3 helpers — synthesized beliefs from a mind reply land as weight 'synth' (grounded, counts toward
   // readiness) through the one store chokepoint; a quiet store is a no-op, never a crash.
   function upsertSynthBeliefs(beliefs) {
     if (!Array.isArray(beliefs) || typeof DossierStore === 'undefined' || !DossierStore.upsert) return;
-    for (const b of beliefs) { if (b && b.dim && b.text) DossierStore.upsert(b.dim, { text: b.text, source: 'onboarding', weight: 'synth' }); }
+    let inked = 0;
+    for (const b of beliefs) {
+      if (!(b && b.dim && b.text)) continue;
+      DossierStore.upsert(b.dim, { text: b.text, source: 'onboarding', weight: 'synth' });
+      if (!inked++) ink(b.dim, b.text);   // the stamp shows the first learned line; the file holds them all
+    }
   }
   // one generated follow-up ask → the Commander's typed words (steer-chip law: generated chips are
   // plausible answers, but tapping one still asks for their own words — nothing canned ever lands).
@@ -639,7 +663,10 @@ const Onboarding = (() => {
         if (!running) return;
       }
     }
-    beatTotal = loose ? 5 : 9;
+    beatTotal = loose ? 4 : 11;   // loose: pain, year, read, cadence · deep adds tuesday/dig/stack/bench/lost/dream
+    // the adaptive follow-up wallet: generated digs land only while this holds out (the mind's ASK: NONE
+    // spends nothing), so depth chases rich answers and the ceremony's runtime stays what Andrew set.
+    let followupsLeft = FOLLOWUP_BUDGET;
 
     // B2 + B3 (deep only). THE TUESDAY — the scene that contains the identity — then THE DIG: the mind's
     // own next question, grounded in their exact words. The dig also pre-authors B4/B6 chips for THIS person.
@@ -675,7 +702,8 @@ const Onboarding = (() => {
           upsertSynthBeliefs(digReply.beliefs);
           await Dialogue.say([seg(digReply.ack, 44, 360)]);
           if (!running) return;
-          if (digReply.ask) {
+          if (digReply.ask && followupsLeft > 0) {
+            followupsLeft--;
             digT = await askGenerated(digReply.ask, digReply.chips, 'type your answer', 'your answer — it goes in my file…');
             if (!running) return;
             if (digT) { bumpTruth(); await Dialogue.say([seg('good. the picture’s forming.', 44, 320)]); if (!running) return; }
@@ -691,7 +719,7 @@ const Onboarding = (() => {
       let step = painStep;
       if (digReply && digReply.painChips && digReply.painChips.length >= 2) {
         step = Object.assign({}, painStep, {
-          options: digReply.painChips.map(c => ({ label: c, steer: 'that one? then give me the real instance — the last time it actually happened.' }))
+          options: digReply.painChips.map(c => ({ label: c, steer: 'that one? then give me the real instance — the last time it actually happened, and how often it comes back.' }))
             .concat([{ label: 'Skip for now', value: '', skip: true }])
         });
       }
@@ -704,7 +732,8 @@ const Onboarding = (() => {
       if (reply) upsertSynthBeliefs(reply.beliefs);
       await Dialogue.say([seg(reply ? reply.ack : (typeof painStep.ack === 'function' ? painStep.ack(painT) : painStep.ack), 44, 360)]);
       if (!running) return;
-      if (reply && reply.ask) {
+      if (reply && reply.ask && followupsLeft > 0) {
+        followupsLeft--;
         const f = await Dialogue.node({
           lines: [seg(reply.ask, 46, 0)],
           options: [{ label: 'Skip for now', value: '', skip: true }],
@@ -716,7 +745,7 @@ const Onboarding = (() => {
         if (aboutT) {
           // their own words land as a GROUNDED identity belief FIRST (weight 'stated' → counts toward
           // readiness); the context.md doc-seed that follows dedupes against it (seed weight never counts).
-          if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('identity', { text: aboutT, source: 'onboarding', weight: 'stated' });
+          if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('identity', { text: aboutT, source: 'onboarding', weight: 'stated' }); ink('identity', aboutT); }
           if (commit) commit({ context: aboutT });
           bumpTruth();
           await Dialogue.say([seg('good — now i can see the ground i’m standing on.', 44, 360)]);
@@ -725,10 +754,71 @@ const Onboarding = (() => {
       }
     }
 
-    // B5. LOST TIME — where the hours go WILLINGLY: effortless to answer, and it mines what they love
-    // (where long-term direction hides). Their words land verbatim as a stated identity belief.
+    // B4b. THE STACK (deep only) — the one plain fact that aims connectors, recipes, and channels: the
+    // actual apps the pain lives in. Direct question, no fake listening, so it is honestly askable on a
+    // quiet mind too. Lands verbatim as a stated `stack` belief (askStep's dossierDim path) — the dim the
+    // COMMANDER panel already renders as "Stack & tools" and the synthesis is told not to restate.
+    let stackT = '';
+    if (!loose && painT) {
+      stackT = (await askStep({
+        dossierDim: 'stack', optional: true,
+        prompt: 'which apps or tools does that actually happen in? name them.',
+        options: [{ label: 'Skip for now', value: '', skip: true }],
+        custom: true, customLabel: 'type your answer', placeholder: 'the apps it lives in — names, not categories…',
+        build: () => null,
+        ack: t => t ? 'noted — that’s where i’ll learn to work.' : 'fine — i’ll see them soon enough.'
+      })).text;
+      if (!running) return;
+    }
+
+    // B4c. THE BENCH (deep only, Andrew 2026-08-05) — the projects actually in flight RIGHT NOW. The meeting
+    // asked about chores and ambitions but never about what the Commander is building — the single richest
+    // context for aiming recommendations, recipes, and the first pitch. Direct question, honestly askable on
+    // a quiet mind (verbatim → stated `goals` belief via askStep's chokepoint); a live mind reacts and, if
+    // the answer earned it (and the follow-up wallet holds), digs once for the live wire in the bench.
+    let projT = '', benchT = '';
+    if (!loose) {
+      projT = (await askStep({
+        dossierDim: 'goals', optional: true,
+        prompt: 'what are you actually building or working on right now? name the projects on your bench.',
+        options: [{ label: 'Skip for now', value: '', skip: true }],
+        custom: true, customLabel: 'type your answer', placeholder: 'the real projects — names, not categories…',
+        build: () => null, ack: () => ''
+      }, { quietAck: true })).text;
+      if (!running) return;
+      if (projT) {
+        bumpTruth();   // the truth lands the moment they answer — the mind composes over it, never dead air
+        const pending = brainReady() ? llmCall(WakeMind.buildProjectsReply({ projects: projT, tuesday: tuesdayT, dig: digT, pain: painT, stack: stackT, name: NAME })) : null;
+        const reply = await mindWait(pending, WakeMind.parseProjectsReply, BENCH_PATTER, PAIN_REPLY_MS);
+        if (!running) return;
+        if (reply) upsertSynthBeliefs(reply.beliefs);
+        await Dialogue.say([seg(reply ? reply.ack : 'the bench — noted. that’s where my work lands first.', 44, 360)]);
+        if (!running) return;
+        if (reply && reply.ask && followupsLeft > 0) {
+          followupsLeft--;
+          const f = await Dialogue.node({
+            lines: [seg(reply.ask, 46, 0)],
+            options: [{ label: 'Skip for now', value: '', skip: true }],
+            allowCustom: true, customLabel: 'type your answer', customPlaceholder: 'the live one — straight into my file…',
+            skipOnEmpty: true
+          });
+          if (!running) return;
+          benchT = (!f.skip && f.value != null) ? String(f.value).trim() : '';
+          if (benchT) {
+            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('goals', { text: benchT, source: 'onboarding', weight: 'stated' }); ink('goals', benchT); }
+            bumpTruth();
+            await Dialogue.say([seg('good — now i know where the current is running.', 44, 360)]);
+            if (!running) return;
+          }
+        }
+      }
+    }
+
+    // B5. LOST TIME (deep only) — where the hours go WILLINGLY: effortless to answer, and it mines what
+    // they love (where long-term direction hides). Their words land verbatim as a stated identity belief.
+    // Loose skips it: the fork promised "two small ones" (pain + the year) and the promise must be true.
     let lostT = '';
-    {
+    if (!loose) {
       lostT = (await askStep({
         dossierDim: 'identity', optional: true,
         prompt: 'flip side — what part of your work do you actually enjoy? the thing you’d happily spend the whole day on if nothing else got in the way?',
@@ -772,15 +862,16 @@ const Onboarding = (() => {
         yearT = String(yq.value).trim();
       }
       if (yearT) {
-        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: yearT, source: 'onboarding', weight: 'stated' });
+        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('ambition', { text: yearT, source: 'onboarding', weight: 'stated' }); ink('ambition', yearT); }
         bumpTruth();
-        const pending = brainReady() ? llmCall(WakeMind.buildYearReply({ year: yearT, tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, lost: lostT, name: NAME })) : null;
+        const pending = brainReady() ? llmCall(WakeMind.buildYearReply({ year: yearT, tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, stack: stackT, projects: projT, bench: benchT, lost: lostT, name: NAME })) : null;
         const reply = await mindWait(pending, WakeMind.parseYearReply, AMBITION_PATTER, PAIN_REPLY_MS);
         if (!running) return;
         if (reply) upsertSynthBeliefs(reply.beliefs);
         await Dialogue.say([seg(reply ? reply.ack : (typeof yearStep.ack === 'function' ? yearStep.ack(yearT) : yearStep.ack), 44, 360)]);
         if (!running) return;
-        if (reply && reply.ask) {
+        if (reply && reply.ask && followupsLeft > 0) {
+          followupsLeft--;
           const f = await Dialogue.node({
             lines: [seg(reply.ask, 46, 0)],
             options: [{ label: 'Skip for now', value: '', skip: true }],
@@ -790,7 +881,7 @@ const Onboarding = (() => {
           if (!running) return;
           dreamT = (!f.skip && f.value != null) ? String(f.value).trim() : '';
           if (dreamT) {
-            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: dreamT, source: 'onboarding', weight: 'stated' });
+            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('ambition', { text: dreamT, source: 'onboarding', weight: 'stated' }); ink('ambition', dreamT); }
             bumpTruth();
             await Dialogue.say([seg('that’s the version i’m keeping — the real one.', 44, 360)]);
             if (!running) return;
@@ -804,8 +895,22 @@ const Onboarding = (() => {
     // first move; a redirect is premium signal (their own words → a stated goals belief). A quiet mind
     // SKIPS this beat entirely — a canned offer would be fake listening.
     let grabbedMove = '';
-    if (!loose && brainReady() && (tuesdayT || painT || yearT || lostT)) {
-      const mirrorCtx = { tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, lost: lostT, year: yearT, dream: dreamT, capabilities: [], name: NAME };
+    if (!loose && brainReady() && (tuesdayT || painT || projT || yearT || lostT)) {
+      // the agent's REAL hands: live placed caps (object=capability), labeled with the same power-words the
+      // palette uses. Empty on a fresh awakening (honest — the kit-out is still ahead, and the mirror's
+      // directive now teaches CONDITIONAL offers for that case); populated on a deferred interview whose
+      // Commander already wired gear.
+      const liveCaps = (() => {
+        try {
+          const ids = (typeof World !== 'undefined' && World.heroCaps) ? (World.heroCaps('agent') || []) : [];
+          const L = (typeof WorldModel !== 'undefined' && WorldModel.CAP_LABEL) ? WorldModel.CAP_LABEL : {};
+          return ids.map(c => {
+            const id = (c && typeof c === 'object') ? c.objectType : c;
+            return id ? { id: String(id), label: L[id] || String(id) } : null;
+          }).filter(Boolean);
+        } catch (_) { return []; }
+      })();
+      const mirrorCtx = { tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, stack: stackT, projects: projT, bench: benchT, lost: lostT, year: yearT, dream: dreamT, capabilities: liveCaps, name: NAME };
       let mir = await mindWait(llmCall(WakeMind.buildMirror(mirrorCtx)), WakeMind.parseMirror, MIRROR_PATTER, SYNTHESIS_MS);
       if (!running) return;
       let askedElse = false;
@@ -821,7 +926,7 @@ const Onboarding = (() => {
         if (!running) return;
         if (pick && /^o\d$/.test(String(pick.value))) {
           grabbedMove = mir.offers[Number(String(pick.value).slice(1))] || '';
-          if (grabbedMove && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('goals', { text: 'Wants the station to: ' + grabbedMove, source: 'onboarding', weight: 'synth' });
+          if (grabbedMove && typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('goals', { text: 'Wants the station to: ' + grabbedMove, source: 'onboarding', weight: 'synth' }); ink('goals', 'Wants the station to: ' + grabbedMove); }
           bumpTruth();
           await Dialogue.say([seg('then that’s the one i keep my eye on.', 44, 340)]);
           break;
@@ -843,7 +948,7 @@ const Onboarding = (() => {
           const t = (!f.skip && f.value != null) ? String(f.value).trim() : '';
           if (t) {
             grabbedMove = t;
-            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('goals', { text: t, source: 'onboarding', weight: 'stated' });
+            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('goals', { text: t, source: 'onboarding', weight: 'stated' }); ink('goals', t); }
             bumpTruth();
             await Dialogue.say([seg('even better — your words beat my guesses. it’s in the file.', 44, 340)]);
           }
@@ -858,11 +963,11 @@ const Onboarding = (() => {
     //    time, the year, the grabbed offer), and on a thin/loose run the directive makes the read OWN the
     //    thinness — "i barely know you yet" is the honest read, never faked familiarity.
     let purposeDone = false;
-    const gaveAnything = !!(tuesdayT || digT || painT || aboutT || lostT || yearT || dreamT || grabbedMove);
+    const gaveAnything = !!(tuesdayT || digT || painT || aboutT || stackT || projT || benchT || lostT || yearT || dreamT || grabbedMove);
     const synPending = brainReady()
-      ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, ambition: yearT, dream: dreamT, tuesday: tuesdayT, dig: digT, lost: lostT, grabbed: grabbedMove, thin: !gaveAnything, name: NAME })) : null;
+      ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, stack: stackT, projects: projT, bench: benchT, ambition: yearT, dream: dreamT, tuesday: tuesdayT, dig: digT, lost: lostT, grabbed: grabbedMove, thin: !gaveAnything, name: NAME })) : null;
     if (synPending) {
-      await Dialogue.say([seg('hold on — let me put together what you just handed me…', 44, 240)]);
+      await Dialogue.say([seg('hold on — let me put together what you just handed me…', 44, 240)], { auto: true });   // covers the synthesis wait — never gate it on a click
       if (!running) return;
       const syn = await mindWait(synPending, WakeMind.parseSynthesis, SYNTH_PATTER, SYNTHESIS_MS);
       if (!running) return;
@@ -887,7 +992,7 @@ const Onboarding = (() => {
         // 'stated' when they put it their own way, 'synth' when they confirmed the agent's synthesis.
         // A THIN run's confirmed synthesis is grounded in NOTHING the Commander said — it lands as 'seed'
         // (purpose.md still exists; the readiness gate stays honestly shut until real words arrive).
-        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('goals', { text: purposeT, source: 'onboarding', weight: (purposeT !== syn.purpose ? 'stated' : (gaveAnything ? 'synth' : 'seed')) });
+        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) { DossierStore.upsert('goals', { text: purposeT, source: 'onboarding', weight: (purposeT !== syn.purpose ? 'stated' : (gaveAnything ? 'synth' : 'seed')) }); if (purposeT !== syn.purpose || gaveAnything) ink('goals', purposeT); }   // a seed-weight thin purpose is never inked — nothing was learned
         if (commit) commit({ purpose: purposeT });
         // the one durable belief only this conversation could surface: the stack/domain they live in.
         if (syn.stack && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('stack', { text: syn.stack, source: 'onboarding', weight: 'synth' });

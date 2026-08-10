@@ -43,15 +43,26 @@ A.eq(S.decide(s, { now: T0 + 1, warm: true }).binding, 'gap', 'a second attempt 
 const d1 = S.decide(s, { now: T0 + GAP + 1, warm: true });
 A.ok(d1.fire, 'past the gap it fires');
 A.eq(d1.kind, 'prospect', 'a tie alternates away from the last kind (last was recipe)');
-// fill one kind to MAX_LIVE: the other kind is chosen; fill both: full binds
+// fill one kind to its OWN cap: the other kind is chosen; fill both: full binds. The caps DIFFER by kind
+// (recipes 6, prospects 3), so looping on a single constant would leave the recipe shelf half empty here.
 let full = s;
-for (let i = 0; i < S.MAX_LIVE; i++) full = S.stage(full, { id: 'p' + i, kind: 'prospect', draft: { name: 'x' + i }, why: 'w', fingerprint: 'fp-p' + i }, { now: T0 });
+for (let i = 0; i < S.liveCap('prospect'); i++) full = S.stage(full, { id: 'p' + i, kind: 'prospect', draft: { name: 'x' + i }, why: 'w', fingerprint: 'fp-p' + i }, { now: T0 });
 for (let i = 0; i < S.MINT_EVERY_RUNS; i++) full = S.noteRun(full, T0);
 const d2 = S.decide(full, { now: T0 + GAP + 1, warm: true });
 A.eq(d2.kind, 'recipe', 'a full prospect shelf routes the attempt to recipes');
-for (let i = 0; i < S.MAX_LIVE; i++) full = S.stage(full, { id: 'r' + i, kind: 'recipe', draft: { name: 'y' + i }, why: 'w', fingerprint: 'fp-r' + i }, { now: T0 });
+for (let i = 0; i < S.liveCap('recipe'); i++) full = S.stage(full, { id: 'r' + i, kind: 'recipe', draft: { name: 'y' + i }, why: 'w', fingerprint: 'fp-r' + i }, { now: T0 });
 for (let i = 0; i < S.MINT_EVERY_RUNS; i++) full = S.noteRun(full, T0);
 A.eq(S.decide(full, { now: T0 + 2 * GAP + 2, warm: true }).binding, 'full', 'both shelves full -> full binds');
+// the caps are PER KIND and recipes get the deeper shelf: a recipe draft is a cheap offer to skim, a
+// prospect is a whole agent joining the crew, so a deep prospect queue would nag rather than help.
+A.eq(S.liveCap('recipe'), 6, 'the recipe shelf holds six undecided drafts');
+A.eq(S.liveCap('prospect'), 3, 'the prospect shelf stays at three');
+A.eq(S.liveCap('unknown-kind'), S.MAX_LIVE, 'an unknown kind falls back to the default cap');
+// a 6-deep recipe shelf must SURVIVE a save/load round-trip — normalize() used to clip on a constant
+// derived from the old single cap, which would have silently dropped live drafts on the way back in.
+let deep = S.fresh(T0);
+for (let i = 0; i < 6; i++) deep = S.stage(deep, { id: 'd' + i, kind: 'recipe', draft: { name: 'd' + i }, why: 'w', fingerprint: 'fp-d' + i }, { now: T0 });
+A.eq(S.normalize(JSON.parse(JSON.stringify(deep)), T0).staged.filter(x => x.kind === 'recipe').length, 6, 'six live recipe drafts survive normalize()');
 
 /* ---------- lane E: COLD-START — a pushed dossier buys exactly ONE day-one recipe attempt ---------- */
 let cs = S.fresh(T0);
@@ -74,9 +85,9 @@ A.eq(warmStamp.coldStartDone, false, 'a normal attempt leaves the cold-start unl
 // the flag survives persistence; an old save without it defaults false
 A.eq(S.normalize(JSON.parse(JSON.stringify(csSpent)), T0).coldStartDone, true, 'coldStartDone round-trips normalize');
 A.eq(S.normalize({ v: 1 }, T0).coldStartDone, false, 'an old save without the flag hydrates to false (back-compat)');
-// a full recipe shelf blocks even the cold-start (never a 4th undecided draft)
+// a full recipe shelf blocks even the cold-start (never one past the recipe cap)
 let csFull = S.noteRun(S.fresh(T0), T0);
-for (let i = 0; i < S.MAX_LIVE; i++) csFull = S.stage(csFull, { id: 'cr' + i, kind: 'recipe', draft: { name: 'z' + i }, why: 'w', fingerprint: 'fp-z' + i }, { now: T0 });
+for (let i = 0; i < S.liveCap('recipe'); i++) csFull = S.stage(csFull, { id: 'cr' + i, kind: 'recipe', draft: { name: 'z' + i }, why: 'w', fingerprint: 'fp-z' + i }, { now: T0 });
 csFull = S.noteRun(csFull, T0);
 A.eq(S.decide(csFull, { now: T0 + GAP + 1, warm: false, dossierWarm: true }).binding, 'full', 'a full recipe shelf binds the cold-start at full');
 
@@ -260,8 +271,8 @@ A.eq(noop.staged.length, swept.staged.length, 'a sweep with nothing stale drops 
 A.eq(noop.ledger.length, swept.ledger.length, 'a no-op sweep writes no ledger note');
 // decide() un-wedges: both shelves full of STALE drafts bind at 'full'; after the sweep clears them it fires again.
 let wedged = S.fresh(T0);
-for (let i = 0; i < S.MAX_LIVE; i++) wedged = S.stage(wedged, { id: 'wp' + i, kind: 'prospect', draft: { name: 'p' + i }, why: 'w', fingerprint: 'fp-wp' + i }, { now: T0 });
-for (let i = 0; i < S.MAX_LIVE; i++) wedged = S.stage(wedged, { id: 'wr' + i, kind: 'recipe', draft: { name: 'r' + i }, why: 'w', fingerprint: 'fp-wr' + i }, { now: T0 });
+for (let i = 0; i < S.liveCap('prospect'); i++) wedged = S.stage(wedged, { id: 'wp' + i, kind: 'prospect', draft: { name: 'p' + i }, why: 'w', fingerprint: 'fp-wp' + i }, { now: T0 });
+for (let i = 0; i < S.liveCap('recipe'); i++) wedged = S.stage(wedged, { id: 'wr' + i, kind: 'recipe', draft: { name: 'r' + i }, why: 'w', fingerprint: 'fp-wr' + i }, { now: T0 });
 for (let i = 0; i < S.MINT_EVERY_RUNS; i++) wedged = S.noteRun(wedged, T0);
 const wedgeAt = T0 + S.DRAFT_TTL_MS + S.MINT_MIN_GAP_MS + 1;
 A.eq(S.decide(wedged, { now: wedgeAt, warm: true }).binding, 'full', 'stale drafts filling both shelves wedge minting at binding:full');
@@ -290,7 +301,11 @@ A.eq(S.matchArchetype(ARCH, { topics: [{ label: 'gpu price tracking', weight: 0.
 A.eq(S.matchArchetype(ARCH, { topics: [] }), null, 'no learned topics -> no archetype match');
 A.eq(S.matchArchetype(ARCH, { topics: [{ label: 'daily general work', weight: 2, count: 9 }] }), null, 'generic-word topics are stopworded, never a match');
 // dedup: an archetype the Commander already HAS (roster/custom/staged name) is never re-pitched…
-A.eq(S.matchArchetype(ARCH, { topics: priceTopics, existingNames: ['Broker'] }), null, 'an already-held archetype is never re-pitched (name dedup, case-insensitive)');
+// derived from the LIVE catalog, never a hardcoded display name: the dedup is name-based, so a class rename
+// (2026-08-03 renamed broker -> "Deal Finder") would otherwise silently turn this assertion into a no-op.
+// Lower-cased on purpose — the dedup must be case-insensitive.
+const brokerName = ARCH.find(a => a.id === 'broker').name;
+A.eq(S.matchArchetype(ARCH, { topics: priceTopics, existingNames: [brokerName.toLowerCase()] }), null, 'an already-held archetype is never re-pitched (name dedup, case-insensitive)');
 // …and a dismissed shape stays dead (fingerprint denylist, same 0.6 overlap rule as the LLM path).
 const deadFp = S.fingerprint('Broker Compare deals & call the buy');
 A.eq(S.matchArchetype(ARCH, { topics: priceTopics, denylist: [deadFp] }), null, 'a dismissed archetype shape never re-mints');

@@ -15,6 +15,13 @@ export async function runShoot({ port, cdpPort, outDir, win = '1440,900', only =
   const PROFILE = join(outDir, '_profile');
   mkdirSync(outDir, { recursive: true });
 
+  // OUT is intentionally reused by `golden:bless` and every later `golden` check, but the browser
+  // profile must not be. Keeping `_profile` carried term geometry/local UI state from one sweep
+  // into the next, so the AGENTS dossier alternated between its fresh centred position and a
+  // persisted cascade slot at the exact same commit. Start from the fresh-profile contract the
+  // driver already documents; screenshots remain in OUT and are overwritten normally.
+  try { rmSync(PROFILE, { recursive: true, force: true }); } catch {}
+
   // 1. Ensure a SEEDED sidecar is serving the port (reuse if up, else boot one we own).
   let ownSidecar = null;
   if (await isUp(APP_URL)) {
@@ -54,6 +61,14 @@ export async function runShoot({ port, cdpPort, outDir, win = '1440,900', only =
       await capture(cdp, outDir, '_FAILED-boot');
       exitCode = 2;
     } else {
+      // Golden/shoot frames are layout evidence, not samples of the idle-wander simulation. Freeze
+      // the already-painted world once the floor is ready so translucent panels do not inherit a
+      // different agent position from scheduler speed. Panel code can still repaint explicitly.
+      try { await evalJS(cdp, `(() => {
+        if (document.body) document.body.classList.add('no-flicker');
+        if (typeof World !== 'undefined' && World.stop) { World.stop(); return 'world-frozen'; }
+        return 'world-unavailable';
+      })()`); } catch {}
       // 4. Capture every state.
       const states = buildStates();
       for (const st of states) {

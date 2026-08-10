@@ -53,15 +53,24 @@
     [/\b\d{8,10}:[A-Za-z0-9_\-]{30,}\b/g, '[redacted-token]'],          // Telegram bot token (this app uses these)
     [/sk-[A-Za-z0-9_\-]{16,}/g, '[redacted-key]'],                      // generic OpenAI-style (broad — keep last)
     [/\bBearer\s+[A-Za-z0-9._\-]{12,}/g, 'Bearer [redacted-key]'],      // Authorization: Bearer <token>
+    // Synthetic/local connectors frequently use ordinary canaries rather than vendor-shaped tokens. Scrub
+    // explicit credential assignments too, including URL query strings, so upstream diagnostics cannot turn a
+    // `password=...` or `client_secret: ...` value into a credential disclosure.
+    [/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|authorization)\b(\s*[=:]\s*)(?!\[redacted-)[^\s&,;"']{4,}/gi, '$1$2[redacted-secret]'],
   ];
   function redactStr(s) {
     for (let i = 0; i < SECRET_PATTERNS.length; i++) s = s.replace(SECRET_PATTERNS[i][0], SECRET_PATTERNS[i][1]);
     return s;
   }
+  const SECRET_FIELD = /^(?:api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret|password|passwd|authorization|cookie|credentials?)$/i;
   function redact(x) {
     if (typeof x === 'string') return redactStr(x);
     if (Array.isArray(x)) return x.map(redact);
-    if (x && typeof x === 'object') { const o = {}; for (const k in x) o[k] = redact(x[k]); return o; }
+    if (x && typeof x === 'object') {
+      const o = {};
+      for (const k in x) o[k] = SECRET_FIELD.test(k) ? '[redacted-secret]' : redact(x[k]);
+      return o;
+    }
     return x;
   }
 

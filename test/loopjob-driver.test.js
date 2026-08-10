@@ -69,7 +69,7 @@ function world(opts) {
     // let the driver's pre-run context hop settle (only project-shaped loops take it)
     flush: () => new Promise(r => setImmediate(() => setImmediate(r))),
     // resolve the oldest in-flight run, then let the settle microtasks drain
-    finish: (res) => { const p = pending.shift(); p.resolve(res); return new Promise(r => setImmediate(r)); },
+    finish: (res) => { const p = pending.shift(); p.resolve(Object.assign({ reason: 'done' }, res)); return new Promise(r => setImmediate(r)); },
     fail: (err) => { const p = pending.shift(); p.reject(err); return new Promise(r => setImmediate(r)); },
     seed: (spec) => { loops = S.createLoop(loops, Object.assign({ id: 'l1', objective: 'find bugs' }, spec), { now: T0 }); }
   };
@@ -131,6 +131,28 @@ function world(opts) {
     A.eq(w.tick(T0 + MIN).fired, 1, 'once the store recovers, the loop fires normally');
   }
 
+  // ---- 2b. a failed SETTLEMENT persist stays fenced and retries without repeating the run ----------------
+  {
+    let failing = false;
+    const w = world({ persistFails: () => failing });
+    w.seed({});
+    w.tick(T0);
+    A.eq(w.calls.length, 1, 'the persistence-boundary fixture launches one real iteration');
+
+    failing = true;
+    await w.finish({ text: 'completed before the disk write failed', usd: 0.01 });
+    A.eq(w.loop().iterations[0].outcome, 'running', 'a rejected settlement write never pretends the outcome persisted');
+    A.eq(w.drv.leases.size, 1, 'the lease remains as a duplicate-execution fence while settlement is pending');
+    A.ok(w.ledger.some(e => e.kind === 'defer' && e.reason === 'settlement-persist-failed'),
+      'the persistence failure is visible in the autonomy ledger');
+
+    failing = false;
+    A.eq(w.tick(T0 + MIN).fired, 0, 'the recovery tick persists the pending result without starting another run');
+    A.eq(w.calls.length, 1, 'settlement recovery never repeats the provider/tool side effects');
+    A.eq(w.loop().iterations[0].outcome, 'candidate', 'the originally completed result becomes durable after recovery');
+    A.eq(w.drv.leases.size, 0, 'the duplicate fence releases only after the settlement write succeeds');
+  }
+
   // ---- 3. INVARIANT: the VERDICT is the trigger ----------------------------------------------------------
   {
     const w = world(); w.seed({ queueCap: 1 });
@@ -186,6 +208,12 @@ function world(opts) {
     A.eq(w2.loop().iterations[0].outcome, 'cancelled', 'an aborted iteration is cancelled, not a failure');
     A.eq(w2.loop().failStreak, 0, 'so it costs no failure streak');
 
+    // a resolved run can still be incomplete (budget/max_iters/refusal/empty); only done is a candidate
+    const wb = world(); wb.seed({}); wb.tick(T0);
+    await wb.finish({ reason: 'budget', text: 'partial work' });
+    A.eq(wb.loop().iterations[0].outcome, 'failed', 'a budget-ended run is not parked as an approvable candidate');
+    A.ok(/budget/.test(wb.loop().iterations[0].error || ''), 'the failed iteration names its terminal reason');
+
     // a run host that throws synchronously
     const w3 = world({ runThrows: true }); w3.seed({});
     w3.tick(T0);
@@ -198,6 +226,22 @@ function world(opts) {
     await w4.finish({ text: 'I fixed everything' });
     A.eq(w4.loop().iterations[0].outcome, 'failed', 'a failed harvest is a failed iteration, not a silent success');
     A.ok(/dirty tree/.test(w4.loop().iterations[0].error), 'and names why the work could not land');
+  }
+
+  // ---- 5b. a failed settlement persist retries the receipt, never the completed iteration ----------------
+  {
+    let failing = false;
+    const w = world({ persistFails: () => failing });
+    w.seed({ queueCap: 1 }); w.tick(T0);
+    failing = true;
+    await w.finish({ text: 'completed once' });
+    A.eq(w.loop().iterations[0].outcome, 'running', 'an unpersisted settlement is not exposed as completed');
+    A.eq(w.drv.leases.size, 1, 'the lease retains the pending settlement');
+    failing = false;
+    w.tick(T0 + MIN);
+    A.eq(w.calls.length, 1, 'settlement recovery does not execute the iteration again');
+    A.eq(w.loop().iterations[0].outcome, 'candidate', 'the original outcome lands after persistence recovers');
+    A.eq(w.drv.leases.size, 0, 'the lease releases only after durable settlement');
   }
 
   // ---- 6. a deleted agent stops the loop instead of firing under a ghost ---------------------------------
@@ -418,6 +462,72 @@ function world(opts) {
     // a checked loop settles through the async check chain, so let it drain before asserting the announcement
     w2.tick(T0); await w2.flush(); await w2.finish({ text: "fixed" }); await w2.flush();
     A.eq(stops2, ["done"], "meeting the objective announces as done");
+  }
+
+  /* ---- 16. ENDURANCE: E-STOP is a durable terminal even when the run host ignores AbortSignal ---------
+     A provider/tool can wedge after receiving abort. Cancellation authority belongs to the host, so the
+     loop must release its claim and truthful RUNNING telemetry immediately; a late provider resolution must
+     not harvest or rewrite the already-cancelled iteration. */
+  {
+    let harvests = 0;
+    const tracked = new Map();
+    const w = world({
+      harvest: () => { harvests++; return { text: 'late work', title: 'late work' }; },
+      trackRun: (runId, agentId, ac) => tracked.set(runId, { agentId, ac }),
+      untrackRun: (runId) => tracked.delete(runId)
+    });
+    w.seed({});
+    w.tick(T0);
+    A.eq(w.drv.abortAllLeases(), 1, 'E-STOP reaches the hung iteration');
+    A.eq(w.loop().iterations[0].outcome, 'cancelled', 'E-STOP durably settles immediately even while the provider promise is still hung');
+    A.eq(w.loop().fireClaim, null, 'the durable claim is released immediately on E-STOP');
+    A.eq(w.drv.leases.size, 0, 'the in-memory lease is released immediately on E-STOP');
+    A.eq(tracked.size, 0, 'host RUNNING telemetry clears immediately on E-STOP');
+
+    await w.finish({ text: 'provider ignored abort and returned late' });
+    A.eq(w.loop().iterations[0].outcome, 'cancelled', 'a late provider resolution cannot rewrite the cancelled outcome');
+    A.eq(harvests, 0, 'late work is never harvested after cancellation');
+  }
+
+  /* ---- 17. ENDURANCE: a pre-restart running pass never auto-replays uncertain side effects ------------
+     The durable fire claim proves that a pass existed, not whether its last tool effect happened. On a new
+     driver there is no live lease that can own that claim. The first tick must reconcile it into an explicit
+     recovery pause; only the Commander's existing RESUME action may start a fresh pass. */
+  {
+    let loops = S.createLoop([], { id: 'l1', objective: 'multi-step work', queueCap: 5 }, { now: T0 });
+    loops = S.startIteration(S.claimFire(loops, 'l1', { now: T0 }), 'l1', { runId: 'pre-restart', now: T0 });
+    const restarted = world({ loops, maxRunMs: 10 * MIN });
+
+    const first = restarted.tick(T0 + 30 * MIN);
+    A.eq(first.fired, 0, 'restart reconciliation never auto-replays a pass with an unknown side-effect boundary');
+    A.eq(restarted.calls.length, 0, 'no provider/tool work is duplicated during restart reconciliation');
+    A.eq(restarted.loop().iterations[0].outcome, 'cancelled', 'the abandoned ledger row no longer lies RUNNING');
+    A.eq(restarted.loop().state, 'paused', 'the loop pauses for explicit recovery review');
+    A.ok(/restart|interrupted/i.test(restarted.loop().stopReason || ''), 'the pause names the restart interruption');
+
+    const resumedLoops = S.resumeLoop(restarted.loops, 'l1', { now: T0 + 31 * MIN });
+    const resumed = world({ loops: resumedLoops, maxRunMs: 10 * MIN });
+    A.eq(resumed.tick(T0 + 31 * MIN).fired, 1, 'the existing explicit RESUME action starts exactly one fresh pass');
+    A.eq(resumed.calls.length, 1, 'resume produces one replacement run, not a replay storm');
+    A.eq(resumed.loop().iterations.filter(it => it.outcome === 'running').length, 1, 'only the replacement pass is RUNNING');
+  }
+
+  /* ---- 18. ENDURANCE: cancelling one standing loop cannot kill siblings or revive after PAUSE ---------- */
+  {
+    let loops = S.createLoop([], { id: 'l1', objective: 'first' }, { now: T0 });
+    loops = S.createLoop(loops, { id: 'l2', objective: 'second' }, { now: T0 });
+    const w = world({ loops, maxParallel: 2 });
+    w.tick(T0);
+    A.eq(w.drv.abortLease('l1', 'paused by the Commander'), true, 'the targeted loop cancellation is accepted');
+    A.eq(S.getLoop(w.loops, 'l1').iterations[0].outcome, 'cancelled', 'the targeted pass settles cancelled immediately');
+    A.eq(S.getLoop(w.loops, 'l2').iterations[0].outcome, 'running', 'a sibling pass remains live');
+    A.eq(w.drv.leases.size, 1, 'only the sibling lease remains');
+
+    await w.finish({ text: 'late first result' });
+    A.eq(S.getLoop(w.loops, 'l1').iterations[0].outcome, 'cancelled', 'the targeted pass cannot revive on a late result');
+    await w.finish({ text: 'second completed' });
+    A.eq(S.getLoop(w.loops, 'l2').iterations[0].outcome, 'candidate', 'the sibling still completes normally');
+    A.eq(w.drv.abortLease('missing'), false, 'targeted cancellation is idempotent for an absent lease');
   }
 
   A.report('loopjob-driver (LOOP tick driver)');

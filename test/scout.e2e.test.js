@@ -28,10 +28,13 @@ const os = require('os');
 const fs = require('fs');
 const { spawn } = require('child_process');
 const { bootToken } = require('./_httpToken.js');
+const Specialties = require('../shared/specialties.js');
 
 const HOST = '127.0.0.1';
 const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+const BROKER = Specialties.ARCHETYPES.find(spec => spec && spec.id === 'broker');
+A.ok(BROKER && BROKER.name, 'the canonical broker archetype is present in the live catalog');
 
 /* ---- the mock OpenRouter: routes on the prompt's marker (extraction vs recipe vs the main run) ---- */
 function startMock(replies) {
@@ -269,13 +272,13 @@ const QUIET = { SKYNET_THREAD_MINE: '0', SKYNET_SKILL_REVIEW: '0', SKYNET_SKILL_
         'an archetype prospect staged by the live scout cycle');
       const draft = s.staged.find(it => it.kind === 'prospect');
       A.eq(draft.draft.archetypeId, 'broker', 'ARCHETYPE MINT: the warm price-hunting interest staged the Broker archetype');
-      A.eq(draft.draft.name, 'Broker', 'the staged draft is the archetype itself, not an LLM invention');
+      A.eq(draft.draft.name, BROKER.name, 'the staged draft uses the archetype\'s current canonical name, not an LLM invention');
       A.ok(Array.isArray(draft.draft.kit) && draft.draft.kit.length > 0 && Array.isArray(draft.draft.skills) && draft.draft.skills.length > 0,
         'the staged archetype carries its FULL loadout (kit + skills)');
       A.ok(draft.draft.purpose.length > 0 && draft.draft.manual.length > 0, 'the staged archetype carries its purpose + manual (nothing half-authored)');
       A.ok(draft.why.indexOf('gpu price tracking') >= 0 && draft.why.indexOf('5×') >= 0,
         'the WHY names the real topic and its real count (truthful telemetry): ' + draft.why);
-      A.ok((s.ledger || []).some(e => e.kind === 'prospect' && e.outcome === 'staged' && e.title === 'Broker'), 'the ledger recorded the archetype mint');
+      A.ok((s.ledger || []).some(e => e.kind === 'prospect' && e.outcome === 'staged' && e.title === BROKER.name), 'the ledger recorded the archetype mint under its canonical name');
       A.eq(mock.calls.indexOf('recruiter'), -1, 'ZERO SPEND: the LLM prospect authorship pass never fired for an archetype mint');
       A.eq(mock.calls.indexOf('extraction'), -1, 'the gap-suppressed extraction pass never fired (the mint was pure state)');
 

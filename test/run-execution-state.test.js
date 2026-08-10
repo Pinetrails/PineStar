@@ -32,13 +32,48 @@ A.ok(bounded.content.startsWith('[tool output omitted'), 'later output is replac
 state.resetToolBytes();
 A.eq(state.toolBytes(), 0, 'compaction can reset the output budget');
 
+const receiptState = makeRunExecutionState();
+receiptState.boundToolResult({ content: 'a'.repeat(90), summary: 'read 90 chars' }, 100);
+const lateCommand = { content: 'test details\nPASS\n[exit 0]', summary: 'exit 0 (42ms)', parkedPath: '.output/shell.exec-run-0.txt', outputChars: 26, outputBytes: 26 };
+A.ok(receiptState.willBoundToolResult(lateCommand, 100), 'a later result predicts the run-wide clip before its bytes are lost');
+const receipt = receiptState.boundToolResult(lateCommand, 100);
+A.ok(receipt.outputBounded, 'a clipped result is explicitly marked at the host boundary');
+A.ok(/exit 0 \(42ms\)/.test(receipt.content), 'the clipped result retains the authoritative tool summary');
+A.ok(/full 26-character \/ 26-byte UTF-8 output was saved/.test(receipt.content), 'the receipt reports exact pre-clamp character and byte sizes');
+A.ok(/\.output\/shell\.exec-run-0\.txt/.test(receipt.content), 'the receipt points at the durable full output');
+const afterReceipt = receiptState.boundToolResult({ content: 'more details', summary: 'verify passed', parkedPath: '.output/verify-run-1.txt', outputChars: 12 }, 100);
+A.ok(/verify passed/.test(afterReceipt.content), 'even an exhausted run returns evidence instead of a generic suppression message');
+A.ok(/verify-run-1\.txt/.test(afterReceipt.content), 'an exhausted run keeps the recovery path actionable');
+
 A.eq(state.checkpointTurn(), 0, 'checkpoint sequence starts at zero');
 A.eq(state.advanceCheckpoint(), 1, 'checkpoint sequence advances explicitly');
 A.ok(!state.journalStarted(), 'journal starts false');
 state.startJournal();
 A.ok(state.journalStarted(), 'journal start latches true');
+const journalStop = state.failJournal(new Error('disk full after tool execution'));
+A.ok(state.journalFailed(), 'a journal boundary failure latches for the rest of the run');
+A.ok(journalStop.isError && journalStop.control && journalStop.control.final && journalStop.control.reason === 'error',
+  'journal failure returns a host-terminal error result instead of allowing a done synthesis');
+A.ok(/requires review/i.test(journalStop.content), 'the model-visible result names the uncertain outcome');
 state.observeArtifact({ toolName: 'fs.write' });
 A.eq(state.artifactList(), [{ toolName: 'fs.write' }], 'artifact collector is owned by the run state');
+
+A.ok(state.consumeToolCall(2), 'first task-bounded tool call is admitted');
+A.ok(state.consumeToolCall(2), 'second task-bounded tool call is admitted');
+A.ok(!state.consumeToolCall(2), 'task-bounded tool calls stop at the exact cap');
+A.eq(state.toolCallsStarted(), 2, 'tool-call budget counter is owned by the run state');
+state.observeToolEvent('agent.tool_call', { callId: 'call-1', name: 'web_fetch' }, 100);
+state.observeToolEvent('agent.tool_result', { callId: 'call-1', ok: false, isError: true, ms: 25, summary: 'x'.repeat(300) }, 125);
+const trace = state.toolTraceList();
+A.eq(trace[0].name, 'web_fetch', 'tool timing records the actual tool name');
+A.eq(trace[0].ms, 25, 'tool timing records measured milliseconds');
+A.eq(trace[0].endedAt, 125, 'tool timing derives a stable end time from the measured duration');
+A.ok(trace[0].summary.length <= 240, 'tool timing summaries are bounded');
+trace[0].name = 'mutated';
+A.eq(state.toolTraceList()[0].name, 'web_fetch', 'tool timing snapshots cannot mutate run state');
+const clocked = makeRunExecutionState({ now: () => 777 });
+clocked.observeToolEvent('agent.tool_call', { callId: 'clocked', name: 'verify.run' });
+A.eq(clocked.toolTraceList()[0].startedAt, 777, 'tool timing uses the injected run clock');
 
 const clean = makeRunExecutionState();
 A.eq(clean.latchTaint('browser.read'), 'browser.read', 'first runtime taint is retained');

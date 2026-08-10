@@ -64,7 +64,7 @@
         + 'accomplished); this NEVER marks it complete — the Commander must confirm. Quests that complete '
         + 'mechanically (a run finishing, a capability going live, a deliverable existing) cannot be attested — leave '
         + 'them to the harness. op:"mint" creates a NEW personalized quest for the Commander (pass title, a completion '
-        + 'contract, and groundedIn citing the dossier/memory fact that motivated it); every quest MUST declare a '
+        + 'contract, domain, and groundedIn citing the dossier/memory fact that motivated it); every quest MUST declare a '
         + 'contract. Never claim a quest done in prose — use this tool.',
       schema: {
         type: 'object', required: ['op'], properties: {
@@ -76,6 +76,7 @@
           title: { type: 'string' },         // mint: the new quest's title
           desc: { type: 'string' },          // mint: optional description
           reward: { type: 'string' },        // mint: the REAL outcome it unlocks (never points)
+          domain: { type: 'string', enum: ['building', 'research', 'writing', 'growth', 'operations', 'creative', 'planning', 'support'] },
           contract: {                        // mint: the completion contract (REQUIRED by the store)
             type: 'object', properties: {
               type: { type: 'string', enum: ['prop', 'run', 'fact', 'artifact', 'attest'] },
@@ -112,7 +113,7 @@
           // completeByContract('run', runId) then completes it on 'done' (non-done stalls it). This is the ONLY
           // binding path for a STATION-WIDE run quest (the prompt-injection seam binds only agent-OWNED ones —
           // an unrelated agent's next run must never claim a shared quest it did no work on). Fail-open.
-          if (mine.contract && mine.contract.type === 'run' && runId) { try { await store.bindRun(id, runId); } catch (_) {} }
+          if (mine.contract && mine.contract.type === 'run' && runId) { try { await store.bindRun(id, runId, agentId); } catch (_) {} }
           return { content: 'Ticked step "' + stepKey + '" on ' + id + '.', summary: 'progress ' + id };
         }
 
@@ -142,6 +143,8 @@
           if (runId && (mintsByRun.get(runId) || 0) >= MINTS_PER_RUN) {
             return { content: 'one quest per run — the Commander\'s log is not a backlog dump. You already minted a quest this run.', summary: 'mint cap' };
           }
+          let activeGoal = null;
+          try { activeGoal = typeof deps.activeGoal === 'function' ? deps.activeGoal() : null; } catch (_) { activeGoal = null; }
           const r = await store.mint({
             title: args.title,
             desc: args.desc,
@@ -149,6 +152,9 @@
             contract: args.contract,
             steps: args.steps,
             groundedIn: args.groundedIn,
+            domain: args.domain,
+            goalId: activeGoal && activeGoal.id,
+            milestoneId: activeGoal && activeGoal.milestoneId,
             kind: 'generated',
             agentId: agentId,
             createdBy: 'agent:' + agentId

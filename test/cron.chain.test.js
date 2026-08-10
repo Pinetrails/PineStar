@@ -20,7 +20,7 @@ function setup(opts) {
   opts = opts || {};
   const clock = makeClock(T0);
   const schedule = cron.parseSchedule('every 1m', T0);
-  let store = [cronStore.makeJob({ id: 'j1', prompt: 'research the thing', agentId: 'researcher', schedule }, { id: 'j1', now: T0 })];
+  let store = [cronStore.makeJob({ id: 'j1', prompt: 'research the thing', agentId: 'researcher', schedule, unattendedGrants: opts.grants, runsLine: opts.runsLine }, { id: 'j1', now: T0 })];
   const events = [], runs = [], chainCalls = [];
   let idN = 0;
   const driver = makeCronDriver({
@@ -29,7 +29,8 @@ function setup(opts) {
     emit: (name, payload) => events.push({ name, payload }),
     newId: () => 'run-' + (++idN), newAbort: () => new AbortController(), now: () => clock.now(),
     getKey: () => 'sk-test', defaultModel: 'test/model', persona: 'PERSONA', maxRunMs: 480000,
-    advanceChain: opts.advanceChain ? (o) => { chainCalls.push(o); return opts.advanceChain(o); } : undefined
+    advanceChain: opts.advanceChain ? (o) => { chainCalls.push(o); return opts.advanceChain(o); } : undefined,
+    stageBriefFor: opts.stageBriefFor
   });
   return { driver, clock, events, runs, chainCalls, getJob: (id) => cronStore.getJob(store, id) };
 }
@@ -84,6 +85,54 @@ async function fireAndSettle(s, reply) {
     A.eq(lastOf(s.events, 'cron.result').outcome, 'ok', 'an empty line never blanks the routine');
   }
 
+  /* ---- GRANTS NEVER FLOW DOWN A LINE (2026-08-04): the unattended grant the Commander recorded names ONE
+     agent — the routine's own dock. Stage one runs with it; every downstream hop runs UNGRANTED, so drawing
+     a belt to another dock can never silently extend terminal/verify authority onto a different agent. ---- */
+  {
+    const s = setup({ grants: ['workbench'], advanceChain: async () => ({ text: 'line done', hops: [{ agentId: 'writer' }], stopped: null }) });
+    await fireAndSettle(s, 'stage one output');
+    A.eq(s.runs[0].opts.unattendedGrants, ['workbench'], "stage one (the routine's own agent) keeps the recorded grant");
+    A.eq(s.chainCalls.length, 1, 'the line still advanced');
+    A.eq(s.chainCalls[0].unattendedGrants, [], 'the advanceChain seam is handed an EMPTY grants list — hops never inherit authority');
+    A.eq(lastOf(s.events, 'cron.result').outcome, 'ok', 'and the routine still settles ok');
+  }
+
+  /* ---- THE DOCK'S STANDING BRIEF RIDES A SCHEDULED ENTRY RUN (inbox-trigger, 2026-08-05). A routine's
+     fire was the ONE entry-run path that never briefed its dock: the same agent ran WITH its standing brief
+     from a routed message (hub.js) and WITHOUT it from a routine. The driver now asks the injected
+     stageBriefFor(agentId) — index.js wires router.stageBrief, the same seam the hub and chain handoffs
+     read — and appends the brief to the run's SYSTEM under the hub's exact section header. Prompt text
+     only: grants/tools/messages are untouched. ---- */
+  {
+    const s = setup({ stageBriefFor: (aid) => (aid === 'researcher' ? 'Dig three primary sources, cite them.' : null) });
+    await fireAndSettle(s, 'stage one output');
+    A.eq(s.runs[0].opts.system, 'PERSONA\n\nYOUR STANDING BRIEF FOR THIS STATION:\nDig three primary sources, cite them.',
+      "the entry run's system carries the dock's standing brief under the hub's exact section header");
+    A.eq(s.runs[0].opts.messages[0].content, 'research the thing', 'the brief rides SYSTEM — the user message is untouched');
+    A.eq(s.runs[0].opts.unattendedGrants, [], 'and a brief never smuggles grants');
+    A.eq(lastOf(s.events, 'cron.result').outcome, 'ok', 'the routine settles ok');
+  }
+
+  /* ---- no seam / no brief -> the exact pre-brief system string (byte-identical) ---- */
+  {
+    const s = setup({});
+    await fireAndSettle(s, 'plain');
+    A.eq(s.runs[0].opts.system, 'PERSONA', 'no stageBriefFor seam -> pre-brief system, byte-identical');
+  }
+  {
+    const s = setup({ stageBriefFor: () => null });
+    await fireAndSettle(s, 'plain');
+    A.eq(s.runs[0].opts.system, 'PERSONA', 'a seam with no brief for this dock -> pre-brief system, byte-identical');
+  }
+
+  /* ---- a THROWING brief seam never kills the fire (a brief is an enhancement, not a gate) ---- */
+  {
+    const s = setup({ stageBriefFor: () => { throw new Error('boom'); } });
+    await fireAndSettle(s, 'still works');
+    A.eq(s.runs[0].opts.system, 'PERSONA', 'a throwing brief seam degrades to the pre-brief system');
+    A.eq(lastOf(s.events, 'cron.result').outcome, 'ok', 'and the routine still settles ok');
+  }
+
   /* ---- NO advanceChain injected = today's single-run routine, untouched ---- */
   {
     const s = setup({});
@@ -102,6 +151,88 @@ async function fireAndSettle(s, reply) {
     await flush(); await flush(); await flush();
     A.eq(s.chainCalls.length, 0, 'a failed stage one hands nothing downstream');
     A.eq(lastOf(s.events, 'cron.result').outcome, 'failed', 'and the routine reports the failure honestly');
+  }
+
+  /* ---- ONLY A ROUTINE THAT BELONGS TO THE LINE RUNS THE LINE ----
+     Work belongs to a line (Andrew's ruling, 2026-08-07). Deciding that from the DOCK alone was a money bug:
+     a routine created months before the workflow existed started buying a run per drawn stage the instant its
+     agent was crewed onto a line — and the text it delivered became the LAST stage's output instead of its own
+     answer. So the intent is durable and OPT-IN (`runsLine` on the job record, set only by the INBOX trigger
+     zone's create), and its ABSENCE is terminal. Wired here exactly as the composition root does
+     (sidecar/index.js: `lineId: o.runsLine === true ? router.lineOfAgent(o.agentId) : null`), over the REAL
+     router and the REAL chain runner, so this proves the semantics rather than a mock's opinion of them. */
+  {
+    const Pipeline = require('../frontend/app/pipeline.js');
+    const { makeRouter } = require('../sidecar/routing/router.js');
+    const { makeChainRunner } = require('../sidecar/routing/chain.js');
+    const belt = (x, y, dir) => ({ x, y, dir });
+    const router = makeRouter();
+    A.ok(router.setPlan(Pipeline.compileRoutingPlan({
+      props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+              { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'researcher' },
+              { id: 'b2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer' }],
+      belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E')]
+    })).ok, 'the routine floor deploys');
+
+    const hopRuns = [];
+    const chain = makeChainRunner({
+      nextAgent: (a, ctx) => router.chainNext(a, ctx),
+      runAgent: async (h) => { hopRuns.push(h.agentId); return { text: h.agentId + ' output' }; },
+      now: () => 0
+    });
+    // the EXACT shape index.js injects, quoted so the two cannot drift apart unnoticed
+    const advanceChain = (o) => chain.advance({
+      agentId: o.agentId, text: o.text, originalText: o.originalText, signal: o.signal,
+      lineId: o.runsLine === true ? router.lineOfAgent(o.agentId) : null
+    });
+
+    /* A PRE-EXISTING ROUTINE AT A DOCKED AGENT SPENDS EXACTLY ONE PROVIDER CALL. This is the money case:
+       the job was created before the line was ever drawn, so it carries no marker. Its own run happens; the
+       drawn stages downstream do NOT, and the answer delivered is the routine's own. */
+    {
+      const s = setup({ advanceChain });
+      A.eq(s.getJob('j1').runsLine, false, 'a routine created without the marker is TERMINAL by default');
+      await fireAndSettle(s, 'raw findings about the thing');
+      A.eq(s.runs.length, 1, 'PROVIDER CALLS: exactly ONE — the routine\'s own run');
+      A.eq(s.chainCalls[0].runsLine, false, 'the driver hands the seam the durable flag, never a guess from the dock');
+      A.eq(hopRuns.length, 0, '…and ZERO downstream: a routine that predates the workflow never buys its stages');
+      A.eq(lastOf(s.events, 'cron.result').outcome, 'ok', 'the routine still settles ok');
+      A.eq(s.getJob('j1').lastOutput, 'raw findings about the thing', "and DELIVERS ITS OWN answer, not a later stage's");
+    }
+
+    /* THE SAME FLOOR, THE SAME DOCK — with the marker the Commander set by creating it from the line's
+       INBOX trigger zone. Now the routine IS the line's trigger and the drawn stages run. */
+    {
+      hopRuns.length = 0;
+      const s = setup({ advanceChain, runsLine: true });
+      A.eq(s.getJob('j1').runsLine, true, 'the INBOX-created routine carries the durable marker');
+      await fireAndSettle(s, 'raw findings about the thing');
+      A.eq(s.chainCalls[0].runsLine, true, 'the driver passes it through');
+      A.eq(hopRuns, ['writer'], "a routine that BELONGS to the line runs that line's next stage");
+      A.eq(s.getJob('j1').lastOutput, 'writer output', "and the line's answer is what the routine delivers");
+    }
+
+    // a MARKED routine at an agent that crews NO dock: no line to run, and nothing downstream is bought
+    hopRuns.length = 0;
+    A.eq(router.lineOfAgent('freelancer'), null, 'an undocked agent belongs to no line');
+    const off = await chain.advance({ agentId: 'freelancer', text: 'raw findings', lineId: router.lineOfAgent('freelancer') });
+    A.eq(off.hops.length, 0, 'so even a marked routine there is terminal');
+    A.eq(hopRuns.length, 0, 'PROVIDER CALLS: zero — a routine can never spend on a line it is not on');
+  }
+
+  /* ---- THE MARKER IS DURABLE AND CANNOT BE FAKED BY A TRUTHY VALUE ---- */
+  {
+    const schedule = cron.parseSchedule('every 1m', T0);
+    const mk = v => cronStore.makeJob({ id: 'j', prompt: 'p', agentId: 'a', schedule, runsLine: v }, { id: 'j', now: T0 });
+    A.eq(mk(undefined).runsLine, false, 'absent -> false (a routine made anywhere else stays terminal)');
+    A.eq(mk('yes').runsLine, false, 'a truthy STRING cannot buy a work line');
+    A.eq(mk(1).runsLine, false, 'nor can a truthy number');
+    A.eq(mk(true).runsLine, true, 'only a literal true opts in');
+    let jobs = [mk(undefined)];
+    jobs = cronStore.updateJob(jobs, 'j', { runsLine: true }, { now: T0 });
+    A.eq(cronStore.getJob(jobs, 'j').runsLine, true, 'and it is an EDITABLE field, so the console can turn it on');
+    jobs = cronStore.updateJob(jobs, 'j', { runsLine: 'nope' }, { now: T0 });
+    A.eq(cronStore.getJob(jobs, 'j').runsLine, false, 'a patch is re-normalized through the same === true rule');
   }
 
   A.report('cron.chain');

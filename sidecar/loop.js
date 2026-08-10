@@ -199,6 +199,7 @@
   async function executeCalls(calls, dispatch, capCtx, emit, meta) {
     const results = [];
     let finalControl = null;
+    let stopToolsControl = null;
 
     /* CONCURRENT PATH. The EMIT STREAM STAYS IN CALL ORDER even though the work does not: the loop advertises
        "identical calls -> identical emits", the war-room renders off that stream, and a shuffled order would
@@ -214,7 +215,13 @@
         const t0 = meta.clock ? meta.clock.now() : 0;
         let r;
         try { r = await dispatch(c, capCtx); }
-        catch (e) { r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' }; }
+        catch (e) {
+          // The host marks a dispatch fatal when it has durably recorded a tool intent but cannot durably
+          // establish the outcome. Converting that boundary loss into an ordinary tool error would let the
+          // model continue and claim success over an unknown side effect.
+          if (e && e.fatalToRun === true) throw e;
+          r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' };
+        }
         r = r || { ok: false, isError: true, content: 'tool returned nothing', summary: 'error' };
         return { c, r, ms: Math.max(0, (meta.clock ? meta.clock.now() : 0) - t0) };
       }));
@@ -236,14 +243,30 @@
       }
       const hidden = meta.hiddenTools && meta.hiddenTools.has(c.name);
       if (!hidden) emit('agent.tool_call', { agentId: meta.agentId, runId: meta.runId, callId: c.id, name: c.name || 'unknown', argsSummary: summarize(c.argsRaw) });
+      // A host-proven terminal result (for example NXDOMAIN on the exact host the Commander asked to
+      // inspect) stops the REST of this already-issued sequential batch too. Every requested call still gets
+      // its paired result and telemetry, but no second network request executes after the proof landed.
+      if (stopToolsControl) {
+        const why = stopToolsControl.reason || 'terminal evidence already resolved this request';
+        results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: ' + why, control: null });
+        if (!hidden) emit('agent.tool_result', {
+          agentId: meta.agentId, runId: meta.runId, callId: c.id, ok: false,
+          ms: 0, summary: 'skipped — terminal evidence', isError: true
+        });
+        continue;
+      }
       const t0 = meta.clock ? meta.clock.now() : 0;
       let r;
       try { r = await dispatch(c, capCtx); }
-      catch (e) { r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' }; }
+      catch (e) {
+        if (e && e.fatalToRun === true) throw e;
+        r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' };
+      }
       r = r || { ok: false, isError: true, content: 'tool returned nothing', summary: 'error' };
       const t1 = meta.clock ? meta.clock.now() : 0;
       results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, control: r.control || null, images: r.images || null, parkedPath: r.parkedPath || null });
       if (r.control && r.control.final) finalControl = r.control;
+      if (r.control && r.control.stopTools) stopToolsControl = r.control;
       if (!hidden) emit('agent.tool_result', {
         agentId: meta.agentId, runId: meta.runId, callId: c.id, ok: !!r.ok,
         ms: Math.max(0, t1 - t0), summary: r.summary || (r.isError ? 'error' : 'ok'), isError: !!r.isError
@@ -283,6 +306,19 @@
   const vosKey = (n) => String(n == null ? '' : n).toLowerCase().replace(/\./g, '_');
   const VOS_MUTATORS = new Set(['fs_write', 'fs_edit', 'fs_patch', 'fs_append']);
   const VOS_VERIFIERS = new Set(['verify_run']);
+  // Custom-connector tools are namespaced by the host as mcp__<connector>__<tool>. The server's own
+  // annotations are deliberately NOT trusted here: this classifier only decides whether to spend one bounded
+  // follow-up turn, never whether a call is safe or whether an effect is proven. Unknown MCP verbs therefore
+  // lean conservative (external mutation); familiar observation verbs are eligible read-back tools.
+  const VOS_EXTERNAL_OBSERVE_RE = /(^|_)(verify|verification|check|confirm|read|get|list|fetch|status|inspect|search|show|lookup|query|describe|retrieve)(_|$)/i;
+  function vosExternalEffect(name) {
+    const n = String(name == null ? '' : name).toLowerCase();
+    if (!/^mcp__.+__.+$/.test(n)) return null;
+    const split = n.lastIndexOf('__');
+    const leaf = n.slice(split + 2);
+    return { connector: n.slice(5, split), role: VOS_EXTERNAL_OBSERVE_RE.test(leaf) ? 'observe' : 'mutate' };
+  }
+  const vosExternalRole = name => { const effect = vosExternalEffect(name); return effect ? effect.role : ''; };
   // A check is a command whose whole job is to PASS or FAIL. `git status`, `ls`, `cat` are not evidence.
   const VOS_CHECK_RE = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?(test|build|lint|typecheck|check)|\b(pytest|tox|jest|vitest|mocha|ava|tsc|eslint|ruff|mypy|flake8|rubocop|clippy|gradle|mvn|make)\b|\b(cargo|go|dotnet|swift)\s+(test|build|vet)\b|\bnode\s+[^|;&]*\btest\b/i;
   function vosIsCodePath(p) {
@@ -305,6 +341,21 @@
     if (!args || typeof args !== 'object') return false;
     const cmd = args.command || args.cmd || args.script || '';
     return VOS_CHECK_RE.test(String(cmd));
+  }
+
+  function canonicalJson(value) {
+    if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
+    if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(value[k])).join(',') + '}';
+    return JSON.stringify(value);
+  }
+
+  // Keep this deliberately narrow: ordinary reads/polls and every mutation remain repeatable.
+  function deterministicCheckSignature(call) {
+    if (!call) return '';
+    const key = vosKey(call.name);
+    const isFixtureCheck = /(^|__)fixture_run_command$/.test(key);
+    if (!VOS_VERIFIERS.has(key) && !isFixtureCheck && !(key === 'shell_exec' && vosIsCheckCommand(call.args))) return '';
+    return key + '\u0000' + canonicalJson(call.args || {});
   }
 
   function announcesIntent(text) {
@@ -397,6 +448,7 @@
     const LG_STOP = (_lg === false) ? 0 : (_lg && _lg.stopAfter != null ? _lg.stopAfter : 6);
     const lgFails = new Map();    // signature (name\0args) -> failure count
     const lgWarned = new Set();   // signatures already nudged (the warn fires once)
+    let lastDeterministicCheck = '';   // immediately-prior successful check turn; any other tool turn clears it
 
     // CONTINUATION GUARD (default ON): some models (Kimi K3, live-caught 2026-07-17) end a turn by ANNOUNCING
     // the next action ("Reading the full main.js now — then fixing immediately.") with finish_reason 'stop' and
@@ -436,7 +488,9 @@
     const _vos = limits.verifyOnStop;
     const VOS_MAX = (_vos === false) ? 0 : (_vos && _vos.max != null ? _vos.max : 1);
     const vosUnverified = new Set();
+    const vosExternalUnverified = new Map();
     let vosUsed = 0;
+    let vosExternalUsed = 0;
 
     // NO-OP TURN REFUND (reference-harness iteration-budget parity): a turn that produced NO tool call AND no NEW assistant
     // content (empty/whitespace text, OR text byte-identical to the immediately-prior assistant turn) is wasted work
@@ -531,7 +585,9 @@
         if (typeof extra.budgetCapUsd === 'number' && isFinite(extra.budgetCapUsd)) endPayload.budgetCapUsd = extra.budgetCapUsd;
       }
       emit('agent.run.end', endPayload);
-      const out = { reason, messages, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
+      const tail = messages[messages.length - 1];
+      const terminalText = tail && tail.role === 'assistant' && !tail.tool_calls ? String(tail.content == null ? '' : tail.content) : '';
+      const out = { reason, messages, text: terminalText, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
       if (cut) out.finishReason = cut;
       if (endPayload.budgetScope) { out.budgetScope = endPayload.budgetScope; if (endPayload.budgetCapUsd != null) out.budgetCapUsd = endPayload.budgetCapUsd; }
       return out;
@@ -762,7 +818,10 @@
         // fallback class (overloaded/server_error) with an EMPTY or exhausted chain — every single-provider
         // station, e.g. ChatGPT-login codex — fell straight to fatal on the first blip. The chain-exhausted
         // case the comment always promised is now real.
-        if (!signal.aborted && cls.retryable && (!cls.shouldFallback || fbIndex >= fallbacks.length) && retriesUsed < MAX_STREAM_RETRIES) {
+        // Adapters mark a fully exhausted pre-stream ladder. Re-running that ladder here multiplied one outage
+        // into 15 requests; only errors from a stream that actually started belong to this recovery budget.
+        if (!signal.aborted && !streamErr.preStreamRetriesExhausted && cls.retryable
+            && (!cls.shouldFallback || fbIndex >= fallbacks.length) && retriesUsed < MAX_STREAM_RETRIES) {
           retriesUsed++;
           // NOTE: no provider.fallback emit here — a same-provider retry is NOT a failover; emitting it would
           // inflate the floor's failover counter and lie about a model/credential switch that didn't happen
@@ -865,6 +924,12 @@
       }
 
       repairCalls(calls, emit, agentId, runId);   // L2: fix broken tool-call JSON before it is used or discarded
+      /* DUPLICATE CHECK STOP. If the model already supplied a sufficient answer while reissuing the exact check
+         from the immediately-prior tool turn, dispatching it again adds no evidence and forces another paid turn.
+         Drop it before persisting the assistant turn so tool-call/result pairing remains valid. Explicit retry
+         intent, changed arguments, other tools, reads, and mutations all continue normally. */
+      const repeatedCheck = calls.length === 1 ? deterministicCheckSignature(calls[0]) : '';
+      if (repeatedCheck && repeatedCheck === lastDeterministicCheck && String(acc.text || '').trim() && !announcesIntent(acc.text)) calls.length = 0;
       const assistant = assistantTurn(acc.text, calls, acc.reasoning);
       messages.push(assistant);
       {
@@ -920,6 +985,22 @@
           messages.push({ role: 'system', content: '<verify_before_done>You changed code in this run (' + touched + ') and are ending without running anything against it. Code that compiles is not code that works, and an unverified claim of "done" is the one thing this station never ships. Run the narrowest real check that proves the change — the project\'s own test/build command via verify_run, or shell_exec if that fits better — then report what it actually returned. If you genuinely cannot run a check here, say so plainly and state what you did NOT verify.</verify_before_done>' });
           continue;
         }
+        // EXTERNAL VERIFY-ON-STOP: a successful custom-connector mutation is not proof that the requested
+        // state now exists. When that same connector exposes a plausible observation/read-back tool, spend one
+        // bounded turn asking the model to use it. Tool names and server annotations are untrusted, so this can
+        // only cause a conservative nudge; it never clears consent, changes scope, or marks evidence as valid.
+        const externalObserverConnectors = new Set(tools.map(t => vosExternalEffect(t && t.function && t.function.name))
+          .filter(effect => effect && effect.role === 'observe').map(effect => effect.connector));
+        const externalTouched = [];
+        for (const [connector, names] of vosExternalUnverified) {
+          if (externalObserverConnectors.has(connector)) externalTouched.push(...names);
+        }
+        if (!empty && !graceUsed && vosExternalUsed < VOS_MAX && externalTouched.length) {
+          vosExternalUsed++;
+          const touched = externalTouched.slice(0, 8).join(', ');
+          messages.push({ role: 'system', content: '<verify_external_before_done>You used an external connector action in this run (' + touched + ') and are ending without a later read-back or verification call. A successful action response is not independent proof that the requested state persisted. Use the connector\'s narrowest read/check/verify tool now, then report only what that result proves. If no meaningful read-back can verify this action, say plainly that the external state was NOT independently verified instead of claiming it was.</verify_external_before_done>' });
+          continue;
+        }
         const continuedTextExists = continuationParts.some(m => String((m && m.content) || '').trim());
         if ((empty || duplicate) && !continuedTextExists && refundsUsed < REFUND_MAX) {
           refundsUsed++;
@@ -951,6 +1032,11 @@
         return end('error');
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
+      if (calls.length === 1 && results.length === 1 && results[0].ok && !results[0].isError) {
+        lastDeterministicCheck = deterministicCheckSignature(calls[0]);
+      } else {
+        lastDeterministicCheck = '';
+      }
       {
         const checkpointEnd = await saveCheckpoint('tool_results');
         if (checkpointEnd) return checkpointEnd;
@@ -998,6 +1084,12 @@
           const k = vosKey(c.name);
           if (VOS_VERIFIERS.has(k) || (k === 'shell_exec' && vosIsCheckCommand(c.args))) { vosUnverified.clear(); continue; }
           if (VOS_MUTATORS.has(k)) { const p = vosPathOf(c.args); if (vosIsCodePath(p)) vosUnverified.add(p); }
+          const externalEffect = vosExternalEffect(c.name);
+          if (externalEffect && externalEffect.role === 'observe') vosExternalUnverified.delete(externalEffect.connector);
+          else if (externalEffect && externalEffect.role === 'mutate') {
+            if (!vosExternalUnverified.has(externalEffect.connector)) vosExternalUnverified.set(externalEffect.connector, new Set());
+            vosExternalUnverified.get(externalEffect.connector).add(String(c.name));
+          }
         }
       }
 
@@ -1020,6 +1112,17 @@
           deferredDefs.delete(key);
           tools.push(def);
         }
+      }
+
+      /* TERMINAL TOOL EVIDENCE. A tool may prove that the exact requested subject cannot be reached (the
+         direct-domain policy is the first producer). The result is already in the transcript; now remove every
+         advertised/revealable tool and buy exactly one tool-free synthesis turn. This is host enforcement, not
+         model advice: even an over-eager model cannot launch a WHOIS/archive/search cascade after the proof. */
+      const stopTools = results.map(r => r && r.control).find(c => c && c.stopTools);
+      if (stopTools) {
+        tools.splice(0, tools.length);
+        deferredDefs.clear();
+        messages.push({ role: 'system', content: String(stopTools.prompt || '<terminal_evidence>The requested subject is unavailable. Use the tool result above and answer now without more tools.</terminal_evidence>') });
       }
 
       const finalControl = results.map(r => r.control).find(c => c && c.final);
@@ -1058,5 +1161,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, parallelizable, applyTurnBudget, squeeze } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
 });

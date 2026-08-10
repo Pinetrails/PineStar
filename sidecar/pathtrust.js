@@ -20,7 +20,7 @@
    un-blessed outside path is a HARD DENY with NO prompt — silence is never consent, and a headless/cron
    run can never widen its own reach.
 
-   makePathTrust({ fsp, pathMod, roots, bless, touch, isGitRepoOf, now, maxWalk }) -> { guard, detectRoot, normalizeRoot }
+   makePathTrust({ fsp, pathMod, roots, bless, touch, isGitRepoOf, workspaceRoot, now, maxWalk }) -> { guard, detectRoot, normalizeRoot }
      fsp        : node:fs/promises (injected) — realpath / stat only, never writes.
      pathMod    : node:path (injected).
      roots      : () => [normalizedRealRoot...]  — the LIVE blessed set (index.js derives it from the
@@ -29,6 +29,8 @@
                   known-projects store (persist-before-commit in index.js); false ⇒ deny (never committed).
      touch      : (rootReal, absPath) => void  — bump lastTouchedAt on I/O under a known root (best-effort).
      isGitRepoOf: async (rootReal) => bool  — light metadata for the store (has a .git entry).
+     workspaceRoot: absolute parent of the private per-agent workspaces; standing grants and Full Access do
+                  not override ownership beneath this root.
      now        : injected clock.
      maxWalk    : ancestor-walk cap for git-root detection (default 40).
 
@@ -54,6 +56,7 @@
     const bless = typeof deps.bless === 'function' ? deps.bless : null;
     const touch = typeof deps.touch === 'function' ? deps.touch : (() => {});
     const isGitRepoOf = typeof deps.isGitRepoOf === 'function' ? deps.isGitRepoOf : (async () => false);
+    const workspaceRoot = deps.workspaceRoot ? P.resolve(String(deps.workspaceRoot)) : '';
     const now = typeof deps.now === 'function' ? deps.now : (() => null);
     const MAX_WALK = Number(deps.maxWalk) > 0 ? Number(deps.maxWalk) : 40;
 
@@ -115,6 +118,7 @@
       const scope = o.scope === 'write' ? 'write' : 'read';
       const surface = o.surface === 'interactive' ? 'interactive' : 'autonomous';
       const prompt = typeof o.prompt === 'function' ? o.prompt : null;
+      const fullAccess = o.fullAccess === true;
 
       const raw = String(absPath == null ? '' : absPath);
       const norm = P.resolve(raw);
@@ -131,18 +135,35 @@
       const rhr = hardlineReason(real, real);
       if (rhr) throw new Error(rhr + ' (reached via ' + norm + ')');
 
+      // Agent workspaces are private jails, not station-global projects. A stale or accidentally-created
+      // path:<WORKSPACES/alpha> grant must never let beta cross that boundary, and Full Access must not turn
+      // the station's internal workspace tree into shared storage. Absolute paths into the caller's own
+      // workspace remain usable; everything else under the workspace parent is denied before standing grants.
+      if (workspaceRoot) {
+        const workspaceReal = await realpathOrSelf(workspaceRoot);
+        if (pathInside(real, workspaceReal)) {
+          const agentId = String(o.agentId == null ? '' : o.agentId);
+          if (/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) {
+            const ownReal = await realpathOrSelf(P.join(workspaceRoot, agentId));
+            if (pathInside(real, ownReal)) return { base: ownReal, abs: norm };
+          }
+          throw new Error('path is inside another agent workspace and cannot be shared by a project grant: ' + norm);
+        }
+      }
+
       // 1. already under a blessed root? reads flow; the write-scope boundary is the broker's job upstream.
       for (const R of rootsFn()) {
         if (!R) continue;
         if (pathInside(real, R)) { touch(R, norm); return { base: R, abs: norm }; }
       }
 
-      // 2. not blessed. THE UNATTENDED RULE: only a watched, prompt-wired interactive run may bless a new root.
-      if (surface !== 'interactive' || !prompt)
+      // 2. not blessed. In ASK mode only a watched, prompt-wired run may approve a new root. Full Access is
+      // already the operator's authority for every non-hardline path, so it must never manufacture a prompt.
+      if (!fullAccess && (surface !== 'interactive' || !prompt))
         throw new Error('path is outside the agent workspace and no project root grant covers it: ' + norm +
           ' — an autonomous run cannot bless a new folder; grant it from a watched session first.');
 
-      // 3. ask ONCE about the proposed project root.
+      // 3. Resolve and re-prove the proposed project boundary before either Full Access or a live answer proceeds.
       const proposed = normalizeRoot(await detectRoot(norm));
       const phr = hardlineReason(proposed, proposed);
       if (phr) throw new Error(phr);
@@ -150,6 +171,10 @@
       // the referenced target must actually live under the proposed root's REAL path (symlink re-proof).
       if (!pathInside(real, proposedReal))
         throw new Error('path escapes the proposed project root via symlink: ' + norm);
+
+      // Full Access is live and revocable, so do not silently convert it into a permanent path grant. While the
+      // posture remains full every access flows here without asking; revoking it restores the ordinary path card.
+      if (fullAccess) return { base: proposedReal, abs: norm, fullAccess: true };
 
       /* BLESS THE REAL PATH. The header calls the grant key "realpath (canonical)", but normalizeRoot is only
          P.resolve — so a root reached through a symlinked ancestor (~/code -> /mnt/data/code, the ordinary
@@ -161,8 +186,8 @@
       const decision = await prompt(proposed, { path: norm, scope: scope });
       /* "always" AND "full" both RECORD the standing root grant. "full" used to fall through to the one-time
          branch below on the reasoning that "a directory bless is never a side effect of a blanket capability
-         grant" — which is still true and still enforced, because this module never reads grantsBlanket/'*' at
-         all. But that reasoning was applied to the wrong value: `decision` here is not a leaked blanket grant,
+         grant" — which is still true and still enforced, because this module does not interpret the agent's
+         global approval posture. But that reasoning was applied to the wrong value: `decision` here is not leaked state,
          it is the Commander's DIRECT answer to a card that names THIS folder. Treating their strongest answer
          as weaker than "Always" meant clicking "Full access" recorded nothing, so the very next file touch in
          the same folder asked again — live-caught 2026-07-27: five reads in one project folder raised five

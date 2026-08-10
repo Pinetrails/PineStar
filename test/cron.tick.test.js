@@ -33,10 +33,12 @@ function setup(jobs, runOnceFake, opts) {
   const events = [];        // every cron.*/forwarded event the driver emitted
   const runs = [];          // every runOnce opts object the driver passed
   const placed = [];        // every placeWorkitem(agentId,prompt,runId) — the conveyor box a fire rides onto the floor
+  const deliveries = [];
   let idN = 0;
+  let writes = 0;
   const driver = makeCronDriver({
     getJobs: () => store,
-    setJobs: (j) => { store = j; },
+    setJobs: (j) => { writes++; if (opts.failWriteAt === writes) return false; store = j; return true; },
     runOnce: (o) => { runs.push(o); return Promise.resolve(runOnceFake ? runOnceFake(o) : undefined); },
     emit: (name, payload) => { events.push({ name, payload }); },
     placeWorkitem: (agentId, prompt, runId) => { placed.push({ agentId, prompt, runId }); },
@@ -46,6 +48,10 @@ function setup(jobs, runOnceFake, opts) {
     getKey: () => (opts.key !== undefined ? opts.key : 'sk-test'),
     providerForJob: opts.providerForJob,
     hasCredential: opts.hasCredential,
+    preflightConfig: opts.preflightConfig,
+    contextFor: opts.contextFor,
+    hashText: opts.hashText,
+    deliverResult: opts.deliverResult || ((job, result) => { deliveries.push({ job, result }); return { ok: true }; }),
     defaultModel: opts.defaultModel !== undefined ? opts.defaultModel : 'test/model',
     identityForAgent: opts.identityForAgent,
     persona: 'PERSONA',
@@ -54,7 +60,8 @@ function setup(jobs, runOnceFake, opts) {
     maxParallel: opts.maxParallel,       // G4.4: undefined -> driver default (4); a number caps in-flight fires
     resolveStation: opts.resolveStation  // B5 parity: absent -> station undefined (default office), like the host
   });
-  return { driver, clock, events, runs, placed, getJobs: () => store, getJob: (id) => cronStore.getJob(store, id) };
+  return { driver, clock, events, runs, placed, deliveries, getJobs: () => store, getJob: (id) => cronStore.getJob(store, id),
+    replaceJob: (id, patch) => { store = store.map(j => j && j.id === id ? Object.assign({}, j, patch) : j); } };
 }
 
 const evNames = (events) => events.map(e => e.name);
@@ -240,7 +247,41 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     A.ok(s.events.some(e => e.name === 'cron.result' && e.payload.jobId === 'ja' && e.payload.outcome === 'failed'), 'failed outcome for the throwing job');
   }
 
-  // ---- 8. no key/model -> cron.skipped{no-capability}; runOnce is never called ----
+  // ---- 7b. a settlement that cannot persist is retried, never announced or re-fired as completed ----
+  {
+    const j = onceJob('persist-settle', 'in 1m');
+    const s = setup([j], okRun('landed once'), { failWriteAt: 3 }); // claim + first heartbeat persist; settlement fails
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());
+    await flush();
+    A.eq(s.runs.length, 1, 'the one-shot ran exactly once before its settlement write failed');
+    A.eq(countOf(s.events, 'cron.result'), 0, 'an unpersisted settlement is not announced as a completed result');
+    A.eq(s.driver.leases.size, 1, 'the lease retains the pending settlement instead of reopening the fire');
+    s.driver.applyTick(s.clock.now() + 1);             // retry the durable settlement; the injected failure was one-shot
+    A.eq(s.runs.length, 1, 'retrying settlement does not re-run the routine');
+    A.eq(countOf(s.events, 'cron.result'), 1, 'the result is announced exactly once after persistence succeeds');
+    A.eq(s.getJob('persist-settle').state, 'completed', 'the recovered settlement durably completes the one-shot');
+    A.eq(s.driver.leases.size, 0, 'the lease releases only after settlement is durable');
+  }
+
+  // ---- 7c. a cleanly-emitted non-done terminal is still a failed routine outcome ----
+  {
+    const j = onceJob('cancelled-run', 'in 1m');
+    const s = setup([j], (o) => {
+      o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'schedule', model: o.model });
+      o.emit('agent.token', { delta: 'partial work' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'cancelled', turns: 1, usd: 0 });
+    });
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());
+    await flush();
+    A.eq(s.getJob('cancelled-run').lastStatus, 'error', 'cancelled work is not persisted as a successful routine');
+    A.eq(s.getJob('cancelled-run').lastReason, 'cancelled', 'the durable outcome preserves the real terminal reason');
+    A.ok(/cancelled/.test(s.getJob('cancelled-run').lastError || ''), 'the durable error names why work was incomplete');
+    A.eq(firstOf(s.events, 'cron.result').outcome, 'failed', 'cancelled work is announced as failed, not ok');
+  }
+
+  // ---- 8. no key/model -> one durable blocked_config alert; runOnce is never called ----
   {
     const j = intervalJob('j1', 'every 1m');
     const s = setup([j], okRun(), { key: '' });               // no BYOK key configured
@@ -248,7 +289,83 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     const summary = s.driver.applyTick(s.clock.now());
     A.eq(summary.fired, 0, 'nothing fires without a key');
     A.eq(s.runs.length, 0, 'runOnce not called');
-    A.eq(firstOf(s.events, 'cron.skipped').reason, 'no-capability', 'skip reason no-capability');
+    A.ok(/^blocked_config:/.test(firstOf(s.events, 'cron.result').reason), 'one actionable blocked_config alert is emitted');
+    A.eq(s.getJob('j1').state, 'blocked_config', 'configuration block is durable and visible');
+    s.clock.set(T0 + 120000); s.driver.applyTick(s.clock.now());
+    A.eq(countOf(s.events, 'cron.result'), 1, 'unchanged missing configuration does not create an alert storm');
+    A.eq(s.deliveries.length, 0, 'a configuration block attempts no delivery');
+  }
+
+  // ---- 8c. a missing delivery channel blocks before spend, alerts once, then recovers when healthy ----
+  {
+    const j = intervalJob('channel-block', 'every 1m');
+    let healthy = false;
+    const s = setup([j], okRun('delivered'), {
+      preflightConfig: () => healthy
+        ? { ok: true }
+        : { ok: false, code: 'channel-unavailable', reason: 'delivery channel "telegram" is not connected; reconnect it' }
+    });
+    s.clock.set(T0 + 60000); s.driver.applyTick(s.clock.now()); await flush();
+    A.eq(s.runs.length, 0, 'a known-missing delivery channel blocks before model spend');
+    A.eq(s.deliveries.length, 0, 'a known-missing delivery channel receives no delivery attempt');
+    A.eq(countOf(s.events, 'cron.result'), 1, 'the channel configuration receives one actionable alert');
+    s.clock.set(T0 + 120000); s.driver.applyTick(s.clock.now()); await flush();
+    A.eq(countOf(s.events, 'cron.result'), 1, 'the unchanged channel failure does not repeat the alert');
+    healthy = true;
+    s.clock.set(T0 + 180000); s.driver.applyTick(s.clock.now()); await flush(); await flush();
+    A.eq(s.runs.length, 1, 'the next due occurrence runs after channel configuration recovers');
+    A.eq(s.getJob('channel-block').blockedConfig, null, 'successful preflight clears the durable configuration block');
+  }
+
+  // ---- 8a. monitor source hashing: unchanged durable source causes no model call or delivery ----
+  {
+    const source = Object.assign(intervalJob('source', 'every 1h'), { lastStatus: 'ok', lastOutput: 'version one' });
+    const monitor = cronStore.makeJob({ id: 'monitor', prompt: 'summarize changes', agentId: 'cron_monitor',
+      schedule: cron.parseSchedule('every 1m', T0), contextFrom: ['source'], monitorMode: true }, { id: 'monitor', now: T0 });
+    const s = setup([source, monitor], okRun('reported'), {
+      contextFor: (_job, jobs) => String(cronStore.getJob(jobs, 'source').lastOutput || ''),
+      hashText: text => 'hash:' + text
+    });
+    s.clock.set(T0 + 60000); s.driver.applyTick(s.clock.now()); await flush(); await flush();
+    A.eq(s.runs.length, 1, 'a new monitor source runs once');
+    A.eq(s.deliveries.length, 1, 'a new monitor source delivers once');
+    A.eq(s.getJob('monitor').monitorHash, 'hash:version one', 'successful run commits the source hash durably');
+    s.clock.set(T0 + 120000); s.driver.applyTick(s.clock.now()); await flush();
+    A.eq(s.runs.length, 1, 'unchanged source does not call the model again');
+    A.eq(s.deliveries.length, 1, 'unchanged source does not deliver again');
+    s.replaceJob('source', { lastOutput: 'version two' });
+    s.clock.set(T0 + 180000); s.driver.applyTick(s.clock.now()); await flush(); await flush();
+    A.eq(s.runs.length, 2, 'changed source calls the model again');
+    A.eq(s.deliveries.length, 2, 'changed source delivers again');
+    A.eq(s.getJob('monitor').monitorHash, 'hash:version two', 'the successful changed run advances the durable hash');
+  }
+
+  // ---- 8aa. restart preserves the hash barrier: unchanged source still spends/delivers nothing ----
+  {
+    const source = Object.assign(intervalJob('restart-source', 'every 1h'), { lastStatus: 'ok', lastOutput: 'version one' });
+    const monitor = cronStore.makeJob({ id: 'restart-monitor', prompt: 'summarize changes', agentId: 'cron_monitor',
+      schedule: cron.parseSchedule('every 1m', T0), contextFrom: ['restart-source'], monitorMode: true }, { id: 'restart-monitor', now: T0 });
+    const deps = {
+      contextFor: (_job, jobs) => String(cronStore.getJob(jobs, 'restart-source').lastOutput || ''),
+      hashText: text => 'hash:' + text
+    };
+    const beforeRestart = setup([source, monitor], okRun('reported before restart'), deps);
+    beforeRestart.clock.set(T0 + 60000); beforeRestart.driver.applyTick(beforeRestart.clock.now()); await flush(); await flush();
+    const settled = beforeRestart.getJob('restart-monitor');
+    A.eq(settled.monitorHash, 'hash:version one', 'pre-restart monitor commits the source hash');
+    A.eq(beforeRestart.runs.length, 1, 'pre-restart changed source calls the model once');
+    A.eq(beforeRestart.deliveries.length, 1, 'pre-restart changed source delivers once');
+
+    // Model a real process boundary through the exact durable envelope loader, then construct a fresh driver.
+    const reloaded = cronStore.loadEnvelope(cronStore.toEnvelope(beforeRestart.getJobs())).jobs;
+    const afterRestart = setup(reloaded, okRun('must never run'), Object.assign({ t0: T0 + 60000 }, deps));
+    afterRestart.clock.set(T0 + 120000); afterRestart.driver.applyTick(afterRestart.clock.now()); await flush();
+    const unchanged = afterRestart.getJob('restart-monitor');
+    A.eq(afterRestart.runs.length, 0, 'restart + unchanged source makes zero model calls');
+    A.eq(afterRestart.deliveries.length, 0, 'restart + unchanged source makes zero delivery attempts');
+    A.eq(unchanged.lastRunId, settled.lastRunId, 'suppressed restart check records no phantom run');
+    A.eq(unchanged.monitorHash, settled.monitorHash, 'suppressed restart check keeps the committed hash');
+    A.ok(unchanged.monitorLastCheckedAt !== settled.monitorLastCheckedAt, 'suppressed restart check durably advances only its check timestamp');
   }
 
   // ---- 8b. OAuth-backed providers launch without a BYOK key ----

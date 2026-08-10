@@ -162,6 +162,9 @@ function analyze(records, corrupt) {
   const completed = [];
   let baseCheckpoint = null;
   let latestCheckpoint = null;
+  let resolution = null;
+  let finishPayload = null;
+  let continuation = null;
   for (const r of records) {
     if (r.type === 'checkpoint') {
       if (r.payload && r.payload.phase === 'initial' && !baseCheckpoint) baseCheckpoint = r.payload;
@@ -173,10 +176,21 @@ function analyze(records, corrupt) {
       if (intents.has(callId)) completed.push({ intent: intents.get(callId), result: r.payload });
       intents.delete(callId);
     }
+    if (r.type === 'resolution' && r.payload) resolution = r.payload;
+    if (r.type === 'finish') finishPayload = r.payload || {};
+    if (r.type === 'continuation_ready' && r.payload) continuation = Object.assign({ state: 'ready' }, r.payload);
+    if (r.type === 'continuation_start' && r.payload && continuation) continuation = Object.assign({}, continuation, r.payload, { state: 'started' });
+    if (r.type === 'continuation_finish' && r.payload && continuation) continuation = Object.assign({}, continuation, r.payload, { state: 'finished' });
   }
-  const uncertain = Array.from(intents.values());
-  const terminal = !!(last && last.type === 'finish');
-  const transcriptAck = !!(terminal && last.payload && last.payload.transcriptAck === true);
+  // An explicit read intent is safe to replay from the provider-valid checkpoint: it cannot have changed host
+  // state before the missing result boundary. Legacy/unknown intents remain conservative (review-required), as
+  // do all declared mutations. Keep the reads visible separately so recovery UIs and receipts can prove exactly
+  // what will be re-dispatched instead of silently treating them as completed.
+  const pending = Array.from(intents.values());
+  const replayableReads = pending.filter(intent => intent && intent.mutating === false);
+  const uncertain = pending.filter(intent => !intent || intent.mutating !== false);
+  const terminal = finishPayload !== null;
+  const transcriptAck = !!(terminal && finishPayload.transcriptAck === true);
   let checkpoint = latestCheckpoint || baseCheckpoint || (first && first.type === 'begin' ? first.payload : {});
   if (baseCheckpoint && latestCheckpoint) {
     checkpoint = Object.assign({}, latestCheckpoint, {
@@ -184,15 +198,26 @@ function analyze(records, corrupt) {
         .concat(Array.isArray(latestCheckpoint.messages) ? latestCheckpoint.messages : [])
     });
   }
+  const uncertainIds = uncertain.map(x => String(x.callId || '')).sort();
+  const resolutionIds = resolution && Array.isArray(resolution.outcomes)
+    ? resolution.outcomes.map(x => String((x && x.callId) || '')).sort() : [];
+  const resolutionValid = !!(resolution && uncertainIds.length && stable(uncertainIds) === stable(resolutionIds)
+    && resolution.outcomes.every(x => x && /^(?:happened|did_not_happen|unknown)$/.test(String(x.outcome || ''))));
   return {
     runId: first ? first.runId : '', records: records.length, corrupt: !!corrupt, terminal,
     // A terminal run event cannot prove what happened inside a tool that returned no durable result. The intent
     // remains review-required even if the loop caught an exception and cleanly emitted run.end afterward.
-    status: uncertain.length ? 'needs_review' : (terminal ? (transcriptAck ? 'finished' : 'awaiting_commit') : 'resumable'),
+    status: resolutionValid ? 'resolved' : (uncertain.length ? 'needs_review' : (terminal ? (transcriptAck ? 'finished' : 'awaiting_commit') : 'resumable')),
     meta: first && first.type === 'begin' ? first.payload : {},
-    uncertain, completed, baseCheckpoint: baseCheckpoint || {}, deltaCheckpoint: latestCheckpoint || {},
-    checkpoint: checkpoint || {}, finish: terminal ? last.payload : null
+    uncertain, replayableReads, completed, baseCheckpoint: baseCheckpoint || {}, deltaCheckpoint: latestCheckpoint || {},
+    checkpoint: checkpoint || {}, finish: finishPayload,
+    resolution: resolutionValid ? resolution : null,
+    continuation: resolutionValid ? continuation : null
   };
+}
+
+function resolutionError(message) {
+  const e = new Error(message); e.code = 'RUN_RESOLUTION_CONFLICT'; return e;
 }
 
 function makeRunJournal(opts) {
@@ -215,36 +240,148 @@ function makeRunJournal(opts) {
     return r;
   }
 
+  function inspect(runId) {
+    const p = parseRecords(io.read(runId));
+    return analyze(p.records, p.corrupt);
+  }
+
+  function recoverFile(file) {
+    let parsed;
+    try { parsed = parseRecords(io.readFile(file)); }
+    catch (_) { parsed = { records: [], corrupt: true }; }
+    const state = analyze(parsed.records, parsed.corrupt);
+    state.file = file;
+    try {
+      if (parsed.corrupt && parsed.records.length && typeof io.repair === 'function') {
+        state.repairedFrom = io.repair(file, parsed.records);
+      } else if (parsed.corrupt && !parsed.records.length && typeof io.quarantine === 'function') {
+        state.quarantinedTo = io.quarantine(file);
+      }
+    } catch (e) { state.repairError = String((e && e.message) || e); }
+    if (state.runId && parsed.records.length) {
+      const last = parsed.records[parsed.records.length - 1];
+      live.set(state.runId, { seq: last.seq, hash: last.hash });
+    }
+    return state;
+  }
+
   return {
     begin(meta) { return record(meta && meta.runId, 'begin', meta, true); },
     checkpoint(runId, payload) { return record(runId, 'checkpoint', payload); },
     toolIntent(runId, payload) { return record(runId, 'tool_intent', payload); },
     toolResult(runId, payload) { return record(runId, 'tool_result', payload); },
     finish(runId, payload) { return record(runId, 'finish', payload); },
-    remove(runId) { live.delete(String(runId || '')); io.remove(runId); },
-    inspect(runId) { const p = parseRecords(io.read(runId)); return analyze(p.records, p.corrupt); },
-    recoverAll() {
-      const out = [];
-      for (const file of io.list()) {
-        let parsed;
-        try { parsed = parseRecords(io.readFile(file)); }
-        catch (_) { parsed = { records: [], corrupt: true }; }
-        const state = analyze(parsed.records, parsed.corrupt);
-        state.file = file;
-        try {
-          if (parsed.corrupt && parsed.records.length && typeof io.repair === 'function') {
-            state.repairedFrom = io.repair(file, parsed.records);
-          } else if (parsed.corrupt && !parsed.records.length && typeof io.quarantine === 'function') {
-            state.quarantinedTo = io.quarantine(file);
-          }
-        } catch (e) { state.repairError = String((e && e.message) || e); }
-        out.push(state);
-        if (state.runId && parsed.records.length) {
-          const last = parsed.records[parsed.records.length - 1];
-          live.set(state.runId, { seq: last.seq, hash: last.hash });
-        }
+    resolve(runId, payload) {
+      payload = payload || {};
+      const state = inspect(runId);
+      const normalized = {
+        resolutionId: String(payload.resolutionId || ''),
+        operator: String(payload.operator || 'local'),
+        resolvedAt: Number(payload.resolvedAt || now()),
+        outcomes: (Array.isArray(payload.outcomes) ? payload.outcomes : []).map(x => ({
+          callId: String((x && x.callId) || ''), outcome: String((x && x.outcome) || '')
+        })),
+        note: String(payload.note || '').slice(0, 500)
+      };
+      if (!normalized.resolutionId) throw resolutionError('resolutionId is required');
+      if (state.resolution) {
+        const existing = state.resolution;
+        const sameDecision = existing.resolutionId === normalized.resolutionId
+          && stable(existing.outcomes || []) === stable(normalized.outcomes)
+          && String(existing.note || '') === normalized.note;
+        if (sameDecision) return state;
+        throw resolutionError('run already has a different durable resolution');
       }
-      return out;
+      if (state.status !== 'needs_review' || state.corrupt) throw resolutionError('run is not safely resolvable');
+      const expected = state.uncertain.map(x => String(x.callId || '')).sort();
+      const actual = normalized.outcomes.map(x => x.callId).sort();
+      if (!expected.length || stable(expected) !== stable(actual)
+        || new Set(actual).size !== actual.length
+        || normalized.outcomes.some(x => !/^(?:happened|did_not_happen|unknown)$/.test(x.outcome))) {
+        throw resolutionError('resolution must account for every uncertain call exactly once');
+      }
+      record(runId, 'resolution', normalized);
+      return inspect(runId);
+    },
+    prepareContinuation(runId, payload) {
+      payload = payload || {};
+      const state = inspect(runId);
+      const continuationId = String(payload.continuationId || '');
+      if (!continuationId) throw resolutionError('continuationId is required');
+      if (state.continuation) {
+        if (state.continuation.continuationId === continuationId) return state;
+        throw resolutionError('run already has a different durable continuation');
+      }
+      if (state.status !== 'resolved' || !state.resolution || state.corrupt) throw resolutionError('run is not safely continuable');
+      record(runId, 'continuation_ready', {
+        continuationId,
+        operator: String(payload.operator || 'local'),
+        preparedAt: Number(payload.preparedAt || now()),
+        blockedFingerprints: (Array.isArray(payload.blockedFingerprints) ? payload.blockedFingerprints : []).map(String).sort(),
+        context: String(payload.context || '').slice(0, 4000)
+      });
+      return inspect(runId);
+    },
+    startContinuation(runId, payload) {
+      payload = payload || {};
+      const state = inspect(runId);
+      const continuationId = String(payload.continuationId || '');
+      const continuedRunId = String(payload.continuedRunId || '');
+      if (!state.continuation || state.continuation.continuationId !== continuationId) throw resolutionError('continuation was not durably prepared');
+      if (state.continuation.state !== 'ready') {
+        if (state.continuation.continuedRunId === continuedRunId) return state;
+        throw resolutionError('continuation already started');
+      }
+      if (!continuedRunId) throw resolutionError('continuedRunId is required');
+      record(runId, 'continuation_start', { continuationId, continuedRunId, startedAt: Number(payload.startedAt || now()) });
+      return inspect(runId);
+    },
+    finishContinuation(runId, payload) {
+      payload = payload || {};
+      const state = inspect(runId);
+      const continuationId = String(payload.continuationId || '');
+      const continuedRunId = String(payload.continuedRunId || '');
+      if (!state.continuation || state.continuation.continuationId !== continuationId
+        || state.continuation.continuedRunId !== continuedRunId) throw resolutionError('continuation identity does not match');
+      if (state.continuation.state === 'finished') return state;
+      if (state.continuation.state !== 'started') throw resolutionError('continuation has not started');
+      record(runId, 'continuation_finish', {
+        continuationId, continuedRunId, finishedAt: Number(payload.finishedAt || now()),
+        reason: String(payload.reason || 'unknown')
+      });
+      return inspect(runId);
+    },
+    finishAndRetire(runId, payload) {
+      record(runId, 'finish', payload);
+      const state = inspect(runId);
+      if (state.status !== 'finished') return { retired: false, state };
+      const retired = this.remove(runId);
+      return { retired: !!retired, state };
+    },
+    // Retirement is a safety boundary, not a raw unlink. A terminal record does not settle an unmatched tool
+    // intent: that journal is the only durable evidence that a side effect may have happened, so ordinary host
+    // teardown must retain it for review. Corrupt/unreadable journals also fail closed and remain recoverable.
+    remove(runId) {
+      let state;
+      try { state = inspect(runId); } catch (_) { return false; }
+      if (!state || state.status !== 'finished') return false;
+      live.delete(String(runId || ''));
+      io.remove(runId);
+      return true;
+    },
+    inspect,
+    recoverAll() {
+      return io.list().sort().map(recoverFile);
+    },
+    // Lazy/paged recovery preserves every journal while preventing thousands of failed runs
+    // from blocking process startup or producing one unbounded API response. Stable filename
+    // ordering makes offset pagination deterministic; no file is deleted here.
+    recoverPage(options) {
+      options = options || {};
+      const files = io.list().sort();
+      const offset = Math.max(0, Number(options.offset) || 0);
+      const limit = Math.max(1, Math.min(500, Number(options.limit) || 100));
+      return { rows: files.slice(offset, offset + limit).map(recoverFile), total: files.length, offset, limit };
     },
     _internals: { parseRecords, analyze, hashRecord, runFileName, cloneSafe, writeAll }
   };

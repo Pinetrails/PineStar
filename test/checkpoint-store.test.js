@@ -33,6 +33,7 @@ function runGit(args, opts) {
   fs.mkdirSync(wt, { recursive: true });
   const write = (rel, body) => fs.writeFileSync(path.join(wt, rel), body);
   const read = (rel) => fs.readFileSync(path.join(wt, rel), 'utf8');
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-cp-project-'));
 
   try {
     // ---- 1. baseline snapshot of a non-empty workspace ----
@@ -74,6 +75,44 @@ function runGit(args, opts) {
     A.eq(await store.snapshot('bad id!', {}), null, 'snapshot rejects a bad agentId');
     A.eq(await store.restore(aid, 'not-a-real-sha-but-valid-chars'), false, 'restore refuses an id not in the index');
     A.eq(await store.restore('bad id!', s1.id), false, 'restore rejects a bad agentId');
+
+    // ---- 7b. EXTERNAL PROJECT ROOT: isolated history, exact-root identity, revocation-safe restore ----
+    let projectAllowed = true;
+    const scoped = makeCheckpointStore({
+      fs, pathMod: path, root, runGit, clock, keep: 20,
+      scopeIdOf: () => '0123456789abcdef01234567',
+      allowWorkTree: (candidate) => projectAllowed && path.resolve(candidate) === path.resolve(project)
+    });
+    execFileSync('git', ['init', '-q'], { cwd: project, windowsHide: true });
+    fs.writeFileSync(path.join(project, '.git', 'STARNET_TEST_MARKER'), 'user repo metadata\n');
+    fs.writeFileSync(path.join(project, 'project.txt'), 'project baseline\n');
+    const ps1 = await scoped.snapshot('pr', { runId: 'external', turn: 0, label: 'shell.exec', workTree: project, authorizedWorkTree: true });
+    A.ok(ps1 && ps1.created, 'external project baseline snapshot created');
+    A.ok(/^0123456789abcdef01234567:/.test(ps1.id), 'external snapshot id is bound to its root scope');
+    fs.writeFileSync(path.join(project, 'project.txt'), 'project changed\n');
+    fs.writeFileSync(path.join(project, 'new.txt'), 'created later\n');
+    projectAllowed = false;
+    A.eq(scoped.list('pr').snapshots.find(s => s.id === ps1.id).restoreAvailable, false, 'revoked project checkpoint is listed but truthfully unavailable');
+    A.eq(await scoped.restore('pr', ps1.id), false, 'restore fails closed after the project grant is revoked');
+    A.eq(fs.readFileSync(path.join(project, 'project.txt'), 'utf8'), 'project changed\n', 'revoked restore did not touch project bytes');
+    projectAllowed = true;
+    A.eq(scoped.list('pr').snapshots.find(s => s.id === ps1.id).restoreAvailable, true, 're-authorizing the exact root makes its restore point available again');
+    A.ok(await scoped.restore('pr', ps1.id), 're-authorized external project restore succeeds');
+    A.eq(fs.readFileSync(path.join(project, 'project.txt'), 'utf8'), 'project baseline\n', 'external project bytes restore exactly');
+    A.ok(!fs.existsSync(path.join(project, 'new.txt')), 'external project restore removes files created after the snapshot');
+    A.eq(fs.readFileSync(path.join(project, '.git', 'STARNET_TEST_MARKER'), 'utf8'), 'user repo metadata\n', 'shadow restore never reads, resets, or cleans the project\'s own .git metadata');
+    const projectIndex = path.join(root, '.checkpoints', 'pr', 'index.json');
+    fs.rmSync(projectIndex, { force: true }); fs.rmSync(projectIndex + '.bak', { force: true });
+    projectAllowed = false;
+    const rebuiltProject = await scoped.listResilient('pr');
+    A.eq(rebuiltProject.snapshots.find(s => s.id === ps1.id).restoreAvailable, false,
+      'index-loss rebuild preserves revoked project history as visible but unavailable');
+    projectAllowed = true;
+    const projectRecord = scoped.list('pr').snapshots.find(s => s.id === ps1.id);
+    A.eq(projectRecord.workTree, fs.realpathSync(project), 'index identifies the exact project root affected');
+    A.eq(projectRecord.gitCommit, ps1.id.split(':')[1], 'index binds the scoped id to its real git commit');
+    const projectGit = path.join(root, '.checkpoints', 'pr', 'roots', '0123456789abcdef01234567', 'git');
+    A.ok(fs.existsSync(path.join(projectGit, 'HEAD')), 'project history is isolated outside both project and agent jail');
 
     // ---- 8. prune keeps the cap (keep:5) ----
     for (let i = 0; i < 8; i++) { write('report.md', 'rev ' + i + '\n'); await store.snapshot(aid, { runId: 'r1', turn: 10 + i, label: 'fs.write' }); }
@@ -151,6 +190,7 @@ function runGit(args, opts) {
     A.eq(rep2.swept, false, 'a repo under the ceiling is left untouched (no sweep)');
   } finally {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
+    try { fs.rmSync(project, { recursive: true, force: true }); } catch (_) {}
   }
 
   A.report('checkpoint-store.test');

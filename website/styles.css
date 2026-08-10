@@ -233,14 +233,14 @@ a:hover{ color:var(--amber); }
 .bezel figcaption{ padding:9px 4px 2px; font-size:14px; letter-spacing:1px; color:rgba(236,224,207,.35); }
 /* the live preview IS the app (website/app, a verbatim frontend copy booted from a seeded
    save) — an iframe at the app's fixed 1380x900 layout, clipped to the station-camera panel
-   and scaled to the column. live-preview.js keeps --appk = clipWidth/666 on resize. */
+   and scaled to the column. live-preview.js measures the current panel rectangle. */
 .bezel.live{ border:0; background:transparent; padding:0; box-shadow:none; }
-.app-clip{ position:relative; overflow:hidden; width:100%; aspect-ratio:666/744; }
+.app-clip{ position:relative; overflow:hidden; width:100%; aspect-ratio:var(--app-aspect,666 / 744); }
 .app-clip iframe{
   position:absolute; left:0; top:0; width:1380px; height:900px; border:0;
   pointer-events:none;                       /* a preview, not a control surface */
   transform-origin:0 0;
-  transform:scale(var(--appk,1)) translate(-283px,-88px);
+  transform:scale(var(--appk,1)) translate(var(--appx,-283px),var(--appy,-88px));
 }
 
 /* feature cards */
@@ -510,3 +510,23 @@ a:hover{ color:var(--amber); }
 .steps code{
   font-family:'VT323',monospace; font-size:18px; letter-spacing:1px; color:var(--amber-b);
 }
+
+/* Real not-found surface. Cloudflare Pages serves /404.html with an actual 404 status,
+   so missing routes never masquerade as a second copy of the homepage. */
+.not-found-page{ min-height:100vh; }
+.not-found{
+  min-height:100vh; padding:150px 24px 90px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center;
+}
+.not-found-code{
+  font-size:clamp(86px,18vw,180px); line-height:.78; letter-spacing:10px;
+  color:rgba(255,157,47,.13); text-shadow:0 0 34px rgba(255,127,24,.15);
+}
+.not-found h1{
+  margin:26px 0 6px; font-weight:400; font-size:clamp(27px,5vw,48px);
+  letter-spacing:4px; color:var(--amber-b); text-shadow:0 0 14px rgba(255,157,47,.4);
+}
+.not-found p{ margin:0 0 28px; color:var(--ink-d); font-size:18px; letter-spacing:1px; }
+.not-found .cta-row{ justify-content:center; }
+.signal-lost{ color:#ff6b4d; }
+.signal-lost .dot{ background:#ff6b4d; box-shadow:0 0 8px rgba(255,107,77,.8); }

@@ -7,14 +7,18 @@
 <meta name="description" content="StarNet is a local-first desktop harness where you recruit AI agents into a living pixel-art station and watch them do real work with real models and tools. Open source. Windows and macOS.">
 <meta property="og:title" content="StarNet — Give your AI a world to work in">
 <meta property="og:description" content="Recruit AI agents into a living station on your machine, put them to work, and build your empire. Local-first. Open source. BYOK.">
-<meta property="og:image" content="https://starnetos.com/assets/og-card.png">
+<meta property="og:image" content="https://starnetos.com/assets/og-card.png?v=20260810">
 <meta property="og:url" content="https://starnetos.com/">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="StarNet — Give your AI a world to work in">
 <meta name="twitter:description" content="Recruit AI agents into a living station on your machine, put them to work, and build your empire. Local-first. Open source. BYOK.">
-<meta name="twitter:image" content="https://starnetos.com/assets/og-card.png">
+<meta name="twitter:image" content="https://starnetos.com/assets/og-card.png?v=20260810">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<link rel="canonical" href="https://starnetos.com/">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="preload" href="app/assets/sprites/blank/rot_south.png" as="image" fetchpriority="high">
 <link rel="stylesheet" href="styles.css?v=20260725">
 </head>
 <body>
@@ -55,14 +59,13 @@
   <nav class="topnav">
     <a href="#station">WHAT IT IS</a>
     <a href="#difference">FEATURES</a>
-    <a href="pricing.html" data-pricing-link>PRICING</a>
+    <a href="pricing.html" data-pricing-link hidden>PRICING</a>
     <a href="#download">DOWNLOAD</a>
     <a href="docs/index.html">DOCS</a>
     <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
   </nav>
   <span class="topbar-right">
-    <a class="social-link" data-social="discord" href="" hidden>DISCORD</a>
-    <a class="social-link" data-social="x" href="" hidden>X</a>
+    <a href="https://github.com/androoAGI/starnet/issues" target="_blank" rel="noopener">COMMUNITY</a>
     <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
   </span>
 </header>
@@ -81,7 +84,7 @@
         <a id="cta-download" class="btn btn-primary" href="#download">[ DOWNLOAD ]</a>
         <a class="btn" href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">[ VIEW SOURCE ]</a>
       </div>
-      <div class="hero-meta"><span id="ver-badge">v0.8.5</span> &middot; MIT open source &middot; Windows + macOS installers day one &middot; bring your own keys</div>
+      <div class="hero-meta"><span id="ver-badge">v0.9.0</span> &middot; MIT open source &middot; Windows + macOS installers day one &middot; bring your own keys</div>
     </div>
   </section>
 
@@ -102,9 +105,9 @@
       </div>
       <figure class="bezel live">
         <div class="app-clip" aria-label="Live preview: the actual StarNet app running in your browser, clipped to the station camera">
-          <iframe id="live-app" src="app/index.html" scrolling="no" loading="lazy" tabindex="-1" title="StarNet live preview"></iframe>
+          <iframe id="live-app" src="app/embed.htm?v=20260810-default-station-v3" scrolling="no" loading="lazy" tabindex="-1" title="StarNet live preview"></iframe>
         </div>
-        <figcaption>// live preview</figcaption>
+        <figcaption>// live preview &middot; current source build</figcaption>
       </figure>
     </div>
   </section>
@@ -134,30 +137,30 @@
       <span class="section-no">03</span>
       <h2>DOWNLOAD STARNET</h2>
     </div>
-    <p class="dl-sub"><b>Windows and macOS installers, fully supported from day one.</b> Builds publish on the <a id="rel-page" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a> and update through the same verified feed. Current version: <span class="ver">v0.8.5</span>.</p>
+    <p class="dl-sub"><b>The public release train targets Windows and macOS.</b> Release assets appear on the <a id="rel-page" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a> after its signing, notarization, and updater-signature gates pass. Current stable version: <span class="ver">v0.9.0</span>. The live preview and docs track current source and may show work landing in the next signed release.</p>
     <div class="dl-grid">
       <article class="dl-card" data-os="windows">
         <div class="dl-os">WINDOWS</div>
         <div class="dl-req">Windows 10 / 11 &middot; 64-bit</div>
         <a class="btn btn-primary dl-btn" data-asset="x64-setup.exe" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .EXE INSTALLER ]</a>
-        <div class="dl-note">Authenticode-signed. SmartScreen may still warn while the new certificate builds reputation: More info &rarr; Run anyway.</div>
+        <div class="dl-note">The public train requires Authenticode publisher and timestamp verification. SmartScreen can still warn while a certificate builds reputation; inspect the publisher before proceeding.</div>
       </article>
       <article class="dl-card" data-os="mac-arm">
         <div class="dl-os">MACOS &middot; APPLE SILICON</div>
         <div class="dl-req">M1 / M2 / M3 / M4</div>
         <a class="btn btn-primary dl-btn" data-asset="aarch64.dmg" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .DMG ]</a>
-        <div class="dl-note">Gatekeeper warning expected: right-click &rarr; Open.</div>
+        <div class="dl-note">The public train requires Developer ID signing and Apple notarization. Stop and report any Gatekeeper trust failure.</div>
       </article>
       <article class="dl-card" data-os="mac-intel">
         <div class="dl-os">MACOS &middot; INTEL</div>
         <div class="dl-req">Intel-based Macs</div>
         <a class="btn btn-primary dl-btn" data-asset="x64.dmg" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .DMG ]</a>
-        <div class="dl-note">Not sure which Mac you have? Apple menu &rarr; About This Mac &mdash; "Intel" means this one. Gatekeeper warning expected: right-click &rarr; Open.</div>
+        <div class="dl-note">Not sure which Mac you have? Apple menu &rarr; About This Mac &mdash; "Intel" means this one. Stop and report any Gatekeeper trust failure.</div>
       </article>
     </div>
     <div class="source-run">
       <div class="source-run-head">// prefer to run from source? node 18+ is all you need</div>
-    <p class="dl-honesty">// honesty note: every build is cryptographically signed for auto-updates, and Windows installers are Authenticode code-signed. macOS builds aren't Apple-notarized yet, so Gatekeeper shows a one-time warning before first run; Windows SmartScreen may also warn until the signing certificate earns reputation. The <a href="docs/getting-started.html">getting-started guide</a> shows exactly what to click on each platform. Something broken? Tell us: <a href="mailto:androo.agi@gmail.com">androo.agi@gmail.com</a>.</p>
+    <p class="dl-honesty">// honesty note: public-train requirements are not installed proof for a particular asset. The train fails closed unless Windows is Authenticode-signed and timestamped, both Mac builds are Developer-ID-signed and notarized, and updater signatures verify. Manual test builds can be unsigned and are not public releases. Linux is not a supported public target. See the <a href="docs/getting-started.html">getting-started guide</a>, and report any trust failure to <a href="mailto:androo.agi@gmail.com">androo.agi@gmail.com</a>.</p>
   </section>
 
   <!-- ===== docs ===== -->
@@ -189,7 +192,7 @@
     <div class="faq">
       <details>
         <summary>Is StarNet free?</summary>
-        <p>The software is MIT-licensed open source and free to run. Model usage costs whatever your provider charges &mdash; you bring your own API key (or OAuth account), and StarNet shows you real cost per run. No markup, no subscription required to use your own keys.<span data-pricing-link> If you'd rather not manage keys at all, <a href="pricing.html">StarNet Credits</a> are an optional managed plan &mdash; never required.</span></p>
+        <p>The software is MIT-licensed open source and free to run. Model usage costs whatever your provider charges &mdash; you bring your own API key (or OAuth account), and StarNet shows you real cost per run. No markup, no subscription required to use your own keys.<span data-pricing-link hidden> If you'd rather not manage keys at all, <a href="pricing.html">StarNet Credits</a> are an optional managed plan &mdash; never required.</span></p>
       </details>
       <details>
         <summary>Is the work actually real?</summary>
@@ -205,7 +208,7 @@
       </details>
       <details>
         <summary>Why does my OS warn me during install?</summary>
-        <p>Windows installers are Authenticode code-signed; SmartScreen can still warn while a new certificate builds reputation. macOS builds aren't Apple-notarized yet, so Gatekeeper shows a one-time warning. The <a href="docs/troubleshooting.html">troubleshooting guide</a> documents every warning honestly.</p>
+        <p>SmartScreen can still warn while an Authenticode certificate builds reputation; inspect the publisher before proceeding. A public Mac DMG is required to pass Apple notarization, so a Gatekeeper trust failure should be reported rather than bypassed. The <a href="docs/troubleshooting.html">troubleshooting guide</a> explains both cases.</p>
       </details>
     </div>
   </section>
@@ -217,19 +220,18 @@
   <div class="footer-links">
     <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
     <a href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
-    <a href="pricing.html" data-pricing-link>PRICING</a>
+    <a href="pricing.html" data-pricing-link hidden>PRICING</a>
     <a href="docs/index.html">DOCS</a>
     <a href="docs/getting-started.html">INSTALL GUIDE</a>
-    <a class="social-link" data-social="discord" href="" hidden>DISCORD</a>
-    <a class="social-link" data-social="x" href="" hidden>X / TWITTER</a>
+    <a href="https://github.com/androoAGI/starnet/issues" target="_blank" rel="noopener">COMMUNITY / SUPPORT</a>
     <a href="legal/privacy.html">PRIVACY</a>
     <a href="legal/terms.html">TERMS</a>
     <a href="mailto:androo.agi@gmail.com">CONTACT</a>
   </div>
-  <div class="footer-fine">MIT license &middot; <span id="ver-foot">v0.8.5</span> &middot; &copy; <span id="year">2026</span> StarNet &middot; no telemetry, no tracking &mdash; <a href="legal/privacy.html">we collect nothing</a></div>
+  <div class="footer-fine">MIT license &middot; <span id="ver-foot">v0.9.0</span> &middot; &copy; <span id="year">2026</span> StarNet &middot; no telemetry, no tracking &mdash; <a href="legal/privacy.html">we collect nothing</a></div>
 </footer>
 
-<script src="site.js?v=20260725"></script>
-<script src="live-preview.js?v=20260725"></script>
+<script src="site.js?v=20260810"></script>
+<script src="live-preview.js?v=20260809"></script>
 </body>
 </html>

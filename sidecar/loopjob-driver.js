@@ -152,6 +152,7 @@
     // loopId -> { runId, abort, startedAt }. In-memory only; the DURABLE half is the fire-claim on the record,
     // which is what survives a restart. Both are consulted by the gate.
     const leases = new Map();
+    let bootReconciled = false;
 
     function personaOf() {
       const p = deps.persona;
@@ -182,13 +183,25 @@
        (success, throw, abort) lands here exactly once; an unsettled iteration would hold its claim until the
        zombie ceiling and stall the loop for maxRunMs. */
     function settle(loopId, runId, result) {
-      const at = now();
+      const lease = leases.get(loopId);
+      const pending = lease && lease.runId === runId ? lease.settlement : null;
+      const at = pending ? pending.at : now();
       const prev = store.getLoop(getLoops(), loopId);
       const prevState = prev && prev.state;
       const next = store.settleIteration(getLoops(), loopId, Object.assign({ runId: runId }, result), { now: at });
-      setLoops(next);
+      let persisted = false;
+      try { persisted = setLoops(next) !== false; } catch (_) { persisted = false; }
+      if (!persisted) {
+        // The iteration already ran. Keep its lease as a settlement receipt and retry only the durable write;
+        // dropping ownership here lets the old fire claim age into a zombie and execute completed work twice.
+        if (lease && lease.runId === runId && !lease.settlement) {
+          lease.settlement = { at: at, result: Object.assign({}, result) };
+        }
+        note('defer', prev, { runId: runId, reason: 'settlement-persist-failed', binding: 'persist' });
+        return false;
+      }
       leases.delete(loopId);
-      if (untrackRun) { try { untrackRun(runId); } catch (_) {} }   // the desk goes quiet only when the pass really ends
+      if (untrackRun && !(lease && lease.untracked)) { try { untrackRun(runId); } catch (_) {} }   // the desk goes quiet only when the pass really ends
       const loop = store.getLoop(next, loopId);
       const it = loop && (loop.iterations || []).slice().reverse().find(x => String(x.runId) === String(runId));
       note(result.status === 'ok' ? 'act' : 'decline', loop, {
@@ -208,6 +221,34 @@
         if (onStopped && after && NEEDS_YOU[after.state] && after.state !== prevState) onStopped(after, prevState || null);
       } catch (_) { /* a notification must never break a settlement */ }
       return next;
+    }
+
+    /* reconcileBoot — a fresh driver cannot own a RUNNING row loaded from disk: it has no matching in-memory
+       lease or AbortController. That row is proof of an interrupted prior process, not proof that work is still
+       alive. Reconcile once, before the first gate pass, and persist the recovery pause before allowing any new
+       launch. The existing RESUME action is the only authority that re-arms it. */
+    function reconcileBoot(nowMs) {
+      if (bootReconciled) return;
+      bootReconciled = true;
+      for (const loop of getLoops()) {
+        if (!loop || leases.has(loop.id)) continue;
+        const hasRunning = (loop.iterations || []).some(it => it && it.outcome === 'running');
+        if (!hasRunning) continue;
+        const reason = 'interrupted by sidecar restart — review recovery evidence, then resume explicitly';
+        const next = store.recoverInterruptedIteration(getLoops(), loop.id, reason, { now: nowMs });
+        if (setLoops(next)) {
+          const recovered = store.getLoop(next, loop.id) || loop;
+          note('decline', recovered, {
+            runId: loop.lastRunId || '', reason: 'restart-interrupted', binding: 'recovery',
+            detail: { iteration: loop.iterationCount || 0 }
+          });
+        } else {
+          // A failed recovery write must not fall through to the stale-claim re-fire path in this process.
+          // Keep a synthetic lease as a fail-closed block; a later explicit restart/recovery can try again.
+          leases.set(loop.id, { runId: String(loop.lastRunId || ''), abort: null, startedAt: nowMs, recoveryBlocked: true });
+          note('defer', loop, { reason: 'recovery-persist-failed', binding: 'persist' });
+        }
+      }
     }
 
     /* fireLoop — launch ONE iteration. Returns true if a run was actually launched.
@@ -274,6 +315,7 @@
           }
         }
         if (name === 'agent.token') { state.buf += (p.delta || ''); return; }   // accumulated here; never teed out
+        if (name === 'agent.tool_call') state.buf = '';
         if (name === 'agent.run.error') state.errMsg = p.message || 'run error';
         else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
         else if (name === 'agent.run.end') {
@@ -313,6 +355,8 @@
       return true;
 
       function launch(snapshotText) {
+      const currentLease = leases.get(loop.id);
+      if (!currentLease || currentLease.runId !== runId || (ac.signal && ac.signal.aborted)) return false;
       const opts = {
         key: key,
         model: fresh.model || ident.model || deps.defaultModel,
@@ -346,11 +390,22 @@
       Promise.resolve(p)
         .then(
           (res) => {
+            // E-STOP settles cancellation at the host boundary immediately. A provider/tool that ignores the
+            // AbortSignal may still resolve later; generation-fence that stale completion before check/harvest.
+            const live = leases.get(loop.id);
+            if (!live || live.runId !== runId || (ac.signal && ac.signal.aborted)) return null;
             // runOnce RESOLVES on a failed run — the failure arrives through the sink (state.errMsg) or as an
             // end reason. Trusting the promise alone would park a broken iteration as a review candidate and
             // ask the Commander to approve work that never happened.
             if (state.cancelled) return settle(loop.id, runId, { status: 'error', cancelled: true, error: 'cancelled' });
             if (state.errMsg) return settle(loop.id, runId, { status: 'error', error: state.errMsg });
+            const terminalReason = String(state.reason || (res && res.reason) || '');
+            if (terminalReason !== 'done') {
+              return settle(loop.id, runId, {
+                status: 'error', cancelled: terminalReason === 'cancelled',
+                error: 'run ended without completion: ' + (terminalReason || 'missing terminal outcome')
+              });
+            }
             // hand the harvest the run result WITH the streamed text folded in (runOnce doesn't carry it).
             const withText = Object.assign({}, res || {}, { text: (res && res.text) || state.buf });
             // RUN THE CHECK between the work and the settlement. A check that THROWS is not a pass and not a
@@ -379,11 +434,15 @@
               (e) => settle(loop.id, runId, { status: 'error', error: 'harvest: ' + ((e && e.message) || 'failed') })
             )));
           },
-          (e) => settle(loop.id, runId, {
-            status: 'error',
-            cancelled: !!(e && (e.name === 'AbortError' || /abort/i.test(String(e.message || '')))),
-            error: (e && e.message) || 'run failed'
-          })
+          (e) => {
+            const live = leases.get(loop.id);
+            if (!live || live.runId !== runId) return null;
+            return settle(loop.id, runId, {
+              status: 'error',
+              cancelled: !!(e && (e.name === 'AbortError' || /abort/i.test(String(e.message || '')))),
+              error: (e && e.message) || 'run failed'
+            });
+          }
         )
         .catch((e) => {
           try { leases.delete(loop.id); } catch (_) {}
@@ -395,8 +454,19 @@
 
     /* applyTick — one pass over every loop. */
     function applyTick(nowMs) {
+      reconcileBoot(nowMs);
       const halted = isHalted();
       let fired = 0, skipped = 0, deferred = 0, planned = 0;
+
+      // Retry completed-but-not-yet-durable iteration receipts before considering any new fire. A pending
+      // settlement is not a live process and must never be reclaimed/re-executed as a stale run.
+      const settledThisTick = new Set();
+      for (const entry of Array.from(leases.entries())) {
+        const loopId = entry[0], lease = entry[1];
+        if (!lease || !lease.settlement) continue;
+        settle(loopId, lease.runId, lease.settlement.result);
+        if (!leases.has(loopId)) settledThisTick.add(loopId);
+      }
 
       // roll every loop's daily budget bucket first, persisting once if any changed. Done before the gate so a
       // loop that was budget-bound yesterday is genuinely free today rather than free-on-the-tick-after.
@@ -405,6 +475,7 @@
 
       for (const loop of getLoops()) {
         if (!loop) continue;
+        if (settledThisTick.has(loop.id)) { skipped++; continue; }
 
         // a loop whose agent was deleted must STOP — never fire under a ghost, never silently keep spending.
         if (agentExists && loop.enabled !== false && !agentExists(loop.agentId)) {
@@ -448,20 +519,32 @@
     /* abortAllLeases — the E-STOP hook. Aborts every in-flight iteration; each one's rejection path settles it
        as 'cancelled', which costs neither the fail streak nor the dry streak. Returns how many were aborted.
        Must never throw: an E-STOP that fails halfway is worse than no E-STOP. */
+    function abortLease(loopId, reason) {
+      const lease = leases.get(loopId);
+      if (!lease || lease.recoveryBlocked || lease.settlement) return false;
+      try { if (lease.abort && isFn(lease.abort.abort)) lease.abort.abort(); } catch (_) {}
+      try {
+        settle(loopId, lease.runId, {
+          status: 'error', cancelled: true, error: String(reason || 'cancelled by the Commander')
+        });
+      } catch (_) {}
+      return true;
+    }
+
     function abortAllLeases() {
       let n = 0;
-      for (const lease of leases.values()) {
-        try { if (lease && lease.abort && isFn(lease.abort.abort)) lease.abort.abort(); } catch (_) {}
-        n++;
-      }
+      // abortLease/settle mutates the lease map, so iterate a stable snapshot. The host owns cancellation: once
+      // E-STOP is accepted the loop is durably terminal even if a provider or tool ignores AbortSignal.
+      for (const [loopId] of Array.from(leases.entries())) if (abortLease(loopId, 'cancelled by E-STOP')) n++;
       return n;
     }
 
     return {
       applyTick: applyTick,
+      abortLease: abortLease,
       abortAllLeases: abortAllLeases,
       leases: leases,
-      _internals: { fireLoop: fireLoop, settle: settle, buildMessages: buildMessages, defaultHarvest: defaultHarvest }
+      _internals: { fireLoop: fireLoop, settle: settle, reconcileBoot: reconcileBoot, buildMessages: buildMessages, defaultHarvest: defaultHarvest }
     };
   }
 

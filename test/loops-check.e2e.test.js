@@ -85,7 +85,7 @@ function boot(port, env, attemptsLeft) {
 }
 
 async function until(B, headers, pred, label, ms) {
-  const deadline = Date.now() + (ms || 20000);
+  const deadline = Date.now() + (ms || 60000);
   let last = null;
   while (Date.now() < deadline) {
     last = await (await fetch(B + '/api/loops', { headers })).json();

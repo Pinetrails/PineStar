@@ -46,7 +46,7 @@
       source: 'builtin', forkedFrom: null
     },
     {
-      id: 'competitor-tracking', name: 'Competitor Tracking', emoji: '◎', tagline: 'What a rival shipped or announced',
+      id: 'competitor-tracking', name: 'Competitor Tracking', emoji: '⊗', tagline: 'What a rival shipped or announced',
       accent: '#6fa8bf',
       blurb: 'Tracks a rival against its own history — pricing pages and job posts, not press-release adjectives.',
       tags: { research: 0.8, general: 0.2 },
@@ -59,7 +59,7 @@
       source: 'builtin', forkedFrom: null
     },
     {
-      id: 'claim-fact-check', name: 'Deep Fact-Check', emoji: '⊜', tagline: 'Verify a claim across the record',
+      id: 'claim-fact-check', name: 'Deep Fact-Check', emoji: '⊚', tagline: 'Verify a claim across the record',
       accent: '#88b6c4',
       blurb: 'Maps who is saying it and traces every version to its origin — repetition never launders into confirmation.',
       tags: { research: 0.9, general: 0.1 },
@@ -82,7 +82,7 @@
       source: 'builtin', forkedFrom: null
     },
     {
-      id: 'paper-summarize', name: 'Summarize a Paper', emoji: '◫', tagline: 'The paper, minus the jargon',
+      id: 'paper-summarize', name: 'Summarize a Paper', emoji: '▦', tagline: 'The paper, minus the jargon',
       intake: [
         { dimension: "audience", question: "Who is the summary for?", options: ["plain-English (me)","technical peer"], recommended: "plain-English (me)", reason: "sets the jargon level and depth" }
       ],

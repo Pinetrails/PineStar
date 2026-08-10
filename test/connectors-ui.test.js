@@ -102,6 +102,8 @@ function fakeStack(tools) {
 
   // ---------- 2. SOURCE GUARD: the frontend panel ----------
   const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'windows', 'connectors.js'), 'utf8');   // CONNECTORS window extracted from stationui.js (BUILDERS split)
+  A.ok(/cached:\s*\['var\(--gold\)', '◐ idle · starts on use'\]/.test(station),
+    'cached stdio schemas render as idle/starts-on-use, never falsely connected or disabled');
   const css = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'css', 'app.css'), 'utf8');
   const idx = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8');
 
@@ -111,20 +113,16 @@ function fakeStack(tools) {
   A.ok(/setupSpotify\(body\)/.test(station), 'Spotify card is still wired (not regressed)');
   A.ok(/id="sp-connect"/.test(station), 'Spotify connect control preserved');
 
-  // transport choice: HTTP, plus an HONEST stdio dead-end.
-  // A local stdio MCP server can never connect on the desktop host — the installed app pins
-  // STARNET_MCP_STDIO=0 (src-tauri/src/main.rs) and makeStdioTransport refuses without a broker-proven
-  // isolated cell (sidecar/mcp/transport.stdio.js; `userControlIsolated` is set NOWHERE in production).
-  // This pane used to render command/args/cwd/env inputs anyway: the config saved, the connect threw, and
-  // the row stayed red forever. These assertions previously PINNED that lie in place — inverted 2026-07-24.
+  // transport choice: HTTP plus local stdio bound to a real per-agent Safe Cell.
   A.ok(/id="mc-transport"/.test(station) && /data-tp="stdio"/.test(station) && /data-tp="http"/.test(station), 'transport toggle (http/stdio) present');
-  A.ok(!/id="mc-command"/.test(station) && !/id="mc-args"/.test(station), 'NO stdio command/args inputs — the host can never spawn one');
-  A.ok(!/id="mc-cwd"/.test(station) && !/id="mc-env"/.test(station), 'NO stdio cwd/env inputs — the host can never spawn one');
-  A.ok(/can’t run here|cannot run on this host/.test(station), 'the stdio tab explains WHY it is unavailable');
-  A.ok(/addBtn\.disabled = dead/.test(station), 'ADD is disabled while the stdio tab is selected');
+  A.ok(/id="mc-command"/.test(station) && /id="mc-args"/.test(station), 'stdio command and exact-argv inputs are present');
+  A.ok(/id="mc-cwd"/.test(station) && /id="mc-env"/.test(station), 'stdio container cwd and explicit env inputs are present');
+  A.ok(/id="mc-agent"/.test(station) && /\/api\/execution-profiles/.test(station), 'stdio must bind to a live Safe Cell agent');
+  A.ok(/tp === 'stdio' && stdioAgents\.length === 0/.test(station), 'ADD is disabled when no isolated agent is available');
+  A.ok(/payload\.agentId = agentId/.test(station) && /payload\.command = command/.test(station), 'stdio owner and command reach the connector API');
   // the web build ships the same panel — a fix that lands in only one copy is a fix half the users never get
   const webStation = fs.readFileSync(path.join(__dirname, '..', 'website', 'app', 'app', 'windows', 'connectors.js'), 'utf8');
-  A.ok(!/id="mc-command"/.test(webStation) && !/id="mc-env"/.test(webStation), 'web build carries the same stdio withdrawal');
+  A.ok(/id="mc-command"/.test(webStation) && /id="mc-agent"/.test(webStation), 'web build carries the same isolated stdio form');
   A.ok(/function readJSON/.test(webStation) && /offline: true/.test(webStation) && /offline: false/.test(webStation),
     'web build carries the same read-honesty fix — a one-copy fix is one half the users never get');
   A.ok(/id="mc-headers"/.test(station), 'http custom-headers input present');
@@ -154,8 +152,11 @@ function fakeStack(tools) {
   A.ok(/\/api\/connectors\/refresh/.test(station), 'RELOAD hits the refresh endpoint');
   A.ok(/function badge/.test(station) && /connected/.test(station) && /error/.test(station), 'status badge (green/amber/red) present');
   A.ok(/mc-tools/.test(station), 'discovered-tools preview present');
-  A.ok(/act === 'remove'[\s\S]{0,500}if \(!r\.ok\)/.test(station),
+  A.ok(/async function removeConnector\([\s\S]{0,500}if \(!r\.ok\)/.test(station),
     'connector delete checks HTTP success before claiming removal');
+  A.ok(/function wireRemoveButtons\(\)/.test(station) && /ArmConfirm\.wire\(btn/.test(station) &&
+    /armedLabel:\s*'SURE\? REMOVE CONNECTOR'/.test(station) && /btn\.dataset\.wired === '1'/.test(station),
+    'connector removal requires the shared two-step armed confirmation');
   A.ok(/postJSON\('\/api\/connectors', \{ id, transport: c\.transport, enabled: cb\.checked \}\)[\s\S]{0,250}if \(!r\.ok\)/.test(station),
     'connector enable toggles reject and visibly revert a refused HTTP write');
 
@@ -195,6 +196,9 @@ function fakeStack(tools) {
   A.ok(/ccCache\.find\(/.test(station), 'install reads the authoritative url/name from the catalog, never a re-typed value');
   A.ok(/transport:\s*'http',\s*url:\s*e\.url/.test(station), 'install pre-fills the catalog entry url');
   A.ok(/if \(token\) payload\.token = token/.test(station), 'an API key is sent only when the user provided one');
+  A.ok(/const keyDelivery = e\.keyHeader/.test(station) && /esc\(e\.keyHeader\)/.test(station),
+    'custom-header API keys describe their real wire header instead of falsely claiming Bearer auth');
+  A.ok(/Authorization: Bearer &hellip;/.test(station), 'ordinary token connectors retain the Bearer-auth explanation');
   // truthful telemetry: ADDED state comes from the backend `installed` flag, and live state is re-read after add
   A.ok(/e\.installed/.test(station) && /✓ ADDED/.test(station), 'an already-installed connector shows ADDED (from backend state, not guessed)');
   A.ok(/state === 'up'/.test(station), 'the connect result badge reflects the real manager state, not an assumption');
@@ -214,6 +218,28 @@ function fakeStack(tools) {
   A.ok(/dataset\.search/.test(stationCore), 'console search also matches the off-screen data-search aliases');
   A.ok(/data-search="/.test(station), 'catalog cards emit data-search from their aliases');
   A.ok(/e\.aliases/.test(station) && /p\.aliases/.test(station), 'both the CATALOG and the KEYS platform card carry aliases');
+
+  /* ---------- 5. SEARCH + FILTER ACCESSIBILITY ----------
+     A zero-hit global search used to hide every pane and clear every tab's selected state, leaving a
+     silent blank console. Filter selection was color-only, and dynamic form feedback was not announced. */
+  A.ok(/mkEl\('div', 'con-search-empty'\)/.test(stationCore) && /setAttribute\('role', 'status'\)/.test(stationCore),
+    'console search owns a polite status surface for zero results');
+  A.ok(/setSearchContext\(matches\[0\] \|\| activeId\)/.test(stationCore),
+    'zero-hit search retains the real selected section instead of clearing the tablist selection');
+  A.ok(/searchLabel:\s*'Search abilities'/.test(station) && /searchEmptyText:\s*'No abilities match/.test(station),
+    'ABILITIES names its global search accurately and explains a zero-hit result');
+  A.ok(/data-cc-filter="all" aria-pressed="true"/.test(station) &&
+    /setAttribute\('aria-pressed', active \? 'true' : 'false'\)/.test(station),
+    'catalog setup filters expose the same selected state to assistive technology that the active class paints');
+  for (const id of ['sp-msg', 'mc-msg', 'cc-msg', 'ky-msg', 'ext-msg']) {
+    A.ok(new RegExp('id="' + id + '"[^>]*role="status"[^>]*aria-live="polite"').test(station),
+      id + ' announces validation and connection feedback');
+  }
+  A.ok(/\.con-search-empty\s*\{/.test(css), 'zero-result search feedback has station-native styling');
+  A.ok(/\(c\.hasToken \|\| c\.hasHeaders\) && !c\.oauth/.test(station),
+    'KEYS recognizes catalog connectors authenticated through a protected custom header');
+  A.ok(/c\.hasHeaders && !c\.hasToken \? 'header saved' : 'token saved'/.test(station),
+    'KEYS labels custom-header credentials truthfully instead of calling every credential a token');
 
   A.report('connectors-ui');
 })().catch(e => { console.log('FAIL: threw ' + (e && e.stack || e)); process.exit(1); });

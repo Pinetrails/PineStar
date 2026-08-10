@@ -9,7 +9,7 @@
 
    The tree shape:
      goal = { id, text, sourceBeliefId, status:'active'|'done'|'retired',
-              milestones:[{ id, text, status:'open'|'done', questRef, evidence, doneAt }],
+              milestones:[{ id, text, status:'open'|'done', questRef, evidence, doneAt, journeySyncedAt }],
               createdAt, updatedAt }
    - sourceBeliefId binds the goal to the dossier goals-dim belief it decomposed (dossier.js cd_N ids), so if the
      Study Engine RETIRES that belief (dossier.forget → drift), the goal tree goes status:'retired' (kept for
@@ -142,7 +142,7 @@
     const clean = (Array.isArray(texts) ? texts : []).map(t => clip(scrubSecrets(t), TEXT_CHARS)).filter(t => t && !lowValue(t)).slice(0, MAX_MILESTONES);
     if (clean.length < MIN_MILESTONES) return null;
     const id = 'goal_' + now;
-    const milestones = clean.map((t, i) => ({ id: id + ':m' + (i + 1), text: t, status: 'open', questRef: null, evidence: '', doneAt: null }));
+    const milestones = clean.map((t, i) => ({ id: id + ':m' + (i + 1), text: t, status: 'open', questRef: null, evidence: '', doneAt: null, journeySyncedAt: null }));
     return { id, text: clip(goalText, 280), sourceBeliefId: sourceBeliefId == null ? null : String(sourceBeliefId), status: 'active', milestones, createdAt: now, updatedAt: now };
   }
 

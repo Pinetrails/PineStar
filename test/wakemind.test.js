@@ -19,6 +19,7 @@ A.ok(/Do not run any tools/.test(d1), 'the directive forbids tools (reason-only)
 A.ok(/^ACK:/m.test(d1) && /^ASK:/m.test(d1), 'the directive demands the exact ACK/ASK format');
 A.ok(/it depends/.test(d1), 'the ASK spec bans it-depends questions');
 A.ok(/answerable in one breath/.test(d1), 'the ASK spec encodes the awakening-question hard rule (concrete, one-breath answerable)');
+A.ok(/how often the chore hits/.test(d1) && /daily\? weekly\?/.test(d1), 'the ASK spec folds cadence in when unstated — the fact that turns a chore into a routine');
 
 /* ---------- parsePainReply: tolerant happy path, hard failure modes ---------- */
 const r1 = W.parsePainReply('some chatter first\nACK: shorts every night — no wonder you switched me on.\nASK: what are the shorts for — a channel you run, or client work?\ntrailing chatter');
@@ -165,8 +166,16 @@ A.ok(!/Date\.now|Math\.random|new Date\(/.test(src), 'wakemind.js is determinist
 /* ---------- the mirror (B7): 2-4 offers or nothing; excludes honor the "what else?" regen ---------- */
 {
   const d = W.buildMirror({ tuesday: 'edits all day', pain: 'sponsor briefs', capabilities: [], exclude: ['draft the briefs'], name: 'VERA' });
-  A.ok(/offer pure reasoning\/writing\/planning work only/.test(d), 'a toolless mirror is honest about its envelope');
+  // 2026-08-03: the toolless mirror teaches CONDITIONAL offers (the kit-out is minutes away) — but the
+  // honesty floor stands: nothing unconditioned beyond reasoning, nothing claimed before it is placed.
+  A.ok(/once you wire me the web, i could/.test(d), 'a toolless mirror may offer tool work phrased as conditional on wiring');
+  A.ok(/Never claim to reach a power before it is placed/.test(d), 'the honesty floor: no reach claimed before placement');
+  A.ok(/must be pure reasoning\/writing\/planning work only/.test(d), 'unconditioned right-now offers stay reasoning-only');
   A.ok(/They already passed on these/.test(d) && /draft the briefs/.test(d), 'the regen call excludes passed offers');
+  const dc = W.buildMirror({ tuesday: 'edits all day', capabilities: [{ id: 'dish', label: 'WEB' }], name: 'VERA' });
+  A.ok(/Capabilities you actually have: WEB/.test(dc) && !/once you wire me the web/.test(dc), 'with real caps the conditional lesson stands down');
+  const ds = W.buildMirror({ tuesday: 'edits all day', stack: 'premiere and notion', capabilities: [], name: 'VERA' });
+  A.ok(/the apps\/tools it lives in: "premiere and notion"/.test(ds), 'a stated stack is shown to the mirror');
   const p = W.parseMirror('OFFER1: i could draft your sponsor-brief replies each morning.\nOFFER2: i could plan the next four videos from what you said.\nOFFER3: NONE\nBELIEF pain: Loses hours to sponsor-brief back-and-forth.');
   A.eq(p.offers.length, 2, 'NONE offers are dropped; real ones kept');
   A.eq(p.beliefs.length, 1, 'mirror beliefs parse');
@@ -179,6 +188,9 @@ A.ok(!/Date\.now|Math\.random|new Date\(/.test(src), 'wakemind.js is determinist
   A.ok(/OWN that honestly/.test(thin) && /barely know them yet/.test(thin), 'a thin synthesis is told to own the thinness');
   const full = W.buildSynthesis({ tuesday: 'edits', lost: 'pixel art', grabbed: 'plan the channel', name: 'VERA' });
   A.ok(/edits/.test(full) && /pixel art/.test(full) && /plan the channel/.test(full), 'the v3 synthesis sees the whole meeting');
+  const st = W.buildSynthesis({ tuesday: 'edits', stack: 'premiere and notion', name: 'VERA' });
+  A.ok(/the apps\/tools that work lives in: "premiere and notion"/.test(st), 'a stated stack is shown to the synthesis');
+  A.ok(/do not restate it/.test(st), 'and the STACK output is told not to duplicate a stated answer');
   const p = W.parseSynthesis('READ: you edit for others and dream in pixels.\nPURPOSE: Help them build their own channel.\nSTACK: NONE\nBELIEF style: Prefers blunt, fast answers.');
   A.ok(p && p.beliefs.length === 1, 'synthesis beliefs parse');
 }
@@ -189,6 +201,44 @@ A.ok(!/Date\.now|Math\.random|new Date\(/.test(src), 'wakemind.js is determinist
   A.ok(/edits all day/.test(d), 'the pain directive carries the tuesday context');
   const p = W.parsePainReply('ACK: the briefs. of course.\nASK: which sponsor eats the most of it?\nBELIEF pain: Loses hours to sponsor briefs.');
   A.ok(p && p.beliefs && p.beliefs.length === 1, 'pain-reply beliefs parse');
+}
+
+/* ---------- V3.4 THE BENCH (Andrew 2026-08-05) — the projects-in-flight reply ---------- */
+{
+  A.ok(typeof W.buildProjectsReply === 'function' && typeof W.parseProjectsReply === 'function', 'the bench builder/parser exist');
+  const d = W.buildProjectsReply({ projects: 'a saas dashboard and a yt channel', tuesday: 'code all day', pain: 'invoices', stack: 'react and stripe', name: 'VERA' });
+  A.ok(/a saas dashboard and a yt channel/.test(d), 'the bench directive carries their exact projects');
+  A.ok(/code all day/.test(d) && /invoices/.test(d) && /react and stripe/.test(d), 'shown context rides in (never re-asked)');
+  A.ok(/^ACK:/m.test(d) && /^ASK:/m.test(d), 'the directive demands the exact ACK/ASK format');
+  A.ok(/recorded verbatim/.test(d), 'the directive says the bench answer is already recorded — beliefs must add, not restate');
+  A.ok(/answerable in one breath/.test(d) && /it depends/.test(d), 'the ASK spec keeps the awakening-question hard rule');
+  A.ok(/PLAIN WORDS ONLY/.test(d), 'the bench ASK spec carries the plain-words law');
+  const p = W.parseProjectsReply('ACK: two live wires. good.\nASK: which one has to ship first?\nBELIEF goals: Building a saas dashboard.');
+  A.ok(p && p.ack && p.ask === 'which one has to ship first?' && p.beliefs.length === 1, 'parseProjectsReply grabs ACK/ASK/beliefs');
+  A.eq(W.parseProjectsReply('ASK: no ack came back'), null, 'a bench reply without an ACK is null');
+}
+
+/* ---------- ADAPTIVE FOLLOW-UPS (Andrew 2026-08-05) — ASK: NONE is the mind declining to dig ---------- */
+{
+  for (const [name, d] of [
+    ['pain', W.buildPainReply({ pain: 'x' })],
+    ['year', W.buildYearReply({ year: 'x' })],
+    ['bench', W.buildProjectsReply({ projects: 'x' })]
+  ]) A.ok(/ASK: NONE/.test(d), 'the ' + name + ' ASK spec offers the honest NONE escape (no forced follow-up)');
+  A.eq(W.parsePainReply('ACK: heard.\nASK: NONE').ask, '', 'pain ASK: NONE reads as no follow-up');
+  A.eq(W.parseYearReply('ACK: heard.\nASK: NONE').ask, '', 'year ASK: NONE reads as no follow-up');
+  A.eq(W.parseProjectsReply('ACK: heard.\nASK: NONE').ask, '', 'bench ASK: NONE reads as no follow-up');
+}
+
+/* ---------- the bench rides into the later contexts ---------- */
+{
+  const y = W.buildYearReply({ year: 'x', projects: 'the dashboard', bench: 'ship billing', name: 'VERA' });
+  A.ok(/the dashboard/.test(y) && /ship billing/.test(y), 'year reply sees the bench + its live wire');
+  const m = W.buildMirror({ tuesday: 'x', projects: 'the dashboard', bench: 'ship billing', name: 'VERA' });
+  A.ok(/the dashboard/.test(m) && /ship billing/.test(m), 'the mirror offers can aim at the live projects');
+  const s = W.buildSynthesis({ tuesday: 'x', projects: 'the dashboard', bench: 'ship billing', name: 'VERA' });
+  A.ok(/the dashboard/.test(s) && /ship billing/.test(s), 'the synthesis sees the bench');
+  A.ok(/never restate them/.test(s), 'and is told the verbatim bench is already recorded');
 }
 
 A.report('wakemind.test');
