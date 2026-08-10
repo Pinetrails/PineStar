@@ -12607,7 +12607,7 @@ async function runOnce(o) {
   // An UNMETERED (OAuth-subscription) run skips the default per-run $ cap: its "spend" is a token estimate
   // against a flat subscription, so stopping it at $N stops it at an imaginary number (2026-07-23, Andrew-
   // approved). An EXPLICIT caller cap (o.maxCostUsd — e.g. a delegated worker's perWorker) is still honored.
-  const runCapUsd = (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd
+  let runCapUsd = (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd
     : (providerUnmetered ? Infinity
     : ((effectiveCaps.perRun > 0 && isFinite(effectiveCaps.perRun)) ? effectiveCaps.perRun : Infinity));
   // Same rule as o.maxCostUsd for the TURN budget: an explicit caller cap (o.maxIters -- e.g. a delegated
@@ -12619,14 +12619,27 @@ async function runOnce(o) {
     : stationMaxIters;
   const managedRun = credits.configured() && !providerUnmetered;
   if (managedRun) {
-    // a managed reservation needs a FINITE cap to hold; an ungoverned per-run can't be pre-authorized.
-    if (!(runCapUsd > 0 && isFinite(runCapUsd))) {
-      emit('agent.run.start', { agentId, runId, trigger, model });
-      emit('agent.run.error', { agentId, runId, transient: false, message: 'Managed credits need a per-run budget cap — set STARNET_BUDGET_PER_RUN to a dollar amount.' });
-      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
-      return;   // the outer finally releases the concurrency slot; nothing was reserved (billed stays false)
-    }
     await credits.refresh(CREDITS_ACCOUNT).catch(() => {});   // reconcile the cached balance right before admission
+    // A managed reservation needs a FINITE cap to hold. With no opt-in cap the wallet itself is the run's
+    // only ceiling: reserve the full available balance — the least-limiting finite number there is — and
+    // settle refunds whatever the run didn't use. The reservation is also the loop's maxCostUsd (below),
+    // so a run can never overshoot what it reserved (that would fail the settle as over-cap).
+    if (!(runCapUsd > 0 && isFinite(runCapUsd))) {
+      const snap = credits.snapshot();
+      const avail = Number(snap && snap.balanceUsd);
+      runCapUsd = (isFinite(avail) && avail > 0) ? avail : 0;
+      if (!(runCapUsd > 0)) {
+        // fail closed — never spend against an unknown/empty managed balance (same surface as a beginRun refusal).
+        const exhausted = isFinite(avail);   // a known $0 balance vs. a balance the service never reported
+        const msg = exhausted
+          ? 'Out of managed credit — add credits in the STORE to keep running (or connect your own provider key).'
+          : 'Managed credits are unavailable right now — the credits service did not answer (try again, or use your own provider key).';
+        emit('agent.run.start', { agentId, runId, trigger, model });
+        emit('agent.run.error', { agentId, runId, transient: !exhausted, reason: 'billing', message: msg });
+        emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+        return;   // the outer finally releases the concurrency slot; nothing was reserved (billed stays false)
+      }
+    }
     const adm = credits.beginRun({ runId, agentId, capUsd: runCapUsd });
     if (!adm || adm.ok === false) {
       // fail closed — never spend against an unknown/exhausted managed balance. Surface it as a billing fault
