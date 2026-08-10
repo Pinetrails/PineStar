@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b935e6d90dfa8e682d3643c914bc2ec81fe03771",
+    "sourceCommit": "0062e667cbd60b7cf2869260425986e544330ce7",
     "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
     "files": [
       {
@@ -48,8 +48,8 @@
       },
       {
         "path": "docs/DOWNLOAD_PAGE.md",
-        "bytes": 5275,
-        "sha256": "7fbca90fdd31432edd870232f5824f27eff88e2db1d0944f5d693820e81ff28c"
+        "bytes": 5581,
+        "sha256": "47a73e22acb1f972ba4f7f35e8986e25d5533ecd929f8d4dc302c1d1d21d9b06"
       },
       {
         "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 331417,
-        "sha256": "3bf946f0259f21deb4209a6b90c0ccfe9002a5a6a89c8932e92bdb09e44bf3dd"
+        "bytes": 331806,
+        "sha256": "f33e90d777d7c351cf550102667f33f73b8a45b0f7b73a9fd04c5fea196e7d8f"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -283,8 +283,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 74283,
-        "sha256": "fafaf3a4e3038c8bc302e394a5a1e28456b795ff860cc9077573db97df54a2cc"
+        "bytes": 76420,
+        "sha256": "4e639d4f55e16aa66795ba7af9e520f3925384a41408da36bb00d4d5ac9e4303"
       },
       {
         "path": "frontend/app/hint.js",
@@ -733,8 +733,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 576509,
-        "sha256": "4bfdad09796803fa215a57f52963851ed2439ae82dc1b55611949ea96e70a01b"
+        "bytes": 596028,
+        "sha256": "ad6c952c7db0cec2b3d50152d1daf24425667f03afd6fb41809aee965f44938c"
       },
       {
         "path": "frontend/app/study.js",
