@@ -381,6 +381,9 @@ jobs:
           $env:STARNET_SMOKE_CDP_PORT = '9333'
           $env:STARNET_SMOKE_EXPECTED_HEAD = $expectedCommit
           $env:STARNET_SMOKE_ARTIFACT = $desktopExe
+          $debugPolicy = 'HKCU:\Software\Policies\Microsoft\Edge\WebView2\AdditionalBrowserArguments'
+          New-Item -Path $debugPolicy -Force | Out-Null
+          New-ItemProperty -Path $debugPolicy -Name 'skynet-desktop.exe' -Value '--remote-debugging-port=9333' -PropertyType String -Force | Out-Null
           $desktop = Start-Process -FilePath $desktopExe -WorkingDirectory $installRoot -PassThru
           try {
             $tabs = $null
