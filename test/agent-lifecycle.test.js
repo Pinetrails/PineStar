@@ -134,5 +134,47 @@ const { makeAgentLifecycle } = require('../sidecar/agent-lifecycle.js');
   A.ok(accepted.events.includes('streams.remove:scout'), 'accepted deletion retires bound workstreams');
   A.ok(accepted.events.includes('persist'), 'accepted deletion persists the surviving state');
 
+  // Backend-initiated recruitment must not acknowledge a worker whose roster push failed or was refused.
+  const summonSource = A.fnBody(appSource, 'async function summonForRequest(ev)');
+  A.ok(summonSource && summonSource.length < 5000, 'summonForRequest source is extracted exactly');
+
+  function recruitmentHarness(rosterResult) {
+    const events = [];
+    const ctx = {
+      rosterResult,
+      events,
+      station: {
+        propsByAgent: id => { events.push('props:' + id); return [{ id: 'desk-1', t: 'desk', x: 2, y: 3 }]; },
+        capForProp: t => t === 'desk' ? 'computer' : '',
+        roomAt: () => 'bridge',
+        roomById: () => ({ name: 'BRIDGE' })
+      }
+    };
+    const summon = new Function('CTX', `
+      const Specialties = { get: () => null };
+      const station = CTX.station;
+      let lastRosterPush = CTX.rosterResult;
+      function summonAgent(spec, opts) {
+        CTX.events.push('summon:' + opts.activate + ':' + opts.desk);
+        return { id: 'scout-2' };
+      }
+      ${summonSource}
+      return summonForRequest;
+    `)(ctx);
+    return { summon, events };
+  }
+
+  const refusedRecruitment = recruitmentHarness(Promise.resolve(false));
+  A.eq(await refusedRecruitment.summon({ name: 'Scout' }), null, 'resolved-false roster refusal produces a failure acknowledgement');
+  A.eq(refusedRecruitment.events, ['summon:false:true'], 'roster refusal does not read a desk for a worker it cannot report');
+
+  const rejectedRecruitment = recruitmentHarness(Promise.reject(new Error('offline')));
+  A.eq(await rejectedRecruitment.summon({ name: 'Scout' }), null, 'rejected roster push produces a failure acknowledgement');
+  A.eq(rejectedRecruitment.events, ['summon:false:true'], 'transport failure does not continue through the success path');
+
+  const acceptedRecruitment = recruitmentHarness(Promise.resolve(true));
+  A.eq(await acceptedRecruitment.summon({ name: 'Scout' }), { agentId: 'scout-2', desk: 'BRIDGE' }, 'accepted roster push returns the registered worker');
+  A.eq(acceptedRecruitment.events, ['summon:false:true', 'props:scout-2'], 'success reads back the seeded workstation after registration');
+
   A.report('agent-lifecycle');
 })().catch(e => { console.log('FAIL: agent-lifecycle threw - ' + (e && e.stack || e)); process.exit(1); });
