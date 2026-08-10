@@ -7429,7 +7429,13 @@ const World = (() => {
       if (!station) return [];
       const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];
       const norm = o => (o && typeof o === 'object') ? o.objectType : o;   // bayObjects entries are strings or {objectType}
-      const src = (viaBay && viaBay.length)
+      // bayObjects() returns [] both for no bay and for a real but empty assigned room. The latter is still
+      // authoritative: use agentRoomId to preserve its empty scope instead of falling back station-wide.
+      let hasBay = false;
+      if (station.agentRoomId && agentId) {
+        try { hasBay = !!station.agentRoomId(agentId); } catch (_) { return []; }
+      }
+      const src = (hasBay || (viaBay && viaBay.length))
         ? viaBay.map(norm)
         : ((station.doc && station.doc().props) || []).map(p => (station.capForProp ? station.capForProp(p.t) : null));
       const out = [], seen = {};
