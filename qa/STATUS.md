@@ -1141,12 +1141,12 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-09 01:14Z @ 0b1bcba8 | RED | 10 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-08T17:28:59.848Z · ui-only · 100764ms | PASS | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-10 21:12Z @ e1928ea9 | RED | 0 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-10T13:02:07.733Z · ui-only · 122641ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
-| Janitor | What's rotting in the workshop? | 2026-08-02 | 284 findings | 106 |
+| Janitor | What's rotting in the workshop? | 2026-08-09 | 314 findings | 106 |
 | Cartographer | Is every surface element mapped and perfected? | 2026-07-18 04:18Z @ bc28c86f | PERFECTED-fresh 279 / total 1154 (24%) | 34 |
 | Dogfood | Does StarNet survive being USED like a real user uses it? | 2026-07-07 (proof shift · mock) @ e01831ab | SURVIVED — 0 anomalies (mock seam shift) | 0 |
 
@@ -2101,3 +2101,5 @@ GATE: two runs, two DIFFERENT reds, each passing standalone — `boot-security` 
 **2026-08-10 correction digest (DASHBOARD-SAFE WEBSITE EMBED):** `agent/station-preview-deploy` -> trunk by `--no-ff`; guarded staging now emits a byte-identical, uniquely named `app/embed.html` and the homepage targets it, preventing Cloudflare's dashboard ZIP importer from colliding the marketing and station `index.html` entries. Staging coverage 14/14 and preview coverage 14/14; exact candidate and post-merge `npm run test:fast` **595/595 GREEN**; no backend route, sidecar, shared contract, package, or credential change and `test:http` not required.
 
 **2026-08-10 merge digest (VISUAL GUARDIAN CAPTURE STABILITY):** `agent/parity-readiness-audit` -> trunk by clean fast-forward `30121078` -> `6c02dcc5`; the seeded screenshot driver now starts from a genuinely fresh Chrome profile and waits for the dossier's real lazy-loaded portrait, eliminating persisted cascade geometry and loading-mannequin drift without widening the 1.5 visual threshold. Two consecutive 16-frame golden sweeps passed, focused golden coverage passed 30/30, and exact post-merge `npm run test:fast` **595/595 GREEN**; no sidecar/shared/package/credential change and `test:http` not required.
+
+**2026-08-10 merge digest (CODEX STALE-TOKEN LOOP):** `agent/codex-token-refresh` -> trunk by clean fast-forward `e1928ea9` -> `45547931`; a user-reported escape (repeated `codex http 401 - token is expired` while Settings said SIGNED IN - VERIFIED) is closed at the mechanism: the codex provider now takes a `renewToken` seam and answers a 401 with ONE force-refresh + retry (the server outranks the local JWT-exp clock check, which clock skew or an unreadable exp claim can defeat), wired at every codex call site sharing the existing single-flight guard; codex fallback catalog entries are marked `fallback:true` and the provider probe counts only live-fetched models, so VERIFIED can no longer be stamped off the hardcoded offline list. Focused provider coverage 66 assertions (4 new 401-handshake regressions); exact post-merge `npm run test:fast` **605/605 GREEN** and `npm run test:http` **73/73 GREEN**; no shared-contract or package change; token persistence untouched (existing read-back-verified store). Existing uncommitted Guardian status edits were preserved. FOLLOW-UP WORTH A LANE: friendlyerror's `auth` copy still says 'No model is connected yet' for any 401 - make it connection-aware and surface the provider's status/body.
