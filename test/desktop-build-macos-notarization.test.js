@@ -53,7 +53,7 @@ A.ok(/pattern: starnet-\*/.test(yml),
 
 A.eq(v090Fixture.doc.version, 6, 'installed journey uses the save version shipped by v0.9.0');
 A.eq(v090Fixture.doc.agent.name, 'NOVA-090-INTEL', 'installed fixture carries an observable prior-station identity');
-A.ok(/tell application "Finder" to open POSIX file/.test(installedScript),
+A.ok(/set app_file to POSIX file[\s\S]*?tell application "Finder" to open app_file/.test(installedScript),
   'installed verifier asks Finder/LaunchServices to open the copied app');
 A.ok(/\.local\/share\/StarNet\/workspaces/.test(installedScript)
   && /Library\/Application Support\/ai\.skynet\.harness\/workspaces/.test(installedScript),

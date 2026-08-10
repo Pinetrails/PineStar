@@ -74,7 +74,8 @@ launch_with_finder() {
   if [ -f "$startup_log" ]; then before_count=$(grep -c 'startup exe=' "$startup_log" || true); fi
   osascript - "$installed" <<'APPLESCRIPT'
 on run argv
-  tell application "Finder" to open POSIX file (item 1 of argv)
+  set app_file to POSIX file (item 1 of argv)
+  tell application "Finder" to open app_file
 end run
 APPLESCRIPT
 
