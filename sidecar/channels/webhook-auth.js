@@ -5,7 +5,8 @@ const crypto = require('node:crypto');
 function makeWebhookVerifier(opts) {
   opts = opts || {};
   const secret = String(opts.secret || '');
-  const now = typeof opts.now === 'function' ? opts.now : () => Date.now();
+  const now = opts.now;
+  if (typeof now !== 'function') throw new Error('makeWebhookVerifier: an injected now function is required');
   const maxSkewMs = Math.max(1000, Number(opts.maxSkewMs) || 300000);
   const maxNonces = Math.max(100, Number(opts.maxNonces) || 10000);
   const seen = new Map();

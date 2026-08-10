@@ -30,6 +30,7 @@ const { makeWebhookVerifier } = require('../sidecar/channels/webhook-auth.js');
   A.ok(appended.some(x => x.role === 'user') && appended.some(x => x.role === 'assistant'), 'legacy history remains a fallback projection');
 
   let now = 1700000000000;
+  A.throws(() => makeWebhookVerifier({ secret: 'x'.repeat(32) }), 'webhook replay protection refuses an ambient wall clock');
   const auth = makeWebhookVerifier({ secret: 'x'.repeat(32), now: () => now, maxSkewMs: 60000 });
   const body = '{"chatId":"chat","text":"hello"}', ts = String(now), nonce = 'nonce_1234567890abcdef';
   const signature = auth.sign(ts, nonce, body);
