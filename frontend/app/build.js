@@ -25,7 +25,7 @@ const Build = (() => {
     // day it grew wall cladding and a material axis: it now sets what a room's surfaces are MADE OF,
     // deck and walls, so it's SURFACE. Same law as the skynet.* keys: rename the label, never the key.
     { id: 'paint', key: '3', label: 'SURFACE', verb: 'click a room to lay this deck', hint: 'click a room to lay the selected deck · drag to paint single tiles in the colour', cursor: 'cell' },
-    { id: 'move', key: '4', label: 'MOVE', verb: 'drag a room or machine', hint: 'drag a room to relocate it', cursor: 'move' },
+    { id: 'move', key: '4', label: 'MOVE', verb: 'drag a room or machine', hint: 'drag a room to relocate it — its machines ride along', cursor: 'move' },
     /* DELETE, not RECLAIM (2026-08-07). "Reclaim" is salvage-economy fiction from a tier system
        that was never built — the button's whole job is to remove a thing, and every player already
        knows the word for that. Same law as SURFACE above: the LABEL changed, the tool id `reclaim`
