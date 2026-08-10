@@ -8,6 +8,8 @@ const path = require('path');
 
 const root = path.join(__dirname, '..');
 const yml = fs.readFileSync(path.join(root, '.github', 'workflows', 'desktop-build.yml'), 'utf8');
+const installedScript = fs.readFileSync(path.join(root, 'scripts', 'verify-macos-intel-installed.sh'), 'utf8');
+const v090Fixture = JSON.parse(fs.readFileSync(path.join(root, 'test', 'fixtures', 'upgrade', 'v090-intel-mac', 'agent.save.json'), 'utf8'));
 
 const buildStep = yml.match(/- name: Build desktop bundles([\s\S]*?)(?=\n      - name: Submit macOS DMG)/);
 A.ok(buildStep, 'manual workflow has a desktop build step');
@@ -37,9 +39,28 @@ A.ok(/notarize-macos:[\s\S]*?timeout-minutes: 350/.test(yml),
 A.ok(/notarize-macos-finalize\.sh/.test(yml), 'manual workflow uses the retryable finalizer');
 A.ok(/name: starnet-\$\{\{ matrix\.target \}\}/.test(yml),
   'only the final notarized DMG receives the distributable artifact name');
-A.ok(/needs: \[build, notarize-macos\]/.test(yml),
-  'test publication waits for both Mac finalizers');
+A.ok(/intel-macos-installed-acceptance:[\s\S]*?needs: \[build, notarize-macos\][\s\S]*?runs-on: macos-15-intel/.test(yml),
+  'manual workflow runs installed-app acceptance on actual Intel hardware after notarization');
+A.ok(/Install, Finder-launch, and recover v0\.9\.0 station[\s\S]*?verify-macos-intel-installed\.sh/.test(yml),
+  'manual workflow delegates the installed upgrade journey to the named verifier');
+A.ok(/require_signed_mac:[\s\S]*?default: "false"/.test(yml)
+  && /STARNET_REQUIRE_NOTARIZED: \$\{\{ inputs\.require_signed_mac \}\}/.test(yml),
+  'manual builds can require signed installed proof without removing the explicit keyless-test tier');
+A.ok(/needs: \[build, notarize-macos, intel-macos-installed-acceptance\]/.test(yml),
+  'test publication waits for Intel installed-app acceptance');
 A.ok(/pattern: starnet-\*/.test(yml),
   'test publication excludes unstapled notarization-input artifacts');
+
+A.eq(v090Fixture.doc.version, 6, 'installed journey uses the save version shipped by v0.9.0');
+A.eq(v090Fixture.doc.agent.name, 'NOVA-090-INTEL', 'installed fixture carries an observable prior-station identity');
+A.ok(/set app_file to POSIX file[\s\S]*?tell application "Finder" to open app_file/.test(installedScript),
+  'installed verifier asks Finder/LaunchServices to open the copied app');
+A.ok(/\.local\/share\/StarNet\/workspaces/.test(installedScript)
+  && /Library\/Application Support\/ai\.skynet\.harness\/workspaces/.test(installedScript),
+  'installed verifier reproduces the v0.9.0 manual-sidecar to desktop shelf split');
+A.ok(/source_hash_after[\s\S]*?source_hash_before/.test(installedScript),
+  'installed verifier proves the v0.9.0 source save remains byte-identical');
+A.ok(/quit_cleanly[\s\S]*?launch_with_finder[\s\S]*?restartSurvived/.test(installedScript),
+  'installed verifier quits, relaunches through Finder, and records restart persistence');
 
 A.report('desktop-build-macos-notarization.test');
