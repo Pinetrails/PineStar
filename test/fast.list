@@ -245,6 +245,7 @@ test/transcript.test.js
 test/transcript-history-v2.test.js
 test/recall.test.js
 test/fs.jail.test.js
+test/fs-mutation-receipts.test.js
 test/fs.patch.test.js
 test/fs.stale-write.test.js
 test/docextract.test.js

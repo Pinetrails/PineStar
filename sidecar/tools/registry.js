@@ -71,8 +71,11 @@
   // Preserve the pre-clamp character count alongside the model-visible preview. A later aggregate/run cap may
   // have to shorten this result again; without the original count it can only say "some output was omitted",
   // which is both unhelpful and impossible to audit against the parked file.
-  const okResult = (content, summary, control, parkedPath, images) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null, parkedPath: parkedPath || null, outputChars: typeof content === 'string' ? content.length : null });
-  const errResult = (content, summary, parkedPath) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error', parkedPath: parkedPath || null, outputChars: typeof content === 'string' ? content.length : null });
+  // `receipt` is an optional host-verifiable side channel for mutation tools. It must survive dispatch in
+  // addition to the human/model-readable content: callers need to distinguish attempted, written,
+  // read-back-verified, partially-applied, and failed mutations without scraping prose.
+  const okResult = (content, summary, control, parkedPath, images, receipt) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null, receipt: receipt || null, parkedPath: parkedPath || null, outputChars: typeof content === 'string' ? content.length : null });
+  const errResult = (content, summary, parkedPath, receipt) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error', receipt: receipt || null, parkedPath: parkedPath || null, outputChars: typeof content === 'string' ? content.length : null });
 
   // Ask the host to keep the full output. Never throws and never blocks a result: a parker that fails just
   // means we fall back to the plain clamp — losing the tail must never also lose the answer.
@@ -234,10 +237,10 @@
         const raw = shaped ? out.content : (out == null ? '' : out);
         // Park BEFORE clamping — the clamp is what destroys the middle, so the full text has to be on disk first.
         const parked = await parkIfOver(raw, call, ctx);
-        return await notifyPost(okResult(raw, shaped ? out.summary : undefined, shaped ? out.control : undefined, parked, shaped ? out.images : undefined), elapsed());
+        return await notifyPost(okResult(raw, shaped ? out.summary : undefined, shaped ? out.control : undefined, parked, shaped ? out.images : undefined, shaped ? out.receipt : undefined), elapsed());
       } catch (e) {
         if (e && e.__timeout) return await notifyPost(errResult('tool ' + call.name + ' timed out after ' + timeoutMs + 'ms', 'timeout'), elapsed());
-        return await notifyPost(errResult('tool ' + call.name + ' failed: ' + (e && e.message ? e.message : String(e))), elapsed());
+        return await notifyPost(errResult('tool ' + call.name + ' failed: ' + (e && e.message ? e.message : String(e)), undefined, undefined, e && e.receipt), elapsed());
       } finally {
         // A long run may execute hundreds of tools against one parent signal. Once this call settles, its child
         // controller no longer needs cancellation propagation; retaining every listener until run end leaks the

@@ -163,6 +163,74 @@
       return result;
     }
 
+    /* VERIFIED MUTATION RECEIPTS (G9).
+       A resolved writeFile/rm promise proves only that the OS accepted the request. It does not prove the
+       intended bytes are now readable from the workspace (mocked/faulty filesystems, disk/filter races, and
+       remote mounts can acknowledge then expose different bytes). Every ordinary fs mutation therefore owns
+       a small state machine and re-reads the exact target before it may say "Wrote/Appended/Edited/Applied".
+
+       The receipt is both machine-readable (`result.receipt`, preserved by registry.js) and named in content.
+       On failure the Error carries the same receipt so dispatch can return it without pretending success.
+       For a multi-file patch, earlier verified operations plus a later failure are PARTIALLY_APPLIED — loud
+       and exact. We do not attempt an unsafe best-effort rollback that could overwrite a concurrent edit. */
+    function mutationReceipt(tool, specs) {
+      return {
+        kind: 'workspace_mutation', version: 1, tool: String(tool), status: 'attempted',
+        operations: (specs || []).map(s => ({ path: String(s.path), action: String(s.action), state: 'attempted', bytes: s.bytes == null ? null : Number(s.bytes) }))
+      };
+    }
+    function receiptOp(receipt, rel, action) {
+      return receipt.operations.find(o => o.path === String(rel) && o.action === String(action));
+    }
+    function receiptStatusOnFailure(receipt, op, phase) {
+      const prior = receipt.operations.some(o => o !== op && (o.state === 'written' || o.state === 'verified'));
+      if (prior) return 'partially_applied';
+      if (phase === 'read_back' && op && op.state === 'written') return 'written_unverified';
+      return 'failed';
+    }
+    function mutationFailure(receipt, op, phase, reason) {
+      const msg = String((reason && reason.message) || reason || 'unknown mutation failure');
+      if (op) { op.failedAt = String(phase); op.error = msg; }
+      receipt.status = receiptStatusOnFailure(receipt, op, phase);
+      const e = new Error('mutation receipt: ' + receipt.status + ' at ' + phase + (op ? ' for ' + op.path : '') + ' — ' + msg + '; do not claim the file was written');
+      e.receipt = receipt;
+      return e;
+    }
+    async function writeAndVerify(receipt, rel, abs, data) {
+      const op = receiptOp(receipt, rel, 'write');
+      const expected = Buffer.isBuffer(data) ? data : Buffer.from(data);
+      try { await fsp.writeFile(abs, expected); }
+      catch (e) { throw mutationFailure(receipt, op, 'write', e); }
+      op.state = 'written';
+      let actual;
+      try { actual = await fsp.readFile(abs); }
+      catch (e) { throw mutationFailure(receipt, op, 'read_back', e); }
+      const got = Buffer.isBuffer(actual) ? actual : Buffer.from(actual);
+      if (!got.equals(expected)) throw mutationFailure(receipt, op, 'read_back', 'byte mismatch: intended ' + expected.length + ' bytes, re-read ' + got.length + ' bytes');
+      op.state = 'verified'; op.bytes = expected.length;
+    }
+    async function removeAndVerify(receipt, rel, abs) {
+      const op = receiptOp(receipt, rel, 'delete');
+      try { await fsp.rm(abs, { force: true }); }
+      catch (e) { throw mutationFailure(receipt, op, 'delete', e); }
+      op.state = 'written';
+      try {
+        await fsp.readFile(abs);
+        throw mutationFailure(receipt, op, 'read_back', 'deleted path is still readable');
+      } catch (e) {
+        if (e && e.receipt) throw e;
+        if (!(e && e.code === 'ENOENT')) throw mutationFailure(receipt, op, 'read_back', e);
+      }
+      op.state = 'verified'; op.bytes = 0;
+    }
+    function verifiedReceipt(receipt) {
+      receipt.status = 'verified';
+      return receipt;
+    }
+    function receiptLine(receipt) {
+      return 'Mutation receipt: read-back verified ' + receipt.operations.length + ' operation' + (receipt.operations.length === 1 ? '' : 's') + '.';
+    }
+
     /* STALE-WRITE GUARD (2026-07-27). A delegated worker, a second agent, or the Commander's own editor can
        change a file between the moment this agent READ it and the moment it writes back. Nothing here noticed,
        so the write silently reverted the other change — the classic lost update, and the harder kind to spot
@@ -210,12 +278,15 @@
         let before = '';
         try { before = await fsp.readFile(abs, 'utf8'); } catch (e) { if (!(e && e.code === 'ENOENT')) throw e; }
         const diagnosticTicket = await beginEditDiagnostics(aid, [{ abs, base, rel: String(args.path), text: before }], ctx);
-        await fsp.mkdir(P.dirname(abs), { recursive: true });
-        await fsp.writeFile(abs, data);
+        const receipt = mutationReceipt('fs.write', [{ path: args.path, action: 'write', bytes: data.length }]);
+        try { await fsp.mkdir(P.dirname(abs), { recursive: true }); }
+        catch (e) { throw mutationFailure(receipt, receipt.operations[0], 'prepare', e); }
+        await writeAndVerify(receipt, args.path, abs, data);
         await stampSeen(aid, abs);                // our own write is the new baseline, so a rewrite never self-trips
         emitDeliverable(ctx, aid, args.path);
+        verifiedReceipt(receipt);
         return finishEditDiagnostics(diagnosticTicket,
-          { content: 'Wrote ' + args.path + ' (' + data.length + ' bytes).', summary: 'wrote ' + args.path + ' (' + kb(data.length) + ')' }, ctx);
+          { content: 'Wrote ' + args.path + ' (' + data.length + ' bytes).\n' + receiptLine(receipt), summary: 'wrote ' + args.path + ' (' + kb(data.length) + ') · verified', receipt }, ctx);
       }
     };
 
@@ -312,12 +383,16 @@
         const bytes = Buffer.byteLength(combined, 'utf8');
         if (bytes > WRITE_BYTES) throw new Error('file too large after append (' + bytes + ' > ' + WRITE_BYTES + ' bytes)');
         const diagnosticTicket = await beginEditDiagnostics(aid, [{ abs, base, rel: String(args.path), text: existing }], ctx);
-        await fsp.mkdir(P.dirname(abs), { recursive: true });
-        await fsp.writeFile(abs, Buffer.from(combined, 'utf8'));
+        const data = Buffer.from(combined, 'utf8');
+        const receipt = mutationReceipt('fs.append', [{ path: args.path, action: 'write', bytes: data.length }]);
+        try { await fsp.mkdir(P.dirname(abs), { recursive: true }); }
+        catch (e) { throw mutationFailure(receipt, receipt.operations[0], 'prepare', e); }
+        await writeAndVerify(receipt, args.path, abs, data);
         emitDeliverable(ctx, aid, args.path);
         const added = Buffer.byteLength(String(args.content), 'utf8');
+        verifiedReceipt(receipt);
         return finishEditDiagnostics(diagnosticTicket,
-          { content: 'Appended to ' + args.path + ' (+' + added + ' bytes, now ' + bytes + ').', summary: 'appended ' + args.path + ' (+' + kb(added) + ')' }, ctx);
+          { content: 'Appended to ' + args.path + ' (+' + added + ' bytes, now ' + bytes + ').\n' + receiptLine(receipt), summary: 'appended ' + args.path + ' (+' + kb(added) + ') · verified', receipt }, ctx);
       }
     };
 
@@ -339,10 +414,13 @@
         const bytes = Buffer.byteLength(next, 'utf8');
         if (bytes > WRITE_BYTES) throw new Error('file too large after edit (' + bytes + ' > ' + WRITE_BYTES + ' bytes)');
         const diagnosticTicket = await beginEditDiagnostics(aid, [{ abs, base, rel: String(args.path), text: txt }], ctx);
-        await fsp.writeFile(abs, Buffer.from(next, 'utf8'));
+        const data = Buffer.from(next, 'utf8');
+        const receipt = mutationReceipt('fs.edit', [{ path: args.path, action: 'write', bytes: data.length }]);
+        await writeAndVerify(receipt, args.path, abs, data);
         emitDeliverable(ctx, aid, args.path);
+        verifiedReceipt(receipt);
         return finishEditDiagnostics(diagnosticTicket,
-          { content: 'Edited ' + args.path + ' (' + count + ' replacement' + (count === 1 ? '' : 's') + ').', summary: 'edited ' + args.path + ' (' + count + 'x)' }, ctx);
+          { content: 'Edited ' + args.path + ' (' + count + ' replacement' + (count === 1 ? '' : 's') + ').\n' + receiptLine(receipt), summary: 'edited ' + args.path + ' (' + count + 'x) · verified', receipt }, ctx);
       }
     };
 
@@ -444,18 +522,27 @@
         const touched = Array.from(plans.values()).filter(p => p.touched);
         const diagnosticTicket = await beginEditDiagnostics(aid,
           touched.map(plan => ({ abs: plan.abs, base: plan.base, rel: plan.rel, text: plan.initialContent == null ? '' : plan.initialContent })), ctx);
-        for (const plan of touched) {
-          if (plan.content == null) {
-            await fsp.rm(plan.abs, { force: true });
-          } else {
-            await fsp.mkdir(P.dirname(plan.abs), { recursive: true });
-            await fsp.writeFile(plan.abs, Buffer.from(plan.content, 'utf8'));
-            emitDeliverable(ctx, aid, plan.rel);
-          }
+        const receipt = mutationReceipt('fs.patch', touched.map(plan => ({
+          path: plan.rel, action: plan.content == null ? 'delete' : 'write',
+          bytes: plan.content == null ? 0 : Buffer.byteLength(plan.content, 'utf8')
+        })));
+        // Destinations/updated files first, deletes second. A move must never erase the last copy before
+        // the destination has been written AND read back byte-for-byte.
+        const writes = touched.filter(plan => plan.content != null);
+        const deletes = touched.filter(plan => plan.content == null);
+        for (const plan of writes) {
+          const op = receiptOp(receipt, plan.rel, 'write');
+          try { await fsp.mkdir(P.dirname(plan.abs), { recursive: true }); }
+          catch (e) { throw mutationFailure(receipt, op, 'prepare', e); }
+          await writeAndVerify(receipt, plan.rel, plan.abs, Buffer.from(plan.content, 'utf8'));
+          emitDeliverable(ctx, aid, plan.rel);
         }
+        for (const plan of deletes) await removeAndVerify(receipt, plan.rel, plan.abs);
+        verifiedReceipt(receipt);
         return finishEditDiagnostics(diagnosticTicket, {
-          content: 'Applied patch: ' + touched.length + ' file' + (touched.length === 1 ? '' : 's') + ' changed.',
-          summary: 'patched ' + touched.length + ' file' + (touched.length === 1 ? '' : 's')
+          content: 'Applied patch: ' + touched.length + ' file' + (touched.length === 1 ? '' : 's') + ' changed.\n' + receiptLine(receipt),
+          summary: 'patched ' + touched.length + ' file' + (touched.length === 1 ? '' : 's') + ' · verified',
+          receipt
         }, ctx);
       }
     };
