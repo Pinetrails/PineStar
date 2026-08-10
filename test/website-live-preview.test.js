@@ -25,7 +25,7 @@ A.eq(/clip\.clientWidth\s*\/\s*666/.test(js), false,
   'the current preview scale is not pinned to the retired 666px stage width');
 A.ok(/live-preview\.js\?v=20260809/.test(html),
   'the homepage cache-busts the corrected preview controller');
-A.ok(/app\/embed\.html\?v=20260809-current-station/.test(html),
+A.ok(/app\/embed\.htm\?v=20260810-current-station-v2/.test(html),
   'the homepage uses the cache-busted dashboard-upload-safe station document');
 
 function bootDemo(initial) {
@@ -51,7 +51,7 @@ A.eq(upgradedRoom.floorMat, 'plank', 'the website demo uses the current seeded f
 A.eq(upgradedRoom.wallMat, 'ribbed', 'the website demo uses the current seeded wall material');
 A.eq(upgradedRoom.hullStyle, 'ember', 'the website demo uses the current seeded hull style');
 A.eq(upgradedRoom.hullMat, 'brick', 'the website demo uses the current seeded hull material');
-A.ok(/^2026-08-09-current-station-v\d+$/.test(upgraded['starnet.website.demo.rev']),
+A.eq(upgraded['starnet.website.demo.rev'], '2026-08-10-current-station-v2',
   'a versioned marker moves returning visitors off the retired captured save');
 
 const currentRev = upgraded['starnet.website.demo.rev'];

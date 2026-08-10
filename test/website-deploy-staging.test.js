@@ -12,7 +12,7 @@ A.eq(fs.existsSync(path.join(staged, 'pricing.html')), false, 'held-back pricing
 A.eq(fs.existsSync(path.join(staged, 'app', 'assets', 'sprites', '_assembly')), false, 'sprite assembly sources are absent from deploy artifact');
 A.ok(fs.existsSync(path.join(staged, 'app', 'index.html')), 'staged artifact retains the embedded app');
 const stagedApp = fs.readFileSync(path.join(staged, 'app', 'index.html'));
-const stagedEmbed = fs.readFileSync(path.join(staged, 'app', 'embed.html'));
+const stagedEmbed = fs.readFileSync(path.join(staged, 'app', 'embed.htm'));
 A.ok(stagedEmbed.equals(stagedApp), 'staged artifact carries a unique dashboard-upload-safe embed entry');
 
 const workflow = fs.readFileSync(path.join(root, '.github', 'workflows', 'deploy-website.yml'), 'utf8');

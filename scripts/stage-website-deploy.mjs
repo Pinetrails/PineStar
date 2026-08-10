@@ -111,10 +111,11 @@ for (const rel of shipping) {
 }
 
 /* Cloudflare Pages' dashboard ZIP importer can collapse identically named index.html
-   entries from different folders. Keep app/index.html for normal directory deploys, but
-   give the marketing-page iframe a unique entry name that survives dashboard uploads. */
+   entries from different folders, while Pages clean-URL rewriting sends a secondary .html
+   entry through the catch-all. Keep app/index.html for directory deploys, but give the
+   marketing-page iframe a unique .htm entry that survives both dashboard behaviors. */
 const embedSource = join(OUT, 'app', 'index.html');
-const embedEntry = join(OUT, 'app', 'embed.html');
+const embedEntry = join(OUT, 'app', 'embed.htm');
 copyFileSync(embedSource, embedEntry);
 
 /* Prove the swap actually removed what it exists to remove, on the bytes that will be uploaded —

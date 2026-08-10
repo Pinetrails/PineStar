@@ -25,7 +25,7 @@ A.eq(res.status, 0, 'website/app is in sync with frontend/ — if this fails, ru
 // The three deliberate embed differences must SURVIVE every sync. Each is load-bearing:
 const idx = fs.readFileSync(path.join(ROOT, 'website', 'app', 'index.html'), 'utf8');
 A.eq(/fonts\.googleapis\.com|fonts\.gstatic\.com/.test(idx), false, 'the public embed makes zero third-party font requests');
-A.ok(/<script src="demo-boot\.js\?v=20260809-current-station"><\/script>/.test(idx),
+A.ok(/<script src="demo-boot\.js\?v=20260810-current-station-v2"><\/script>/.test(idx),
   'the embed still boots its captured demo save with an explicit cache revision');
 A.ok(/<link rel="stylesheet" href="demo\.css">/.test(idx), 'the embed still carries its downscaled-iframe styling');
 A.ok(idx.indexOf('demo-boot.js') < idx.indexOf('<script src="app/'), 'demo-boot runs BEFORE the first app script, so the demo save seeds ahead of any store read');
