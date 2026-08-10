@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "a86ddaf1c75280f6c397a06fd737ec1d832ce6f1",
+    "sourceCommit": "770412f69e612ba0cb1eff16c539f69c95249daa",
     "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 338212,
-        "sha256": "756c5206c6bde58a83edc5526466fb82e07cb43f15cc1447aeeb5fdec13c5239"
+        "bytes": 340859,
+        "sha256": "1c1a914854ca42af1a30951f3d9b0650b1a33b804278a1664978887cdb8f703e"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -1033,8 +1033,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 75271,
-        "sha256": "326334a99db3dfc2ef8555ec10e0d25999aaedf6d4dcde79ee124180a996cfbb"
+        "bytes": 75462,
+        "sha256": "bda02cc145f1dd856a971c2a09a5ad3f2922a2415b70356b1b3958b785336ec1"
       },
       {
         "path": "frontend/js/arcade.js",
