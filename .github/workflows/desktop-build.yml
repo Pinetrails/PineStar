@@ -349,9 +349,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $expectedCommit = '322aac89cc89b9f0237d4acb59ba0b9255b0ccd3'
-          $expectedHash = 'A99533AC8DC64B90B1C3505B3EFDADDBEF65005F500CD72D41FE5FB7C1AA940A'
-          $expectedBytes = 124766400
+          $expectedCommit = '765847f833dca0c6d20038091f91ffcc6fca76d6'
+          $expectedHash = '364882E96127921DB35DCAAD034B05513AFD9EF91906222AF98E5E05AB2E9078'
+          $expectedBytes = 124792984
           $installer = Get-ChildItem downloaded -Recurse -File -Filter 'StarNet_0.10.0_x64-setup.exe' | Select-Object -First 1
           if (-not $installer) { throw 'signed installer is missing from the selected workflow artifact' }
           $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer.FullName).Hash
@@ -369,7 +369,7 @@ jobs:
           node scripts/minisign-verify.mjs --artifact (Join-Path $nsis $installer.Name) --sig (Join-Path $nsis ($installer.Name + '.sig'))
           if ($LASTEXITCODE -ne 0) { throw 'updater signature verification failed' }
 
-          $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\StarNet-T0-322aac89'
+          $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\StarNet-T0-765847f8'
           $install = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installRoot") -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "installer exit code $($install.ExitCode)" }
           $desktopExe = Join-Path $installRoot 'skynet-desktop.exe'
@@ -494,7 +494,7 @@ jobs:
           $ErrorActionPreference = 'Continue'
           $diagnostics = '.dogfood\external-t0\diagnostics'
           New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
-          $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\StarNet-T0-322aac89'
+          $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\StarNet-T0-765847f8'
           $appDataRoot = Join-Path $env:APPDATA 'ai.skynet.harness'
           $localAppDataRoot = Join-Path $env:LOCALAPPDATA 'ai.skynet.harness'
           $desktopExe = Join-Path $installRoot 'skynet-desktop.exe'
@@ -542,7 +542,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: t0-clean-install-322aac89
+          name: t0-clean-install-765847f8
           if-no-files-found: warn
           include-hidden-files: true
           path: |
