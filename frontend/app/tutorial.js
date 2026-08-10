@@ -948,19 +948,19 @@ const Tutorial = (() => {
       return '<p class="fm-lead">one loop runs everything here, and it’s all real:</p>'
         + fmEntry('REAL', '1 · ASK', 'type a job in COMMS. small talk i answer in place; a real task and i get up.')
         + fmEntry('REAL', '2 · WALK', 'i cross to my workstation. that desk is where i actually go to work, on your machine.')
-        + fmEntry('REAL', '3 · CONSENT', 'before i touch a file or reach out i stop and ask — approve once, always, or kill it.')
+        + fmEntry('REAL', '3 · CONSENT', 'local file reads and private notebook saves do not prompt. for other file changes or network actions, i ask unless that class is already approved or FULL ACCESS is on; protected actions stay blocked.')
         + fmEntry('REAL', '4 · RUN', 'i execute the real tools you’ve granted me — web search, file read/write — and stream the result to COMMS.')
         + fmEntry('REAL', '5 · PROVE', 'i verify the work and show the outcome instead of just claiming it.')
         + '<p class="fm-note">every crew member you recruit is a real, separate agent with its own identity, workspace, memory, and sessions. right now one agent runs the loop; recruit more and each runs its own work.</p>';
     }
     if (tab === 'GEAR') {
-      return '<p class="fm-lead">a prop in my room is a PERMISSION. drop these in a bay’s room to grant a power; most other furniture is set dressing.</p>'
+      return '<p class="fm-lead">a prop grants a CAPABILITY — what i can attempt, not blanket consent. Settings &gt; Permissions decides whether an action asks or runs without another prompt; most other furniture is set dressing.</p>'
         + fmEntry('REAL', 'WORKSTATION → a desk to work at', 'desk · console · bench · pixel rig. compute to think is always mine — a workstation just gives my body a real desk to walk to and sit at, and its screens light while i work.')
         + fmEntry('REAL', 'CABINET → files', 'intel cab · safe · vault · rack · shelf. read &amp; write files in my workspace.')
         + fmEntry('REAL', 'DISH → web', 'comms dish · uplink · beacon. reach the live web.')
         + fmEntry('REAL', 'SERVER → memory + skills', 'server cart · relay stack · core. a notebook that survives restarts — and the skill library where i save &amp; reload reusable procedures.')
         + fmEntry('REAL', 'CONNECTOR PORTAL → live tools', 'binds one MCP server; its tools land in my hands. lamp = health: green live, amber warming, red broken.')
-        + fmEntry('REAL', 'WORKBENCH → terminal', 'the powered bench. place it in my room and i can run real shell commands and verify what they did — consent-gated, like every tool. it glows while i’m running code.')
+        + fmEntry('REAL', 'WORKBENCH → terminal', 'the powered bench. place it in my room and i can run real shell commands and verify what they did — under your Settings &gt; Permissions posture and the protected-action floor. it glows while i’m running code.')
         + fmEntry('SHOW', 'everything else', 'plants, rugs, screens, lounge gear — flavour. they grant nothing; place them because the place is yours.');
     }
     if (tab === 'WIRING') {
