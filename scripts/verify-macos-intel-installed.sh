@@ -67,9 +67,9 @@ if [ "$require_notarized" = "true" ]; then
 fi
 
 launch_with_finder() {
-  local before_count
-  before_count=0
-  if [ -f "$startup_log" ]; then before_count=$(grep -c 'startup exe=' "$startup_log" || true); fi
+  local before_lines candidate_port
+  before_lines=0
+  if [ -f "$startup_log" ]; then before_lines=$(wc -l < "$startup_log"); fi
   osascript - "$installed" <<'APPLESCRIPT'
 on run argv
   set app_file to POSIX file (item 1 of argv)
@@ -80,14 +80,14 @@ APPLESCRIPT
   launch_port=""
   for _ in $(seq 1 240); do
     if [ -f "$startup_log" ]; then
-      current_count=$(grep -c 'startup exe=' "$startup_log" 2>/dev/null || true)
-      launch_port=$(sed -n 's/.*startup exe=.* port=\([0-9][0-9]*\).*/\1/p' "$startup_log" | tail -1)
-      if [ "$current_count" -gt "$before_count" ] && [ -n "$launch_port" ] \
-        && grep -Eq "spawn_sidecar pid=[0-9]+ port=$launch_port listening=true" "$startup_log" \
-        && curl -fsS "http://127.0.0.1:$launch_port/health" >/dev/null; then
-        pgrep -f "$exe" >/dev/null || fail "Finder returned but the Intel desktop process is not alive"
-        return 0
-      fi
+      while IFS= read -r candidate_port; do
+        if [ -n "$candidate_port" ] && curl -fsS "http://127.0.0.1:$candidate_port/health" >/dev/null; then
+          launch_port=$candidate_port
+          pgrep -f "$exe" >/dev/null || fail "Finder returned but the Intel desktop process is not alive"
+          return 0
+        fi
+      done < <(tail -n "+$((before_lines + 1))" "$startup_log" \
+        | sed -n 's/.*spawn_sidecar pid=[0-9][0-9]* port=\([0-9][0-9]*\) listening=true.*/\1/p')
     fi
     sleep 0.25
   done
