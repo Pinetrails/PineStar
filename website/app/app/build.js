@@ -2869,9 +2869,12 @@ const Build = (() => {
       const ep = exist && station.propById(exist);
       if (ep) { onInspect(ep, ev); return; }
     }
-    // a click stamps the remembered size (what the hover ghost was showing); a drag draws its own
-    const rect = !d.moved ? stampRectFor(d.cur.tx, d.cur.ty)
-      : (tool === 'hall') ? laneRect(d.start, d.cur) : norm(d.start, d.cur);
+    /* a click stamps the remembered size (what the hover ghost was showing); a drag draws its own.
+       Both go through the SAME snapFit the ghost drew — commit what was on screen, never the raw
+       gesture, or the snap becomes a lie the instant you press. `rememberDrawn` reads the SNAPPED
+       rect too, so a room that grew a tile to meet its neighbour teaches the next click that size. */
+    const rect = !d.moved ? snapFit(stampRectFor(d.cur.tx, d.cur.ty), {})
+      : snapFit((tool === 'hall') ? laneRect(d.start, d.cur) : norm(d.start, d.cur), { resize: true });
     const res = (tool === 'hall') ? station.placeHallway({ rect }) : station.addRoom({ kind, rect });
     if (res && res.ok) {
       pushFlash([rect], false);
@@ -2881,9 +2884,11 @@ const Build = (() => {
     feedback(res, ev, tool === 'hall' ? 'hallway run' : 'room placed');
   }
   function commitMove(d, ev) {
-    const dx = d.cur.tx - d.start.tx, dy = d.cur.ty - d.start.ty;
-    if (!dx && !dy) { hideTip(); return; }
-    feedback(station.moveRoom(d.roomId, dx, dy), ev, 'relocated');
+    // the SAME snapped delta the move ghost drew — commit what was on screen, never the raw drag
+    const rm = station.roomById(d.roomId);
+    const s = snapMoveDelta(rm, d.cur.tx - d.start.tx, d.cur.ty - d.start.ty);
+    if (!s.dx && !s.dy) { hideTip(); return; }
+    feedback(station.moveRoom(d.roomId, s.dx, s.dy), ev, 'relocated');
   }
   function propSpec(id) { return (typeof PropSprites !== 'undefined' && PropSprites.spec(id)) || { w: 1, h: 1 }; }
   // open the right editor for a logistics prop that carries config (BAY = agent, FILTER/MERGER = routing, AIRLOCK = seal)
@@ -3271,6 +3276,104 @@ const Build = (() => {
   }
   function beltRunBox(a, b) { return beltRun(a, b).rect; }
 
+  /* ---------- SNAP FLUSH (2026-08-10) ----------
+     Andrew's own station, read out of his save: EIGHT rooms, and not one pair of them touching —
+     r5/r6/r7/r8 sit ONE tile off r1, r3 two, r9 three. The seam classifier finds 0 open joins, so
+     what reads as "the floors won't blend" is not a blend failure at all: it is eight separate
+     hulls, each correctly drawing its own wall and shell across a gap of void. Close the gaps and
+     the same seven rooms give 72 open joins and one continuous deck.
+
+     Nothing was stopping him. `checkRects` rejects OVERLAP and nothing else, so a one-tile gap is a
+     perfectly legal placement — and at TILE=12 it is a handful of screen pixels, invisible until the
+     bake draws two walls where you expected none. The tool let you miss by one and said nothing.
+
+     So the fix is in the GESTURE, not the bake: within SNAP_FIT tiles of an existing footprint, a
+     placement lands FLUSH against it. Two behaviours, because the two gestures mean different things:
+       · a CLICK stamps a remembered size -> TRANSLATE the rect, never resize it. The size is what
+         the user last drew and is not ours to change.
+       · a DRAG is sizing -> move the EDGE that is near a neighbour, so the room you are drawing
+         grows to meet the one already there.
+     A snap is only ever offered when the two footprints actually FACE each other (their spans
+     overlap on the other axis) — otherwise a room across the station would tug at a placement it can
+     never touch. And every candidate is re-validated through the model's own validator before it is
+     accepted, so a snap can never create the overlap the snap exists to avoid.
+
+     The ghost and the commit both call this, which is the same contract the LINES tool already
+     holds: what a click commits is exactly what was on screen. */
+  const SNAP_FIT = 2;   // tiles. 1 is the miss that started this; 2 forgives a slightly wilder aim
+  const spanHit = (a1, a2, b1, b2) => Math.max(a1, b1) <= Math.min(a2, b2);
+  function snapFit(rect, opts) {
+    const resize = !!(opts && opts.resize), ignoreId = opts && opts.ignoreId;
+    const list = (station.rooms && station.rooms()) || [];
+    if (!list.length) return rect;
+    /* MOVE hands its own validator in. It has to: `tool` is 'move' and `kind` is whatever the ROOM
+       palette happens to have selected, so validating a dragged corridor against the armed room kind
+       would ask the model an unrelated question and take its answer. A multi-rect room also has to
+       be validated as the whole set, not as its bounding box. */
+    const legal = (opts && opts.validate) || ((r) => {
+      const v = (tool === 'hall') ? station.canPlaceHallway([r], ignoreId) : station.canPlaceRoom([r], kind, ignoreId);
+      return !!(v && v.ok);
+    });
+    if (!legal(rect)) return rect;   // already illegal — snapping would only hide why
+
+    // every flush position this rect could take against a footprint it actually faces
+    const cand = [];
+    for (const rm of list) {
+      if (ignoreId && rm.id === ignoreId) continue;
+      for (const o of rm.rects) {
+        if (spanHit(rect.y1, rect.y2, o.y1, o.y2)) {
+          cand.push({ ax: 'x', edge: 'x1', to: o.x2 + 1 });   // our left edge meets their right
+          cand.push({ ax: 'x', edge: 'x2', to: o.x1 - 1 });   // our right edge meets their left
+        }
+        if (spanHit(rect.x1, rect.x2, o.x1, o.x2)) {
+          cand.push({ ax: 'y', edge: 'y1', to: o.y2 + 1 });
+          cand.push({ ax: 'y', edge: 'y2', to: o.y1 - 1 });
+        }
+      }
+    }
+    if (!cand.length) return rect;
+
+    let out = rect;
+    for (const ax of ['x', 'y']) {                       // each axis resolves once, independently
+      let best = null;
+      for (const c of cand) {
+        if (c.ax !== ax) continue;
+        const d = c.to - out[c.edge];
+        if (d === 0 || Math.abs(d) > SNAP_FIT) continue;
+        const next = resize
+          ? { ...out, [c.edge]: c.to }                                          // drag: the edge moves
+          : (ax === 'x' ? { ...out, x1: out.x1 + d, x2: out.x2 + d }            // click: the whole rect slides
+                        : { ...out, y1: out.y1 + d, y2: out.y2 + d });
+        // a resize may not collapse the footprint under the model's own minimum
+        const w = next.x2 - next.x1 + 1, h = next.y2 - next.y1 + 1;
+        const min = (tool === 'room') ? station.MIN_ROOM : 1;
+        if (w < min || h < min) continue;
+        if (!legal(next)) continue;
+        if (!best || Math.abs(d) < best.d) best = { d: Math.abs(d), next };
+      }
+      if (best) out = best.next;
+    }
+    return out;
+  }
+
+  /* MOVE snaps too — relocating a room next to another is the same gesture with the same one-tile
+     miss. The whole footprint translates, so the snap is computed on its bounding box and the
+     resulting delta is applied to every rect; an L-shaped room keeps its shape. */
+  function snapMoveDelta(rm, dx, dy) {
+    if (!rm || !rm.rects || !rm.rects.length) return { dx, dy };
+    let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+    for (const r of rm.rects) { if (r.x1 < x1) x1 = r.x1; if (r.y1 < y1) y1 = r.y1; if (r.x2 > x2) x2 = r.x2; if (r.y2 > y2) y2 = r.y2; }
+    const moved = { x1: x1 + dx, y1: y1 + dy, x2: x2 + dx, y2: y2 + dy };
+    const shift = (ddx, ddy) => rm.rects.map(r => ({ x1: r.x1 + dx + ddx, y1: r.y1 + dy + ddy, x2: r.x2 + dx + ddx, y2: r.y2 + dy + ddy }));
+    const validate = (r) => {
+      const rects = shift(r.x1 - moved.x1, r.y1 - moved.y1);
+      const v = rm.kind === 'corridor' ? station.canPlaceHallway(rects, rm.id) : station.canPlaceRoom(rects, rm.kind, rm.id);
+      return !!(v && v.ok);
+    };
+    const s = snapFit(moved, { ignoreId: rm.id, validate });
+    return { dx: dx + (s.x1 - moved.x1), dy: dy + (s.y1 - moved.y1) };
+  }
+
   function ghostInfo() {
     if (!drag) {
       // DUPE armed: the copy ghosts under the cursor with no drag — every click stamps
@@ -3281,14 +3384,14 @@ const Build = (() => {
       // validated live — so "what happens if I press here" is answered before you press. A drag
       // from the same tile takes over the moment you move (drag.mode 'draw' below).
       if ((tool === 'room' || tool === 'hall') && hoverTile && !station.propAt(hoverTile.tx, hoverTile.ty)) {
-        const rect = stampRectFor(hoverTile.tx, hoverTile.ty);
+        const rect = snapFit(stampRectFor(hoverTile.tx, hoverTile.ty), {});
         const v = tool === 'hall' ? station.canPlaceHallway([rect]) : station.canPlaceRoom([rect], kind);
         return { rects: [rect], v, kind: tool, stamp: true };
       }
       return null;
     }
     if (drag.mode === 'draw') {
-      const rect = (tool === 'hall') ? laneRect(drag.start, drag.cur) : norm(drag.start, drag.cur);
+      const rect = snapFit((tool === 'hall') ? laneRect(drag.start, drag.cur) : norm(drag.start, drag.cur), { resize: true });
       const v = (tool === 'hall') ? station.canPlaceHallway([rect]) : station.canPlaceRoom([rect], kind);
       return { rects: [rect], v, kind: tool };
     }
@@ -3310,7 +3413,8 @@ const Build = (() => {
     }
     if (drag.mode === 'move') {
       const rm = station.roomById(drag.roomId); if (!rm) return null;
-      const dx = drag.cur.tx - drag.start.tx, dy = drag.cur.ty - drag.start.ty;
+      const raw = { dx: drag.cur.tx - drag.start.tx, dy: drag.cur.ty - drag.start.ty };
+      const { dx, dy } = snapMoveDelta(rm, raw.dx, raw.dy);
       const rects = rm.rects.map(r => ({ x1: r.x1 + dx, y1: r.y1 + dy, x2: r.x2 + dx, y2: r.y2 + dy }));
       const v = rm.kind === 'corridor' ? station.canPlaceHallway(rects, rm.id) : station.canPlaceRoom(rects, rm.kind, rm.id);
       return { rects, v, move: true, dx, dy };
@@ -4430,6 +4534,24 @@ const Build = (() => {
       onUp(__test__._tileEvent(tiles[tiles.length - 1]));
       return { ok: true, before, after: station.belts().length };
     },
+    /* drive a REAL place gesture (onDown→onMove→onUp) with a tool armed, and hand back the room the
+       station actually gained. This is the seam the snap proof needs: asserting snapFit() directly
+       would prove the arithmetic and nothing about whether the GHOST and the COMMIT agree, which is
+       the half that silently breaks (the ghost shows flush, the click lands one tile off). Drives
+       the same three handlers a mouse does, so both go through it. `mode` is 'room' or 'hall'. */
+    placeDrag: (mode, from, to) => {
+      if (!running || !station || !cv) return { ok: false, reason: 'not-in-build' };
+      selectTool(mode === 'hall' ? 'hall' : 'room');
+      const before = new Set(station.rooms().map(r => r.id));
+      onDown(__test__._tileEvent(from));
+      onMove(__test__._tileEvent(to));
+      onUp(__test__._tileEvent(to));
+      const made = station.rooms().find(r => !before.has(r.id));
+      return { ok: !!made, requested: { from, to },
+        rects: made ? made.rects.map(r => ({ ...r })) : null, kind: made ? made.kind : null };
+    },
+    // the ghost's CURRENT rect — so a proof can assert the ghost and the commit agree, not just one
+    ghostRects: () => { const g = ghostInfo(); return g && g.rects ? g.rects.map(r => ({ ...r })) : null; },
     // finish-the-line card readout for CDP proof scripts: the EXACT DOM state the card renders
     finCard: () => (finCardEl ? {
       key: finComp && finComp.key,
