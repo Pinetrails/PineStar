@@ -510,3 +510,23 @@ a:hover{ color:var(--amber); }
 .steps code{
   font-family:'VT323',monospace; font-size:18px; letter-spacing:1px; color:var(--amber-b);
 }
+
+/* Real not-found surface. Cloudflare Pages serves /404.html with an actual 404 status,
+   so missing routes never masquerade as a second copy of the homepage. */
+.not-found-page{ min-height:100vh; }
+.not-found{
+  min-height:100vh; padding:150px 24px 90px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; text-align:center;
+}
+.not-found-code{
+  font-size:clamp(86px,18vw,180px); line-height:.78; letter-spacing:10px;
+  color:rgba(255,157,47,.13); text-shadow:0 0 34px rgba(255,127,24,.15);
+}
+.not-found h1{
+  margin:26px 0 6px; font-weight:400; font-size:clamp(27px,5vw,48px);
+  letter-spacing:4px; color:var(--amber-b); text-shadow:0 0 14px rgba(255,157,47,.4);
+}
+.not-found p{ margin:0 0 28px; color:var(--ink-d); font-size:18px; letter-spacing:1px; }
+.not-found .cta-row{ justify-content:center; }
+.signal-lost{ color:#ff6b4d; }
+.signal-lost .dot{ background:#ff6b4d; box-shadow:0 0 8px rgba(255,107,77,.8); }

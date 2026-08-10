@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Providers & keys — StarNet Docs</title>
+<meta name="description" content="Model providers supported by StarNet, including API-key, account sign-in, local, and custom OpenAI-compatible options.">
+<link rel="canonical" href="https://starnetos.com/docs/providers.html">
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
 <link rel="stylesheet" href="docs.css?v=20260725">
 </head>
@@ -48,16 +50,18 @@
 hundreds of models, transparent per-token pricing. Paste it once in Settings and every agent can
 use any model you allow.</p>
 
-<h2>Supported provider families</h2>
+<h2>Supported providers</h2>
+<p>The provider picker is a first-class roster, not one generic endpoint wearing different labels:</p>
 <ul>
-<li><b>OpenRouter</b> — the recommended default; widest model selection.</li>
-<li><b>Anthropic</b> — direct API key for Claude models.</li>
-<li><b>OpenAI-compatible endpoints</b> — point StarNet at any API that speaks the OpenAI wire
-format, including local servers.</li>
-<li><b>Gemini</b> — direct Google API key.</li>
-<li><b>OAuth sign-ins</b> — supported providers let you sign in with an account instead of
-pasting a key (including Grok and Kimi sign-in flows).</li>
+<li><b>Account sign-in:</b> ChatGPT (Codex), Grok, and Kimi for Coding. These use the provider's
+sign-in flow instead of asking you to paste an API key.</li>
+<li><b>Direct API keys:</b> OpenRouter, OpenAI, Anthropic, Google Gemini, xAI, Groq, Mistral,
+DeepSeek, Together AI, Fireworks AI, Perplexity, and Cerebras.</li>
+<li><b>Local and custom:</b> Ollama on your machine, or any custom endpoint that speaks the
+OpenAI-compatible wire format.</li>
 </ul>
+<div class="callout"><b>Release note:</b> these docs track current source. The stable installer linked
+from the site can lag while the next Windows and macOS builds pass signing and notarization.</div>
 
 <h2>Where keys live</h2>
 <p>Keys are stored locally in your OS keychain via the desktop shell — never in plain project
