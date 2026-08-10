@@ -1526,7 +1526,7 @@
           else if (name === 'agent.tool_call') state.buf = '';
           else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
           else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
-          else if (name === 'agent.run.end') { state.reason = p.reason; state.budgetScope = p.budgetScope || null; state.budgetCapUsd = (typeof p.budgetCapUsd === 'number' && isFinite(p.budgetCapUsd)) ? p.budgetCapUsd : null; }
+          else if (name === 'agent.run.end') { state.reason = p.reason; state.budgetScope = p.budgetScope || null; state.budgetCapUsd = (typeof p.budgetCapUsd === 'number' && isFinite(p.budgetCapUsd)) ? p.budgetCapUsd : null; if (typeof p.usd === 'number' && isFinite(p.usd)) state.usd = Math.max(state.usd || 0, p.usd); }
         };
 
         // CONSENT SURFACE (per-chat, default OFF — see /approvals). With it off nothing changes: the run stays
@@ -1600,6 +1600,9 @@
       if (chain && !state.errMsg && !myRec.superseded && String(state.buf || '').trim()) {
         const line = await chain.advance({
           agentId: agentId, text: state.buf, originalText: msg.text,
+          // the entry run's reconciled spend: the chain's $ ceiling covers the whole line, stage one included
+          // (2026-08-10 audit). `line.usd` stays hop-only, so onLineOutcome's accounting is unchanged.
+          entryUsd: state.usd || 0,
           // WORK BELONGS TO A LINE: only work the floor routed in through this line's own INBOX advances it.
           // A /talk-bound or fallback-resolved message carries no lineId and stops at the dock that answered.
           lineId: lineId,

@@ -35,8 +35,11 @@ function makeRouter(o) {
     // every bay-bound agent the DEFAULT OFFICE while the world still painted "NO COMPUTE" over its bay: the
     // UI asserting a restriction the harness had stopped applying, and the looser grant of the two. Keeping
     // the bay projection here means the claim and the grant stay one fact; ROUTING still refuses below.
+    // The refusal carries `caps: true` so the persistence seam (index.js handleRouting) keeps this plan on
+    // disk: capsPlan was memory-only, so a refusal followed by a RESTART re-opened the same default-office
+    // hole this block closed live (2026-08-10 audit #1). Boot replays the file through this same function.
     capsPlan = p;
-    if (!Pipeline.ok(p)) { plan = null; return { ok: false, error: 'plan has blocking errors', codes: p.errors.filter(e => !e.warn).map(e => e.code) }; }
+    if (!Pipeline.ok(p)) { plan = null; return { ok: false, error: 'plan has blocking errors', caps: true, codes: p.errors.filter(e => !e.warn).map(e => e.code) }; }
     /* KEEP SPLITTER BALANCE ACROSS A NO-OP RE-POST (2026-08-07). `rr` is the per-splitter round-robin counter
        that makes dispatch SPREAD across a splitter's lanes; resetting it on every accepted plan meant any
        re-post restarted every splitter at lane 0. plan.hash is exactly the dispatch topology (sources, bays,

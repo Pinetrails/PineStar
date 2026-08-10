@@ -1950,6 +1950,21 @@ function channelRunConfigFor(agentId) {
     system: ident.system || ''
   };
 }
+/* A cron/Run-Now HOP's run config: the TARGET dock's own roster provider/model/credential, exactly like a
+   channel hop resolves it (channelRunConfigFor above). The 2026-08-10 audit finding was the same drawn floor
+   buying DIFFERENT models per trigger surface — a channel-routed hop ran on the receiving dock's roster while
+   a scheduled hop ran on the ROUTINE's provider/model/key, spending the routine's credential as a foreign
+   agent. EMPTY-roster grace mirrors agentExists (cron driver deps): a headless sidecar that has never seen a
+   roster push still runs scheduled lines on the routine's own config — fail-open on ABSENT data, never on a
+   roster that disagrees. An unconfigured target on a live roster fails honestly; the chain law then delivers
+   the last good output with a stop note. */
+function cronHopConfigFor(agentId, fallback) {
+  if (agentRoster.size === 0) {
+    const f = fallback || {};
+    return { ok: true, key: f.key, model: f.model, provider: f.provider, baseUrl: '', reasoningEffort: undefined };
+  }
+  return channelRunConfigFor(agentId);
+}
 function cronProviderFor(job) {
   const ident = cronIdentityFor(job && job.agentId);
   const explicit = normalizeProviderId((job && job.provider) || (ident && ident.provider) || '');
@@ -3431,6 +3446,9 @@ const ROUTING_FILE = path.join(WORKSPACES, 'routing.plan.json');
     if (plan && typeof plan === 'object') {
       const r = router.setPlan(plan);
       if (r && r.ok) console.log('  · routing plan restored from disk (hash ' + (plan.hash || '?') + ')');
+      // a persisted REFUSED plan is the capability view on purpose (see handleRouting): bays stay isolated,
+      // routing stays unarmed — the restart may not widen what the live refusal kept narrow (2026-08-10 #1).
+      else if (r && r.caps) console.log('  · routing plan restored for CAPABILITY only (' + ((r && r.error) || 'refused') + ') — bays stay isolated; routing unarmed until the app posts a deployable plan');
       else console.warn('[routing] persisted plan refused at boot (' + ((r && r.error) || 'invalid') + ') — routing unarmed until the app posts one');
     }
   } catch (e) { console.warn('[routing] plan restore failed:', (e && e.message) || e); }
@@ -4249,6 +4267,9 @@ const cronDriver = makeCronDriver({
      no chat transcript; its hops ride the routine's own stream so the session shows the whole line). */
   advanceChain: (o) => chainRunner.advance({
     agentId: o.agentId, text: o.text, originalText: o.originalText, signal: o.signal,
+    // the entry run's reconciled spend: MAX_CHAIN_USD bounds the WHOLE chain, and stage one is part of the
+    // chain (2026-08-10 audit — the entry run rode outside its own line's $ ceiling on every path).
+    entryUsd: o.entryUsd,
     /* ONLY A ROUTINE THAT BELONGS TO THE LINE RUNS THE LINE (Andrew's ruling, 2026-08-07). `o.runsLine` is
        the durable opt-in the driver reads off the job record (cron-store `runsLine`): true only for a routine
        created from a line's own INBOX trigger zone. Without it this is a routine that predates the workflow
@@ -4258,6 +4279,14 @@ const cronDriver = makeCronDriver({
     lineId: o.runsLine === true ? router.lineOfAgent(o.agentId) : null,
     runAgent: async (h) => {
       if (o.onHop) { try { o.onHop(); } catch (_) {} }
+      /* A HOP RUNS AS THE TARGET AGENT ON THE TARGET'S OWN ROSTER CONFIG (2026-08-10 audit #3): a channel
+         hop already resolves the receiving dock's provider/model/credential (hub.js resolveRunConfig); this
+         seam ran every hop on the ROUTINE's — same floor, different model, and the routine's key spending
+         as a foreign agent, depending on nothing but what triggered the line. */
+      const hopConfig = cronHopConfigFor(h.agentId, o);
+      if (!hopConfig || hopConfig.ok === false) {
+        return { text: '', usd: 0, error: (hopConfig && hopConfig.error) || ('target agent ' + h.agentId + ' is not configured') };
+      }
       const hs = { buf: '', errMsg: null, usd: 0 };
       const sink = (name, payload) => {
         const p = payload || {};
@@ -4270,7 +4299,9 @@ const cronDriver = makeCronDriver({
       };
       try {
         await runOnce({
-          key: o.key, model: o.model, provider: o.provider, system: cronSystemFor(h.agentId),
+          key: hopConfig.key, model: hopConfig.model, provider: hopConfig.provider,
+          baseUrl: hopConfig.baseUrl || '', reasoningEffort: hopConfig.reasoningEffort,
+          system: cronSystemFor(h.agentId),
           messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
           emit: sink, signal: h.signal, runId: crypto.randomUUID(), streamId: o.streamId,
           surface: 'autonomous', trigger: 'schedule', reflect: true,
@@ -8384,11 +8415,13 @@ function handleRouting(req, res) {
     if (raw && raw.trim()) { try { plan = JSON.parse(raw); } catch (_) { res.writeHead(400); return res.end('bad json'); } }
     const r = router.setPlan(plan);
     // persist every ACCEPTED plan (incl. an accepted clear) so routing survives a sidecar restart (2026-07-06).
-    // A REFUSED post persists the CLEAR (2026-08-04): setPlan drops the in-memory plan on refusal, so leaving
-    // the previously-accepted file on disk would re-arm STALE routing at boot — live behavior (unrouted
-    // fallback) and post-restart behavior (old floor's routing) diverged for the same posted state. Boot must
-    // match live: accepted plan -> persist it; accepted clear OR refusal -> persist null (same durable idiom).
-    try { saveResilient(ROUTING_FILE, (r && r.ok) ? plan : null); } catch (e) { console.warn('[routing] plan persist failed:', (e && e.message) || e); }
+    // A REFUSED post persists the REFUSED PLAN ITSELF, never the previously-accepted file (2026-08-04): stale
+    // routing must not re-arm at boot. But a well-formed refusal is still the CAPABILITY view (r.caps — see
+    // router.setPlan), and keeping capsPlan memory-only meant a refusal followed by a headless restart handed
+    // every bay-bound cron/routed run the FULL default office while the floor still painted bay restrictions
+    // (2026-08-10 audit #1). Boot replays this file through the same setPlan, which re-refuses routing AND
+    // restores the bay projection — boot matches live for BOTH facts. Malformed post or clear -> null.
+    try { saveResilient(ROUTING_FILE, (r && (r.ok || r.caps)) ? plan : null); } catch (e) { console.warn('[routing] plan persist failed:', (e && e.message) || e); }
     res.writeHead(r.ok ? 200 : 422, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(r));
   }).catch(() => { try { res.writeHead(400); res.end(); } catch (_) {} });
@@ -10155,14 +10188,16 @@ async function handleCronRun(req, res) {
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
   const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e) console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
-  const state = { buf: '', errMsg: null, reason: null, transient: false };
+  const state = { buf: '', errMsg: null, reason: null, transient: false, usd: 0 };
   const teeEmit = (name, payload) => {
     try { emit(name, payload); } catch (_) {}
     const p = payload || {};
     if (name === 'agent.token') state.buf += (p.delta || '');
     else if (name === 'agent.tool_call') state.buf = '';
     else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
-    else if (name === 'agent.run.end') state.reason = p.reason;
+    // usd rides the same terminal event (mirrors cron-driver's sink): the entry run's reconciled spend seeds
+    // the chain's $ ceiling below, so a Run-Now line is bounded exactly like the scheduled fire.
+    else if (name === 'agent.run.end') { state.reason = p.reason; if (typeof p.usd === 'number' && isFinite(p.usd)) state.usd = Math.max(state.usd, p.usd); }
   };
   try { cronEmit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: Date.now() }); } catch (_) {}
   // NS-0: a manual Run Now is still a cron FIRE decision — record it in the autonomy ledger (binding:'run-now'
@@ -10219,6 +10254,7 @@ async function handleCronRun(req, res) {
       try {
         const line = await chainRunner.advance({
           agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''), signal: ac.signal,
+          entryUsd: state.usd,   // stage one is part of the chain — its spend counts against MAX_CHAIN_USD (2026-08-10)
           // SAME ORIGIN AS THE SCHEDULED FIRE (work belongs to a line, 2026-08-07): Run Now is this routine's
           // own trigger pressed by hand, so it carries the dock's lineId and the line runs — but ONLY for a
           // routine that belongs to the line (the durable `runsLine` opt-in, read off the same job record the
@@ -10226,6 +10262,13 @@ async function handleCronRun(req, res) {
           // four from the button, and a terminal routine must buy exactly one run from either.
           lineId: job.runsLine === true ? router.lineOfAgent(job.agentId) : null,
           runAgent: async (h) => {
+            /* A HOP RUNS AS THE TARGET AGENT ON THE TARGET'S OWN ROSTER CONFIG (2026-08-10 audit #3) —
+               mirrors the scheduled seam (cron driver advanceChain) and the channel hub's resolveRunConfig:
+               same floor, same models, whatever triggered the line. */
+            const hopConfig = cronHopConfigFor(h.agentId, { key: key, model: model, provider: provider });
+            if (!hopConfig || hopConfig.ok === false) {
+              return { text: '', usd: 0, error: (hopConfig && hopConfig.error) || ('target agent ' + h.agentId + ' is not configured') };
+            }
             const hs = { buf: '', errMsg: null, usd: 0 };
             const hopSink = (name, payload) => {
               try { emit(name, payload); } catch (_) {}
@@ -10238,7 +10281,9 @@ async function handleCronRun(req, res) {
             };
             try {
               await runOnce({
-                key: key, model: model, provider: provider, system: cronSystemFor(h.agentId),
+                key: hopConfig.key, model: hopConfig.model, provider: hopConfig.provider,
+                baseUrl: hopConfig.baseUrl || '', reasoningEffort: hopConfig.reasoningEffort,
+                system: cronSystemFor(h.agentId),
                 messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
                 emit: hopSink, signal: h.signal, runId: crypto.randomUUID(), streamId: 'cron-' + runId,
                 surface: 'autonomous', trigger: 'schedule', broadcast: true, reflect: true,

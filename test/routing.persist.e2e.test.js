@@ -1,10 +1,14 @@
 /* node test/routing.persist.e2e.test.js — POST /api/routing over the REAL sidecar: refusal, persistence,
    and the boot/live parity law (audit 2026-08-04).
 
-   The bug: an accepted plan persisted to routing.plan.json and re-armed at boot, but a REFUSED (422) plan
-   only cleared the IN-MEMORY plan — the previous accepted plan stayed on disk, so live behavior (unrouted
-   fallback) and post-restart behavior (the OLD floor's routing) diverged for the same posted state. Now a
-   refusal persists the clear, so boot always matches live. Boot pattern per cron.run-now.e2e.test.js.
+   The bug (2026-08-04): an accepted plan persisted to routing.plan.json and re-armed at boot, but a REFUSED
+   (422) plan only cleared the IN-MEMORY plan — the previous accepted plan stayed on disk, so live behavior
+   (unrouted fallback) and post-restart behavior (the OLD floor's routing) diverged for the same posted state.
+   The bug's bug (2026-08-10 audit #1): persisting the CLEAR on refusal threw away the CAPABILITY view too —
+   capsPlan was memory-only, so a refusal + headless restart handed bay-bound cron/routed runs the FULL default
+   office while the floor still painted bay restrictions. A refusal now persists the REFUSED plan itself; boot
+   replays it through setPlan, which re-refuses routing AND restores the bay projection — boot matches live for
+   BOTH facts. Boot pattern per cron.run-now.e2e.test.js.
    In test/http.list (a child-process boot test does not gate test:fast). */
 'use strict';
 
@@ -122,21 +126,29 @@ function cyclicPlan() {
     headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
     A.eq(await chainNext(), 'stage-two', 'the re-armed routing answers the same chain edge after restart');
 
-    // ---- refuse: 422 clears LIVE routing AND the persisted plan (the audit fix) ----
+    /* ---- refuse: 422 unarms LIVE routing but KEEPS the refused plan as the capability view ----
+       (2026-08-10 audit #1). The 2026-08-04 fix persisted the CLEAR on refusal so stale routing could not
+       re-arm at boot — but that threw away the CAPABILITY view with it: capsPlan was memory-only, so a
+       refusal followed by a headless restart handed every bay-bound cron/routed run the FULL default office
+       while the floor still painted bay restrictions. Now the refusal persists the REFUSED plan itself; boot
+       replays it through the same setPlan, which re-refuses routing AND restores the bay projection. The
+       stale-routing law still holds: the OLD accepted floor never survives a refusal on disk. */
     const bad = cyclicPlan();
     const p2 = await fetch(B + '/api/routing', { method: 'POST', headers, body: JSON.stringify(bad) });
     A.eq(p2.status, 422, 'a non-deployable plan is refused (422)');
     const refusal = await p2.json();
     A.ok(!refusal.ok && Array.isArray(refusal.codes) && refusal.codes.indexOf('CYCLE') >= 0, 'the refusal names the blocker (CYCLE)');
+    A.ok(refusal.caps === true, 'the refusal says the plan was KEPT as the capability view (caps: true)');
     A.eq(await chainNext(), null, 'live routing is unarmed after the refusal (dispatch falls back)');
-    A.eq(readFile(), null, 'the refusal PERSISTS the clear — the old accepted plan no longer sits on disk');
+    A.eq(readFile().hash, bad.hash, 'the refusal persists the REFUSED plan itself — and the old accepted floor no longer sits on disk');
 
-    // ---- restart after refusal: boot matches live (was: the STALE old plan re-armed) ----
+    // ---- restart after refusal: boot matches live for BOTH facts — routing unarmed, bays still isolated ----
     await stop(b);
     b = await boot(b.port, env, 20);
     B = 'http://' + HOST + ':' + b.port;
-    A.ok(b.out().indexOf('routing plan restored from disk') < 0, 'boot restores NO plan after a refusal');
-    A.ok(b.out().indexOf('persisted plan refused at boot') < 0, '...and refuses nothing at boot either (the file is a clean clear, not a stale plan)');
+    A.ok(b.out().indexOf('routing plan restored for CAPABILITY only') >= 0, 'boot restores the refused plan as the CAPABILITY view (bays stay isolated after a headless restart)');
+    A.ok(b.out().indexOf('routing plan restored from disk') < 0, '...but never as ROUTING — a refused floor cannot re-arm dispatch at boot');
+    A.ok(b.out().indexOf('persisted plan refused at boot') < 0, '...and the malformed-plan warn does not fire — this is the deliberate capability restore, not an error');
     token = await bootToken(B, B);
     headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
     A.eq(await chainNext(), null, 'post-restart routing matches live: unarmed (boot/live parity)');

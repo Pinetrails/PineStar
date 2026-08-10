@@ -46,4 +46,29 @@ const seamBlock = sliceBetween(driverBlock, /advanceChain:\s*\(o\)\s*=>\s*chainR
 A.ok(/unattendedGrants:\s*\[\]/.test(seamBlock), 'the scheduled advanceChain seam runs every hop with NO unattended grants');
 A.ok(!/unattendedGrants:\s*o\.unattendedGrants/.test(seamBlock), 'the seam never forwards caller-supplied grants into a hop');
 
+/* A HOP RUNS ON THE TARGET DOCK'S OWN ROSTER CONFIG (2026-08-10 audit #3). Both cron hop executors ran the
+   foreign dock on the ROUTINE's provider/model/key — same drawn floor, different models (and the routine's
+   credential spending as a foreign agent) depending on nothing but what triggered the line. Channel hops
+   already resolved the receiving dock's roster (hub.js resolveRunConfig); both cron paths now resolve
+   through cronHopConfigFor (roster config when a roster exists, the routine's own config only under the
+   documented EMPTY-roster headless grace). Locked textually so a refactor that quietly re-inherits the
+   routine's key into a hop turns this red. */
+A.ok(/function cronHopConfigFor\s*\(/.test(src), 'the cron hop config resolver exists');
+A.ok(/agentRoster\.size === 0/.test(sliceBetween(src, /function cronHopConfigFor\s*\(/, /function cronProviderFor/)), 'and it fails open ONLY on an empty (never-pushed) roster');
+A.ok(/cronHopConfigFor\(h\.agentId/.test(seamBlock), "the scheduled seam resolves each hop's config from the TARGET agent");
+A.ok(/cronHopConfigFor\(h\.agentId/.test(runNowHopBlock), "the Run Now hop resolves its config from the TARGET agent too");
+// the pin lands on the hop's runOnce CALL: the fallback arg may name the routine's config (empty-roster
+// grace), but what the hop actually SPENDS must be the resolved target config, on both fire paths.
+const seamHopRun = sliceBetween(seamBlock, /await runOnce\(\{/, /\}\);/);
+const runNowHopRun = sliceBetween(runNowHopBlock, /await runOnce\(\{/, /\}\);/);
+A.ok(/key:\s*hopConfig\.key,\s*model:\s*hopConfig\.model,\s*provider:\s*hopConfig\.provider/.test(seamHopRun), "the scheduled hop's runOnce spends the target's key/model/provider");
+A.ok(!/key:\s*o\.key/.test(seamHopRun), "and never the routine's key");
+A.ok(/key:\s*hopConfig\.key,\s*model:\s*hopConfig\.model,\s*provider:\s*hopConfig\.provider/.test(runNowHopRun), "the Run Now hop's runOnce spends the target's key/model/provider");
+A.ok(!/key:\s*key,/.test(runNowHopRun), "and never the routine's resolved key");
+
+/* THE ENTRY RUN IS PART OF ITS OWN CHAIN'S $ CEILING (2026-08-10 audit): both fire paths seed the chain
+   runner with stage one's reconciled spend, so MAX_CHAIN_USD bounds the whole line, not just the hops. */
+A.ok(/entryUsd:\s*o\.entryUsd/.test(seamBlock), "the scheduled seam forwards the entry run's spend into the chain ceiling");
+A.ok(/entryUsd:\s*state\.usd/.test(runNowBlock), "Run Now seeds the chain ceiling with stage one's reconciled spend");
+
 if (require.main === module) A.report('cron.run-now.test');

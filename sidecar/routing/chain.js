@@ -29,7 +29,7 @@
 const Pipeline = require('../../frontend/app/pipeline.js');
 
 const MAX_HOPS = 6;            // stages AFTER the first (a drawn floor with more is a design smell, not a run)
-const MAX_CHAIN_USD = 2.00;    // the whole chain's spend ceiling — one message must not become an open tab
+const MAX_CHAIN_USD = 2.00;    // the WHOLE chain's spend ceiling, entry run included (seed.entryUsd) — one message must not become an open tab
 const PREVIEW = 40;
 
 function makeChainRunner(o) {
@@ -92,8 +92,8 @@ function makeChainRunner(o) {
 
   const preview = s => String(s || '').replace(/\s+/g, ' ').slice(0, PREVIEW);
 
-  /* advance({ agentId, text, originalText, signal, runAgent }) — run every downstream stage of the line that
-     starts at the dock which just finished. `runAgent` may be supplied PER CALL: the runner is built once in
+  /* advance({ agentId, text, originalText, signal, runAgent, entryUsd }) — run every downstream stage of the
+     line that starts at the dock which just finished. `runAgent` may be supplied PER CALL: the runner is built once in
      index.js with the floor's edge function bound, and each caller (the channel hub, a cron fire, the dev
      route) hands in its own way to execute a hop — the hub keeps owning transcripts/persona/consent and stays
      require-free, exactly like the runOnce it is already handed. Returns:
@@ -106,10 +106,16 @@ function makeChainRunner(o) {
     // the line this work ENTERED on (null for a direct order — the gate then keeps every dock terminal)
     const lineId = (s.lineId != null && String(s.lineId)) || null;
     const runAgent = typeof s.runAgent === 'function' ? s.runAgent : defaultRunAgent;
+    /* the ENTRY run's reconciled spend (2026-08-10 audit): maxUsd bounds the WHOLE chain and stage one is part
+       of the chain — seeded by the caller because this module never sees that run. `out.usd` stays HOP-ONLY:
+       both production callers ADD it to their own entry accounting (cron-driver `state.usd += line.usd`, the
+       hub's onLineOutcome), so totalling the entry into it here would double-count the same dollars. */
+    const entryUsd = (typeof s.entryUsd === 'number' && isFinite(s.entryUsd) && s.entryUsd > 0) ? s.entryUsd : 0;
     const out = { text: s.text, agentId: startAgent, hops: [], usd: 0, stopped: null };
     if (!nextAgent || !runAgent || !startAgent) return out;
 
     const visited = { [startAgent]: true };
+    let spent = entryUsd;   // entry + hops — what the $ ceiling is actually measured against
     let cur = startAgent;
     for (let hop = 1; hop <= maxHops + 1; hop++) {
       if (s.signal && s.signal.aborted) { out.stopped = 'stopped'; return out; }
@@ -122,7 +128,9 @@ function makeChainRunner(o) {
       if (!target) { out.stopped = refusalNote(cur, lineId); return out; }
       if (visited[target]) { out.stopped = 'the line loops back to ' + target; return out; }
       if (hop > maxHops) { out.stopped = 'the line is longer than ' + maxHops + ' stages'; return out; }
-      if (out.usd >= maxUsd) { out.stopped = 'the line reached its $' + maxUsd.toFixed(2) + ' limit'; return out; }
+      // PRE-hop because a hop's cost is unknowable before it runs: the ceiling is enforced to within one
+      // hop's spend. `spent` (never out.usd) is the guard — entry seeded, so stage one no longer rides free.
+      if (spent >= maxUsd) { out.stopped = 'the line reached its $' + maxUsd.toFixed(2) + ' limit'; return out; }
       // a stage that produced nothing has nothing to hand on — handing it an empty crate would buy a run that
       // can only hallucinate its input (and the floor would draw a crate carrying nothing).
       if (!String(out.text || '').trim()) { out.stopped = cur + ' produced no output to hand on'; return out; }
@@ -147,7 +155,7 @@ function makeChainRunner(o) {
       catch (e) { r = { error: (e && e.message) || String(e || 'stage failed') }; }
       r = r || {};
       const usd = (typeof r.usd === 'number' && isFinite(r.usd) && r.usd > 0) ? r.usd : 0;
-      out.usd += usd;
+      out.usd += usd; spent += usd;
 
       // A FAILED STAGE KEEPS THE LAST GOOD ANSWER. The reply the user gets is still real work by a real agent;
       // the note says the line stopped short, so the floor and the channel tell the same story.
