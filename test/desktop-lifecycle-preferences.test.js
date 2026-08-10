@@ -40,6 +40,8 @@ const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
   A.ok(/if !start_minimized\s*\{\s*let _ = window\.show\(\)/.test(main), 'stored start-minimized choice gates initial window reveal');
   A.ok(/close_to_tray\s*=\s*lifecycle_preferences_snapshot\(st\)\.close_to_tray[\s\S]{0,500}?if close_to_tray[\s\S]{0,300}?return;/.test(main), 'stored close-to-tray choice keeps the supervised process alive before armed-work probing');
   A.ok(/"lifecycle_quit"[\s\S]{0,400}?drain_and_kill_sidecar/.test(main), 'explicit tray Quit still drains and stops the sidecar');
+  A.ok(/#\[cfg\(unix\)\][\s\S]*?fn terminate_sidecar_child[\s\S]*?SIGTERM[\s\S]*?child\.kill\(\)/.test(main), 'Unix Quit gives the owned sidecar a graceful stop before the force-kill fallback');
+  A.ok(/#\[cfg\(target_os = "macos"\)\][\s\S]*?fn reap_orphan_sidecars[\s\S]*?proc_listallpids[\s\S]*?mac_process_image_path\(pid\)[\s\S]*?SIGTERM[\s\S]*?SIGKILL/.test(main), 'macOS boot reaps only processes proven to use the exact bundled Node image');
   A.ok(/save_verified[\s\S]*read_exact\(path\)/.test(prefs), 'native preferences require exact read-back before success');
   A.ok(/id="set-start-minimized"/.test(settings) && /Lifecycle\.setStartMinimized/.test(settings), 'Settings renders and wires START MINIMIZED TO TRAY');
   A.ok(/id="set-close-to-tray"/.test(settings) && /Lifecycle\.setCloseToTray/.test(settings), 'Settings renders and wires CLOSE WINDOW TO TRAY');

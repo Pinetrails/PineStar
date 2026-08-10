@@ -35,6 +35,10 @@ on:
         description: "Evidence-only mode: download the signed Windows artifact from this run ID and execute T0 on a clean runner"
         required: false
         default: ""
+      require_signed_mac:
+        description: "Fail unless Intel installed-app acceptance uses a notarized Developer ID build"
+        required: false
+        default: "false"
   # No tag trigger: v* tags run release-train.yml (the shipping path). This workflow is for
   # manual test builds / shareable pre-releases only.
 
@@ -281,9 +285,41 @@ jobs:
           if-no-files-found: error
           path: notarization-input/**/*.dmg
 
+  # Build/finalize prove bytes and trust. This proves the user journey on Intel hardware:
+  # install the DMG, ask Finder to open it, recover a v0.9.0 manual-sidecar station,
+  # quit, relaunch, and read the same station again.
+  intel-macos-installed-acceptance:
+    needs: [build, notarize-macos]
+    if: ${{ !cancelled() }}
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Intel macOS distributable
+        uses: actions/download-artifact@v4
+        with:
+          name: starnet-darwin-x64
+          path: intel-distributable
+
+      - name: Install, Finder-launch, and recover v0.9.0 station
+        shell: bash
+        env:
+          STARNET_REQUIRE_NOTARIZED: ${{ inputs.require_signed_mac }}
+        run: |
+          dmg=$(find intel-distributable -type f -name '*_x64.dmg' -print -quit)
+          test -n "${dmg:-}"
+          bash scripts/verify-macos-intel-installed.sh "$dmg" intel-macos-installed-acceptance.json
+
+      - name: Upload Intel installed-app receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: intel-macos-installed-acceptance
+          if-no-files-found: error
+          path: intel-macos-installed-acceptance.json
+
   publish-test:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish-test == 'true'
-    needs: [build, notarize-macos]
+    needs: [build, notarize-macos, intel-macos-installed-acceptance]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -349,9 +385,9 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $expectedCommit = '765847f833dca0c6d20038091f91ffcc6fca76d6'
-          $expectedHash = '364882E96127921DB35DCAAD034B05513AFD9EF91906222AF98E5E05AB2E9078'
-          $expectedBytes = 124792984
+          $expectedCommit = '155ea52f83a3643c6705b816c48119d7d1540378'
+          $expectedHash = 'D202B2A2D5279F4F193C4D80EBB445981394B68244820E1BD6177FEFC522EEB6'
+          $expectedBytes = 124987552
           $installer = Get-ChildItem downloaded -Recurse -File -Filter 'StarNet_0.10.0_x64-setup.exe' | Select-Object -First 1
           if (-not $installer) { throw 'signed installer is missing from the selected workflow artifact' }
           $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer.FullName).Hash
@@ -369,7 +405,7 @@ jobs:
           node scripts/minisign-verify.mjs --artifact (Join-Path $nsis $installer.Name) --sig (Join-Path $nsis ($installer.Name + '.sig'))
           if ($LASTEXITCODE -ne 0) { throw 'updater signature verification failed' }
 
-          $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\StarNet-T0-765847f8'
+          $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\StarNet-T0-155ea52f'
           $install = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installRoot") -Wait -PassThru
           if ($install.ExitCode -ne 0) { throw "installer exit code $($install.ExitCode)" }
           $desktopExe = Join-Path $installRoot 'skynet-desktop.exe'
@@ -494,7 +530,7 @@ jobs:
           $ErrorActionPreference = 'Continue'
           $diagnostics = '.dogfood\external-t0\diagnostics'
           New-Item -ItemType Directory -Path $diagnostics -Force | Out-Null
-          $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\StarNet-T0-765847f8'
+          $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\StarNet-T0-155ea52f'
           $appDataRoot = Join-Path $env:APPDATA 'ai.skynet.harness'
           $localAppDataRoot = Join-Path $env:LOCALAPPDATA 'ai.skynet.harness'
           $desktopExe = Join-Path $installRoot 'skynet-desktop.exe'
@@ -542,7 +578,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: t0-clean-install-765847f8
+          name: t0-clean-install-155ea52f
           if-no-files-found: warn
           include-hidden-files: true
           path: |

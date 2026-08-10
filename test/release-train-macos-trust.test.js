@@ -11,6 +11,7 @@ const root = path.join(__dirname, '..');
 const yml = fs.readFileSync(path.join(root, '.github', 'workflows', 'release-train.yml'), 'utf8');
 const submitScript = fs.readFileSync(path.join(root, 'scripts', 'notarize-macos-submit.sh'), 'utf8');
 const finalizeScript = fs.readFileSync(path.join(root, 'scripts', 'notarize-macos-finalize.sh'), 'utf8');
+const installedScript = fs.readFileSync(path.join(root, 'scripts', 'verify-macos-intel-installed.sh'), 'utf8');
 const hydrateScript = fs.readFileSync(path.join(root, 'scripts', 'hydrate-sharp-macos-x64.sh'), 'utf8');
 const nativeScript = fs.readFileSync(path.join(root, 'scripts', 'sign-macos-native-deps.sh'), 'utf8');
 
@@ -103,8 +104,12 @@ A.ok(/notarization-input-\$\{\{ matrix\.target \}\}/.test(yml),
   'exact submitted DMG and submission id are preserved as a retryable artifact');
 A.ok(/notarize-macos:[\s\S]*?needs: build[\s\S]*?timeout-minutes: 350/.test(yml),
   'notarization finalization is an independent bounded job');
-A.ok(/needs: \[build, notarize-macos\]/.test(yml),
-  'release assembly waits for notarized Mac artifacts');
+A.ok(/intel-macos-installed-acceptance:[\s\S]*?needs: \[build, notarize-macos\][\s\S]*?runs-on: macos-15-intel/.test(yml),
+  'shipping train runs installed-app acceptance on actual Intel hardware');
+A.ok(/STARNET_REQUIRE_NOTARIZED: "true"[\s\S]*?verify-macos-intel-installed\.sh/.test(yml),
+  'shipping Intel acceptance requires the notarized Developer ID verdict');
+A.ok(/assemble:[\s\S]*?needs: \[build, notarize-macos, intel-macos-installed-acceptance\]/.test(yml),
+  'release assembly waits for notarized Mac artifacts and installed Intel acceptance');
 
 A.ok(/notarytool submit/.test(submitScript) && !/notarytool submit[\s\S]*?--wait/.test(submitScript),
   'submission is asynchronous and never consumes a runner waiting on Apple');
@@ -120,5 +125,14 @@ A.ok(/source=Notarized Developer ID[\s\S]*?exit 1/.test(finalizeScript),
   'a non-notarized Gatekeeper source is a hard failure');
 A.ok(!/no Apple cert[\s\S]*?exit 0/.test(finalizeScript),
   'shipping trust proof has no unsigned-success escape hatch');
+A.ok(/spctl -a -t exec -vv "\$installed"/.test(installedScript)
+  && /source=Notarized Developer ID/.test(installedScript),
+  'installed verifier rechecks Gatekeeper on the app copied out of the DMG');
+A.ok(/tail -n "\+\$\(\(before_lines \+ 1\)\)"/.test(installedScript)
+  && /listening=true/.test(installedScript)
+  && /curl -fsS "http:\/\/127\.0\.0\.1:\$candidate_port\/api\/health"/.test(installedScript),
+  'installed verifier proves the Finder-launched bundled sidecar is listening');
+A.ok(/\.migration-receipt\.json/.test(installedScript) && /receipt\.get\("validated"\) is True/.test(installedScript),
+  'installed verifier requires the activated v0.9.0 migration receipt');
 
 A.report('release-train-macos-trust.test');

@@ -225,10 +225,21 @@ try {
 
   const per = new Map();
   let couchTvSeatSamples = 0, sharedBarSamples = 0, maxBarSitters = 0;
+  // ONE MACHINE, ONE PLAYER (2026-08-10): two bodies sharing the same usingProp id at the same
+  // instant is the shoulder-to-shoulder-at-the-arcade bug. A couch legitimately shares its id
+  // (several cushions, one prop); every other kind is single-occupant, seats included (one stool,
+  // one id). Recorded as a hard violation, not a stat.
+  const sharedMachine = new Map();   // propId -> worst simultaneous occupant count
   for (const s of samples) {
     const barSitters = s.bodies.filter(b => b && b.sitting && b.seated && b.facingProp && b.facingProp.useKind === 'bar');
     maxBarSitters = Math.max(maxBarSitters, barSitters.length);
     if (barSitters.length >= 2) sharedBarSamples++;
+    const users = new Map();
+    for (const b of s.bodies) {
+      if (!b || b.unplaced || !b.usingProp || b.useKind === 'couch') continue;
+      users.set(b.usingProp, (users.get(b.usingProp) || 0) + 1);
+    }
+    for (const [pid, n] of users) if (n >= 2) sharedMachine.set(pid, Math.max(sharedMachine.get(pid) || 0, n));
     for (const b of s.bodies) {
       if (!b || b.unplaced) continue;
       if (b.goal === 'lounge' && b.useKind === 'couch' && b.sitting && b.seated) couchTvSeatSamples++;
@@ -271,6 +282,7 @@ try {
   const report = {
     minutes: MINUTES, samples: samples.length, floor: builtFloor, encounters, encounterTimeline: timeline,
     requestedBehaviors: { couchTvSeatSamples, sharedBarSamples, maxBarSitters },
+    sharedMachines: Object.fromEntries(sharedMachine),   // propId -> worst simultaneous occupants (must be empty)
     bodies: []
   };
   for (const r of per.values()) {
@@ -305,6 +317,7 @@ try {
       if (b.outOfZone > 0) fail.push(`${b.name}: ${b.outOfZone} samples OUT of its zone (containment)`);
       if (b.stillSamples >= 20 && b.wallPct > 12) fail.push(`${b.name}: ${b.wallPct}% of still samples nose-to-wall (bar: <=12%)`);
     }
+    for (const [pid, n] of sharedMachine) fail.push(`${n} bodies shared machine ${pid} at the same instant (one machine, one player)`);
     if (KITNAME !== 'lounge' && builtFloor && builtFloor.added && !report.bodies.some(b => b.nextDoorSamples > 0)) {
       fail.push('mixed two-room soak observed no body cross into the directly connected room (W3 unproven)');
     }

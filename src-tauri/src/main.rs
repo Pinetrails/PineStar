@@ -66,6 +66,31 @@ struct AppState {
     shutting_down: AtomicBool,
 }
 
+#[cfg(unix)]
+fn terminate_sidecar_child(child: &mut Child) {
+    unsafe extern "C" {
+        fn kill(pid: i32, signal: i32) -> i32;
+    }
+
+    const SIGTERM: i32 = 15;
+    let _ = unsafe { kill(child.id() as i32, SIGTERM) };
+    let deadline = Instant::now() + Duration::from_secs(4);
+    while Instant::now() < deadline {
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[cfg(not(unix))]
+fn terminate_sidecar_child(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
 impl AppState {
     /// Kill the child sidecar on intentional shutdown. HONESTY NOTE: this only covers the
     /// graceful paths — the ExitRequested run-event and `Drop for AppState`. A hard kill of
@@ -76,8 +101,7 @@ impl AppState {
     fn kill_sidecar(&self) {
         if let Ok(mut guard) = self.sidecar.lock() {
             if let Some(mut child) = guard.take() {
-                let _ = child.kill();
-                let _ = child.wait();
+                terminate_sidecar_child(&mut child);
             }
         }
     }
@@ -1498,15 +1522,130 @@ fn reap_orphan_sidecars(node: &Path, startup_log: &Option<PathBuf>) -> usize {
     reaped
 }
 
-/// Non-Windows: no reap wired yet (the observed orphan escape is Windows taskkill /F; mac/linux
-/// hard kills of the shell can strand a sidecar the same way — hook a pgrep-by-exact-path pass
-/// in here when a case is observed). Honest no-op, logged.
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+fn mac_process_image_path(pid: i32) -> Option<PathBuf> {
+    use std::ffi::{c_void, OsString};
+    use std::os::unix::ffi::OsStringExt;
+
+    #[link(name = "proc")]
+    unsafe extern "C" {
+        fn proc_pidpath(pid: i32, buffer: *mut c_void, buffersize: u32) -> i32;
+    }
+
+    const PROC_PIDPATHINFO_MAXSIZE: usize = 4096;
+    let mut buffer = vec![0u8; PROC_PIDPATHINFO_MAXSIZE];
+    let written = unsafe {
+        proc_pidpath(
+            pid,
+            buffer.as_mut_ptr().cast::<c_void>(),
+            buffer.len() as u32,
+        )
+    };
+    if written <= 0 {
+        return None;
+    }
+    let len = buffer
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(written as usize);
+    Some(PathBuf::from(OsString::from_vec(buffer[..len].to_vec())))
+}
+
+/// macOS backstop for a desktop process that exits without running its managed-state Drop hook.
+/// Enumerate every PID, authorize termination only when libproc reports the exact bundled Node
+/// image path, ask it to shut down gracefully, then force only that same verified image if needed.
+#[cfg(target_os = "macos")]
+fn reap_orphan_sidecars(node: &Path, startup_log: &Option<PathBuf>) -> usize {
+    use std::ffi::c_void;
+
+    #[link(name = "proc")]
+    unsafe extern "C" {
+        fn proc_listallpids(buffer: *mut c_void, buffersize: i32) -> i32;
+    }
+    unsafe extern "C" {
+        fn kill(pid: i32, signal: i32) -> i32;
+    }
+
+    if !is_reapable_node_path(node) {
+        log_startup(
+            startup_log,
+            format!(
+                "sidecar-reap: skipped — node path {:?} is not an absolute bundled runtime (dev PATH fallback)",
+                node
+            ),
+        );
+        return 0;
+    }
+
+    let estimated = unsafe { proc_listallpids(std::ptr::null_mut(), 0) };
+    if estimated <= 0 {
+        log_startup(
+            startup_log,
+            "sidecar-reap: macOS PID enumeration failed — skipped",
+        );
+        return 0;
+    }
+    let mut pids = vec![0i32; estimated as usize + 64];
+    let capacity = (pids.len() * std::mem::size_of::<i32>()) as i32;
+    let count = unsafe { proc_listallpids(pids.as_mut_ptr().cast::<c_void>(), capacity) };
+    if count <= 0 {
+        log_startup(
+            startup_log,
+            "sidecar-reap: macOS PID enumeration failed — skipped",
+        );
+        return 0;
+    }
+    pids.truncate((count as usize).min(pids.len()));
+
+    let mut reaped = 0usize;
+    for pid in pids {
+        if pid <= 0 || pid == std::process::id() as i32 {
+            continue;
+        }
+        if !mac_process_image_path(pid).is_some_and(|path| same_path(&path, node)) {
+            continue;
+        }
+
+        const SIGTERM: i32 = 15;
+        const SIGKILL: i32 = 9;
+        let _ = unsafe { kill(pid, SIGTERM) };
+        let deadline = Instant::now() + Duration::from_secs(4);
+        while Instant::now() < deadline {
+            if !mac_process_image_path(pid).is_some_and(|path| same_path(&path, node)) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        if mac_process_image_path(pid).is_some_and(|path| same_path(&path, node)) {
+            let _ = unsafe { kill(pid, SIGKILL) };
+        }
+        if !mac_process_image_path(pid).is_some_and(|path| same_path(&path, node)) {
+            reaped += 1;
+            log_startup(
+                startup_log,
+                format!(
+                    "sidecar-reap: terminated orphan sidecar pid={pid} ({})",
+                    node.display()
+                ),
+            );
+        }
+    }
+    log_startup(
+        startup_log,
+        format!(
+            "sidecar-reap: done — {reaped} orphan sidecar(s) reaped for {}",
+            node.display()
+        ),
+    );
+    reaped
+}
+
+#[cfg(all(not(windows), not(target_os = "macos")))]
 fn reap_orphan_sidecars(node: &Path, startup_log: &Option<PathBuf>) -> usize {
     let _ = node;
     log_startup(
         startup_log,
-        "sidecar-reap: non-Windows platform — no reap wired yet",
+        "sidecar-reap: this platform has no exact-image reaper wired",
     );
     0
 }
