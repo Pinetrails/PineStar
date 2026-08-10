@@ -25,7 +25,7 @@ const Build = (() => {
     // day it grew wall cladding and a material axis: it now sets what a room's surfaces are MADE OF,
     // deck and walls, so it's SURFACE. Same law as the skynet.* keys: rename the label, never the key.
     { id: 'paint', key: '3', label: 'SURFACE', verb: 'click a room to lay this deck', hint: 'click a room to lay the selected deck · drag to paint single tiles in the colour', cursor: 'cell' },
-    { id: 'move', key: '4', label: 'MOVE', verb: 'drag a room or machine', hint: 'drag a room to relocate it', cursor: 'move' },
+    { id: 'move', key: '4', label: 'MOVE', verb: 'drag a room or machine', hint: 'drag a room to relocate it — its machines ride along', cursor: 'move' },
     /* DELETE, not RECLAIM (2026-08-07). "Reclaim" is salvage-economy fiction from a tier system
        that was never built — the button's whole job is to remove a thing, and every player already
        knows the word for that. Same law as SURFACE above: the LABEL changed, the tool id `reclaim`
@@ -2954,10 +2954,11 @@ const Build = (() => {
         if (propType === 'connector_portal') { if (Tutorial.onConnectorPlaced) Tutorial.onConnectorPlaced(); }
         else if ((!isEditableProp(propType) || CONNECT_TYPES[propType]) && Tutorial.onPropPlaced) Tutorial.onPropPlaced(propType);
       }
-      // PLACEMENT FLOW: one stamp done → the tool DROPS back to SELECT (silent — the place sound
-      // already fired). Drag-paint tools (BELT/DELETE/SURFACE) stay armed; stamping is a decision,
-      // painting is a stroke.
-      deselectTool({ silent: true });
+      // PLACEMENT FLOW (2026-08-10, Andrew's order): a prop stamp KEEPS the tool and the pick
+      // armed — dropping to SELECT here threw the user out of the prop drawer after EVERY
+      // placement, so furnishing a room meant a re-pick per prop. Double-stamping on top of the
+      // fresh prop can't happen (CLICK-ON-MACHINE WINS inspects it; occupied tiles fail red).
+      // ESC / right-click still drops the tool; rooms and blueprints keep their one-shot flow.
       if (isEditableProp(propType) && res.id) { openPropEditor(res.id, propType, ev); return; }   // configure the freshly-placed prop
     }
     feedback(res, ev, grant ? ('EQUIPPED · grants ' + grant) : ('placed ' + propType));
