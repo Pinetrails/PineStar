@@ -12,6 +12,8 @@ const initial = Plan.initialTracks(grouped, ['blank', 'ultron', 'blank']);
 const totalFrames = Plan.frameCount(all);
 const initialFrames = Plan.frameCount(initial);
 const loaderSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'js', 'assets.js'), 'utf8');
+const worldSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'world.js'), 'utf8');
+const appHtml = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8');
 
 A.eq(planned.length, all.length, 'every valid manifest track belongs to exactly one set');
 A.ok(grouped.blank && grouped.ultron, 'default skin and station leader have loadable sets');
@@ -21,7 +23,13 @@ A.ok(totalFrames > 3000, 'budget assertion covers the expanded production manife
 A.eq(Plan.groupTracks({ broken: 'not-an-array', 'valid.rot.south': ['valid.png'] }),
   { valid: [['valid.rot.south', ['valid.png']]] }, 'malformed tracks cannot crash or pollute a load plan');
 A.ok(/tracksBySet = SpriteLoadPlan\.groupTracks\(man\.sprites\)/.test(loaderSource), 'runtime uses the tested manifest planner');
-A.ok(/Promise\.all\(\[loadSet\(defSet\), loadSet\('ultron'\)\]\)/.test(loaderSource), 'runtime startup is limited to the default and station-leader sets');
+A.ok(/primeTrack = defSet \+ '\.rot\.south'/.test(loaderSource) && /await loadTrack\(primeTrack, primePaths\)/.test(loaderSource),
+  'runtime prioritizes one renderable default pose before the full animation set');
+A.ok(/Promise\.all\(\[loadSet\(defSet\), loadSet\('ultron'\)\]\)/.test(loaderSource), 'full default and station-leader sets continue warming in the background');
+A.ok(/SPRITES\.loading/.test(worldSource) && /get loading\(\)/.test(loaderSource),
+  'the world suppresses the procedural body only while the real startup skin is actively loading');
+A.ok(/assets\/sprites\/blank\/rot_south\.png/.test(appHtml) && /fetchpriority="high"/.test(appHtml),
+  'the default first-paint pose is preloaded at high priority');
 A.ok(/if \(!loadedSets\.has\(set\)\) \{ loadSet\(set\); return null; \}/.test(loaderSource), 'an unseen skin starts one lazy load and renders the honest fallback meanwhile');
 
 // COLD-START RACE: enterGame intentionally does not await SPRITES.init() before World.start(), so the first
