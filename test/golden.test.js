@@ -143,6 +143,9 @@ const sig = (v) => Array.from({ length: SIG_LEN }, () => v);
   A.ok(/openStableAgents[\s\S]{0,1400}SPRITES\.ensureSkin\(DATA\.DEFAULT_SKIN\)/.test(states) &&
        /name: 'crew-agents'[\s\S]{0,100}drive: openStableAgents/.test(states),
     'crew-agents waits for the seeded hero portrait instead of capturing its loading mannequin');
+  A.ok(/openStableSettings[\s\S]{0,2600}Harness\.probeProvider[\s\S]{0,1800}provider-health-settled/.test(states) &&
+       /name: 'sys-settings'[\s\S]{0,100}drive: openStableSettings/.test(states),
+    'sys-settings settles a deterministic screenshot-only provider probe before capture');
 }
 
 A.report('golden.test');

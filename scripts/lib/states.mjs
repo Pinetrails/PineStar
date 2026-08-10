@@ -96,6 +96,34 @@ export const openStableAgents = `(async () => {
   return opened + (ready ? ':portrait-ready' : ':portrait-timeout');
 })()`;
 
+// Provider health is deliberately live in the product, but a golden frame must not depend on whether an
+// external endpoint answered during its 650 ms capture window. The seeded profile carries a placeholder
+// OpenRouter credential, so Settings otherwise alternates between CHECKING, NOT VERIFIED, and CHECK FAILED.
+// Stub only the screenshot browser's no-generation probe before the panel opens, then wait for its real
+// coalesced repaint. Product code and ordinary seeded runs still exercise the live probe unchanged.
+export const openStableSettings = `(async () => {
+  try {
+    if (typeof Harness === 'object' && Harness) {
+      Harness.probeProvider = async () => ({ reachable: false, credentialVerified: false, screenshotFixture: true });
+    }
+  } catch (_) {}
+  const opened = ${openSel('[data-term="settings"]', 'SETTINGS')};
+  if (/^(NOTFOUND|CLICK_ERR)/.test(String(opened))) return opened;
+  const settled = await new Promise(resolve => {
+    const deadline = performance.now() + 3000;
+    const probe = () => {
+      const panel = document.querySelector('#terms .term');
+      const checking = panel && /CHECKING/.test(String(panel.textContent || ''));
+      if (panel && !checking) return resolve(true);
+      if (performance.now() >= deadline) return resolve(false);
+      setTimeout(probe, 25);
+    };
+    probe();
+  });
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  return opened + (settled ? ':provider-health-settled' : ':provider-health-timeout');
+})()`;
+
 export const closeOnly = `(() => { ${CLOSE}; return 'reset'; })()`;
 
 // REFIT first-use guide: on a fresh browser profile, build.js showGuide() paints a full-canvas
@@ -147,7 +175,7 @@ export function buildStates() {
     { name: 'sys-messaging',   drive: openSel('[data-term="messaging"]', 'CHANNELS') },
     // SYSTEM group
     { name: 'build-manual',    drive: openSel('[data-term="manual"]', 'FIELD MANUAL') },
-    { name: 'sys-settings',    drive: openSel('[data-term="settings"]', 'SETTINGS') },
+    { name: 'sys-settings',    drive: openStableSettings },
     { name: 'sys-updates',     drive: openSel('[data-term="updates"]', 'UPDATES') },
     { name: 'sys-notifs',      drive: openStableNotifs },
   ];
