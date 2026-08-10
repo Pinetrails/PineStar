@@ -389,7 +389,11 @@
       if (n) deferredDefs.set(wireKey(n), d);
     }
     const limits = o.limits || {};
-    const maxIters = limits.maxIters || 40;
+    // Missing/zero means the Commander did not opt into a turn ceiling. Operational
+    // protections (tool timeout, repeat guard, cancellation) still apply independently.
+    const maxIters = (typeof limits.maxIters === 'number' && isFinite(limits.maxIters) && limits.maxIters > 0)
+      ? Math.floor(limits.maxIters)
+      : Infinity;
     // GRACE TURN (P0.3): when a run hits the iteration ceiling, give it ONE final no-tools turn to deliver its
     // best answer instead of dead-stopping at 'max_iters' (the reference harness's grace-call pattern). Default on; pass
     // limits.grace === false to test/force the raw hard cap. Bounded: exactly one grace turn per run.

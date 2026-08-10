@@ -4864,8 +4864,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // saved overrides. Precedence (env > saved > default) is enforced + reported by the sidecar; the UI just shows
   // whether a field is env-locked (read-only + a note) or a saved override.
   const ADV_FIELDS = [
-    { key: 'maxIters', label: 'MAX ITERATIONS', hint: 'tool-turns a single run may take before it stops. Higher = deeper multi-step work; more spend.', min: 1, max: 200, step: 1 },
-    { key: 'maxConcurrentAgents', label: 'MAX CONCURRENT AGENTS', hint: 'how many agents may run paid loops at once. 0 = unlimited.', min: 0, max: 32, step: 1 },
+    { key: 'maxIters', label: 'MAX ITERATIONS', hint: 'optional tool-turn ceiling for one run. 0 = unlimited (default).', min: 0, max: 200, step: 1 },
+    { key: 'maxConcurrentAgents', label: 'MAX CONCURRENT AGENTS', hint: 'optional simultaneous-agent ceiling. 0 = unlimited (default).', min: 0, max: 32, step: 1 },
     { key: 'consentTimeoutMs', label: 'CONSENT TIMEOUT (MS)', hint: 'how long a permission prompt waits for your answer before auto-denying (so a run never hangs).', min: 5000, max: 600000, step: 1000 },
     { key: 'cronTickMs', label: 'ROUTINE TICK (MS)', hint: 'how often the scheduler checks for due routines.', min: 5000, max: 600000, step: 1000 }
   ];
@@ -5379,8 +5379,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<p class="set-about" id="lifecycle-desc">' + (lifecycleDesktop ? 'Checking what runs in the background…' : 'The desktop app can stay supervised in the system tray. This browser tab has no background process.') + '</p>' +
       // ADVANCED — env-only runtime knobs, now editable + persisted server-side (P1-9). PRECEDENCE is spelled out
       // in the card: an explicit environment variable ALWAYS wins over a value saved here (a deploy stays in control).
-      '<h4 class="ms-h">ADVANCED <span class="dim">— runtime limits (usually leave these alone)</span></h4>' +
-      '<p class="set-about">Tuning knobs that were environment-only. Saved here on this machine and read by the sidecar at boot. <b>An environment variable always overrides a value saved here</b> — a locked-down deploy stays in control. Blank a field to clear the override (follow the environment / built-in default again).</p>' +
+      '<h4 class="ms-h">ADVANCED <span class="dim">— optional runtime limits (off by default)</span></h4>' +
+      '<p class="set-about">StarNet does not limit agent concurrency or run iterations by default. Set a positive value only when you want a ceiling. Saved here on this machine and read by the sidecar at boot. <b>An environment variable always overrides a value saved here</b>. Blank a field to clear the override.</p>' +
       '<div class="mc-form" id="adv-form"><div class="dim" id="adv-loading">reading runtime settings…</div></div>' +
       '<div id="adv-msg" class="msg"></div>' +
       // DATA / STATION BACKUP — export the whole station config to one JSON file, import it back, reset a section.

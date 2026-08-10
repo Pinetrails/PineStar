@@ -10,8 +10,10 @@ many of these — they win on any wording conflict.
 
 ## Product
 
-- **StarNet is a beginners product.** Sandbox freedom, full power from minute one, NEVER
-  grind/unlock/permission walls. (Locked; see also skills.)
+- **StarNet is for beginners and power users.** It is easier for beginners to use, never
+  beginner-limited: sandbox freedom, full power from minute one, and no grind/unlock/usage
+  walls. User-work quotas default off; users or deployers may opt into limits. Safety,
+  consent, sandbox, and truthful-telemetry boundaries remain enforced. (Locked; see also skills.)
 - **Truthful telemetry is THE core law.** The app must never assert state the harness can't
   prove. Object = capability: a prop in the world is a real grant, not decoration. Tool
   surface must never exceed wired reality.
