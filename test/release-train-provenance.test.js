@@ -56,7 +56,7 @@ const checkoutSteps = Array.from(
   yml.matchAll(/^      - uses: actions\/checkout@v4\s*$([\s\S]*?)(?=^      - |^  [a-z0-9_-]+:|$(?![\s\S]))/gm),
   row => row[0]
 );
-A.eq(checkoutSteps.length, 5, 'release train has the expected five source checkouts');
+A.eq(checkoutSteps.length, 6, 'release train has the expected six source checkouts, including installed Intel acceptance');
 for (const [i, step] of checkoutSteps.entries()) {
   A.ok(/^\s*ref:\s*\$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.tag \|\| github\.ref \}\}\s*$/m.test(step),
     `source checkout ${i + 1} uses the immutable requested tag during a manual recovery run`);

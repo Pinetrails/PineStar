@@ -31,6 +31,10 @@ on:
         description: "Publish a public test pre-release to starnet-releases (shareable download link)"
         required: false
         default: "false"
+      require_signed_mac:
+        description: "Fail unless Intel installed-app acceptance uses a notarized Developer ID build"
+        required: false
+        default: "false"
   # No tag trigger: v* tags run release-train.yml (the shipping path). This workflow is for
   # manual test builds / shareable pre-releases only.
 
@@ -276,9 +280,41 @@ jobs:
           if-no-files-found: error
           path: notarization-input/**/*.dmg
 
+  # Build/finalize prove bytes and trust. This proves the user journey on Intel hardware:
+  # install the DMG, ask Finder to open it, recover a v0.9.0 manual-sidecar station,
+  # quit, relaunch, and read the same station again.
+  intel-macos-installed-acceptance:
+    needs: [build, notarize-macos]
+    if: ${{ !cancelled() }}
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Intel macOS distributable
+        uses: actions/download-artifact@v4
+        with:
+          name: starnet-darwin-x64
+          path: intel-distributable
+
+      - name: Install, Finder-launch, and recover v0.9.0 station
+        shell: bash
+        env:
+          STARNET_REQUIRE_NOTARIZED: ${{ inputs.require_signed_mac }}
+        run: |
+          dmg=$(find intel-distributable -type f -name '*_x64.dmg' -print -quit)
+          test -n "${dmg:-}"
+          bash scripts/verify-macos-intel-installed.sh "$dmg" intel-macos-installed-acceptance.json
+
+      - name: Upload Intel installed-app receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: intel-macos-installed-acceptance
+          if-no-files-found: error
+          path: intel-macos-installed-acceptance.json
+
   publish-test:
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.publish-test == 'true'
-    needs: [build, notarize-macos]
+    needs: [build, notarize-macos, intel-macos-installed-acceptance]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
