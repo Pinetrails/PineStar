@@ -25,8 +25,8 @@ A.eq(/clip\.clientWidth\s*\/\s*666/.test(js), false,
   'the current preview scale is not pinned to the retired 666px stage width');
 A.ok(/live-preview\.js\?v=20260809/.test(html),
   'the homepage cache-busts the corrected preview controller');
-A.ok(/app\/index\.html\?v=20260809-current-station/.test(html),
-  'the homepage cache-busts the revised embedded station document');
+A.ok(/app\/embed\.html\?v=20260809-current-station/.test(html),
+  'the homepage uses the cache-busted dashboard-upload-safe station document');
 
 function bootDemo(initial) {
   const rows = Object.assign({}, initial || {});
