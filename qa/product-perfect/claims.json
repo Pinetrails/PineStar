@@ -1963,7 +1963,7 @@
     {
       "id": "manual-mcp-connect",
       "domain": "integrations",
-      "claim": "Users can connect remote HTTP MCP servers or run local stdio MCP servers inside a named agent's isolated Safe Cell, then discover their tools. Stdio never falls back to an interactive host child.",
+      "claim": "Users can connect remote HTTP MCP servers. Local stdio MCP is constrained to a named agent's isolated Safe Cell and never falls back to an interactive host child; real container execution and tool discovery remain live-unproven.",
       "surfaceLocators": [
         {
           "path": "frontend/app/windows/connectors.js",
@@ -1972,6 +1972,10 @@
         {
           "path": "frontend/app/windows/connectors.js",
           "needle": "persistent Safe Cell"
+        },
+        {
+          "path": "RELEASE_NOTES.md",
+          "needle": "Safe Cell stdio MCP is container-only and not yet live-proven."
         }
       ],
       "authorityChecks": [
@@ -1991,10 +1995,10 @@
           "needle": "deps.userControlIsolated === true"
         }
       ],
-      "verdict": "SHIPPED",
-      "disposition": "PROVEN",
+      "verdict": "PARTIAL",
+      "disposition": "COMPLETE",
       "ownerWave": "W6",
-      "qualification": "Remote HTTP remains the broadest connector route. Local stdio requires an existing SAFE CELL agent plus a working Docker runtime; the installed desktop still pins host stdio off, and the only production opt-in is the exact Docker broker path.",
+      "qualification": "Remote HTTP remains the broadest connector route. Local stdio requires an existing SAFE CELL agent plus a working Docker runtime; the installed desktop still pins host stdio off, and the only production opt-in is the exact Docker broker path. The audited host had no Docker, Podman, nerdctl, or WSL, so real container stdio remains BLOCKED and live proof is PENDING.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
