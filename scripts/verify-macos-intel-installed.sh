@@ -64,8 +64,6 @@ cat "$trust_log"
 if [ "$require_notarized" = "true" ]; then
   grep -qi 'accepted' "$trust_log" || fail "Gatekeeper did not accept the installed Intel app"
   grep -qi 'source=Notarized Developer ID' "$trust_log" || fail "installed Intel app is not a notarized Developer ID build"
-  quarantine_stamp=$(printf '0083;%x;GitHub Actions;' "$(date +%s)")
-  sudo xattr -w com.apple.quarantine "$quarantine_stamp" "$installed"
 fi
 
 launch_with_finder() {
