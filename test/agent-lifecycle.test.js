@@ -64,5 +64,75 @@ const { makeAgentLifecycle } = require('../sidecar/agent-lifecycle.js');
   A.ok(/restoreAvailable/.test(rewind) && /PROJECT ACCESS REVOKED/.test(rewind),
     'restore UI blocks a project restore whose path grant is no longer active');
 
+  // Browser deletion is server-first: lifecycle refusal and transport failures preserve every local surface.
+  const appSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'app.js'), 'utf8');
+  const deleteSource = A.fnBody(appSource, 'function deleteAgent(agentId)');
+  A.ok(deleteSource && deleteSource.length < 6000, 'deleteAgent source is extracted exactly');
+  A.ok(deleteSource.indexOf("fetch('/api/agent/delete'") < deleteSource.indexOf('agents.delete(id)'),
+    'server authorization precedes the local roster mutation');
+
+  function deletionHarness(fetchImpl) {
+    const events = [];
+    class TrackedMap extends Map {
+      delete(id) { events.push('agents.delete:' + id); return super.delete(id); }
+    }
+    const hero = { id: 'agent', role: 'orchestrator' };
+    const scout = { id: 'scout', role: 'specialist' };
+    const agents = new TrackedMap([[hero.id, hero], [scout.id, scout]]);
+    const ctx = {
+      agents,
+      agent: scout,
+      events,
+      fetch: (...args) => { events.push('fetch'); return fetchImpl(...args); },
+      World: { despawnAgent: id => events.push('despawn:' + id) },
+      station: {
+        propsByAgent: id => [{ id: 'bay-' + id }],
+        assignPropAgent: (id, agentId) => events.push('unbind:' + id + ':' + agentId)
+      },
+      Workstreams: { removeByAgent: id => events.push('streams.remove:' + id) },
+      StationUI: { setRoster: roster => events.push('roster:' + roster.map(a => a.id).join(',')) }
+    };
+    const remove = new Function('CTX', `
+      const agents = CTX.agents;
+      let agent = CTX.agent;
+      const fetch = CTX.fetch;
+      const World = CTX.World;
+      const station = CTX.station;
+      const Workstreams = CTX.Workstreams;
+      const StationUI = CTX.StationUI;
+      function liveAgents() { return [...agents.values()]; }
+      function focusAgent(id) { CTX.events.push('focus:' + id); agent = agents.get(id); }
+      function recomposeOrchestrators() { CTX.events.push('recompose'); }
+      function renderRail() { CTX.events.push('rail'); }
+      function pushRoster() { CTX.events.push('pushRoster'); return Promise.resolve(true); }
+      function persist() { CTX.events.push('persist'); }
+      ${deleteSource}
+      return deleteAgent;
+    `)(ctx);
+    return { remove, agents, events };
+  }
+
+  const deletionResponse = (ok, body) => Promise.resolve({ ok, json: () => Promise.resolve(body) });
+  for (const [name, fetchImpl] of [
+    ['active-agent refusal', () => deletionResponse(false, { error: 'agent-active' })],
+    ['malformed success response', () => Promise.resolve({ ok: true, json: () => Promise.reject(new Error('bad json')) })],
+    ['network failure', () => Promise.reject(new Error('offline'))]
+  ]) {
+    const browser = deletionHarness(fetchImpl);
+    A.eq(await browser.remove('scout'), false, name + ' returns false');
+    A.ok(browser.agents.has('scout'), name + ' preserves the roster');
+    A.eq(browser.events, ['fetch'], name + ' causes no local lifecycle mutation');
+  }
+
+  const accepted = deletionHarness(() => deletionResponse(true, { ok: true }));
+  A.eq(await accepted.remove('scout'), true, 'accepted deletion returns true');
+  A.ok(!accepted.agents.has('scout'), 'accepted deletion removes the specialist');
+  A.ok(accepted.events.indexOf('fetch') < accepted.events.indexOf('agents.delete:scout'), 'fetch completes before local removal');
+  A.ok(accepted.events.includes('focus:agent'), 'focused deletion hands COMMS to the hero');
+  A.ok(accepted.events.includes('despawn:scout'), 'accepted deletion removes the floor body');
+  A.ok(accepted.events.includes('unbind:bay-scout:'), 'accepted deletion clears station bindings');
+  A.ok(accepted.events.includes('streams.remove:scout'), 'accepted deletion retires bound workstreams');
+  A.ok(accepted.events.includes('persist'), 'accepted deletion persists the surviving state');
+
   A.report('agent-lifecycle');
 })().catch(e => { console.log('FAIL: agent-lifecycle threw - ' + (e && e.stack || e)); process.exit(1); });
