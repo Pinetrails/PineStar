@@ -130,7 +130,7 @@ A.ok(/spctl -a -t exec -vv "\$installed"/.test(installedScript)
   'installed verifier rechecks Gatekeeper on the app copied out of the DMG');
 A.ok(/tail -n "\+\$\(\(before_lines \+ 1\)\)"/.test(installedScript)
   && /listening=true/.test(installedScript)
-  && /curl -fsS "http:\/\/127\.0\.0\.1:\$candidate_port\/health"/.test(installedScript),
+  && /curl -fsS "http:\/\/127\.0\.0\.1:\$candidate_port\/api\/health"/.test(installedScript),
   'installed verifier proves the Finder-launched bundled sidecar is listening');
 A.ok(/\.migration-receipt\.json/.test(installedScript) && /receipt\.get\("validated"\) is True/.test(installedScript),
   'installed verifier requires the activated v0.9.0 migration receipt');

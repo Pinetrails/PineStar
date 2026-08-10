@@ -81,7 +81,7 @@ APPLESCRIPT
   for _ in $(seq 1 240); do
     if [ -f "$startup_log" ]; then
       while IFS= read -r candidate_port; do
-        if [ -n "$candidate_port" ] && curl -fsS "http://127.0.0.1:$candidate_port/health" >/dev/null; then
+        if [ -n "$candidate_port" ] && curl -fsS "http://127.0.0.1:$candidate_port/api/health" >/dev/null; then
           launch_port=$candidate_port
           pgrep -f "$exe" >/dev/null || fail "Finder returned but the Intel desktop process is not alive"
           return 0
