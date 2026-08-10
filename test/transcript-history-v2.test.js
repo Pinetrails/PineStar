@@ -16,6 +16,21 @@ function ioAt(base, extra) {
   }, extra || {}));
 }
 
+// User-controlled terms and stream ids must never collide with Object.prototype.
+{
+  const dir = temp('history-prototype-keys');
+  const warnings = [];
+  try {
+    let io = ioAt(dir, { onWarning: m => warnings.push(m) });
+    io.appendDurable({ streamId: 'constructor', role: 'user', content: 'constructor __proto__ prototype', ts: 1 });
+    io.appendDurable({ streamId: '__proto__', role: 'assistant', content: 'prototype constructor', ts: 2 });
+    io = ioAt(dir, { onWarning: m => warnings.push(m) });
+    A.eq(io.search('constructor', 'constructor', { scope: 'all' }).length, 2, 'prototype-named term remains searchable after restart');
+    A.eq(io.history('__proto__', { limit: 5 }).length, 1, 'prototype-named stream remains readable after restart');
+    A.eq(warnings.length, 0, 'prototype-named content never degrades history initialization');
+  } finally { remove(dir); }
+}
+
 // Unicode words survive indexing/restart, and compatibility spellings normalize deterministically.
 {
   const dir = temp('history-unicode');
