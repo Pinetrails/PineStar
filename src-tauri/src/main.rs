@@ -3312,7 +3312,24 @@ fn main() {
             // edge-drag resize grips working. macOS keeps native decorations until a mac
             // pass is designed (unverified there — do not blind-apply).
             #[cfg(windows)]
-            let main_window = main_window.decorations(false).shadow(true);
+            let main_window = {
+                let main_window = main_window.decorations(false).shadow(true);
+                match std::env::var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS") {
+                    Ok(args) if !args.trim().is_empty() => {
+                        // Tauri supplies its own WebView2 environment options, so the ambient
+                        // variable is not inherited automatically. Forward an explicit caller
+                        // override here; installed QA uses this to open a loopback CDP port.
+                        // Normal production launches do not set it and therefore expose no
+                        // debugger. Never log the argument value because callers may add paths.
+                        log_startup(
+                            &startup_log_path(app.handle()),
+                            "webview-browser-args: explicit environment override forwarded",
+                        );
+                        main_window.additional_browser_args(&args)
+                    }
+                    _ => main_window,
+                }
+            };
             let main_window = main_window.build()?;
 
             // ---- Lane 4D: close-to-tray, explicitly selected or gated on REAL armed work ----

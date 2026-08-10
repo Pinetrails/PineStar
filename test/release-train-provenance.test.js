@@ -111,8 +111,10 @@ A.ok(/for path in SHIPPED_INPUTS[\s\S]*cargo:rerun-if-changed=\{path\}/.test(bui
 const shippedGitRoots = rustStringArray('SHIPPED_GIT_ROOTS');
 A.eq(shippedGitRoots, ['frontend', 'sidecar', 'shared', 'src-tauri'],
   'dirty detection covers every Git-owned packaged root');
-A.ok(/"-C",\s*"\.\."/.test(buildRs) && /--porcelain=v1/.test(buildRs) && /--untracked-files=normal/.test(buildRs) && /cmd\.args\(SHIPPED_GIT_ROOTS\)/.test(buildRs),
-  'dirty detection includes unstaged and untracked shipped inputs');
+A.ok(/"diff"[\s\S]{0,220}"--quiet"[\s\S]{0,220}"--ignore-cr-at-eol"[\s\S]{0,220}"HEAD"/.test(buildRs) && /diff\.args\(SHIPPED_GIT_ROOTS\)/.test(buildRs),
+  'tracked dirty detection catches real shipped-input changes but ignores Tauri CR-only rewrites');
+A.ok(/"ls-files"[\s\S]{0,220}"--others"[\s\S]{0,220}"--exclude-standard"/.test(buildRs) && /untracked\.args\(SHIPPED_GIT_ROOTS\)/.test(buildRs),
+  'dirty detection independently includes untracked shipped inputs');
 A.ok(/shipped_inputs_dirty\(\)\.unwrap_or\(describe_dirty\)/.test(buildRs),
   'packaged source roots are authoritative, with git-describe as the fail-closed fallback');
 A.ok(/!dirty\s*&&\s*describe_dirty[\s\S]*describe\.truncate/.test(buildRs),
