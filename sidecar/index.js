@@ -3025,6 +3025,24 @@ async function ensureCodexAccessToken() {
   codexRefreshInFlight = refreshCodexTokensOnce().finally(() => { codexRefreshInFlight = null; });
   return codexRefreshInFlight;
 }
+/* The provider's 401-recovery seam (codex.js renewToken; the 2026-08-10 stale-token-loop escape): the codex
+   backend answered "authentication token is expired" while accessTokenIsExpiring — a LOCAL-clock check —
+   still said the token was fine (clock skew, or an exp claim we couldn't decode fail-opens to "not
+   expiring"). ensureCodexAccessToken would re-serve the dead token forever, no refresh was ever attempted,
+   so no invalid_grant was ever seen and Settings never flipped to SIGN-IN EXPIRED. This entry point trusts
+   the SERVER's verdict: skip the local expiry check and refresh now. `staleToken` dedupes recoveries — if
+   another caller already rotated past the token that 401'd, hand back the current one instead of burning a
+   second rotation. Same single-flight guard: parallel 401s share one refresh. */
+async function forceRefreshCodexAccessToken(staleToken) {
+  if (!codexTokens || !codexTokens.access_token) {
+    const e = new Error('Not signed in to ChatGPT — connect a ChatGPT subscription first.');
+    e.code = 'codex_not_connected'; e.reloginRequired = true; throw e;
+  }
+  if (staleToken && codexTokens.access_token !== staleToken) return codexTokens.access_token;
+  if (codexRefreshInFlight) return codexRefreshInFlight;
+  codexRefreshInFlight = refreshCodexTokensOnce().finally(() => { codexRefreshInFlight = null; });
+  return codexRefreshInFlight;
+}
 async function refreshCodexTokensOnce() {
   let next;
   try {
@@ -6620,7 +6638,7 @@ async function runQuestRefreshCycle(why) {
     }
     // evidence exists → NOW pay for the provider (codex token fetch is a network hop; never spend it on a cold save).
     let provider;
-    if (usingCodex) { const token = await ensureCodexAccessToken(); provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token, baseUrl }); }
+    if (usingCodex) { const token = await ensureCodexAccessToken(); provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token, renewToken: forceRefreshCodexAccessToken, baseUrl }); }
     else if (usingDeviceOAuth) { const token = await ensureOAuthAccessToken(providerId); provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token, headers: oauthInferenceHeaders(providerId), baseUrl }); }
     else provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key, baseUrl });
     const cost = makeCostEngine({ priceOf: provider.priceOf });
@@ -13358,7 +13376,7 @@ async function runOnce(o) {
       emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
       return;
     }
-    provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: codexToken, baseUrl, reasoningEffort });
+    provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: codexToken, renewToken: forceRefreshCodexAccessToken, baseUrl, reasoningEffort });
   } else if (usingDeviceOAuth) {
     // Grok / Kimi subscription: the OAuth access token authenticates the OpenAI-compatible endpoint (riding in
     // AS the Bearer key). Same dead/missing-token -> clean run.error contract as codex; kimi's X-Msh-* headers
@@ -13439,7 +13457,7 @@ async function runOnce(o) {
     if (providerUsesCodex(fbProviderId)) {
       let fbToken;
       try { fbToken = await ensureCodexAccessToken(); } catch (_) { continue; }
-      fbProvider = selectProvider({ provider: fbProviderId, fetch: globalThis.fetch, token: fbToken, baseUrl: fbBaseUrl, reasoningEffort });
+      fbProvider = selectProvider({ provider: fbProviderId, fetch: globalThis.fetch, token: fbToken, renewToken: forceRefreshCodexAccessToken, baseUrl: fbBaseUrl, reasoningEffort });
     } else if (providerUsesDeviceOAuth(fbProviderId)) {
       let fbToken;
       try { fbToken = await ensureOAuthAccessToken(fbProviderId); } catch (_) { continue; }
@@ -15437,7 +15455,7 @@ async function handleLiveDoctor(req, res) {
     try {
       let provider;
       if (providerUsesCodex(providerId)) {
-        provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: await ensureCodexAccessToken(), baseUrl, reasoningEffort: 'none' });
+        provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: await ensureCodexAccessToken(), renewToken: forceRefreshCodexAccessToken, baseUrl, reasoningEffort: 'none' });
       } else if (providerUsesDeviceOAuth(providerId)) {
         provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: await ensureOAuthAccessToken(providerId), headers: oauthInferenceHeaders(providerId), baseUrl, reasoningEffort: 'none' });
       } else {
@@ -16179,7 +16197,11 @@ async function handleProviderProbe(req, res) {
     // A catalog endpoint that does not require authentication proves reachability, not that a saved key can run.
     // Provider adapters intentionally fail closed to [] when /models cannot be reached. Without at least one real
     // model there is no runnable endpoint to prove, so do not upgrade mere request completion into REACHABLE.
-    const catalogAvailable = models.length > 0;
+    // `fallback:true` entries prove even less (2026-08-10 escape): they are an adapter's OFFLINE seed list, served
+    // when the live fetch failed — codex could answer 401 "token is expired" on every run while this probe kept
+    // stamping VERIFIED off its hardcoded fallback. Only live-fetched models count as evidence here.
+    const liveModels = models.filter(m => !(m && m.fallback));
+    const catalogAvailable = liveModels.length > 0;
     const credentialVerified = catalogAvailable && (!providerRequiresKey(id) || profile.modelsRequireAuth !== false);
     json({ provider: id, reachable: catalogAvailable, catalogAvailable, credentialVerified });
   } catch (e) {
@@ -16248,7 +16270,7 @@ async function listModelsForProvider(providerId, opts) {
   let provider;
   if (providerUsesCodex(id)) {
     const token = await ensureCodexAccessToken();
-    provider = selectProvider({ provider: id, fetch: globalThis.fetch, token, baseUrl });
+    provider = selectProvider({ provider: id, fetch: globalThis.fetch, token, renewToken: forceRefreshCodexAccessToken, baseUrl });
   } else if (providerUsesDeviceOAuth(id)) {
     const token = await ensureOAuthAccessToken(id);
     provider = selectProvider({ provider: id, fetch: globalThis.fetch, token, headers: oauthInferenceHeaders(id), baseUrl });
@@ -16282,7 +16304,7 @@ async function handleCodexModels(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {
     const token = await ensureCodexAccessToken();
-    const provider = selectProvider({ provider: 'codex', fetch: globalThis.fetch, token });
+    const provider = selectProvider({ provider: 'codex', fetch: globalThis.fetch, token, renewToken: forceRefreshCodexAccessToken });
     const models = await provider.listModels();
     // Rich objects now (id + display/reasoning metadata) so the model dock can render per-model chips.
     // The bare `id` is still present on every entry, so older consumers that read m.id keep working.
