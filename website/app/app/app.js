@@ -609,9 +609,8 @@ const App = (() => {
 
   // DOSSIER › DELETE AGENT: remove a SUMMONED specialist from the crew for real — the roster, the world body, and
   // the server-side stores (archived, not wiped, by /api/agent/delete). Refuses to delete the hero or the LAST
-  // remaining agent (the UI disables the button with a reason; this is the matching hard guard). The frontend
-  // owns the roster, so we mutate the live registry, re-push the surviving set, drop the floor body, retire any
-  // workstreams bound to the gone agent, then fire the server archive. Returns a Promise<bool>.
+  // remaining agent (the UI disables the button with a reason; this is the matching hard guard). The server
+  // authorizes first; only an accepted archive commits the matching browser mutation. Returns a Promise<bool>.
   function deleteAgent(agentId) {
     const id = String(agentId || '');
     const a = agents.get(id);
@@ -620,33 +619,35 @@ const App = (() => {
     if (a.role === 'orchestrator') return Promise.resolve(false);   // the overseer is the founder — undeletable
     if (agents.size <= 1) return Promise.resolve(false);   // never the last agent on station
     // if the deleted agent is currently focused, hand COMMS back to the hero BEFORE dropping it.
-    const wasFocused = agent && agent.id === id;
-    agents.delete(id);
-    if (wasFocused) focusAgent('agent');
-    if (typeof World !== 'undefined' && World.despawnAgent) World.despawnAgent(id);   // pull its floor body
-    // unbind every prop still assigned to the gone agent (its bay above all): a stale bay→agentId binding
-    // re-mints a floor body for a DELETED agent on the next floor rederive (ghost crew) and keeps claiming
-    // the dock in REFIT. assignPropAgent fires station.onChange, so the world rederives on its own.
-    try {
-      if (station && station.propsByAgent && station.assignPropAgent) {
-        for (const p of station.propsByAgent(id)) station.assignPropAgent(p.id, '');
-      }
-    } catch (_) {}
-    // retire workstreams bound to the gone agent so the rail can't reopen a stream with no agent behind it.
-    try {
-      if (typeof Workstreams !== 'undefined' && Workstreams.removeByAgent) Workstreams.removeByAgent(id);
-    } catch (_) {}
-    recomposeOrchestrators();   // the lead's YOUR CREW clause must drop the removed specialist
-    if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
-    renderRail();
-    pushRoster();   // the surviving crew replaces the whole server roster
-    persist();
-    // fire-and-honest: archive the server-side stores. The roster is already correct locally + re-pushed; this
-    // resolves off the real route so the caller can surface a truthful result, but a failure here never resurrects
-    // the agent (its stores just stay retained on disk, which is the safe direction).
     return fetch('/api/agent/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: id }) })
-      .then(r => r.json().catch(() => null))
-      .then(j => !!(j && j.ok))
+      .then(r => (r && r.ok) ? r.json().catch(() => null) : null)
+      .then(j => {
+        // The lifecycle authority must accept the delete before any browser-owned state changes. An active-agent
+        // refusal, malformed response, or unavailable server therefore leaves the roster and its bindings intact.
+        if (!j || !j.ok) return false;
+        const wasFocused = agent && agent.id === id;
+        agents.delete(id);
+        if (wasFocused) focusAgent('agent');
+        if (typeof World !== 'undefined' && World.despawnAgent) World.despawnAgent(id);   // pull its floor body
+        // unbind every prop still assigned to the gone agent (its bay above all): a stale bay→agentId binding
+        // re-mints a floor body for a DELETED agent on the next floor rederive (ghost crew) and keeps claiming
+        // the dock in REFIT. assignPropAgent fires station.onChange, so the world rederives on its own.
+        try {
+          if (station && station.propsByAgent && station.assignPropAgent) {
+            for (const p of station.propsByAgent(id)) station.assignPropAgent(p.id, '');
+          }
+        } catch (_) {}
+        // retire workstreams bound to the gone agent so the rail can't reopen a stream with no agent behind it.
+        try {
+          if (typeof Workstreams !== 'undefined' && Workstreams.removeByAgent) Workstreams.removeByAgent(id);
+        } catch (_) {}
+        recomposeOrchestrators();   // the lead's YOUR CREW clause must drop the removed specialist
+        if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
+        renderRail();
+        pushRoster();   // the surviving crew replaces the whole server roster
+        persist();
+        return true;
+      })
       .catch(() => false);
   }
 
@@ -3514,8 +3515,14 @@ const App = (() => {
   function deleteWorkstream(id) {
     const w = Workstreams.get(id); const label = w ? (w.title || 'General') : '';
     const agentId = w ? (w.agentId || 'agent') : 'agent';
+    // Recheck after the destructive-confirmation click: a session may have started while its menu was open.
+    if (w && typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(id)) {
+      SFX.bad();
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('stop this session before deleting it', 'bad');
+      return false;
+    }
     const wasActive = (id === Workstreams.activeId());
-    if (!Workstreams.del(id)) { SFX.bad(); return; }
+    if (!Workstreams.del(id)) { SFX.bad(); return false; }
     SFX.bad();
     if (wasActive) loadActiveStream();   // deleting the OPEN stream falls back to General
     renderRail(); persist();
@@ -3526,6 +3533,7 @@ const App = (() => {
       WorkshopStore.discardIfPending(agentId, String(id).slice('workshop-'.length)).catch(() => {});
     }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('deleted “' + label + '”', 'warn');
+    return true;
   }
   // re-open whatever the store now treats as active (after archive/delete bumps the open stream to General)
   function loadActiveStream() {
