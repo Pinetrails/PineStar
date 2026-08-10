@@ -166,6 +166,77 @@ pub(crate) fn read_channel_token(channel: &str) -> Option<String> {
         .filter(|token| !token.trim().is_empty())
 }
 
+// ---- StarNet Cloud device token (keychain account "credits:device") ----
+//
+// The device token is a BEARER CREDENTIAL THAT SPENDS MONEY: anyone holding it can bill the
+// linked account until the balance runs out. It is minted by the sidecar (which polls the cloud),
+// so unlike a BYOK key it never passes through the UI — and it must not stay in plaintext either.
+//
+// Same posture as channel bot tokens: keychain -> env -> sidecar runtime layer. The sidecar writes
+// the link record to `.secrets/credits.json`; we adopt the secret half into the keychain and strip
+// it from the file, leaving the non-secret fields (url, accountId, linkedAt) exactly where they were.
+
+pub(crate) fn credits_keychain_entry() -> keyring::Result<keyring::Entry> {
+    keyring::Entry::new(KEYCHAIN_SERVICE, "credits:device")
+}
+
+/// The stored StarNet Cloud device token, or `None` if unset/empty.
+pub(crate) fn read_credits_token() -> Option<String> {
+    credits_keychain_entry()
+        .ok()
+        .and_then(|entry| entry.get_password().ok())
+        .filter(|token| !token.trim().is_empty())
+}
+
+/// Adopt the device token out of `.secrets/credits.json` into the OS keychain, then rewrite the
+/// file without it. Returns whether a token now lives in the keychain (adopted just now or already
+/// there), so callers report the truth rather than assume success.
+///
+/// Runs at every launch (migrating already-linked stations) AND on demand right after a link, so a
+/// freshly minted token spends seconds on disk instead of until the next restart. Idempotent.
+pub(crate) fn migrate_credits_token_from_plaintext(workspaces: &Path) -> bool {
+    let file = workspaces.join(".secrets").join("credits.json");
+    let raw = match std::fs::read_to_string(&file) {
+        Ok(raw) => raw,
+        Err(_) => return read_credits_token().is_some(), // no file -> keychain may still hold it
+    };
+    let mut json: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(json) => json,
+        Err(_) => return read_credits_token().is_some(), // corrupt -> leave it for the sidecar's loader
+    };
+    let token = json
+        .get("deviceToken")
+        .and_then(|token| token.as_str())
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(str::to_string);
+
+    let Some(token) = token else {
+        return read_credits_token().is_some(); // already stripped on a previous run
+    };
+
+    if read_credits_token().as_deref() != Some(token.as_str()) {
+        if let Ok(entry) = credits_keychain_entry() {
+            let _ = entry.set_password(&token);
+        }
+    }
+
+    // INVARIANT (Andrew): never remove the last copy of a secret without PROOF a durable home holds
+    // it. Strip the plaintext token only once a READ-BACK confirms the keychain really has this
+    // exact value. If the store failed (locked keychain, no backend, permissions), leave the token
+    // on disk — a token in a file beats a token nobody has. The next launch retries (self-healing).
+    let keychain_has_it = read_credits_token().map(|held| held == token).unwrap_or(false);
+    if keychain_has_it {
+        if let Some(object) = json.as_object_mut() {
+            object.remove("deviceToken");
+        }
+        if let Ok(serialized) = serde_json::to_string(&json) {
+            let _ = atomic_write(&file, serialized.as_bytes());
+        }
+    }
+    keychain_has_it
+}
+
 /// Import plaintext channel bot tokens from legacy `secrets.json` into the OS keychain.
 /// A plaintext token is removed only after read-back proves the exact value arrived.
 pub(crate) fn migrate_channel_tokens_from_plaintext(workspaces: &Path) {

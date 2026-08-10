@@ -156,20 +156,26 @@
                  .prov[data-prov] button + #prov-more stay in the DOM so app.js wiring (selectProviderUI,
                  setProviderRowExpanded) is untouched — the queries match .prov descendants regardless of nesting. -->
             <div class="provider-row ov-prov">
-              <button class="prov prov-hero sel" data-prov="codex" aria-pressed="true">
+              <!-- THE HERO IS THE STARNET SUBSCRIPTION — the promoted easiest start. It ships HIDDEN and is
+                   revealed only when the sidecar reports a real cloud seam (/api/credits linkable or configured):
+                   the honesty law says a build with no cloud must not offer a subscription it cannot link
+                   (app.js revealStarnetGenesis, which also makes it the default pick on a fresh create).
+                   ChatGPT sign-in is no longer a hero — it lives inside the OPENAI chip below. -->
+              <button class="prov prov-hero hidden" data-prov="starnet" aria-pressed="false">
                 <span class="prov-hero-badge">◆ EASIEST START · NO KEY</span>
                 <span class="prov-hero-row">
-                  <span class="prov-hero-ic" aria-hidden="true">⏼</span>
+                  <span class="prov-hero-ic" aria-hidden="true">🔗</span>
                   <span class="prov-hero-body">
-                    <span class="prov-hero-title">SIGN IN WITH CHATGPT</span>
-                    <span class="prov-hero-sub">use the ChatGPT Plus/Pro account you already have — no API key to find or paste</span>
+                    <span class="prov-hero-title">START WITH STARNET</span>
+                    <span class="prov-hero-sub">your StarNet subscription powers every agent — link it in one click, no API key to find or paste</span>
                   </span>
                 </span>
               </button>
               <div class="prov-byok-lab" aria-hidden="true">— or pick another provider —</div>
               <div class="prov-grid">
-                <!-- grok/kimi are keyless subscription sign-ins (device-code OAuth, same engine as ChatGPT
-                     above) but present as standard chips; selecting one swaps in the shared sign-in block. -->
+                <!-- ChatGPT/Codex has NO chip of its own anymore: picking OPENAI offers BOTH paths on one card —
+                     sign in with ChatGPT (device-code, no key) or paste an OpenAI API key. WAKE takes whichever
+                     path the user actually completed (app.js onWakeAttempt). -->
                 <button class="prov" data-prov="grok" aria-pressed="false">GROK</button>
                 <button class="prov" data-prov="kimi" aria-pressed="false">KIMI</button>
                 <button class="prov" data-prov="openrouter" aria-pressed="false">OPENROUTER</button>
@@ -210,7 +216,23 @@
                   <button type="button" id="btn-codex-open" class="btn hidden">↗ OPEN PAGE</button>
                   <button type="button" id="btn-codex-logout" class="btn hidden">✕ DISCONNECT</button>
                 </div>
-                <div class="dim hint" id="codex-hint">Uses the ChatGPT Plus/Pro account you already have — no API key, no billing setup. Prefer a key? Switch to OPENROUTER (or any provider) above.</div>
+                <div class="dim hint" id="codex-hint">Uses the ChatGPT Plus/Pro account you already have — no API key, no billing setup. Prefer a key? Paste an OpenAI API key above instead.</div>
+              </div>
+            </div>
+
+            <!-- STARNET MANAGED link block — the subscription twin of #codex-block, reusing its classes so the
+                 two paths look and behave identically. LINK mints a pairing code (sidecar /api/credits/link/start),
+                 opens the browser to confirm it, and polls until the account is linked — no key, no token in the
+                 WebView, ever. Payment always stays in the external browser. -->
+            <div id="starnet-block" class="hidden">
+              <div class="codex-signin">
+                <div id="starnet-status" class="codex-status">checking…</div>
+                <div id="starnet-code" class="codex-code hidden"></div>
+                <div class="codex-actions">
+                  <button type="button" id="btn-starnet-link" class="btn">🔗 LINK YOUR STARNET ACCOUNT ▸</button>
+                  <button type="button" id="btn-starnet-open" class="btn hidden">↗ OPEN PAGE</button>
+                </div>
+                <div class="dim hint" id="starnet-hint">Runs on your StarNet subscription — no API key to find or paste. You’ll confirm a short code in your browser; StarNet never handles your payment details in the app.</div>
               </div>
             </div>
 
