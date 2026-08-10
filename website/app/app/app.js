@@ -4226,15 +4226,88 @@ const App = (() => {
     gateActive = true;
     try { if (World && World.stop) World.stop(); } catch (_) {}
     const rows = lineage && Array.isArray(lineage.evidence) ? lineage.evidence : [];
+    const recovery = lineage && lineage.recovery && typeof lineage.recovery === 'object' ? lineage.recovery : {};
+    const candidates = Array.isArray(recovery.candidates) ? recovery.candidates : [];
+    let selected = recovery.automaticCandidateId || null;
     const box = el('lineage-evidence');
     if (box) {
-      box.innerHTML = rows.slice(0, 8).map(row => {
+      const evidenceHtml = rows.slice(0, 8).map(row => {
         const kind = String(row && row.kind || 'prior-state').replace(/-/g, ' ').toUpperCase();
         const root = String(row && row.root || 'local StarNet storage');
         const examples = Array.isArray(row && row.examples) && row.examples.length ? ' · ' + row.examples.slice(0, 4).join(', ') : '';
         return '<div><b>' + U.esc(kind) + '</b> — <code>' + U.esc(root) + '</code>' + U.esc(examples) + '</div>';
       }).join('') || '<div><b>PRIOR STATE MARKER</b> — local StarNet storage</div>';
+      const candidateHtml = candidates.map(row => {
+        const when = row && row.updatedAt ? new Date(row.updatedAt).toLocaleString() : 'time unavailable';
+        const size = row && row.bytes ? Math.max(1, Math.ceil(row.bytes / 1024)) + ' KB' : 'size unavailable';
+        const on = !!(row && row.id === selected);
+        return '<button class="lineage-candidate' + (on ? ' on' : '') + '" data-candidate-id="' + U.esc(row && row.id || '') + '" aria-pressed="' + (on ? 'true' : 'false') + '"' + (row && row.recoverable ? '' : ' disabled') + '>' +
+          '<b>' + U.esc(row && row.stationName || 'Prior station') + '</b>' +
+          '<span>' + U.esc(row && row.displayRoot || 'local StarNet storage') + '</span>' +
+          '<small>' + U.esc(row && row.recoverable ? when + ' · ' + size : row && row.reason || 'unreadable save') + '</small></button>';
+      }).join('');
+      box.innerHTML = evidenceHtml + (candidateHtml ? '<div class="lineage-candidates" aria-label="Recoverable stations">' + candidateHtml + '</div>' : '');
     }
+    const status = el('lineage-status');
+    const recover = el('btn-lineage-recover');
+    const validCandidates = candidates.filter(row => row && row.recoverable);
+    const refreshRecover = () => {
+      if (!recover) return;
+      recover.hidden = validCandidates.length === 0;
+      recover.disabled = !selected;
+      recover.textContent = validCandidates.length === 1 ? '⟳ RECOVER AUTOMATICALLY' : '⟳ RECOVER SELECTED STATION';
+    };
+    if (box) Array.from(box.querySelectorAll('.lineage-candidate')).forEach(btn => {
+      btn.onclick = () => {
+        selected = btn.getAttribute('data-candidate-id') || null;
+        Array.from(box.querySelectorAll('.lineage-candidate')).forEach(other => {
+          const on = other === btn; other.classList.toggle('on', on); other.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        refreshRecover();
+      };
+    });
+    refreshRecover();
+    if (recover) recover.onclick = async () => {
+      if (!selected || recover.disabled) return;
+      recover.disabled = true;
+      if (status) status.textContent = '＋ staging verified recovery; the prior source will be preserved';
+      try {
+        const response = await fetch('/api/lineage/recover', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidateId: selected })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.ok) throw new Error(result.error || 'recovery request refused');
+        if (status) status.textContent = result.desktopWillRestart
+          ? '＋ recovery accepted — station service restarting now…'
+          : '＋ recovery accepted — restart the manual sidecar; this screen will resume automatically';
+        const timer = setInterval(async () => {
+          try {
+            const probe = await fetch('/api/save?agent=agent', { cache: 'no-store' });
+            const body = probe.ok ? await probe.json() : null;
+            if (body && body.save && body.save.agent) { clearInterval(timer); location.reload(); }
+          } catch (_) {}
+        }, 1500);
+      } catch (error) {
+        recover.disabled = false;
+        if (status) status.textContent = '＋ recovery paused — ' + String(error && error.message || error);
+      }
+    };
+    const report = el('btn-lineage-report');
+    if (report) report.onclick = async () => {
+      report.disabled = true;
+      if (status) status.textContent = '＋ preparing redacted recovery report…';
+      try {
+        const response = await fetch('/api/lineage/report', { cache: 'no-store' });
+        if (!response.ok) throw new Error('report unavailable');
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = url; a.download = 'starnet-recovery-report.json'; a.style.display = 'none';
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+        if (status) status.textContent = '＋ redacted recovery report exported — no credentials or save contents included';
+      } catch (error) {
+        if (status) status.textContent = '＋ report export failed — ' + String(error && error.message || error);
+      } finally { report.disabled = false; }
+    };
     const retry = el('btn-lineage-retry');
     if (retry) retry.onclick = () => { SFX.click && SFX.click(); try { location.reload(); } catch (_) {} };
     const restore = el('btn-lineage-restore');
