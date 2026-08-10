@@ -1,5 +1,21 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-09 — WEBSITE PREVIEW STATE CORRECTION (`agent/station-preview-state`)
+
+READY TO MERGE. The first preview repair updated the renderer mirror and stage crop but left the
+website-only captured save on the retired one-room `hull` material state. Worse, `demo-boot.js`
+seeded only when `starnet.save` was absent, so any returning visitor stayed pinned to that stale
+snapshot forever. The embed now upgrades its captured room to the current seeded-app material
+preset (`walnut/plank`, `ribbed`, `ember/brick`) and carries a versioned website-demo marker that
+refreshes stale localStorage exactly once. The homepage iframe, generated embed tag, and demo boot
+script all have explicit cache revisions.
+
+Live side-by-side proof used the already-running current app at `127.0.0.1:9527` and the corrected
+local website at `127.0.0.1:18880`: both render the warm plank deck, ribbed upper wall, and brick
+hull, while the reported public screenshot remains the retired gray hull. Crop telemetry remains
+`748 / 752` with offsets `-252px / -84px`. Focused preview coverage is 14/14, website mirror is
+exact, and the guarded website stage check would publish 3,901 files while holding back 17.
+
 ## 2026-08-09 — CURRENT WEBSITE STATION PREVIEW (`agent/station-preview-current`)
 
 READY TO MERGE. The starnetos.com station preview was still clipping the embedded app with the
