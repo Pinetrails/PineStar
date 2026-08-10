@@ -3,7 +3,7 @@
 const A = require('./_assert.js');
 const win = require('node:path').win32;
 const posix = require('node:path').posix;
-const { classifyWorkspace } = require('../sidecar/workspace-safety.js');
+const { classifyWorkspace, workspaceCandidates } = require('../sidecar/workspace-safety.js');
 
 const winDeps = {
   path: win,
@@ -26,5 +26,24 @@ const posixDeps = { path: posix, platform: 'linux', env: {}, homedir: () => '/ho
 A.eq(classifyWorkspace('/home/ada/.local/share/StarNet/workspaces', posixDeps).protected, true,
   'POSIX fallback production root is protected');
 A.eq(classifyWorkspace('/tmp/starnet-test', posixDeps).protected, false, 'POSIX scratch root is allowed');
+
+const macDeps = { path: posix, platform: 'darwin', env: {}, homedir: () => '/Users/ada' };
+const macCandidates = workspaceCandidates(macDeps);
+A.ok(macCandidates.includes('/Users/ada/Library/Application Support/ai.skynet.harness/workspaces'),
+  'macOS desktop bundle-id root is a canonical protected candidate');
+A.ok(macCandidates.includes('/Users/ada/.local/share/StarNet/workspaces'),
+  'manual-sidecar POSIX root remains a recoverable protected candidate on macOS');
+A.eq(classifyWorkspace('/Users/ada/Library/Application Support/ai.skynet.harness/workspaces', macDeps).protected, true,
+  'macOS desktop production root is protected');
+
+const duplicateBases = workspaceCandidates({
+  path: win, platform: 'win32', env: { LOCALAPPDATA: 'C:\\same', APPDATA: 'C:\\same' }, homedir: () => ''
+});
+A.eq(new Set(duplicateBases.map(row => row.toLowerCase())).size, duplicateBases.length,
+  'duplicate environment bases never duplicate recovery evidence');
+
+const index = require('node:fs').readFileSync(require('node:path').join(__dirname, '../sidecar/index.js'), 'utf8');
+A.ok(/process\.platform === 'darwin'[\s\S]{0,500}?Library'[\s\S]{0,200}?'Application Support'[\s\S]{0,200}?'ai\.skynet\.harness'/.test(index),
+  'manual sidecar defaults to the same macOS bundle-id workspace as the desktop shell');
 
 A.report('workspace-safety.test');

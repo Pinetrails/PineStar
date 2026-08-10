@@ -167,6 +167,8 @@ function makeFakeTransport(handle) {
     A.ok(out.content.indexOf('[truncated') >= 0, 'the model is TOLD it was truncated');
     A.ok(out.content.indexOf((huge.length - RESULT_MAX_CHARS) + ' more characters') >= 0, 'the hint reports how much is missing');
     A.ok(out.summary.indexOf('(truncated)') >= 0, 'the run summary records the truncation');
+    A.ok(out.fullContent.indexOf(huge) > 0, 'the complete MCP payload crosses the registry persistence seam');
+    A.ok(/\[END EXTERNAL WEB CONTENT\]$/.test(out.fullContent), 'the recoverable MCP artifact remains fenced as untrusted content');
 
     // A payload at or under the cap must pass through byte-identical — no hint, no summary noise.
     const exact = 'y'.repeat(RESULT_MAX_CHARS);
@@ -184,9 +186,10 @@ function makeFakeTransport(handle) {
     // A FAILING server can hand back just as much text as a succeeding one.
     const errBig = makeMcpToolDef({ connectorId: 'db', mcpTool: { name: 'boom', inputSchema: { type: 'object' } },
       call: () => Promise.resolve({ isError: true, content: [{ type: 'text', text: huge }] }) });
-    let msg = '';
-    try { await errBig.run({}, {}); } catch (e) { msg = e.message; }
+    let msg = '', fullError = '';
+    try { await errBig.run({}, {}); } catch (e) { msg = e.message; fullError = e.fullContent || ''; }
     A.ok(msg.length > 0 && msg.length < huge.length, 'an oversized MCP ERROR payload is clamped too');
+    A.ok(fullError.indexOf(huge) > 0, 'the complete MCP error is also available for one durable park');
 
     // Per-connector override, so a connector known to return large documents can be widened.
     const tuned = makeMcpToolDef({ connectorId: 'db', mcpTool: { name: 'q2', inputSchema: { type: 'object' } },

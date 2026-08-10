@@ -1036,6 +1036,43 @@ const Chat = (() => {
     });
   }
 
+  function mergeCanonicalHistory(local, turns) {
+    const buckets = new Map();
+    for (const row of Array.isArray(local) ? local : []) {
+      if (!row || (row.role !== 'user' && row.role !== 'assistant')) continue;
+      const key = row.role + '\u0000' + String(row.content || '');
+      const q = buckets.get(key) || []; q.push(row); buckets.set(key, q);
+    }
+    const merged = [];
+    for (const turn of Array.isArray(turns) ? turns : []) {
+      if (!turn || (turn.role !== 'user' && turn.role !== 'assistant')) continue;
+      const key = turn.role + '\u0000' + String(turn.content || '');
+      const q = buckets.get(key) || [], prior = q.shift();
+      merged.push(Object.assign({}, turn, prior || {}, { role: turn.role, content: String(turn.content || ''), ts: turn.ts != null ? turn.ts : (prior && prior.ts) }));
+    }
+    // Preserve genuinely local/in-flight rows the sidecar has not committed yet. Occurrence queues, rather than
+    // a Set, keep two identical user turns distinct while still preventing a duplicate final answer.
+    for (const q of buckets.values()) for (const row of q) merged.push(row);
+    return merged;
+  }
+
+  async function reconcileServerHistory(ws, loadToken) {
+    if (!ws || !ws.id) return;
+    try {
+      const r = await fetch('/api/transcript?agent=' + encodeURIComponent(ws.agentId || 'agent') + '&stream=' + encodeURIComponent(ws.id) + '&limit=200', { cache: 'no-store' });
+      if (!r.ok) return;
+      const j = await r.json(), turns = j && Array.isArray(j.turns) ? j.turns : [];
+      const next = mergeCanonicalHistory(ws.history, turns);
+      if (!turns.length || JSON.stringify(next) === JSON.stringify(ws.history || [])) return;
+      ws.history = next;
+      try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
+      if (!activeWs || activeWs.id !== ws.id || historyPinPending !== loadToken) return;
+      if (log) log.innerHTML = '';
+      renderHistory(); replayChannel(); syncStatus(); maybeEmptyState();
+      pinLoadedHistoryAfterLayout(loadToken);
+    } catch (_) { /* offline sidecar: local history stays intact and the next load retries */ }
+  }
+
   // swap the rendered conversation to a workstream (its history). Used on enter/resume and when the
   // Commander clicks another stream in the rail — re-renders without re-wiring the input row.
   function load(ws) {
@@ -1076,6 +1113,7 @@ const Chat = (() => {
       try { WorkshopStore.presentFor(activeWs.id).catch(() => {}); } catch (_) {}
     }
     pinLoadedHistoryAfterLayout(historyPin);
+    reconcileServerHistory(activeWs, historyPin);
   }
 
   async function restoreTaskQuestion(ws) {
@@ -7208,6 +7246,7 @@ const Chat = (() => {
           stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],
           onRunId: id => { hopRunId = id; },
           onToken: d => { hopAcc += d; if (hopRow) hopRow.append(d); App.refreshUsage(); },
+          onTerminalReset: () => { hopAcc = ''; },
           onToolCall: ev => { if (isActiveWs(ws)) { if (hopRow && hopRow.breakSeg) hopRow.breakSeg(); toolChip(ev); } }
         });
       } catch (e) { res = { error: e }; }
@@ -7423,6 +7462,7 @@ const Chat = (() => {
         stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],   // Class Loadouts (shared-gear): station-wide gear for SKILL availability — a desk-only specialist still gets its class skills when the STATION has the gear (tools stay room-scoped via `placed`)
         onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), intentOfferText: intentOfferText, fromRecipe: fromRecipe, recipeId: recipeId, agentId: ws.agentId || 'agent', rec: recClaimRun(id, ws.agentId || 'agent') }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
+        onTerminalReset: () => { acc = ''; spokenIdx = 0; Channels.setAcc(ws.id, ''); },
         onUsage: () => App.refreshUsage(),
         // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is
         // unchanged — replayChannel renders those via toolLine), but the LIVE surface renders a structured CHIP.

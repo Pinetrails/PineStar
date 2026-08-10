@@ -59,6 +59,15 @@ function spy(jinaStatus) {
     A.ok(JSON.stringify(r).indexOf('jina_SECRET_value') < 0, 'the Jina key never appears in the fetch result');
   }
 
+  // ---- D. the context preview ceiling retains the complete extracted page for the central parker ----
+  {
+    const complete = 'PAGE'.repeat(2000);
+    const W = makeWebTools({ fetchImpl: async () => ({ status: 200, headers: { get: () => 'text/plain' }, text: async () => complete }), lookup: null });
+    const r = await W.webFetch('https://example.com/large');
+    A.ok(r.text.length < complete.length, 'large page text stays bounded in context');
+    A.eq(r.fullText, complete, 'the exact extracted page crosses the durable-output seam without a second fetch');
+  }
+
   /* ---- a hostile page must not be able to freeze the single-process station ----
      htmlToText was a chain of lazy `[\s\S]*?` replaces, every one QUADRATIC on input the fetch does not
      control: `<script` with no `</script>` makes the scan walk to end-of-input from each start position.

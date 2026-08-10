@@ -5,6 +5,8 @@
 'use strict';
 const A = require('./_assert.js');
 const U = require('../frontend/app/updatecore.js');
+const fs = require('fs');
+const path = require('path');
 
 const HOUR = 60 * 60 * 1000;
 const now = 1_000_000;
@@ -83,6 +85,37 @@ const now = 1_000_000;
   A.eq(U.installBlockReason(3, true), null, 'force (the explicit INSTALL ANYWAY click) bypasses the guard');
   A.eq(U.installBlockReason(-2, false), null, 'negative/garbage count never blocks');
   A.ok(/2 agents/.test(U.installBlockReason('2', false) || ''), 'numeric-string count still guards');
+}
+
+// ---- public privacy claims follow the real first-run default and plaintext OAuth inventory ----
+{
+  const ROOT = path.resolve(__dirname, '..');
+  const read = rel => fs.readFileSync(path.join(ROOT, rel), 'utf8');
+  const docs = [
+    ['PRIVACY.md', read('PRIVACY.md')],
+    ['website privacy', read('website/legal/privacy.html')],
+    ['website no-credits privacy', read('website/legal/_privacy.nocredits.html')]
+  ];
+  const sidecar = read('sidecar/index.js');
+
+  A.ok(/const OAUTH_PROVIDER_IDS = \['grok', 'kimi'\]/.test(sidecar), 'runtime owns Grok and Kimi OAuth stores');
+  A.ok(/path\.join\(WORKSPACES, id, 'tokens\.json'\)/.test(sidecar), 'runtime persists each device-OAuth token under its provider directory');
+
+  for (const [label, doc] of docs) {
+    A.ok(/The app does not track you/i.test(doc), label + ' preserves the accurate no-tracking claim');
+    A.ok(/Automatic update checks are on by default/i.test(doc), label + ' discloses the default');
+    A.ok(/On first run and at the configured interval/i.test(doc), label + ' discloses first-run timing');
+    A.ok(/AUTO-CHECK FOR UPDATES/i.test(doc), label + ' names the opt-out control');
+    A.ok(/SYSTEM (?:>|&gt;) SETTINGS (?:>|&gt;) UPDATES/i.test(doc), label + ' names the opt-out location');
+    A.ok(!/no ["&quot;]*phone home["&quot;]* of any kind/i.test(doc), label + ' omits the retired absolute phone-home claim');
+    A.ok(!/talks to the network[^\n<]*only[^\n<]*work you asked for/i.test(doc), label + ' does not hide the automatic update request');
+    for (const provider of ['codex', 'grok', 'kimi']) {
+      const row = new RegExp(provider + '\\/tokens\\.json[\\s\\S]{0,120}Plaintext', 'i');
+      A.ok(row.test(doc), label + ' identifies ' + provider + '/tokens.json as plaintext');
+    }
+    A.ok(/\.secrets\/spotify\.json[\s\S]{0,120}Plaintext/i.test(doc), label + ' retains the Spotify plaintext disclosure');
+    A.ok(!/Two secret types are/i.test(doc), label + ' omits the incomplete secret count');
+  }
 }
 
 A.report('updatecore');

@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f5d7212d3e744c43c87f34611d2e561f68e772d2",
+    "sourceCommit": "283a7e646d77632e50ce9a8efb452c58f77fd252",
     "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
     "files": [
       {
@@ -28,8 +28,8 @@
       },
       {
         "path": "PRIVACY.md",
-        "bytes": 11747,
-        "sha256": "9d10f669cc0a3e38c1b50e7aa82db4947f12430ce59e72e1ad84dbc2d4f49f64"
+        "bytes": 12352,
+        "sha256": "cf4ebfca9b06017a2d0c26c6e41d6f39fac1032101b48bd874a028465051cb77"
       },
       {
         "path": "README.md",
@@ -38,8 +38,8 @@
       },
       {
         "path": "RELEASE_NOTES.md",
-        "bytes": 2158,
-        "sha256": "ad83103120bf416ab61e3f388b2aafeb1d711b245f17a150d92dd95961fd55bf"
+        "bytes": 1082,
+        "sha256": "cf2eac3394e60624ec4f9ea4b26d118131c022587f46f8bfb736eee097bd278d"
       },
       {
         "path": "TERMS.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 325816,
-        "sha256": "99a93145796ed99ed50381638f338f449b8119fcbf4e6c556836851f6c57026c"
+        "bytes": 331417,
+        "sha256": "3bf946f0259f21deb4209a6b90c0ccfe9002a5a6a89c8932e92bdb09e44bf3dd"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 299201,
-        "sha256": "c80d8a84d2f126d05b53e782bbfde83b762ddd478fddb11e250fadac23d0af07"
+        "bytes": 299482,
+        "sha256": "015e70b8e71137601fe918d3f0ae304e455a28b12863370aa75ac3f1e6bcff13"
       },
       {
         "path": "frontend/app/channels.js",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 575775,
-        "sha256": "2be41d577a6f78ed10a1ae72faf580053fe9b798b948e2825e51880dbf2b2988"
+        "bytes": 578111,
+        "sha256": "18b88f341121c4ca64000607cb4b7a883594f01403edf99859db5ee6a810ba3f"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -263,8 +263,8 @@
       },
       {
         "path": "frontend/app/glossary.js",
-        "bytes": 9203,
-        "sha256": "f3f570fd7db654259f16cd9be92de1fad42a9eef68e179c620b8df14f923abaf"
+        "bytes": 9291,
+        "sha256": "172dbbe5bd78a41aafd8f6fd0b4f40842b9f4c2d6dc9698b280f4660828e17d8"
       },
       {
         "path": "frontend/app/goalloop.js",
@@ -283,8 +283,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 72975,
-        "sha256": "a91a2735b0a3a76715c3952eda24113c154d406d4879affadb84c7b6f3a714d2"
+        "bytes": 74283,
+        "sha256": "fafaf3a4e3038c8bc302e394a5a1e28456b795ff860cc9077573db97df54a2cc"
       },
       {
         "path": "frontend/app/hint.js",
@@ -733,8 +733,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 575240,
-        "sha256": "76c55f31eea6b9183507c25985309c19fdf177d0c32417acc309b8ff8cc61eda"
+        "bytes": 576509,
+        "sha256": "4bfdad09796803fa215a57f52963851ed2439ae82dc1b55611949ea96e70a01b"
       },
       {
         "path": "frontend/app/study.js",
@@ -808,8 +808,8 @@
       },
       {
         "path": "frontend/app/tutorial.js",
-        "bytes": 73855,
-        "sha256": "80779a8dd7ca4477b98c13fcfd4cd0e39430ad1f249ba0bae2f7a43f8d6f55c8"
+        "bytes": 74139,
+        "sha256": "1250245b5f378368cb424d85362064ccd191c0bf3e01fb6cbbd5ca5289074304"
       },
       {
         "path": "frontend/app/understanding.js",
@@ -878,8 +878,8 @@
       },
       {
         "path": "frontend/app/windows/loops.js",
-        "bytes": 43293,
-        "sha256": "c0ce6947dbbda75cc0b269de138dddec36ca93c860bfe09e5ebab3195d608b19"
+        "bytes": 43519,
+        "sha256": "7954601a91b063fd79cf8565a9b286b42148fb843ebd3d68e2fd0850dac39af8"
       },
       {
         "path": "frontend/app/windows/messaging.js",
@@ -898,8 +898,8 @@
       },
       {
         "path": "frontend/app/windows/routines.js",
-        "bytes": 35085,
-        "sha256": "e2e8858fb7636b6e75f81aa769b4a9409688b7c658d19a8871cbd678ddc97e91"
+        "bytes": 35147,
+        "sha256": "50f0125d9b92d15c36baee29c2279583b691423c4038fa6449b654ead2cbd066"
       },
       {
         "path": "frontend/app/windows/trophies.js",
@@ -938,8 +938,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 561557,
-        "sha256": "fdf0d0f0d6d96919bf1d99810b4eaf0d9f7293e884bd6266382e1eb80d487127"
+        "bytes": 566045,
+        "sha256": "889e3cc8197e38fabb1f85b03f6dcf8bce517812a52fef73e1d709da1984b809"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -958,13 +958,13 @@
       },
       {
         "path": "frontend/app/zones.js",
-        "bytes": 16860,
-        "sha256": "d1038c6aab292278f3a732aad049addf9955065a53282df17ca4d69570a49371"
+        "bytes": 12313,
+        "sha256": "5abb6deb7e64dcb053854fae98a3ffbabfc2bab1fbba2398b184aaaa784991aa"
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 331498,
-        "sha256": "4c2063a34bd2992e2fd958226b051e1d502f7636622b7e304365066a023d53e2"
+        "bytes": 332471,
+        "sha256": "e98e93d12548fb5a6e50c25c6b065f802dfdd70b663e32cda6a4d9cdbe45bfde"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -973,8 +973,8 @@
       },
       {
         "path": "frontend/css/comms.css",
-        "bytes": 45108,
-        "sha256": "7ac501555ee3e5bd15a0c7bc2d3a41da5bd8139015719e02b579bd76bb69e1df"
+        "bytes": 45212,
+        "sha256": "06d46f8f09606f9170b742e31e09985b7387364b063cf15dc13a1d19ec1d3eaa"
       },
       {
         "path": "frontend/css/marketplace.css",
@@ -1033,8 +1033,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 73227,
-        "sha256": "e8237a2bdd30487b8d25ef4d6577821bd9cb9d6a9943dd205d960654ef0b12db"
+        "bytes": 73485,
+        "sha256": "ce19688509ec1432d187322291b6062d3e6aaad29a265631aa593e017f1edce3"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -2130,7 +2130,7 @@
       "surfaceLocators": [
         {
           "path": "PRIVACY.md",
-          "needle": "no \"phone home\" of any kind"
+          "needle": "desktop app's automatic update-manifest check"
         }
       ],
       "authorityChecks": [
@@ -2143,7 +2143,7 @@
       "verdict": "REFUTED",
       "disposition": "NARROW",
       "ownerWave": "W2",
-      "qualification": "The boot-time OpenRouter catalog warm contradicts the blanket claim. The Google Fonts request is GONE — VT323 now has a single local source (the STARNET font law), so the frontend makes no third-party request at boot.",
+      "qualification": "The blanket claim remains refuted. PRIVACY.md now discloses configured/requested provider and tool traffic plus the desktop automatic update-manifest check; the OpenRouter catalog warm is still an additional boot-time egress boundary under audit. Google Fonts is gone and VT323 is local.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [

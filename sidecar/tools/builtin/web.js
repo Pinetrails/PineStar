@@ -610,7 +610,8 @@
         if (source === 'jina') { text = await directFetch(u, parent); source = 'direct'; }
         if (!text || !text.trim()) throw new Error('web_fetch got empty content' + (jErr ? ' (jina: ' + jErr.message + ')' : ''));
       }
-      return { text: clamp(text, max), url: u.href, source };
+      const bounded = clamp(text, max);
+      return { text: bounded, fullText: bounded === text ? null : text, url: u.href, source };
     }
 
     // ====================================================================
@@ -748,6 +749,7 @@
               const text = clamp(r.text, FETCH_MAX_CHARS);
               return {
                 content: fenceExternal(text, 'page text from ' + (r.url || args.url) + ' (read via the station browser' + (s ? ' after http ' + s : '') + ')'),
+                fullContent: text === r.text ? undefined : fenceExternal(r.text, 'page text from ' + (r.url || args.url) + ' (read via the station browser' + (s ? ' after http ' + s : '') + ')'),
                 summary: text.length + ' chars via browser'
               };
             }
@@ -762,7 +764,7 @@
           if (soft) return soft;
           throw e;                                     // genuine fault (timeout/abort/SSRF/bad URL) → isError
         }
-        return { content: fenceExternal(out.text, 'page text from ' + out.url), summary: out.text.length + ' chars via ' + out.source };
+        return { content: fenceExternal(out.text, 'page text from ' + out.url), fullContent: out.fullText ? fenceExternal(out.fullText, 'page text from ' + out.url) : undefined, summary: out.text.length + ' chars via ' + out.source };
       }
     };
 

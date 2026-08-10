@@ -34,10 +34,11 @@ English and is grounded in an audit of the actual code — not aspirations.</p>
 <p>Support questions: androo.agi@gmail.com.</p>
 <h2>The short version</h2>
 <ul>
-<li><strong>The app collects nothing.</strong> There is no telemetry, no analytics, no crash reporting, no ad
-  SDK, and no "phone home" of any kind. We verified this by searching the whole codebase for the
+<li><strong>The app does not track you.</strong> There is no telemetry, no analytics, no crash reporting, or ad
+  SDK. We verified this by searching the whole codebase for the
   usual suspects (Sentry, PostHog, Mixpanel, Segment, Google Analytics, Amplitude, Datadog):
-  none are present.</li>
+  none are present. The desktop app does make the automatic update-manifest request described
+  below; that request carries no user data or app identifier.</li>
 <li><strong>Your data stays on your machine</strong>, under your OS user's app-data directory —
   Windows: <code>%APPDATA%\ai.skynet.harness\workspaces\</code>; macOS:
   <code>~/Library/Application Support/ai.skynet.harness/workspaces/</code>; Linux:
@@ -45,8 +46,8 @@ English and is grounded in an audit of the actual code — not aspirations.</p>
   <code>%LOCALAPPDATA%\StarNet\</code> on Windows.) The <code>ai.skynet.harness</code> folder name is an intentional
   back-compatibility alias kept from before the app was renamed to StarNet on 2026-06-22 — it
   holds your StarNet data.</li>
-<li>The app talks to the network <strong>only</strong> to do work you asked for, and only to the specific
-  third parties described below.</li>
+<li>The app talks to the network for the configured or requested work described below, plus the
+  desktop app's automatic update-manifest check. These are the only outbound cases.</li>
 </ul>
 <h2>What leaves your machine — and only these</h2>
 <p>StarNet makes outbound network requests in exactly these situations. Nothing else.</p>
@@ -109,14 +110,15 @@ no audio or transcript. Once cached, listening is offline. Speaking is also offl
 available; if it is not, the Edge Read Aloud fallback described above may send only the answer text
 (not your recorded audio) to Microsoft.</p>
 <h3>6. A version check for updates (no personal data)</h3>
-<p>The desktop app checks for updates by fetching a single public manifest file from GitHub
-Releases:</p>
+<p>Automatic update checks are on by default. On first run and at the configured interval, the
+desktop app fetches a single public manifest file from GitHub Releases:</p>
 <pre><code>https://github.com/androoAGI/starnet-releases/releases/latest/download/latest.json
 </code></pre>
 <p>This is a plain <code>GET</code> for a static file. <strong>No user data, no identifier, and no telemetry are
 sent</strong> — it's the same request your browser would make to view that file. Each update's
 integrity is cryptographically verified against a key baked into the app before anything is
-installed.</p>
+installed. You can stop automatic checks by turning off <strong>AUTO-CHECK FOR UPDATES</strong> in
+<strong>SYSTEM &gt; SETTINGS &gt; UPDATES</strong>; the Update Center still lets you check manually.</p>
 <h2>What StarNet stores on your machine (and how)</h2>
 <p>Everything below lives under your per-user app-data directory (see the paths in "The short
 version" above for Windows/macOS/Linux). It never leaves your machine except as described
@@ -173,6 +175,16 @@ always under the service name <code>ai.skynet.harness</code>.</p>
 <td><strong>Plaintext</strong> JSON on disk</td>
 </tr>
 <tr>
+<td>Grok sign-in token</td>
+<td><code>grok/tokens.json</code></td>
+<td><strong>Plaintext</strong> JSON on disk</td>
+</tr>
+<tr>
+<td>Kimi sign-in token</td>
+<td><code>kimi/tokens.json</code></td>
+<td><strong>Plaintext</strong> JSON on disk</td>
+</tr>
+<tr>
 <td>Channel message history (Discord/Telegram chats the bot saw)</td>
 <td><code>channels/*.history.json</code></td>
 <td><strong>Plaintext</strong> JSON on disk</td>
@@ -202,11 +214,11 @@ plaintext <code>channels/secrets.json</code> is migrated into the keychain and s
 <p>If you instead run the bare sidecar directly (developer mode / <code>node sidecar/index.js</code> /
 tests), the OS keychain isn't reachable, so those bot tokens <strong>fall back to a plaintext file</strong>
 (<code>channels/secrets.json</code>). This is called out plainly in the code rather than hidden.</p>
-<p>Two secret types are <strong>plaintext even on desktop</strong> today: the <strong>Spotify</strong> OAuth token
-(<code>.secrets/spotify.json</code>) and the <strong>ChatGPT/Codex</strong> sign-in token (<code>codex/tokens.json</code>). If
-that matters to you, keep those integrations off. (Transcripts are run through a redaction step
-at write-time to avoid capturing secret-shaped tokens in your chat history, but the transcript
-file itself is plaintext.)</p>
+<p>These integration secrets are <strong>plaintext even on desktop</strong> today: the <strong>Spotify</strong> OAuth token
+(<code>.secrets/spotify.json</code>) and the <strong>ChatGPT/Codex</strong>, <strong>Grok</strong>, and <strong>Kimi</strong> sign-in tokens
+(<code>codex/tokens.json</code>, <code>grok/tokens.json</code>, and <code>kimi/tokens.json</code>). If that matters to you,
+keep those integrations off. (Transcripts are run through a redaction step at write-time to avoid
+capturing secret-shaped tokens in your chat history, but the transcript file itself is plaintext.)</p>
 <p>Because this data sits in plaintext files under your user profile, anyone with access to your
 Windows user account can read it. Protect your machine account accordingly.</p>
 <h2>What we do NOT do</h2>

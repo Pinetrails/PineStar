@@ -48,6 +48,49 @@ A.eq(ToolProps.toolPropType('image_analyze'), 'studio', 'toolPropType(image_anal
   A.eq(m.capForProp('studio'), 'studio', 'station.capForProp knows the studio prop (world.js capPropFor pulse targeting)');
 }
 
+/* ================= ROOM SCOPE: an empty assigned bay is not "no bay" =================
+   world.js is a browser IIFE, so extract the shipped heroCaps method and execute it against the real
+   WorldModel. bayObjects() returns [] both when an agent has no bay and when its assigned room is genuinely
+   empty. Only the first case may use the legacy station-wide fallback. */
+{
+  const world = fs.readFileSync(path.join(__dirname, '../frontend/app/world.js'), 'utf8');
+  const begin = world.indexOf('heroCaps: (agentId) => {');
+  const end = world.indexOf('\n    },\n    // STATION-WIDE gear', begin);
+  A.ok(begin >= 0 && end > begin, 'the shipped World.heroCaps method is extractable');
+  const method = world.slice(begin, end + '\n    }'.length).replace(/^heroCaps:\s*/, '');
+  const bindHeroCaps = station => new Function('station', 'return (' + method + ');')(station);
+
+  const m = WM.create();
+  const annex = m.addRoom({ kind: 'lab', rect: { x1: 18, y1: 0, x2: 26, y2: 8 } });
+  A.ok(annex.ok, 'a second capability-isolation room is placed');
+  A.ok(m.addProp({ t: 'comms_dish', x: 2, y: 2, w: 1, h: 1, block: true }).ok,
+    'the original room holds station-wide WEB gear');
+  A.ok(m.addProp({ t: 'workbench', x: 4, y: 2, w: 2, h: 1, block: true }).ok,
+    'the original room holds station-wide TERMINAL gear');
+  A.ok(m.addProp({ t: 'bay', x: 20, y: 2, w: 2, h: 2, block: true, agentId: 'isolated' }).ok,
+    'the isolated agent has a bay in the empty second room');
+
+  const heroCaps = bindHeroCaps(m);
+  A.eq(m.agentRoomId('isolated'), annex.id, 'the model proves the isolated agent has an assigned room');
+  A.eq(m.bayObjects('isolated'), [], 'that assigned room truthfully has no capability objects');
+  A.eq(heroCaps('isolated'), [], 'an empty assigned bay stays empty instead of inheriting station-wide gear');
+
+  A.ok(m.addProp({ t: 'comms_dish', x: 23, y: 2, w: 1, h: 1, block: true }).ok,
+    'WEB gear is placed inside the isolated room');
+  A.eq(heroCaps('isolated'), [{ objectType: 'dish' }],
+    'a bay-bound agent receives only the capability gear in its own room');
+  A.ok(heroCaps('unbound').some(x => x.objectType === 'workbench'),
+    'an agent with no bay keeps the legacy station-wide fallback');
+
+  const faulted = bindHeroCaps({
+    bayObjects: () => [],
+    agentRoomId: () => { throw new Error('room index unavailable'); },
+    doc: () => m.doc(),
+    capForProp: t => m.capForProp(t)
+  });
+  A.eq(faulted('isolated'), [], 'an assigned-room lookup failure fails closed instead of widening reach');
+}
+
 /* ================= MISSION BOARD: functional-but-NOT-capability, own category ================= */
 const mb = PS.spec('missionboard');
 A.ok(mb, 'the catalog has a MISSION BOARD prop');

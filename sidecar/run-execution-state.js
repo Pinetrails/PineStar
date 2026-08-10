@@ -43,13 +43,15 @@ function makeRunExecutionState(options) {
     const copy = messages || {};
     const originalChars = Number.isFinite(Number(result.outputChars))
       ? Math.max(0, Math.floor(Number(result.outputChars))) : result.content.length;
+    const originalBytes = Number.isFinite(Number(result.outputBytes))
+      ? Math.max(0, Math.floor(Number(result.outputBytes))) : Buffer.byteLength(result.content, 'utf8');
     const summary = String(result.summary || '').replace(/\s+/g, ' ').trim().slice(0, 240);
     const parkedPath = String(result.parkedPath || '').trim();
     const receipt = (summary || parkedPath) ? ('[Tool result receipt' + (summary ? ': ' + summary : '') + '. '
       + (parkedPath
-        ? 'The full ' + originalChars + '-character output was saved to ' + parkedPath
+        ? 'The full ' + originalChars + '-character / ' + originalBytes + '-byte UTF-8 output was saved to ' + parkedPath
           + ' because this run reached its context allowance. The tool already completed; do not rerun it merely to recover output. Read the saved file in focused ranges.'
-        : originalChars + ' characters were returned, but the full output could not fit or be preserved. Narrow the command before rerunning it.')
+        : originalChars + ' characters / ' + originalBytes + ' UTF-8 bytes were returned, but the full output could not fit or be preserved. Narrow the command before rerunning it.')
       + ']') : '';
     if (toolBytes >= cap) {
       next = Object.assign({}, result, { content: receipt || copy.omitted || '[tool output omitted — per-run tool-output budget reached]', outputBounded: true });

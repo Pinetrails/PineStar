@@ -18,13 +18,14 @@ function fakePty() {
   return api;
 }
 
-let t = 1000, seq = 0, saved = null;
+let t = 1000, seq = 0, saved = null, spilled = '';
 const pty = fakePty();
 const ledger = { rows: [], released: [], record(r) { this.rows.push(r); }, release(pid) { this.released.push(pid); }, pinIdentity() {} };
 const manager = makeTerminalSessions({
   pty, platform: 'win32', clock: { now: () => t }, newId: () => 'id' + (++seq),
   load: () => ({ status: 'absent', value: null }), save: v => { saved = JSON.parse(JSON.stringify(v)); },
-  redact: s => String(s).replace(/secret/g, '[redacted]'), ledger, ringChars: 4096
+  redact: s => String(s).replace(/secret/g, '[redacted]'), ledger, ringChars: 4096,
+  spill: e => { spilled += e.text; return { path: '.output/terminal-' + e.id + '.txt', bytes: Buffer.byteLength(spilled) }; }
 });
 
 A.ok(manager.available(), 'node-pty-shaped adapter makes terminals available');
@@ -60,11 +61,15 @@ pty.children[0].emitData('\x1b[32mgreen\x1b[0m\rprompt> ');
 let read = manager.read('a1', 'repl', { offset: 0, maxChars: 100 });
 A.eq(read.output, 'green\nprompt> ', 'scrollback strips terminal controls and normalizes redraw carriage returns');
 A.eq(read.nextOffset, read.output.length, 'read returns an absolute continuation cursor');
+A.eq(spilled, 'green\nprompt> ', 'sanitized terminal output is durably appended before the memory ring can drop it');
+A.eq(read.session.outputPath, '.output/terminal-term_id1.txt', 'terminal read exposes the exact durable output path');
 
 pty.children[0].emitData('z'.repeat(5000));
 read = manager.read('a1', 'repl', { offset: 0, maxChars: 100 });
 A.ok(read.truncatedStart, 'a read before the ring start explicitly reports dropped output');
 A.ok(read.availableFrom > 0 && read.session.droppedChars > 0, 'bounded scrollback reports its real surviving range');
+A.eq(read.session.outputSpillVerified, true, 'ring rollover retains a verified durable full-output receipt');
+A.eq(read.session.outputBytes, Buffer.byteLength(spilled), 'terminal receipt reports exact full bytes beyond the ring');
 
 const stop = manager.stop('a1', 'repl');
 A.ok(stop.ok && stop.requested && stop.session.state === 'stopping', 'stop reports a request, not an invented exit');

@@ -15,6 +15,7 @@ test/scout.e2e.test.js
 test/auxbudget.e2e.test.js
 test/questrefresh.e2e.test.js
 test/e2e.run.test.js
+test/image-task.e2e.test.js
 test/e2e.workspace-lease.test.js
 test/e2e.attachments.test.js
 test/e2e.summon.test.js
@@ -55,6 +56,7 @@ test/cron.arm.test.js
 test/lifecycle-armed.http.test.js
 test/checkpoint-store.test.js
 test/shell.test.js
+test/shell.process-tree.test.js
 test/verify.run.test.js
 test/browser.gauntlet.e2e.test.js
 test/servicekeys.http.test.js

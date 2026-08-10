@@ -9,11 +9,11 @@
 
    The shape of a zone (a tiny tagged union):
      • { kind:'room', rect:{x1,y1,x2,y2} } — the agent's bay/workstation sits inside an
-       enclosing room rect; roam that rect. A SOLO agent whose room spans the whole station
-       yields a large rect, so its rich station-wide behavior is NOT regressed (invariant I2/A3).
-       OPTIONALLY carries `roam:{cx,cy,r}` (see `roamR` below) — the home room PLUS a Chebyshev
-       radius around the desk, so a body may cross a threshold into a NEIGHBOURING room while
-       still being leashed to its own desk. The zone `kind` stays 'room' precisely so every
+       enclosing room rect; without `roamR`, roam that rect (the legacy behavior).
+       OPTIONALLY carries `roam:{cx,cy,r,rects}` (see `roamR` below) — a Chebyshev radius around
+       the stable desk/spawn anchor, intersected with the station's floor rects. It is deliberately
+       independent of room identity, so nearby reachable floor in another room is admitted. The
+       zone `kind` stays 'room' precisely so every
        existing consumer (world.js `zoneRect`, the D3 border-meeting geometry) keeps working.
      • { kind:'leash', cx,cy,r }           — no enclosing room found around the anchor; roam a
        bounded leash radius (Chebyshev) around the workstation/bay foot tile.
@@ -39,20 +39,11 @@
   'use strict';
 
   const DEFAULT_LEASH = 5;   // Chebyshev tiles around the anchor when there is no enclosing room
-  /* ROAM_RADIUS — "how far from its own desk a body may wander while idle" (Chebyshev tiles).
-     Opt-in per call via `roamR`: with no roamR a room zone is the room and NOTHING else (the
-     pre-2026-08-08 behavior every existing caller/test relies on). world.js passes it for bodies
-     with a REAL assigned anchor (workstation / bay / the hero's desk), which is what turns "caged
-     in the room I was assigned" into "lives here, and pops next door". */
-  const ROAM_RADIUS = 9;
-  /* SPILL_RADIUS — how far PAST ITS OWN DOORWAY a body may go. The desk radius alone does not
-     deliver "it can walk into the next room": measured live on a 18x11 home room, a desk near the
-     middle put every neighbouring room outside a 9-tile radius, so the roam widening changed
-     nothing at all. A body may therefore also roam a band around any threshold ON ITS OWN ROOM's
-     border — i.e. it may step through its own door and look around next door, and no further.
-     Not transitive: the spill is computed from the HOME room's doors only, so "next door" can never
-     ratchet into "the whole station". */
-  const SPILL_RADIUS = 6;
+  /* ROAM_RADIUS — the genuine stable-anchor idle leash (Chebyshev tiles). Fourteen tiles reaches
+     beyond a typical 18x11 room from a centrally placed desk without opening the whole 64x48
+     station. Room plates do not alter the distance; geo.walkable/pathfinding still decide whether
+     a destination is physically reachable. */
+  const ROAM_RADIUS = 14;
 
   // ---- small geometry helpers (LOCAL-frame, inclusive rects) ----
   function isRect(r) {
@@ -124,33 +115,26 @@
   //   agentId    : the agent's id (to match bound props); may be null/undefined
   //   anchorTile : {x,y} the agent's bay/workstation foot tile (preferred input)
   //   leashR     : Chebyshev radius for the open-floor fallback (default DEFAULT_LEASH)
-  //   doors      : Array<[x1,y1,x2,y2]> the model's threshold seams (geo.doorDefs). With roamR set,
-  //                the zone also admits a spillR band around the OUTSIDE tile of every threshold on
-  //                the home room's own border — "you may step through your own door", never further.
-  //   spillR     : radius of that band (default SPILL_RADIUS)
-  //   roamR      : Chebyshev radius around the anchor the body may roam IN ADDITION to its home
-  //                room (0 / omitted = the room and nothing else — the original caging). A room
-  //                zone gains `roam:{cx,cy,r}`; an open-floor leash simply widens to max(leashR,
-  //                roamR) so a desk-anchored body off-rect roams the same distance. Never applies
-  //                to the solo 'multi' zone (already the whole floor) or to a null zone.
+  //   roamR      : Chebyshev radius around the stable anchor. When present, it REPLACES room-plate
+  //                membership with radius ∩ station-floor membership. A room zone gains
+  //                `roam:{cx,cy,r,rects}`; an open-floor leash widens to max(leashR, roamR).
   //   solo       : when truthy, this agent effectively OWNS the whole space (no other bound
   //                bay/crew). Per A3/I2 its zone widens to the UNION of all room rects (the whole
   //                reachable floor) so its rich station-wide behavior is never caged — even in a
   //                multi-room station where its desk room is only one of several. (Applies only
-  //                when there IS an anchor — an unplaced agent still gets no zone.)
+  //                when there IS an anchor and roamR is omitted; an explicit radius wins.)
   //
   // Resolution order (matches the plan A2/A3):
   //   1. resolve an anchor tile (explicit anchorTile, else from a bound prop)
   //   2. no anchor at all -> unassigned/unplaced -> null (does not roam)
-  //   3. SOLE OWNERSHIP (solo) with >=1 room rect -> { kind:'multi', rects:[...] } (whole floor)
-  //   4. anchor inside an enclosing room rect -> { kind:'room', rect } (+ roam when roamR > 0)
+  //   3. SOLE OWNERSHIP (solo) with >=1 room rect and NO roamR -> { kind:'multi', rects:[...] }
+  //   4. anchor inside an enclosing room rect -> { kind:'room', rect } (+ true radius with roamR)
   //   5. anchor on open floor (no enclosing rect) -> { kind:'leash', cx,cy,r }
   function computeZone(opts) {
     opts = opts || {};
     const rects = opts.rects;
     let r = Number.isFinite(opts.leashR) && opts.leashR > 0 ? Math.floor(opts.leashR) : DEFAULT_LEASH;
     const roamR = Number.isFinite(opts.roamR) && opts.roamR > 0 ? Math.floor(opts.roamR) : 0;
-    const spillR = Number.isFinite(opts.spillR) && opts.spillR > 0 ? Math.floor(opts.spillR) : SPILL_RADIUS;
     if (roamR > r) r = roamR;   // a desk-anchored body off-rect roams the same distance it would from a room
 
     // 1) anchor tile
@@ -167,19 +151,16 @@
     // exact target set the pre-change idle pickers drew from (geo.allRects), so a SOLO agent keeps
     // every previously-valid cross-room target — invariant I2/A3 held for the realistic solo case
     // (a built-out solo station where the desk room != the whole station).
-    const multi = soloMulti(rects, opts.solo);
+    const multi = roamR > 0 ? null : soloMulti(rects, opts.solo);
     if (multi) return multi;
 
-    // 4) enclosing room (+ optional widening into rooms joined DIRECTLY to it by a doorway)
+    // 4) enclosing room (+ optional true stable-anchor radius over all station floor rects)
     const room = smallestEnclosing(rects, a.x, a.y);
     if (room) {
       const z = { kind: 'room', rect: room };
       if (roamR > 0) {
-        const connected = doorwayRegions(room, rects, opts.doors);
-        z.roam = { cx: a.x, cy: a.y, r: roamR, rects: connected.rects };
-        if (connected.regions.length) {
-          z.spill = { pts: connected.regions.map(p => ({ x: p.x, y: p.y })), regions: connected.regions, r: spillR };
-        }
+        const floor = soloMulti(rects, true);
+        z.roam = { cx: a.x, cy: a.y, r: roamR, rects: floor ? floor.rects : [room] };
       }
       return z;
     }
@@ -200,73 +181,21 @@
     return out.length ? { kind: 'multi', rects: out } : null;
   }
 
-  /* The OUTSIDE tile of every threshold on this room's border. `doors` is the world model's
-     doorDefs shape: [x1,y1,x2,y2] — the two floor tiles either side of one seam. A seam counts when
-     exactly ONE of its tiles is inside the room; the other tile is the point the body may spill
-     around. Deduped, stable order (no RNG — invariant I3), and a COPY (never aliases the input). */
-  function spillPoints(rect, doors) {
-    if (!Array.isArray(doors) || !doors.length) return [];
-    const out = [], seen = new Set();
-    for (const d of doors) {
-      if (!d || d.length < 4) continue;
-      const aIn = rectHas(rect, d[0], d[1]), bIn = rectHas(rect, d[2], d[3]);
-      if (aIn === bIn) continue;                       // both sides inside (or both outside) → not this room's threshold
-      const x = aIn ? d[2] : d[0], y = aIn ? d[3] : d[1];
-      const k = x + ',' + y;
-      if (seen.has(k)) continue;
-      seen.add(k); out.push({ x, y });
-    }
-    return out;
-  }
-
-  /* Bind each outside doorway tile to the room rect on the OTHER side of that exact seam. This is
-     the topology guard: distance can widen a home room into its immediate neighbour, but it cannot
-     jump across a narrow neighbour into a third room (or diagonally into an unrelated room). */
-  function doorwayRegions(rect, rects, doors) {
-    if (!isRect(rect) || !Array.isArray(rects) || !Array.isArray(doors)) return { regions: [], rects: [] };
-    const regions = [], neighbours = [], seenRegion = new Set(), seenRect = new Set();
-    for (const d of doors) {
-      if (!d || d.length < 4) continue;
-      const aIn = rectHas(rect, d[0], d[1]), bIn = rectHas(rect, d[2], d[3]);
-      if (aIn === bIn) continue;
-      const ix = aIn ? d[0] : d[2], iy = aIn ? d[1] : d[3];
-      const ox = aIn ? d[2] : d[0], oy = aIn ? d[3] : d[1];
-      for (const raw of rects) {
-        if (!isRect(raw)) continue;
-        const next = normRect(raw);
-        if (!rectHas(next, ox, oy) || rectHas(next, ix, iy)) continue;
-        const rk = [next.x1, next.y1, next.x2, next.y2].join(',');
-        const pk = ox + ',' + oy + '|' + rk;
-        if (!seenRegion.has(pk)) { seenRegion.add(pk); regions.push({ x: ox, y: oy, rect: next }); }
-        if (!seenRect.has(rk)) { seenRect.add(rk); neighbours.push(next); }
-      }
-    }
-    return { regions, rects: neighbours };
-  }
-
   // ---- membership test ----
-  // inZone(null, ..) -> false (an agent with no zone roams nowhere). For a room zone: inclusive
-  // rect contains. For a leash zone: Chebyshev (square) radius around the center.
+  // inZone(null, ..) -> false (an agent with no zone roams nowhere). For a room zone without roam,
+  // the rect contains; with roam, floor-rect membership AND the desk radius are required.
   function inZone(zone, tx, ty) {
     if (!zone) return false;
     if (!Number.isFinite(tx) || !Number.isFinite(ty)) return false;
     if (zone.kind === 'room') {
-      if (rectHas(zone.rect, tx, ty)) return true;
-      // ROAM: a Chebyshev radius around the desk, clipped to rooms directly connected to HOME.
-      // Distance alone never grants authority to enter a third or unrelated room.
       const rm = zone.roam;
-      if (rm && Math.abs(tx - rm.cx) <= rm.r && Math.abs(ty - rm.cy) <= rm.r && Array.isArray(rm.rects)) {
+      if (rm) {
+        if (Math.abs(tx - rm.cx) > rm.r || Math.abs(ty - rm.cy) > rm.r) return false;
+        if (!Array.isArray(rm.rects)) return false;
         for (const r of rm.rects) if (rectHas(r, tx, ty)) return true;
+        return false;
       }
-      // ...and the band just past its own doorways (see SPILL_RADIUS): this is the clause that
-      // actually delivers "it can walk into the next room" when the desk sits deep in a big room.
-      const sp = zone.spill;
-      if (sp && Array.isArray(sp.regions)) {
-        for (const p of sp.regions) {
-          if (rectHas(p.rect, tx, ty) && Math.abs(tx - p.x) <= sp.r && Math.abs(ty - p.y) <= sp.r) return true;
-        }
-      }
-      return false;
+      return rectHas(zone.rect, tx, ty);               // legacy opt-out: no roamR means the room plate
     }
     if (zone.kind === 'leash') {
       return Math.abs(tx - zone.cx) <= zone.r && Math.abs(ty - zone.cy) <= zone.r;
@@ -298,7 +227,7 @@
   return {
     computeZone, inZone, clampPickable,
     // exposed for tests / reuse — pure geometry helpers
-    rectHas, rectArea, smallestEnclosing, anchorFromProps, spillPoints, doorwayRegions,
-    DEFAULT_LEASH, ROAM_RADIUS, SPILL_RADIUS,
+    rectHas, rectArea, smallestEnclosing, anchorFromProps,
+    DEFAULT_LEASH, ROAM_RADIUS,
   };
 });

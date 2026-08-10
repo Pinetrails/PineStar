@@ -54,7 +54,9 @@ jobs:
             target: darwin-arm64
             bundles: app,dmg
             rust-target: aarch64-apple-darwin
-          - os: macos-latest
+          # Run the Intel artifact on Intel hardware too; an ARM cross-build cannot prove x64
+          # app-data and upgrade behavior. GitHub supports this label until macOS 15 retires.
+          - os: macos-15-intel
             target: darwin-x64
             bundles: app,dmg
             rust-target: x86_64-apple-darwin
@@ -84,10 +86,16 @@ jobs:
 
       - run: npm ci
 
-      # macos-latest is ARM, including for the Intel cross-build. Hydrate the exact x64
-      # Sharp packages pinned by the lockfile before the production dependency closure is
-      # staged; otherwise a manual Intel build can silently carry host-ARM native modules.
-      - name: Hydrate Intel Sharp runtime for macOS cross-build
+      - name: Verify v0.8.5 station recovery on Intel macOS
+        if: runner.os == 'macOS' && matrix.target == 'darwin-x64'
+        shell: bash
+        run: |
+          test "$(uname -m)" = "x86_64"
+          node test/upgrade-085-090.test.js
+
+      # Hydrate the exact x64 Sharp packages pinned by the lockfile before the production
+      # dependency closure is staged; this also fails closed if the host install changes.
+      - name: Hydrate Intel Sharp runtime for macOS target
         if: runner.os == 'macOS' && matrix.target == 'darwin-x64'
         shell: bash
         run: bash scripts/hydrate-sharp-macos-x64.sh

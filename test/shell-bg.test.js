@@ -60,7 +60,9 @@ let T = 1000; const clock = { now: () => T };
 {
   const spawn = makeFakeSpawn();
   const exits = [];
-  const bg = makeShellBg({ spawn, clock, onExit: (e) => exits.push(e), maxPerAgent: 2, isWin: true });
+  let full = '';
+  const bg = makeShellBg({ spawn, clock, onExit: (e) => exits.push(e), maxPerAgent: 2, isWin: true,
+    spill: e => { full += e.text; return { path: '.output/shell-bg-' + e.id + '.txt', bytes: Buffer.byteLength(full) }; } });
 
   T = 1000;
   const s1 = bg.start({ agentId: 'a', cmd: 'npm run dev', cwd: '/ws/a' });
@@ -73,6 +75,9 @@ let T = 1000; const clock = { now: () => T };
 
   spawn.children[0]._emit('Server listening on :3000\n');
   A.ok(bg.status('a', 'bg_1').tail.indexOf('listening on :3000') >= 0, 'stdout streams into the status tail');
+  A.eq(full, 'Server listening on :3000\n', 'background output is appended whole to the durable spill seam');
+  A.eq(bg.status('a', 'bg_1').outputPath, '.output/shell-bg-bg_1.txt', 'status exposes the exact recoverable log path');
+  A.eq(bg.status('a', 'bg_1').outputSpillVerified, true, 'status distinguishes a verified spill from a bounded memory tail');
 
   // cap: a 2nd is fine, a 3rd is refused
   A.ok(bg.start({ agentId: 'a', cmd: 'sleep 99' }).ok, 'second within cap');

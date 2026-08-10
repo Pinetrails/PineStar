@@ -66,6 +66,7 @@ function makeTerminalSessions(deps) {
   const ledger = deps.ledger && typeof deps.ledger.record === 'function' ? deps.ledger : null;
   const stopTree = typeof deps.stopTree === 'function' ? deps.stopTree : null;
   const onExit = typeof deps.onExit === 'function' ? deps.onExit : (() => {});
+  const spill = typeof deps.spill === 'function' ? deps.spill : null;
   const platform = deps.platform || process.platform;
   const spawnSpec = typeof deps.spawnSpec === 'function' ? deps.spawnSpec : defaultSpawnSpec;
   const RING = clamp(deps.ringChars, 4096, 4 * 1024 * 1024, 512 * 1024);
@@ -86,7 +87,8 @@ function makeTerminalSessions(deps) {
       state: r.state, pid: r.pid || null, cols: r.cols, rows: r.rows,
       startedAt: r.startedAt, endedAt: r.endedAt, exitCode: r.exitCode, exitSignal: r.exitSignal,
       stopRequested: !!r.stopRequested, totalOutputChars: r.totalOutputChars || 0,
-      droppedChars: r.droppedChars || 0, reason: r.reason || ''
+      droppedChars: r.droppedChars || 0, reason: r.reason || '', outputPath: r.outputPath || null,
+      outputBytes: r.outputBytes || 0, outputSpillError: r.outputSpillError || ''
     };
   }
   function persist() {
@@ -121,7 +123,8 @@ function makeTerminalSessions(deps) {
         sessionId: String(raw.sessionId), agentId: String(raw.agentId), name: String(raw.name),
         command: String(raw.command || ''), cwd: String(raw.cwd || ''), handle: null, attached: false,
         buffer: '', bufferStart: Number(raw.totalOutputChars) || 0, totalOutputChars: Number(raw.totalOutputChars) || 0,
-        droppedChars: Number(raw.droppedChars) || 0, exitCode: raw.exitCode == null ? null : Number(raw.exitCode),
+        droppedChars: Number(raw.droppedChars) || 0, outputPath: raw.outputPath ? String(raw.outputPath) : null,
+        outputBytes: Number(raw.outputBytes) || 0, outputSpillError: String(raw.outputSpillError || ''), exitCode: raw.exitCode == null ? null : Number(raw.exitCode),
         exitSignal: raw.exitSignal == null ? null : Number(raw.exitSignal), pid: null
       });
       if (ACTIVE_STATES.has(String(raw.state))) {
@@ -164,12 +167,20 @@ function makeTerminalSessions(deps) {
       startedAt: r.startedAt, endedAt: r.endedAt || null, exitCode: r.exitCode,
       exitSignal: r.exitSignal, stopRequested: !!r.stopRequested,
       totalOutputChars: r.totalOutputChars || 0, bufferedChars: (r.buffer || '').length,
-      droppedChars: r.droppedChars || 0, reason: r.reason || '', metadataPersisted: lastPersisted
+      droppedChars: r.droppedChars || 0, reason: r.reason || '', metadataPersisted: lastPersisted,
+      outputPath: r.outputPath || null, outputBytes: r.outputBytes || 0,
+      outputSpillVerified: !!r.outputPath && !r.outputSpillError, outputSpillError: r.outputSpillError || null
     };
   }
   function append(r, data) {
     const text = stripAnsi(redact(data));
     if (!text) return;
+    if (spill) {
+      try {
+        const saved = spill({ agentId: r.agentId, kind: 'terminal', id: r.sessionId, text });
+        if (saved && saved.path) { r.outputPath = String(saved.path); r.outputBytes = Math.max(0, Number(saved.bytes) || r.outputBytes); r.outputSpillError = ''; }
+      } catch (e) { r.outputSpillError = String((e && e.message) || e || 'output spill failed').slice(0, 300); }
+    }
     r.buffer += text;
     r.totalOutputChars += text.length;
     if (r.buffer.length > RING) {
@@ -178,6 +189,7 @@ function makeTerminalSessions(deps) {
       r.bufferStart += drop;
       r.droppedChars += drop;
     }
+    if (spill) persist();
   }
   function settle(r, event) {
     if (!r || !r.attached || !ACTIVE_STATES.has(r.state)) return;
@@ -227,7 +239,7 @@ function makeTerminalSessions(deps) {
       sessionId, agentId, name, command: redact(command), cwd: String(opts.cwd || ''), state: 'running',
       handle, attached: true, pid: Number(handle.pid) || null, cols, rows, startedAt: now(), endedAt: null,
       exitCode: null, exitSignal: null, stopRequested: false, reason: '', buffer: '', bufferStart: 0,
-      totalOutputChars: 0, droppedChars: 0
+      totalOutputChars: 0, droppedChars: 0, outputPath: null, outputBytes: 0, outputSpillError: ''
     };
     records.set(sessionId, r); byName.set(nameKey(agentId, name), sessionId);
     attach(r, handle);

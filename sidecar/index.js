@@ -16,6 +16,7 @@ const dns = require('node:dns');
 
 const { runAgentLoop } = require('./loop.js');
 const DomainTask = require('./domain-task.js');
+const ImageTask = require('./image-task.js');
 const { makeCostEngine } = require('./cost.js');
 const { makeLedger } = require('./ledger.js');
 const { makeBudget } = require('./budget.js');
@@ -27,11 +28,13 @@ const { makeWorkspaceLease } = require('./workspace-lease.js');
 const { makeWorkspaceOwner } = require('./workspace-owner.js');
 const { classifyWorkspace, workspaceCandidates } = require('./workspace-safety.js');
 const { inspectWorkspaceLineage } = require('./workspace-lineage.js');
+const workspaceRecovery = require('./workspace-recovery.js');
 const { makeUpdatePreparation } = require('./update-preparation.js');
 const { makeAgentLifecycle } = require('./agent-lifecycle.js');
 const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
+const { makeOutputArtifacts } = require('./output-artifacts.js');
 const { makeWebTools, makePoliteScheduler } = require('./tools/builtin/web.js');
 const { makeWebReader } = require('./tools/builtin/webreader.js');
 const { makeBrowserTools } = require('./tools/builtin/browser.js');
@@ -149,6 +152,7 @@ const { makeEnvironmentProxyFetch } = require('./channels/proxy-fetch.js');
 const telegramOwnerPairing = require('./channels/owner-pairing.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub, menuCommands } = require('./channels/hub.js');
+const { makeWebhookVerifier } = require('./channels/webhook-auth.js');
 const { makePromptRegistry } = require('./channels/prompts.js');   // C6: the bounded token→meaning map behind inline keyboards
 const { makeOpenAiCompat } = require('./openai-compat.js');   // /v1/* OpenAI-compatible surface (external harness ingress)
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
@@ -156,6 +160,7 @@ const { parseSlackTokens } = require('./channels/slack.js');                    
 const channelSecretsMod = require('./channels/secrets.js');                        // T1.4: token-vs-config split + keychain migration
 const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
+const relayWebhook = makeWebhookVerifier({ secret: process.env.STARNET_CHANNEL_WEBHOOK_SECRET || '', now: () => Date.now() });
 const { makeRouter } = require('./routing/router.js');
 const { makeChainRunner } = require('./routing/chain.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
@@ -357,6 +362,11 @@ const SHARED = path.resolve(__dirname, '..', 'shared');
 // Files, so writing beside the .js source EACCES-fails on first boot and silently kills ALL persistence
 // (ledger/memory/secrets/cron) and degrades every permission grant to a deny. App-data is always writable.
 function defaultWorkspaces() {
+  if (process.platform === 'darwin') {
+    // Match Tauri app.path().app_data_dir() exactly. Older manual sidecars used ~/.local/share/StarNet;
+    // that location remains a recovery candidate, never a second canonical station.
+    return path.join(os.homedir() || '.', 'Library', 'Application Support', 'ai.skynet.harness', 'workspaces');
+  }
   const base = process.env.LOCALAPPDATA || process.env.APPDATA            // Windows: %LOCALAPPDATA% (machine-local app data)
     || process.env.XDG_DATA_HOME                                          // Linux XDG
     || path.join(os.homedir() || '.', '.local', 'share');                 // POSIX fallback
@@ -369,6 +379,23 @@ function defaultWorkspaces() {
   return neu;
 }
 const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : defaultWorkspaces();
+const outputArtifacts = makeOutputArtifacts({ fsp, fs, pathMod: path, root: WORKSPACES, crypto });
+
+const RECOVERY_CANDIDATE_ROOTS = workspaceCandidates({
+  path: path, env: process.env, platform: process.platform, homedir: () => os.homedir()
+}).concat([path.resolve(__dirname, 'workspaces'), path.resolve(__dirname, '..', 'workspaces')]);
+
+// Recovery activation must precede the owner claim and every store constructor. With no explicit request,
+// production may self-heal only one unambiguous valid legacy root; conflicts stay read-only for the picker.
+const startupWorkspaceRecovery = workspaceRecovery.applyPendingRecovery({
+  fs, path, platform: process.platform, home: os.homedir(), workspaceRoot: WORKSPACES,
+  candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS, auto: !DEV_MODE, now: Date.now
+});
+if (startupWorkspaceRecovery && startupWorkspaceRecovery.applied) {
+  console.warn('[recovery] restored prior station before opening stores; source preserved, rollback retained=' + !!startupWorkspaceRecovery.rollbackRetained);
+} else if (startupWorkspaceRecovery && startupWorkspaceRecovery.ok === false) {
+  console.error('[recovery] automatic station recovery failed closed: ' + String(startupWorkspaceRecovery.error || 'unknown error'));
+}
 
 // DEV/QA must be destructive only inside an explicit scratch profile. A forgotten WORKSPACES override used
 // to make a headless audit inherit the Commander's canonical app-data root; that can produce a reset-looking
@@ -411,9 +438,23 @@ process.once('exit', () => { try { workspaceOwner.release(); } catch (_) {} });
 // isolated DEV/QA roots deliberately do not look sideways into the Commander's production profile.
 const workspaceLineage = inspectWorkspaceLineage({
   fs: fs, path: path, platform: process.platform, workspaceRoot: WORKSPACES,
-  candidateRoots: DEV_MODE ? [] : workspaceCandidates({ path: path, env: process.env, homedir: () => os.homedir() })
-    .concat([path.resolve(__dirname, 'workspaces'), path.resolve(__dirname, '..', 'workspaces')])
+  candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS
 });
+const workspaceRecoveryInspection = workspaceRecovery.inspectCandidates({
+  fs, path, platform: process.platform, home: os.homedir(), workspaceRoot: WORKSPACES,
+  candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS
+});
+workspaceLineage.recovery = workspaceRecovery.publicInspection(workspaceRecoveryInspection);
+
+function publicWorkspaceLineage() {
+  const home = os.homedir();
+  const out = JSON.parse(JSON.stringify(workspaceLineage));
+  out.currentWorkspace = workspaceRecovery._internals.displayPath(out.currentWorkspace, home, path, process.platform);
+  out.evidence = (out.evidence || []).map(row => Object.assign({}, row, {
+    root: workspaceRecovery._internals.displayPath(row.root, home, path, process.platform)
+  }));
+  return out;
+}
 
 /* ---- LIVE MODEL PRICING (2026-07-31, Hermes-parity pass): wire the models.dev aggregate into the
    price snapshot so a newly-released model gets its real published rate instead of a stale family
@@ -2485,6 +2526,7 @@ async function projectIsGitRepo(rootReal) { try { await fsp.stat(path.join(rootR
 const pathTrustCore = makePathTrust({
   fsp, pathMod: path,
   roots: blessedRoots,
+  workspaceRoot: WORKSPACES,
   bless: async (rootReal, m) => blessProjectRoot(rootReal, m),
   touch: (rootReal, abs) => { try { projectsStore.touch(rootReal, Date.now()); } catch (_) {} },
   isGitRepoOf: projectIsGitRepo,
@@ -3122,7 +3164,8 @@ if (require.main === module) {
   procLedger.sweep().then(s => { if (s.examined) console.log('[proc-ledger] boot sweep: examined=' + s.examined + ' killed=' + s.killed + ' gone=' + s.gone + ' pid-reused=' + s.reused); }).catch(() => {});
   inputGuard.observe('boot').catch(() => {});
 }
-const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
+const appendDurableProcessOutput = entry => outputArtifacts.append(entry);
+const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, newId: () => crypto.randomUUID(), onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger, spill: appendDurableProcessOutput });
 const EXECUTION_SETTINGS_FILE = path.join(WORKSPACES, 'execution-settings.json');
 const executionIdleDefault = Math.max(0, Math.min(1440, Number(process.env.STARNET_DOCKER_IDLE_MINUTES == null ? 60 : process.env.STARNET_DOCKER_IDLE_MINUTES) || 0));
 let executionSettings = (() => {
@@ -3197,6 +3240,7 @@ const terminalSessions = makeTerminalSessions({
   pty: terminalPty, clock: { now: () => Date.now() }, newId: () => crypto.randomUUID(),
   load: () => terminalMetadataStore.readKey('all'), save: (value) => terminalMetadataStore.set('all', value),
   redact: redact, ledger: procLedger, stopTree: stopTerminalTree,
+  spill: appendDurableProcessOutput,
   onExit: (s) => { try { console.log('[terminal] ' + s.agentId + '/' + s.name + ' ' + s.state + (s.exitCode == null ? '' : ' exit=' + s.exitCode)); } catch (_) {} }
 });
 if (terminalPtyLoadError && require.main === module) console.warn('[terminal] PTY runtime unavailable: ' + terminalPtyLoadError);
@@ -4141,6 +4185,7 @@ const cronDriver = makeCronDriver({
       const sink = (name, payload) => {
         const p = payload || {};
         if (name === 'agent.token') { hs.buf += (p.delta || ''); return; }
+        if (name === 'agent.tool_call') hs.buf = '';
         if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
         else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
         else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
@@ -4404,6 +4449,7 @@ async function nightshiftChat(o) {
   const sink = (name, payload) => {
     const p = payload || {};
     if (name === 'agent.token') { state.buf += (p.delta || ''); return; }
+    if (name === 'agent.tool_call') state.buf = '';
     if (name === 'agent.run.error') state.err = p.message || 'run error';
   };
   // VISIBLE WHILE THINKING (2026-07-18): the beat's broadcast opt-in (driver + force route both pass it) used to
@@ -6578,6 +6624,11 @@ async function runQuestRefreshCycle(why) {
 function questRefreshTick() {
   if (process.env.SKYNET_QUEST_REFRESH === '0') return;
   if (questRefreshingNow) return;
+  // The cadence and caught-up triggers are BACKGROUND initiative. Read the server-owned effective posture on
+  // every look so the fully-off end of the autonomy dial is honored across restarts: WAIT means nothing starts,
+  // calls a provider, stamps refresh state, or mints quests on its own. The explicit /refresh/run route does not
+  // come through this function; a Commander pressing REFRESH QUESTS remains the authority for a manual cycle.
+  if (!(commanderPosture.summary() || {}).enabled) return;
   // V3 §6 note: the readiness gate is applied INSIDE the cycle as dossier ADMISSIBILITY (a synced not-ready
   // verdict blanks the dossier out of the evidence, so a blitzed onboarding can't mint quests) — never here
   // at the tick, so the cadence still spends and the honest 'skipped' ledger semantics survive.
@@ -6747,6 +6798,7 @@ function startTelegram(token, key, model, agentCfg) {
   let adapterRef = null;
   const hub = makeChannelHub({
     channel: 'telegram', runOnce: runOnce, store: channelStore,
+    historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     // Only the adapter can mint owner trust: its owner is claimed from an admitted DM and group traffic never
@@ -6990,6 +7042,7 @@ function startTelegramBot(botId) {
   const botStore = makeBotScopedStore(botId);
   const hub = makeChannelHub({
     channel: 'telegram:' + botId, runOnce: runOnce, store: botStore,
+    historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     ownerTrusted: (msg) => !!(adapterRef && adapterRef._internals && msg && msg.chatType === 'dm'
@@ -7127,6 +7180,7 @@ function startDiscord(token, key, model, agentCfg) {
   const wired = wireChannel(channelRegistry.get('discord'), {
     hub: {
       runOnce: runOnce, store: channelStore,
+      historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
       secrets: () => {
         const d = (channelSecrets && channelSecrets.discord) || {};
         const provider = normalizeProvider(d.provider);
@@ -7238,6 +7292,7 @@ function getDevHub() {
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     runOnce: runOnce, store: channelStore,
+    historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
     send: (chatId, text) => devCaptureReply(chatId, text),
     secrets: devHubSecrets,
     persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
@@ -7399,6 +7454,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
   const wired = wireChannel(desc, {
     hub: {
       runOnce: runOnce, store: channelStore,
+      historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
       secrets: () => {
         const r = (channelSecrets && channelSecrets[id]) || {};
         const p = normalizeProvider(r.provider);
@@ -7615,7 +7671,7 @@ async function handleExecutionSync(req, res) {
   const rec = agentRoster.get(agentId);
   if (!rec) return sendExecutionJson(res, 404, { ok: false, error: 'no such agent' });
   if (rec.executionProfile !== 'remote-ssh') return sendExecutionJson(res, 409, { ok: false, error: 'select the Remote SSH execution profile before synchronizing' });
-  try { return sendExecutionJson(res, 200, await executionEnvironment.syncWorkspace(agentId, { direction: body.direction })); }
+  try { return sendExecutionJson(res, 200, await executionEnvironment.syncWorkspace(agentId, { direction: body.direction, conflictAware: true })); }
   catch (e) { return sendExecutionJson(res, 502, { ok: false, error: String((e && e.message) || e), environment: executionEnvironment.describeAgent(agentId) }); }
 }
 async function handleExecutionCleanup(req, res) {
@@ -7634,6 +7690,8 @@ const ROUTES = [
   { m: 'POST', exact: '/api/update/prepare', h: handleUpdatePrepare },
   { m: 'POST', exact: '/api/update/cancel', h: handleUpdateCancel },
   { m: 'GET', exact: '/api/update/status', h: handleUpdateStatus },
+  { m: 'GET', exact: '/api/lineage/report', h: serveWorkspaceRecoveryReport },
+  { m: 'POST', exact: '/api/lineage/recover', h: handleWorkspaceRecovery },
   { m: 'GET', exact: '/api/lineage', h: serveWorkspaceLineage },
   { m: 'POST', exact: '/api/session', h: handleApiSession },
   // qsplit, not exact: these carry ?provider= so the page can ask about the provider it is actually on.
@@ -7729,8 +7787,9 @@ const ROUTES = [
   { m: 'GET', qsplit: '/api/channels/events', h: handleChannelEvents },   // path match: the SSE url carries a ?token= query now
   { m: 'POST', exact: '/api/routing', h: handleRouting },
   { m: 'GET', qsplit: '/api/routing/chain', h: handleRoutingChain },   // qsplit, not exact: `exact` compares the FULL url and this route always carries a query
-  // PROOF (guided workflow Phase 4): run ONE real, labeled sample job through the armed line. Refusals are
-  // 409, never 404 — the finish-the-line card feature-detects the route by exactly that difference.
+  // PROOF (guided workflow Phase 4): GET is the inert feature probe; POST runs ONE real, labeled sample
+  // job through the armed line. Keeping discovery separate means probing can never spend or dispatch.
+  { m: 'GET', exact: '/api/routing/sample', h: handleRoutingSampleStatus },
   { m: 'POST', exact: '/api/routing/sample', h: handleRoutingSample },
   { m: 'GET', exact: '/api/budget/status', h: handleBudgetStatus },
   { m: 'GET', qsplit: '/api/credits', h: handleCredits },   // 404s (no surface) unless managed credits are configured
@@ -7920,6 +7979,8 @@ const ROUTES = [
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
+  { m: 'POST', exact: '/api/channels/handoff', h: handleChannelHandoff },
+  { m: 'POST', prefix: '/api/channels/webhook/', h: handleChannelWebhook },
   { m: 'GET', prefix: '/api/memory/proposals', h: serveProposals },
   { m: 'GET', prefix: '/api/memory/pending', h: servePending },   // un-answered high-stakes decks (durable, cross-run)
   { m: 'POST', exact: '/api/memory/turnin', h: handleMemoryTurnin },
@@ -7985,7 +8046,38 @@ function handleUpdateStatus(req, res) {
 }
 function serveWorkspaceLineage(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ ok: true, lineage: workspaceLineage }));
+  res.end(JSON.stringify({ ok: true, lineage: publicWorkspaceLineage() }));
+}
+function serveWorkspaceRecoveryReport(req, res) {
+  const report = workspaceRecovery.recoveryReport({
+    fs, path, platform: process.platform, arch: process.arch, home: os.homedir(), workspaceRoot: WORKSPACES,
+    candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS,
+    inspection: workspaceRecoveryInspection, publicLineage: publicWorkspaceLineage(), now: Date.now
+  });
+  res.writeHead(200, {
+    'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store',
+    'Content-Disposition': 'attachment; filename="starnet-recovery-report.json"'
+  });
+  res.end(JSON.stringify(report, null, 2) + '\n');
+}
+async function handleWorkspaceRecovery(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 4096)) || {}; }
+  catch (_) { return json(400, { ok: false, error: 'bad json' }); }
+  try {
+    const result = workspaceRecovery.requestRecovery({
+      fs, path, platform: process.platform, home: os.homedir(), workspaceRoot: WORKSPACES,
+      candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS,
+      inspection: workspaceRecoveryInspection, candidateId: String(body.candidateId || ''), now: Date.now
+    });
+    json(202, Object.assign({}, result, { desktopWillRestart: DESKTOP_SHELL }));
+    // Exit only after the authenticated response is flushed. The desktop guardian respawns automatically;
+    // a manual sidecar is explicitly told by the UI to restart it. The next boot applies before store open.
+    setTimeout(() => process.exit(75), 150);
+  } catch (error) {
+    json(409, { ok: false, error: String(error && error.message || error) });
+  }
 }
 
 // Prefix routes are route families, not arbitrary string aliases. A route whose declared prefix already
@@ -8105,8 +8197,9 @@ server.listen(PORT, '127.0.0.1', () => {
   try {
     if (nightshiftShouldArm()) armNightshift();
   } catch (e) { console.warn('[nightshift] start failed:', (e && e.message) || e); }
-  // QUEST REFRESH (QUEST V3, on by default): the 24h + caught-up quest-refresh tick. Inert only under
-  // SKYNET_QUEST_REFRESH=0. The gate itself spends nothing; a due cycle makes ONE aux model call.
+  // QUEST REFRESH (QUEST V3, on by default): the 24h + caught-up quest-refresh tick. Inert under
+  // SKYNET_QUEST_REFRESH=0 or effective autonomy posture WAIT. The gate itself spends nothing; an allowed due
+  // cycle makes ONE aux model call. Explicit manual refresh remains available at every posture.
   try {
     armQuestRefresh();
   } catch (e) { console.warn('[questrefresh] start failed:', (e && e.message) || e); }
@@ -8249,6 +8342,12 @@ function handleRoutingChain(req, res) {
   res.end(JSON.stringify({ next: next || null, brief: brief || null }));
 }
 
+/* ---- GET /api/routing/sample — inert feature discovery for the Build Mode finish-the-line card. ---- */
+function handleRoutingSampleStatus(_req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ ok: true, available: true }));
+}
+
 /* ---- POST /api/routing/sample — PROOF: feed ONE real, clearly-labeled work item through the armed line.
 
    Guided-workflow Phase 4 (docs/CONVEYOR_GUIDED_WORKFLOW_PLAN.md): the button that answers "does my system
@@ -8282,6 +8381,7 @@ function getSampleHub() {
   sampleHub = makeChannelHub({
     channel: 'sample', maxMessageLength: 4000, agentPrefix: 'smp_', textBatchWaitMs: 0,
     runOnce: runOnce, store: channelStore,
+    historyFor: (streamId) => transcriptStore.reconstruct(streamId, { limit: 100 }),
     /* THE SAMPLE IS UNADDRESSED, EVERY TIME. This route's whole claim is "a REAL run on the REAL UNADDRESSED
        dispatch path" — the FILTER/SPLITTER must sort it. The hub's ordinary chat→agent bookkeeping saved a
        binding for chatId 'sample' on the first run, so from the SECOND sample on resolveTarget took its
@@ -9921,6 +10021,7 @@ async function handleCronRun(req, res) {
     try { emit(name, payload); } catch (_) {}
     const p = payload || {};
     if (name === 'agent.token') state.buf += (p.delta || '');
+    else if (name === 'agent.tool_call') state.buf = '';
     else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
     else if (name === 'agent.run.end') state.reason = p.reason;
   };
@@ -9991,6 +10092,7 @@ async function handleCronRun(req, res) {
               try { emit(name, payload); } catch (_) {}
               const p = payload || {};
               if (name === 'agent.token') hs.buf += (p.delta || '');
+              else if (name === 'agent.tool_call') hs.buf = '';
               else if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
               else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
               else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
@@ -11166,12 +11268,13 @@ async function handleCheckpointRestore(req, res) {
   const agentId = String(body.agentId || '');
   const snapshotId = String(body.snapshotId || '');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'bad agentId' });
-  if (!checkpointStore.isValidId(snapshotId)) return json(400, { error: 'bad snapshotId' });
+  const remoteEnv = executionEnvironment.backendIdFor(agentId) === 'ssh' ? executionEnvironment.forAgent(agentId) : null;
+  if (remoteEnv ? !/^sshcp_[a-f0-9]{8}$/.test(snapshotId) : !checkpointStore.isValidId(snapshotId)) return json(400, { error: 'bad snapshotId' });
   const operationId = 'restore-' + crypto.randomUUID();
   const lifecycle = await agentLifecycle.acquireMutation(agentId, operationId);
   if (!lifecycle.ok) return json(409, { error: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
   let ok;
-  try { ok = await checkpointStore.restore(agentId, snapshotId); }
+  try { ok = remoteEnv && typeof remoteEnv.restoreCheckpoint === 'function' ? await remoteEnv.restoreCheckpoint(agentId, snapshotId) : await checkpointStore.restore(agentId, snapshotId); }
   catch (e) { return json(500, { error: 'restore failed: ' + ((e && e.message) || e) }); }
   finally { lifecycle.release(); }
   if (!ok) return json(404, { error: 'no such snapshot for that agent' });
@@ -11180,13 +11283,15 @@ async function handleCheckpointRestore(req, res) {
 }
 
 // GET /api/checkpoint?agent=<id> — the read-only snapshot index a "rewind" affordance lists from.
-function handleCheckpointList(req, res) {
+async function handleCheckpointList(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
     if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(400, { error: 'bad agentId' });
-    json(200, { enabled: CHECKPOINTS_ENABLED, snapshots: checkpointStore.list(agent).snapshots });
+    const remoteEnv = executionEnvironment.backendIdFor(agent) === 'ssh' ? executionEnvironment.forAgent(agent) : null;
+    const snapshots = remoteEnv && typeof remoteEnv.listCheckpoints === 'function' ? await remoteEnv.listCheckpoints(agent) : checkpointStore.list(agent).snapshots;
+    json(200, { enabled: remoteEnv ? true : CHECKPOINTS_ENABLED, snapshots });
   } catch (e) {
     // HONESTY (GROUND_UP_AUDIT P2): a thrown store read is a real failure — report 500 so a crash isn't
     // masked as "no restore points". A genuinely-empty list still returns 200 {snapshots:[]} above (shape
@@ -12189,6 +12294,7 @@ async function runOnce(o) {
   // A single explicit host inspection is a bounded lookup, not an autonomous research brief. Classifying once
   // at admission lets the prompt, advertised tools, dispatch guard, and terminal-evidence stop share one truth.
   const directDomainTask = isTask ? DomainTask.classify(latestUserText(messages)) : null;
+  const imageTask = isTask ? ImageTask.classify(latestUserText(messages)) : null;
   // P1-6 per-agent model/provider OVERRIDE: when a run carries NO explicit model/provider (headless hub, delegated
   // worker, or any caller that didn't pass one), fall back to THIS AGENT's pinned identity in the roster before the
   // station default. An explicit per-run o.model/o.provider still wins (the interactive dock path is unchanged), so
@@ -12458,6 +12564,8 @@ async function runOnce(o) {
   const managedSkills = [];
   const seenLoadedSkills = new Set();
   const openrouterToolKey = providerId === 'openrouter' ? runKey : runtimeKey;
+  const studioRoute = ImageTask.resolveRoute({ providerId, runKey, stationOpenRouterKey: runtimeKey });
+  const studioOpenRouterBase = providerId === 'openrouter' ? baseUrl : providerRuntimeBaseUrl('openrouter', '');
   // web_search/web_fetch (DDG/Jina, OR fallback) + web_request. `accessSurface` is host authority: it comes
   // from the run host, never from tool args. An authenticated owner DM has the same stored-key reach as the
   // desktop; an ordinary autonomous caller remains restricted to explicitly unattended-approved keys.
@@ -12517,7 +12625,7 @@ async function runOnce(o) {
       return out;
     } finally { clearTimeout(t); }
   };
-  const imageTools = makeImageTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null, fsp, pathMod: path, root: WORKSPACES, imageModel: String(ENV('IMAGE_MODEL') || '').trim() || undefined, auxVision: auxVisionCall });
+  const imageTools = makeImageTools({ openrouter: studioRoute.ok ? { apiKey: studioRoute.key, model, baseUrl: studioOpenRouterBase } : null, fsp, pathMod: path, root: WORKSPACES, imageModel: String(ENV('IMAGE_MODEL') || '').trim() || undefined, auxVision: auxVisionCall });
   // browser.vision uses the SAME vision model as image_analyze when a key exists; with no key it
   // reports "unavailable" honestly (never a success-shaped stub). Pass the dep only when usable.
   runBrowser = makeBrowserTools({
@@ -12948,6 +13056,24 @@ async function runOnce(o) {
   resolved = enforceSyntheticOnly(resolved, remoteDesktopAuthorized);
   resolved = enforceRunAuthority(resolved, registry, userControlAuthority);
   resolved = enforceEnabledToolsets(resolved, registry, o.enabledToolsets);
+  if (imageTask) {
+    const imageRoomId = station.agents && station.agents[agentId] && station.agents[agentId].room;
+    const imageRoom = imageRoomId && station.rooms && station.rooms[imageRoomId];
+    const hasStudio = !!(imageRoom && Array.isArray(imageRoom.objects) && imageRoom.objects.some(ob => ob && ob.objectType === 'studio'));
+    const imageBlocker = ImageTask.admissionBlocker({
+      hasStudio,
+      studioEnabled: resolved.tools.indexOf('image_generate') >= 0,
+      route: studioRoute,
+      providerId,
+      model
+    });
+    if (imageBlocker) {
+      emit('agent.run.start', { agentId, runId, trigger, model });
+      emit('agent.run.error', { agentId, runId, transient: false, message: imageBlocker });
+      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+      return;
+    }
+  }
   if (Array.isArray(o.preloadSkills) && o.preloadSkills.length && resolved.tools.indexOf('skill.view') < 0) {
     emit('agent.run.start', { agentId, runId, trigger, model });
     emit('agent.run.error', { agentId, runId, transient: false, message: 'This routine requires saved skills, but its per-job toolset/station does not grant skill.view.' });
@@ -13088,18 +13214,9 @@ async function runOnce(o) {
     // design: a parker that fails degrades to the plain clamp rather than failing the tool call.
     parkOutput: async (content, meta) => {
       try {
-        const ws = await executionEnvironment.ensureWorkspace(fsJail.safeAgentId(agentId || 'agent'));
-        await fsp.mkdir(path.join(ws, '.output'), { recursive: true });
         const safeTool = String((meta && meta.tool) || 'tool').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40);
-        const rel = '.output/' + safeTool + '-' + String(runId || 'run').replace(/[^A-Za-z0-9_-]/g, '') + '-' + (parkSeq++) + '.txt';
-        const full = String(content);
-        const abs = path.join(ws, rel);
-        await fsp.writeFile(abs, full, 'utf8');
-        // A path is evidence only after byte-for-byte read-back. If storage returned short/corrupt bytes, the
-        // caller falls back to an honest unpreserved-output receipt instead of pointing at an unproved file.
-        const readBack = await fsp.readFile(abs, 'utf8');
-        if (readBack !== full) return null;
-        return { path: rel };   // WORKSPACE-RELATIVE: the exact string fs.read takes, not a host absolute path
+        const stem = safeTool + '-' + String(runId || 'run').replace(/[^A-Za-z0-9_-]/g, '') + '-' + (parkSeq++);
+        return await outputArtifacts.park(agentId || 'agent', stem, content);
       } catch (_) { return null; }
     },
     // The context carries the host-minted remote-owner lease only for a locally paired Telegram owner.
@@ -14001,7 +14118,7 @@ async function runOnce(o) {
     // right direction, since the alternative is a run that can still call tools but can no longer SEE any.
     if (name === 'agent.compact') execution.resetToolBytes();
     execution.observeToolEvent(name, payload);
-    if (taskBrief && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
+    if ((taskBrief || imageTask) && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
       bufferedTaskEnd = payload; return;
     }
     emit(name, payload);
@@ -14066,6 +14183,20 @@ async function runOnce(o) {
       // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
       approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
     });
+    if (imageTask && result && result.reason === 'done') {
+      let clarifying = false;
+      if (taskBrief && Array.isArray(result.messages)) {
+        for (let i = result.messages.length - 1; i >= 0; i--) {
+          const m = result.messages[i];
+          if (m && m.role === 'assistant' && typeof m.content === 'string') {
+            clarifying = !!TaskIntent.parse(m.content);
+            break;
+          }
+        }
+      }
+      const completionError = ImageTask.enforceCompletion(result, execution.artifactList(), { clarifying });
+      if (completionError) emit('agent.run.error', { agentId, runId, transient: false, message: completionError });
+    }
     // HOOKS — on_session_end. The run's real outcome, not an optimistic one: `reason` is whatever the loop
     // actually ended on ('done' | 'empty' | 'max_iters' | 'budget' | 'cancelled' | 'error'), so a hook that
     // pages on failure pages on the truth. This is the seam for "when a run finishes, notify me / run the
@@ -14105,12 +14236,12 @@ async function runOnce(o) {
       } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }
     }
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : bufferedTaskEnd.reason }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason) }));
       bufferedTaskEnd = null;
     }
   } finally {
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : bufferedTaskEnd.reason }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason) }));
       bufferedTaskEnd = null;
     }
     // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
@@ -16330,8 +16461,8 @@ function serveSaveLoad(req, res) {
     // path can disclose a damaged/restored save instead of silently presenting the pristine first-run ceremony.
     // EL-11 FIX 1 (GB-9): also surface workspaceDegraded at boot-read time, not only on the first refused write.
     const recovery = (typeof saveStore.recoveryNotice === 'function') ? (saveStore.recoveryNotice(agent) || null) : null;
-    json(200, { save: doc || null, recovery: recovery, lineage: workspaceLineage, degraded: workspaceDegraded ? true : undefined });
-  } catch (e) { json(200, { save: null, recovery: null, lineage: workspaceLineage }); }
+    json(200, { save: doc || null, recovery: recovery, lineage: publicWorkspaceLineage(), degraded: workspaceDegraded ? true : undefined });
+  } catch (e) { json(200, { save: null, recovery: null, lineage: publicWorkspaceLineage() }); }
 }
 // POST /api/save/recovery-ack { agent? } — the frontend has SHOWN the honest quarantine/recovery notice; clear
 // the marker so it appears exactly once. Never touches the save itself (the quarantined copy stays on disk).
@@ -16759,6 +16890,47 @@ function serveTranscript(req, res) {
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 200));
     json(200, { stream, turns: transcriptStore.history(stream, { limit }) });
   } catch (e) { json(200, { turns: [] }); }   // tolerate any error — empty transcript, never a 500
+}
+
+/* Bind a local authenticated messaging conversation to an existing desktop workstream. This mutates only
+   routing metadata: it never sends a message or starts a model run. */
+async function handleChannelHandoff(req, res) {
+  const json = (code, value) => respondJson(res, code, value);
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16, res)) || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  const channel = String(body.channel || '').trim(), chatId = String(body.chatId || '').trim(), streamId = String(body.streamId || '').trim();
+  const agentId = body.agentId == null ? '' : String(body.agentId).trim();
+  if (!/^[A-Za-z0-9:_-]{1,80}$/.test(channel) || !chatId || chatId.length > 200) return json(400, { error: 'channel and chatId are required' });
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(streamId)) return json(400, { error: 'invalid streamId' });
+  if (agentId && !isAgentId(agentId)) return json(400, { error: 'invalid agentId' });
+  const bot = /^telegram:([^:]+)$/.exec(channel);
+  const storeKey = bot ? bot[1] + '|' + chatId : chatId;
+  const prior = channelStore.getChatRecord(storeKey);
+  if (prior && prior.channel && String(prior.channel) !== channel) return json(409, { error: 'chatId is already owned by ' + prior.channel });
+  const patch = { channel, chatId, streamId };
+  if (agentId) patch.agentId = agentId;
+  const saved = channelStore.saveChatRecord(storeKey, patch);
+  json(200, { ok: true, channel, chatId, streamId, agentId: saved.agentId || null, turns: transcriptStore.history(streamId, { limit: 200 }).length });
+}
+
+/* Authenticated relay ingress. API-token auth is still required by the global HTTP guard; this second HMAC
+   proves payload origin and the timestamp+nonce cache makes lifecycle delivery exactly-once at this boundary. */
+async function handleChannelWebhook(req, res) {
+  const json = (code, value) => respondJson(res, code, value);
+  const channel = decodeURIComponent(String(req.url || '').split('?')[0].slice('/api/channels/webhook/'.length));
+  if (!/^[A-Za-z0-9:_-]{1,80}$/.test(channel)) return json(404, { error: 'unknown channel' });
+  let raw; try { raw = await readBody(req, 2 << 20, res); } catch (_) { return; }
+  const verdict = relayWebhook.verify({
+    timestamp: req.headers['x-starnet-timestamp'], nonce: req.headers['x-starnet-nonce'],
+    signature: req.headers['x-starnet-signature'], body: raw
+  });
+  if (!verdict.ok) return json(verdict.code || 401, { error: verdict.error });
+  let body; try { body = JSON.parse(raw) || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  const live = liveChannelFor(channel);
+  if (!(live && live.hub && typeof live.hub.onInbound === 'function')) return json(409, { error: channel + ' is not connected' });
+  const msg = body.message || body;
+  if (!msg.chatId || (!msg.text && !(Array.isArray(msg.media) && msg.media.length))) return json(400, { error: 'message payload is incomplete' });
+  await live.hub.onInbound(Object.assign({}, msg, { chatId: String(msg.chatId), userId: String(msg.userId || ''), chatType: msg.chatType === 'group' ? 'group' : 'dm' }));
+  json(202, { ok: true, accepted: true, channel, nonce: verdict.nonce });
 }
 
 // GET /api/memory/proposals?agent=<id>&run=<id> — the pending Keep/Edit/Discard candidates reflection raised

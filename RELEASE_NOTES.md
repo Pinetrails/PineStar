@@ -1,34 +1,18 @@
-# StarNet v0.9.0
+# StarNet v0.10.0
 
-StarNet 0.9.0 is the reliability and harness-parity release. It focuses on truthful completion,
-safe recovery, durable autonomous work, and a smoother first-use experience.
+This candidate consolidates the 0.10.0 execution, reliability, and interface work. Release
+readiness remains evidence-bound: implementation and automated coverage are not presented as
+live host proof.
 
-## Highlights
+## Candidate verification boundaries
 
-- Hardened run finalization, compaction recovery, retries, routing, and subagent/routine completion
-  so the station does not report work as done before the backing result is durable and verified.
-- Added complete-station recovery bundles, authorized project-root checkpoints, exact-root rewind,
-  safer workspace ownership, and guarded 0.8.5-to-0.9.0 migration behavior.
-- Added inspect-first Skill Exchange installation with immutable source bytes, provenance, quarantine,
-  approval gates, and update checks.
-- Expanded the built-in roster to 28 practical agent classes and the bundled Skill Library to 73
-  procedures, with task-matched class discovery from COMMS and authored skill depth wired into runs.
-- Improved Telegram owner pairing truth and added offline Ogg/Opus voice-note transcription through
-  the bundled local speech path.
-- Restored cross-platform push-to-talk transcription, preserved crew skins through save rehydration,
-  and refreshed live agent levels without requiring an app restart.
-- Added durable model controls for tasks and loops, bounded long-haul history growth, stronger loop
-  cancellation/recovery, and post-content connector/tool safety boundaries.
-- Expanded independent parity fixtures, graders, signed receipts, host observers, installed-desktop
-  performance measurement, and fail-closed soak tooling.
-- Refined onboarding, recommendations, permissions, dock layout, accessibility, station visuals, and
-  the shared Windows/macOS release contract.
-
-## Upgrade notes
-
-- Existing 0.8.5 workspaces are migrated through a staged, verified path. StarNet retains recovery
-  information and refuses destructive migration when verification cannot complete.
-- Provider and channel credentials remain machine-local and may require reauthentication after a
-  recovery or machine move.
-- The public desktop train supports Windows and macOS. Linux packages are not part of the supported
-  public release train for 0.9.0.
+- **Attended browser login is not yet release-proven.** The watched-COMMS flow opens a visible
+  Chrome window so the Commander can sign in without sharing a password with the agent. On the
+  audited Windows host, Chrome connected at browser-level CDP but `Page.enable` failed before a
+  page session was adopted, so the Done-card handoff and authenticated-session reuse were not
+  proven.
+- **Safe Cell stdio MCP is container-only and not yet live-proven.** Local stdio connectors
+  require an existing Safe Cell agent and a working Docker runtime through the exact container
+  broker path; the installed desktop does not fall back to an interactive host child. The
+  audited host had no Docker, Podman, nerdctl, or WSL, so real container stdio could not run.
+  Remote HTTP remains the available MCP route on such a host.

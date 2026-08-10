@@ -72,6 +72,12 @@ function jsonResp(obj, status) { return { status: status || 200, json: async () 
   A.ok(g.content.indexOf('/api/file?agent=hero&path=') >= 0, 'image_generate returns the /api/file viewer URL');
   A.ok(emits.some(e => e.n === 'deliverable' && e.p.kind === 'image' && e.p.agentId === 'hero'), 'image_generate emits a deliverable event');
 
+  // A configured OpenRouter-compatible base is part of the authorized route (local proxy/tests included).
+  const baseFetch = stubFetch(() => jsonResp({ choices: [{ message: { images: [{ image_url: { url: DATA_URL } }] } }] }));
+  const TB = makeImageTools({ openrouter: { apiKey: 'base-key', baseUrl: 'http://127.0.0.1:43210/api/v1/' }, fsp, pathMod: path, root: ROOT, fetchImpl: baseFetch });
+  await TB.generateTool.run({ prompt: 'local route' }, ctx);
+  A.eq(baseFetch.calls[0].url, 'http://127.0.0.1:43210/api/v1/chat/completions', 'image_generate honors the configured OpenRouter base URL');
+
   // ---- B2. custom output path + content-addressed idempotency (same bytes -> same default name) ----
   const g2 = await T1.generateTool.run({ prompt: 'x', path: 'art/cube' }, ctx);
   A.ok(g2.summary.indexOf('art/cube.png') >= 0, 'image_generate appends .png to an extensionless custom path');
