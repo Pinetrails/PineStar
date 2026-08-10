@@ -1,18 +1,19 @@
-/* node test/routing.sample.e2e.test.js — real-sidecar proof for POST /api/routing/sample (guided
+/* node test/routing.sample.e2e.test.js — real-sidecar proof for GET/POST /api/routing/sample (guided
    workflow Phase 4: PROOF — run a sample job).
 
    What it locks, over real sockets against the REAL host (boot pattern per routing.persist.e2e.test.js,
    content-driven mock provider per comms-send.e2e.test.js — zero real spend, no keys):
      1. the route sits behind the same per-launch token gate as every /api route;
-     2. NO ARMED PLAN → an honest 409 refusal ({ok:false,error}), and never a 404 — the finish-the-line
-        card feature-detects the endpoint by exactly that difference;
-     3. HAPPY PATH: the sample rides the REAL unaddressed dispatch path through a posted two-stage floor —
+     2. GET discovery answers available without dispatching or spending, while an unauthenticated probe
+        remains denied;
+     3. NO ARMED PLAN → POST gives an honest 409 refusal ({ok:false,error}), and never a route-miss;
+     4. HAPPY PATH: the sample rides the REAL unaddressed dispatch path through a posted two-stage floor —
         the router picks the entry dock, the chain runner runs the downstream stage, the reply the line
         delivers is the LAST stage's, the recorded runs.jsonl rows are scoped by the sample's own streamId,
         and the workitem crates (with the additive sample:true marker, re-proven against shared/events
         validate()) ride the station bus;
-     4. ONE IN FLIGHT per station: a concurrent second post refuses 409 while the first is riding;
-     5. NO GRANTS PROPAGATION (the chain-grants law): a sample whose model tries a consent-gated mutation
+     5. ONE IN FLIGHT per station: a concurrent second post refuses 409 while the first is riding;
+     6. NO GRANTS PROPAGATION (the chain-grants law): a sample whose model tries a consent-gated mutation
         (shell.exec) is default-denied — the request body cannot smuggle unattendedGrants — and the line
         still delivers (a denial never gates the reply).
 
@@ -192,8 +193,17 @@ function twoStagePlan() {
     /* ---- 1. the route is behind the SAME per-launch token gate as every /api route ---- */
     const bare = await fetch(B + '/api/routing/sample', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: B }, body: '{}' });
     A.eq(bare.status, 403, 'no token -> 403 (the auth seam holds)');
+    const bareGet = await fetch(B + '/api/routing/sample', { headers: { Origin: B } });
+    A.eq(bareGet.status, 403, 'GET discovery also stays behind the session token gate');
 
-    /* ---- 2. no armed plan -> an honest 409 refusal, never a 404 (the feature-detect contract) ---- */
+    /* ---- 1b. GET is the inert discovery contract used by Build Mode ---- */
+    const discovered = await fetch(B + '/api/routing/sample', { headers }).then(r => r.json().then(j => ({ status: r.status, j })));
+    A.eq(discovered.status, 200, 'authenticated GET discovers the sample-job seam');
+    A.ok(discovered.j && discovered.j.ok === true && discovered.j.available === true,
+      'the discovery response explicitly says the seam is available');
+    A.eq(mock.requests.length, 0, 'GET discovery never dispatches a provider request');
+
+    /* ---- 2. no armed plan -> an honest POST refusal, never a route-miss ---- */
     const noPlan = await post({});
     A.eq(noPlan.status, 409, 'no armed routing plan -> 409');
     A.ok(noPlan.j && noPlan.j.ok === false, 'the refusal says ok:false');

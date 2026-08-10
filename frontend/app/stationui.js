@@ -744,6 +744,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     sfx('open');
     w.classList.remove('term-min-hidden', 'term-minimizing');
     w.removeAttribute('aria-hidden');
+    // The dossier displays live model and run counters. It stays mounted while minimized, so refresh that
+    // readout before revealing it again; other windows keep their in-progress DOM and draft state untouched.
+    if (key === 'agents') rerender('agents');
     // land it back at the remembered spot (or CSS-centre if never moved), lift to top, replay power-on.
     placeTerm(w, key);
     w.style.zIndex = U.zTop();
@@ -1268,12 +1271,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // aborted/dropped run's agent.run.end never reached the bus) so the panel can't get stuck showing it WORKING.
     for (const id of Array.from(runningAgents.keys())) { if (!present.some(a => a.id === id)) { runningAgents.delete(id); runSeenAt.delete(id); } }
     const act = activity();
+    let focusedId = '';
+    try { focusedId = (typeof App !== 'undefined' && App.currentAgent && App.currentAgent() || {}).id || ''; } catch (_) {}
     let working = 0;
     present.forEach(a => {
       const live = agentLive(a.id);
       if (live) working++;
       const e = $('#cs-' + a.id);
-      if (e) e.textContent = live ? (act === 'talk' ? 'in conversation' : 'working at the terminal') : 'idle — awaiting orders';
+      if (e) e.textContent = live ? (a.id === focusedId && act === 'talk' ? 'in conversation' : 'working at the terminal') : 'idle — awaiting orders';
       // H: mark the row WORKING so the in-flight shimmer bar shows only while it's actually running.
       if (e && e.parentElement && e.parentElement.parentElement) e.parentElement.parentElement.classList.toggle('working', live);
     });
@@ -1376,8 +1381,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   function agHead(a, act) {
     const dn = linkDown();   // E2: link gone → the dossier can't honestly say ONLINE either
-    const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
-    const statusText = dn ? 'OFFLINE' : act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
+    const live = !!(a && agentLive(a.id));
+    let focused = false;
+    try { focused = !!(a && typeof App !== 'undefined' && App.currentAgent && App.currentAgent() && App.currentAgent().id === a.id); } catch (_) {}
+    const dotCls = dn ? 'down' : live ? 'working' : (focused && act === 'talk') ? 'thinking' : 'on';
+    const statusText = dn ? 'OFFLINE' : live ? 'WORKING' : (focused && act === 'talk') ? 'THINKING' : 'ONLINE';
     const lv = (typeof Xp !== 'undefined' && a.stats) ? Xp.compute(a.stats).level : null;   // always-visible level chip
     return '<div class="ag-hero">' +
       // recessed portrait WELL: corner ticks + a slow scan-sweep overlay (v2 hero pattern). The sweep +
@@ -2610,6 +2618,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (sel >= present.length) sel = 0;
     const a = present[sel];
     const act = activity();
+    let focusedId = '';
+    try { focusedId = (typeof App !== 'undefined' && App.currentAgent && App.currentAgent() || {}).id || ''; } catch (_) {}
     // CONSOLE MODE: the roster is the rail-top; the five former sub-tabs are console sections. Every section
     // pane is built up-front (mountConsole keeps them all in the DOM), so the single wire pass below reaches
     // every control — wireHead (header, all sections), wireConfig (CONFIG pane), loadMemoryCore (MEMORY pane).
@@ -2702,7 +2712,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // ROSTER: keep the exact .ag-list / .ag-item class names; upgrade the rows premium (color dot, name,
         // and a cheap live status hint driven by the same run state the crew panel reads).
         const hint = (x) => agentLive(x.id)
-          ? '<span class="ag-item-st working">' + (act === 'talk' ? 'talking' : 'working') + '</span>'
+          ? '<span class="ag-item-st working">' + (x.id === focusedId && act === 'talk' ? 'talking' : 'working') + '</span>'
           : '<span class="ag-item-st">idle</span>';
         top.innerHTML =
           '<div class="ag-list" role="listbox" aria-label="Agents on station">' +
@@ -2828,9 +2838,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const w = open.agents; if (!w) return;
     const act = activity();
     const dn = linkDown();   // E2: keep the live-painted status honest — link gone → OFFLINE, not ONLINE
-    const dotCls = dn ? 'down' : act === 'task' ? 'working' : act === 'talk' ? 'thinking' : 'on';
-    const statusText = dn ? 'OFFLINE' : act === 'task' ? 'WORKING' : act === 'talk' ? 'THINKING' : 'ONLINE';
-    // hero: the status dot (class) + the role line's status word
+    const selected = present[sel] || null;
+    const selectedLive = !!(selected && agentLive(selected.id));
+    let focusedId = '';
+    try { focusedId = (typeof App !== 'undefined' && App.currentAgent && App.currentAgent() || {}).id || ''; } catch (_) {}
+    const selectedTalking = !!(selected && selected.id === focusedId && act === 'talk');
+    const dotCls = dn ? 'down' : selectedLive ? 'working' : selectedTalking ? 'thinking' : 'on';
+    const statusText = dn ? 'OFFLINE' : selectedLive ? 'WORKING' : selectedTalking ? 'THINKING' : 'ONLINE';
+    // selected agent: the status dot (class) + the role line's status word
     const dot = w.querySelector('.ag-role-line .ag-sdot');
     if (dot) dot.className = 'ag-sdot ' + dotCls;
     const line = w.querySelector('.ag-role-line');
@@ -2846,7 +2861,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const x = present[+it.dataset.i]; if (!x) return;
       const st = it.querySelector('.ag-item-st'); if (!st) return;
       const live = agentLive(x.id);
-      st.textContent = live ? (act === 'talk' ? 'talking' : 'working') : 'idle';
+      st.textContent = live ? ((x.id === focusedId && act === 'talk') ? 'talking' : 'working') : 'idle';
       st.classList.toggle('working', live);
     });
   }
@@ -3503,18 +3518,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
 
   // purposeful empty-state per kanban lane (Phase 2 · E). The TO DO column gets a CTA that focuses the
-  // add-a-workstream input (focus only — no new functionality); ACTIVE/SHIPPED just explain what lands here.
+  // add-a-task input (focus only — no new functionality); ACTIVE/SHIPPED just explain what lands here.
   function kbEmpty(lane) {
     if (lane === 'todo') return '<div class="kb-empty-col"><div class="empty-state">' +
-      '<span class="es-glyph">▧</span><b>NO WORKSTREAMS</b>' +
-      '<span>Queue the first thing you want your agent to build.</span>' +
+      '<span class="es-glyph">▧</span><b>NO TASKS</b>' +
+      '<span>Queue a planned task for an agent.</span>' +
       '<button class="es-cta" type="button">+ ADD ONE</button></div></div>';
     if (lane === 'active') return '<div class="kb-empty-col"><div class="empty-state">' +
       '<span class="es-glyph">▶</span><b>NOTHING IN FLIGHT</b>' +
-      '<span>Assign a TO DO card and it moves here while the agent works.</span></div></div>';
+      '<span>Assign a TO DO task and it moves here while the agent works.</span></div></div>';
     return '<div class="kb-empty-col"><div class="empty-state">' +
       '<span class="es-glyph">✓</span><b>NOTHING SHIPPED YET</b>' +
-      '<span>Finished workstreams land here as proof of work.</span></div></div>';
+      '<span>Tasks you mark shipped land here as proof of work.</span></div></div>';
   }
   // TRUTHFUL RUN-STATE (IN PROGRESS cards only): the chip maps to a PROVABLE backend state — RUNNING when a run
   // is actually in flight on this stream (Channels.isBusy), else DONE — REVIEW & SHIP once at least one run has
@@ -3609,7 +3624,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const keepScroll = live ? Array.from(body.querySelectorAll('.kb-col')).map(c => c.scrollTop) : null;
     const streams = boardStreams();
     body.innerHTML =
-      '<div class="kb-add"><input id="kb-in" maxlength="80" placeholder="add a workstream for your agent…" autocomplete="off">' +
+      '<div class="kb-add"><input id="kb-in" maxlength="80" placeholder="add a planned task…" autocomplete="off">' +
       '<button class="bb sm" id="kb-add">+ ADD</button></div>' +
       '<div class="kb-cols">' +
       COLS.map(([lane, label]) => {
@@ -3623,7 +3638,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // hunting HERE, but this board only holds queued directives — finished routine/away runs are
       // readable sessions in COMMS and collectable on the OUTBOX. Shown only when the board is empty
       // (that's exactly when the hunt strands); openTerm('outbox') is the one-click door.
-      (streams.length ? '' : '<div class="win-note" style="margin-top:8px">Looking for finished work? Routine and while-away runs aren’t board cards — they land as sessions in COMMS and wait on the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
+      (streams.length ? '' : '<div class="win-note" style="margin-top:8px">This board holds tasks you plan here or launch from Recipes and goals. Chats, routines, and while-away runs live as Sessions in COMMS; finished files wait in the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
     // entrance motion belongs to USER-initiated opens only — a background data poke must not re-animate.
     // (body persists across rebuilds, so the class must be actively toggled both ways.)
     body.classList.toggle('kb-live-refresh', live);
@@ -3633,7 +3648,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const submit = () => { const t = inp.value; inp.value = ''; addTask(t); };
     body.querySelector('#kb-add').addEventListener('click', () => { sfx('click'); submit(); });
     inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit(); } });
-    // empty-state CTA (TO DO column): focus the add-a-workstream input — no new behaviour, just focus.
+    // empty-state CTA (TO DO column): focus the add-a-task input — no new behaviour, just focus.
     body.querySelectorAll('.kb-empty-col .es-cta').forEach(b =>
       b.addEventListener('click', () => { sfx('click'); inp.focus(); }));
     const obLink = body.querySelector('#kb-outbox-link');
@@ -3909,7 +3924,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // whatever onboarding stored — and REMOVE-ing the last custom key stranded a still-active endpoint with no
       // editor. hasStoredCredential('custom') stays false for it (an endpoint is configuration, not a credential).
       const keylessEp = provider === 'custom' && !!(h.getBaseUrl && h.getBaseUrl('custom'));
-      if (set || keylessEp) out.push({ provider, key: h.getKey ? h.getKey(provider) : '', baseUrl: h.getBaseUrl ? h.getBaseUrl(provider) : '', model: (h.getModel && h.getModel()) || '', local: provider === 'ollama' });
+      if (set || keylessEp) out.push({ provider, key: h.getKey ? h.getKey(provider) : '', stored: !!set, baseUrl: h.getBaseUrl ? h.getBaseUrl(provider) : '', model: (h.getModel && h.getModel()) || '', local: provider === 'ollama' });
     }
     addProvider(active);
     if (active !== 'openrouter') addProvider('openrouter');
@@ -4122,7 +4137,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<span class="conn-dot"></span>' +
         '<div class="key-main">' +
         '<div class="key-top"><span class="key-prov">' + esc(provName(k.provider)) + '</span>' +
-        '<code class="key-mask" title="shown masked when a key exists — the full key is never displayed">' + esc(k.key ? maskKey(k.key) : (k.baseUrl || 'keyless endpoint')) + '</code></div>' +
+        '<code class="key-mask" title="shown masked when a key exists — the full key is never displayed">' + esc(k.key ? maskKey(k.key) : (k.baseUrl || (k.stored ? 'stored securely' : 'keyless endpoint'))) + '</code></div>' +
         '<div class="key-meta">model <b>' + esc(k.model || '—') + '</b> · ' +
         runState + '</div>' +
         '</div>' +
@@ -5407,7 +5422,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div id="diag-build" class="dim" style="margin-top:6px;font-size:11px" hidden></div>' +
       // CLEAR NOTIFICATIONS moved to the NOTIFICATIONS section (where it belongs); this is now just the about note.
       '<h4 class="ms-h">ABOUT</h4>' +
-      '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage workstreams from the TASK BOARD or the COMMS rail.</p>';
+      '<p class="set-about">STARNET — gamified AI-agent harness.<br>Theme, display & audio preferences are saved locally on this machine. Manage planned tasks on the TASK BOARD and saved conversations under SESSIONS in COMMS.</p>';
 
     const frag = html => (el => { el.innerHTML = html; });  // curried: fill a pane element with a fragment
     function wireLiveVoice(host) {

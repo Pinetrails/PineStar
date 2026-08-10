@@ -111,8 +111,11 @@ function makeTerminalTools(deps) {
     },
     run: function (args, ctx) {
       const r = fail(manager.read(aid(ctx), sessionRef(args), { offset: args.offset, maxChars: args.maxChars }));
+      const saved = r.session.outputSpillVerified
+        ? '; full ' + r.session.outputBytes + '-byte output saved once at ' + r.session.outputPath + ' (page with fs.read)'
+        : (r.session.outputSpillError ? '; durable output spill failed: ' + r.session.outputSpillError : '');
       const note = '[offset ' + r.offset + '→' + r.nextOffset + ' of ' + r.endOffset
-        + (r.truncatedStart ? '; earlier output was dropped from the bounded scrollback' : '')
+        + (r.truncatedStart ? '; earlier output left the bounded scrollback' : '') + saved
         + (r.hasMore ? '; more available' : '') + ']';
       return { content: (r.output || '(no output)') + '\n' + note + '\n' + terminalSummary(r.session), summary: r.output.length + ' chars · ' + r.session.state };
     }

@@ -856,7 +856,7 @@
           // The BROWSER endpoint is what makes popup adoption possible; /json/list is still the
           // readiness proof and the fallback when a rig exposes no browser websocket.
           let wsUrl = null, viaBrowser = false;
-          if (deps.adoptPopups !== false) {
+          if (deps.adoptPopups !== false && deps.syntheticInputOnly !== false) {
             try {
               const v = await (await fetchImpl('http://127.0.0.1:' + port + '/json/version')).json();
               if (v && v.webSocketDebuggerUrl) { wsUrl = v.webSocketDebuggerUrl; viaBrowser = true; }

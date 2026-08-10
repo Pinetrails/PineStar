@@ -601,12 +601,31 @@
     return abs;
   }
 
-  // best-effort tree-kill: child.kill() reaps the shell; on Windows taskkill /T also reaps its grandchildren.
+  // best-effort tree-kill: on Windows taskkill must inspect the live shell root to discover `/T` descendants.
   function killTree(spawn, child, isWin) {
+    if (isWin && child.pid) {
+      let fellBack = false;
+      const fallback = () => {
+        if (fellBack) return;
+        fellBack = true;
+        try { child.kill(); } catch (_) {}
+      };
+      try {
+        const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+        if (killer && typeof killer.on === 'function') {
+          killer.on('error', fallback);
+          killer.on('close', (code) => { if (code !== 0) fallback(); });
+        }
+        try { if (killer && typeof killer.unref === 'function') killer.unref(); } catch (_) {}
+        return;
+      } catch (_) {
+        fallback();
+        return;
+      }
+    }
     try { child.kill(); } catch (_) {}
     try {
-      if (isWin && child.pid) spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-      else if (child.pid) process.kill(child.pid, 'SIGKILL');
+      if (child.pid) process.kill(child.pid, 'SIGKILL');
     } catch (_) {}
   }
 
@@ -658,10 +677,12 @@
       try { child = spawn(cmd, spawnOpts); }
       catch (e) { return reject(new Error('could not start shell: ' + ((e && e.message) || e))); }
       const t0 = now();
-      let out = '', total = 0, truncated = false, settled = false, timedOut = false, aborted = false;
+      let out = '', fullOut = '', total = 0, truncated = false, settled = false, timedOut = false, aborted = false;
       const append = function (buf) {
+        const complete = buf.toString();
+        fullOut += complete;
         if (total >= maxBytes) { truncated = true; return; }
-        let s = buf.toString();
+        let s = complete;
         if (total + s.length > maxBytes) { s = s.slice(0, maxBytes - total); truncated = true; }
         out += s; total += s.length;
       };
@@ -676,7 +697,7 @@
         if (sig) { try { sig.removeEventListener('abort', onAbort); } catch (_) {} }
         // Stripped HERE, at the single exit of the shared primitive, so shell.exec and the background tail
         // (shellbg.js reads r.out) are both covered by one strip that cannot drift into two.
-        resolve({ exitCode: (typeof code === 'number') ? code : -1, out: stripAnsi(out), ms: Math.max(0, now() - t0), truncated: truncated, timedOut: timedOut, aborted: aborted });
+        resolve({ exitCode: (typeof code === 'number') ? code : -1, out: stripAnsi(out), fullOut: stripAnsi(fullOut), ms: Math.max(0, now() - t0), truncated: truncated, timedOut: timedOut, aborted: aborted });
       }
       child.on('error', function (e) { if (settled) return; settled = true; clearTimeout(timer); if (sig) { try { sig.removeEventListener('abort', onAbort); } catch (_) {} } reject(new Error('shell error: ' + ((e && e.message) || e))); });
       child.on('close', function (code) { finish(timedOut || aborted ? null : code); });
@@ -780,7 +801,8 @@
         });
         return run.then(function (res) {
           // recover the final cwd + the REAL exit code from the marker; persist the cwd only if it stayed in-jail.
-          const pm = parseMarker(res.out);
+          const pm = parseMarker(res.fullOut || res.out);
+          const preview = parseMarker(res.out);
           if (environment && pm.cwd && environmentBackendId !== 'local') environment.rememberCwd(aid, pm.cwd);
           else if (environment && pm.cwd && withinJail(P, pm.cwd, jailRoot)) environment.rememberCwd(aid, pm.cwd);
           else if (environment && pm.cwd && environmentBackendId === 'local') {
@@ -789,15 +811,18 @@
           else if (pm.cwd && (remoteOwner || withinJail(P, pm.cwd, jailRoot))) sessions.set(aid, { cwd: pm.cwd });
           const exitCode = (pm.ec != null && !res.timedOut && !res.aborted) ? pm.ec : res.exitCode;
           const note = res.timedOut ? ' — KILLED (timed out after ' + timeoutMs + 'ms)' : res.aborted ? ' — KILLED (aborted)' : '';
-          const body = redact(pm.cleanOut || '(no output)');
+          const body = redact((res.truncated ? preview.cleanOut : pm.cleanOut) || '(no output)');
           const content = body + '\n[exit ' + exitCode + (res.truncated ? ', output truncated to ' + Math.round(MAX_BYTES / 1000) + 'KB' : '') + note + ']';
+          const fullContent = res.truncated
+            ? redact(pm.cleanOut || '(no output)') + '\n[exit ' + exitCode + note + ']'
+            : undefined;
           try {
             if (typeof ctx.emit === 'function') ctx.emit('shell.exec', {
               agentId: aid, runId: ctx.runId || '', callId: ctx.callId || 'call',
               cmdSummary: redact(clip(cmd)), cwd: aid, exitCode: exitCode, ms: res.ms, truncated: res.truncated
             });
           } catch (_) {}
-          return { content: content, summary: 'exit ' + exitCode + ' (' + res.ms + 'ms)' + (res.truncated ? ', truncated' : '') };
+          return { content: content, fullContent: fullContent, summary: 'exit ' + exitCode + ' (' + res.ms + 'ms)' + (res.truncated ? ', truncated' : '') };
         });
       }
     };
@@ -808,19 +833,21 @@
       description: 'List your running/finished background processes (from shell.exec background:true), or pass an id '
         + 'for one process — shows whether it is still running, its exit code if done, and a tail of its output.',
       schema: { type: 'object', properties: { id: { type: 'string' } } },
-      run: function (args, ctx) {
+      run: async function (args, ctx) {
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const source = environment && typeof environment.statusBackground === 'function' ? environment : null;
         if (!source && !bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
         const id = args && args.id ? String(args.id) : null;
         if (id) {
-          const v = source ? source.statusBackground(aid, id) : bg.status(aid, id);
+          const v = await Promise.resolve(source ? source.statusBackground(aid, id) : bg.status(aid, id));
           if (!v) return { content: 'No background process "' + id + '".', summary: 'not found' };
-          return { content: '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : 'exited ' + v.exitCode + (v.killed ? ' (killed)' : '')) + ' · ' + v.ms + 'ms · ' + v.cmd + '\n--- output tail ---\n' + redact(v.tail || '(none)'), summary: v.running ? 'running' : 'exited ' + v.exitCode };
+          const saved = v.outputSpillVerified ? '\n[full output: ' + v.outputBytes + ' bytes durably appended to ' + v.outputPath + ']' : (v.outputSpillError ? '\n[full-output spill failed: ' + v.outputSpillError + ']' : '');
+          const state = v.running ? 'RUNNING' : v.lost ? 'LOST — ' + (v.remoteBoundary || 'remote process identity is unconfirmed') : 'exited ' + v.exitCode + (v.killed ? ' (killed)' : '');
+          return { content: '[' + v.bgId + '] ' + state + ' · ' + v.ms + 'ms · ' + v.cmd + saved + '\n--- output tail ---\n' + redact(v.tail || '(none)'), summary: v.running ? 'running' : v.lost ? 'lost' : 'exited ' + v.exitCode };
         }
-        const list = source ? (source.statusBackground(aid) || []) : (bg.status(aid) || []);
+        const list = await Promise.resolve(source ? source.statusBackground(aid) : bg.status(aid)) || [];
         if (!list.length) return { content: 'No background processes.', summary: '0' };
-        return { content: list.map(function (v) { return '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : 'exited ' + v.exitCode) + ' · ' + v.cmd; }).join('\n'), summary: list.length + ' process(es)' };
+        return { content: list.map(function (v) { return '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : v.lost ? 'LOST (identity mismatch)' : 'exited ' + v.exitCode) + ' · ' + v.cmd; }).join('\n'), summary: list.length + ' process(es)' };
       }
     };
     /* H2.3 — READ PAST THE TAIL. shell.bg.status returns the last ~2000 characters, which is fine for "is it
@@ -836,13 +863,13 @@
         type: 'object', required: ['id'],
         properties: { id: { type: 'string' }, offset: { type: 'number' }, limit: { type: 'number' }, grep: { type: 'string' } }
       },
-      run: function (args, ctx) {
+      run: async function (args, ctx) {
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const source = environment && typeof environment.readBackground === 'function' ? environment : null;
         if (!source && (!bg || typeof bg.read !== 'function')) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
         const id = args && args.id ? String(args.id) : '';
         const opts = { offset: args && args.offset, limit: args && args.limit, grep: args && args.grep };
-        const r = source ? source.readBackground(aid, id, opts) : bg.read(aid, id, opts);
+        const r = await Promise.resolve(source ? source.readBackground(aid, id, opts) : bg.read(aid, id, opts));
         if (!r || !r.ok) return { content: 'Could not read: ' + ((r && r.error) || 'unknown error'), summary: 'not read' };
         const head = '[' + r.bgId + '] ' + (r.running ? 'RUNNING' : 'exited ' + r.exitCode + (r.killed ? ' (killed)' : '')) + ' · ' + r.cmd;
         const scope = r.grep
@@ -850,7 +877,11 @@
           : ('lines ' + (r.returned ? r.firstLineNo : 0) + '–' + (r.returned ? r.firstLineNo + r.returned - 1 : 0) + ' of ' + r.totalLines + ' held');
         /* Say it when the ring has lapped. Line 1 is then NOT the first line the process printed, and an agent
            that assumes it is will conclude a failure started somewhere it did not. */
-        const note = r.truncatedStart ? '\n(earlier output was dropped — this buffer holds only the most recent ' + Math.round(r.droppedBytes / 1024) + ' KB onward)' : '';
+        const note = r.truncatedStart
+          ? (r.outputSpillVerified
+              ? '\n(earlier output left the memory buffer; the full ' + r.outputBytes + '-byte log is saved once at ' + r.outputPath + ' and can be paged with fs.read)'
+              : '\n(earlier output was dropped from memory and durable spill is unverified' + (r.outputSpillError ? ': ' + r.outputSpillError : '') + ')')
+          : (r.outputSpillVerified ? '\n(full output is durably appended to ' + r.outputPath + '; ' + r.outputBytes + ' bytes so far)' : '');
         const body = r.returned
           ? r.lines.map(function (ln, i) { return String(r.lineNos[i]).padStart(6, ' ') + '  ' + ln; }).join('\n')
           : (r.grep ? '(no lines match)' : '(no output yet)');
@@ -874,7 +905,7 @@
         type: 'object', required: ['id'],
         properties: { id: { type: 'string' }, input: { type: 'string' }, submit: { type: 'boolean' }, eof: { type: 'boolean' } }
       },
-      run: function (args, ctx) {
+      run: async function (args, ctx) {
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const id = args && args.id ? String(args.id) : '';
         const wantEof = !!(args && args.eof);
@@ -882,7 +913,7 @@
         if (!source && (!bg || typeof bg.write !== 'function')) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
 
         if (wantEof) {
-          const c = source && typeof source.closeBackgroundStdin === 'function' ? source.closeBackgroundStdin(aid, id) : bg.closeStdin(aid, id);
+          const c = await Promise.resolve(source && typeof source.closeBackgroundStdin === 'function' ? source.closeBackgroundStdin(aid, id) : bg.closeStdin(aid, id));
           return { content: c.ok ? (c.alreadyClosed ? 'stdin for ' + id + ' was already closed.' : 'Closed stdin for ' + id + ' (EOF sent).') : ('Could not close stdin: ' + c.error), summary: c.ok ? 'eof' : 'not closed' };
         }
         const input = String((args && args.input) || '');
@@ -895,7 +926,7 @@
         const remoteOwner = !!(ctx && ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner');
         const risk = remoteOwner ? null : commandSafetyRisk(input, { cwd: jailRoot, fs: fs, pathMod: P, dialect: dialect, isWin: isWin });
         if (risk) throw new Error('refused [' + risk.kind + ']: this input ' + risk.reason + '. A line sent to a shell or REPL runs like a command, so it is screened the same way.');
-        const r = source ? source.writeBackground(aid, id, { input: input, submit: args && args.submit }) : bg.write(aid, id, { input: input, submit: args && args.submit });
+        const r = await Promise.resolve(source ? source.writeBackground(aid, id, { input: input, submit: args && args.submit }) : bg.write(aid, id, { input: input, submit: args && args.submit }));
         return {
           content: r.ok ? ('Sent ' + r.bytes + ' byte(s) to ' + id + '. Read what it printed with shell.bg.read.') : ('Could not write: ' + r.error),
           summary: r.ok ? 'wrote ' + r.bytes + 'b' : 'not written'
@@ -907,12 +938,12 @@
       name: 'shell.bg.kill', capability: 'workbench', scope: 'write', requiresConsent: false,
       description: 'Stop one of your background processes by id (from shell.bg.status). Kills the whole process tree.',
       schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
-      run: function (args, ctx) {
+      run: async function (args, ctx) {
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const source = environment && typeof environment.killBackground === 'function' ? environment : null;
         if (!source && !bg) return { content: 'Background processes are not available in this build.', summary: 'unavailable' };
         const id = args && args.id ? String(args.id) : '';
-        const r = source ? source.killBackground(aid, id) : bg.kill(aid, id);
+        const r = await Promise.resolve(source ? source.killBackground(aid, id) : bg.kill(aid, id));
         return { content: r.ok ? (r.alreadyExited ? 'Process ' + id + ' had already exited.' : 'Killed background process ' + id + '.') : ('Could not kill: ' + r.error), summary: r.ok ? 'killed' : 'not killed' };
       }
     };

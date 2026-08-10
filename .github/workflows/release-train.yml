@@ -85,7 +85,9 @@ jobs:
             target: darwin-arm64
             bundles: app,dmg
             rust-target: aarch64-apple-darwin
-          - os: macos-latest
+          # The x64 release is built and upgrade-tested on actual Intel hardware. An ARM
+          # cross-build alone cannot prove the installed Intel station path.
+          - os: macos-15-intel
             target: darwin-x64
             bundles: app,dmg
             rust-target: x86_64-apple-darwin
@@ -116,12 +118,16 @@ jobs:
 
       - run: npm ci
 
-      # macos-latest currently runs on Apple Silicon even for the x64 cross-build. npm installs
-      # optional native packages for the HOST architecture, while the shipped voice runtime must
-      # match matrix.target. Hydrate the exact Sharp x64 packages pinned in package-lock before
-      # stage-voice-deps copies the production closure; the later signing step removes host-ARM
-      # variants and fails closed unless these target packages are present.
-      - name: Hydrate Intel Sharp runtime for macOS cross-build
+      - name: Verify v0.8.5 station recovery on Intel macOS
+        if: runner.os == 'macOS' && matrix.target == 'darwin-x64'
+        shell: bash
+        run: |
+          test "$(uname -m)" = "x86_64"
+          node test/upgrade-085-090.test.js
+
+      # Hydrate the exact Sharp x64 packages pinned in package-lock before stage-voice-deps
+      # copies the production closure; the signing step fails closed unless they are present.
+      - name: Hydrate Intel Sharp runtime for macOS target
         if: runner.os == 'macOS' && matrix.target == 'darwin-x64'
         shell: bash
         run: bash scripts/hydrate-sharp-macos-x64.sh

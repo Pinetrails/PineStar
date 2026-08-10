@@ -15,6 +15,13 @@ export async function runShoot({ port, cdpPort, outDir, win = '1440,900', only =
   const PROFILE = join(outDir, '_profile');
   mkdirSync(outDir, { recursive: true });
 
+  // OUT is intentionally reused by `golden:bless` and every later `golden` check, but the browser
+  // profile must not be. Keeping `_profile` carried term geometry/local UI state from one sweep
+  // into the next, so the AGENTS dossier alternated between its fresh centred position and a
+  // persisted cascade slot at the exact same commit. Start from the fresh-profile contract the
+  // driver already documents; screenshots remain in OUT and are overwritten normally.
+  try { rmSync(PROFILE, { recursive: true, force: true }); } catch {}
+
   // 1. Ensure a SEEDED sidecar is serving the port (reuse if up, else boot one we own).
   let ownSidecar = null;
   if (await isUp(APP_URL)) {

@@ -239,5 +239,68 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.ok(ids.length > 0 && ids.indexOf('gpt-5.5') >= 0, 'falls back to curated models on discovery failure');
   }
 
+  // K. 401 RENEW HANDSHAKE (the 2026-08-10 stale-token-loop escape): the SERVER's "token is expired" verdict
+  //    outranks the sidecar's local expiry check. With renewToken injected, a 401 triggers exactly ONE
+  //    renew+retry carrying the fresh bearer; the renew receives the token that just 401'd (dedupe seam).
+  {
+    let calls = 0, renewedWith = null;
+    const auths = [];
+    const f = async (_url, init) => {
+      calls++; auths.push(init.headers['Authorization']);
+      if (calls === 1) return new Response('{"error":{"message":"Provided authentication token is expired."}}', { status: 401 });
+      return new Response([ev({ type: 'response.output_text.delta', output_index: 0, delta: 'ok' }), ev({ type: 'response.completed', response: { status: 'completed' } }), 'data: [DONE]', ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const p = makeCodexProvider({ fetch: f, token: 'STALE', renewToken: async (stale) => { renewedWith = stale; return 'FRESH'; } });
+    const evs = await collect(p, { model: 'gpt-5.5', messages: [] });
+    A.eq(calls, 2, 'a 401 triggers exactly one renew+retry');
+    A.eq(renewedWith, 'STALE', 'renewToken receives the token that 401d (lets the host dedupe rotations)');
+    A.eq(auths[1], 'Bearer FRESH', 'the retry carries the renewed bearer');
+    A.eq(evs.filter(e => e.type === 'text').map(e => e.delta).join(''), 'ok', 'after renew it streams normally');
+  }
+
+  // K2. the renew fires ONCE: a second 401 (token genuinely rejected, e.g. account lost Codex) surfaces the
+  //     honest 401 — no refresh loop against a dead account.
+  {
+    let calls = 0, renews = 0;
+    const f = async () => { calls++; return new Response('{"error":{"message":"token is expired"}}', { status: 401 }); };
+    const p = makeCodexProvider({ fetch: f, token: 'STALE', renewToken: async () => { renews++; return 'FRESH'; } });
+    let msg = '';
+    try { await collect(p, { model: 'gpt-5.5', messages: [] }); } catch (e) { msg = e.message; }
+    A.eq(renews, 1, 'renew is attempted exactly once per request');
+    A.eq(calls, 2, 'one retry after the renew, then the 401 surfaces');
+    A.ok(/401/.test(msg), 'the persistent 401 is surfaced honestly');
+  }
+
+  // K3. a relogin-class renew failure REPLACES the raw 401 (more actionable: "sign in again"); a transient
+  //     renew failure keeps the original 401 (the network blip is not the story).
+  {
+    const bad = async () => new Response('{"error":{"message":"token is expired"}}', { status: 401 });
+    const dead = new Error('Sign in with ChatGPT again — the saved sign-in is no longer valid.');
+    dead.reloginRequired = true;
+    let msg1 = '';
+    try { await collect(makeCodexProvider({ fetch: bad, token: 't', renewToken: async () => { throw dead; } }), { model: 'gpt-5.5', messages: [] }); } catch (e) { msg1 = e.message; }
+    A.ok(/Sign in with ChatGPT again/.test(msg1), 'relogin-class renew failure surfaces the sign-in-again error');
+    let msg2 = '';
+    try { await collect(makeCodexProvider({ fetch: bad, token: 't', renewToken: async () => { throw new Error('fetch failed'); } }), { model: 'gpt-5.5', messages: [] }); } catch (e) { msg2 = e.message; }
+    A.ok(/401/.test(msg2) && /expired/.test(msg2), 'transient renew failure keeps the honest original 401');
+  }
+
+  // L. listModels shares the 401 renew seam, and fallback entries are MARKED: `fallback:true` is the honesty
+  //    flag the provider probe reads so Settings can never stamp VERIFIED off the hardcoded offline list.
+  {
+    let calls = 0;
+    const auths = [];
+    const f = async (_url, init) => {
+      calls++; auths.push(init.headers['Authorization']);
+      if (calls === 1) return new Response('unauthorized', { status: 401 });
+      return new Response(JSON.stringify({ models: [{ slug: 'gpt-5.5', priority: 1 }] }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    };
+    const live = await makeCodexProvider({ fetch: f, token: 'STALE', renewToken: async () => 'FRESH' }).listModels();
+    A.eq(auths[1], 'Bearer FRESH', 'listModels retries discovery with the renewed bearer');
+    A.ok(live.length === 1 && !live[0].fallback, 'a live-discovered catalog carries no fallback flag');
+    const offline = await makeCodexProvider({ fetch: async () => new Response('nope', { status: 500 }), token: 'acc' }).listModels();
+    A.ok(offline.length > 0 && offline.every(m => m.fallback === true), 'the curated offline list is marked fallback:true on every entry');
+  }
+
   A.report('provider.codex.test');
 })();

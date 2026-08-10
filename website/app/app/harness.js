@@ -171,7 +171,8 @@ const Harness = (() => {
   // PRIVATE local credential; a naive substring match on '/api/' would attach it to third-party URLs that merely
   // contain '/api/' (e.g. the OpenRouter fallback catalog https://openrouter.ai/api/v1/models), leaking the token
   // cross-origin AND forcing a CORS preflight OpenRouter rejects (so the fallback fails exactly when it's needed).
-  // Same-origin = a leading-slash relative path ('/api/...') OR an absolute URL whose origin === location.origin.
+  // Accepted = a leading-slash relative path ('/api/...'), an absolute URL at location.origin, OR the exact
+  // configured loopback sidecar origin used by the packaged Tauri page.
   function apiPath(s) {
     s = String(s || '');
     if (s.indexOf('/api/') === 0) return true;   // leading-slash relative — always same-origin
@@ -180,7 +181,21 @@ const Harness = (() => {
       const base = (typeof location !== 'undefined' && location.href) ? location.href : undefined;
       const parsed = new URL(s, base);
       const here = (typeof location !== 'undefined' && location.origin) ? location.origin : null;
-      return here != null && parsed.origin === here && parsed.pathname.indexOf('/api/') === 0;
+      if (parsed.pathname.indexOf('/api/') !== 0) return false;
+      if (here != null && parsed.origin === here) return true;
+      // The packaged Tauri page is cross-origin from its configured loopback sidecar. Trust only that
+      // exact configured loopback origin; accepting arbitrary cross-origin /api URLs would leak the token.
+      let sidecar = null;
+      const configured = (typeof window !== 'undefined' && window.__STARNET_API__) ? String(window.__STARNET_API__) : '';
+      if (configured) {
+        try {
+          const u = new URL(configured, base);
+          const host = String(u.hostname || '').toLowerCase();
+          const loopback = host === '127.0.0.1' || host === 'localhost' || host === '[::1]' || host === '::1';
+          if (loopback && (u.protocol === 'http:' || u.protocol === 'https:')) sidecar = u.origin;
+        } catch (_) {}
+      }
+      return sidecar != null && parsed.origin === sidecar;
     } catch (_) { return false; }
   }
   function isApiUrl(u) {
@@ -634,7 +649,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, evidence, projectRoot, taskAction, recovery }) {
+  async function chat({ system, messages, onToken, onTerminalReset, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, evidence, projectRoot, taskAction, recovery }) {
     const model = getModel(), provider = getProv(), key = getKey(provider), reasoningEffort = getReasoningEffort(provider);
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -739,7 +754,10 @@ const Harness = (() => {
             if (!runId) { runId = payload.runId; onRunId && onRunId(runId); }
             break;
           case 'agent.token': full += payload.delta; onToken && onToken(payload.delta); break;
-          case 'agent.tool_call': onToolCall && onToolCall(payload); break;
+          // Any prose before a tool call was an in-progress narration segment, not the terminal answer. Keep it
+          // visible in the chronological live transcript, but reset every final-output accumulator at this
+          // authoritative boundary so returned/persisted/delivered text contains exactly the last assistant turn.
+          case 'agent.tool_call': full = ''; onTerminalReset && onTerminalReset(); onToolCall && onToolCall(payload); break;
           case 'agent.tool_result': onToolResult && onToolResult(payload); break;
           case 'deliverable': onDeliverable && onDeliverable(payload); break;
           // the run is PAUSED on the sidecar awaiting this; the UI shows approve/always/full/deny and answers

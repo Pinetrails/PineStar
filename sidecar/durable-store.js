@@ -159,12 +159,14 @@ function makeDurableJsonStore(deps) {
   function update(key, mutator) {
     return mutex.run(key, async function () {
       const r = readKey(key);               // RE-READ the current committed state INSIDE the lock (loud on failure)
-      // FAIL SAFE: if the current value is UNREADABLE (present but locked), refuse the write. Proceeding would
-      // mutate `undefined` and persist an amnesiac state over a file that was actually fine — the exact silent
-      // data-wipe this store exists to prevent. Throw so the caller sees a real failure, not a false success.
-      if (r.status === 'unreadable') {
-        const e = new Error('durable-store: refusing to update key "' + key + '" — current value is unreadable (' + ((r.err && r.err.code) || 'EUNKNOWN') + ')');
-        e.code = 'ESTORE_UNREADABLE';
+      // FAIL SAFE: if the current value is UNREADABLE (present but locked) OR CORRUPT with no usable backup,
+      // refuse the write. Both states prove a record exists but give us no safe base for a read-modify-write;
+      // treating either as `undefined` would persist an amnesiac replacement and destroy the only recovery /
+      // forensic bytes. A genuinely absent record is the only state allowed to initialize from undefined.
+      if (r.status === 'unreadable' || r.status === 'corrupt') {
+        const detail = r.status === 'unreadable' ? ' (' + ((r.err && r.err.code) || 'EUNKNOWN') + ')' : '';
+        const e = new Error('durable-store: refusing to update key "' + key + '" — current value is ' + r.status + detail);
+        e.code = r.status === 'unreadable' ? 'ESTORE_UNREADABLE' : 'ESTORE_CORRUPT';
         e.cause = r.err;
         throw e;
       }

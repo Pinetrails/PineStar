@@ -15,7 +15,12 @@
    downstream of the provider seam changes.
 
    Auth is an OAuth access_token (a JWT), passed as `Authorization: Bearer …` — there is no API key. The
-   token's freshness (refresh before expiry) is the sidecar's job; this module just uses what it's given. */
+   token's freshness (refresh before expiry) is the sidecar's job; this module uses what it's given, with
+   ONE recovery seam: on an HTTP 401 the SERVER is the authority on expiry — the sidecar's local-clock
+   check can pass while the token is dead (clock skew, an exp claim we couldn't read), which stranded a
+   real user in a "token is expired" loop that Settings still called VERIFIED (2026-08-10). So when the
+   caller injects opts.renewToken (async, returns a fresh access_token), a 401 triggers ONE renew+retry
+   before the error is surfaced. No renewToken injected = byte-identical to the old behavior. */
 'use strict';
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'));
@@ -150,7 +155,8 @@
     opts = opts || {};
     const doFetch = opts.fetch || (typeof fetch !== 'undefined' ? fetch : null);
     if (!doFetch) throw new Error('codex provider requires fetch (Node 18+) or opts.fetch');
-    const token = opts.token || '';
+    let token = opts.token || '';   // mutable: a 401-triggered renew swaps in the fresh access_token
+    const renew = (typeof opts.renewToken === 'function') ? opts.renewToken : null;
     const baseUrl = (opts.baseUrl || BASE).replace(/\/$/, '');
     const reasoningEffort = normalizeCodexReasoningEffort(opts.reasoningEffort || DEFAULT_REASONING_EFFORT);
 
@@ -319,7 +325,11 @@
     }
 
     // POST the responses request, retrying transient failures (429/5xx + network) BEFORE the stream starts.
+    // A 401 additionally gets ONE renew+retry through opts.renewToken (see the header comment): the server's
+    // "expired" verdict wins over the sidecar's local expiry check. The renew does not consume a transient
+    // retry slot — it is a different recovery (new credential, not "wait and hope").
     async function requestWithRetry(body, signal) {
+      let renewed = false;
       for (let attempt = 0; ; attempt++) {
         if (signal && signal.aborted) throw abortError();
         let res;
@@ -353,6 +363,17 @@
         const err = new Error('codex http ' + res.status + ' — ' + detail);
         err.status = res.status;
         err.headers = res.headers;
+        if (res.status === 401 && renew && !renewed) {
+          renewed = true;
+          try {
+            const fresh = await renew(token);
+            if (fresh && typeof fresh === 'string') { token = fresh; continue; }
+          } catch (renewErr) {
+            // A relogin-class renew failure ("Sign in with ChatGPT again") is MORE actionable than the raw
+            // 401 — surface it. A transient renew failure (network blip) keeps the honest original 401.
+            if (renewErr && renewErr.reloginRequired) throw renewErr;
+          }
+        }
         const cls = classifyApiError(err, { model: body.model });
         err.transient = cls.retryable;
         if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(Math.min(60000, Math.max(RETRY_DELAYS[attempt], cls.retryAfterMs || 0)), signal); continue; }
@@ -368,9 +389,16 @@
     // curated STATIC_MODELS when offline / no token. Mirrors the reference harness' codex model-fetch flow.
     async function listModels() {
       try {
-        const res = await doFetch(baseUrl + '/models?client_version=' + CLIENT_VERSION, {
+        let res = await doFetch(baseUrl + '/models?client_version=' + CLIENT_VERSION, {
           headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' }
         });
+        // Same 401 recovery seam as requestWithRetry: the server outranks the local expiry check. One renew,
+        // one retry; any renew failure just falls through to the curated fallback below (renew errors are
+        // surfaced by the RUN path — the catalog must keep its fail-open contract).
+        if (res && res.status === 401 && renew) {
+          try { const fresh = await renew(token); if (fresh && typeof fresh === 'string') { token = fresh; res = await doFetch(baseUrl + '/models?client_version=' + CLIENT_VERSION, { headers: { 'Authorization': 'Bearer ' + token, 'Accept': 'application/json' } }); } }
+          catch (_) { /* fall through to the curated fallback */ }
+        }
         if (res.ok) {
           const j = await res.json();
           const entries = (j && Array.isArray(j.models)) ? j.models : [];
@@ -407,7 +435,10 @@
           if (out.length) return out.map(({ _rank, ...m }) => m);
         }
       } catch (e) { /* offline / no token -> curated fallback below */ }
-      return STATIC_MODELS.map(m => Object.assign({}, m, { pricing: null }));
+      // `fallback: true` is the honesty marker (2026-08-10): these entries prove NOTHING about the account —
+      // the live fetch failed. The provider probe reads it so Settings can no longer print VERIFIED off a
+      // hardcoded list, and the model dock can label the catalog offline.
+      return STATIC_MODELS.map(m => Object.assign({}, m, { pricing: null, fallback: true }));
     }
     function contextLimit(id) { const m = findModel(id); return (m && m.context_length) || 272000; }   // sane default for an unlisted Codex model
     function priceOf() { return null; }                  // flat-rate subscription -> no per-token price

@@ -1,5 +1,37 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-09 — WEBSITE PREVIEW STATE CORRECTION (`agent/station-preview-state`)
+
+READY TO MERGE. The first preview repair updated the renderer mirror and stage crop but left the
+website-only captured save on the retired one-room `hull` material state. Worse, `demo-boot.js`
+seeded only when `starnet.save` was absent, so any returning visitor stayed pinned to that stale
+snapshot forever. The embed now upgrades its captured room to the current seeded-app material
+preset (`walnut/plank`, `ribbed`, `ember/brick`) and carries a versioned website-demo marker that
+refreshes stale localStorage exactly once. The homepage iframe, generated embed tag, and demo boot
+script all have explicit cache revisions.
+
+Live side-by-side proof used the already-running current app at `127.0.0.1:9527` and the corrected
+local website at `127.0.0.1:18880`: both render the warm plank deck, ribbed upper wall, and brick
+hull, while the reported public screenshot remains the retired gray hull. Crop telemetry remains
+`748 / 752` with offsets `-252px / -84px`. Focused preview coverage is 14/14, website mirror is
+exact, and the guarded website stage check would publish 3,901 files while holding back 17.
+
+## 2026-08-09 — CURRENT WEBSITE STATION PREVIEW (`agent/station-preview-current`)
+
+READY TO MERGE. The starnetos.com station preview was still clipping the embedded app with the
+retired `666x744 @ 283,88` camera rectangle while the current shell renders the stage at
+`748x752 @ 252,84`. The homepage now measures the real same-origin `#stage` rectangle after iframe
+load and on later layout changes, then derives its crop offset, scale, and aspect ratio from that
+live geometry. The website app mirror is synchronized with the current frontend, including the
+latest station lighting/rendering changes, and the corrected controller is cache-busted.
+
+Live local-site proof at desktop width rendered the complete warm-lit station with measured crop
+`748 / 752`, offsets `-252px / -84px`, and scale `0.721925`; at `390x844` it retained the same live
+geometry, scaled to `0.447861`, and reported `scrollWidth 375` with no horizontal overflow. The new
+regression is 6/6, website mirror is exact (3,885 files + 2 embed-only), claims planning authority
+is PASS (37 claims / 208 locked files), and `npm run test:fast` is **595/595 GREEN**. No publish,
+Cloudflare deploy, push, PR, credential, provider-spend, or production-data action occurred.
+
 ## 2026-08-08 — VOICE TURN BOUNDARIES + LIVE DICTATION — MERGED
 
 Merged to `feat/harness-backend` as `9e8c9c5c` from snapshot `17196bd9`. Conversation mode now keeps a 900 ms pre-roll, uses a quieter-room-safe

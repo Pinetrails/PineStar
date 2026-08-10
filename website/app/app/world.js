@@ -56,6 +56,15 @@ const World = (() => {
   let _lut = null, _lutKey = '', _outImg = null;   // CPU per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurveCPU()
   let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glAberrLoc = null, _glVigLoc = null, _glOverLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
   let _glProbeOk = false, _glProbeTries = 0, _glProbeSkip = 0, _glProbeClean = 0, _glProbeCv = null;   // one-time GL output sanity probe — see drawCurveGL()
+  function glContextLost(gl) {
+    try { return !!(gl && typeof gl.isContextLost === 'function' && gl.isContextLost()); }
+    catch (_) { return true; }   // an unreadable context is no safer to blit than a proven-lost one
+  }
+  function abandonCurveGL(reason) {
+    if (!_glFailed) console.warn('[crt] ' + reason + ' — switching to CPU fallback');
+    _glFailed = true; _glReady = false;
+    return false;
+  }
   // whole-frame per-channel means via a 16×16 GPU downscale (~1KB readback) — the probe's sampler
   function probeMeans(src) {
     if (!_glProbeCv) { _glProbeCv = document.createElement('canvas'); _glProbeCv.width = 16; _glProbeCv.height = 16; }
@@ -866,7 +875,8 @@ const World = (() => {
       // SAME 100ms boundaries (the crew animated in visible lockstep). A fractional offset de-syncs them.
       phase: U.hash(a.id) % 6, aph: (U.hash(a.id) % 600) / 100, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false,  // idle leisure: which prop the agent is at + dwell timer + pose
-      lastFun: null, lastFunUntil: 0,   // hard recent-choice exclusion; prevents a lone couch becoming permanent parking
+      lastFun: null, lastFunUntil: 0,   // recent-choice penalty; a sole recent prop is skipped, a multi-prop room stays non-deterministic
+      deskVisitCd: 0, exploreCd: 0,     // stop desk loops; periodically take one bounded trip beyond the current room
       watchProp: null,   // lounge: the TV the couch-sitter is watching (kept lit while it watches)
       // seat-on-couch: logical pos stays on the approach tile, but it RENDERS at seat{Px,Py} ON the couch
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
@@ -970,11 +980,14 @@ const World = (() => {
       const wasDrag = drag && drag.moved; drag = null; cv.style.cursor = 'default';
       if (wasDrag) return;
       const wp = toWorld(ev);
-      // a click opens the HERO's console (StationUI.openAgent(0)); keep it hero-only so a crew
-      // body's hover nameplate never turns into a wrong-panel open. Crew clicks fall through.
-      if (agent && agentHit(wp) === agent) {
-        if (activity !== 'task') { agent.dir = 'south'; setGlance('south', 1000, performance.now()); curiositySay(SELF_GREET, 0.8, performance.now()); }   // eye contact for the Commander
-        if (onClick) onClick(); return;
+      // Every body that raises the agent hover nameplate is also a real dossier target. Pass its stable
+      // roster id through the click seam so a specialist opens ITS dossier instead of falling through or
+      // reusing the Overseer's index. The greeting remains hero-only: crew clicks open a panel, not a hero line.
+      const hit = agentHit(wp);
+      if (hit) {
+        if (hit === agent && activity !== 'task') { agent.dir = 'south'; setGlance('south', 1000, performance.now()); curiositySay(SELF_GREET, 0.8, performance.now()); }   // eye contact for the Commander
+        if (onClick) onClick(hit.agentId || hit.id);
+        return;
       }
       const arc = arcadeAt(wp);
       if (arc && onArcade) { onArcade(arc); return; }
@@ -1349,15 +1362,6 @@ const World = (() => {
     const dxT = box.x - agent.target.x, dyT = box.y - agent.target.y;
     return box.d < 15 || Math.hypot(dxT, dyT) < 15;
   }
-  // a quick 2-beat settle-scan (left, then right) before committing the gaze to finalDir — reads as deliberate "taking it in"
-  function scanThen(now, finalDir) {
-    const body = self;   // B1: capture the scheduling body — the setTimeout closures must animate THIS body, not whatever `self` points to at fire time (self is restored to agent each tick)
-    const guard = () => body && (body.goal === 'inspect' || body.goal === 'watch');
-    const sides = U.chance(0.5) ? ['west', 'east'] : ['east', 'west'];
-    if (body) body.glance = { dir: sides[0], until: now + 380 };
-    setTimeout(() => { if (guard()) body.glance = { dir: sides[1], until: performance.now() + 380 }; }, 420);
-    setTimeout(() => { if (guard()) { body.glance = null; body.dir = finalDir; } }, 860);
-  }
   function arrive(now) {
     self.pathPts = null; self.target = null; self.pauseUntil = 0; self.pauseLook = null; self.stilling = false;
     if (self.goal === 'firstwake') { self.state = 'idle'; return; }   // the wake ritual self-drives via stepFirstWake; the rare 'find feet' arrival is a no-op
@@ -1433,12 +1437,11 @@ const World = (() => {
       if (self.studyKey) seenCount.set(self.studyKey, fam + 1);
       if (self.goal === 'tend') { self.studyUntil = now + offbeat(now, U.irnd(3500, 8000)); curiositySay(self.needs.social < 30 ? SELF_TEND : SELF_QUIET, 0.5, now); }
       else if (self.goal === 'gaze') { self.studyUntil = now + offbeat(now, U.irnd(4000, 8000)); curiositySay(SELF_CONTEMPLATE, 0.5, now); }
-      else if (self.goal === 'watch') { self.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); if (U.chance(0.5)) scanThen(now, self.useFace); }
+      else if (self.goal === 'watch') { self.studyUntil = now + U.irnd(6000, 14000) * famK; curiositySay(CURIO_WATCH, 0.5 * famK, now); }
       else {
-        // INSPECT: it walked over to a machine to look at it — a study, held, with the settle-scan.
+        // INSPECT: it walked over to a machine to look at it — face the subject and hold the study.
         // (No gesture: the only track available is an arms-up stretch, which is not "examining".)
         self.studyUntil = now + U.irnd(2600, 6000) * famK; curiositySay(self.inspectNovel ? CURIO_NEW_PROP : CURIO_STUDY, (self.inspectNovel ? 0.7 : 0.55) * famK, now);
-        if (U.chance(0.55)) scanThen(now, self.useFace);
       }
     }
     else if (self.goal === 'rounds') {
@@ -1564,11 +1567,9 @@ const World = (() => {
      anchorFor(body): the body's own workstation/bay foot tile — its STABLE home (never its transient
      px/py, so the zone doesn't drift as it walks). Hero falls back to the module `seat` (its synthetic
      desk) when it has no placed workstation prop; crew resolve purely via deskPropFor/bay (P2/P3). */
-  /* The returned tile carries `assigned` — true when it came from a REAL posting (a bound
-     workstation, a bay, or the hero's own desk), false for the A2 fallback below (a placed body
-     with nowhere of its own yet). Only an ASSIGNED body earns the ROAM RADIUS: "how far from MY
-     DESK may I wander" is meaningless for a body that has no desk, and widening the deskless
-     fallback would just undo the bounded-spawn leash A2 exists to provide. */
+  /* The returned tile carries `assigned` for posting semantics, but every PLACED body's STABLE
+     anchor may own the same bounded roam radius. A deskless body uses its immutable spawn home,
+     so widening it cannot ratchet across the station as it walks. */
   function anchorFor(body) {
     if (!geo) return null;
     const aid = body && body.id;
@@ -1595,19 +1596,15 @@ const World = (() => {
     if (agent && agent.unplaced) return false;        // an unplaced hero owns nothing
     return crew.every(b => b && b.unplaced);          // no OTHER placed body shares the station
   }
-  /* ROAM RADIUS (2026-08-08 idle-life pass). A body assigned to a room used to be caged to that
-     room's rect, which is why the station read as a set of terrariums: an agent could NEVER be
-     seen anywhere but its own box. It now roams its home room PLUS Zones.ROAM_RADIUS tiles around
-     its own DESK, so it pops next door and comes back — still leashed to its posting, never free
-     to cross the whole floor. Nothing else changes: every picker already filters through
-     tileInZone, so they all widen together, and the solo/null/deskless cases are untouched. */
+  /* TRUE ROAM RADIUS (2026-08-08 idle-life pass). Every placed body gets one immutable
+     desk/spawn-centered distance leash across the station floor. Room plates do not widen or clip
+     it; walkability and the existing pathfinder decide which in-radius destinations are reachable. */
   function zoneFor(body) {
     if (typeof Zones === 'undefined' || !geo) return null;
     const a = anchorFor(body);
     return Zones.computeZone({
       rects: geo.allRects, props: geo.props, agentId: body && body.id, anchorTile: a,
-      roamR: (a && a.assigned) ? Zones.ROAM_RADIUS : 0,
-      doors: geo.doorDefs,                    // ...and a band past its OWN room's thresholds (Zones.SPILL_RADIUS)
+      roamR: a ? Zones.ROAM_RADIUS : 0,
       solo: soleOwner(body),
     });
   }
@@ -2068,10 +2065,11 @@ const World = (() => {
      just called planProp, whose tryLounge short-circuit meant the measured result was BOTH bodies on
      the couch for 58% of the run and not one visit to the arcade, the pinball table or the bar. It
      is a candidate here, not a shortcut. */
-  const FUN_W = { arcade: 3, pinball: 3, pool: 2.5, poker: 2, dj: 2, juke: 1.5, bar: 2.5, gacha: 1.5, fish: 1.5, lounge: 2.5 };
+  const FUN_W = { arcade: 3, pinball: 3, pool: 2.5, poker: 2, dj: 2, juke: 1.5, bar: 2.5, gacha: 1.5, lounge: 2.5 };
   const FUN_REPEAT_MIN = 90000, FUN_REPEAT_MAX = 150000;
-  /* FUN-REPEAT-PURE-BEGIN — a recent choice is unavailable, not merely less likely. A weak weight
-     cannot prevent parking when the couch is the only candidate. Kept pure for the regression test. */
+  /* FUN-REPEAT-PURE-BEGIN — reports whether a choice is still recent. The picker skips a recent
+     SOLE option, but only down-weights it when alternatives exist so avoidance never becomes a
+     predictable forced rotation. Kept pure for the regression test. */
   function funRecentlyUsed(lastKey, lastUntil, key, now) {
     return !!key && lastKey === key && Number.isFinite(lastUntil) && now < lastUntil;
   }
@@ -2176,16 +2174,17 @@ const World = (() => {
     if (!geo || !geo.props || !geo.props.length) return false;
     const zone = zoneFor(self), cands = [];
     const lounge = loungePair(zone);
-    if (lounge && !funBlocked('lounge', now)) cands.push({ key: 'lounge', w: FUN_W.lounge, lounge });
+    if (lounge) { const recent = funBlocked('lounge', now); cands.push({ key: 'lounge', w: FUN_W.lounge * (recent ? 0.28 : 1), recent, lounge }); }
     for (const p of geo.props) {
       const u = propUse(p);
       if (!u || !FUN_KINDS[u.kind]) continue;
       if (!mayTouchProp(self.id, p)) continue;
       if (!tileInZone(zone, p.x, p.y)) continue;
-      if (funBlocked(p.id, now)) continue;
-      cands.push({ key: p.id, w: FUN_W[u.kind] || 2, prop: p, kind: u.kind });
+      const recent = funBlocked(p.id, now);
+      cands.push({ key: p.id, w: (FUN_W[u.kind] || 2) * (recent ? 0.28 : 1), recent, prop: p, kind: u.kind });
     }
     if (!cands.length) return false;                       // nothing fun placed → the bored branch carries on as before
+    if (cands.length === 1 && cands[0].recent) return false;   // one prop cannot become permanent parking
     let total = 0; for (const c of cands) total += c.w;
     // draw one, then fall through the rest in a rotated order so an unreachable pick never wastes the beat
     let roll = U.rnd(0, total), start = 0;
@@ -2222,8 +2221,9 @@ const World = (() => {
     for (const p of geo.props) {
       const use = propUse(p); if (!use || !purposefulIdleProp(p)) continue;
       if (use.kind === 'couch') { if (!funBlocked('lounge', now)) cands.push({ couch: p }); continue; }   // cushion/approach are caged per-slot in planCouchSit (a wide couch can straddle a wall)
-      if (use.kind === 'seat') { cands.push({ seat: p }); continue; }     // only a seat pulled up to a purposeful counter reaches this branch
+      if (use.kind === 'seat') { const counter = counterForSeat(p); if (counter && counter.p && !funBlocked(counter.p.id, now)) cands.push({ seat: p }); continue; }   // only a non-recent purposeful counter seat reaches this branch
       if (use.kind === 'bar') continue;                                  // its adjacent purposeful seat is the destination, never the counter face itself
+      if (funBlocked(p.id, now)) continue;
       const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
       if (a && tileInZone(zone, a.tx, a.ty)) cands.push({ id: p.id, a });   // the APPROACH tile (where the body stands) must be in-zone
     }
@@ -3420,6 +3420,7 @@ const World = (() => {
   }
   // lonely → drift to a tile by the desk and face south (its window to the Commander); refills social
   function planSeekDesk(now) {
+    if (now < (self.deskVisitCd || 0)) return false;   // checking in is useful; bouncing back after every other activity is not
     const seat = seatFor(self);   // the CURRENT body's own desk (hero → synthetic `seat`; crew → its workstation chair) — never the hero's seat for a crew body (J2/J3)
     if (!seat) return false;
     const zone = zoneFor(self);   // J3: the desk spots derive from the seat with +2 south / ±1 offsets; clamp them to the body's OWN zone like every sibling picker
@@ -3427,8 +3428,41 @@ const World = (() => {
     for (const [tx, ty] of spots) {
       if (!tileInZone(zone, tx, ty)) continue;   // J3: never tether OUT of the body's zone (hero whole-floor 'multi' zone admits its own spots → byte-parity)
       if (!geo.walkable(tx, ty, blocked)) continue;
-      if (setPathTo({ x: tx, y: ty })) { self.goal = 'tend'; self.useFace = 'south'; self.usingProp = null; self.studyKey = null; if (!self.target) arrive(now); return true; }
+      if (setPathTo({ x: tx, y: ty })) { self.goal = 'tend'; self.useFace = 'south'; self.usingProp = null; self.studyKey = null; self.deskVisitCd = now + U.irnd(60000, 120000); if (!self.target) arrive(now); return true; }
     }
+    return false;
+  }
+  /* After a real stretch of downtime, take one trip beyond the current room when the existing zone
+     permits it. This is not free station roaming: zoneFor still limits the destination to the stable
+     home/spawn radius, and setPathTo owns the normal collision-safe, reachable walk. */
+  function planExplore(now) {
+    if (!self || !geo || !geo.allRects || !geo.allRects.length) return false;
+    // Spread the first stroll over 45 seconds instead of making every newly-idle body leave at once.
+    if (!self.exploreCd) {
+      self.exploreCd = now + U.irnd(1, 45000);
+      return false;
+    }
+    if (now < self.exploreCd) return false;
+    const cur = tileOf(self.px, self.py), here = roomOfLocalTile(cur.x, cur.y), zone = zoneFor(self);
+    if (!here || !zone) return false;
+    const rects = geo.allRects.filter(r => {
+      const room = roomOfLocalTile((r.x1 + r.x2) >> 1, (r.y1 + r.y2) >> 1);
+      return room && room !== here;
+    });
+    if (!rects.length) return false;
+    for (let i = 0; i < 36; i++) {
+      const r = rects[U.irnd(0, rects.length - 1)];
+      const tx = U.irnd(r.x1, r.x2), ty = U.irnd(r.y1, r.y2);
+      if (!tileInZone(zone, tx, ty) || !geo.walkable(tx, ty, blocked)) continue;
+      const there = roomOfLocalTile(tx, ty);
+      if (!there || there === here) continue;
+      if (!setPathTo({ x: tx, y: ty })) continue;
+      self.goal = null; self.usingProp = null; self.stilling = false; self.attn = null;
+      self.drive = null; self.driveUntil = 0;
+      self.exploreCd = now + U.irnd(120000, 210000);
+      return true;
+    }
+    self.exploreCd = now + U.irnd(30000, 60000);   // retry calmly if nearby geometry has no reachable sample this beat
     return false;
   }
   // restless → short back-and-forth hops near the current tile (paces in place instead of strolling far off)
@@ -3809,6 +3843,7 @@ const World = (() => {
     // USES the Commander's placed props (couch/TV/arcade) via planProp below — that stays.
     const n = self.needs, p = self.pers, ph = phaseOf(now), idleAge = now - (self.lastTaskAt || now);
     if (ph.tag === 'drift' && idleAge > 45000 && n.rest > 50 && U.chance(0.22) && sleep(now)) return;   // deep downtime in the wind-down mood -> power down where it stands
+    if (idleAge > 60000 && planExplore(now)) return;                                  // after a while, deliberately visit another reachable room inside the stable home range
     /* TIER D SELECTION (hoisted 2026-07-02 — live-soak fix): these three used to sit INSIDE the `top < 28`
        CONTENT branch below, but contentment is correct-but-rare in practice (stim/social decay while idle —
        the Pass-7 note), so chase/social/mimic were almost never even CONSULTED and the observed live rate was
@@ -3854,8 +3889,8 @@ const World = (() => {
     // ladder's own precedence below (rest > soc > stim) so the two can never disagree about who won.
     const win = top === wRest ? 'rest' : top === wSoc ? 'soc' : 'stim';
     if (win !== held) { self.drive = win; self.driveUntil = now + U.irnd(12000, 22000); }
-    if (top === wRest) { if (planRest(now)) return; }                                  // tired -> lounge / couch (but not the SAME couch on a loop — see planRest)
-    else if (top === wSoc) { if (planSeekDesk(now)) return; }                          // lonely -> the desk, face the Commander
+    if (top === wRest) { if (U.chance(0.7) && planRest(now)) return; }                  // tired usually rests; sometimes it simply carries on living
+    else if (top === wSoc) { if (U.chance(0.65) && planSeekDesk(now)) return; }         // desk check is meaningful, not the mandatory half of a loop
     else {                                                                             // bored / restless
       // TIER D · D5 beat 3 — QUEUE-AWARE IDLE BIAS: while the visible task/mission queue is non-empty, the OVERSEER
       // (hero only) leans harder into a purposeful caretaker lap (which visits desks / belts / the board — the
@@ -3867,8 +3902,8 @@ const World = (() => {
       // single leisure prop (see planPlay) — the whole reason a station full of arcade machines
       // read as scenery. Ahead of the caretaker lap on purpose: a lap is what you do when there is
       // nothing better, and the Commander placing a pinball table is them saying there is.
-      if (U.chance(0.7) && planPlay(now)) return;                                       //   bored + something fun placed -> play with it
-      const roundsBias = (self === agent && (missionPinCounts(now)[0] | 0) > 0) ? 0.45 : 0.3;
+      if (U.chance(0.55) && planPlay(now)) return;                                      //   bored + something fun placed -> often play, never always
+      const roundsBias = (self === agent && (missionPinCounts(now)[0] | 0) > 0) ? 0.4 : 0.12;
       if (U.chance(roundsBias) && maybeRounds(now)) return;                             //   do a deliberate caretaker lap (purpose, not aimless)
       if (n.stim < 42 && planPOI(now)) return;                                         //   study a machine / watch a belt
       // the vantage beat is a PUNCTUATION MARK, not a pastime. At 0.35 after 30s it became the most
@@ -3879,7 +3914,7 @@ const World = (() => {
     }
     // graceful fallbacks so it never freezes
     if (U.chance(0.45 * p.curious) && planPOI(now)) return;
-    if (U.chance(0.4 * p.homebody) && planProp(now)) return;
+    if (U.chance(0.18 * p.homebody) && planProp(now)) return;
     if (U.chance(0.45)) lookAround(now); else wander(now);
   }
 
@@ -4537,6 +4572,12 @@ const World = (() => {
     if (_glReady || _glFailed) return _glReady;
     try {
       _glc = document.createElement('canvas'); _glc.width = W; _glc.height = H;
+      // A WebView/GPU reset reports context loss as WebGL state, not a JavaScript exception. Mark the GPU path
+      // unusable immediately; the next drawCurve() frame takes the existing pixel-identical CPU warp.
+      _glc.addEventListener('webglcontextlost', ev => {
+        try { ev.preventDefault(); } catch (_) {}
+        abandonCurveGL('WebGL context lost');
+      }, false);
       _gl = _glc.getContext('webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true }) ||
             _glc.getContext('experimental-webgl', { premultipliedAlpha: false, preserveDrawingBuffer: true });
       if (!_gl) throw new Error('no webgl');
@@ -4586,13 +4627,15 @@ const World = (() => {
       _glVigLoc = gl.getUniformLocation(prog, 'uVig'); _glOverLoc = gl.getUniformLocation(prog, 'uOver');
       _glProg = prog; _glReady = true;
       return true;
-    } catch (e) { console.warn('[crt] WebGL curve unavailable, using CPU fallback:', e && e.message); _glFailed = true; _gl = null; return false; }
+    } catch (e) { _gl = null; return abandonCurveGL('WebGL curve unavailable: ' + ((e && e.message) || String(e))); }
   }
   function drawCurveGL(k, W, H) {
     try {
       if (!initGL(W, H)) return false;
       const gl = _gl;
+      if (glContextLost(gl)) return abandonCurveGL('WebGL context lost before draw');
       if (_glc.width !== W || _glc.height !== H) { _glc.width = W; _glc.height = H; }
+      if (glContextLost(gl)) return abandonCurveGL('WebGL context lost during resize');
       // OUTPUT SANITY PROBE (2026-07-20, the mac theme-wash report): the warp only MOVES pixels and
       // applies a channel-NEUTRAL vignette, so the frame's global per-channel ratios must survive it.
       // WKWebView's GL sits on a different backend (ANGLE-on-Metal) than Windows — a channel-order/
@@ -4611,6 +4654,10 @@ const World = (() => {
       if (_glVigLoc) gl.uniform1f(_glVigLoc, vigAmt());
       if (_glOverLoc) gl.uniform1f(_glOverLoc, overAmt());
       gl.drawArrays(gl.TRIANGLES, 0, 3);
+      // Context loss is deliberately checked AGAIN after GPU work and BEFORE the destructive clear below.
+      // WebGL commands on a lost context are specified to no-op instead of throwing; without this guard the
+      // dead offscreen canvas is copied over a healthy 2D frame and the camera feed goes permanently black.
+      if (glContextLost(gl)) return abandonCurveGL('WebGL context lost during draw');
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0, 0, W, H); ctx.drawImage(_glc, 0, 0);   // blit the warped result back onto the visible feed
       if (pre) {
@@ -4646,7 +4693,7 @@ const World = (() => {
         }
       }
       return true;
-    } catch (e) { console.warn('[crt] WebGL curve draw failed, using CPU fallback:', e && e.message); _glFailed = true; return false; }
+    } catch (e) { return abandonCurveGL('WebGL curve draw failed: ' + ((e && e.message) || String(e))); }
   }
   function drawCurveCPU(k, W, H) {
     const hw = W / 2, hh = H / 2;
@@ -4864,7 +4911,9 @@ const World = (() => {
       if (bornA < 1) ctx.globalAlpha = prevA * bornA;
       let geom = null;
       if (typeof SPRITES !== 'undefined' && SPRITES.ready) geom = SPRITES.drawBody(ctx, who, now);
-      if (!geom) drawFallback(now, who);
+      // Do not flash the cyan procedural body while the real default skin is actively loading.
+      // A genuine load failure still clears `loading` and gets the honest fallback on the next frame.
+      if (!geom && !(typeof SPRITES !== 'undefined' && SPRITES.loading)) drawFallback(now, who);
       // remember the visible head-top (world px) so overlays (nameplate, speech bubble) anchor
       // above the ACTUAL drawn sprite — skins are taller than the old 15px assumption, which
       // parked bubbles over the face. Fallback bodies keep the legacy 15px estimate (null).
@@ -6178,6 +6227,7 @@ const World = (() => {
       phase: U.hash('' + aid) % 6, aph: (U.hash('' + aid) % 600) / 100, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false, watchProp: null,
       lastFun: null, lastFunUntil: 0,
+      deskVisitCd: 0, exploreCd: 0,
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
       summonGlanceCd: 0,   // Tier C / C-Beat1: per-observer refractory (mirrors the hero literal) — runtime-only
@@ -6289,6 +6339,10 @@ const World = (() => {
     const t = spawnTileLocal();
     const ring = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [2, 2], [-2, -2], [3, 1], [-3, 1], [1, 3], [-1, -3], [3, -2]];
     const seen = new Set(crew.filter(b => b.summoned).map(b => { const tt = tileOf(b.px, b.py); return tt.x + ',' + tt.y; }));
+    // The hero occupies the ring too. Omitting it made the first summoned worker take [0,0]
+    // directly underneath the hero; hover/click then resolved the hero first and the specialist
+    // was impossible to address on the floor even though its roster/body existed.
+    if (agent && !agent.unplaced) { const ht = tileOf(bodyPosX(agent), bodyPosY(agent)); seen.add(ht.x + ',' + ht.y); }
     for (let i = 0; i < ring.length; i++) {
       const tx = t.x + ring[i][0], ty = t.y + ring[i][1];
       if (geo && geo.walkable(tx, ty, blocked) && !seen.has(tx + ',' + ty)) return footOf(tx, ty);
@@ -7213,6 +7267,26 @@ const World = (() => {
   // so the DOWN branch can be observed against a real non-OPEN readyState without killing the whole process.
   const _dbgLinkState = () => ({ es: !!chanES, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round(((typeof performance !== 'undefined') ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) });
   const _dbgDropBridge = () => { if (chanES) { try { chanES.close(); } catch (_) {} } return _dbgLinkState(); };
+  // Deterministic live regression seam for the offscreen CRT warp. It invokes the browser-standard
+  // WEBGL_lose_context extension on the exact production context, then exposes only renderer health + a
+  // bounded whole-frame brightness sample so the test can prove the SAME visible feed stayed alive.
+  const _dbgCurveState = () => {
+    let means = null;
+    try { if (cv) means = probeMeans(cv); } catch (_) {}
+    return {
+      path: _glFailed ? 'cpu' : (_glReady ? 'webgl' : 'uninitialized'),
+      ready: _glReady, failed: _glFailed, lost: glContextLost(_gl),
+      frameSum: means ? Math.round(means[0] + means[1] + means[2]) : null
+    };
+  };
+  const _dbgLoseCurveContext = () => {
+    if (!_gl || !_glReady) return { ok: false, reason: 'WebGL curve is not active' };
+    let ext = null;
+    try { ext = _gl.getExtension('WEBGL_lose_context'); } catch (_) {}
+    if (!ext || typeof ext.loseContext !== 'function') return { ok: false, reason: 'WEBGL_lose_context unavailable' };
+    ext.loseContext();
+    return { ok: true };
+  };
   // belt-legibility readout for CDP verify scripts: the EXACT state the renderer draws from (never a re-derivation)
   const _dbgBeltLegibility = () => ({
     beltCount: beltTileSet ? beltTileSet.size : 0,
@@ -7235,7 +7309,7 @@ const World = (() => {
     // FEED TRUTH accessor (guided workflows): the exact server-proven state the NO FEED nag keys on —
     // REFIT's finish-the-line card reads THIS, never a parallel poll, so the two can never disagree.
     feedState: () => ({ known: feedState.known, fed: feedState.fed }),
-    loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, setOnIntakeSample, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgBeltLegibility, _dbgPropClientPoint, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
+    loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, setOnIntakeSample, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgCurveState, _dbgLoseCurveContext, _dbgBeltLegibility, _dbgPropClientPoint, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {
@@ -7357,7 +7431,13 @@ const World = (() => {
       if (!station) return [];
       const viaBay = (station.bayObjects && agentId) ? station.bayObjects(agentId) : [];
       const norm = o => (o && typeof o === 'object') ? o.objectType : o;   // bayObjects entries are strings or {objectType}
-      const src = (viaBay && viaBay.length)
+      // bayObjects() returns [] both for no bay and for a real but empty assigned room. The latter is still
+      // authoritative: use agentRoomId to preserve its empty scope instead of falling back station-wide.
+      let hasBay = false;
+      if (station.agentRoomId && agentId) {
+        try { hasBay = !!station.agentRoomId(agentId); } catch (_) { return []; }
+      }
+      const src = (hasBay || (viaBay && viaBay.length))
         ? viaBay.map(norm)
         : ((station.doc && station.doc().props) || []).map(p => (station.capForProp ? station.capForProp(p.t) : null));
       const out = [], seen = {};

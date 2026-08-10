@@ -20,6 +20,16 @@ try {
   A.eq(v.priorInstallEvidence, false, 'runtime/schema/migration infrastructure, including an empty migration receipt, is a genuine first run');
   A.eq(v.onboardingAllowed, true, 'onboarding is allowed only with zero evidence');
 
+  fs.writeFileSync(path.join(current, 'future-cache-v2.json'), '{"cache":true}');
+  v = inspectWorkspaceLineage({ fs, path, workspaceRoot: current, candidateRoots: [legacy], snapshotsRoot: snapshots, platform: process.platform });
+  A.eq(v.priorInstallEvidence, false, 'unknown cache files cannot become prior-station evidence by denylist omission');
+  fs.unlinkSync(path.join(current, 'future-cache-v2.json'));
+
+  fs.writeFileSync(path.join(current, 'ledger.jsonl'), '{"event":"prior-work"}\n');
+  v = inspectWorkspaceLineage({ fs, path, workspaceRoot: current, candidateRoots: [legacy], snapshotsRoot: snapshots, platform: process.platform });
+  A.eq(v.priorInstallEvidence, true, 'known durable station ledgers still block destructive first-run inference when the save is missing');
+  fs.unlinkSync(path.join(current, 'ledger.jsonl'));
+
   fs.mkdirSync(legacy, { recursive: true });
   fs.writeFileSync(path.join(legacy, 'agent.save.json'), '{"version":5}');
   v = inspectWorkspaceLineage({ fs, path, workspaceRoot: current, candidateRoots: [legacy], snapshotsRoot: snapshots, platform: process.platform });
@@ -52,6 +62,8 @@ try {
   const html = fs.readFileSync(path.join(__dirname, '../frontend/index.html'), 'utf8');
   const screen = html.slice(html.indexOf('<section id="screen-lineage"'), html.indexOf('<!-- ============ GAME', html.indexOf('<section id="screen-lineage"')));
   A.ok(screen.includes('READ ONLY') && screen.includes('btn-lineage-restore') && screen.includes('btn-lineage-retry'), 'Recovery Mode offers restore/retry and declares read-only posture');
+  A.ok(screen.includes('btn-lineage-recover') && screen.includes('btn-lineage-report'), 'Recovery Mode offers verified candidate recovery and a redacted report without Terminal work');
+  A.ok(fn.includes('/api/lineage/recover') && fn.includes('/api/lineage/report'), 'Recovery Mode wires both actions to authenticated sidecar truth');
   A.eq(/CONTINUE.*FRESH|CREATE.*STATION/i.test(screen), false, 'Recovery Mode exposes no fresh-station bypass');
   A.report('workspace-lineage.test');
 } finally {

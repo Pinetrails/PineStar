@@ -14,6 +14,7 @@
      entire app painted in Courier New. It bought nothing: the local face already covers a
      superset of what Google served. Preloaded so the face is in flight before first paint. -->
 <link rel="preload" href="assets/fonts/vt323.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/sprites/blank/rot_south.png" as="image" fetchpriority="high">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/comms.css">
@@ -240,7 +241,7 @@
 
     <div class="ov-foot">
       <div class="ov-foot-data">
-        <span class="ov-foot-cap">＋ everything here is re-editable later in the Commander Dossier</span>
+        <span class="ov-foot-cap">＋ later: agent setup in CREW › AGENTS · model in COMMS · providers, permissions &amp; appearance in SYSTEM › SETTINGS</span>
         <!-- DATA PORTABILITY — RESTORE must stay reachable for first-run users now that the title screen is gone.
              Labeled RESTORE BACKUP (not IMPORT AGENT) so it can't be mistaken for the Recruitment Bay's
              Hermes/OpenClaw agent importer — this button only reads StarNet's own export file. EXPORT is
@@ -391,6 +392,8 @@
         <span class="ov-foot-cap" id="lineage-status">＋ inspect or restore the prior state; writes remain paused here</span>
       </div>
       <div class="connect-actions ov-actions">
+        <button id="btn-lineage-recover" class="btn-xl" hidden disabled>⟳ RECOVER AUTOMATICALLY</button>
+        <button id="btn-lineage-report" class="btn">⇩ EXPORT RECOVERY REPORT</button>
         <button id="btn-lineage-restore" class="btn">⭱ RESTORE BACKUP</button>
         <button id="btn-lineage-retry" class="btn-xl">⟳ RETRY STATE RECOVERY</button>
       </div>
@@ -447,7 +450,7 @@
     <ul id="crew"></ul>
     <div id="crew-sum"></div>
     <div id="ws-wrap">
-      <div class="ws-head"><span class="ws-view" role="tablist" aria-label="rail view"><button id="ws-tab-sessions" class="ws-tab on" role="tab" aria-selected="true" title="your conversations">SESSIONS</button><button id="ws-tab-projects" class="ws-tab" role="tab" aria-selected="false" title="trusted project folders">PROJECTS</button></span><span class="ws-head-acts"><button id="ws-new" title="start a new workstream">+ NEW</button><button id="ws-addproject" title="bless a folder as a trusted project" hidden>+ ADD</button></span></div>
+      <div class="ws-head"><span class="ws-view" role="tablist" aria-label="rail view"><button id="ws-tab-sessions" class="ws-tab on" role="tab" aria-selected="true" title="your saved conversations">SESSIONS</button><button id="ws-tab-projects" class="ws-tab" role="tab" aria-selected="false" title="trusted project folders">PROJECTS</button></span><span class="ws-head-acts"><button id="ws-new" title="start a new COMMS session">+ NEW</button><button id="ws-addproject" title="bless a folder as a trusted project" hidden>+ ADD</button></span></div>
       <!-- RAIL SEARCH (2026-07-17): the SESSION TOOLS window was retired — search lives ON the rail now
            (the one capability no other surface covered); per-session export moved into the row ⋯ menu.
            The head above stays SESSIONS/PROJECTS + NEW only (Commander directive, 2026-07-08). -->
@@ -584,7 +587,7 @@
         <!-- WORK menu, one axis per entry (UX confusion audit 2026-07-15): RECIPES = WHAT to run,
              ROUTINES = WHEN it runs, LOOPS = UNTIL it is done, TASKS = WHERE live work sits,
              QUESTS = progress only. -->
-        <button class="bb" data-term="tasks" data-hint="task"><span class="bb-i">☑</span><span class="bb-tx"><b>TASKS</b><small>where all work lives — queued, running &amp; done</small></span></button>
+        <button class="bb" data-term="tasks" data-hint="task"><span class="bb-i">☑</span><span class="bb-tx"><b>TASKS</b><small>planned work — queued, active &amp; shipped</small></span></button>
         <button class="bb" data-term="deliverables" data-hint="deliverable"><span class="bb-i">▣</span><span class="bb-tx"><b>DELIVERABLES</b><small>outputs, Workshop builds &amp; cleanup</small></span></button>
         <button class="bb" id="bb-missions" data-hint="recipe"><span class="bb-i">❒</span><span class="bb-tx"><b>RECIPES</b><small>ready-made jobs to launch — they land on TASKS</small></span></button>
         <button class="bb" data-term="automation" data-hint="automation"><span class="bb-i">∞</span><span class="bb-tx"><b>AUTOMATION</b><small>routines &amp; loops — any job on a schedule, or repeated until it’s done</small></span></button>
