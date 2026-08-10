@@ -65,6 +65,37 @@ export const openStableNotifs = `(() => {
   return 'opened:NOTIFS';
 })()`;
 
+// The seeded dossier opens before its lazily-loaded skin is guaranteed to be ready. Capturing on
+// the fixed panel delay alone therefore alternated between the procedural loading mannequin and
+// the real portrait depending on whether the preceding IN-GAME frame bought the loader enough
+// time. Make this frame wait on the same sprite authority the dossier uses, then yield two paints
+// so drawPortrait's already-registered promise callback reaches the canvas before CDP reads it.
+// This is deliberately scoped to the seeded golden driver: the seed's hero wears DEFAULT_SKIN.
+export const openStableAgents = `(async () => {
+  const opened = ${openSel('[data-term="agents"]', 'AGENTS')};
+  if (/^(NOTFOUND|CLICK_ERR)/.test(String(opened))) return opened;
+  const loaderReady = await new Promise(resolve => {
+    const deadline = performance.now() + 5000;
+    const probe = () => {
+      if (typeof SPRITES === 'object' && SPRITES.ready && typeof SPRITES.ensureSkin === 'function' &&
+          typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN) return resolve(true);
+      if (performance.now() >= deadline) return resolve(false);
+      setTimeout(probe, 25);
+    };
+    probe();
+  });
+  if (!loaderReady) return opened + ':portrait-loader-timeout';
+  let ready = false;
+  try {
+    ready = !!(await Promise.race([
+      SPRITES.ensureSkin(DATA.DEFAULT_SKIN),
+      new Promise(resolve => setTimeout(() => resolve(false), 5000))
+    ]));
+  } catch (_) {}
+  if (ready) await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  return opened + (ready ? ':portrait-ready' : ':portrait-timeout');
+})()`;
+
 export const closeOnly = `(() => { ${CLOSE}; return 'reset'; })()`;
 
 // REFIT first-use guide: on a fresh browser profile, build.js showGuide() paints a full-canvas
@@ -91,7 +122,7 @@ export function buildStates() {
   return [
     { name: 'ingame',          drive: closeOnly,                                   wait: 900 },
     // CREW group
-    { name: 'crew-agents',     drive: openSel('[data-term="agents"]', 'AGENTS') },
+    { name: 'crew-agents',     drive: openStableAgents },
     // ONE recruit door now (#bb-recruit): the old ROSTER/SUMMON split collapsed into a single
     // bay whose class dossier carries both verbs, so one state captures it.
     { name: 'crew-recruit',    drive: openSel('#bb-recruit', 'RECRUIT'),           wait: 1800 },

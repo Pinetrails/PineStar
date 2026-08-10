@@ -127,6 +127,8 @@ const sig = (v) => Array.from({ length: SIG_LEN }, () => v);
   A.ok(/toast-stack/.test(shoot) && /remove\(\)/.test(shoot), 'shared screenshot runner clears transient toasts before each frame');
   A.ok(/World\.stop/.test(shoot) && /world-frozen/.test(shoot), 'shared screenshot runner freezes the idle world before translucent panel captures');
   A.ok(/classList\.add\('no-flicker'\)/.test(shoot), 'shared screenshot runner disables the global seven-second flicker cycle');
+  A.ok(/rmSync\(PROFILE,\s*\{\s*recursive:\s*true,\s*force:\s*true\s*\}\)/.test(shoot),
+    'shared screenshot runner clears its reused Chrome profile before every sweep');
 }
 
 // The navigation-condense change merged ROUTINES + LOOPS behind the AUTOMATION dock entry. The
@@ -138,6 +140,9 @@ const sig = (v) => Array.from({ length: SIG_LEN }, () => v);
     'work-automation golden frame opens the merged AUTOMATION dock entry');
   A.ok(!/name: 'work-routines'/.test(states),
     'golden states retire the obsolete work-routines baseline key');
+  A.ok(/openStableAgents[\s\S]{0,1400}SPRITES\.ensureSkin\(DATA\.DEFAULT_SKIN\)/.test(states) &&
+       /name: 'crew-agents'[\s\S]{0,100}drive: openStableAgents/.test(states),
+    'crew-agents waits for the seeded hero portrait instead of capturing its loading mannequin');
 }
 
 A.report('golden.test');
