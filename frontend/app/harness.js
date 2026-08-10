@@ -171,7 +171,8 @@ const Harness = (() => {
   // PRIVATE local credential; a naive substring match on '/api/' would attach it to third-party URLs that merely
   // contain '/api/' (e.g. the OpenRouter fallback catalog https://openrouter.ai/api/v1/models), leaking the token
   // cross-origin AND forcing a CORS preflight OpenRouter rejects (so the fallback fails exactly when it's needed).
-  // Same-origin = a leading-slash relative path ('/api/...') OR an absolute URL whose origin === location.origin.
+  // Accepted = a leading-slash relative path ('/api/...'), an absolute URL at location.origin, OR the exact
+  // configured loopback sidecar origin used by the packaged Tauri page.
   function apiPath(s) {
     s = String(s || '');
     if (s.indexOf('/api/') === 0) return true;   // leading-slash relative — always same-origin
@@ -180,7 +181,21 @@ const Harness = (() => {
       const base = (typeof location !== 'undefined' && location.href) ? location.href : undefined;
       const parsed = new URL(s, base);
       const here = (typeof location !== 'undefined' && location.origin) ? location.origin : null;
-      return here != null && parsed.origin === here && parsed.pathname.indexOf('/api/') === 0;
+      if (parsed.pathname.indexOf('/api/') !== 0) return false;
+      if (here != null && parsed.origin === here) return true;
+      // The packaged Tauri page is cross-origin from its configured loopback sidecar. Trust only that
+      // exact configured loopback origin; accepting arbitrary cross-origin /api URLs would leak the token.
+      let sidecar = null;
+      const configured = (typeof window !== 'undefined' && window.__STARNET_API__) ? String(window.__STARNET_API__) : '';
+      if (configured) {
+        try {
+          const u = new URL(configured, base);
+          const host = String(u.hostname || '').toLowerCase();
+          const loopback = host === '127.0.0.1' || host === 'localhost' || host === '[::1]' || host === '::1';
+          if (loopback && (u.protocol === 'http:' || u.protocol === 'https:')) sidecar = u.origin;
+        } catch (_) {}
+      }
+      return sidecar != null && parsed.origin === sidecar;
     } catch (_) { return false; }
   }
   function isApiUrl(u) {
