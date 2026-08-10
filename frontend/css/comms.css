@@ -436,9 +436,11 @@
 }
 .cmsg.broadcast .bc-line {
   flex: 0 0 auto;
+  min-width: 0; max-width: 100%;
   font-size: 11px; letter-spacing: 2.5px; text-transform: uppercase;
   color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
-  white-space: nowrap; font-variant-numeric: tabular-nums;
+  text-align: center; white-space: normal; overflow-wrap: anywhere; word-break: break-word;
+  font-variant-numeric: tabular-nums;
 }
 .cmsg.broadcast .bc-glyph { color: var(--ph); opacity: .8; }
 /* .bc-name carries its per-agent suit colour inline (chat.js) — that tint IS its emphasis;

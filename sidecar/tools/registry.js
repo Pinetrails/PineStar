@@ -54,10 +54,10 @@
     const dropped = content.length - head - tail;
     // The note names a NEXT ACTION. "truncated" alone invites the model to run the identical call again.
     const note = parkedPath
-      ? '\n\n[... ' + dropped + ' characters elided here by the host output cap. THE FULL OUTPUT WAS SAVED to '
+      ? '\n\n[... ' + dropped + ' characters elided here by the host output cap. Full size: ' + content.length + ' characters / ' + utf8Bytes(content) + ' UTF-8 bytes. THE FULL OUTPUT WAS SAVED to '
         + parkedPath + ' — read that file (in ranges if it is large) to see the part that is missing, or search '
         + 'it. Do NOT repeat this call to recover it. The end of the output follows ...]\n\n'
-      : '\n\n[... ' + dropped + ' characters removed by the host output cap. Do not repeat this call as-is — '
+      : '\n\n[... ' + dropped + ' characters removed by the host output cap. Full size: ' + content.length + ' characters / ' + utf8Bytes(content) + ' UTF-8 bytes. Do not repeat this call as-is — '
         + 'narrow it: filter, page, request a smaller range, or write the full output to a file and read it back '
         + 'in parts. The end of the output follows ...]\n\n';
     return content.slice(0, head) + note + content.slice(content.length - tail);
@@ -71,8 +71,14 @@
   // Preserve the pre-clamp character count alongside the model-visible preview. A later aggregate/run cap may
   // have to shorten this result again; without the original count it can only say "some output was omitted",
   // which is both unhelpful and impossible to audit against the parked file.
-  const okResult = (content, summary, control, parkedPath, images) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null, parkedPath: parkedPath || null, outputChars: typeof content === 'string' ? content.length : null });
-  const errResult = (content, summary, parkedPath) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error', parkedPath: parkedPath || null, outputChars: typeof content === 'string' ? content.length : null });
+  function utf8Bytes(value) {
+    const text = String(value == null ? '' : value);
+    if (typeof Buffer !== 'undefined' && Buffer.byteLength) return Buffer.byteLength(text, 'utf8');
+    if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(text).length;
+    return unescape(encodeURIComponent(text)).length;
+  }
+  const okResult = (content, summary, control, parkedPath, images, outputChars, outputBytes, mutationReceipt) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null, parkedPath: parkedPath || null, outputChars: Number.isFinite(Number(outputChars)) ? Number(outputChars) : (typeof content === 'string' ? content.length : null), outputBytes: Number.isFinite(Number(outputBytes)) ? Number(outputBytes) : (typeof content === 'string' ? utf8Bytes(content) : null), mutationReceipt: mutationReceipt || null });
+  const errResult = (content, summary, parkedPath, outputChars, outputBytes, mutationReceipt) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error', parkedPath: parkedPath || null, outputChars: Number.isFinite(Number(outputChars)) ? Number(outputChars) : (typeof content === 'string' ? content.length : null), outputBytes: Number.isFinite(Number(outputBytes)) ? Number(outputBytes) : (typeof content === 'string' ? utf8Bytes(content) : null), mutationReceipt: mutationReceipt || null });
 
   // Ask the host to keep the full output. Never throws and never blocks a result: a parker that fails just
   // means we fall back to the plain clamp — losing the tail must never also lose the answer.
@@ -83,6 +89,15 @@
       const r = await ctx.parkOutput(content, { tool: (call && call.name) || 'tool' });
       return (r && r.path) ? String(r.path) : null;
     } catch (_) { return null; }
+  }
+
+  function intrinsicReceipt(preview, fullChars, fullBytes, parkedPath) {
+    const note = parkedPath
+      ? '[full-output receipt: ' + fullChars + ' characters / ' + fullBytes + ' UTF-8 bytes before truncation; saved once to ' + parkedPath
+        + '. Read that file in ranges; do not rerun the tool merely to recover output.]'
+      : '[full-output receipt: ' + fullChars + ' characters / ' + fullBytes + ' UTF-8 bytes before truncation; durable storage could not be verified. '
+        + 'Do not assume the omitted bytes are recoverable.]';
+    return String(preview == null ? '' : preview) + '\n\n' + note;
   }
 
   // Race a promise against a timeout. onTimeout (if given) fires BEFORE the reject so the caller can abort the
@@ -232,12 +247,30 @@
         const out = await withTimeout(tool.run(call.args, runCtx), timeoutMs, () => { try { ac.abort(new Error('tool timeout')); } catch (_) { try { ac.abort(); } catch (_) {} } });
         const shaped = (out && typeof out === 'object' && 'content' in out);
         const raw = shaped ? out.content : (out == null ? '' : out);
+        // A narrower tool ceiling may already have produced a preview. `fullContent` crosses this persistence
+        // seam once and is never placed directly in model context.
+        const full = shaped && typeof out.fullContent === 'string' ? out.fullContent : raw;
         // Park BEFORE clamping — the clamp is what destroys the middle, so the full text has to be on disk first.
-        const parked = await parkIfOver(raw, call, ctx);
-        return await notifyPost(okResult(raw, shaped ? out.summary : undefined, shaped ? out.control : undefined, parked, shaped ? out.images : undefined), elapsed());
+        let parked = null;
+        if (typeof full === 'string' && (full !== raw || full.length > OUTPUT_MAX) && ctx && typeof ctx.parkOutput === 'function') {
+          try { const p = await ctx.parkOutput(full, { tool: (call && call.name) || 'tool' }); parked = p && p.path ? String(p.path) : null; } catch (_) {}
+        } else {
+          parked = await parkIfOver(raw, call, ctx);
+        }
+        const fullBytes = typeof full === 'string' ? utf8Bytes(full) : null;
+        const visible = full !== raw && typeof full === 'string' ? intrinsicReceipt(raw, full.length, fullBytes, parked) : raw;
+        return await notifyPost(okResult(visible, shaped ? out.summary : undefined, shaped ? out.control : undefined, parked, shaped ? out.images : undefined, typeof full === 'string' ? full.length : null, fullBytes, shaped ? out.mutationReceipt : null), elapsed());
       } catch (e) {
         if (e && e.__timeout) return await notifyPost(errResult('tool ' + call.name + ' timed out after ' + timeoutMs + 'ms', 'timeout'), elapsed());
-        return await notifyPost(errResult('tool ' + call.name + ' failed: ' + (e && e.message ? e.message : String(e))), elapsed());
+        const errorText = 'tool ' + call.name + ' failed: ' + (e && e.message ? e.message : String(e));
+        const fullError = e && typeof e.fullContent === 'string' ? e.fullContent : errorText;
+        let parked = null;
+        if (fullError !== errorText || fullError.length > OUTPUT_MAX) {
+          try { const p = ctx && typeof ctx.parkOutput === 'function' ? await ctx.parkOutput(fullError, { tool: call.name }) : null; parked = p && p.path ? String(p.path) : null; } catch (_) {}
+        }
+        const fullErrorBytes = utf8Bytes(fullError);
+        const visibleError = fullError !== errorText ? intrinsicReceipt(errorText, fullError.length, fullErrorBytes, parked) : errorText;
+        return await notifyPost(errResult(visibleError, 'error', parked, fullError.length, fullErrorBytes, e && e.mutationReceipt), elapsed());
       } finally {
         // A long run may execute hundreds of tools against one parent signal. Once this call settles, its child
         // controller no longer needs cancellation propagation; retaining every listener until run end leaks the

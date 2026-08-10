@@ -366,12 +366,20 @@ fn push_unique_path(out: &mut Vec<PathBuf>, path: PathBuf) {
 
 fn legacy_workspace_paths(root: &Path, current: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let appdata_bases = [
-        std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
-        std::env::var_os("APPDATA").map(PathBuf::from),
-        std::env::var_os("XDG_DATA_HOME").map(PathBuf::from),
-    ];
-    for base in appdata_bases.into_iter().flatten() {
+    let mut appdata_bases = ["LOCALAPPDATA", "APPDATA", "XDG_DATA_HOME"]
+        .into_iter()
+        .filter_map(|name| std::env::var_os(name).map(PathBuf::from))
+        .collect::<Vec<_>>();
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        // Tauri's live macOS root is ~/Library/Application Support/<bundle-id>, while old/manual Node
+        // sidecars used ~/.local/share/{StarNet,Skynet}. Both are migration sources; the current root is
+        // filtered below. Linux receives the same POSIX fallback that sidecar/workspace-safety.js protects.
+        if cfg!(target_os = "macos") {
+            appdata_bases.push(home.join("Library").join("Application Support"));
+        }
+        appdata_bases.push(home.join(".local").join("share"));
+    }
+    for base in appdata_bases {
         push_unique_path(&mut out, base.join("StarNet").join("workspaces"));
         push_unique_path(&mut out, base.join("Skynet").join("workspaces"));
         push_unique_path(&mut out, base.join("ai.skynet.harness").join("workspaces"));
@@ -474,6 +482,29 @@ fn hash_file(path: &Path) -> std::io::Result<(u64, String)> {
         hasher.update(&buffer[..read]);
     }
     Ok((bytes, format!("{:x}", hasher.finalize())))
+}
+
+/// A legacy root becomes an automatic station source only when its canonical save is readable and proves the
+/// StarNet save contract. This is intentionally stronger than "some JSON object": migration may carry other
+/// durable stores, but it must never choose between two different stations by directory enumeration order.
+fn valid_station_save_hash(root: &Path) -> Option<String> {
+    for name in ["agent.save.json", "agent.save.json.bak"] {
+        let file = root.join(name);
+        let Ok(bytes) = std::fs::read(&file) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
+            continue;
+        };
+        let doc = value.get("doc").unwrap_or(&value);
+        if doc.get("schema").and_then(|v| v.as_str()) != Some("starnet.save")
+            || !doc.get("agent").map(|v| v.is_object()).unwrap_or(false)
+        {
+            continue;
+        }
+        return hash_file(&file).ok().map(|(_, digest)| digest);
+    }
+    None
 }
 
 fn collect_expected_files(
@@ -680,6 +711,28 @@ fn migrate_workspace_data(
             return migrated;
         }
     }
+
+    // One valid legacy station is safe to self-heal. Two different valid saves are a product decision, not a
+    // filesystem merge: leave both byte-untouched and let Recovery Mode's candidate picker choose explicitly.
+    let valid_legacy = legacy_roots
+        .iter()
+        .filter(|root| root.is_dir())
+        .filter_map(|root| valid_station_save_hash(root).map(|digest| (root.clone(), digest)))
+        .collect::<Vec<_>>();
+    let distinct_saves = valid_legacy
+        .iter()
+        .map(|(_, digest)| digest.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    if distinct_saves.len() > 1 {
+        log_startup(
+            startup_log,
+            format!(
+                "workspace-migration: CONFLICT — {} different valid legacy stations found; awaiting explicit Recovery Mode selection",
+                distinct_saves.len()
+            ),
+        );
+        return migrated;
+    }
     if let Err(error) = std::fs::create_dir_all(&stage)
         .and_then(|_| std::fs::write(stage.join(MIGRATION_PENDING_MARKER), b"1"))
     {
@@ -694,7 +747,13 @@ fn migrate_workspace_data(
     if current.is_dir() {
         sources.push(current.to_path_buf());
     }
-    sources.extend(legacy_roots.iter().filter(|root| root.is_dir()).cloned());
+    if let Some((selected, _)) = valid_legacy.first() {
+        // If duplicate roots carry the same save, choose one complete generation deterministically rather than
+        // merging unrelated sibling files. The selected root itself remains unchanged as the recovery source.
+        sources.push(selected.clone());
+    } else {
+        sources.extend(legacy_roots.iter().filter(|root| root.is_dir()).cloned());
+    }
     let expected = match expected_migration_inventory(&sources) {
         Ok(files) => files,
         Err(error) => {
@@ -959,6 +1018,69 @@ mod workspace_migration_tests {
             migration_sibling(&current, MIGRATION_STAGE_SUFFIX).exists(),
             "invalid stage is retained for recovery and forensics"
         );
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    fn station_save(name: &str, updated_at: u64) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({
+            "version": 1,
+            "doc": {
+                "schema": "starnet.save",
+                "version": 5,
+                "updatedAt": updated_at,
+                "agent": { "id": "agent", "name": name }
+            }
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn distinct_valid_legacy_stations_wait_for_explicit_selection() {
+        let base = temp_dir("station-conflict");
+        let first = base.join("first");
+        let second = base.join("second");
+        let current = base.join("current");
+        let startup_log = base.join("startup.log");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        std::fs::write(first.join("agent.save.json"), station_save("NOVA", 1)).unwrap();
+        std::fs::write(second.join("agent.save.json"), station_save("ORION", 2)).unwrap();
+
+        let migrated = migrate_workspace_data(
+            &current,
+            &[first.clone(), second.clone()],
+            &Some(startup_log.clone()),
+        );
+        assert!(migrated.is_empty());
+        assert!(
+            !current.exists(),
+            "conflicting stations never create an active generation"
+        );
+        assert!(first.join("agent.save.json").exists());
+        assert!(second.join("agent.save.json").exists());
+        assert!(std::fs::read_to_string(startup_log)
+            .unwrap()
+            .contains("awaiting explicit Recovery Mode selection"));
+
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn one_valid_legacy_station_is_selected_without_merging_noise() {
+        let base = temp_dir("single-station");
+        let station = base.join("station");
+        let unrelated = base.join("unrelated");
+        let current = base.join("current");
+        std::fs::create_dir_all(&station).unwrap();
+        std::fs::create_dir_all(&unrelated).unwrap();
+        std::fs::write(station.join("agent.save.json"), station_save("NOVA", 1)).unwrap();
+        std::fs::write(unrelated.join("unrelated.cache"), b"not station state").unwrap();
+
+        let migrated = migrate_workspace_data(&current, &[station.clone(), unrelated], &None);
+        assert_eq!(migrated, vec![station]);
+        assert!(current.join("agent.save.json").exists());
+        assert!(!current.join("unrelated.cache").exists());
 
         let _ = std::fs::remove_dir_all(base);
     }

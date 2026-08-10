@@ -48,6 +48,9 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
     const ctx = { agentId: 'ag', room: 'office', emit: (name, p) => captured.push({ name, p }) };
     const w = await writeTool.run({ path: 'note.md', content: 'hello world' }, ctx);
     A.ok(/wrote note\.md/.test(w.summary), 'write summary');
+    A.eq(w.mutationReceipt.state, 'read-back-verified', 'write success is backed by an exact read-back receipt');
+    A.eq(w.mutationReceipt.verifiedBytes, 11, 'write receipt reports the verified byte count');
+    A.ok(/^[a-f0-9]{64}$/.test(w.mutationReceipt.sha256), 'write receipt carries the intended byte digest');
     const dl = captured.find(c => c.name === 'deliverable');
     A.ok(dl && dl.p.kind === 'file' && dl.p.title === 'note.md' && dl.p.room === 'office', 'write emits a deliverable');
 
@@ -65,6 +68,23 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
   // ---- reading a missing file is a clean error (not a crash) ----
   await rejects(readTool.run({ path: 'nope.md' }, { agentId: 'ag' }), 'missing file -> clean error');
 
+  // ---- large durable text can be recovered in exact ranges without rerunning its producer ----
+  {
+    const large = 'A'.repeat(1000) + 'MIDDLE' + 'Z'.repeat(1200);
+    const dir = path.join(ROOT, 'paged');
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(path.join(dir, 'large.txt'), large, 'utf8');
+    const p0 = await readTool.run({ path: 'large.txt', offset: 0, limit: 1000 }, { agentId: 'paged' });
+    const p1 = await readTool.run({ path: 'large.txt', offset: 1000, limit: 1000 }, { agentId: 'paged' });
+    const p2 = await readTool.run({ path: 'large.txt', offset: 2000, limit: 1000 }, { agentId: 'paged' });
+    const payload = r => r.content.split('\n[showing characters ')[0];
+    A.eq(payload(p0) + payload(p1) + payload(p2), large, 'paged fs.read reconstructs every original character exactly once');
+    A.ok(/"offset":1000,"limit":1000/.test(p0.content), 'the truncation receipt gives the exact next read call');
+    A.ok(/end of file/.test(p2.content), 'the final page states the durable output is exhausted');
+    const beyond = await readTool.run({ path: 'large.txt', offset: large.length + 50, limit: 1000 }, { agentId: 'paged' });
+    A.ok(new RegExp('characters ' + large.length + '-' + large.length + ' of ' + large.length).test(beyond.content), 'a continuation beyond EOF clamps to an honest empty terminal range');
+  }
+
   // ---- one agent cannot read another agent's workspace via the path ----
   await rejects(readTool.run({ path: '../other/note.md' }, { agentId: 'ag' }), 'cannot escape to a sibling agent workspace');
 
@@ -72,7 +92,8 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
   {
     const ctx = { agentId: 'ag2' };
     await appendTool.run({ path: 'log.txt', content: 'a' }, ctx);
-    await appendTool.run({ path: 'log.txt', content: 'b' }, ctx);
+    const appended = await appendTool.run({ path: 'log.txt', content: 'b' }, ctx);
+    A.eq(appended.mutationReceipt.state, 'read-back-verified', 'append is not reported successful until combined bytes are reread');
     A.eq((await readTool.run({ path: 'log.txt' }, ctx)).content, 'ab', 'append creates then adds without clobbering');
     await rejects(appendTool.run({ path: 'log.txt', content: 'x'.repeat(64) }, ctx), 'append respects the combined-size cap');
   }
@@ -82,6 +103,7 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
     await writeTool.run({ path: 'e.txt', content: 'foo bar' }, ctx);
     const e = await editTool.run({ path: 'e.txt', find: 'foo', replace: 'baz' }, ctx);
     A.ok(/1 replacement/.test(e.content), 'edit reports the replacement count');
+    A.eq(e.mutationReceipt.state, 'read-back-verified', 'edit carries a verified mutation receipt');
     A.eq((await readTool.run({ path: 'e.txt' }, ctx)).content, 'baz bar', 'edit applied to disk');
     await rejects(editTool.run({ path: 'e.txt', find: 'nope', replace: 'x' }, ctx), 'edit errors when "find" is absent');
   }

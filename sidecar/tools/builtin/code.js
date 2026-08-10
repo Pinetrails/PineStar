@@ -120,7 +120,13 @@ function makeCodeTools(deps) {
             let rendered;
             try { rendered = typeof msg.result === 'string' ? msg.result : JSON.stringify(msg.result); }
             catch (_) { rendered = String(msg.result); }
-            done(null, { content: clampText(rendered == null ? '' : rendered, limits.maxOutputBytes), summary: 'code composed ' + calls + ' read call' + (calls === 1 ? '' : 's') });
+            const full = rendered == null ? '' : rendered;
+            const bounded = clampText(full, limits.maxOutputBytes);
+            done(null, {
+              content: bounded,
+              fullContent: bounded === full ? undefined : full,
+              summary: 'code composed ' + calls + ' read call' + (calls === 1 ? '' : 's')
+            });
           }
         });
         safeSend({ type: 'run', code: source, syncTimeoutMs: Math.min(2000, limits.timeoutMs) });

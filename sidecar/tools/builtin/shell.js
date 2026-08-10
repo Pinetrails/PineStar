@@ -601,12 +601,31 @@
     return abs;
   }
 
-  // best-effort tree-kill: child.kill() reaps the shell; on Windows taskkill /T also reaps its grandchildren.
+  // best-effort tree-kill: on Windows taskkill must inspect the live shell root to discover `/T` descendants.
   function killTree(spawn, child, isWin) {
+    if (isWin && child.pid) {
+      let fellBack = false;
+      const fallback = () => {
+        if (fellBack) return;
+        fellBack = true;
+        try { child.kill(); } catch (_) {}
+      };
+      try {
+        const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+        if (killer && typeof killer.on === 'function') {
+          killer.on('error', fallback);
+          killer.on('close', (code) => { if (code !== 0) fallback(); });
+        }
+        try { if (killer && typeof killer.unref === 'function') killer.unref(); } catch (_) {}
+        return;
+      } catch (_) {
+        fallback();
+        return;
+      }
+    }
     try { child.kill(); } catch (_) {}
     try {
-      if (isWin && child.pid) spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-      else if (child.pid) process.kill(child.pid, 'SIGKILL');
+      if (child.pid) process.kill(child.pid, 'SIGKILL');
     } catch (_) {}
   }
 
@@ -658,10 +677,12 @@
       try { child = spawn(cmd, spawnOpts); }
       catch (e) { return reject(new Error('could not start shell: ' + ((e && e.message) || e))); }
       const t0 = now();
-      let out = '', total = 0, truncated = false, settled = false, timedOut = false, aborted = false;
+      let out = '', fullOut = '', total = 0, truncated = false, settled = false, timedOut = false, aborted = false;
       const append = function (buf) {
+        const complete = buf.toString();
+        fullOut += complete;
         if (total >= maxBytes) { truncated = true; return; }
-        let s = buf.toString();
+        let s = complete;
         if (total + s.length > maxBytes) { s = s.slice(0, maxBytes - total); truncated = true; }
         out += s; total += s.length;
       };
@@ -676,7 +697,7 @@
         if (sig) { try { sig.removeEventListener('abort', onAbort); } catch (_) {} }
         // Stripped HERE, at the single exit of the shared primitive, so shell.exec and the background tail
         // (shellbg.js reads r.out) are both covered by one strip that cannot drift into two.
-        resolve({ exitCode: (typeof code === 'number') ? code : -1, out: stripAnsi(out), ms: Math.max(0, now() - t0), truncated: truncated, timedOut: timedOut, aborted: aborted });
+        resolve({ exitCode: (typeof code === 'number') ? code : -1, out: stripAnsi(out), fullOut: stripAnsi(fullOut), ms: Math.max(0, now() - t0), truncated: truncated, timedOut: timedOut, aborted: aborted });
       }
       child.on('error', function (e) { if (settled) return; settled = true; clearTimeout(timer); if (sig) { try { sig.removeEventListener('abort', onAbort); } catch (_) {} } reject(new Error('shell error: ' + ((e && e.message) || e))); });
       child.on('close', function (code) { finish(timedOut || aborted ? null : code); });
@@ -780,7 +801,8 @@
         });
         return run.then(function (res) {
           // recover the final cwd + the REAL exit code from the marker; persist the cwd only if it stayed in-jail.
-          const pm = parseMarker(res.out);
+          const pm = parseMarker(res.fullOut || res.out);
+          const preview = parseMarker(res.out);
           if (environment && pm.cwd && environmentBackendId !== 'local') environment.rememberCwd(aid, pm.cwd);
           else if (environment && pm.cwd && withinJail(P, pm.cwd, jailRoot)) environment.rememberCwd(aid, pm.cwd);
           else if (environment && pm.cwd && environmentBackendId === 'local') {
@@ -789,15 +811,18 @@
           else if (pm.cwd && (remoteOwner || withinJail(P, pm.cwd, jailRoot))) sessions.set(aid, { cwd: pm.cwd });
           const exitCode = (pm.ec != null && !res.timedOut && !res.aborted) ? pm.ec : res.exitCode;
           const note = res.timedOut ? ' — KILLED (timed out after ' + timeoutMs + 'ms)' : res.aborted ? ' — KILLED (aborted)' : '';
-          const body = redact(pm.cleanOut || '(no output)');
+          const body = redact((res.truncated ? preview.cleanOut : pm.cleanOut) || '(no output)');
           const content = body + '\n[exit ' + exitCode + (res.truncated ? ', output truncated to ' + Math.round(MAX_BYTES / 1000) + 'KB' : '') + note + ']';
+          const fullContent = res.truncated
+            ? redact(pm.cleanOut || '(no output)') + '\n[exit ' + exitCode + note + ']'
+            : undefined;
           try {
             if (typeof ctx.emit === 'function') ctx.emit('shell.exec', {
               agentId: aid, runId: ctx.runId || '', callId: ctx.callId || 'call',
               cmdSummary: redact(clip(cmd)), cwd: aid, exitCode: exitCode, ms: res.ms, truncated: res.truncated
             });
           } catch (_) {}
-          return { content: content, summary: 'exit ' + exitCode + ' (' + res.ms + 'ms)' + (res.truncated ? ', truncated' : '') };
+          return { content: content, fullContent: fullContent, summary: 'exit ' + exitCode + ' (' + res.ms + 'ms)' + (res.truncated ? ', truncated' : '') };
         });
       }
     };
@@ -816,7 +841,8 @@
         if (id) {
           const v = source ? source.statusBackground(aid, id) : bg.status(aid, id);
           if (!v) return { content: 'No background process "' + id + '".', summary: 'not found' };
-          return { content: '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : 'exited ' + v.exitCode + (v.killed ? ' (killed)' : '')) + ' · ' + v.ms + 'ms · ' + v.cmd + '\n--- output tail ---\n' + redact(v.tail || '(none)'), summary: v.running ? 'running' : 'exited ' + v.exitCode };
+          const saved = v.outputSpillVerified ? '\n[full output: ' + v.outputBytes + ' bytes durably appended to ' + v.outputPath + ']' : (v.outputSpillError ? '\n[full-output spill failed: ' + v.outputSpillError + ']' : '');
+          return { content: '[' + v.bgId + '] ' + (v.running ? 'RUNNING' : 'exited ' + v.exitCode + (v.killed ? ' (killed)' : '')) + ' · ' + v.ms + 'ms · ' + v.cmd + saved + '\n--- output tail ---\n' + redact(v.tail || '(none)'), summary: v.running ? 'running' : 'exited ' + v.exitCode };
         }
         const list = source ? (source.statusBackground(aid) || []) : (bg.status(aid) || []);
         if (!list.length) return { content: 'No background processes.', summary: '0' };
@@ -850,7 +876,11 @@
           : ('lines ' + (r.returned ? r.firstLineNo : 0) + '–' + (r.returned ? r.firstLineNo + r.returned - 1 : 0) + ' of ' + r.totalLines + ' held');
         /* Say it when the ring has lapped. Line 1 is then NOT the first line the process printed, and an agent
            that assumes it is will conclude a failure started somewhere it did not. */
-        const note = r.truncatedStart ? '\n(earlier output was dropped — this buffer holds only the most recent ' + Math.round(r.droppedBytes / 1024) + ' KB onward)' : '';
+        const note = r.truncatedStart
+          ? (r.outputSpillVerified
+              ? '\n(earlier output left the memory buffer; the full ' + r.outputBytes + '-byte log is saved once at ' + r.outputPath + ' and can be paged with fs.read)'
+              : '\n(earlier output was dropped from memory and durable spill is unverified' + (r.outputSpillError ? ': ' + r.outputSpillError : '') + ')')
+          : (r.outputSpillVerified ? '\n(full output is durably appended to ' + r.outputPath + '; ' + r.outputBytes + ' bytes so far)' : '');
         const body = r.returned
           ? r.lines.map(function (ln, i) { return String(r.lineNos[i]).padStart(6, ' ') + '  ' + ln; }).join('\n')
           : (r.grep ? '(no lines match)' : '(no output yet)');

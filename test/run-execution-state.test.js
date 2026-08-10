@@ -34,12 +34,12 @@ A.eq(state.toolBytes(), 0, 'compaction can reset the output budget');
 
 const receiptState = makeRunExecutionState();
 receiptState.boundToolResult({ content: 'a'.repeat(90), summary: 'read 90 chars' }, 100);
-const lateCommand = { content: 'test details\nPASS\n[exit 0]', summary: 'exit 0 (42ms)', parkedPath: '.output/shell.exec-run-0.txt', outputChars: 27 };
+const lateCommand = { content: 'test details\nPASS\n[exit 0]', summary: 'exit 0 (42ms)', parkedPath: '.output/shell.exec-run-0.txt', outputChars: 26, outputBytes: 26 };
 A.ok(receiptState.willBoundToolResult(lateCommand, 100), 'a later result predicts the run-wide clip before its bytes are lost');
 const receipt = receiptState.boundToolResult(lateCommand, 100);
 A.ok(receipt.outputBounded, 'a clipped result is explicitly marked at the host boundary');
 A.ok(/exit 0 \(42ms\)/.test(receipt.content), 'the clipped result retains the authoritative tool summary');
-A.ok(/full 27-character output was saved/.test(receipt.content), 'the receipt reports the exact pre-clamp size');
+A.ok(/full 26-character \/ 26-byte UTF-8 output was saved/.test(receipt.content), 'the receipt reports exact pre-clamp character and byte sizes');
 A.ok(/\.output\/shell\.exec-run-0\.txt/.test(receipt.content), 'the receipt points at the durable full output');
 const afterReceipt = receiptState.boundToolResult({ content: 'more details', summary: 'verify passed', parkedPath: '.output/verify-run-1.txt', outputChars: 12 }, 100);
 A.ok(/verify passed/.test(afterReceipt.content), 'even an exhausted run returns evidence instead of a generic suppression message');

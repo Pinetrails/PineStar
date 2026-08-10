@@ -173,6 +173,67 @@ const call = (name, args, id) => ({ id: id || 'c1', name, args, argsRaw: JSON.st
     A.eq(messages[3].content, 'done!', 'final assistant answer');
   }
 
+  /* TERMINAL ANSWER BOUNDARY + DUPLICATE CHECK STOP. A real provider was observed returning a truthful
+     failure summary AND reissuing the exact same deterministic check in the same turn. The old loop executed
+     it twice, then clients concatenated both complete prose segments into one reply. The tool-call event is the
+     boundary that discards provisional prose; the second call is suppressed only because it is the immediately
+     repeated check and this turn already contains a terminal answer. */
+  {
+    const { seq, emit } = setup();
+    const checkTurn = (id, text) => [
+      ...(text ? [{ type: 'text', delta: text }] : []),
+      { type: 'tool_start', index: 0, id, name: 'verify_run' },
+      { type: 'tool_args', index: 0, chunk: '{"command":"npm test"}' },
+      { type: 'done', finishReason: 'tool_calls' }
+    ];
+    const provider = makeReplayProvider({ turns: [
+      checkTurn('check_1', 'I am checking the current failure. '),
+      checkTurn('check_2', 'The check failed with exit code 7 and marker CHECK-MARKER-17.'),
+      [{ type: 'text', delta: 'fallback answer that must not be needed' }, { type: 'done', finishReason: 'stop' }]
+    ] });
+    const reg = makeRegistry();
+    let dispatches = 0;
+    reg.register({
+      name: 'verify_run', schema: { type: 'object', properties: { command: { type: 'string' } } },
+      run: async () => { dispatches++; return { exitCode: 7, stderr: 'CHECK-MARKER-17' }; }
+    });
+    const messages = [{ role: 'user', content: 'run the check and report the failure' }];
+    const res = await runAgentLoop({
+      messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', tools: reg.wireFormat(), dispatch: (c, ctx) => reg.dispatch(c, ctx), capCtx: {}
+    });
+    let terminal = '';
+    for (const event of seq) {
+      if (event.name === 'agent.token') terminal += String(event.payload.delta || '');
+      else if (event.name === 'agent.tool_call') terminal = '';
+    }
+    A.eq(res.reason, 'done', 'a sufficient answer stops the repeated deterministic check turn');
+    A.eq(res.text, 'The check failed with exit code 7 and marker CHECK-MARKER-17.', 'loop exposes the terminal assistant segment');
+    A.eq(terminal, res.text, 'tool-call boundaries keep only the terminal streamed segment');
+    A.eq(dispatches, 1, 'the immediately repeated deterministic check is not dispatched twice');
+    A.eq(provider.callCount(), 2, 'no paid cleanup turn is needed after the sufficient answer');
+    A.eq(messages[messages.length - 1].content, res.text, 'durable transcript ends on the one terminal answer');
+    A.ok(!messages[messages.length - 1].tool_calls, 'suppressed duplicate does not leave an unpaired tool call');
+  }
+
+  {
+    const { emit } = setup();
+    const provider = makeReplayProvider({ turns: [
+      [{ type: 'tool_start', index: 0, id: 'v1', name: 'verify_run' }, { type: 'tool_args', index: 0, chunk: '{"command":"npm test"}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: "I'll run the check again now." }, { type: 'tool_start', index: 0, id: 'v2', name: 'verify_run' }, { type: 'tool_args', index: 0, chunk: '{"command":"npm test"}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'The intentional rerun completed.' }, { type: 'done', finishReason: 'stop' }]
+    ] });
+    const reg = makeRegistry(); let dispatches = 0;
+    reg.register({ name: 'verify_run', schema: { type: 'object' }, run: async () => { dispatches++; return 'ok'; } });
+    const res = await runAgentLoop({
+      messages: [{ role: 'user', content: 'run it twice' }], provider, emit,
+      cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model', tools: reg.wireFormat(),
+      dispatch: (c, ctx) => reg.dispatch(c, ctx), capCtx: {}
+    });
+    A.eq(res.reason, 'done', 'explicit rerun intent still completes normally');
+    A.eq(dispatches, 2, 'an explicitly announced identical rerun is not suppressed');
+  }
+
   // ============ D. loop guards (need multi-turn tool fixtures) ============
   // budget: a per-run cap trips BEFORE the second model call
   {
@@ -299,9 +360,24 @@ const call = (name, args, id) => ({ id: id || 'c1', name, args, argsRaw: JSON.st
       A.ok(parked && parked.content.length === HUGE.length, 'the FULL output reaches the parker, before any clamp');
       A.eq(parked.meta.tool, 'flood', 'the parker is told which tool produced it');
       A.eq(r.outputChars, HUGE.length, 'dispatch retains the exact pre-clamp character count for later receipts');
+      A.eq(r.outputBytes, Buffer.byteLength(HUGE), 'dispatch retains the exact pre-clamp byte count');
       A.ok(r.content.length <= 81000, 'the in-context result is still capped');
+      A.ok(r.content.indexOf('Full size: ' + HUGE.length + ' characters / ' + Buffer.byteLength(HUGE) + ' UTF-8 bytes') >= 0, 'the central ceiling surfaces exact full size');
       A.ok(/\.output\/flood-r1-0\.txt/.test(r.content), 'the note points at the file holding the full output');
       A.ok(/Do NOT repeat this call/.test(r.content), 'and tells the model to read that file instead of re-running');
+
+      reg.register({
+        name: 'intrinsic-cap', capability: 'compute', scope: 'read', requiresConsent: false,
+        description: 'narrow tool ceiling', schema: { type: 'object', properties: {} },
+        run: async () => ({ content: 'preview [truncated]', fullContent: 'complete-middle-and-tail', summary: 'intrinsic cap' })
+      });
+      parked = null;
+      const intrinsic = await reg.dispatch({ id: 'c6b', name: 'intrinsic-cap', args: {} }, parkCtx);
+      A.eq(parked.content, 'complete-middle-and-tail', 'a tool-specific ceiling parks its hidden full output even below the registry cap');
+      A.eq(intrinsic.outputChars, 'complete-middle-and-tail'.length, 'the receipt reports the exact pre-truncation size, not preview size');
+      A.eq(intrinsic.outputBytes, Buffer.byteLength('complete-middle-and-tail'), 'the receipt separately reports exact UTF-8 bytes');
+      A.eq(intrinsic.parkedPath, '.output/flood-r1-0.txt', 'the parked artifact path is carried structurally');
+      A.ok(intrinsic.content.indexOf('24 characters / 24 UTF-8 bytes before truncation') >= 0 && intrinsic.content.indexOf('.output/flood-r1-0.txt') >= 0, 'the model-visible receipt surfaces exact size and retrieval path');
 
       // A parker that fails must never fail the tool call — losing the tail must not also lose the answer.
       const broken = await reg.dispatch({ id: 'c7', name: 'flood', args: {} }, { timeoutMs: 5000, parkOutput: async () => { throw new Error('disk full'); } });

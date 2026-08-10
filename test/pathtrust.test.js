@@ -52,6 +52,25 @@ function scriptPrompt(decision) {
 
   const fileAbs = path.join(proj, 'src', 'main.js');
 
+  // ---- PRIVATE WORKSPACE FLOOR: station-global grants and Full Access cannot cross agent jails ----
+  {
+    const workspaces = path.join(ROOT, 'workspaces');
+    const alpha = path.join(workspaces, 'alpha');
+    const beta = path.join(workspaces, 'beta');
+    const alphaPrivate = path.join(alpha, 'private.txt');
+    await fsp.mkdir(alpha, { recursive: true });
+    await fsp.mkdir(beta, { recursive: true });
+    await fsp.writeFile(alphaPrivate, 'alpha only\n');
+    const pt = makePathTrust({ fsp, pathMod: path, workspaceRoot: workspaces, roots: () => [alpha] });
+    await rejects(pt.guard(alphaPrivate, { scope: 'read', surface: 'interactive', agentId: 'beta', fullAccess: true }),
+      'beta cannot read alpha even when alpha has a station-global grant and Full Access is live');
+    const own = await pt.guard(alphaPrivate, { scope: 'read', surface: 'autonomous', agentId: 'alpha' });
+    A.ok(path.resolve(own.base).toLowerCase() === path.resolve(alpha).toLowerCase(),
+      'alpha may still use an absolute path inside its own workspace');
+    await rejects(pt.guard(alphaPrivate, { scope: 'read', surface: 'interactive', agentId: '../alpha' }),
+      'an invalid agent id cannot manufacture ownership of a private workspace');
+  }
+
   // ---- 1. UNATTENDED RULE: autonomous run (no prompt) referencing an un-blessed outside path = HARD DENY ----
   {
     const h = harness();

@@ -15,11 +15,12 @@ Support questions: androo.agi@gmail.com.
 
 ## The short version
 
-- **The app collects nothing.** There is no telemetry, no analytics, no crash reporting, no ad
-  SDK, and no "phone home" of any kind. We verified this by searching the whole codebase for the
+- **The app does not track you.** There is no telemetry, no analytics, no crash reporting, or ad
+  SDK. We verified this by searching the whole codebase for the
   usual suspects (Sentry, PostHog, Mixpanel, Segment, Google Analytics, Amplitude, Datadog):
-  none are present. This stays true whether or not you buy credits — buying credits adds a
-  billing account, not tracking.
+  none are present. The desktop app does make the automatic update-manifest request described
+  below; that request carries no user data or app identifier. This stays true whether or not you
+  buy credits — buying credits adds a billing account, not tracking.
 - **Your data stays on your machine**, under your OS user's app-data directory —
   Windows: `%APPDATA%\ai.skynet.harness\workspaces\`; macOS:
   `~/Library/Application Support/ai.skynet.harness/workspaces/`; Linux:
@@ -27,8 +28,8 @@ Support questions: androo.agi@gmail.com.
   `%LOCALAPPDATA%\StarNet\` on Windows.) The `ai.skynet.harness` folder name is an intentional
   back-compatibility alias kept from before the app was renamed to StarNet on 2026-06-22 — it
   holds your StarNet data.
-- The app talks to the network **only** to do work you asked for, and only to the specific
-  third parties described below.
+- The app talks to the network for the configured or requested work described below, plus the
+  desktop app's automatic update-manifest check. These are the only outbound cases.
 
 ## What leaves your machine — and only these
 
@@ -96,8 +97,8 @@ to `api.elevenlabs.io` instead. No voices, no TTS requests.
 
 ### 6. A version check for updates (no personal data)
 
-The desktop app checks for updates by fetching a single public manifest file from GitHub
-Releases:
+Automatic update checks are on by default. On first run and at the configured interval, the
+desktop app fetches a single public manifest file from GitHub Releases:
 
 ```
 https://github.com/androoAGI/starnet-releases/releases/latest/download/latest.json
@@ -106,7 +107,8 @@ https://github.com/androoAGI/starnet-releases/releases/latest/download/latest.js
 This is a plain `GET` for a static file. **No user data, no identifier, and no telemetry are
 sent** — it's the same request your browser would make to view that file. Each update's
 integrity is cryptographically verified against a key baked into the app before anything is
-installed.
+installed. You can stop automatic checks by turning off **AUTO-CHECK FOR UPDATES** in
+**SYSTEM > SETTINGS > UPDATES**; the Update Center still lets you check manually.
 
 ## What StarNet stores on your machine (and how)
 
@@ -126,6 +128,8 @@ always under the service name `ai.skynet.harness`.
 | Your model-provider API keys | OS keychain (desktop) | **OS keychain** (Windows Credential Manager); loaded into app memory at launch, never written to disk by the app |
 | Spotify OAuth token | `.secrets/spotify.json` | **Plaintext** JSON on disk |
 | ChatGPT / Codex sign-in token | `codex/tokens.json` | **Plaintext** JSON on disk |
+| Grok sign-in token | `grok/tokens.json` | **Plaintext** JSON on disk |
+| Kimi sign-in token | `kimi/tokens.json` | **Plaintext** JSON on disk |
 | Channel message history (Discord/Telegram chats the bot saw) | `channels/*.history.json` | **Plaintext** JSON on disk |
 | Agent memory ledgers (accepted/declined memory proposals, dossiers, goals) | per-agent `*.json` | **Plaintext** JSON on disk |
 | Station state (widgets, sub-agents, routing, quests, XP) | various `*.json` | **Plaintext** JSON on disk |
@@ -142,11 +146,11 @@ If you instead run the bare sidecar directly (developer mode / `node sidecar/ind
 tests), the OS keychain isn't reachable, so those bot tokens **fall back to a plaintext file**
 (`channels/secrets.json`). This is called out plainly in the code rather than hidden.
 
-Two secret types are **plaintext even on desktop** today: the **Spotify** OAuth token
-(`.secrets/spotify.json`) and the **ChatGPT/Codex** sign-in token (`codex/tokens.json`). If
-that matters to you, keep those integrations off. (Transcripts are run through a redaction step
-at write-time to avoid capturing secret-shaped tokens in your chat history, but the transcript
-file itself is plaintext.)
+These integration secrets are **plaintext even on desktop** today: the **Spotify** OAuth token
+(`.secrets/spotify.json`) and the **ChatGPT/Codex**, **Grok**, and **Kimi** sign-in tokens
+(`codex/tokens.json`, `grok/tokens.json`, and `kimi/tokens.json`). If that matters to you, keep
+those integrations off. (Transcripts are run through a redaction step at write-time to avoid
+capturing secret-shaped tokens in your chat history, but the transcript file itself is plaintext.)
 
 Because this data sits in plaintext files under your user profile, anyone with access to your
 Windows user account can read it. Protect your machine account accordingly.

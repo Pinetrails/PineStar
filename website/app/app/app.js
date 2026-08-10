@@ -609,9 +609,8 @@ const App = (() => {
 
   // DOSSIER › DELETE AGENT: remove a SUMMONED specialist from the crew for real — the roster, the world body, and
   // the server-side stores (archived, not wiped, by /api/agent/delete). Refuses to delete the hero or the LAST
-  // remaining agent (the UI disables the button with a reason; this is the matching hard guard). The frontend
-  // owns the roster, so we mutate the live registry, re-push the surviving set, drop the floor body, retire any
-  // workstreams bound to the gone agent, then fire the server archive. Returns a Promise<bool>.
+  // remaining agent (the UI disables the button with a reason; this is the matching hard guard). The server
+  // authorizes first; only an accepted archive commits the matching browser mutation. Returns a Promise<bool>.
   function deleteAgent(agentId) {
     const id = String(agentId || '');
     const a = agents.get(id);
@@ -620,33 +619,35 @@ const App = (() => {
     if (a.role === 'orchestrator') return Promise.resolve(false);   // the overseer is the founder — undeletable
     if (agents.size <= 1) return Promise.resolve(false);   // never the last agent on station
     // if the deleted agent is currently focused, hand COMMS back to the hero BEFORE dropping it.
-    const wasFocused = agent && agent.id === id;
-    agents.delete(id);
-    if (wasFocused) focusAgent('agent');
-    if (typeof World !== 'undefined' && World.despawnAgent) World.despawnAgent(id);   // pull its floor body
-    // unbind every prop still assigned to the gone agent (its bay above all): a stale bay→agentId binding
-    // re-mints a floor body for a DELETED agent on the next floor rederive (ghost crew) and keeps claiming
-    // the dock in REFIT. assignPropAgent fires station.onChange, so the world rederives on its own.
-    try {
-      if (station && station.propsByAgent && station.assignPropAgent) {
-        for (const p of station.propsByAgent(id)) station.assignPropAgent(p.id, '');
-      }
-    } catch (_) {}
-    // retire workstreams bound to the gone agent so the rail can't reopen a stream with no agent behind it.
-    try {
-      if (typeof Workstreams !== 'undefined' && Workstreams.removeByAgent) Workstreams.removeByAgent(id);
-    } catch (_) {}
-    recomposeOrchestrators();   // the lead's YOUR CREW clause must drop the removed specialist
-    if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
-    renderRail();
-    pushRoster();   // the surviving crew replaces the whole server roster
-    persist();
-    // fire-and-honest: archive the server-side stores. The roster is already correct locally + re-pushed; this
-    // resolves off the real route so the caller can surface a truthful result, but a failure here never resurrects
-    // the agent (its stores just stay retained on disk, which is the safe direction).
     return fetch('/api/agent/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: id }) })
-      .then(r => r.json().catch(() => null))
-      .then(j => !!(j && j.ok))
+      .then(r => (r && r.ok) ? r.json().catch(() => null) : null)
+      .then(j => {
+        // The lifecycle authority must accept the delete before any browser-owned state changes. An active-agent
+        // refusal, malformed response, or unavailable server therefore leaves the roster and its bindings intact.
+        if (!j || !j.ok) return false;
+        const wasFocused = agent && agent.id === id;
+        agents.delete(id);
+        if (wasFocused) focusAgent('agent');
+        if (typeof World !== 'undefined' && World.despawnAgent) World.despawnAgent(id);   // pull its floor body
+        // unbind every prop still assigned to the gone agent (its bay above all): a stale bay→agentId binding
+        // re-mints a floor body for a DELETED agent on the next floor rederive (ghost crew) and keeps claiming
+        // the dock in REFIT. assignPropAgent fires station.onChange, so the world rederives on its own.
+        try {
+          if (station && station.propsByAgent && station.assignPropAgent) {
+            for (const p of station.propsByAgent(id)) station.assignPropAgent(p.id, '');
+          }
+        } catch (_) {}
+        // retire workstreams bound to the gone agent so the rail can't reopen a stream with no agent behind it.
+        try {
+          if (typeof Workstreams !== 'undefined' && Workstreams.removeByAgent) Workstreams.removeByAgent(id);
+        } catch (_) {}
+        recomposeOrchestrators();   // the lead's YOUR CREW clause must drop the removed specialist
+        if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
+        renderRail();
+        pushRoster();   // the surviving crew replaces the whole server roster
+        persist();
+        return true;
+      })
       .catch(() => false);
   }
 
@@ -655,6 +656,15 @@ const App = (() => {
      builder / dossier read. focusAgent(id) repoints COMMS + the run identity at one crew member — the
      focus follows whichever workstream is active (switchWorkstream calls it with the stream's agentId). */
   function liveAgents() { return [...agents.values()]; }
+  // Canvas bodies carry stable agent ids, while the dossier owns a roster index. Resolve at click time from
+  // the same live registry StationUI receives so a summoned specialist opens its own record without changing
+  // COMMS focus. Unknown/stale bodies fail closed instead of silently opening the Overseer.
+  function openWorldAgent(agentId) {
+    const i = liveAgents().findIndex(a => a && a.id === agentId);
+    if (i < 0 || typeof StationUI === 'undefined' || !StationUI.openAgent) return false;
+    StationUI.openAgent(i);
+    return true;
+  }
   function registerHero(a) { agents.clear(); agents.set(a.id, a); }   // wake/resume: the hero founds the registry
   // rosterClause() reads the LIVE registry, so every orchestrator prompt must be recomposed whenever the roster
   // changes shape (summon; crew rehydrate on resume; a crew rename) — this is the cached-systemPrompt trap: the
@@ -1398,7 +1408,9 @@ const App = (() => {
     let a = null;
     try { a = summonAgent(spec, { activate: false, desk: true }); } catch (_) { a = null; }
     if (!a) return null;
-    try { await lastRosterPush; } catch (_) {}   // the worker is now in the backend roster → safe to delegate
+    let rosterLanded = false;
+    try { rosterLanded = (await lastRosterPush) === true; } catch (_) {}
+    if (!rosterLanded) return null;   // fail closed: never tell the Commander it can dispatch an unregistered worker
     // READ BACK what actually landed, so the ack can tell the lead where the desk is. Deliberately a PURE
     // read (propsByAgent), never a second ensureWorkstation call: re-running the seeder here could place a
     // desk AFTER summonAgent's persist() — a floor change that would not be saved until the next write.
@@ -2590,7 +2602,7 @@ const App = (() => {
     SPRITES.init();
     World.init(el('stage'));
     World.spawn(agent);
-    World.setOnClick(() => { if (typeof StationUI !== 'undefined') StationUI.openAgent(0); });
+    World.setOnClick(openWorldAgent);
     World.setOnArcade(() => { if (typeof StationUI !== 'undefined' && StationUI.openArcade) StationUI.openArcade(); });   // click a cabinet → BREACH PROTOCOL
     // 2026-07-16 UX fix: the OUTBOX click opens the OUTBOX window — one clean list of ALL uncollected
     // finished work, readable + rateable in place (the old path fired a one-crate chat beat, which read
@@ -3505,8 +3517,14 @@ const App = (() => {
   function deleteWorkstream(id) {
     const w = Workstreams.get(id); const label = w ? (w.title || 'General') : '';
     const agentId = w ? (w.agentId || 'agent') : 'agent';
+    // Recheck after the destructive-confirmation click: a session may have started while its menu was open.
+    if (w && typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(id)) {
+      SFX.bad();
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('stop this session before deleting it', 'bad');
+      return false;
+    }
     const wasActive = (id === Workstreams.activeId());
-    if (!Workstreams.del(id)) { SFX.bad(); return; }
+    if (!Workstreams.del(id)) { SFX.bad(); return false; }
     SFX.bad();
     if (wasActive) loadActiveStream();   // deleting the OPEN stream falls back to General
     renderRail(); persist();
@@ -3517,6 +3535,7 @@ const App = (() => {
       WorkshopStore.discardIfPending(agentId, String(id).slice('workshop-'.length)).catch(() => {});
     }
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('deleted “' + label + '”', 'warn');
+    return true;
   }
   // re-open whatever the store now treats as active (after archive/delete bumps the open stream to General)
   function loadActiveStream() {
@@ -4207,15 +4226,88 @@ const App = (() => {
     gateActive = true;
     try { if (World && World.stop) World.stop(); } catch (_) {}
     const rows = lineage && Array.isArray(lineage.evidence) ? lineage.evidence : [];
+    const recovery = lineage && lineage.recovery && typeof lineage.recovery === 'object' ? lineage.recovery : {};
+    const candidates = Array.isArray(recovery.candidates) ? recovery.candidates : [];
+    let selected = recovery.automaticCandidateId || null;
     const box = el('lineage-evidence');
     if (box) {
-      box.innerHTML = rows.slice(0, 8).map(row => {
+      const evidenceHtml = rows.slice(0, 8).map(row => {
         const kind = String(row && row.kind || 'prior-state').replace(/-/g, ' ').toUpperCase();
         const root = String(row && row.root || 'local StarNet storage');
         const examples = Array.isArray(row && row.examples) && row.examples.length ? ' · ' + row.examples.slice(0, 4).join(', ') : '';
         return '<div><b>' + U.esc(kind) + '</b> — <code>' + U.esc(root) + '</code>' + U.esc(examples) + '</div>';
       }).join('') || '<div><b>PRIOR STATE MARKER</b> — local StarNet storage</div>';
+      const candidateHtml = candidates.map(row => {
+        const when = row && row.updatedAt ? new Date(row.updatedAt).toLocaleString() : 'time unavailable';
+        const size = row && row.bytes ? Math.max(1, Math.ceil(row.bytes / 1024)) + ' KB' : 'size unavailable';
+        const on = !!(row && row.id === selected);
+        return '<button class="lineage-candidate' + (on ? ' on' : '') + '" data-candidate-id="' + U.esc(row && row.id || '') + '" aria-pressed="' + (on ? 'true' : 'false') + '"' + (row && row.recoverable ? '' : ' disabled') + '>' +
+          '<b>' + U.esc(row && row.stationName || 'Prior station') + '</b>' +
+          '<span>' + U.esc(row && row.displayRoot || 'local StarNet storage') + '</span>' +
+          '<small>' + U.esc(row && row.recoverable ? when + ' · ' + size : row && row.reason || 'unreadable save') + '</small></button>';
+      }).join('');
+      box.innerHTML = evidenceHtml + (candidateHtml ? '<div class="lineage-candidates" aria-label="Recoverable stations">' + candidateHtml + '</div>' : '');
     }
+    const status = el('lineage-status');
+    const recover = el('btn-lineage-recover');
+    const validCandidates = candidates.filter(row => row && row.recoverable);
+    const refreshRecover = () => {
+      if (!recover) return;
+      recover.hidden = validCandidates.length === 0;
+      recover.disabled = !selected;
+      recover.textContent = validCandidates.length === 1 ? '⟳ RECOVER AUTOMATICALLY' : '⟳ RECOVER SELECTED STATION';
+    };
+    if (box) Array.from(box.querySelectorAll('.lineage-candidate')).forEach(btn => {
+      btn.onclick = () => {
+        selected = btn.getAttribute('data-candidate-id') || null;
+        Array.from(box.querySelectorAll('.lineage-candidate')).forEach(other => {
+          const on = other === btn; other.classList.toggle('on', on); other.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        refreshRecover();
+      };
+    });
+    refreshRecover();
+    if (recover) recover.onclick = async () => {
+      if (!selected || recover.disabled) return;
+      recover.disabled = true;
+      if (status) status.textContent = '＋ staging verified recovery; the prior source will be preserved';
+      try {
+        const response = await fetch('/api/lineage/recover', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ candidateId: selected })
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result.ok) throw new Error(result.error || 'recovery request refused');
+        if (status) status.textContent = result.desktopWillRestart
+          ? '＋ recovery accepted — station service restarting now…'
+          : '＋ recovery accepted — restart the manual sidecar; this screen will resume automatically';
+        const timer = setInterval(async () => {
+          try {
+            const probe = await fetch('/api/save?agent=agent', { cache: 'no-store' });
+            const body = probe.ok ? await probe.json() : null;
+            if (body && body.save && body.save.agent) { clearInterval(timer); location.reload(); }
+          } catch (_) {}
+        }, 1500);
+      } catch (error) {
+        recover.disabled = false;
+        if (status) status.textContent = '＋ recovery paused — ' + String(error && error.message || error);
+      }
+    };
+    const report = el('btn-lineage-report');
+    if (report) report.onclick = async () => {
+      report.disabled = true;
+      if (status) status.textContent = '＋ preparing redacted recovery report…';
+      try {
+        const response = await fetch('/api/lineage/report', { cache: 'no-store' });
+        if (!response.ok) throw new Error('report unavailable');
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob), a = document.createElement('a');
+        a.href = url; a.download = 'starnet-recovery-report.json'; a.style.display = 'none';
+        document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+        if (status) status.textContent = '＋ redacted recovery report exported — no credentials or save contents included';
+      } catch (error) {
+        if (status) status.textContent = '＋ report export failed — ' + String(error && error.message || error);
+      } finally { report.disabled = false; }
+    };
     const retry = el('btn-lineage-retry');
     if (retry) retry.onclick = () => { SFX.click && SFX.click(); try { location.reload(); } catch (_) {} };
     const restore = el('btn-lineage-restore');

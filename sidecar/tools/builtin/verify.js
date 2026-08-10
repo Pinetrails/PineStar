@@ -86,13 +86,17 @@
           const body = redact(res.out || '(no output)');
           const content = (verdict.passed ? '✓ PASSED' : '✗ FAILED') + ' — `' + cmd + '`\n' + body
             + '\n[exit ' + res.exitCode + (res.truncated ? ', output truncated' : '') + (res.timedOut ? ', TIMED OUT' : '') + ']';
+          const fullContent = res.truncated && typeof res.fullOut === 'string'
+            ? (verdict.passed ? '✓ PASSED' : '✗ FAILED') + ' — `' + cmd + '`\n' + redact(res.fullOut || '(no output)')
+              + '\n[exit ' + res.exitCode + (res.timedOut ? ', TIMED OUT' : '') + ']'
+            : undefined;
           try {
             if (typeof ctx.emit === 'function') ctx.emit('verify.result', {
               agentId: aid, runId: ctx.runId || '', tool: cmd.slice(0, 60),
               passed: verdict.passed, added: 0, removed: 0, summary: redact(verdict.summary)
             });
           } catch (_) {}
-          return { content: content, summary: (verdict.passed ? 'verify passed' : 'verify FAILED') + ' (' + res.ms + 'ms)' };
+          return { content: content, fullContent: fullContent, summary: (verdict.passed ? 'verify passed' : 'verify FAILED') + ' (' + res.ms + 'ms)' };
         });
       }
     };

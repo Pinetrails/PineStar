@@ -5,6 +5,8 @@
    digest rule that gives it any convergence at all, and neither may quietly become the other. */
 'use strict';
 const A = require('./_assert.js');
+const fs = require('fs');
+const path = require('path');
 const T = require('../frontend/app/loop-templates.js');
 
 // ---- 1. the catalog is coherent ------------------------------------------------------------------------
@@ -131,6 +133,17 @@ const T = require('../frontend/app/loop-templates.js');
   // and the hard template must NOT be asking for a digest it does not measure
   const hard = T.list().find(x => x.rigor === 'hard');
   A.ok(!/DIGEST:/.test(hard.objective), hard.id + ' does not ask for a digest — its check is the measure');
+}
+
+/* ---- 9. the project detector has a real idle state ------------------------------------------------------
+   The create form must not claim it is reading a project before a path exists. Once a path is present the
+   same row may show the loading state while /api/loops/detect is genuinely in flight. */
+{
+  const ui = fs.readFileSync(path.join(__dirname, '../frontend/app/windows/loops.js'), 'utf8');
+  A.ok(/id="lp-checkrow" class="lp-checkline dim">choose a project to detect its check command/.test(ui),
+    'a blank New Loop form starts with an honest idle instruction, not an indefinite loading claim');
+  A.ok(/if \(!val && checkEl && rowEl\) \{[\s\S]{0,220}checkEl\.value = ''[\s\S]{0,220}choose a project to detect its check command[\s\S]{0,120}\} else if \(checkEl && rowEl\) \{[\s\S]{0,160}reading the project/.test(ui),
+    'clearing the project path resets the check row; loading appears only in the non-empty-path branch');
 }
 
 A.report('loop-templates (the shapes a beginner picks)');

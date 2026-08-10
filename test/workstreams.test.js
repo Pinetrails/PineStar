@@ -4,6 +4,8 @@
    the General default always exists, per-stream cost is isolated (no double-count), and lanes are
    hybrid-honest (a real run auto-advances todo->active; 'shipped' is only ever set deliberately). */
 'use strict';
+const fs = require('fs');
+const path = require('path');
 const A = require('./_assert.js');
 const W = require('../frontend/app/workstreams.js');
 
@@ -386,5 +388,47 @@ const dumpedRun = JSON.parse(JSON.stringify(W.serialize()));
 W.init(dumpedRun);
 A.eq(W.get(fr.id).lastRunOk, false, 'lastRunOk survives a serialize/init round-trip');
 A.eq(W.get(noRun.id).lastRunOk, null, 'a never-ran stream round-trips as unknown (null), never invented');
+
+/* ---------- deleting a live stream fails closed at the destructive operation ---------- */
+const appSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'app.js'), 'utf8');
+const deleteWorkstreamSource = A.fnBody(appSource, 'function deleteWorkstream(id)');
+A.ok(deleteWorkstreamSource && deleteWorkstreamSource.length < 3000, 'deleteWorkstream source is extracted exactly');
+
+function deletionHarness(busy) {
+  const events = [];
+  const streams = new Map([['work-1', { id: 'work-1', title: 'Long task', agentId: 'scout' }]]);
+  const ctx = { events, streams, busy };
+  const remove = new Function('CTX', `
+    const Workstreams = {
+      get: id => CTX.streams.get(id),
+      activeId: () => 'work-1',
+      del: id => { CTX.events.push('del:' + id); return CTX.streams.delete(id); }
+    };
+    const Channels = { isBusy: id => { CTX.events.push('busy:' + id); return CTX.busy; } };
+    const SFX = { bad: () => CTX.events.push('sfx.bad') };
+    const StationUI = { notify: (message, tone) => CTX.events.push('notify:' + tone + ':' + message) };
+    function loadActiveStream() { CTX.events.push('loadActiveStream'); }
+    function renderRail() { CTX.events.push('rail'); }
+    function persist() { CTX.events.push('persist'); }
+    ${deleteWorkstreamSource}
+    return deleteWorkstream;
+  `)(ctx);
+  return { remove, streams, events };
+}
+
+const busyDeletion = deletionHarness(true);
+A.eq(busyDeletion.remove('work-1'), false, 'busy workstream deletion is refused');
+A.ok(busyDeletion.streams.has('work-1'), 'busy workstream remains in the rail store');
+A.eq(busyDeletion.events.filter(e => e.startsWith('del:')).length, 0, 'busy refusal never calls the destructive store operation');
+A.eq(busyDeletion.events.filter(e => e === 'persist').length, 0, 'busy refusal does not persist a tombstone');
+A.eq(busyDeletion.events.filter(e => e === 'loadActiveStream').length, 0, 'busy refusal does not change the active stream');
+A.ok(busyDeletion.events.some(e => e.includes('stop this session before deleting it')), 'busy refusal explains the required stop');
+
+const idleDeletion = deletionHarness(false);
+A.eq(idleDeletion.remove('work-1'), true, 'idle workstream deletion succeeds');
+A.ok(!idleDeletion.streams.has('work-1'), 'idle workstream is removed');
+A.eq(idleDeletion.events.filter(e => e === 'del:work-1').length, 1, 'idle path deletes exactly once');
+A.eq(idleDeletion.events.filter(e => e === 'persist').length, 1, 'idle deletion persists exactly once');
+A.eq(idleDeletion.events.filter(e => e === 'loadActiveStream').length, 1, 'deleting the open idle stream reloads General');
 
 A.report('workstreams.test');

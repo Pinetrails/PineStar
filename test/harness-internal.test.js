@@ -109,8 +109,8 @@ A.ok(/\+ taskDoctrineNote/.test(sidecar), 'the task doctrine is actually wired i
   A.ok(mIsApi, 'harness.js defines isApiUrl()');
   // isApiUrl must NOT be the old blanket-substring form (that was the leak).
   A.ok(!/return\s+u\.indexOf\('\/api\/'\)\s*===\s*0\s*\|\|\s*\/\\\/api\\\//.test(src), 'isApiUrl no longer substring-matches /api/ anywhere (the token-leak form is gone)');
-  const factory = new Function('location', 'URL', mApiPath[0] + '\n' + mIsApi[0] + '\nreturn isApiUrl;');
-  const isApiUrl = factory({ origin: 'http://localhost:8787', href: 'http://localhost:8787/' }, URL);
+  const factory = new Function('location', 'URL', 'window', mApiPath[0] + '\n' + mIsApi[0] + '\nreturn isApiUrl;');
+  const isApiUrl = factory({ origin: 'http://localhost:8787', href: 'http://localhost:8787/' }, URL, {});
   // same-origin /api/ (relative + absolute) => token attaches
   A.ok(isApiUrl('/api/models/openrouter') === true, 'same-origin relative /api/ is an API URL (token attaches)');
   A.ok(isApiUrl('http://localhost:8787/api/version') === true, 'same-origin absolute /api/ is an API URL (token attaches)');
@@ -122,9 +122,24 @@ A.ok(/\+ taskDoctrineNote/.test(sidecar), 'the task doctrine is actually wired i
   A.ok(isApiUrl('http://evil.example/api/steal') === false, 'a cross-origin host with /api/ is NOT an API URL');
   A.ok(isApiUrl('/frontend/app/harness.js') === false, 'a same-origin non-/api path is not an API URL');
   // the tauri app origin hitting its OWN sidecar /api must still count (desktop build)
-  const isApiUrlTauri = (new Function('location', 'URL', mApiPath[0] + '\n' + mIsApi[0] + '\nreturn isApiUrl;'))({ origin: 'https://tauri.localhost', href: 'https://tauri.localhost/' }, URL);
+  const isApiUrlTauri = factory(
+    { origin: 'https://tauri.localhost', href: 'https://tauri.localhost/' }, URL,
+    { __STARNET_API__: 'http://127.0.0.1:8964' }
+  );
   A.ok(isApiUrlTauri('/api/run') === true, 'tauri app origin: its own /api/ is an API URL');
+  A.ok(isApiUrlTauri('http://127.0.0.1:8964/api/routing') === true,
+    'tauri app origin: the exact configured loopback sidecar /api URL receives the launch token');
+  A.ok(isApiUrlTauri('http://127.0.0.1:8965/api/routing') === false,
+    'tauri app origin: another loopback port is not the configured sidecar and receives no token');
+  A.ok(isApiUrlTauri('http://localhost:8964/api/routing') === false,
+    'tauri app origin: another loopback spelling is refused unless it is the exact configured origin');
   A.ok(isApiUrlTauri('https://openrouter.ai/api/v1/models') === false, 'tauri app origin: OpenRouter is still NOT an API URL');
+  const hostileConfig = factory(
+    { origin: 'https://tauri.localhost', href: 'https://tauri.localhost/' }, URL,
+    { __STARNET_API__: 'https://evil.example' }
+  );
+  A.ok(hostileConfig('https://evil.example/api/steal') === false,
+    'a configured non-loopback origin cannot opt itself into receiving the launch token');
 }
 
 /* ---------- EL-11 FIX 3: a pre-stream /api/run failure must CARRY ITS BODY into the thrown error ----------
