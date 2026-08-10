@@ -3725,6 +3725,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
      the real Harness store; nothing here is simulated. Secrets are shown MASKED only — the
      full key is never written into the DOM (truthful-telemetry + don't-leak-the-key). */
   const PROVIDERS = [
+    // STARNET MANAGED is the one provider with no credential to paste and no account to sign into here: it
+    // runs on the credits balance a linked station already has. It is also the one provider that must be able
+    // to DISAPPEAR — see creditsProviderState() — because offering it on a station with no cloud configured
+    // would advertise an account the user cannot create.
+    { id: 'starnet',       name: 'STARNET MANAGED',   endpoint: 'managed inference · credits', blurb: 'no API key — runs on your balance', live: true, credits: true },
     { id: 'openrouter',    name: 'OPENROUTER',        endpoint: 'openrouter.ai/api/v1',      blurb: 'one key · 300+ models',  live: true },
     { id: 'codex',         name: 'CHATGPT (CODEX)',   endpoint: 'OAuth · ChatGPT subscription', blurb: 'sign-in, no API key',  live: true },
     { id: 'grok',          name: 'GROK (XAI)',        endpoint: 'OAuth · SuperGrok / X Premium+', blurb: 'sign-in, no API key', live: true },
@@ -3745,6 +3750,42 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   ];
   const H = () => (typeof Harness === 'object' && Harness) ? Harness : null;
   function provName(id) { const p = PROVIDERS.find(x => x.id === id); return p ? p.name : String(id || '').toUpperCase(); }
+
+  /* ---- STARNET MANAGED, the credits provider -------------------------------------------------
+     Three states, and the first one is the reason this is not a static row:
+       absent   — no cloud is configured on this station, so the card DOES NOT RENDER. The honesty
+                  law the STORE already follows: never offer an account we cannot create. A shipped
+                  build with the launch switch off is exactly this state.
+       linkable — a cloud is configured but this station is not linked -> LINK STATION, which sends
+                  the user to the STORE where the pairing flow lives (one implementation, not two).
+       linked   — credits are live -> show the balance, because "connected" on a paid provider means
+                  nothing if the balance is zero.
+     Refreshed from the same /api/credits + /api/credits/linkable pair the STORE reads, so the two
+     panels can never disagree about whether this station has credits. */
+  let creditsProv = { state: 'absent', balanceUsd: null, tier: '' };
+  function refreshCreditsProvider() {
+    return Harness.api.get('/api/credits').catch(() => ({ configured: false }))
+      .then(j => {
+        if (j && j.configured) {
+          creditsProv = {
+            state: 'linked',
+            balanceUsd: (j.balanceUsd == null ? null : j.balanceUsd),
+            tier: (j.subscription && j.subscription.tier) ? String(j.subscription.tier) : ''
+          };
+          return creditsProv;
+        }
+        return Harness.api.get('/api/credits/linkable').catch(() => ({ available: false }))
+          .then(lk => {
+            creditsProv = { state: (lk && lk.available) ? 'linkable' : 'absent', balanceUsd: null, tier: '' };
+            return creditsProv;
+          });
+      });
+  }
+  // The rows CONNECTIONS should actually draw. Only starnet is ever filtered — every other provider
+  // is a fixed part of the product and must stay visible whether or not it is configured.
+  function visibleProviders() {
+    return PROVIDERS.filter(p => !p.credits || creditsProv.state !== 'absent');
+  }
   function activeProv() { const h = H(); return (h && h.getProv && h.getProv()) || 'openrouter'; }
   let codexStatusKnown = null;        // last /api/auth/codex/status truth: { connected, expired, reason }
   let codexConnectionChecking = false;
@@ -3950,7 +3991,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   function providersHtml() {
     const active = activeProv();
-    return PROVIDERS.map((p, pi) => {
+    return visibleProviders().map((p, pi) => {
+      // The credits provider has its own card: no key to paste, no sign-in, and a status line that
+      // states the BALANCE, because a paid provider reading "connected" at $0.00 would be a lie of
+      // exactly the kind this panel exists to avoid.
+      if (p.credits) return creditsProviderCard(p, pi, active);
       const ks = keysFor(p.id);
       // a keyless device-code sign-in (codex/grok/kimi) can be KNOWN-dead (sidecar recorded a consumed/invalid
       // refresh token) — that must never render as SIGNED IN. The row still exists (ks has the expired entry) so
@@ -4015,6 +4060,33 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '</div>';
     }).join('');
   }
+  // The STARNET MANAGED card. Same shape as every other provider row so it reads as one of them, but its
+  // action routes to the STORE rather than owning a second copy of the pairing flow.
+  function creditsProviderCard(p, pi, active) {
+    const linked = creditsProv.state === 'linked';
+    const runnable = !!(linked && p.id === active && H() && H().getModel && H().getModel());
+    const cls = linked ? 'conn' : 'avail';
+    const bal = (creditsProv.balanceUsd == null) ? null : fmtUsd(creditsProv.balanceUsd);
+    // A linked station with an unreadable balance says so instead of implying it can spend.
+    const stat = linked
+      ? (bal == null ? '● LINKED · BALANCE UNAVAILABLE' : '● LINKED · ' + esc(bal) + (creditsProv.tier ? ' · $' + esc(creditsProv.tier) + '/MO' : ''))
+      : '○ NOT LINKED';
+    return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="group" aria-label="' + esc(p.name) + ' provider" style="--ci:' + pi + '">' +
+      '<button class="prov-select" data-act="prov-select" aria-label="Select ' + esc(p.name) + ' provider">' +
+        '<span class="conn-dot"></span>' +
+        '<span class="prov-main">' +
+          '<span class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</span>' +
+          '<span class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</span>' +
+        '</span>' +
+        '<span class="prov-stat"><span class="prov-stat-t">' + stat + '</span></span>' +
+      '</button>' +
+      '<button class="bb sm prov-addkey" data-act="credits-store" data-provider="' + esc(p.id) + '" ' +
+      'aria-label="' + (linked ? 'Open the STORE' : 'Link this station to a StarNet account') + '" ' +
+      'title="' + (linked ? 'balance, plan and history live in the STORE' : 'link this station to a StarNet account') + '">' +
+      (linked ? '◆ STORE' : '🔗 LINK STATION') + '</button>' +
+      '</div>';
+  }
+
   // The SHARED credential-row for a keyless device-code OAuth provider (grok/kimi) — the parameterized twin of
   // the codex oauth branch in keysHtml. Same honest contract: SIGN-IN EXPIRED (never SIGNED IN) when dead, a
   // scrubbed reason, and always-present ⏼ RE-SIGN-IN / ✕ DISCONNECT wired to the shared engine + its own inline
@@ -4428,6 +4500,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             rerender('settings');
           }).catch(() => {});
         }
+        // Repaint the dock for EVERY provider switch, not only the OAuth reconcile above. The dock caches the
+        // provider it last drew, so without this it kept advertising the previous one — most visibly as
+        // "no OPENROUTER key — this model can't run yet" on a station that had just switched to a provider
+        // needing no key at all.
+        if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
         notify('selected ' + provName(p) + ' provider', 'good');
         sfx('click');
         rerender('settings');
@@ -4485,6 +4562,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         sfx('click');
       });
       if (inlineSave) inlineSave.addEventListener('click', ev => { ev.stopPropagation(); saveInline(card.dataset.provider); });
+      // STARNET MANAGED: both LINK STATION and STORE land in the same place — the STORE section owns the
+      // pairing flow, and duplicating it on this card would be a second implementation to keep in step.
+      const toStore = card.querySelector('[data-act="credits-store"]');
+      if (toStore) toStore.addEventListener('click', ev => {
+        ev.stopPropagation();
+        sfx('click');
+        const host = body.querySelector('#credits-store');
+        if (host && host.scrollIntoView) host.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Re-read rather than trust the last paint: the user may have linked or unlinked in another window.
+        wireCredits(body);
+        const btn = host && host.querySelector('#credits-link');
+        if (btn && btn.focus) btn.focus();
+      });
       if (inlineInput) {
         inlineInput.addEventListener('click', ev => ev.stopPropagation());   // don't select the provider when focusing the field
         inlineInput.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); saveInline(card.dataset.provider); } });
@@ -4499,6 +4589,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // display a USD amount for the spend readout / cap echo. Whole-cent granularity for readability (the ledger
   // itself keeps micro-dollar precision; this is presentation only). No app-wide formatter exists to reuse.
   function fmtUsd(v) { return U.usd(v); }   // canonical spend formatter (util.js U.usd)
+
+  // The desktop shell's command bridge, or null in a plain browser (dev, tests, the website embed).
+  // Looked up per call rather than cached: the page can render before __TAURI__ is injected.
+  function tauriInvoke() {
+    try { return (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) || null; }
+    catch (_) { return null; }
+  }
 
   // open a URL in the user's real browser (Tauri shell when packaged, a new tab otherwise). Buying credits is
   // ALWAYS an external link — this app never renders a payment form or handles card data.
@@ -4536,41 +4633,222 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // STORE / MANAGED CREDITS — populate #credits-store from the real /api/credits payload. The endpoint 404s unless
   // a credits backend is configured, so an UNconfigured install renders NOTHING here (no dead STORE, no fake balance
   // — the honesty law). Balance + history are read from the adapter; PURCHASE opens the external buy page.
+  let _creditsLinkPoll = null;   // module-scoped so a re-render / panel re-open always cancels a stale poll loop
+  function stopLinkPoll() { if (_creditsLinkPoll) { clearInterval(_creditsLinkPoll); _creditsLinkPoll = null; } }
+
   function wireCredits(body) {
     const host = body.querySelector('#credits-store');
     if (!host) return;
-    host.innerHTML = '';   // stay empty until we KNOW credits are configured
-    Harness.api.get('/api/credits')
+    stopLinkPoll();        // any in-flight link poll from a prior render is stale now
+    host.innerHTML = '';   // stay empty until we KNOW credits are configured (or linkable)
+    // /api/credits 404s when credits are unconfigured — that is the honesty law, not an error, and
+    // api.get throws on any non-2xx. Catching to {configured:false} keeps the 404 on the normal path.
+    Harness.api.get('/api/credits').catch(() => ({ configured: false }))
       .then(j => {
-        if (!j || !j.configured) return;   // unconfigured → no surface at all
-        const bal = (j.balanceUsd == null) ? '—' : fmtUsd(j.balanceUsd);
-        const reach = j.reachable === false;
-        const hist = Array.isArray(j.history) ? j.history : [];
-        const rows = hist.length ? hist.slice(0, 12).map(e => {
-          const when = e && e.ts ? new Date(e.ts).toLocaleString() : '';
-          const kind = esc(String((e && e.kind) || 'entry'));
-          const amt = (e && e.usd != null) ? fmtUsd(e.usd) : '';
-          return '<div class="mc-row"><div class="mc-top"><b>' + kind + '</b> <span class="dim">' + esc(when) + '</span></div>' +
-            '<div class="mc-url dim">' + esc(amt) + (e && e.runId ? ' · run ' + esc(String(e.runId).slice(0, 8)) : '') + '</div></div>';
-        }).join('') : '<div class="fb-empty">No credit activity yet.</div>';
-        host.innerHTML =
-          '<h4 class="ms-h">STORE <span class="dim">— managed credits</span></h4>' +
-          '<p class="set-about">This station runs on <b>managed credits</b> — a prepaid balance the operator tops up, so your agents can work without you bringing your own provider key. Each run reserves up to your <b>PER RUN</b> budget and refunds whatever it doesn’t spend. You can always switch to your own key under API KEYS above.</p>' +
-          '<div class="set-row"><span class="dim">BALANCE</span><b class="credits-bal" style="margin-left:auto">' + esc(bal) + '</b></div>' +
-          (reach ? '<div class="set-row dim">⚠ the credits service didn’t answer — the balance shown may be stale.</div>' : '') +
-          '<div class="mc-acts">' +
-            '<button class="bb sm" id="credits-buy">＋ ADD CREDITS ↗</button>' +
-            '<button class="bb xs" id="credits-refresh" title="re-read the balance">↻ REFRESH</button>' +
-          '</div>' +
-          '<div class="mc-hint">Adding credits opens your browser — StarNet never handles your payment details.</div>' +
-          '<div class="set-row"><span class="dim">RECENT ACTIVITY</span></div>' +
-          '<div class="mc-list">' + rows + '</div>';
-        const buy = host.querySelector('#credits-buy');
-        if (buy) buy.addEventListener('click', () => { sfx('click'); openExternal(j.purchaseUrl); });
-        const ref = host.querySelector('#credits-refresh');
-        if (ref) ref.addEventListener('click', () => { sfx('click'); wireCredits(body); });
+        if (j && j.configured) return renderCreditsConfigured(body, host, j);
+        // unconfigured → is this station LINKABLE (STARNET_CLOUD_URL wired)? If so, offer LINK STATION. Otherwise
+        // render NOTHING (honesty law: a bare BYOK install shows no STORE surface at all).
+        return Harness.api.get('/api/credits/linkable').catch(() => ({ available: false }))
+          .then(lk => { if (lk && lk.available) renderCreditsLinkCard(body, host); })
+          .catch(() => {});
       })
       .catch(() => {});   // sidecar offline / not configured → leave the STORE absent
+  }
+
+  // A ledger entry's own name for itself. The backend sends `label` for rows that are not model calls
+  // ('expiry', 'topup', 'sub_renewal', …) and `model` for the ones that are; `kind` is the last resort.
+  const CREDIT_ENTRY_LABELS = {
+    topup: 'top-up', sub_init: 'subscription', sub_renewal: 'monthly credits',
+    expiry: 'expired — 90 days after cancelling', adjustment: 'adjustment'
+  };
+  function creditEntryLabel(e) {
+    const lab = e && e.label;
+    if (lab) return CREDIT_ENTRY_LABELS[lab] || String(lab);
+    if (e && e.model) return String(e.model);
+    return String((e && e.kind) || 'entry');
+  }
+
+  // The PLAN rows — tier, what it grants, and the next date that matters. Rendered ONLY from a real
+  // `subscription` object: a station with no plan (operator-provisioned, or a top-up-only account) shows
+  // nothing here rather than an empty "PLAN —" row implying there is one to look at.
+  function creditsPlanRows(j) {
+    const s = j && j.subscription;
+    if (!s || !s.tier) return '';
+    const cancelled = String(s.status || '') !== 'active';
+    const grant = (s.grantUsd != null && s.grantUsd > 0) ? fmtUsd(s.grantUsd) + '/mo' : '';
+    const day = (ms) => { try { return new Date(Number(ms)).toLocaleDateString(); } catch (_) { return ''; } };
+    // While cancelled the date that matters is when the leftover credits STOP working, not a renewal that
+    // is never coming. Saying "renews" on a cancelled plan would be the app asserting something false.
+    const when = cancelled
+      ? (s.graceUntil ? '<span class="dim">credits usable through ' + esc(day(s.graceUntil)) + '</span>' : '')
+      : (s.currentPeriodEnd ? '<span class="dim">renews ' + esc(day(s.currentPeriodEnd)) + '</span>' : '');
+    return '<div class="set-row"><span class="dim">PLAN</span><b style="margin-left:auto">$' + esc(String(s.tier)) + '/mo' +
+      (cancelled ? ' <span class="dim">· CANCELLED</span>' : '') + '</b></div>' +
+      (grant || when
+        ? '<div class="set-row"><span class="dim" style="font-size:.85em">' + esc(grant) + '</span>' +
+          '<span style="margin-left:auto;font-size:.85em">' + when + '</span></div>'
+        : '');
+  }
+
+  // The configured STORE: real balance + history + ADD CREDITS. When the station is configured via a LINKED
+  // DEVICE (not operator env), also surface a small UNLINK affordance + the account id.
+  function renderCreditsConfigured(body, host, j) {
+    const bal = (j.balanceUsd == null) ? '—' : fmtUsd(j.balanceUsd);
+    const reach = j.reachable === false;
+    const hist = Array.isArray(j.history) ? j.history : [];
+    const rows = hist.length ? hist.slice(0, 12).map(e => {
+      const when = e && e.ts ? new Date(e.ts).toLocaleString() : '';
+      // The backend labels its own rows (`label`: 'expiry', 'topup', 'sub_renewal', …). Falling back to the
+      // bare kind would print "debit" for credits expiring at the end of grace — identical to a model call.
+      const kind = esc(creditEntryLabel(e));
+      const amt = (e && e.usd != null) ? fmtUsd(e.usd) : '';
+      return '<div class="mc-row"><div class="mc-top"><b>' + kind + '</b> <span class="dim">' + esc(when) + '</span></div>' +
+        '<div class="mc-url dim">' + esc(amt) + (e && e.runId ? ' · run ' + esc(String(e.runId).slice(0, 8)) : '') + '</div></div>';
+    }).join('') : '<div class="fb-empty">No credit activity yet.</div>';
+    // A LINKED station is somebody's own subscription; an env-configured one is an operator's prepaid pool.
+    // Same balance, completely different sentence — describing a subscriber's own account as something "the
+    // operator tops up" is just wrong on the surface that is supposed to be the truthful one.
+    const about = j.linked
+      ? 'This station runs on <b>your StarNet credits</b> — agents work without you bringing a provider key. Each run reserves up to your <b>PER RUN</b> budget and refunds whatever it doesn’t spend. You can always switch to your own key under API KEYS above.'
+      : 'This station runs on <b>managed credits</b> — a prepaid balance the operator tops up, so your agents can work without you bringing your own provider key. Each run reserves up to your <b>PER RUN</b> budget and refunds whatever it doesn’t spend. You can always switch to your own key under API KEYS above.';
+    host.innerHTML =
+      '<h4 class="ms-h">STORE <span class="dim">— managed credits</span></h4>' +
+      '<p class="set-about">' + about + '</p>' +
+      (j.linked && j.accountId ? '<div class="set-row"><span class="dim">ACCOUNT</span><span class="dim" style="margin-left:auto">' + esc(String(j.accountId)) + '</span></div>' : '') +
+      creditsPlanRows(j) +
+      '<div class="set-row"><span class="dim">BALANCE</span><b class="credits-bal" style="margin-left:auto">' + esc(bal) + '</b></div>' +
+      (reach ? '<div class="set-row dim">⚠ the credits service didn’t answer — the balance shown may be stale.</div>' : '') +
+      '<div class="mc-acts">' +
+        '<button class="bb sm" id="credits-buy">＋ ADD CREDITS ↗</button>' +
+        (j.subscription ? '<button class="bb xs" id="credits-manage" title="change or cancel your plan in the browser">MANAGE PLAN ↗</button>' : '') +
+        '<button class="bb xs" id="credits-refresh" title="re-read the balance">↻ REFRESH</button>' +
+      '</div>' +
+      '<div class="mc-hint">Adding credits opens your browser — StarNet never handles your payment details.</div>' +
+      '<div class="set-row"><span class="dim">RECENT ACTIVITY</span></div>' +
+      '<div class="mc-list">' + rows + '</div>' +
+      (j.linked ? '<div class="set-row" style="margin-top:.6em"><span class="dim" style="font-size:.85em">This station is linked to your account.</span>' +
+        '<button class="bb xs" id="credits-unlink" title="forget this station’s link" style="margin-left:auto">UNLINK</button></div>' : '');
+    const buy = host.querySelector('#credits-buy');
+    if (buy) buy.addEventListener('click', () => { sfx('click'); openExternal(j.purchaseUrl); });
+    const manage = host.querySelector('#credits-manage');
+    if (manage) manage.addEventListener('click', () => { sfx('click'); openExternal(j.manageUrl || j.purchaseUrl); });
+    const ref = host.querySelector('#credits-refresh');
+    if (ref) ref.addEventListener('click', () => { sfx('click'); wireCredits(body); });
+    // UNLINK gives up a money-spending credential, so it is destructive → the house two-step
+    // arm/confirm, same idiom as key remove and permission revoke. It used to raise a native
+    // window.confirm, which the OS paints: a grey system dialog over the CRT, and the one thing
+    // this station never does. ArmConfirm keeps the decision inside the world.
+    const unlink = host.querySelector('#credits-unlink');
+    const doUnlink = () => {
+      unlink.disabled = true;
+      // BOTH halves have to go: the sidecar owns the file, only the shell can reach the keychain.
+      // Clearing the keychain first means a failure there is visible before we report "unlinked" —
+      // leaving a money-spending credential behind while claiming it is gone would be the exact
+      // dishonesty delete_credential_honest exists to prevent.
+      const kcInvoke = tauriInvoke();
+      const forgetKeychain = kcInvoke
+        ? kcInvoke('harness_clear_credits_token').then(() => true).catch(() => false)
+        : Promise.resolve(true);
+      forgetKeychain
+        .then(() => Harness.api.post('/api/credits/unlink', {}))
+        // Symmetric to the link path: a station that just gave up its credential must stop reporting
+        // that it can run on credits, or STARNET stays selectable and every run fails at admission.
+        .then(() => (H() && H().refreshCreditsConfigured) ? H().refreshCreditsConfigured() : null)
+        .then(() => { refreshCreditsProvider().catch(() => {}); wireCredits(body); })
+        .catch(() => wireCredits(body));
+    };
+    if (unlink) {
+      if (typeof ArmConfirm !== 'undefined' && ArmConfirm.wire) {
+        // No restLabel: the helper restores whatever text the button already had.
+        ArmConfirm.wire(unlink, {
+          armedLabel: '✕ CONFIRM UNLINK', timeoutMs: 4000,
+          onArm: () => sfx('bad'),
+          onConfirm: () => { sfx('bad'); doUnlink(); }
+        });
+      } else {
+        // ArmConfirm absent from this build: unlinking one press early is recoverable (relink mints a
+        // new token), and a dead UNLINK button is not — a station you cannot detach is worse.
+        unlink.addEventListener('click', () => { sfx('click'); doUnlink(); });
+      }
+    }
+  }
+
+  // Ask the desktop shell to move the device token from .secrets/credits.json into the OS keychain.
+  // Resolves to true only when the keychain genuinely holds it — a locked/absent credential store
+  // leaves the token in the file ON PURPOSE (better a token on disk than a token nobody has), and
+  // the sidecar keeps reporting tokenAtRest:'file' so the STORE never overstates the protection.
+  function adoptCreditsToken() {
+    const invoke = tauriInvoke();
+    if (!invoke) return Promise.resolve(false);
+    return invoke('harness_adopt_credits_token').then(ok => !!ok).catch(() => false);
+  }
+
+  // The UNLINKED-but-linkable state: a LINK STATION card. Clicking begins the pairing dance.
+  function renderCreditsLinkCard(body, host, note) {
+    host.innerHTML =
+      '<h4 class="ms-h">STORE <span class="dim">— managed credits</span></h4>' +
+      '<p class="set-about">Link this station to your <b>StarNet account</b> to run agents on managed credits — no provider key needed. You will confirm a short code in your browser.</p>' +
+      (note ? '<div class="set-row" style="color:var(--gold,#e8c15a)">' + esc(note) + '</div>' : '') +
+      '<div class="mc-acts"><button class="bb sm" id="credits-link">🔗 LINK STATION</button></div>' +
+      '<div class="mc-hint">Linking opens your browser to confirm — StarNet never handles your payment details.</div>' +
+      '<div id="credits-link-state"></div>';
+    const btn = host.querySelector('#credits-link');
+    if (btn) btn.addEventListener('click', () => { sfx('click'); startCreditsLink(body, host); });
+  }
+
+  // Ask the sidecar for a pairing code, then show it + poll until the user confirms on the site.
+  function startCreditsLink(body, host) {
+    const state = host.querySelector('#credits-link-state');
+    const btn = host.querySelector('#credits-link');
+    if (btn) btn.disabled = true;
+    if (state) state.innerHTML = '<div class="set-row dim">Requesting a link code…</div>';
+    Harness.api.post('/api/credits/link/start', { deviceName: 'StarNet Station' })
+      .then(r => { if (!r.ok) throw new Error('start failed'); return r.j; })
+      .then(j => { if (!j || !j.code) throw new Error('no code'); showCreditsLinkCode(body, host, j); })
+      .catch(() => { renderCreditsLinkCard(body, host, 'Could not reach the link service — try again.'); });
+  }
+
+  // Show the STAR-XXXX code prominently (VT323/CRT), open the verify page, and poll every 2s until linked/expired.
+  function showCreditsLinkCode(body, host, j) {
+    stopLinkPoll();
+    const expiresAt = Number(j.expiresAt) || 0;
+    host.innerHTML =
+      '<h4 class="ms-h">LINK STATION <span class="dim">— confirm in your browser</span></h4>' +
+      '<p class="set-about">Open the link page and confirm this code to connect your account:</p>' +
+      '<div class="credits-link-code" style="font-family:\'VT323\',monospace;font-size:2.6em;line-height:1.1;letter-spacing:.14em;text-align:center;color:var(--gold,#e8c15a);text-shadow:0 0 10px rgba(232,193,90,.55);margin:.35em 0">' + esc(String(j.code)) + '</div>' +
+      '<div class="mc-acts"><button class="bb sm" id="credits-link-open">OPEN LINK PAGE ↗</button></div>' +
+      '<div class="set-row dim" id="credits-link-status" style="margin-top:.5em">Waiting for confirmation…</div>';
+    const open = host.querySelector('#credits-link-open');
+    if (open) open.addEventListener('click', () => { sfx('click'); openExternal(j.verifyUrl); });
+    openExternal(j.verifyUrl);   // auto-open once so the user lands straight on the confirm page
+    const statusEl = host.querySelector('#credits-link-status');
+    const tick = () => {
+      if (expiresAt && Date.now() > expiresAt) { stopLinkPoll(); renderCreditsLinkCard(body, host, 'That code expired — start again.'); return; }
+      Harness.api.post('/api/credits/link/poll', { code: j.code })
+        .then(r => (r && r.ok) ? r.j : {})
+        .then(p => {
+          if (p && p.linked) {
+            stopLinkPoll(); sfx('sale');
+            // Hand the freshly minted device token to the OS keychain immediately. The token is a
+            // bearer credential that spends money and it is sitting in a plaintext file right now;
+            // this shrinks that window from "until the next app restart" to a couple of seconds.
+            // NOTE the token itself never passes through here — Rust reads the file, moves the
+            // secret, and rewrites it. We only say "a link just happened". Best-effort: with no
+            // desktop shell (browser/dev) there is no keychain, and the file path stays honest.
+            // Tell Harness the credential now exists: configured('starnet') is what resume and the
+            // model dock gate on, and it was probed at boot when this station was NOT yet linked.
+            adoptCreditsToken()
+              .then(() => (H() && H().refreshCreditsConfigured) ? H().refreshCreditsConfigured() : null)
+              .then(() => { refreshCreditsProvider().catch(() => {}); wireCredits(body); });
+            return;
+          }
+          if (p && (p.status === 'expired' || p.status === 'consumed' || p.status === 'unknown')) {
+            stopLinkPoll(); renderCreditsLinkCard(body, host, 'That code is no longer valid — start again.');
+          } else if (statusEl) { statusEl.textContent = 'Waiting for confirmation…'; }
+        })
+        .catch(() => {});
+    };
+    _creditsLinkPoll = setInterval(tick, 2000);
   }
 
   // BUDGET panel — read the live caps + real spend from the sidecar, fill the four inputs, wire SAVE / RESET.
@@ -5481,6 +5759,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireProviderActions(host);
     wireKeyActions(host);
     queueProviderHealthRefresh();
+    // The STARNET MANAGED card is drawn from a cached credits state, so the FIRST paint of a fresh session
+    // has nothing to go on. Re-read, and repaint only if the answer changed the card's existence or its
+    // balance — an unconditional rerender here would wipe an open key editor on every settings open.
+    (() => {
+      const was = creditsProv.state + ':' + creditsProv.balanceUsd + ':' + creditsProv.tier;
+      refreshCreditsProvider().then(() => {
+        if (was !== creditsProv.state + ':' + creditsProv.balanceUsd + ':' + creditsProv.tier) rerender('settings');
+      }).catch(() => {});
+    })();
     wireCredits(host);
     wireBudget(host);
     wireFallbackChain(host);

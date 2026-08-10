@@ -83,6 +83,7 @@ test/sanitize.test.js
 test/errorclass.test.js
 test/billing.test.js
 test/credits.test.js
+test/credits-link.test.js
 test/friendlyerror.test.js
 test/codexsignin.test.js
 test/oauthsignin.test.js
@@ -234,6 +235,8 @@ test/qa-closer.test.js
 test/qa-ready.test.js
 test/qa-product-perfect.test.js
 test/qa-product-perfect-claims.test.js
+test/website-pricing-hold.test.js
+test/genesis-starnet-link.test.js
 test/qa-product-perfect-provenance.test.js
 test/qa-cartographer.test.js
 test/golden.test.js
