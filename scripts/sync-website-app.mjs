@@ -41,7 +41,7 @@ const WEBSITE_ONLY = new Set(['demo-boot.js', 'demo.css']);
 
 const EMBED_TAGS =
   '<link rel="stylesheet" href="demo.css"><!-- WEBSITE EMBED ONLY: half-strength glass for the downscaled iframe -->\n' +
-  '<script src="demo-boot.js?v=20260809-current-station"></script><!-- WEBSITE EMBED ONLY: seeds the captured demo save + DEV seam before any store reads -->';
+  '<script src="demo-boot.js?v=20260810-current-station-v2"></script><!-- WEBSITE EMBED ONLY: seeds the captured demo save + DEV seam before any store reads -->';
 
 function walk(dir, base = dir, out = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {

@@ -15,7 +15,7 @@
      hand-editing the enormous serialized fixture above; the parsed save remains the app's real
      versioned document and still boots through the normal Save/WorldModel path. */
   var DEMO_REV_KEY = 'starnet.website.demo.rev';
-  var DEMO_REV = '2026-08-09-current-station-v1';
+  var DEMO_REV = '2026-08-10-current-station-v2';
   try {
     var demoSave = JSON.parse(SEED['starnet.save']);
     var demoRoom = demoSave && demoSave.station && demoSave.station.rooms && demoSave.station.rooms.r1;
