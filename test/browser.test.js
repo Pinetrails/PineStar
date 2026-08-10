@@ -400,6 +400,67 @@ function fakeDriver() {
     A.ok(!sent.some(m => m.method === 'Target.closeTarget' && m.params.targetId === 'popup-target'), 'a successfully shimmed popup is kept, not killed');
     await d.close();
 
+    // ATTENDED LOGIN uses a human-driven window with synthetic isolation disabled. In that mode
+    // no Target auto-attach runs, so there is no adopted page session on a browser-level websocket.
+    // Page.* must therefore use the page websocket from /json/list; an unscoped Page.enable on the
+    // browser endpoint is a protocol error and used to make the visible login window never open.
+    {
+      const attendedFetched = [], attendedSent = [];
+      let attendedUrl = 'about:blank', attendedClose = null;
+      const attendedProc = {
+        pid: 45,
+        on(ev, fn) { if (ev === 'close') attendedClose = fn; },
+        kill() { if (attendedClose) queueMicrotask(() => attendedClose(0)); }
+      };
+      class AttendedWS {
+        constructor(url) { this.url = url; this.handlers = {}; setTimeout(() => this.fire('open', {}), 0); }
+        addEventListener(name, fn) { (this.handlers[name] = this.handlers[name] || []).push(fn); }
+        fire(name, value) { for (const fn of this.handlers[name] || []) fn(value); }
+        send(raw) {
+          const m = JSON.parse(raw); attendedSent.push(m);
+          if (this.url === 'ws://attended-browser' && !m.sessionId && /^Page\./.test(m.method)) {
+            setTimeout(() => {
+              this.fire('message', { data: JSON.stringify({ id: m.id, error: { code: -32601, message: "'" + m.method + "' wasn't found" } }) });
+              if (attendedClose) attendedClose(1);
+            }, 0);
+            return;
+          }
+          if (m.method === 'Page.navigate') attendedUrl = m.params.url;
+          let result = {};
+          if (m.method === 'Runtime.evaluate') {
+            const expr = String(m.params && m.params.expression || '');
+            const value = expr === 'location.href' ? attendedUrl
+              : (/ready:document\.readyState/.test(expr) ? { ok: true, ready: 'complete', n: 0 } : undefined);
+            result = { result: { value } };
+          } else if (m.method === 'Page.getFrameTree') {
+            result = { frameTree: { frame: { id: 'attended-main' } } };
+          } else if (m.method === 'Page.navigate') {
+            result = { frameId: 'attended-main' };
+          }
+          setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+        }
+        close() {}
+      }
+      const attended = T.makeCdpDriver({
+        chrome: 'fake-chrome.exe', headed: true, forceHeadless: false, syntheticInputOnly: false,
+        timeoutMs: 1000, cdpPort: 9349, settleQuietPolls: 1, settleNavBudgetMs: 300, settleActionBudgetMs: 300, settleMinObserveMs: 0,
+        fetchImpl: async url => {
+          attendedFetched.push(url);
+          return { json: async () => url.endsWith('/json/version')
+            ? { webSocketDebuggerUrl: 'ws://attended-browser' }
+            : [{ type: 'page', webSocketDebuggerUrl: 'ws://attended-page' }] };
+        },
+        WebSocketImpl: AttendedWS,
+        spawn: () => attendedProc
+      });
+      const attendedFinal = await attended.navigate('http://127.0.0.1:5173/');
+      A.eq(attendedFinal, 'http://127.0.0.1:5173/', 'human-driven attended login navigates through a page endpoint');
+      A.ok(attendedFetched.some(u => /\/json\/list$/.test(u)), 'attended login discovers the page websocket through /json/list');
+      A.ok(!attendedFetched.some(u => /\/json\/version$/.test(u)), 'attended login never selects the browser websocket without target adoption');
+      A.ok(!attendedSent.some(m => m.method === 'Target.setAutoAttach'), 'human-driven attended login does not arm synthetic target adoption');
+      await attended.close();
+    }
+
     isolationReady = false; currentUrl = 'about:blank'; sent.length = 0;
     const refused = T.makeCdpDriver({
       chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9348,
