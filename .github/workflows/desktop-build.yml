@@ -31,11 +31,16 @@ on:
         description: "Publish a public test pre-release to starnet-releases (shareable download link)"
         required: false
         default: "false"
+      evidence_run_id:
+        description: "Evidence-only mode: download the signed Windows artifact from this run ID and execute T0 on a clean runner"
+        required: false
+        default: ""
   # No tag trigger: v* tags run release-train.yml (the shipping path). This workflow is for
   # manual test builds / shareable pre-releases only.
 
 jobs:
   build:
+    if: ${{ inputs.evidence_run_id == '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -316,3 +321,126 @@ jobs:
             --prerelease \
             $ASSETS
           echo "::notice::shareable download page: https://github.com/androoAGI/starnet-releases/releases/tag/$TAG"
+
+  t0-evidence:
+    if: ${{ inputs.evidence_run_id != '' }}
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Download exact signed Windows candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: starnet-win-x64
+          path: downloaded
+          repository: androoAGI/starnet
+          run-id: ${{ inputs.evidence_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Install, launch, smoke, and import clean-machine proof
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $expectedCommit = '00ccbcfa654df3be1b5ac706042205c2094e376b'
+          $expectedHash = '0300939DF21852F80FFA63AE30FB5B84F06B0853E623A3E82756183F01406315'
+          $expectedBytes = 124645112
+          $installer = Get-ChildItem downloaded -Recurse -File -Filter 'StarNet_0.10.0_x64-setup.exe' | Select-Object -First 1
+          if (-not $installer) { throw 'signed installer is missing from the selected workflow artifact' }
+          $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer.FullName).Hash
+          if ($installer.Length -ne $expectedBytes) { throw "installer byte mismatch: $($installer.Length)" }
+          if ($actualHash -ne $expectedHash) { throw "installer hash mismatch: $actualHash" }
+          $installerSignature = Get-AuthenticodeSignature -LiteralPath $installer.FullName
+          if ($installerSignature.Status -ne 'Valid') { throw "installer Authenticode is $($installerSignature.Status)" }
+
+          $nsis = Join-Path $env:GITHUB_WORKSPACE 'src-tauri\target\release\bundle\nsis'
+          New-Item -ItemType Directory -Path $nsis -Force | Out-Null
+          Copy-Item -LiteralPath $installer.FullName -Destination (Join-Path $nsis $installer.Name)
+          $downloadedSig = $installer.FullName + '.sig'
+          if (-not (Test-Path -LiteralPath $downloadedSig)) { throw 'updater signature is missing' }
+          Copy-Item -LiteralPath $downloadedSig -Destination (Join-Path $nsis ($installer.Name + '.sig'))
+          node scripts/minisign-verify.mjs --artifact (Join-Path $nsis $installer.Name) --sig (Join-Path $nsis ($installer.Name + '.sig'))
+          if ($LASTEXITCODE -ne 0) { throw 'updater signature verification failed' }
+
+          $installRoot = Join-Path $env:LOCALAPPDATA 'Programs\StarNet-T0-00ccbcfa'
+          $install = Start-Process -FilePath $installer.FullName -ArgumentList @('/S', "/D=$installRoot") -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw "installer exit code $($install.ExitCode)" }
+          $desktopExe = Join-Path $installRoot 'skynet-desktop.exe'
+          if (-not (Test-Path -LiteralPath $desktopExe)) { throw 'installed desktop executable is missing' }
+          $desktopSignature = Get-AuthenticodeSignature -LiteralPath $desktopExe
+          if ($desktopSignature.Status -ne 'Valid') { throw "desktop Authenticode is $($desktopSignature.Status)" }
+
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9333'
+          $env:STARNET_SMOKE_CDP_PORT = '9333'
+          $env:STARNET_SMOKE_EXPECTED_HEAD = $expectedCommit
+          $env:STARNET_SMOKE_ARTIFACT = $installer.FullName
+          $desktop = Start-Process -FilePath $desktopExe -WorkingDirectory $installRoot -PassThru
+          try {
+            $tabs = $null
+            for ($i = 0; $i -lt 180; $i++) {
+              if ($desktop.HasExited) { throw "desktop exited before CDP with code $($desktop.ExitCode)" }
+              try {
+                $tabs = Invoke-RestMethod -Uri 'http://127.0.0.1:9333/json' -TimeoutSec 1
+                if ($tabs) { break }
+              } catch {}
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $tabs) { throw 'desktop CDP did not become ready within 90 seconds' }
+
+            npm.cmd run qa:smoke:installed
+            if ($LASTEXITCODE -ne 0) { throw "installed smoke failed with exit code $LASTEXITCODE" }
+
+            $desktop.Refresh()
+            $observedTitle = [string]$desktop.MainWindowTitle
+            if (-not $observedTitle) { $observedTitle = [string]($tabs | Select-Object -First 1).title }
+            if (-not $observedTitle) { throw 'no desktop or CDP window title was observable' }
+            $os = Get-CimInstance Win32_OperatingSystem
+            $proof = [ordered]@{
+              schema = 'starnet.clean-install-proof.v1'
+              generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+              sourceMachine = [ordered]@{ os = [string]$os.Caption; build = [string]$os.BuildNumber }
+              machineKind = 'github-actions-clean-vm'
+              cleanMachine = $true
+              installer = [ordered]@{ sha256 = $actualHash.ToLowerInvariant(); bytes = [int64]$installer.Length }
+              install = [ordered]@{ succeeded = $true; method = 'silent-nsis'; installLocation = $installRoot }
+              launch = [ordered]@{
+                succeeded = $true
+                observedWindowTitle = $observedTitle
+                exePath = $desktopExe
+                startupRoot = $installRoot
+                workspaceRoot = (Join-Path $env:APPDATA 'ai.skynet.harness\workspaces')
+              }
+              notes = @('GitHub-hosted ephemeral Windows VM; exact signed artifact verified before execution.')
+            }
+            New-Item -ItemType Directory -Path '.dogfood\external-t0' -Force | Out-Null
+            $proofPath = (Resolve-Path '.dogfood\external-t0').Path + '\t0-clean-install-proof.json'
+            $proof | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $proofPath -Encoding utf8
+            $env:STARNET_T0_CLEAN_EVIDENCE = $proofPath
+            npm.cmd run t0:clean-install
+            if ($LASTEXITCODE -ne 0) { throw "T0 import gate failed with exit code $LASTEXITCODE" }
+          } finally {
+            $running = Get-Process -Id $desktop.Id -ErrorAction SilentlyContinue
+            if ($running) {
+              [void]$running.CloseMainWindow()
+              if (-not $running.WaitForExit(10000)) { Stop-Process -Id $running.Id }
+            }
+          }
+
+      - name: Upload T0 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: t0-clean-install-00ccbcfa
+          if-no-files-found: warn
+          path: |
+            .dogfood/external-t0/**
+            .dogfood/t0-clean-install-*/**
+            .dogfood/t0-clean-install-latest/**
+            qa/installed/**
