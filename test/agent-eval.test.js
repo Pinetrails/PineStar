@@ -1,7 +1,7 @@
 /* node test/agent-eval.test.js — deterministic task-quality evaluation foundation. */
 'use strict';
 const A = require('./_assert.js');
-const { mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
+const { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
 const { join, resolve } = require('node:path');
 const { tmpdir } = require('node:os');
@@ -108,5 +108,28 @@ const { tmpdir } = require('node:os');
   const invalidDimension = JSON.parse(JSON.stringify(tasks[8]));
   invalidDimension.graders[0].dimension = 'vibes';
   A.throws(() => core.validateTasks([invalidDimension]), 'unknown quality dimensions fail validation instead of diluting the score');
+
+  const bind = await import('../scripts/eval/bind.mjs');
+  const bindTemp = mkdtempSync(join(tmpdir(), 'starnet-eval-bind-'));
+  try {
+    const source = join(bindTemp, 'source'), runtime = join(bindTemp, 'runtime');
+    mkdirSync(join(source, 'frontend'), { recursive: true });
+    mkdirSync(join(runtime, 'frontend'), { recursive: true });
+    const runGit = args => spawnSync('git', args, { cwd: source, encoding: 'utf8' });
+    A.eq(runGit(['init']).status, 0, 'bind fixture initializes a source repository');
+    A.eq(runGit(['config', 'user.email', 'eval@example.invalid']).status, 0, 'bind fixture configures a local author email');
+    A.eq(runGit(['config', 'user.name', 'StarNet Eval']).status, 0, 'bind fixture configures a local author name');
+    writeFileSync(join(source, 'frontend', 'app.js'), 'first\nsecond\n', 'utf8');
+    A.eq(runGit(['add', 'frontend/app.js']).status, 0, 'bind fixture stages the LF source');
+    A.eq(runGit(['commit', '-m', 'fixture']).status, 0, 'bind fixture commits the LF source');
+    const commit = runGit(['rev-parse', 'HEAD']).stdout.trim();
+    writeFileSync(join(runtime, 'frontend', 'app.js'), 'first\r\nsecond\r\n', 'utf8');
+    const verified = bind.verifyRuntimeTree({ dir: source, commit }, runtime, ['frontend']);
+    A.eq(verified.normalization, { kind: 'crlf-to-lf', files: 1 }, 'candidate binding accepts and records CRLF-only Windows checkout conversion');
+    writeFileSync(join(runtime, 'frontend', 'app.js'), 'first\r\nchanged\r\n', 'utf8');
+    A.throws(() => bind.verifyRuntimeTree({ dir: source, commit }, runtime, ['frontend']), 'candidate binding still rejects substantive runtime changes');
+  } finally {
+    rmSync(bindTemp, { recursive: true, force: true });
+  }
   A.report('agent-eval.test');
 })().catch(error => { console.error(error && error.stack || error); process.exit(1); });

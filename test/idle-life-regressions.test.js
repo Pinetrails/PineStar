@@ -82,4 +82,18 @@ A.ok(/floor:\s*builtFloor/.test(soak), 'the report records the floor it actually
 A.eq((soak.match(/process\.exit\s*\(/g) || []).length, 1, 'only the final process.exit remains, after finally cleanup');
 A.ok(/finally\s*\{[\s\S]*proc\.kill\(\)[\s\S]*side\.kill\(\)/.test(soak), 'Chrome and the seeded sidecar are both killed in finally');
 
+// ---- ONE MACHINE, ONE PLAYER (2026-08-10, Andrew's live repro) ----
+// Seats have real claims (occupiedSeats), but standing-use props had none: both idle pickers could
+// send a second body to an arcade cabinet someone was already at, and the two stood shoulder-to-
+// shoulder playing the same machine. `usingProp` is stamped at PLAN time (the moment a body commits
+// to the walk), so scanning OTHER bodies' usingProp covers "using it now" AND "already on the way".
+A.ok(/function propInUse\(propId\)/.test(world), 'world.js carries the standing-use occupancy predicate');
+A.ok(/if \(b\.usingProp === propId\) return true/.test(world), 'the predicate reads other bodies\' PLAN-time claims (covers a body still walking over)');
+A.ok(/b === self \|\| b\.unplaced\) continue/.test(world), 'a body never counts itself (or an unplaced ghost) as the occupant');
+// both pickers consult it BEFORE the prop can become a candidate — the loser re-rolls, never queues
+const playFn = world.slice(world.indexOf('function planPlay('), world.indexOf('function planProp('));
+A.ok(/propInUse\(p\.id\)\) continue/.test(playFn), 'planPlay skips an occupied (or claimed) machine');
+const propFn = world.slice(world.indexOf('function planProp('), world.indexOf('function scanNovelty('));
+A.ok(/propInUse\(p\.id\)\) continue/.test(propFn), 'planProp skips it too (the tired-drive route to the same props)');
+
 A.report('idle-life-regressions.test');

@@ -51,17 +51,42 @@ fn git_output(args: &[&str]) -> Option<String> {
 }
 
 fn shipped_inputs_dirty() -> Option<bool> {
-    let mut cmd = Command::new("git");
-    cmd.args([
+    // Tauri can rewrite Cargo.toml with host-native CRLF while preserving identical
+    // content (the release train verifies and restores that artifact after build).
+    // A porcelain status check sees the rewrite before Rust compilation and would
+    // permanently stamp an otherwise reproducible binary as dirty-dev. Compare all
+    // tracked shipped inputs to HEAD while ignoring CR-at-EOL only, then check
+    // untracked shipped inputs separately so genuinely new packaged files still
+    // fail closed.
+    let mut diff = Command::new("git");
+    diff.args([
         "-C",
         "..",
-        "status",
-        "--porcelain=v1",
-        "--untracked-files=normal",
+        "diff",
+        "--quiet",
+        "--ignore-cr-at-eol",
+        "HEAD",
         "--",
     ]);
-    cmd.args(SHIPPED_GIT_ROOTS);
-    let out = cmd.output().ok()?;
+    diff.args(SHIPPED_GIT_ROOTS);
+    let status = diff.status().ok()?;
+    match status.code() {
+        Some(0) => {}
+        Some(1) => return Some(true),
+        _ => return None,
+    }
+
+    let mut untracked = Command::new("git");
+    untracked.args([
+        "-C",
+        "..",
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "--",
+    ]);
+    untracked.args(SHIPPED_GIT_ROOTS);
+    let out = untracked.output().ok()?;
     if !out.status.success() {
         return None;
     }

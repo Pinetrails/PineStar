@@ -661,11 +661,45 @@ jobs:
             notarization-input/**/*.app.tar.gz
             notarization-input/**/*.app.tar.gz.sig
 
+  # Shipping proof, not a compile proxy: run the notarized x64 DMG on a real Intel runner,
+  # launch the installed app through Finder, and exercise the reported v0.9.0 split-workspace
+  # recovery through a full quit/relaunch before the release can be assembled.
+  intel-macos-installed-acceptance:
+    needs: [build, notarize-macos]
+    if: ${{ !cancelled() }}
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Download notarized Intel macOS distributable
+        uses: actions/download-artifact@v4
+        with:
+          name: starnet-darwin-x64
+          path: intel-distributable
+
+      - name: Install, Finder-launch, and recover v0.9.0 station
+        shell: bash
+        env:
+          STARNET_REQUIRE_NOTARIZED: "true"
+        run: |
+          dmg=$(find intel-distributable -type f -name '*_x64.dmg' -print -quit)
+          test -n "${dmg:-}"
+          bash scripts/verify-macos-intel-installed.sh "$dmg" intel-macos-installed-acceptance.json
+
+      - name: Upload Intel installed-app receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: intel-macos-installed-acceptance
+          if-no-files-found: error
+          path: intel-macos-installed-acceptance.json
+
   # -------------------------------------------------------------------------------------------
   # Job 4 — assemble: one multi-platform latest.json from all artifacts, verified locally.
   # -------------------------------------------------------------------------------------------
   assemble:
-    needs: [build, notarize-macos]
+    needs: [build, notarize-macos, intel-macos-installed-acceptance]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

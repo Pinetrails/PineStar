@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "ec4c01347f6eca6400f67b1d1b41e6f2d650cbef",
+    "sourceCommit": "0c1517538a45cfa667d23c8647366842ec4469db",
     "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 299482,
-        "sha256": "015e70b8e71137601fe918d3f0ae304e455a28b12863370aa75ac3f1e6bcff13"
+        "bytes": 307260,
+        "sha256": "3d167da8ea340bb8eb1e49d236fcbd3b0532791e99031d6cf234cde7624114dc"
       },
       {
         "path": "frontend/app/channels.js",
@@ -733,8 +733,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 596295,
-        "sha256": "140d0a88bed7351f945da002bb6330f99451536d2f70c8a72e4c2f51b885f73c"
+        "bytes": 596335,
+        "sha256": "3434d4c08ace13e1627ebb43c68e13125c9e5c1b3616fdc1168e658b89310bf5"
       },
       {
         "path": "frontend/app/study.js",
@@ -938,8 +938,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 566300,
-        "sha256": "d18e5d5ee4e3392e17811a542035b479b00d1f4066df4d079be4c7769f7276c0"
+        "bytes": 567722,
+        "sha256": "fcb0df2289e8ea18067935b29b16aa1746e32bc559f9be5999a7ac3e23757983"
       },
       {
         "path": "frontend/app/worldmodel.js",

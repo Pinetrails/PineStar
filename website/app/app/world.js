@@ -2170,6 +2170,22 @@ const World = (() => {
     if (planPlay(now)) return true;
     return planProp(now);
   }
+  /* OCCUPANCY for standing-use props (2026-08-10). Seats have real claims (occupiedSeats), so two
+     bodies never share a stool or a cushion — but an arcade/pinball/gacha is used STANDING, carried
+     nothing, and both idle pickers happily sent a second body to a machine someone was already at:
+     the two ended up shoulder-to-shoulder on the same approach tile, playing the same cabinet
+     (Andrew's live repro). `usingProp` is stamped at PLAN time — the moment a body commits to the
+     walk — so checking other bodies' usingProp covers both "using it now" and "already on the way".
+     Read-only over the tiny body list; a multi-tile prop (pool, a wide bar) is deliberately NOT
+     exempted — one machine, one player, which is also how the real thing works. */
+  function propInUse(propId) {
+    if (!propId) return false;
+    for (const b of allBodies()) {
+      if (!b || b === self || b.unplaced) continue;
+      if (b.usingProp === propId) return true;
+    }
+    return false;
+  }
   function planPlay(now) {
     if (!geo || !geo.props || !geo.props.length) return false;
     const zone = zoneFor(self), cands = [];
@@ -2180,6 +2196,7 @@ const World = (() => {
       if (!u || !FUN_KINDS[u.kind]) continue;
       if (!mayTouchProp(self.id, p)) continue;
       if (!tileInZone(zone, p.x, p.y)) continue;
+      if (propInUse(p.id)) continue;                       // someone is at (or walking to) this machine — pick something else
       const recent = funBlocked(p.id, now);
       cands.push({ key: p.id, w: (FUN_W[u.kind] || 2) * (recent ? 0.28 : 1), recent, prop: p, kind: u.kind });
     }
@@ -2224,6 +2241,7 @@ const World = (() => {
       if (use.kind === 'seat') { const counter = counterForSeat(p); if (counter && counter.p && !funBlocked(counter.p.id, now)) cands.push({ seat: p }); continue; }   // only a non-recent purposeful counter seat reaches this branch
       if (use.kind === 'bar') continue;                                  // its adjacent purposeful seat is the destination, never the counter face itself
       if (funBlocked(p.id, now)) continue;
+      if (propInUse(p.id)) continue;                                     // occupied (or being walked to) — see propInUse
       const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
       if (a && tileInZone(zone, a.tx, a.ty)) cands.push({ id: p.id, a });   // the APPROACH tile (where the body stands) must be in-zone
     }
@@ -7369,6 +7387,7 @@ const World = (() => {
           wallDirs: wallDirsAt(b),                                      // control: how many of the 4 cardinals here ARE wall (a blind pick would hit wall wallDirs/4 of the time)
           quirkKind: b.quirkKind || null,
           useKind: b.usingProp ? useKindOf(b.usingProp) : null,         // WHICH prop it is using (the per-kind beat)
+          usingProp: b.usingProp || null,                               // ...and the exact prop id — the one-machine-one-player proof keys on collisions here
           emote: !!(b.emote && b.emote.until > fnow),                   // the ambient stretch is playing (assets.js owns it; nothing in the idle engine fires it)
           talking: !!b.talking,                                         // W4: taking its turn in a silent exchange
           pose: b._pose || null,                                        // the sprite track it was LAST DRAWN in (assets.js records it) — render truth, not a re-derivation

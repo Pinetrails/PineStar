@@ -22,9 +22,14 @@ function sourceIdentity(sourceDir, expectedCommit = '') {
   return { dir, head, commit, tree, clean: git(dir, ['status', '--porcelain']) === '' };
 }
 
-function verifyRuntimeTree(source, runtimeRoot, paths) {
+function normalizeCrlf(buf) {
+  if (buf.includes(0) || !buf.includes('\r\n')) return null;
+  return Buffer.from(buf.toString('utf8').replace(/\r\n/g, '\n'), 'utf8');
+}
+
+export function verifyRuntimeTree(source, runtimeRoot, paths) {
   const rows = git(source.dir, ['ls-tree', '-r', source.commit, '--', ...paths]).split(/\r?\n/).filter(Boolean);
-  const manifest = [], missing = [], mismatched = [];
+  const manifest = [], missing = [], mismatched = [], normalized = [];
   for (const row of rows) {
     const match = row.match(/^\d+ blob ([0-9a-f]{40})\t(.+)$/);
     if (!match) continue;
@@ -32,11 +37,16 @@ function verifyRuntimeTree(source, runtimeRoot, paths) {
     let buf;
     try { buf = readFileSync(file); } catch (_) { missing.push(rel); continue; }
     const actual = gitBlob(buf);
-    if (actual !== match[1]) mismatched.push(rel);
+    if (actual !== match[1]) {
+      const lf = normalizeCrlf(buf);
+      if (lf && gitBlob(lf) === match[1]) normalized.push(rel);
+      else mismatched.push(rel);
+    }
     manifest.push(`${rel}\0${match[1]}`);
   }
   if (missing.length || mismatched.length) throw new Error(`runtime tree mismatch: ${missing.length} missing, ${mismatched.length} changed`);
   return { root: resolve(runtimeRoot), paths, trackedFiles: manifest.length,
+    normalization: { kind: 'crlf-to-lf', files: normalized.length },
     manifestSha256: createHash('sha256').update(manifest.join('\n')).digest('hex') };
 }
 
@@ -66,7 +76,7 @@ export async function bindStarNet(opts) {
     sourceTree: { algorithm: 'git-tree', value: source.tree }, executable: executable(opts.executable),
     platform: { platform: process.platform, arch: process.arch, node: process.version }, dirty: false,
     provenance: { verified: true, kind: 'embedded-build-and-runtime-tree', describe, runtime, probe,
-      checks: ['commit object exists', 'tree matches commit', 'executable embeds commit/tree/describe', 'all shipped runtime blobs match commit', 'live health matches describe'] }
+      checks: ['commit object exists', 'tree matches commit', 'executable embeds commit/tree/describe', 'all shipped runtime blobs match commit exactly or after CRLF-to-LF normalization', 'live health matches describe'] }
   } };
 }
 
