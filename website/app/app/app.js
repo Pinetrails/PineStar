@@ -1847,13 +1847,18 @@ const App = (() => {
       baseInput.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); onWake(); } };
     }
     el('codex-block').classList.toggle('hidden', !isOAuth);
+    // STARNET MANAGED wears its own link block (the codex-block twin) — visible only while picked.
+    const isStarnet = pickedProvider === 'starnet';
+    { const sb = el('starnet-block'); if (sb) sb.classList.toggle('hidden', !isStarnet); }
     // the BYOK note talks about your key on 127.0.0.1 / the OS keychain — irrelevant and contradictory on the
     // keyless subscription paths (no key at all), so hide the whole disclosure there. On BYOK it stays collapsed
     // behind its toggle (progressive disclosure) — the note's own .hidden is owned by #byok-toggle, not this switch.
-    { const bd = el('byok-disclose'); if (bd) bd.classList.toggle('hidden', isOAuth); }
+    { const bd = el('byok-disclose'); if (bd) bd.classList.toggle('hidden', isOAuth || isStarnet); }
     // Switching providers must drop any OTHER provider's in-flight device-code poll — a code minted for the
     // previous pick has no business connecting the new one's block. The active pick's own poll survives a re-click.
     cancelOAuthPolls(pickedProvider);
+    if (!isStarnet) stopStarnetLinkPoll();
+    if (isStarnet) refreshStarnetGenesisStatus();
     if (isOAuth) {
       applyOAuthBlockCopy(pickedProvider);   // the shared #codex-block speaks the picked provider's language
       if (pickedProvider === 'codex') {
@@ -2093,6 +2098,90 @@ const App = (() => {
     refreshOAuthGenesisStatus(pid);
   }
 
+  /* ---------- STARNET MANAGED on the genesis screen ----------
+     The subscription path for people who never want to see an API key: buy on starnetos.com, then the
+     connect screen links this station to that account with ONE confirmed code — the same sidecar engine
+     the STORE uses (/api/credits/link/*), painted into #starnet-block. The chip itself stays HIDDEN
+     until the sidecar reports a cloud seam (linked or linkable): a build with no cloud must not offer
+     a subscription it cannot link, so a CLOUD_LIVE=false install keeps a starnet-free connect screen. */
+  let starnetLinked = false;          // last /api/credits truth — the WAKE gate reads this
+  let _starnetLinkPoll = null;
+  function stopStarnetLinkPoll() { if (_starnetLinkPoll) { clearInterval(_starnetLinkPoll); _starnetLinkPoll = null; } }
+  async function revealStarnetGenesis() {
+    let linked = false, linkable = false;
+    try { const j = await Harness.api.get('/api/credits'); linked = !!(j && j.configured); } catch (_) {}
+    if (!linked) { try { const j = await Harness.api.get('/api/credits/linkable'); linkable = !!(j && j.available); } catch (_) {} }
+    starnetLinked = linked;
+    const b = document.querySelector('.provider-row .prov[data-prov="starnet"]');
+    if (b) b.classList.toggle('hidden', !(linked || linkable));
+    if (pickedProvider === 'starnet') refreshStarnetGenesisStatus();
+    return linked || linkable;
+  }
+  async function refreshStarnetGenesisStatus() {
+    const statusEl = el('starnet-status'), linkBtn = el('btn-starnet-link');
+    if (!statusEl) return;
+    let j = null;
+    try { j = await Harness.api.get('/api/credits'); } catch (_) {}
+    starnetLinked = !!(j && j.configured);
+    if (pickedProvider !== 'starnet') return;   // pick moved on — don't repaint another provider's block
+    if (starnetLinked) {
+      const bal = (j.balanceUsd == null) ? '' : ' · $' + Number(j.balanceUsd).toFixed(2) + ' available';
+      statusEl.innerHTML = '<span class="conn-dot"></span>linked to your StarNet account' + esc(bal) + ' — your agents run on your subscription';
+      statusEl.className = 'codex-status ok';
+      if (linkBtn) linkBtn.classList.add('hidden');
+    } else {
+      statusEl.textContent = 'not linked — connect the subscription you bought on starnetos.com (takes one click + a code)';
+      statusEl.className = 'codex-status';
+      if (linkBtn) linkBtn.classList.remove('hidden');
+    }
+  }
+  // Mint a pairing code, open the browser to confirm it, poll until linked. The device token never enters
+  // this WebView: the sidecar holds it, and on desktop Rust immediately moves it into the OS keychain.
+  function startStarnetLink() {
+    SFX.click();
+    stopStarnetLinkPoll();
+    const statusEl = el('starnet-status'), codeEl = el('starnet-code'), openBtn = el('btn-starnet-open');
+    const fail = t => { statusEl.textContent = t; statusEl.className = 'codex-status bad'; codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); };
+    statusEl.textContent = 'requesting a link code…'; statusEl.className = 'codex-status';
+    Harness.api.post('/api/credits/link/start', { deviceName: 'StarNet Station' })
+      .then(r => { if (!r || !r.ok) throw new Error('start failed'); return r.j; })
+      .then(j => {
+        if (!j || !j.code) throw new Error('no code');
+        codeEl.textContent = j.code; codeEl.classList.remove('hidden');
+        openBtn.classList.remove('hidden');
+        openBtn.onclick = () => openExternalUrl(j.verifyUrl);
+        statusEl.textContent = 'confirm this code in your browser (opening the link page now)…';
+        openExternalUrl(j.verifyUrl);
+        const expiresAt = Number(j.expiresAt) || 0;
+        const tick = () => {
+          if (expiresAt && Date.now() > expiresAt) { stopStarnetLinkPoll(); fail('that code expired — start again'); return; }
+          Harness.api.post('/api/credits/link/poll', { code: j.code })
+            .then(r2 => (r2 && r2.ok) ? r2.j : {})
+            .then(p => {
+              if (p && p.linked) {
+                stopStarnetLinkPoll(); SFX.open();
+                codeEl.classList.add('hidden'); openBtn.classList.add('hidden');
+                // desktop: move the fresh token file → OS keychain NOW (Rust reads + moves; the token
+                // never passes through here), then teach Harness the credential exists so
+                // configured('starnet') answers true without a restart.
+                const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+                const adopt = invoke ? Promise.resolve(invoke('harness_adopt_credits_token')).catch(() => false) : Promise.resolve(false);
+                adopt
+                  .then(() => (Harness.refreshCreditsConfigured ? Harness.refreshCreditsConfigured() : null))
+                  .then(() => { refreshStarnetGenesisStatus(); loadModels('starnet'); });
+                return;
+              }
+              if (p && (p.status === 'expired' || p.status === 'consumed' || p.status === 'unknown')) {
+                stopStarnetLinkPoll(); fail('that code is no longer valid — start again');
+              }
+            })
+            .catch(() => {});
+        };
+        _starnetLinkPoll = setInterval(tick, 2000);
+      })
+      .catch(() => fail('could not reach the link service — try again'));
+  }
+
   // the SKIN picker: choose which sprite set (teddy bear, pepe, …) the new agent wears. The chosen
   // id rides on agent.skin and is read by the sprite engine (assets.js drawBody → DATA.SKINS).
   // A live preview STAGE on the right (shared SkinStage) plays the picked (or hovered) skin's real
@@ -2272,6 +2361,9 @@ const App = (() => {
     // the sign-in block is SHARED by every keyless OAuth provider — dispatch on the current pick
     el('btn-codex-signin').onclick = () => (pickedProvider === 'codex' ? startCodexSignIn() : startOAuthSignIn(pickedProvider));
     el('btn-codex-logout').onclick = () => (pickedProvider === 'codex' ? codexLogout() : oauthGenesisLogout(pickedProvider));
+    // STARNET MANAGED: reveal the chip only when this station actually has a cloud seam, and wire its link flow.
+    { const sl = el('btn-starnet-link'); if (sl) sl.onclick = () => startStarnetLink(); }
+    revealStarnetGenesis();
     // BYOK key-safety note: collapsed by default, expanded by its own disclosure toggle (progressive disclosure).
     { const bt = el('byok-toggle'), bn = el('byok-note');
       if (bt && bn) {
@@ -2413,6 +2505,7 @@ const App = (() => {
   async function onWakeAttempt() {
     SFX.boot(); SFX.open();
     stopCodexPoll();   // leaving the connect screen — drop any in-flight sign-in poll
+    stopStarnetLinkPoll();   // …and any in-flight StarNet pairing poll (same screen-exit rule)
     // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too).
     // A blank/sentinel name mints a station codename (never the bland 'AGENT'), matching the awakening
     // speaker — dialogue.js owns the generator so both surfaces stay consistent.
@@ -2441,7 +2534,11 @@ const App = (() => {
       }
       return false;
     }
-    if (isOAuthProviderId(pickedProvider)) {
+    if (pickedProvider === 'starnet') {
+      // the credits admission gate would refuse the run anyway — say it here, where the fix is one button away.
+      if (!starnetLinked) { msg.textContent = 'link your StarNet account first — press 🔗 LINK YOUR STARNET ACCOUNT above.'; return false; }
+      Harness.setModel(model); Harness.setProv('starnet');
+    } else if (isOAuthProviderId(pickedProvider)) {
       if (!oauthConnected[pickedProvider]) { msg.textContent = 'sign in with ' + OAUTH_GENESIS[pickedProvider].name + ' first, or switch to OpenRouter.'; return false; }
       Harness.setModel(model); Harness.setProv(pickedProvider);
     } else {
