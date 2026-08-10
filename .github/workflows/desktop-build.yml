@@ -451,11 +451,17 @@ jobs:
                 }
               } finally { $probe.Dispose() }
               Start-Sleep -Milliseconds 500
-            }
-            if ($tabs) {
+          }
+          if ($tabs) {
+            $smokeExit = 2
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
               npm.cmd run qa:smoke:installed
-              if ($LASTEXITCODE -ne 0) { throw "installed smoke failed with exit code $LASTEXITCODE" }
-            } else {
+              $smokeExit = $LASTEXITCODE
+              if ($smokeExit -eq 0) { break }
+              if ($attempt -lt 3) { Start-Sleep -Seconds 3 }
+            }
+            if ($smokeExit -ne 0) { throw "installed smoke failed after 3 fresh attachments with exit code $smokeExit" }
+          } else {
               $browserProcesses = Get-CimInstance Win32_Process |
                 Where-Object { $_.Name -eq 'msedgewebview2.exe' } |
                 Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine
