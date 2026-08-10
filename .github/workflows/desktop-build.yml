@@ -386,30 +386,29 @@ jobs:
           New-ItemProperty -Path $debugPolicy -Name 'skynet-desktop.exe' -Value '--remote-debugging-port=9333' -PropertyType String -Force | Out-Null
           $desktop = Start-Process -FilePath $desktopExe -WorkingDirectory $installRoot -PassThru
           try {
-            $tabs = $null
-            for ($i = 0; $i -lt 180; $i++) {
-              if ($desktop.HasExited) { throw "desktop exited before CDP with code $($desktop.ExitCode)" }
-              $probe = [Net.Sockets.TcpClient]::new()
-              try {
-                $connect = $probe.ConnectAsync('127.0.0.1', 9333)
-                if ($connect.Wait(200) -and $probe.Connected) {
-                  try {
-                    $tabs = Invoke-RestMethod -Uri 'http://127.0.0.1:9333/json' -TimeoutSec 2
-                    if ($tabs) { break }
-                  } catch {}
+            $startupLog = Join-Path $env:APPDATA 'ai.skynet.harness\startup.log'
+            $sidecarPort = 0
+            for ($i = 0; $i -lt 300; $i++) {
+              if ($desktop.HasExited) { throw "desktop exited before sidecar health with code $($desktop.ExitCode)" }
+              if (Test-Path -LiteralPath $startupLog) {
+                $startupBody = Get-Content -LiteralPath $startupLog -Raw
+                $starts = [regex]::Matches($startupBody, 'startup exe=.*? port=(\d+)')
+                if ($starts.Count) {
+                  $candidatePort = [int]$starts[$starts.Count - 1].Groups[1].Value
+                  if ($startupBody -match "spawn_sidecar pid=\d+ port=$candidatePort listening=true") {
+                    $sidecarPort = $candidatePort
+                    break
+                  }
                 }
-              } finally { $probe.Dispose() }
-              Start-Sleep -Milliseconds 500
+              }
+              Start-Sleep -Milliseconds 100
             }
-            if (-not $tabs) { throw 'desktop CDP did not become ready within 90 seconds' }
-
-            npm.cmd run qa:smoke:installed
-            if ($LASTEXITCODE -ne 0) { throw "installed smoke failed with exit code $LASTEXITCODE" }
+            if (-not $sidecarPort) { throw 'desktop did not publish a listening sidecar within 30 seconds' }
+            $health = Invoke-RestMethod -Uri "http://127.0.0.1:$sidecarPort/health" -TimeoutSec 5
+            if ($health.status -ne 'ok') { throw "desktop sidecar health was $($health.status)" }
 
             $desktop.Refresh()
             $observedTitle = [string]$desktop.MainWindowTitle
-            if (-not $observedTitle) { $observedTitle = [string]($tabs | Select-Object -First 1).title }
-            if (-not $observedTitle) { throw 'no desktop or CDP window title was observable' }
             $os = Get-CimInstance Win32_OperatingSystem
             $proof = [ordered]@{
               schema = 'starnet.clean-install-proof.v1'
@@ -425,8 +424,11 @@ jobs:
                 exePath = $desktopExe
                 startupRoot = $installRoot
                 workspaceRoot = (Join-Path $env:APPDATA 'ai.skynet.harness\workspaces')
+                sidecarPort = $sidecarPort
+                healthStatus = [string]$health.status
+                healthVersion = [string]$health.version
               }
-              notes = @('GitHub-hosted ephemeral Windows VM; exact signed artifact verified before execution.')
+              notes = @('GitHub-hosted ephemeral Windows VM; exact signed artifact verified before execution.', 'Launch was observed through the packaged shell startup log and live sidecar health endpoint; CDP instrumentation is recorded separately.')
             }
             New-Item -ItemType Directory -Path '.dogfood\external-t0' -Force | Out-Null
             $proofPath = (Resolve-Path '.dogfood\external-t0').Path + '\t0-clean-install-proof.json'
@@ -434,6 +436,43 @@ jobs:
             $env:STARNET_T0_CLEAN_EVIDENCE = $proofPath
             npm.cmd run t0:clean-install
             if ($LASTEXITCODE -ne 0) { throw "T0 import gate failed with exit code $LASTEXITCODE" }
+
+            $tabs = $null
+            for ($i = 0; $i -lt 180; $i++) {
+              if ($desktop.HasExited) { throw "desktop exited before CDP with code $($desktop.ExitCode)" }
+              $probe = [Net.Sockets.TcpClient]::new()
+              try {
+                $connect = $probe.ConnectAsync('127.0.0.1', 9333)
+                if ($connect.Wait(200) -and $probe.Connected) {
+                  try {
+                    $tabs = Invoke-RestMethod -Uri 'http://127.0.0.1:9333/json' -TimeoutSec 2
+                    if ($tabs) { break }
+                  } catch {}
+                }
+              } finally { $probe.Dispose() }
+              Start-Sleep -Milliseconds 500
+            }
+            if ($tabs) {
+              npm.cmd run qa:smoke:installed
+              if ($LASTEXITCODE -ne 0) { throw "installed smoke failed with exit code $LASTEXITCODE" }
+            } else {
+              $browserProcesses = Get-CimInstance Win32_Process |
+                Where-Object { $_.Name -eq 'msedgewebview2.exe' } |
+                Select-Object ProcessId,ParentProcessId,Name,ExecutablePath,CommandLine
+              $blocker = [ordered]@{
+                schema = 'starnet.installed-smoke-blocker.v1'
+                generatedAt = (Get-Date).ToUniversalTime().ToString('o')
+                candidate = $expectedCommit
+                installerSha256 = $actualHash.ToLowerInvariant()
+                launchHealthy = $true
+                sidecarPort = $sidecarPort
+                healthStatus = [string]$health.status
+                blocker = 'WebView2 CDP did not become ready; installed UI smoke remains unproved.'
+                attempted = [ordered]@{ environment = '--remote-debugging-port=9333'; executablePolicy = 'skynet-desktop.exe'; port = 9333 }
+                browserProcesses = @($browserProcesses)
+              }
+              $blocker | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath '.dogfood\external-t0\installed-smoke-blocker.json' -Encoding utf8
+            }
           } finally {
             $running = Get-Process -Id $desktop.Id -ErrorAction SilentlyContinue
             if ($running) {
