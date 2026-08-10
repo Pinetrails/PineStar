@@ -18,7 +18,11 @@ for (const credential of ['APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID']) {
 
 A.ok(/Submit macOS DMG for asynchronous notarization/.test(yml),
   'manual workflow submits the completed DMG asynchronously');
-A.ok(/matrix\.target == 'darwin-x64'[\s\S]{0,180}hydrate-sharp-macos-x64\.sh/.test(yml),
+A.ok(/os: macos-15-intel[\s\S]{0,120}target: darwin-x64/.test(yml),
+  'manual Intel Mac builds run on an actual x86_64 hosted runner');
+A.ok(/Verify v0\.8\.5 station recovery on Intel macOS[\s\S]{0,220}uname -m[\s\S]{0,120}upgrade-085-090\.test\.js/.test(yml),
+  'manual Intel Mac builds exercise the released workspace upgrade on x86_64 hardware');
+A.ok(/matrix\.target == 'darwin-x64'[\s\S]{0,220}hydrate-sharp-macos-x64\.sh/.test(yml),
   'manual Intel Mac builds hydrate the lockfile-pinned x64 Sharp runtime');
 A.ok(/Prepare bundled macOS native dependencies for signing[\s\S]{0,1400}sign-macos-native-deps\.sh/.test(yml),
   'credentialed manual Mac builds sign the staged native dependency closure');

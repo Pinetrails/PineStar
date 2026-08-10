@@ -14,6 +14,11 @@ const finalizeScript = fs.readFileSync(path.join(root, 'scripts', 'notarize-maco
 const hydrateScript = fs.readFileSync(path.join(root, 'scripts', 'hydrate-sharp-macos-x64.sh'), 'utf8');
 const nativeScript = fs.readFileSync(path.join(root, 'scripts', 'sign-macos-native-deps.sh'), 'utf8');
 
+A.ok(/os: macos-15-intel[\s\S]{0,120}target: darwin-x64/.test(yml),
+  'public Intel release runs on an actual x86_64 hosted runner');
+A.ok(/Verify v0\.8\.5 station recovery on Intel macOS[\s\S]{0,220}uname -m[\s\S]{0,120}upgrade-085-090\.test\.js/.test(yml),
+  'public Intel release proves the released workspace upgrade on x86_64 hardware');
+
 const requiredStep = yml.match(
   /- name: Require complete Apple signing credentials([\s\S]*?)(?=\n      - name:)/
 );
@@ -38,11 +43,11 @@ A.ok(/exit 1/.test(gate), 'missing Apple credentials fail the release train');
 A.ok(/Developer ID Application:/.test(gate), 'signing identity must be Developer ID Application');
 
 const hydrateStep = yml.match(
-  /- name: Hydrate Intel Sharp runtime for macOS cross-build([\s\S]*?)(?=\n      - name: Stage bundled Node sidecar runtime)/
+  /- name: Hydrate Intel Sharp runtime for macOS target([\s\S]*?)(?=\n      - name: Stage bundled Node sidecar runtime)/
 );
-A.ok(hydrateStep, 'release train hydrates the Intel Sharp runtime on ARM-hosted macOS runners');
+A.ok(hydrateStep, 'release train hydrates the Intel Sharp runtime on the Intel macOS runner');
 const hydrate = hydrateStep[1];
-A.ok(/matrix\.target == 'darwin-x64'/.test(hydrate), 'Sharp hydration only runs for the Intel cross-build');
+A.ok(/matrix\.target == 'darwin-x64'/.test(hydrate), 'Sharp hydration only runs for the Intel target');
 A.ok(/bash scripts\/hydrate-sharp-macos-x64\.sh/.test(hydrate), 'workflow delegates Sharp hydration to one named script');
 A.ok(/package-lock\.json'[\s\S]*sharp-darwin-x64/.test(hydrateScript) && /sharp-libvips-darwin-x64/.test(hydrateScript),
   'Intel Sharp package versions are read from the immutable source lockfile');
