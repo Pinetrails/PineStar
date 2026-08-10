@@ -1196,19 +1196,41 @@ const WorldModel = (() => {
         return doorSet.has(x1 + ',' + y1 + '>' + x2 + ',' + y2);
       };
 
-      /* chamfers: round the convex, void-exposed corners of ROOMS only (corridors stay slim).
-         a corner is roundable when both of its orthogonal-outward neighbours are void. */
-      const chamfers = [];
+      /* chamfers: round the convex, void-exposed corners. A corner is roundable when both of its
+         orthogonal-outward neighbours are void.
+
+         HALLWAYS GET THE ART, NOT THE BLOCK (2026-08-10). This ran for ROOMS ONLY — "corridors stay
+         slim" — and that is the whole of the broken hallway corner Andrew circled: with no chamfer,
+         a hallway's convex corner is a raw right angle where the tall north face (extruded up-screen
+         by WALL.corUp) collides with the side band (a top surface at floor level), and nothing
+         reconciles the step between them. A room never shows it because a room gets rounded. It also
+         explains why the corner tracked the 08-08 wall lane exactly: the step IS corUp tall, so
+         raising it 8→12 turned a nick into a block.
+
+         But the exclusion was not arbitrary and must not simply be deleted: a chamfer tile is also
+         an UNWALKABLE tile, and hallways are narrow. MIN_HALL allows 2 wide, so blocking both
+         corners of a 2-wide end row severs the hallway there — and a 2x2 hallway (Andrew has one
+         joining r3 to r1) would have all four corners blocked and become an impassable hole in the
+         station's connectivity. Measured, not feared: with the block left in, a 2x2 hallway comes
+         back with 2 of its 4 tiles walkable. Pathing would have broken silently on existing saves.
+
+         So the two meanings of "chamfer" are separated, because they were only ever conflated:
+           · `chamfers`     — ART. What the bake rounds. Rooms AND corridors.
+           · `chamferBlock` — WALKABILITY. What stops being floor. Rooms only, exactly as before.
+         Corridor walkability is therefore identical to before this change; only the shell, the crown
+         ring and the corner's wall art move. Locked by worldmodel.test.js. */
+      const chamfers = [], chamferBlock = [];
       const isVoid = (x, y) => (x < 0 || y < 0 || x >= COLS || y >= ROWS) ? true : zoneGrid[idx(x, y)] == null;
       for (const id of doc.order) {
         const rm = doc.rooms[id];
-        if (rm.kind === 'corridor') continue;
+        const isCor = rm.kind === 'corridor';
+        const cut = (x, y, kind) => { chamfers.push([x, y, kind]); if (!isCor) chamferBlock.push([x, y]); };
         for (const r of rm.rects) {
           const lx1 = r.x1 - ox, ly1 = r.y1 - oy, lx2 = r.x2 - ox, ly2 = r.y2 - oy;
-          if (isVoid(lx1 - 1, ly1) && isVoid(lx1, ly1 - 1)) chamfers.push([lx1, ly1, 'tl']);
-          if (isVoid(lx2 + 1, ly1) && isVoid(lx2, ly1 - 1)) chamfers.push([lx2, ly1, 'tr']);
-          if (isVoid(lx1 - 1, ly2) && isVoid(lx1, ly2 + 1)) chamfers.push([lx1, ly2, 'bl']);
-          if (isVoid(lx2 + 1, ly2) && isVoid(lx2, ly2 + 1)) chamfers.push([lx2, ly2, 'br']);
+          if (isVoid(lx1 - 1, ly1) && isVoid(lx1, ly1 - 1)) cut(lx1, ly1, 'tl');
+          if (isVoid(lx2 + 1, ly1) && isVoid(lx2, ly1 - 1)) cut(lx2, ly1, 'tr');
+          if (isVoid(lx1 - 1, ly2) && isVoid(lx1, ly2 + 1)) cut(lx1, ly2, 'bl');
+          if (isVoid(lx2 + 1, ly2) && isVoid(lx2, ly2 + 1)) cut(lx2, ly2, 'br');
         }
       }
 
@@ -1226,7 +1248,9 @@ const WorldModel = (() => {
          the renderer, not the model, so they're passed in per query). path() is a BFS
          that only crosses zone seams where canStep allows (same zone or a door). */
       const blockedTiles = new Set();
-      for (const c of chamfers) blockedTiles.add(c[0] + ',' + c[1]);
+      // chamferBlock, NOT chamfers — a hallway's corner is rounded in ART but stays walkable, or a
+      // 2-wide hall loses its end row and a 2x2 hall becomes an impassable hole. See the split above.
+      for (const c of chamferBlock) blockedTiles.add(c[0] + ',' + c[1]);
       // props occupy their footprint: shift to the local frame, block walking, and emit for the
       // renderer. This is the seam the walkability contract promised — furniture lives here now.
       const propsLocal = [];

@@ -22,7 +22,7 @@ const App = (() => {
   let pickedTraits = {};        // the VOICE & MANNER fine-tune dials (warmth/humor/formality/length + emoji/blunt) — only set keys contribute prompt text
   let pickedCustomVoice = '';   // the Commander's free-text "in their own words" voice note (optional)
   let pickedApproval = 'ask';   // the APPROVAL mode — 'ask' (consent-gated) | 'full' (auto-approve). Drives the REAL consent broker (sidecar bypass), not a cosmetic toggle.
-  let pickedProvider = 'codex';   // BEGINNER-FIRST default: 'codex' (personal ChatGPT sign-in, NO API key) leads the funnel; 'openrouter' (BYO API key) + the rest stay one click away. initConnect() still honours a returning agent's saved provider (selectProviderUI(Harness.getProv())).
+  let pickedProvider = 'openai';   // BEGINNER-FIRST funnel: the STARNET hero is the promoted start, but it only exists once the cloud seam is proven (revealStarnetGenesis auto-picks it on a fresh create). Until then OPENAI leads — its card carries BOTH paths (ChatGPT sign-in or an API key). initConnect() still honours a returning agent's saved provider.
   // POWER-USER LOOP PL-03 — entry is a four-surface truth transaction. World opens its EventSource
   // before Chat/StationUI finish mounting, and their independent timers used to expose an impossible
   // mixture during reload: unreachable + STANDBY + ONLINE + "COMMS online". Hold every idle claim at
@@ -733,6 +733,7 @@ const App = (() => {
       fireworks: 'FIREWORKS',
       perplexity: 'PERPLEXITY',
       cerebras: 'CEREBRAS',
+      starnet: 'STARNET MANAGED',
       ollama: 'OLLAMA',
       custom: 'CUSTOM'
     };
@@ -756,17 +757,19 @@ const App = (() => {
     if (p === 'fireworks' || p === 'fireworks-ai') return 'fireworks';
     if (p === 'perplexity' || p === 'pplx' || p === 'sonar') return 'perplexity';
     if (p === 'cerebras') return 'cerebras';
+    // managed credits — its bearer is the linked device token, never a key the user pastes
+    if (p === 'starnet' || p === 'starnet-cloud' || p === 'managed') return 'starnet';
     if (p === 'ollama' || p === 'ollama-local') return 'ollama';
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return 'openrouter';
   }
   function providerNeedsKey(provider) {
     const p = normalizeProviderId(provider);
-    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom';
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom' && p !== 'starnet';
   }
   function providerUsesKeyBox(provider) {
     const p = normalizeProviderId(provider);
-    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama';
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'starnet';
   }
   function providerNeedsBaseUrl(provider) {
     return normalizeProviderId(provider) === 'custom';
@@ -804,6 +807,8 @@ const App = (() => {
       fireworks: 'https://fireworks.ai/account/api-keys',
       perplexity: 'https://www.perplexity.ai/settings/api',
       cerebras: 'https://cloud.cerebras.ai',
+      // not a key page: managed credits are obtained by LINKING a station in the STORE
+      starnet: 'https://account.starnetos.com',
       openrouter: 'https://openrouter.ai/keys'
     };
     return map[p] || 'https://openrouter.ai/keys';
@@ -1818,6 +1823,10 @@ const App = (() => {
 
   function selectProviderUI(p) {
     pickedProvider = normalizeProviderId(p);
+    // ChatGPT/Codex has no chip of its own on this screen anymore — it lives INSIDE the OPENAI card
+    // (two paths, one card). A returning codex agent therefore lands on OPENAI, whose card shows the
+    // live ChatGPT sign-in status; WAKE re-derives codex from that sign-in (see onWakeAttempt).
+    if (pickedProvider === 'codex') pickedProvider = 'openai';
     // switching provider is the user ACTING on a wake-validation message — clear the stale line
     { const m = el('connect-msg'); if (m) m.textContent = ''; }
     document.querySelectorAll('.provider-row .prov').forEach(b => { const on = b.dataset.prov === pickedProvider; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', String(on)); });
@@ -1841,23 +1850,32 @@ const App = (() => {
       };
       baseInput.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); onWake(); } };
     }
-    el('codex-block').classList.toggle('hidden', !isOAuth);
+    // The OPENAI card is a TWO-PATH card: ChatGPT sign-in (device-code, no key) or an API key. The shared
+    // sign-in block shows there alongside the key box; grok/kimi keep it as their only path.
+    const isOpenAI = pickedProvider === 'openai';
+    el('codex-block').classList.toggle('hidden', !(isOAuth || isOpenAI));
+    // STARNET MANAGED wears its own link block (the codex-block twin) — visible only while picked.
+    const isStarnet = pickedProvider === 'starnet';
+    { const sb = el('starnet-block'); if (sb) sb.classList.toggle('hidden', !isStarnet); }
     // the BYOK note talks about your key on 127.0.0.1 / the OS keychain — irrelevant and contradictory on the
     // keyless subscription paths (no key at all), so hide the whole disclosure there. On BYOK it stays collapsed
     // behind its toggle (progressive disclosure) — the note's own .hidden is owned by #byok-toggle, not this switch.
-    { const bd = el('byok-disclose'); if (bd) bd.classList.toggle('hidden', isOAuth); }
+    { const bd = el('byok-disclose'); if (bd) bd.classList.toggle('hidden', isOAuth || isStarnet); }
     // Switching providers must drop any OTHER provider's in-flight device-code poll — a code minted for the
     // previous pick has no business connecting the new one's block. The active pick's own poll survives a re-click.
-    cancelOAuthPolls(pickedProvider);
+    cancelOAuthPolls(isOpenAI ? 'codex' : pickedProvider);   // the OPENAI card's sign-in IS the codex poll — keep it alive
+    if (!isStarnet) stopStarnetLinkPoll();
+    if (isStarnet) refreshStarnetGenesisStatus();
     if (isOAuth) {
       applyOAuthBlockCopy(pickedProvider);   // the shared #codex-block speaks the picked provider's language
-      if (pickedProvider === 'codex') {
-        loadCodexModels();      // live per-account discovery (falls back to CODEX_MODELS when not connected)
-        refreshCodexStatus();
-      } else {
-        loadOAuthModels(pickedProvider);
-        refreshOAuthGenesisStatus(pickedProvider);
-      }
+      loadOAuthModels(pickedProvider);
+      refreshOAuthGenesisStatus(pickedProvider);
+    } else if (isOpenAI) {
+      applyOAuthBlockCopy('codex');          // the OPENAI card's sign-in half speaks ChatGPT
+      // The catalog follows the path the user actually has: a live ChatGPT sign-in reads the codex lineup,
+      // otherwise the OpenAI API catalog. refreshCodexStatus resolves async, so re-aim the catalog once known.
+      refreshCodexStatus().then(() => { if (pickedProvider === 'openai' && codexConnected) loadCodexModels(); });
+      loadModels('openai');
     } else {
       loadModels(pickedProvider);
     }
@@ -1987,7 +2005,7 @@ const App = (() => {
     if (signinBtn) signinBtn.textContent = '⏼ SIGN IN WITH ' + c.name.toUpperCase() + ' ▸';
     if (hint) {
       hint.textContent = (pid === 'codex')
-        ? 'Uses the ChatGPT Plus/Pro account you already have — no API key, no billing setup. Prefer a key? Switch to OPENROUTER (or any provider) above.'
+        ? 'Uses the ChatGPT Plus/Pro account you already have — no API key, no billing setup. Prefer a key? Paste an OpenAI API key above instead.'
         : 'Uses the ' + c.sub + ' you already have — no API key, no billing setup. Prefer a key? Switch to OPENROUTER (or any provider) above.';
     }
     // a stale code/status from the previously picked provider must never dress this one's block
@@ -2086,6 +2104,94 @@ const App = (() => {
     el('codex-code').classList.add('hidden'); el('btn-codex-open').classList.add('hidden');
     if (typeof OAuthSignIn !== 'undefined') await OAuthSignIn.for(pid).logout();   // also cancels any in-flight poll
     refreshOAuthGenesisStatus(pid);
+  }
+
+  /* ---------- STARNET MANAGED on the genesis screen ----------
+     The subscription path for people who never want to see an API key: buy on starnetos.com, then the
+     connect screen links this station to that account with ONE confirmed code — the same sidecar engine
+     the STORE uses (/api/credits/link/*), painted into #starnet-block. The chip itself stays HIDDEN
+     until the sidecar reports a cloud seam (linked or linkable): a build with no cloud must not offer
+     a subscription it cannot link, so a CLOUD_LIVE=false install keeps a starnet-free connect screen. */
+  let starnetLinked = false;          // last /api/credits truth — the WAKE gate reads this
+  let userPickedProvider = false;     // a real chip click — the auto-promote below must never override it
+  let _starnetLinkPoll = null;
+  function stopStarnetLinkPoll() { if (_starnetLinkPoll) { clearInterval(_starnetLinkPoll); _starnetLinkPoll = null; } }
+  async function revealStarnetGenesis(autoPick) {
+    let linked = false, linkable = false;
+    try { const j = await Harness.api.get('/api/credits'); linked = !!(j && j.configured); } catch (_) {}
+    if (!linked) { try { const j = await Harness.api.get('/api/credits/linkable'); linkable = !!(j && j.available); } catch (_) {} }
+    starnetLinked = linked;
+    const b = document.querySelector('.provider-row .prov[data-prov="starnet"]');
+    if (b) b.classList.toggle('hidden', !(linked || linkable));
+    // THE PROMOTED START: on a fresh create (never a resume, never over a real click) the revealed
+    // hero becomes the default pick — the subscription path leads the funnel the moment it exists.
+    if (autoPick && (linked || linkable) && !userPickedProvider && pickedProvider !== 'starnet') selectProviderUI('starnet');
+    else if (pickedProvider === 'starnet') refreshStarnetGenesisStatus();
+    return linked || linkable;
+  }
+  async function refreshStarnetGenesisStatus() {
+    const statusEl = el('starnet-status'), linkBtn = el('btn-starnet-link');
+    if (!statusEl) return;
+    let j = null;
+    try { j = await Harness.api.get('/api/credits'); } catch (_) {}
+    starnetLinked = !!(j && j.configured);
+    if (pickedProvider !== 'starnet') return;   // pick moved on — don't repaint another provider's block
+    if (starnetLinked) {
+      const bal = (j.balanceUsd == null) ? '' : ' · $' + Number(j.balanceUsd).toFixed(2) + ' available';
+      statusEl.innerHTML = '<span class="conn-dot"></span>linked to your StarNet account' + esc(bal) + ' — your agents run on your subscription';
+      statusEl.className = 'codex-status ok';
+      if (linkBtn) linkBtn.classList.add('hidden');
+    } else {
+      statusEl.textContent = 'not linked — connect the subscription you bought on starnetos.com (takes one click + a code)';
+      statusEl.className = 'codex-status';
+      if (linkBtn) linkBtn.classList.remove('hidden');
+    }
+  }
+  // Mint a pairing code, open the browser to confirm it, poll until linked. The device token never enters
+  // this WebView: the sidecar holds it, and on desktop Rust immediately moves it into the OS keychain.
+  function startStarnetLink() {
+    SFX.click();
+    stopStarnetLinkPoll();
+    const statusEl = el('starnet-status'), codeEl = el('starnet-code'), openBtn = el('btn-starnet-open');
+    const fail = t => { statusEl.textContent = t; statusEl.className = 'codex-status bad'; codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); };
+    statusEl.textContent = 'requesting a link code…'; statusEl.className = 'codex-status';
+    Harness.api.post('/api/credits/link/start', { deviceName: 'StarNet Station' })
+      .then(r => { if (!r || !r.ok) throw new Error('start failed'); return r.j; })
+      .then(j => {
+        if (!j || !j.code) throw new Error('no code');
+        codeEl.textContent = j.code; codeEl.classList.remove('hidden');
+        openBtn.classList.remove('hidden');
+        openBtn.onclick = () => openExternalUrl(j.verifyUrl);
+        statusEl.textContent = 'confirm this code in your browser (opening the link page now)…';
+        openExternalUrl(j.verifyUrl);
+        const expiresAt = Number(j.expiresAt) || 0;
+        const tick = () => {
+          if (expiresAt && Date.now() > expiresAt) { stopStarnetLinkPoll(); fail('that code expired — start again'); return; }
+          Harness.api.post('/api/credits/link/poll', { code: j.code })
+            .then(r2 => (r2 && r2.ok) ? r2.j : {})
+            .then(p => {
+              if (p && p.linked) {
+                stopStarnetLinkPoll(); SFX.open();
+                codeEl.classList.add('hidden'); openBtn.classList.add('hidden');
+                // desktop: move the fresh token file → OS keychain NOW (Rust reads + moves; the token
+                // never passes through here), then teach Harness the credential exists so
+                // configured('starnet') answers true without a restart.
+                const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+                const adopt = invoke ? Promise.resolve(invoke('harness_adopt_credits_token')).catch(() => false) : Promise.resolve(false);
+                adopt
+                  .then(() => (Harness.refreshCreditsConfigured ? Harness.refreshCreditsConfigured() : null))
+                  .then(() => { refreshStarnetGenesisStatus(); loadModels('starnet'); });
+                return;
+              }
+              if (p && (p.status === 'expired' || p.status === 'consumed' || p.status === 'unknown')) {
+                stopStarnetLinkPoll(); fail('that code is no longer valid — start again');
+              }
+            })
+            .catch(() => {});
+        };
+        _starnetLinkPoll = setInterval(tick, 2000);
+      })
+      .catch(() => fail('could not reach the link service — try again'));
   }
 
   // the SKIN picker: choose which sprite set (teddy bear, pepe, …) the new agent wears. The chosen
@@ -2256,7 +2362,7 @@ const App = (() => {
     // Clear the model on a real USER switch so the new provider's curated default (MODEL_PICKS[p][0]) fills
     // instead of carrying a cross-provider slug (e.g. codex 'gpt-5.5' bleeding onto OpenRouter, which needs
     // 'openai/gpt-5.5'). The programmatic call below (resume) keeps the saved model — it never routes here.
-    document.querySelectorAll('.provider-row .prov').forEach(b => { b.onclick = () => { SFX.click(); if (b.dataset.prov !== pickedProvider) el('in-model').value = ''; selectProviderUI(b.dataset.prov); }; });
+    document.querySelectorAll('.provider-row .prov').forEach(b => { b.onclick = () => { SFX.click(); userPickedProvider = true; if (b.dataset.prov !== pickedProvider) el('in-model').value = ''; selectProviderUI(b.dataset.prov); }; });
     // the long-tail providers start folded behind ＋ MORE so a first-run user faces 6 chips, not 15.
     // selectProviderUI() unfolds the row itself whenever the active provider lives in the tail.
     const provRow = document.querySelector('.provider-row'), provMore = el('prov-more');
@@ -2264,9 +2370,17 @@ const App = (() => {
       setProviderRowExpanded(false);   // collapse the tail + COMPUTE the "＋ N MORE" label from the live tail count (never hardcoded)
       provMore.onclick = () => { SFX.click(); setProviderRowExpanded(provRow.classList.contains('collapsed')); };
     }
-    // the sign-in block is SHARED by every keyless OAuth provider — dispatch on the current pick
-    el('btn-codex-signin').onclick = () => (pickedProvider === 'codex' ? startCodexSignIn() : startOAuthSignIn(pickedProvider));
-    el('btn-codex-logout').onclick = () => (pickedProvider === 'codex' ? codexLogout() : oauthGenesisLogout(pickedProvider));
+    // the sign-in block is SHARED by every keyless OAuth provider — dispatch on the current pick.
+    // On the merged OPENAI card the sign-in half IS ChatGPT/codex.
+    const codexHere = () => pickedProvider === 'codex' || pickedProvider === 'openai';
+    el('btn-codex-signin').onclick = () => (codexHere() ? startCodexSignIn() : startOAuthSignIn(pickedProvider));
+    el('btn-codex-logout').onclick = () => (codexHere() ? codexLogout() : oauthGenesisLogout(pickedProvider));
+    // STARNET MANAGED: reveal the hero only when this station actually has a cloud seam, and wire its link
+    // flow. On a fresh create the revealed hero also becomes the default pick (the promoted easiest start);
+    // a resume keeps the agent's saved provider.
+    userPickedProvider = false;
+    { const sl = el('btn-starnet-link'); if (sl) sl.onclick = () => startStarnetLink(); }
+    revealStarnetGenesis(!recovery);
     // BYOK key-safety note: collapsed by default, expanded by its own disclosure toggle (progressive disclosure).
     { const bt = el('byok-toggle'), bn = el('byok-note');
       if (bt && bn) {
@@ -2282,6 +2396,7 @@ const App = (() => {
     setTimeout(() => {
       try {
         if (!recovery) { const n = el('in-name'); if (n) n.focus(); }
+        else if (pickedProvider === 'starnet') { const c = el('btn-starnet-link'); if (c) c.focus(); }
         else if (isOAuthProviderId(pickedProvider)) { const c = el('btn-codex-signin'); if (c) c.focus(); }
         else { const k = el('in-key'); if (k && el('key-block') && !el('key-block').classList.contains('hidden')) k.focus(); else { const c = el('btn-codex-signin'); if (c) c.focus(); } }
       } catch (_) {}
@@ -2408,6 +2523,7 @@ const App = (() => {
   async function onWakeAttempt() {
     SFX.boot(); SFX.open();
     stopCodexPoll();   // leaving the connect screen — drop any in-flight sign-in poll
+    stopStarnetLinkPoll();   // …and any in-flight StarNet pairing poll (same screen-exit rule)
     // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too).
     // A blank/sentinel name mints a station codename (never the bland 'AGENT'), matching the awakening
     // speaker — dialogue.js owns the generator so both surfaces stay consistent.
@@ -2436,9 +2552,18 @@ const App = (() => {
       }
       return false;
     }
-    if (isOAuthProviderId(pickedProvider)) {
+    if (pickedProvider === 'starnet') {
+      // the credits admission gate would refuse the run anyway — say it here, where the fix is one button away.
+      if (!starnetLinked) { msg.textContent = 'link your StarNet account first — press 🔗 LINK YOUR STARNET ACCOUNT above.'; return false; }
+      Harness.setModel(model); Harness.setProv('starnet');
+    } else if (isOAuthProviderId(pickedProvider)) {
       if (!oauthConnected[pickedProvider]) { msg.textContent = 'sign in with ' + OAUTH_GENESIS[pickedProvider].name + ' first, or switch to OpenRouter.'; return false; }
       Harness.setModel(model); Harness.setProv(pickedProvider);
+    } else if (pickedProvider === 'openai' && !el('in-key').value.trim() && !(Harness.configured && Harness.configured('openai')) && codexConnected) {
+      // THE MERGED OPENAI CARD, ChatGPT half: no key typed, no stored OpenAI credential, but a LIVE ChatGPT
+      // sign-in — the sign-in IS the credential, so this wake rides the codex path. A typed key always wins
+      // (explicit beats ambient) and falls through to the key branch below.
+      Harness.setModel(model); Harness.setProv('codex');
     } else {
       const key = el('in-key').value.trim();
       if (providerNeedsBaseUrl(pickedProvider)) {
@@ -2448,9 +2573,11 @@ const App = (() => {
       if (providerNeedsKey(pickedProvider) && !key && !configured) {
         // COLD-START guidance: a new user has no key AND no idea where to get one. Name the provider and link
         // the exact page that mints a key (from providerSignupUrl — same destinations the placeholder hints at).
+        // The merged OPENAI card has a second door — say both, in the order the card shows them.
         const url = providerSignupUrl(pickedProvider);
         const host = String(url).replace(/^https?:\/\//, '').replace(/\/$/, '');
-        msg.innerHTML = 'enter your ' + esc(providerLabel(pickedProvider)) + ' API key — get one at '
+        msg.innerHTML = (pickedProvider === 'openai' ? 'sign in with ChatGPT below, or ' : '')
+          + 'enter your ' + esc(providerLabel(pickedProvider)) + ' API key — get one at '
           + '<a href="' + esc(url) + '" target="_blank" rel="noopener noreferrer" class="connect-link">' + esc(host) + '</a>.';
         return false;
       }

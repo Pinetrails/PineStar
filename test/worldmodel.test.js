@@ -722,4 +722,47 @@ A.eq(JSON.stringify(WM.deserialize({ rooms: {}, order: [], props: [], edges: [{ 
   A.ok(WM.defaultDoc(1).meta.createdAt !== WM.defaultDoc(2).meta.createdAt, 'two stations are distinguishable');
 }
 
+/* ---- A HALLWAY CORNER IS ROUNDED IN ART AND STILL WALKABLE (2026-08-10) ----
+   Chamfers used to be computed for rooms only, which left every hallway's convex corner a raw right
+   angle — the tall north face colliding with the flat side band with nothing between them. Hallways
+   emit chamfers now, but ONLY rooms may block the tile: a chamfer tile is unwalkable, MIN_HALL
+   allows 2 wide, and blocking both corners of a 2-wide end row severs the hall. A 2x2 hallway would
+   have all four corners blocked and become an impassable hole — silently, on saves that already
+   exist. These two assertions are the pair; neither alone catches the regression that matters. */
+{
+  const st = WM.create(WM.defaultDoc());
+  const room = st.addRoom({ kind: 'hab', rects: [{ x1: 60, y1: 60, x2: 71, y2: 68 }] });
+  const hall = st.placeHallway({ rects: [{ x1: 64, y1: 69, x2: 65, y2: 76 }] });
+  A.ok(room && room.id && hall && hall.id, 'room + hallway placed clear of the default station');
+  const geo = st.projectGeometry();
+
+  const key = c => c[0] + ',' + c[1];
+  const hallRect = geo.allRects.find(r => r.z === hall.id);
+  const inHall = c => c[0] >= hallRect.x1 && c[0] <= hallRect.x2 && c[1] >= hallRect.y1 && c[1] <= hallRect.y2;
+  const hallCh = geo.chamfers.filter(inHall);
+  A.ok(hallCh.length > 0, 'a hallway s void-exposed corners ARE chamfered (the art fix)');
+
+  // …and not one of them costs the hallway a walkable tile
+  const blocked = hallCh.filter(c => !geo.walkable(c[0], c[1]));
+  A.eq(blocked.length, 0, 'no hallway chamfer tile is blocked — corridor walkability is unchanged');
+
+  // the room's own chamfers still block, exactly as before
+  const roomRect = geo.allRects.find(r => r.z === room.id);
+  const roomCh = geo.chamfers.filter(c => c[0] >= roomRect.x1 && c[0] <= roomRect.x2 && c[1] >= roomRect.y1 && c[1] <= roomRect.y2);
+  A.ok(roomCh.length > 0, 'a room still chamfers its void-exposed corners');
+  A.ok(roomCh.every(c => !geo.walkable(c[0], c[1])), '…and a room chamfer is still an unwalkable tile');
+
+  // the shape that would have been severed outright: a 2x2 hallway must keep every tile
+  const st2 = WM.create(WM.defaultDoc());
+  st2.addRoom({ kind: 'hab', rects: [{ x1: 60, y1: 60, x2: 71, y2: 68 }] });
+  const tiny = st2.placeHallway({ rects: [{ x1: 64, y1: 69, x2: 65, y2: 70 }] });
+  if (tiny && tiny.id) {
+    const g2 = st2.projectGeometry(), tr = g2.allRects.find(r => r.z === tiny.id);
+    let walk = 0;
+    for (let y = tr.y1; y <= tr.y2; y++) for (let x = tr.x1; x <= tr.x2; x++) if (g2.walkable(x, y)) walk++;
+    A.eq(walk, 4, 'a 2x2 hallway keeps all four tiles walkable (it would be a sealed hole otherwise)');
+  }
+  void key;
+}
+
 A.report('worldmodel');
