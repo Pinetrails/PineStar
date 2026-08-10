@@ -156,24 +156,26 @@
                  .prov[data-prov] button + #prov-more stay in the DOM so app.js wiring (selectProviderUI,
                  setProviderRowExpanded) is untouched — the queries match .prov descendants regardless of nesting. -->
             <div class="provider-row ov-prov">
-              <button class="prov prov-hero sel" data-prov="codex" aria-pressed="true">
+              <!-- THE HERO IS THE STARNET SUBSCRIPTION — the promoted easiest start. It ships HIDDEN and is
+                   revealed only when the sidecar reports a real cloud seam (/api/credits linkable or configured):
+                   the honesty law says a build with no cloud must not offer a subscription it cannot link
+                   (app.js revealStarnetGenesis, which also makes it the default pick on a fresh create).
+                   ChatGPT sign-in is no longer a hero — it lives inside the OPENAI chip below. -->
+              <button class="prov prov-hero hidden" data-prov="starnet" aria-pressed="false">
                 <span class="prov-hero-badge">◆ EASIEST START · NO KEY</span>
                 <span class="prov-hero-row">
-                  <span class="prov-hero-ic" aria-hidden="true">⏼</span>
+                  <span class="prov-hero-ic" aria-hidden="true">🔗</span>
                   <span class="prov-hero-body">
-                    <span class="prov-hero-title">SIGN IN WITH CHATGPT</span>
-                    <span class="prov-hero-sub">use the ChatGPT Plus/Pro account you already have — no API key to find or paste</span>
+                    <span class="prov-hero-title">START WITH STARNET</span>
+                    <span class="prov-hero-sub">your StarNet subscription powers every agent — link it in one click, no API key to find or paste</span>
                   </span>
                 </span>
               </button>
               <div class="prov-byok-lab" aria-hidden="true">— or pick another provider —</div>
               <div class="prov-grid">
-                <!-- STARNET MANAGED: the subscription path — link your StarNet account, no key ever. HIDDEN until
-                     the sidecar reports a cloud seam (/api/credits linkable or configured): the honesty law says a
-                     build with no cloud must not offer a subscription it cannot link (app.js revealStarnetGenesis). -->
-                <button class="prov hidden" data-prov="starnet" aria-pressed="false">STARNET</button>
-                <!-- grok/kimi are keyless subscription sign-ins (device-code OAuth, same engine as ChatGPT
-                     above) but present as standard chips; selecting one swaps in the shared sign-in block. -->
+                <!-- ChatGPT/Codex has NO chip of its own anymore: picking OPENAI offers BOTH paths on one card —
+                     sign in with ChatGPT (device-code, no key) or paste an OpenAI API key. WAKE takes whichever
+                     path the user actually completed (app.js onWakeAttempt). -->
                 <button class="prov" data-prov="grok" aria-pressed="false">GROK</button>
                 <button class="prov" data-prov="kimi" aria-pressed="false">KIMI</button>
                 <button class="prov" data-prov="openrouter" aria-pressed="false">OPENROUTER</button>
@@ -214,7 +216,7 @@
                   <button type="button" id="btn-codex-open" class="btn hidden">↗ OPEN PAGE</button>
                   <button type="button" id="btn-codex-logout" class="btn hidden">✕ DISCONNECT</button>
                 </div>
-                <div class="dim hint" id="codex-hint">Uses the ChatGPT Plus/Pro account you already have — no API key, no billing setup. Prefer a key? Switch to OPENROUTER (or any provider) above.</div>
+                <div class="dim hint" id="codex-hint">Uses the ChatGPT Plus/Pro account you already have — no API key, no billing setup. Prefer a key? Paste an OpenAI API key above instead.</div>
               </div>
             </div>
 
