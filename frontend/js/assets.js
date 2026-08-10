@@ -3,6 +3,7 @@
 
 const SPRITES = (() => {
   let ready = false;
+  let loading = false;
   const frames = {};   // key "minion.walk.south" -> [Image]
   const tinted = {};   // key "FORGE|minion.walk.south" -> [canvas]
   // null means the manifest has not been planned yet. This distinction matters: World starts drawing
@@ -492,6 +493,14 @@ const SPRITES = (() => {
     });
   }
 
+  function loadTrack(track, paths) {
+    return Promise.all(paths.map(p => loadImage('assets/sprites/' + p))).then(imgs => {
+      const ok = imgs.filter(Boolean);
+      if (ok.length) frames[track] = ok;
+      return ok.length;
+    });
+  }
+
   function loadSet(set) {
     const key = String(set || '').trim();
     if (!key) return Promise.resolve(false);
@@ -501,13 +510,7 @@ const SPRITES = (() => {
     const tracks = tracksBySet[key] || [];
     if (!tracks.length) return Promise.resolve(false);
     if (setJobs[key]) return setJobs[key];
-    setJobs[key] = Promise.all(tracks.map(([track, paths]) =>
-      Promise.all(paths.map(p => loadImage('assets/sprites/' + p))).then(imgs => {
-        const ok = imgs.filter(Boolean);
-        if (ok.length) frames[track] = ok;
-        return ok.length;
-      })
-    )).then(counts => {
+    setJobs[key] = Promise.all(tracks.map(([track, paths]) => loadTrack(track, paths))).then(counts => {
       const loaded = counts.reduce((n, count) => n + count, 0);
       if (loaded) loadedSets.add(key);
       return loaded > 0;
@@ -526,6 +529,7 @@ const SPRITES = (() => {
   function isSkinReady(skin) { return loadedSets.has(setForSkin(skin)); }
 
   async function init() {
+    loading = true;
     try {
       const resp = await fetch('assets/sprites/manifest.json', { cache: 'no-store' });
       if (!resp.ok) return;
@@ -536,13 +540,25 @@ const SPRITES = (() => {
       // every body fell through to the procedural fallback regardless of picked skin).
       const defSet = (typeof DATA !== 'undefined' && DATA.SKINS && DATA.DEFAULT_SKIN
         && DATA.SKINS[DATA.DEFAULT_SKIN] && DATA.SKINS[DATA.DEFAULT_SKIN].set) || 'bear';
-      await Promise.all([loadSet(defSet), loadSet('ultron')]);
-      if (frames[defSet + '.rot.south'] || frames['ultron.rot.south'] || Object.keys(frames).length) {
+      // FIRST PAINT needs one honest body, not every animation. Fetch the default south pose first,
+      // then let the other 106 default frames and ULTRON warm in parallel behind it. On the website
+      // this cuts the cyan procedural placeholder from ~20 seconds to one image request.
+      const primeTrack = defSet + '.rot.south';
+      const primePaths = man.sprites && man.sprites[primeTrack];
+      if (Array.isArray(primePaths) && await loadTrack(primeTrack, primePaths)) {
+        loadedSets.add(defSet);
         ready = true;
-        console.log('[SPRITES] startup sets loaded:', Array.from(loadedSets).join(', '), '—', Object.keys(frames).length, 'animation tracks');
+        loading = false;
       }
+      const startup = Promise.all([loadSet(defSet), loadSet('ultron')]).then(() => {
+        if (frames[defSet + '.rot.south'] || frames['ultron.rot.south'] || Object.keys(frames).length) ready = true;
+        console.log('[SPRITES] startup sets loaded:', Array.from(loadedSets).join(', '), '—', Object.keys(frames).length, 'animation tracks');
+      });
+      if (!ready) await startup;
     } catch (e) { console.warn('[SPRITES] manifest missing — procedural fallback', e); }
+    finally { loading = false; }
   }
 
-  return { init, drawBody, groundShadow, ensureSkin, isSkinReady, bodyScale, get ready() { return ready; } };
+  return { init, drawBody, groundShadow, ensureSkin, isSkinReady, bodyScale,
+    get ready() { return ready; }, get loading() { return loading; } };
 })();

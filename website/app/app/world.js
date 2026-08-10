@@ -4911,7 +4911,9 @@ const World = (() => {
       if (bornA < 1) ctx.globalAlpha = prevA * bornA;
       let geom = null;
       if (typeof SPRITES !== 'undefined' && SPRITES.ready) geom = SPRITES.drawBody(ctx, who, now);
-      if (!geom) drawFallback(now, who);
+      // Do not flash the cyan procedural body while the real default skin is actively loading.
+      // A genuine load failure still clears `loading` and gets the honest fallback on the next frame.
+      if (!geom && !(typeof SPRITES !== 'undefined' && SPRITES.loading)) drawFallback(now, who);
       // remember the visible head-top (world px) so overlays (nameplate, speech bubble) anchor
       // above the ACTUAL drawn sprite — skins are taller than the old 15px assumption, which
       // parked bubbles over the face. Fallback bodies keep the legacy 15px estimate (null).

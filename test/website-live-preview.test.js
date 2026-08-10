@@ -27,6 +27,8 @@ A.ok(/live-preview\.js\?v=20260809/.test(html),
   'the homepage cache-busts the corrected preview controller');
 A.ok(/app\/embed\.htm\?v=20260810-default-station-v3/.test(html),
   'the homepage uses the cache-busted dashboard-upload-safe station document');
+A.ok(/app\/assets\/sprites\/blank\/rot_south\.png/.test(html) && /fetchpriority="high"/.test(html),
+  'the marketing page starts the embedded default-skin request before the iframe boot');
 
 function bootDemo(initial) {
   const rows = Object.assign({}, initial || {});
