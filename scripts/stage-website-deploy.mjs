@@ -110,6 +110,13 @@ for (const rel of shipping) {
   if (SUBSTITUTIONS[rel]) console.log('substituted: ' + rel + ' <- ' + from);
 }
 
+/* Cloudflare Pages' dashboard ZIP importer can collapse identically named index.html
+   entries from different folders. Keep app/index.html for normal directory deploys, but
+   give the marketing-page iframe a unique entry name that survives dashboard uploads. */
+const embedSource = join(OUT, 'app', 'index.html');
+const embedEntry = join(OUT, 'app', 'embed.html');
+copyFileSync(embedSource, embedEntry);
+
 /* Prove the swap actually removed what it exists to remove, on the bytes that will be uploaded —
    not on the source we believed we copied. */
 for (const rel of Object.keys(SUBSTITUTIONS)) {
@@ -140,6 +147,6 @@ if (existsSync(sitemapPath) && held.length) {
   }
 }
 
-console.log('staged ' + shipping.length + ' files -> website-deploy/');
+console.log('staged ' + (shipping.length + 1) + ' files -> website-deploy/');
 for (const f of held) console.log('held back: ' + f);
 console.log('\nnext:\n  npx wrangler pages deploy website-deploy --project-name ' + PROJECT);
