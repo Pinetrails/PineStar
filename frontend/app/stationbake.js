@@ -969,9 +969,14 @@ const StationBake = (() => {
     if (ly === 0 && lx === 3) bolt(X + T - 5, Y + 3);
     if (ly === 2 && lx === 0) bolt(X + 3, Y + T - 5);
     if (ly === 2 && lx === 3) bolt(X + T - 5, Y + T - 5);
-    // a heavier TRANSVERSE structural seam every third band — a cross-rhythm, so the deck has two
-    // scales of line rather than one.
-    if (((y % 9) + 9) % 9 === 0) { px(X, Y, T, 1, sh(-0.34)); px(X, Y + 1, T, 1, sh(0.09)); }
+    /* NO TRANSVERSE STRUCTURAL SEAM EITHER — cut 2026-08-10, and it is the SAME mistake as the
+       service trench above, rotated 90°. A `-0.34` line ruled the full width of the deck every 9
+       tiles: at close range it reads as the hierarchy this recipe wanted (one strong line, then
+       joints, then grain), and at station scale a room shows exactly ONE of it, so it is not a
+       rhythm — it is a black line drawn across the floor. Andrew, on the default hab: "remove the
+       black line." It also survived every attempt to dial the deck back, because unlike the plate
+       joint it was never scaled by `DEPTH.deckSeam`.
+       The plate joints (scaled by deckSeam) and the brushed grain carry the deck on their own. */
   }
 
   /* ---------- THE CORRIDOR DECK CANDIDATES (2026-07-28) ----------
