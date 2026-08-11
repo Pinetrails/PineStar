@@ -392,6 +392,16 @@ const startupWorkspaceRecovery = workspaceRecovery.applyPendingRecovery({
   fs, path, platform: process.platform, home: os.homedir(), workspaceRoot: WORKSPACES,
   candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS, auto: !DEV_MODE, now: Date.now
 });
+if (startupWorkspaceRecovery && startupWorkspaceRecovery.lockUnavailable) {
+  // A LIVE concurrent process holds the parent-level recovery lock — it may be renaming this very
+  // workspace right now. Opening stores here would race that rename, so refuse the boot outright,
+  // matching the owner-claim refusal below (same fail-closed semantics, same exit code).
+  console.error('✗ StarNet refused to open this workspace because another process is recovering it.');
+  console.error('  workspace: ' + WORKSPACES);
+  console.error('  safety code: ' + String(startupWorkspaceRecovery.code || 'RECOVERY_LOCK_UNAVAILABLE'));
+  console.error('  Close the other StarNet process and retry. StarNet will not risk concurrent writes.');
+  process.exit(73);
+}
 if (startupWorkspaceRecovery && startupWorkspaceRecovery.applied) {
   console.warn('[recovery] restored prior station before opening stores; source preserved, rollback retained=' + !!startupWorkspaceRecovery.rollbackRetained);
 } else if (startupWorkspaceRecovery && startupWorkspaceRecovery.ok === false) {

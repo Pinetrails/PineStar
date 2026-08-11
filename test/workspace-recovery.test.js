@@ -91,6 +91,49 @@ try {
   A.eq(invalid.candidates[0].recoverable, false, 'invalid prior save is disclosed without claiming recoverability');
   A.throws(() => Recovery.requestRecovery({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA], inspection: invalid, candidateId: invalid.candidates[0].id }), 'invalid candidate cannot be requested');
 
+  // Concurrency: activation is serialized behind the PARENT-level recovery lock. A live holder
+  // fails the second boot CLOSED (no mutation, request untouched); a provably-dead holder's lock
+  // is broken and recovery proceeds.
+  fs.rmSync(current, { recursive: true, force: true });
+  fs.rmSync(legacyA, { recursive: true, force: true });
+  write(current, '.migrated', '1');
+  write(legacyA, 'agent.save.json', save('VEGA', 4000, 'legacy-lock'));
+  const lockInspection = Recovery.inspectCandidates({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA] });
+  Recovery.requestRecovery({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA], inspection: lockInspection, candidateId: lockInspection.automaticCandidateId, now: () => 4500 });
+  const lockfile = Recovery._internals.recoveryLockFile(current, path);
+  A.ok(lockfile.indexOf(current + path.sep) < 0, 'recovery lock lives BESIDE the workspace root, never inside the directory recovery renames');
+  fs.writeFileSync(lockfile, '999999:cafe');   // a concurrent holder's stamp
+  const refused = Recovery.applyPendingRecovery({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA], now: () => 5000, lockPidAlive: () => true });
+  A.eq(refused.lockUnavailable, true, 'a live-held recovery lock refuses a second activation');
+  A.eq(refused.applied, false, 'refused activation applies nothing');
+  A.eq(fs.existsSync(Recovery._internals.requestFile(current, path)), true, 'refused activation leaves the pending request untouched');
+  A.eq(fs.existsSync(path.join(current, 'agent.save.json')), false, 'refused activation never mutates the active workspace');
+  A.eq(fs.readFileSync(lockfile, 'utf8'), '999999:cafe', 'refused activation never steals the live holder\'s lock');
+  const reclaimed = Recovery.applyPendingRecovery({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA], now: () => 6000, lockPidAlive: () => false });
+  A.eq(reclaimed.applied, true, 'a provably-dead holder\'s stale lock is broken and recovery proceeds');
+  A.eq(JSON.parse(fs.readFileSync(path.join(current, 'agent.save.json'), 'utf8')).doc.agent.name, 'VEGA', 'stale-break activation lands the requested station');
+  A.eq(fs.existsSync(lockfile), false, 'recovery lock is released after activation');
+
+  // Size guard: a pathological source fails CLOSED with a clear error before it can be buffered.
+  fs.rmSync(current, { recursive: true, force: true });
+  fs.rmSync(legacyA, { recursive: true, force: true });
+  write(current, '.migrated', '1');
+  write(legacyA, 'agent.save.json', save('RIGEL', 7000, 'legacy-big'));
+  write(legacyA, 'artifacts/huge.bin', 'x'.repeat(4096));
+  const bigInspection = Recovery.inspectCandidates({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA] });
+  Recovery.requestRecovery({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA], inspection: bigInspection, candidateId: bigInspection.automaticCandidateId, now: () => 7500 });
+  const tooBig = Recovery.applyPendingRecovery({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA], now: () => 8000, maxTotalBytes: 1024 });
+  A.eq(tooBig.ok, false, 'over-limit aggregate recovery source fails closed');
+  A.eq(tooBig.applied, false, 'over-limit source applies nothing');
+  A.ok(/too large/.test(String(tooBig.error)), 'aggregate failure names the size limit: ' + tooBig.error);
+  A.eq(fs.existsSync(path.join(current, 'agent.save.json')), false, 'over-limit source never mutates the active workspace');
+  A.eq(fs.existsSync(Recovery._internals.requestFile(current, path)), false, 'failed over-limit request is retired, not retried forever');
+  Recovery.requestRecovery({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA], inspection: bigInspection, candidateId: bigInspection.automaticCandidateId, now: () => 8500 });
+  const fileTooBig = Recovery.applyPendingRecovery({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA], now: () => 9000, maxFileBytes: 256 });
+  A.eq(fileTooBig.ok, false, 'a single over-limit file fails the recovery closed');
+  A.ok(/per-file/.test(String(fileTooBig.error)), 'per-file failure names the per-file limit: ' + fileTooBig.error);
+  A.eq(fs.existsSync(path.join(current, 'agent.save.json')), false, 'per-file over-limit source never mutates the active workspace');
+
   A.report('workspace-recovery.test');
 } finally {
   fs.rmSync(home, { recursive: true, force: true });
