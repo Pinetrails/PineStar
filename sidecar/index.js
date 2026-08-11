@@ -956,7 +956,8 @@ const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 // Append+fsync must fail closed: the UI may only say "rated" after this ledger acknowledges the row.
 const GROWTH_RATINGS_FILE = path.join(WORKSPACES, 'growth-ratings.jsonl');
 const growthRatingsIo = {
-  readAll() { try { return readBoundedJsonl(GROWTH_RATINGS_FILE); } catch (_) { return []; } },
+  // This ledger decides first-wins XP authority. An unreadable file is unknown history, never empty history.
+  readAll() { return readBoundedJsonl(GROWTH_RATINGS_FILE); },
   append(entry) {
     let fd = null;
     try {
@@ -1188,7 +1189,7 @@ const fetchSkillDocument = makeSkillDocumentFetcher({
   assertResolvedSafe: skillWebInternals.assertResolvedSafe,
   lookup: (host) => dns.promises.lookup(host, { all: true })
 });
-const fetchSkillPackage = makeSkillPackageFetcher({ fetchDocument: fetchSkillDocument });
+const fetchSkillPackage = makeSkillPackageFetcher({ fetchDocument: fetchSkillDocument, now: () => Date.now() });
 const skillRegistry = makeSkillRegistry({ fetchDocument: fetchSkillDocument, now: () => Date.now() });
 const SKILL_REGISTRIES_FILE = path.join(WORKSPACES, 'skill-registries.json');
 let skillRegistrySources = [];
@@ -16774,7 +16775,9 @@ async function handleSaveWrite(req, res) {
   // projection and temporarily erase XP. It can reload/replay the ledger, then save normally.
   const ratingSyncAt = Math.max(0, Number(body.stationStats && body.stationStats.ratingSyncAt) || 0);
   const growthEpoch = Math.max(1, Math.floor(Number(body.agent && body.agent.createdAt) || 1));
-  const latestRatingAt = growthRatings.latestTs(growthEpoch);
+  let latestRatingAt;
+  try { latestRatingAt = growthRatings.latestTs(growthEpoch); }
+  catch (_) { return json(503, { ok: false, error: 'rating history unavailable', growthUnavailable: true }); }
   if (latestRatingAt > ratingSyncAt) return json(200, { ok: false, stale: true, growthStale: true, latestRatingAt });
   try {
     const result = saveStore.save(agentId, body);
@@ -16821,6 +16824,7 @@ async function handleGrowthRatings(req, res) {
   if (!canonical) return json(400, { ok: false, error: 'invalid rating verdict' });
   canonical.epoch = epoch;
   const result = growthRatings.record(canonical);
+  if (result && result.unavailable) return json(503, { ok: false, error: result.error, growthUnavailable: true });
   if (!result || result.error) return json(400, { ok: false, error: (result && result.error) || 'rating failed' });
   return json(200, { ok: true, duplicate: !!result.duplicate, rating: result.rating });
 }

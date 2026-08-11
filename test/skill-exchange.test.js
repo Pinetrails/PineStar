@@ -98,7 +98,7 @@ function store(io) { return makeSkillStore({ io, clock: { now: () => 9000 }, gua
   A.ok(/private host/.test(redirectError), 'every redirect target is revalidated');
 
   const fetchedUrls = [];
-  const genericPackage = makeSkillPackageFetcher({ fetchDocument: async url => {
+  const genericPackage = makeSkillPackageFetcher({ now: () => 0, fetchDocument: async url => {
     fetchedUrls.push(url);
     if (/SKILL\.md$/.test(url)) return { url, text: doc('Linked Package', 'Read references/guide.md then run scripts/check.js.') };
     if (/guide\.md$/.test(url)) return { url, text: 'See assets/pixel.bin.' };
@@ -111,14 +111,50 @@ function store(io) { return makeSkillStore({ io, clock: { now: () => 9000 }, gua
   A.ok(fetchedUrls.some(u => /pixel\.bin$/.test(u)), 'binary support references are fetched as bytes');
   let partialError = '';
   try {
-    await makeSkillPackageFetcher({ fetchDocument: async url => {
+    await makeSkillPackageFetcher({ now: () => 0, fetchDocument: async url => {
       if (/SKILL\.md$/.test(url)) return { url, text: doc('Partial', 'Read references/missing.md.') };
       throw new Error('source returned HTTP 404');
     } })('https://skills.example/partial/SKILL.md');
   } catch (e) { partialError = e.message; }
   A.ok(/404/.test(partialError), 'a missing referenced file refuses the whole package');
 
-  const githubFetch = makeSkillPackageFetcher({ fetchDocument: async url => {
+  // Discovery itself is bounded. Validation after every remote file has already been fetched is too late.
+  let chainCalls = 0, chainError = '';
+  try {
+    await makeSkillPackageFetcher({ now: () => 0, maxDepth: 200, fetchDocument: async url => {
+      chainCalls++;
+      const n = Number((new URL(url).pathname.match(/(\d+)\.md$/) || [])[1] || 0);
+      const text = n < 100 ? 'references/' + (n + 1) + '.md' : 'done';
+      return { url, text, bytes: Buffer.from(text) };
+    } })('https://skills.example/chain/SKILL.md');
+  } catch (e) { chainError = e.message; }
+  A.ok(/more than 64 files/.test(chainError), 'recursive generic discovery stops at the canonical 64-file package limit');
+  A.ok(chainCalls <= 64, 'the file-count guard fires before an over-limit network request — calls=' + chainCalls);
+
+  let bytesError = '';
+  try {
+    await makeSkillPackageFetcher({ now: () => 0, fetchDocument: async url => {
+      if (/SKILL\.md$/.test(url)) {
+        const refs = Array.from({ length: 5 }, (_, i) => 'assets/' + i + '.bin').join('\n');
+        return { url, text: refs, bytes: Buffer.from(refs) };
+      }
+      return { url, bytes: Buffer.alloc(230000) };
+    } })('https://skills.example/bytes/SKILL.md');
+  } catch (e) { bytesError = e.message; }
+  A.ok(/larger than 1048576 bytes/.test(bytesError), 'aggregate package bytes are refused during fetch, not after buffering the whole package');
+
+  let tick = 0, deadlineError = '';
+  try {
+    await makeSkillPackageFetcher({ deadlineMs: 25, now: () => tick, fetchDocument: async url => {
+      tick += 10;
+      const n = Number((new URL(url).pathname.match(/(\d+)\.md$/) || [])[1] || 0);
+      const text = n < 9 ? 'references/' + (n + 1) + '.md' : 'done';
+      return { url, text, bytes: Buffer.from(text) };
+    } })('https://skills.example/deadline/SKILL.md');
+  } catch (e) { deadlineError = e.message; }
+  A.ok(/deadline/.test(deadlineError), 'recursive package discovery has one end-to-end deadline');
+
+  const githubFetch = makeSkillPackageFetcher({ now: () => 0, fetchDocument: async url => {
     if (/api\.github\.com.*contents\/skills\/demo\?ref=main/.test(url)) return { url, text: JSON.stringify([
       { type: 'file', path: 'skills/demo/SKILL.md', download_url: 'https://raw.githubusercontent.com/acme/repo/main/skills/demo/SKILL.md' },
       { type: 'dir', path: 'skills/demo/references' }, { type: 'dir', path: 'skills/demo/assets' }

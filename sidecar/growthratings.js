@@ -79,10 +79,11 @@
     const clock = opts.clock || { now() { return 0; } };
     const ramMax = num(opts.ramMax) > 0 ? num(opts.ramMax) : RAM_ROWS_MAX;
     let loaded = [];
+    let loadError = null;
     try {
       const raw = io.readAll();
       if (Array.isArray(raw)) for (const row of raw) { const clean = normalize(row, row && row.ts); if (clean) loaded.push(clean); }
-    } catch (_) { loaded = []; }
+    } catch (e) { loadError = e || new Error('rating history unavailable'); }
     const byRun = new Map();
     const keyFor = (epoch, runId) => String(epoch) + ':' + String(runId);
     // The served history window is bounded; first-wins authority is not. Build the decision index from every
@@ -90,7 +91,15 @@
     for (const row of loaded) if (!byRun.has(keyFor(row.epoch, row.runId))) byRun.set(keyFor(row.epoch, row.runId), row);
     let rows = loaded.length > ramMax ? loaded.slice(-ramMax) : loaded;
 
+    function assertReady() {
+      if (!loadError) return;
+      const e = new Error('rating history unavailable');
+      e.code = 'GROWTH_RATINGS_UNAVAILABLE';
+      throw e;
+    }
+
     function record(raw) {
+      if (loadError) return { error: 'rating history unavailable', unavailable: true };
       const runId = str(raw && raw.runId).trim().slice(0, RUN_MAX);
       const epoch = Math.max(1, Math.floor(num(raw && raw.epoch)) || 1);
       const existing = byRun.get(keyFor(epoch, runId));
@@ -108,6 +117,7 @@
     }
 
     function list(o) {
+      assertReady();
       o = o || {};
       const limit = Math.max(1, num(o.limit) || 200);
       const since = Math.max(0, num(o.since));
@@ -129,13 +139,14 @@
 
     return {
       record, list,
-      get(runId, epoch) { const row = byRun.get(keyFor(Math.max(1, Math.floor(num(epoch)) || 1), str(runId))); return row ? JSON.parse(JSON.stringify(row)) : null; },
+      get(runId, epoch) { assertReady(); const row = byRun.get(keyFor(Math.max(1, Math.floor(num(epoch)) || 1), str(runId))); return row ? JSON.parse(JSON.stringify(row)) : null; },
       latestTs(epoch) {
+        assertReady();
         const want = Math.max(1, Math.floor(num(epoch)) || 1);
         for (let i = rows.length - 1; i >= 0; i--) if (rows[i].epoch === want) return rows[i].ts;
         return 0;
       },
-      count() { return rows.length; }
+      count() { assertReady(); return rows.length; }
     };
   }
 
