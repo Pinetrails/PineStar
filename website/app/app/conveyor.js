@@ -291,6 +291,28 @@ const Conveyor = (() => {
 
     function reset() { boxes = []; pending.length = 0; rr.clear(); mergeFx.length = 0; }
 
+    /* FRAME SHIFT (origin-move truth, 2026-08-11): world.js hands us belts in its LOCAL tile frame
+       (origin = station bounds − margin), so a floor edit that grows the bounds on the north/west
+       edge moves every belt to new coordinates while riding boxes and queued pending items keep the
+       OLD frame — tick() then reads "belt pulled out" and sinks paid work mid-ride (or splices the
+       pending item as belt-less). The crates are real work; the frame moved, not the line. Mirror the
+       crew-body treatment: shift every tile-frame field by the same delta — riding boxes (+ their
+       birth-tile latch, so dock-delivery's own-birth-tile exemption stays true), queued pending
+       items, splitter round-robin keys, and the merge pulses. Callers in a fixed frame never call this. */
+    function shiftFrame(dtx, dty) {
+      if (!dtx && !dty) return;
+      for (const bx of boxes) {
+        bx.x += dtx; bx.y += dty;
+        if (bx.spawnTile) { const s = bx.spawnTile.split(','); bx.spawnTile = key(+s[0] + dtx, +s[1] + dty); }
+      }
+      for (const p of pending) { p.x += dtx; p.y += dty; }
+      if (rr.size) {
+        const moved = [...rr].map(([k, n]) => { const s = k.split(','); return [key(+s[0] + dtx, +s[1] + dty), n]; });
+        rr.clear(); for (const [k, n] of moved) rr.set(k, n);
+      }
+      for (const fx of mergeFx) { fx.x += dtx; fx.y += dty; }
+    }
+
     /* a junction overrides a box's exit at its tile. Three kinds, all deterministic (per-tile state + the
        fixed LANE_ORDER, no RNG/clock):
          SPLIT  — round-robin across out-lanes (load-balance = real parallelism, drawn).
@@ -614,7 +636,7 @@ const Conveyor = (() => {
     }
 
     return {
-      tick, drawBelts, drawBoxes, reset, enqueueAt, dropWorkitem,
+      tick, drawBelts, drawBoxes, reset, enqueueAt, dropWorkitem, shiftFrame,
       boxCount: () => boxes.length,
       peekBoxes: () => boxes.map(b => ({ id: b.id, x: b.x, y: b.y, dir: b.dir, sink: b.sink, prog: b.prog, payload: b.payload || null }))
     };

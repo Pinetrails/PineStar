@@ -573,6 +573,9 @@ const World = (() => {
     // pos + leash home, same frame), then drop the in-flight path so it re-plans in the new frame.
     if (oldOrigin) {
       const cdx = (oldOrigin.tx - geo.origin.tx) * T, cdy = (oldOrigin.ty - geo.origin.ty) * T;
+      // riding crates + queued work live in the SAME local tile frame as the crew — an unshifted box
+      // reads "belt pulled out" next tick and sinks paid work mid-ride (audit #4, 2026-08-11)
+      if (convey && convey.shiftFrame) convey.shiftFrame(oldOrigin.tx - geo.origin.tx, oldOrigin.ty - geo.origin.ty);
       for (const b of crew) {
         if (cdx || cdy) {
           b.px += cdx; b.py += cdy;

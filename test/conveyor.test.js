@@ -423,4 +423,28 @@ A.eq(Conveyor.weightForUsd(1.0), 1, 'a $1 run reads full-mass');
 A.eq(Conveyor.weightForUsd(7.5), 1, 'mass clamps at 1 — a pricier run cannot overflow the art');
 A.eq(Conveyor.weightForUsd(0.004), 0.004, 'a sub-cent run reads as a near-weightless crate, never estimated up');
 
+/* ---------- FRAME SHIFT (origin-move truth, 2026-08-11 audit #4): a floor edit that grows the
+   station bounds re-frames every belt tile; riding boxes and queued pending items must ride the
+   SAME shift or tick() reads "belt pulled out" and sinks paid work mid-ride. */
+{
+  const laneAt = dy => [0, 1, 2, 3, 4, 5].map(x => ({ x, y: dy, dir: 'E' }));
+  const del = [];
+  const cv = Conveyor.create({ onDeliver: (bx, x, y) => del.push({ id: bx.payload.workitemId, x, y }) });
+  cv.enqueueAt(0, 0, { workitemId: 'ride' });   // will be riding when the frame moves
+  let t = 0; for (let i = 0; i < 30; i++) { t += 16; cv.tick(16, t, laneAt(0)); }
+  cv.enqueueAt(0, 0, { workitemId: 'wait' });   // still queued when the frame moves
+  A.ok(cv.peekBoxes().some(b => b.payload.workitemId === 'ride' && b.sink <= 0), 'a crate is riding pre-shift');
+  cv.shiftFrame(2, 3);                          // a room grew the bounds: every belt moved +2,+3 in the local frame
+  const shifted = laneAt(3).map(b => ({ x: b.x + 2, y: b.y, dir: b.dir }));
+  for (let i = 0; i < 400; i++) { t += 16; cv.tick(16, t, shifted, null, { '5,3': 'dockowner' }); }
+  A.eq(del.length, 2, 'BOTH the riding crate and the queued waiter survive the origin shift and deliver');
+  A.ok(del.every(d => d.y === 3), '...in the NEW frame (no orphan ride on old-frame tiles)');
+  // the dock consumed them mid-lane — spawnTile shifted too, so the own-birth-tile exemption stayed true
+  A.ok(del.every(d => d.x === 5), 'delivery lands at the shifted mid-lane dock, not the open end');
+  A.eq(cv.boxCount(), 0, 'nothing was sunk as an orphan');
+  // a no-op shift is free
+  cv.shiftFrame(0, 0);
+  A.ok(true, 'shiftFrame(0,0) is a no-op');
+}
+
 A.report('conveyor');
