@@ -173,7 +173,7 @@ const StationBake = (() => {
                     so it gets its own knob rather than being deleted. Scales ONLY the seam/bevel
                     steps — per-plate tone, material dressing and wear are untouched.
                     0 = a genuinely seamless deck · 1 = the old hard v3 grid. */
-  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, wallDetail: 1, deckSeam: 0.38 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
+  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, wallDetail: 1, deckSeam: 0.38, poolAlbedo: 1, edgeAO: 1, southFoot: 0 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
 
   /* ============================ THE EXTERIOR SHELL (HULL SKINS) ============================
      Everything you see of a room from OUTSIDE: the plate surrounding its footprint, the texture
@@ -992,9 +992,14 @@ const StationBake = (() => {
     if (ly === 0 && lx === 3) bolt(X + T - 5, Y + 3);
     if (ly === 2 && lx === 0) bolt(X + 3, Y + T - 5);
     if (ly === 2 && lx === 3) bolt(X + T - 5, Y + T - 5);
-    // a heavier TRANSVERSE structural seam every third band — a cross-rhythm, so the deck has two
-    // scales of line rather than one.
-    if (((y % 9) + 9) % 9 === 0) { px(X, Y, T, 1, sh(-0.34)); px(X, Y + 1, T, 1, sh(0.09)); }
+    /* NO TRANSVERSE STRUCTURAL SEAM EITHER — cut 2026-08-10, and it is the SAME mistake as the
+       service trench above, rotated 90°. A `-0.34` line ruled the full width of the deck every 9
+       tiles: at close range it reads as the hierarchy this recipe wanted (one strong line, then
+       joints, then grain), and at station scale a room shows exactly ONE of it, so it is not a
+       rhythm — it is a black line drawn across the floor. Andrew, on the default hab: "remove the
+       black line." It also survived every attempt to dial the deck back, because unlike the plate
+       joint it was never scaled by `DEPTH.deckSeam`.
+       The plate joints (scaled by deckSeam) and the brushed grain carry the deck on their own. */
   }
 
   /* ---------- THE CORRIDOR DECK CANDIDATES (2026-07-28) ----------
@@ -1248,15 +1253,24 @@ const StationBake = (() => {
   }
 
   function bakeEdgeAO(b) {
-    // base edge AO — the short shade band hugging every wall foot (verbatim legacy look)
-    b.fillStyle = 'rgba(0,0,0,0.25)';
-    for (const e of edges) {
-      if (e.door) continue;
-      const X = e.x * T, Y = e.y * T, d = e.room ? 8 : 4, ds = e.room ? 5 : 3;
-      if (e.side === 'n') b.fillRect(X, Y, T, d);
-      else if (e.side === 's') b.fillRect(X, Y + T - ds, T, ds);
-      else if (e.side === 'w') b.fillRect(X, Y, ds, T);
-      else b.fillRect(X + T - ds, Y, ds, T);
+    // base edge AO — the short shade band hugging every wall foot (verbatim legacy look).
+    // DEPTH.edgeAO scales the pass (1 = the shipped band, 0 = off) so it can be dialled in the
+    // CRT LAB like every other depth cue; it used to be the one hardcoded band in the bake, which
+    // made "which pass owns this dark line at the wall?" unanswerable without editing the source.
+    const ea = Math.max(0, DEPTH.edgeAO);
+    if (ea > 0.001) {
+      b.fillStyle = 'rgba(0,0,0,' + (0.25 * ea).toFixed(3) + ')';
+      for (const e of edges) {
+        if (e.door) continue;
+        const X = e.x * T, Y = e.y * T, d = e.room ? 8 : 4, ds = e.room ? 5 : 3;
+        if (e.side === 'n') b.fillRect(X, Y, T, d);
+        // the SOUTH band belongs to DEPTH.southFoot, which owns every dark mark at that edge —
+        // it is the same black rule, and leaving half of it here is what made turning the other
+        // half off look like it had done nothing.
+        else if (e.side === 's') { if (DEPTH.southFoot > 0.001) b.fillRect(X, Y + T - ds, T, ds); }
+        else if (e.side === 'w') b.fillRect(X, Y, ds, T);
+        else b.fillRect(X + T - ds, Y, ds, T);
+      }
     }
     bakeWallCastShadow(b);
     bakeCornerAO(b);
@@ -2616,7 +2630,17 @@ const StationBake = (() => {
         // front of it — same contact-seam law as the north face, mirrored. Its top surface can
         // only ever hang SOUTH of the tile: extruding it toward the viewer like the north wall
         // would bury the walkable row in front of it.
-        b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X, Y + T - dep, T, 1);
+        /* ...AND THE CONTACT SHADOW IS NOW A DIAL, DEFAULTING OFF (2026-08-10). Andrew, circling the
+           foot of a room and then again after the deck's transverse seam was cut: "remove the black
+           line on the bottom". This band is it — `FACEW` rows of -0.62..-0.46 running the full width
+           of every room, the darkest thing on the deck, and the ONE dark cue here that no DEPTH dial
+           could reach. At the station's zoom it does not read as a shadow pooling under a wall, it
+           reads as a black rule drawn across the bottom of the room, with the lit crown right under
+           it making the contrast worse. The crown already separates deck from shell — it is a bright
+           band against a dark one, which is all the seating the edge needs.
+           `DEPTH.southFoot` keeps the old band one slider away (1 = the shipped sliver). */
+        const sf = Math.max(0, DEPTH.southFoot);
+        if (sf > 0.001) b.fillStyle = U.shade(pal.base, -0.62 * sf), b.fillRect(X, Y + T - dep, T, 1);
         /* THE SOUTH WALL HAS NO VISIBLE INNER FACE (2026-08-05, Andrew: "we need to remove the wall
            on the bottom it doesnt make sense to be there due to the angle").
            The camera sits above and SOUTH. That is what lets you see the north wall's inner face at
@@ -2628,9 +2652,12 @@ const StationBake = (() => {
            is therefore a CONTACT SHADOW, not a surface — darkest where the deck meets the wall's
            base, easing as it approaches the crown. It always was a flat dark sliver; giving it the
            material made it start asserting a face that cannot be there, which is what showed. */
-        for (let i = 0; i < fw; i++) {
-          b.fillStyle = U.shade(pal.base, -0.62 + 0.16 * (fw <= 1 ? 1 : i / (fw - 1)));
-          b.fillRect(X, Y + T - fw + i, T, 1);
+        if (sf > 0.001) {
+          const rows = Math.max(1, Math.round(fw * Math.min(1, sf)));
+          for (let i = 0; i < rows; i++) {
+            b.fillStyle = U.shade(pal.base, (-0.62 + 0.16 * (rows <= 1 ? 1 : i / (rows - 1))) * Math.min(1, sf));
+            b.fillRect(X, Y + T - rows + i, T, 1);
+          }
         }
         if (e.exterior) {
           b.fillStyle = shellEdge; b.fillRect(X, Y + T, T, Math.max(out, cw + 2));   // outer hull band
@@ -2729,6 +2756,55 @@ const StationBake = (() => {
      LIGHT.pitch spacing, so a lamp's ~7-tile carve overlaps its neighbour's instead of leaving the
      deck between them at raw ambient. A room shallower than one pitch keeps exactly one row and
      bakes identically to before. */
+  /* ---- LIGHT LANDS ON A SURFACE, IT IS NOT A SURFACE (2026-08-10) ----
+     Andrew, circling the lit band at the foot of a default HULL-floor room: "not a fan of how this
+     lighting is on top of this black dark area — it makes it look unrealistic."
+
+     He is describing a real modelling error, and the measurement backs him. In a room small enough
+     that ONE lamp carve covers the whole deck (a 9x7 hab: room cut r≈5.6 tiles, lamp cuts r≈7.8),
+     the multiplicative light map is SATURATED everywhere — set LIGHT.floor to 0 and the floor goes
+     flat, which means the additive warm pool was carrying essentially all of the visible modelling
+     on that deck. An additive wash is a constant: it adds the same warmth to a plate face and to
+     the near-black seam beside it, so it VEILS the material instead of revealing it. Over a dark
+     deck that reads exactly as reported — a warm decal floating on black.
+
+     Real diffuse light does not add, it SCALES: reflected light is albedo × illumination, so the
+     bright parts of a material gain more than its dark parts and the pattern comes UP under the
+     lamp. So the pool is now painted to its own layer and its alpha modulated by the deck already
+     under it before it composites. Seams stay seams, plate faces catch the light, and the pool's
+     shape is unchanged — it is the same lamp, finally landing on a surface.
+
+     `DEPTH.poolAlbedo` is the mix (0 = the old flat wash, 1 = fully albedo-scaled), live-tunable
+     in the CRT LAB like every other constant here. The gain is normalised at REF so a mid deck
+     bakes near its shipped strength and only the dark/bright extremes move. */
+  const POOL_REF = 96;
+  function additiveFloorPass(b, draw) {
+    const k = Math.max(0, Math.min(1, DEPTH.poolAlbedo));
+    if (k <= 0.001) { draw(b); return; }
+    const layer = canvas(CW, CH);
+    const lg = translatedContext(layer);
+    draw(lg);
+    // scale the layer's alpha by the albedo already painted underneath it
+    if (typeof b.getImageData === 'function' && typeof lg.getImageData === 'function') {
+      const dst = b.getImageData(0, 0, CW, CH).data;
+      const img = lg.getImageData(0, 0, CW, CH);
+      const src = img.data;
+      for (let i = 3; i < src.length; i += 4) {
+        const a = src[i];
+        if (!a) continue;
+        const luma = (dst[i - 3] * 299 + dst[i - 2] * 587 + dst[i - 1] * 114) / 1000;
+        const g = Math.max(0.18, Math.min(1.25, 0.35 + 0.65 * (luma / POOL_REF)));
+        src[i] = Math.round(a * (1 + k * (g - 1)));
+      }
+      lg.putImageData(img, 0, 0);
+    }
+    b.save();
+    b.globalCompositeOperation = 'lighter';
+    b.setTransform(1, 0, 0, 1, 0, 0);
+    b.drawImage(layer, 0, 0);
+    b.restore();
+  }
+
   const lampCols = (r) => Math.max(1, Math.round((r.x2 - r.x1 + 1) / Math.max(2, LIGHT.pitch)));
   function lampRows(Y, RH) {
     const y0 = Y + T * 1.6, yLast = Y + RH - T * 1.2;
@@ -2736,7 +2812,10 @@ const StationBake = (() => {
     return { rows, y0, step: rows > 1 ? (yLast - y0) / (rows - 1) : 0 };
   }
 
-  function bakeRoomLighting(b) {
+  /* the ADDITIVE half of the room lighting — every warm floor pool + its sheen, drawn to whatever
+     context `additiveFloorPass` hands it (the albedo layer when DEPTH.poolAlbedo is on, `b`
+     directly when it is off). Kept in its own function so the pass can never disagree with it. */
+  function bakeRoomPools(b) {
     b.globalCompositeOperation = 'lighter';
     const openSide = (r, side) => {
       if (side === 'n' || side === 's') { const y = side === 'n' ? r.y1 : r.y2; for (let x = r.x1; x <= r.x2; x++) if (isOpenJoin(x, y, side)) return true; }
@@ -2776,6 +2855,11 @@ const StationBake = (() => {
       if (!pairIsSill(x1, y1, x2, y2)) continue;
       bakeSheen(b, (x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T + T * 0.4, T * 0.4);
     }
+    b.globalCompositeOperation = 'source-over';
+  }
+
+  function bakeRoomLighting(b) {
+    additiveFloorPass(b, bakeRoomPools);
     b.globalCompositeOperation = 'source-over';
     for (const r of G.allRects) {
       if (G.isCorridor(r.z)) continue;
@@ -2823,7 +2907,12 @@ const StationBake = (() => {
      LAW: if a surface looks wrong everywhere you put it, measure the LIGHT on it before redrawing
      it. Corridors stay DIMMER than rooms — that is the tunnel-vs-hall read and it is deliberate —
      but dim is a level, not an absence of modelling. */
-  function bakeCorridorDressing(b) {
+  /* the corridor's ADDITIVE half, split out for the same reason as bakeRoomPools — see the
+     albedo note above additiveFloorPass. (The pool loop now runs across ALL corridors before the
+     hardware loop instead of interleaving per corridor; the only pixels that can differ are a
+     neighbouring passage's fixture cap sitting inside this pool's unclipped square, which the
+     wash no longer paints over.) */
+  function bakeCorridorPools(b) {
     for (const r of G.allRects) {
       if (!G.isCorridor(r.z)) continue;
       const vertical = (r.y2 - r.y1) > (r.x2 - r.x1);
@@ -2858,6 +2947,16 @@ const StationBake = (() => {
          worldmodel's wallStyleOfRoom). */
       if (vertical) for (let y = r.y1 + 1; y <= r.y2; y += 4) pool(cx, (y + 0.5) * T);
       else for (let x = r.x1 + 1; x <= r.x2; x += 4) pool((x + 0.5) * T, cy);
+      b.globalCompositeOperation = 'source-over';
+    }
+  }
+
+  function bakeCorridorDressing(b) {
+    additiveFloorPass(b, bakeCorridorPools);
+    for (const r of G.allRects) {
+      if (!G.isCorridor(r.z)) continue;
+      const vertical = (r.y2 - r.y1) > (r.x2 - r.x1);
+      const cx = (r.x1 + r.x2 + 1) / 2 * T, cy = (r.y1 + r.y2 + 1) / 2 * T;
       b.globalCompositeOperation = 'source-over';
       // fixture caps + a coloured cable run on the wall side
       b.fillStyle = '#5b6066';
@@ -3400,7 +3499,23 @@ const StationBake = (() => {
          which is what real coursing does at a corner and what the hull does too. */
       const cEd = WALL_EDGES[wallMatOf(G.zoneGrid[G.idx(ccx, ccy)])] || WALL_EDGES.bulkhead;
       let arcS = null, arcPrev = 0;
-      const vFace = sgnY < 0 ? NFACE : FACEW;   // top corners meet the deep north face; bottom ones the thin south wall
+      /* A CORNER MEETS THE WALL THAT IS ACTUALLY DRAWN (2026-08-10). `vFace` is how deep the face
+         band is at the n/s end of the arc, and on a BOTTOM corner it was hardcoded to FACEW — the
+         south wall's nominal thickness. But the south wall has no visible inner face (see the note
+         in bakeWalls), so on a straight south tile those rows are DECK. The corner painted them
+         solid wall tone, which is the dark block Andrew circled: "there is areas where the literal
+         wall is creeping through the interior." It reads as a chunk of wall sitting a tile inside
+         the room because that is exactly what it is.
+         Taking the south wall's REAL drawn depth (`FACEW * southFoot`, 0 by default) makes the
+         inner ellipse reach the tile's own bottom edge, so the face tapers to nothing at the south
+         end and the deck runs to the same row it does on the tile next door. At southFoot 1 the
+         old geometry comes back unchanged. Same law as the straight walls: one wall, one
+         convention — a corner may not assert a surface its own straight run does not have. */
+      const sFoot = Math.max(0, Math.min(1, DEPTH.southFoot));
+      const vFace = sgnY < 0 ? NFACE : Math.round(FACEW * sFoot);
+      // how much of the corner's foot dressing survives at a given point along the arc: full where
+      // it leaves the side wall, tapering to the south wall's own (absent) foot at the other end.
+      const footAt = ady => sgnY < 0 ? 1 : Math.max(0, Math.min(1, sFoot + (1 - sFoot) * (1 - ady / Rc)));
       const aIn = Math.max(1, Rc - FACEW), bIn = Math.max(1, Rc - vFace);
       eachCornerRow(kind, ax, ay, Rc, (py, edge) => {
         const ady = Math.abs(py + 0.5 - ay);
@@ -3463,7 +3578,10 @@ const StationBake = (() => {
           // -0.58). A 2px flat foot against the straight wall's graded 4px one left the corner ~9
           // luminance brighter than the wall it joins, which reads as a mismatch even once the
           // geometry lines up.
-          for (const [d, k] of [[4, -0.24], [2, -0.40], [1, -0.58]]) {
+          const ff = footAt(ady);
+          for (const [d0, k] of [[4, -0.24], [2, -0.40], [1, -0.58]]) {
+            const d = Math.round(d0 * ff);
+            if (d <= 0) continue;
             if (sgnX < 0) clamp(Math.max(lo, inner - d), inner, U.shade(cPal.face, k));
             else clamp(inner + 1, Math.min(hi + 1, inner + 1 + d), U.shade(cPal.face, k));
           }
@@ -3483,14 +3601,20 @@ const StationBake = (() => {
         const dy = bIn * Math.sqrt(1 - (adx / aIn) * (adx / aIn));
         const py = sgnY < 0 ? Math.round(ay - dy) : Math.round(ay + dy);
         if (py < Y || py >= Y + T) continue;
-        // same graded foot as the row pass, so the shallow stretch is shaded like the steep one
-        for (const [d, k] of [[4, -0.24], [2, -0.40], [1, -0.58]]) {
-          for (let j = 1; j <= d; j++) {
-            const fy = sgnY < 0 ? py - j : py + j;
-            if (fy >= Y && fy < Y + T) fill(ix, fy, 1, 1, U.shade(cPal.face, k));
+        // same graded foot as the row pass, so the shallow stretch is shaded like the steep one —
+        // and tapering the same way, or the column walk would put back the wall block the row walk
+        // just stopped drawing (this is the SHALLOW stretch, i.e. the south end, so it carries most
+        // of it).
+        const ff = footAt(Math.abs(py + 0.5 - ay));
+        if (ff > 0.001) {
+          for (const [d0, k] of [[4, -0.24], [2, -0.40], [1, -0.58]]) {
+            for (let j = 1; j <= Math.round(d0 * ff); j++) {
+              const fy = sgnY < 0 ? py - j : py + j;
+              if (fy >= Y && fy < Y + T) fill(ix, fy, 1, 1, U.shade(cPal.face, k));
+            }
           }
+          fill(ix, py, 1, 1, outerBand);
         }
-        fill(ix, py, 1, 1, outerBand);
       }
       const cZone = G.zoneGrid[G.idx(ccx, ccy)];
       const cRoom = !G.isCorridor(cZone);

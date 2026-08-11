@@ -9,8 +9,18 @@
 const crypto = require('node:crypto');
 const fsNative = require('node:fs');
 const pathNative = require('node:path');
+const { makeCronLock } = require('./cron-lock.js');   // O_EXCL + pid:nonce + stale-break advisory lock (G4.3 primitive)
 
 const REQUEST_VERSION = 1;
+// Recovery activation runs BEFORE the workspace owner claim (it renames the workspace itself, so the
+// owner file inside it cannot protect it). This advisory lock lives at the PARENT level — a sibling of
+// the workspace root, like the request/last-result files — and serializes the whole inspect->copy->rename
+// window across processes. A live holder means another sidecar is mid-recovery: the caller fails closed.
+const RECOVERY_LOCK_MAX_RUN_MS = 8 * 60 * 1000;   // mtime stale ceiling; a provably-dead holder pid is reclaimed sooner
+// copyVerified/inventory read every file fully into memory (sync, hash + read-back verify). These caps
+// fail the recovery CLOSED with a clear error before a pathological source OOMs the sidecar.
+const MAX_RECOVERY_FILE_BYTES = 256 * 1024 * 1024;         // one file over 256 MiB cannot be safely buffered
+const MAX_RECOVERY_TOTAL_BYTES = 2 * 1024 * 1024 * 1024;   // 2 GiB aggregate source ceiling
 const SAVE_NAMES = ['agent.save.json', 'agent.save.json.bak'];
 const SKIP_TOP = new Set(['.browser-profile']);
 const SKIP_FILES = new Set([
@@ -188,7 +198,10 @@ function skipped(rel) {
 
 function inventory(root, deps) {
   const d = deps || {}, fs = d.fs || fsNative, path = d.path || pathNative;
+  const maxFileBytes = Number(d.maxFileBytes) > 0 ? Number(d.maxFileBytes) : MAX_RECOVERY_FILE_BYTES;
+  const maxTotalBytes = Number(d.maxTotalBytes) > 0 ? Number(d.maxTotalBytes) : MAX_RECOVERY_TOTAL_BYTES;
   const rows = [];
+  let totalBytes = 0;
   function visit(dir, rel) {
     for (const name of fs.readdirSync(dir).sort()) {
       const childRel = slash(rel ? rel + '/' + name : name);
@@ -198,6 +211,17 @@ function inventory(root, deps) {
       if (stat.isSymbolicLink()) continue;
       if (stat.isDirectory()) visit(file, childRel);
       else if (stat.isFile()) {
+        // Size guard BEFORE the full-buffer read: fail closed instead of OOMing on a pathological source.
+        const size = Number(stat.size) || 0;
+        if (size > maxFileBytes) {
+          throw new Error('recovery source file too large to buffer safely: ' + childRel +
+            ' (' + size + ' bytes exceeds the ' + maxFileBytes + '-byte per-file limit)');
+        }
+        totalBytes += size;
+        if (totalBytes > maxTotalBytes) {
+          throw new Error('recovery source too large to buffer safely: aggregate exceeds the ' +
+            maxTotalBytes + '-byte limit at ' + childRel);
+        }
         const raw = fs.readFileSync(file);
         rows.push({ path: childRel, bytes: raw.length, sha256: sha256(raw) });
       }
@@ -209,7 +233,7 @@ function inventory(root, deps) {
 
 function copyVerified(source, stage, deps) {
   const d = deps || {}, fs = d.fs || fsNative, path = d.path || pathNative;
-  const expected = inventory(source, { fs, path });
+  const expected = inventory(source, { fs, path, maxFileBytes: d.maxFileBytes, maxTotalBytes: d.maxTotalBytes });
   fs.mkdirSync(stage, { recursive: false });
   for (const row of expected) {
     const src = path.resolve(source, ...row.path.split('/'));
@@ -221,7 +245,7 @@ function copyVerified(source, stage, deps) {
     const back = fs.readFileSync(dest);
     if (back.length !== row.bytes || sha256(back) !== row.sha256) throw new Error('recovery read-back mismatch: ' + row.path);
   }
-  const actual = inventory(stage, { fs, path });
+  const actual = inventory(stage, { fs, path, maxFileBytes: d.maxFileBytes, maxTotalBytes: d.maxTotalBytes });
   if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('recovery stage inventory differs from its source');
   return actual;
 }
@@ -231,9 +255,46 @@ function readLastResult(workspaceRoot, deps) {
   try { return JSON.parse(fs.readFileSync(lastResultFile(workspaceRoot, path), 'utf8')); } catch (_) { return null; }
 }
 
+function recoveryLockFile(workspaceRoot, path) {
+  const root = path.resolve(String(workspaceRoot || ''));
+  return path.join(path.dirname(root), path.basename(root) + '.recovery.lock');
+}
+
+/* applyPendingRecovery — the ONLY mutation entry point. Recovery renames the ACTIVE workspace root
+   (current -> rollback, stage -> current), and it runs BEFORE the one-sidecar owner claim, so two
+   simultaneous boots could race the rename (the existsSync checks on the stage/rollback names are
+   TOCTOU, not mutual exclusion). The whole inspect->copy->rename window is therefore serialized behind
+   a cross-process advisory lock at the PARENT level (a sibling of the workspace root — the lock cannot
+   live inside a directory that recovery renames). A boot that cannot acquire it FAILS CLOSED: no
+   mutation, a distinguishable { lockUnavailable: true } result, and the composition root decides
+   whether to exit (index.js matches the owner-claim refusal semantics). A stale lock from a crashed
+   holder is broken by the cron-lock primitive (mtime ceiling + proven-dead pid probe). */
 function applyPendingRecovery(opts) {
   const o = opts || {}, fs = o.fs || fsNative, path = o.path || pathNative;
-  const platform = String(o.platform || process.platform), now = typeof o.now === 'function' ? o.now : function () { return 0; };
+  const now = typeof o.now === 'function' ? o.now : function () { return 0; };
+  const current = path.resolve(String(o.workspaceRoot || ''));
+  const lockfile = recoveryLockFile(current, path);
+  // A fresh install may not have the workspace parent yet; the lockfile needs it to exist.
+  try { fs.mkdirSync(path.dirname(lockfile), { recursive: true }); } catch (_) {}
+  const lock = makeCronLock({
+    fs, path, lockfile, now,
+    maxRunMs: Number(o.lockMaxRunMs) > 0 ? Number(o.lockMaxRunMs) : RECOVERY_LOCK_MAX_RUN_MS,
+    pid: o.lockPid, nonce: o.lockNonce, pidAlive: o.lockPidAlive
+  });
+  const attempt = lock.withLock(function () { return applyPendingRecoveryLocked(o); });
+  if (!attempt.ran) {
+    return {
+      ok: false, applied: false, lockUnavailable: true, code: 'RECOVERY_LOCK_UNAVAILABLE',
+      error: 'another StarNet process holds the workspace recovery lock'
+    };
+  }
+  return attempt.result;
+}
+
+// The pre-existing recovery body, now only ever entered while holding the recovery lock above.
+function applyPendingRecoveryLocked(opts) {
+  const o = opts || {}, fs = o.fs || fsNative, path = o.path || pathNative;
+  const now = typeof o.now === 'function' ? o.now : function () { return 0; };
   const current = path.resolve(String(o.workspaceRoot || ''));
   const requestPath = requestFile(current, path);
   if (!fs.existsSync(requestPath)) {
@@ -242,7 +303,7 @@ function applyPendingRecovery(opts) {
       const inspection = inspectCandidates(o);
       if ((!active || !active.recoverable) && inspection.recoverableCount === 1 && inspection.automaticCandidateId) {
         requestRecovery(Object.assign({}, o, { inspection, candidateId: inspection.automaticCandidateId }));
-        return applyPendingRecovery(Object.assign({}, o, { auto: false }));
+        return applyPendingRecoveryLocked(Object.assign({}, o, { auto: false }));   // stay inside the held lock
       }
     }
     return { applied: false, pending: false };
@@ -274,7 +335,7 @@ function applyPendingRecovery(opts) {
     const stage = current + '.recovery-stage-' + stamp;
     const rollback = current + '.recovery-rollback-' + stamp;
     if (fs.existsSync(stage) || fs.existsSync(rollback)) throw new Error('recovery stage or rollback name already exists');
-    const files = copyVerified(selected.sourceRoot, stage, { fs, path });
+    const files = copyVerified(selected.sourceRoot, stage, { fs, path, maxFileBytes: o.maxFileBytes, maxTotalBytes: o.maxTotalBytes });
     writeJsonAtomic(path.join(stage, '.migration-receipt.json'), {
       version: 1, validated: true, sourceRoots: [selected.sourceRoot], files
     }, fs, path, now);
@@ -325,5 +386,5 @@ function recoveryReport(opts) {
 
 module.exports = {
   inspectCandidates, publicInspection, requestRecovery, applyPendingRecovery, recoveryReport, readRootCandidate,
-  _internals: { decodeSave, displayPath, inventory, requestFile, lastResultFile, copyVerified, sha256 }
+  _internals: { decodeSave, displayPath, inventory, requestFile, lastResultFile, copyVerified, sha256, recoveryLockFile }
 };
