@@ -109,6 +109,14 @@ try {
   A.eq(fs.existsSync(Recovery._internals.requestFile(current, path)), true, 'refused activation leaves the pending request untouched');
   A.eq(fs.existsSync(path.join(current, 'agent.save.json')), false, 'refused activation never mutates the active workspace');
   A.eq(fs.readFileSync(lockfile, 'utf8'), '999999:cafe', 'refused activation never steals the live holder\'s lock');
+  fs.utimesSync(lockfile, 0, 0);
+  const agedLiveRefused = Recovery.applyPendingRecovery({
+    fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA],
+    now: () => 9 * 60 * 1000, lockMaxRunMs: 8 * 60 * 1000, lockPidAlive: () => true
+  });
+  A.eq(agedLiveRefused.lockUnavailable, true, 'an aged recovery lock is NEVER stolen while its holder pid is still alive');
+  A.eq(fs.readFileSync(lockfile, 'utf8'), '999999:cafe', 'the aged live holder keeps the exact parent-level lock stamp');
+  A.eq(fs.existsSync(path.join(current, 'agent.save.json')), false, 'an aged live holder still blocks every workspace mutation');
   const reclaimed = Recovery.applyPendingRecovery({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA], now: () => 6000, lockPidAlive: () => false });
   A.eq(reclaimed.applied, true, 'a provably-dead holder\'s stale lock is broken and recovery proceeds');
   A.eq(JSON.parse(fs.readFileSync(path.join(current, 'agent.save.json'), 'utf8')).doc.agent.name, 'VEGA', 'stale-break activation lands the requested station');

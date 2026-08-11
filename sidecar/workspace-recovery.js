@@ -16,7 +16,7 @@ const REQUEST_VERSION = 1;
 // owner file inside it cannot protect it). This advisory lock lives at the PARENT level — a sibling of
 // the workspace root, like the request/last-result files — and serializes the whole inspect->copy->rename
 // window across processes. A live holder means another sidecar is mid-recovery: the caller fails closed.
-const RECOVERY_LOCK_MAX_RUN_MS = 8 * 60 * 1000;   // mtime stale ceiling; a provably-dead holder pid is reclaimed sooner
+const RECOVERY_LOCK_MAX_RUN_MS = 8 * 60 * 1000;   // diagnostic age only; recovery disables age-based live-lock theft
 // copyVerified/inventory read every file fully into memory (sync, hash + read-back verify). These caps
 // fail the recovery CLOSED with a clear error before a pathological source OOMs the sidecar.
 const MAX_RECOVERY_FILE_BYTES = 256 * 1024 * 1024;         // one file over 256 MiB cannot be safely buffered
@@ -268,7 +268,8 @@ function recoveryLockFile(workspaceRoot, path) {
    live inside a directory that recovery renames). A boot that cannot acquire it FAILS CLOSED: no
    mutation, a distinguishable { lockUnavailable: true } result, and the composition root decides
    whether to exit (index.js matches the owner-claim refusal semantics). A stale lock from a crashed
-   holder is broken by the cron-lock primitive (mtime ceiling + proven-dead pid probe). */
+   holder is broken only when its pid is PROVEN dead. Recovery has no safe wall-clock ceiling, so
+   unlike cron it never reclaims a lock merely because the mtime is old. */
 function applyPendingRecovery(opts) {
   const o = opts || {}, fs = o.fs || fsNative, path = o.path || pathNative;
   const now = typeof o.now === 'function' ? o.now : function () { return 0; };
@@ -279,7 +280,8 @@ function applyPendingRecovery(opts) {
   const lock = makeCronLock({
     fs, path, lockfile, now,
     maxRunMs: Number(o.lockMaxRunMs) > 0 ? Number(o.lockMaxRunMs) : RECOVERY_LOCK_MAX_RUN_MS,
-    pid: o.lockPid, nonce: o.lockNonce, pidAlive: o.lockPidAlive
+    pid: o.lockPid, nonce: o.lockNonce, pidAlive: o.lockPidAlive,
+    reclaimByAge: false
   });
   const attempt = lock.withLock(function () { return applyPendingRecoveryLocked(o); });
   if (!attempt.ran) {

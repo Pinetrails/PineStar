@@ -992,7 +992,7 @@ const autonomyLedger = makeAutonomyLedger({ io: autonomyLedgerIo, clock: { now: 
 function recordAutonomy(entry) { try { return autonomyLedger.record(entry); } catch (_) { return null; } }
 
 // Webhook replay-nonce inbox: accepted relay nonces are durable facts ({nonce, expiry, at}), append+fsync'd
-// like the growth-ratings ledger so the exactly-once claim at /api/channels/webhook/* survives a sidecar
+// like the growth-ratings ledger so durable at-most-once admission at /api/channels/webhook/* survives a sidecar
 // restart (an in-memory-only cache re-admitted the same signed request after a reboot within the skew
 // window). append() deliberately THROWS on failure — the verifier fails closed (503) rather than admit a
 // delivery whose nonce was never recorded. Pruned by expiry once the live segment passes the compact
@@ -1013,7 +1013,7 @@ function pruneWebhookNonces() {
   } catch (_) {}                                    // pruning is best-effort; append correctness never depends on it
 }
 const webhookNonceIo = {
-  load() { try { return readBoundedJsonl(WEBHOOK_NONCES_FILE); } catch (_) { return []; } },
+  load() { return readBoundedJsonl(WEBHOOK_NONCES_FILE); },
   append(entry) {
     let fd = null;
     try {
@@ -17193,8 +17193,8 @@ async function handleChannelHandoff(req, res) {
 
 /* Authenticated relay ingress. API-token auth is still required by the global HTTP guard; this second HMAC
    proves payload origin and the timestamp+nonce inbox (durable JSONL, reloaded at boot — webhookNonceIo)
-   makes lifecycle delivery exactly-once at this boundary, INCLUDING across a sidecar restart: a nonce that
-   cannot be recorded on disk fails closed (503), never accept-without-record. */
+   makes replay admission at-most-once across restart. No transactional channel-delivery guarantee is
+   asserted: a nonce that cannot be loaded or recorded fails closed (503), never accept-without-proof. */
 async function handleChannelWebhook(req, res) {
   const json = (code, value) => respondJson(res, code, value);
   const channel = decodeURIComponent(String(req.url || '').split('?')[0].slice('/api/channels/webhook/'.length));

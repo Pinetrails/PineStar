@@ -46,8 +46,44 @@ function signedRequest(auth, nonce, body) {
   const v = makeWebhookVerifier({ secret: SECRET, now: clock, store });
   A.eq(Array.from(v._seen.keys()), ['nonce_live000000000000'], 'boot load keeps only unexpired well-formed nonces');
 
-  const broken = { load: () => { throw new Error('disk gone'); }, append: () => {} };
-  A.notThrows(() => makeWebhookVerifier({ secret: SECRET, now: clock, store: broken }), 'a broken store load never crashes boot');
+  let broken = true;
+  const recovering = { load: () => { if (broken) throw new Error('disk gone'); return rows.slice(); }, append: () => {} };
+  const guarded = makeWebhookVerifier({ secret: SECRET, now: clock, store: recovering });
+  const guardedReq = signedRequest(guarded, 'nonce_loadguard0000000', '{"chatId":"c","text":"hi"}');
+  A.eq(guarded.verify(guardedReq).code, 503, 'an unreadable durable inbox fails admission closed instead of pretending it is empty');
+  broken = false;
+  A.ok(guarded.verify(guardedReq).ok, 'admission recovers after the durable inbox can be loaded safely');
+})();
+
+(function futureTimestampReplayStaysBlockedForItsWholeValidityWindow() {
+  const rows = [];
+  const store = { load: () => rows.slice(), append: row => rows.push(row) };
+  const start = now;
+  const v = makeWebhookVerifier({ secret: SECRET, now: clock, store, maxSkewMs: 300000 });
+  const timestamp = String(start + 300000);
+  const nonce = 'nonce_futureclock00000';
+  const body = '{"chatId":"c","text":"hi"}';
+  const req = { timestamp, nonce, body, signature: v.sign(timestamp, nonce, body) };
+  A.ok(v.verify(req).ok, 'a request at the positive skew boundary is initially admitted');
+  now = start + 300001;
+  A.eq(v.verify(req).code, 409, 'the nonce remains blocked until the request timestamp itself leaves the validity window');
+  now = start;
+})();
+
+(function capacityFailsClosedWithoutEvictingLiveReplayReceipts() {
+  const rows = [];
+  const store = { load: () => rows.slice(), append: row => rows.push(row) };
+  const v = makeWebhookVerifier({ secret: SECRET, now: clock, store, maxNonces: 100 });
+  let first = null;
+  for (let i = 0; i < 100; i++) {
+    const nonce = 'nonce_capacity_' + String(i).padStart(4, '0');
+    const req = signedRequest(v, nonce, '{}');
+    if (!first) first = req;
+    A.ok(v.verify(req).ok, 'live replay receipt ' + i + ' is admitted within capacity');
+  }
+  const overflow = signedRequest(v, 'nonce_capacity_overflow', '{}');
+  A.eq(v.verify(overflow).code, 503, 'a full live nonce set refuses new admission instead of evicting replay protection');
+  A.eq(v.verify(first).code, 409, 'the oldest still-live receipt remains replay-protected at capacity');
 })();
 
 (function appendFailureFailsClosed() {
@@ -99,7 +135,8 @@ function signedRequest(auth, nonce, body) {
   const index = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
   A.ok(/store:\s*webhookNonceIo/.test(index), 'index.js composes the verifier over the durable nonce inbox');
   A.ok(/webhook-nonces\.jsonl/.test(index), 'the nonce inbox lives beside the other WORKSPACES ledgers');
-  A.ok(!/nonce cache makes lifecycle delivery exactly-once/.test(index), 'the old in-memory-only exactly-once claim is gone');
+  const ingressComment = index.slice(index.indexOf('Authenticated relay ingress'), index.indexOf('async function handleChannelWebhook') + 200);
+  A.ok(!/exactly-once/i.test(ingressComment), 'the ingress contract does not overclaim transactional exactly-once delivery');
 })();
 
 A.report('channels.webhook-durability.test');
