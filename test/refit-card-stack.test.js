@@ -109,6 +109,8 @@ A.ok(/if \(res && res\.ok\) \{[\s\S]*rememberDrawn\(rect\);[\s\S]*deselectTool\(
   'a successful room or hallway placement disarms the tool before its remembered footprint can self-overlap');
 A.ok(commitDrawBlock.indexOf('deselectTool({ silent: true })') < commitDrawBlock.indexOf('feedback(res'),
   'the post-placement hover is neutral before feedback returns control to the pointer');
+A.ok(/const isHall = tool === 'hall'/.test(commitDrawBlock) && /feedback\(res, ev, isHall \?/.test(commitDrawBlock),
+  'the feedback label reads the tool captured BEFORE deselect — a hallway commit must never flash "room placed"');
 
 /* ---------- 6. per-station latches + session-state hygiene ---------- */
 A.ok(/const ORDERS_KEY = \(\) => 'starnet\.refit\.orders\.dis\.' \+ stationKeyOf\(station\)/.test(build),

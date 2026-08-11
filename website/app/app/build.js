@@ -2932,15 +2932,18 @@ const Build = (() => {
        Both go through the SAME snapFit the ghost drew — commit what was on screen, never the raw
        gesture, or the snap becomes a lie the instant you press. `rememberDrawn` reads the SNAPPED
        rect too, so a room that grew a tile to meet its neighbour teaches the next click that size. */
+    // capture the armed tool BEFORE the success path disarms it — deselectTool resets `tool` to
+    // 'select', so reading it again in the feedback line called every hallway a "room placed"
+    const isHall = tool === 'hall';
     const rect = !d.moved ? snapFit(stampRectFor(d.cur.tx, d.cur.ty), {})
-      : snapFit((tool === 'hall') ? laneRect(d.start, d.cur) : norm(d.start, d.cur), { resize: true });
-    const res = (tool === 'hall') ? station.placeHallway({ rect }) : station.addRoom({ kind, rect });
+      : snapFit(isHall ? laneRect(d.start, d.cur) : norm(d.start, d.cur), { resize: true });
+    const res = isHall ? station.placeHallway({ rect }) : station.addRoom({ kind, rect });
     if (res && res.ok) {
       pushFlash([rect], false);
       rememberDrawn(rect);
       deselectTool({ silent: true });
     }
-    feedback(res, ev, tool === 'hall' ? 'hallway run' : 'room placed');
+    feedback(res, ev, isHall ? 'hallway run' : 'room placed');
   }
   function commitMove(d, ev) {
     // the SAME snapped delta the move ghost drew — commit what was on screen, never the raw drag
