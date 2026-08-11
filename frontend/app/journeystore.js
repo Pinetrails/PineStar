@@ -1,18 +1,26 @@
-/* STARNET — journeystore.js: last-good frontend citizen for /api/journey.
-   The sidecar owns every claim. This store polls, performs explicit Commander writes, and projects the proven
-   evolution stage into the world; it never mints XP and never emits on the frozen U.bus contract. */
+/* STARNET — journeystore.js: QuerySpine projection for /api/journey.
+   The sidecar owns every claim. QuerySpine owns GET dedupe/polling/freshness/error truth; this citizen
+   performs explicit Commander writes and projects proven evolution into the world. */
 'use strict';
 const JourneyStore = (() => {
-  const POLL_MS = 4000;
-  let cache = null, inflight = false, lastFetch = 0, seeded = false, lastStage = 0;
+  let seeded = false, lastStage = 0, stop = null, lastJourney = null;
   let epochFn = () => 1;
 
   function epoch() { try { return Math.max(1, Math.floor(Number(epochFn()) || 1)); } catch (_) { return 1; } }
+  function spine() { return (typeof QuerySpine !== 'undefined' && QuerySpine) ? QuerySpine : null; }
+
+  function state() {
+    const q = spine();
+    if (!q || !q.state) return { hasData: false, data: undefined, stale: true, error: { message: 'journey query unavailable' }, pending: false };
+    try { return q.state('journey'); }
+    catch (_) { return { hasData: false, data: undefined, stale: true, error: { message: 'journey query unavailable' }, pending: false }; }
+  }
 
   function apply(journey) {
     if (!journey || typeof journey !== 'object') return false;
+    if (journey === lastJourney) return true;
+    lastJourney = journey;
     const prior = lastStage;
-    cache = journey; lastFetch = Date.now();
     lastStage = Math.max(0, Number(journey.evolution && journey.evolution.stage) | 0);
     try { document.body.dataset.journeyStage = String(lastStage); } catch (_) {}
     if (seeded && lastStage > prior) {
@@ -25,16 +33,30 @@ const JourneyStore = (() => {
     return true;
   }
 
+  function observe(snap) {
+    const envelope = snap && snap.hasData && snap.data;
+    if (envelope && envelope.ok && envelope.journey) apply(envelope.journey);
+  }
+  function publish(journey) {
+    const q = spine();
+    if (q && q.update) {
+      try {
+        q.update('journey', { ok: true, journey });
+        if (!stop) apply(journey);
+        return true;
+      } catch (_) {}
+    }
+    return apply(journey);
+  }
+
   async function refetch(force) {
-    if (inflight || (!force && Date.now() - lastFetch < POLL_MS)) return cache;
-    inflight = true;
+    const q = spine();
+    if (!q) return status();
     try {
-      const res = await fetch('/api/journey', { cache: 'no-store' });
-      const j = res.ok ? await res.json().catch(() => null) : null;
-      if (j && j.ok && j.journey) apply(j.journey);
-    } catch (_) { /* last-good cache stays visible */ }
-    finally { inflight = false; }
-    return cache;
+      const snap = await (force && q.refresh ? q.refresh('journey') : q.get('journey'));
+      observe(snap);
+    } catch (_) { /* QuerySpine retains last-good and publishes stale/error metadata */ }
+    return status();
   }
 
   async function post(body) {
@@ -43,26 +65,43 @@ const JourneyStore = (() => {
       if (payload.epoch == null || (typeof payload.epoch === 'string' && !payload.epoch.trim()) || !Number.isFinite(Number(payload.epoch))) payload.epoch = epoch();
       const res = await fetch('/api/journey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const j = await res.json().catch(() => null);
-      if (j && j.journey) apply(j.journey);
+      if (j && j.journey) publish(j.journey);
       return j || { ok: false, error: 'journey response unavailable' };
     } catch (_) { return { ok: false, error: 'journey service unavailable' }; }
   }
 
-  function init(opts) { opts = opts || {}; epochFn = typeof opts.epoch === 'function' ? opts.epoch : () => Number(opts.epoch) || 1; cache = null; inflight = false; lastFetch = 0; seeded = false; lastStage = 0; refetch(true); }
-  function sync() { return refetch(false); }
-  function status() { return cache; }
+  function init(opts) {
+    opts = opts || {};
+    epochFn = typeof opts.epoch === 'function' ? opts.epoch : () => Number(opts.epoch) || 1;
+    if (stop) { try { stop(); } catch (_) {} stop = null; }
+    seeded = false; lastStage = 0; lastJourney = null;
+    const q = spine();
+    if (q && q.subscribe) {
+      try { stop = q.subscribe('journey', observe); return; } catch (_) {}
+    }
+    refetch(true);
+  }
+  function sync(force) { return refetch(force === true); }
+  function status() {
+    const snap = state(), envelope = snap && snap.hasData && snap.data;
+    return envelope && envelope.ok && envelope.journey ? envelope.journey : null;
+  }
   function createMetric(d) { return post(Object.assign({ op: 'metric.create' }, d || {})); }
   function updateMetric(id, current, note) { return post({ op: 'metric.update', id: String(id || ''), current: Number(current), note: String(note || '') }); }
   function retireMetric(id) { return post({ op: 'metric.retire', id: String(id || '') }); }
   function suppress(agentId, domain) { return post({ op: 'adaptation.suppress', agentId, domain }); }
   function resume(agentId, domain) { return post({ op: 'adaptation.resume', agentId, domain }); }
-  function reset(nextEpoch) { cache = null; seeded = false; lastStage = 0; return post({ op: 'journey.reset', epoch: Math.max(1, Math.floor(Number(nextEpoch) || epoch())) }); }
+  function reset(nextEpoch) {
+    seeded = false; lastStage = 0; lastJourney = null;
+    const q = spine(); if (q && q.invalidate) { try { q.invalidate('journey'); } catch (_) {} }
+    return post({ op: 'journey.reset', epoch: Math.max(1, Math.floor(Number(nextEpoch) || epoch())) });
+  }
   function noteMilestone(d) {
     d = Object.assign({}, d || {});
     if (!d.domain && typeof Journey !== 'undefined' && Journey.domainOf) d.domain = Journey.domainOf((d.milestoneText || '') + ' ' + (d.goalText || ''));
     d.op = 'milestone.complete';
     return post(d);
   }
-  return { init, sync, status, createMetric, updateMetric, retireMetric, suppress, resume, reset, noteMilestone, _apply: apply };
+  return { init, sync, status, state, createMetric, updateMetric, retireMetric, suppress, resume, reset, noteMilestone, _apply: publish };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = { JourneyStore };

@@ -7616,6 +7616,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const JS = (typeof JourneyStore !== 'undefined') ? JourneyStore : null;
     if (JS && JS.sync) { try { JS.sync(); } catch (_) {} }
     const j = JS && JS.status ? JS.status() : null;
+    const journeyState = JS && JS.state ? JS.state() : null;
     if (!j) return '<div class="gx-sec"><span class="gx-title">COMMANDER JOURNEY</span></div>'
       + '<div class="q-journey-card"><div class="sub dim">journey proof is not available yet. No progress is being inferred.</div></div>';
 
@@ -7666,11 +7667,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const recent = (Array.isArray(j.outcomes) ? j.outcomes : []).slice(-3).reverse();
     const outcomeHtml = recent.length ? '<div class="q-proof-list">' + recent.map(o => '<div class="sub"><span class="q-outcome">' + esc(o.kind) + '</span> '
       + esc(o.title || o.sourceId) + ' <span class="dim">&middot; ' + esc(o.verifiedBy) + '</span></div>').join('') + '</div>' : '';
+    const staleHtml = journeyState && journeyState.stale
+      ? '<div class="sub warn q-journey-stale">Journey snapshot is unconfirmed — showing the last verified sidecar response while the live read recovers.</div>'
+      : '';
 
     return '<div class="gx-sec"><span class="gx-title">COMMANDER JOURNEY</span> <span class="gx-tag">real goals, durable proof</span></div>'
       + '<div class="q-journey-card"><div class="q-evolution"><div><span class="q-ns-eyebrow">STATION EVOLUTION</span><div class="q-evolution-name">' + esc(evo.name) + '</div></div>'
       + '<span class="gx-tag">' + (Number(evo.goalsReached) || 0) + ' distinct goals reached</span></div>'
-      + goalHtml + metricsHtml + masteryHtml + receiptHtml + outcomeHtml
+      + staleHtml + goalHtml + metricsHtml + masteryHtml + receiptHtml + outcomeHtml
       + '<div class="sub dim q-journey-law">Evolution changes the station\'s expression, never your tools, permissions, or capabilities.</div></div>';
   }
 

@@ -54,6 +54,13 @@ async function rejects(p, label) {
   A.ok(honest.stale && honest.error && honest.error.message === 'offline now' && honest.errorAt === clock,
     'failure publishes explicit stale/error metadata');
 
+  // A successful mutation response can write through canonical server truth without a redundant GET.
+  Q.define('write-through', { path: '/write-through', validate: data => !!(data && data.ok) });
+  const written = Q.update('write-through', { ok: true, revision: 9 });
+  A.ok(written.hasData && !written.stale && written.data.revision === 9,
+    'update publishes a validated mutation response as fresh shared truth');
+  A.throws(() => Q.update('write-through', { ok: false }), 'update refuses a payload that fails the resource validator');
+
   // A mutation invalidation outranks an older GET already on the wire. Its response must not become fresh
   // after the write, and a reader arriving after invalidation waits for a new-generation request.
   Q.define('mutation-race', { path: '/mutation-race', ttlMs: 1000 });
