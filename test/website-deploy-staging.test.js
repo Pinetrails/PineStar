@@ -8,7 +8,12 @@ const root = path.join(__dirname, '..');
 const staged = path.join(root, 'website-deploy');
 const run = spawnSync(process.execPath, ['scripts/stage-website-deploy.mjs'], { cwd: root, encoding: 'utf8' });
 A.eq(run.status, 0, 'guarded website staging completes');
-A.eq(fs.existsSync(path.join(staged, 'pricing.html')), false, 'held-back pricing page is absent from deploy artifact');
+// The pricing page ships EXACTLY when the release flag says so — the staging script follows
+// website/site.js PRICING_LIVE, and this guard follows the same single source of truth, so the
+// gate is green in both the held and the launched state but never in a mixed one.
+const PRICING_LIVE = /var PRICING_LIVE = true;/.test(fs.readFileSync(path.join(root, 'website', 'site.js'), 'utf8'));
+A.eq(fs.existsSync(path.join(staged, 'pricing.html')), PRICING_LIVE,
+  PRICING_LIVE ? 'launched pricing page ships in the deploy artifact' : 'held-back pricing page is absent from deploy artifact');
 A.ok(fs.existsSync(path.join(staged, '404.html')), 'staged artifact carries a real not-found page');
 A.eq(fs.existsSync(path.join(staged, 'app', 'assets', 'sprites', '_assembly')), false, 'sprite assembly sources are absent from deploy artifact');
 A.ok(fs.existsSync(path.join(staged, 'app', 'index.html')), 'staged artifact retains the embedded app');
