@@ -8011,6 +8011,29 @@ const PropSprites = (() => {
      `live` (G0.2/G0.3, optional) carries the seated agent's TRUTHFUL activity: { heat, prog } — heat
      is real token/tool flow (0..1, ~2s decay, world.js heatFor); prog is a real published task
      fraction or null (live harness runs have none). Only ever passed for a lit assigned workstation. */
+  /* SEAT-FRONT OVERLAY (stool-sit lane): ONLY the front rim of a single-tile seat's pad, redrawn by the
+     world layer just IN FRONT of the body sitting on it, so the sitter's lap tucks INTO the pad instead
+     of floating over it — the couch's sort-in-front trick at single-seat scale. The rows repainted here
+     are byte-for-byte the same rows F.stool / F.chair already drew (sorted just BEHIND the sitter); a
+     divergent copy would ghost a second seat when the body wanders mid-frame. Keep them in lockstep. */
+  function drawSeatFront(f) {
+    const lift = f.mount === 'surface' ? SURFACE_RISE : 0;
+    const x = f.x * TILE, y = f.y * TILE - lift;
+    const r = RAMP.steel;
+    if (f.t === 'stool') {
+      px(x + 2, y + 3, 8, 1, '#2f6a62');                          // pad south face (lower body row)
+      px(x + 2, y + 3, 1, 1, '#4a8a82'); px(x + 9, y + 3, 1, 1, '#26554e');
+      px(x + 3, y + 3, 1, 1, '#26554e'); px(x + 8, y + 3, 1, 1, '#26554e');   // piping stitches
+      px(x + 3, y + 4, 6, 1, r.dk);                               // rounded underside rim
+      px(x + 4, y + 5, 4, 1, U.shade(r.dk, -0.30));               // seat AO onto the stem
+    } else if (f.t === 'chair') {
+      px(x + 2, y + 6, 8, 1, '#2f6a62');                          // pad south row
+      px(x + 3, y + 6, 1, 1, '#26554e'); px(x + 8, y + 6, 1, 1, '#26554e');   // seat stitches
+      px(x + 2, y + 7, 8, 1, r.face); px(x + 2, y + 7, 3, 1, r.lit);          // front lip
+      px(x + 3, y + 8, 6, 1, r.dk);                               // rounded skirt
+    }
+  }
+
   function draw(f, work, live) {
     const fn = F[f.t]; if (!fn) return;
     // MOUNT LIFT. A surface-standing prop is the SAME art as a floor prop, drawn higher: every prop
@@ -8066,7 +8089,7 @@ const PropSprites = (() => {
   return {
     setCtx(c) { ctx = c; },
     setNow(t) { now = t; },
-    draw, CATALOG, CATS, spec, has, TILE,
+    draw, drawSeatFront, CATALOG, CATS, spec, has, TILE,
     // live connector state (the world layer feeds these; the connector_portal sprite reads them)
     setConnectorState, pulseConnector,
     // workbench pulse (the world layer feeds this off shell.exec / verify.result)
