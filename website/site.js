@@ -15,7 +15,7 @@
   // deleted outright and has to be re-added by hand: `<a href="../pricing.html">PRICING</a>`.
   // legal/terms.html also cites the pricing page in the body of clause 2 as forming part of the
   // terms; that citation is a legal question, not a link-visibility one, and is left in place.
-  var PRICING_LIVE = false;
+  var PRICING_LIVE = true;
   // Mark the whole sentence, not just the <a>, wherever pricing is mentioned mid-paragraph —
   // hiding a bare link would leave the surrounding prose referring to a page nobody can reach.
   document.querySelectorAll('[data-pricing-link]').forEach(function(el){ el.hidden = !PRICING_LIVE; });
@@ -26,7 +26,7 @@
   // deployed `live:false` keeps every buy button honest — no button on this site may imply
   // a purchase we cannot actually take. Flip `live` to true once the service answers.
   var CREDITS = {
-    live: false,
+    live: true,
     accountUrl: 'https://account.starnetos.com'
   };
   (function wireCredits(){
