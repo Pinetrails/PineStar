@@ -2745,15 +2745,46 @@ fn safe_native_artifact_extension(path: &Path) -> bool {
     )
 }
 
+/// Marker the frontend keys off to tell "the user said no at the native prompt" apart from
+/// a real failure (a declined open must NOT trigger the browser-preview fallback).
+const HOST_GESTURE_DECLINED: &str = "declined at the host confirmation";
+
+/// Host-boundary human gesture (docs/MISTAKES.md law: "a token, renderer IPC call, or tool
+/// annotation is not a human gesture"). Every renderer-callable OS-launch command must obtain
+/// an exact, one-shot, NON-CACHEABLE confirmation from a blocking native dialog that names
+/// the canonical resolved path and the action, minted by the host at the moment of the call.
+/// Nothing is remembered between calls — the next launch asks again. This is an ADDITIONAL
+/// gate on top of the path jail and the non-executable extension allowlist, never a
+/// replacement for them.
+///
+/// Must be called off the main thread (Tauri v2 dialogs dispatch to the main thread and
+/// block the caller) — both callers are `async` commands, which run on the async runtime.
+fn confirm_host_launch(app: &tauri::AppHandle, title: &str, body: &str, verb: &str) -> bool {
+    use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+    app.dialog()
+        .message(body)
+        .title(title)
+        .kind(MessageDialogKind::Warning)
+        .buttons(MessageDialogButtons::OkCancelCustom(
+            verb.to_string(),
+            "Cancel".to_string(),
+        ))
+        .blocking_show()
+}
+
 /// Open a proven, non-executable deliverable with the user's OS file association. The
 /// renderer supplies the artifact identity, not an unrestricted command: this re-resolves
 /// relative paths beneath the owning agent workspace, canonicalizes symlinks, and accepts
 /// absolute paths only beneath the user's home or a standing trusted-project root.
+/// The spawn itself is gated behind a blocking native host dialog naming the exact resolved
+/// path — renderer clicks are not host gestures, and the answer is never cached.
+/// `async` so the blocking dialog runs on the async runtime, not the main thread.
 #[tauri::command]
-fn starnet_open_artifact(
+async fn starnet_open_artifact(
     path: String,
     agent_id: Option<String>,
-    state: State<AppState>,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
 ) -> Result<(), String> {
     let artifact = resolve_artifact_path(&state.workspaces, agent_id.as_deref(), &path)?;
     if !artifact.is_file() {
@@ -2761,6 +2792,13 @@ fn starnet_open_artifact(
     }
     if !safe_native_artifact_extension(&artifact) {
         return Err("that file type stays in the station preview for safety".to_string());
+    }
+    let body = format!(
+        "Open this file with its system default app?\n\n{}",
+        artifact.display()
+    );
+    if !confirm_host_launch(&app, "StarNet — open file", &body, "Open") {
+        return Err(format!("open {HOST_GESTURE_DECLINED}"));
     }
 
     #[cfg(windows)]
@@ -2787,15 +2825,29 @@ fn starnet_open_artifact(
 
 /// Reveal a proven deliverable in Explorer/Finder (or open its containing directory on
 /// Linux). Directories are opened directly so the existing Workshop "open folder" action
-/// uses the same constrained command.
+/// uses the same constrained command. Same host-gesture gate as `starnet_open_artifact`:
+/// a blocking native dialog names the exact resolved path before anything spawns.
 #[tauri::command]
-fn starnet_reveal_path(
+async fn starnet_reveal_path(
     path: String,
     agent_id: Option<String>,
-    state: State<AppState>,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
 ) -> Result<(), String> {
     let artifact = resolve_artifact_path(&state.workspaces, agent_id.as_deref(), &path)?;
     let is_dir = artifact.is_dir();
+    let body = format!(
+        "{} in the system file manager?\n\n{}",
+        if is_dir {
+            "Open this folder"
+        } else {
+            "Reveal this file"
+        },
+        artifact.display()
+    );
+    if !confirm_host_launch(&app, "StarNet — reveal in folder", &body, "Reveal") {
+        return Err(format!("reveal {HOST_GESTURE_DECLINED}"));
+    }
 
     #[cfg(windows)]
     {
@@ -3305,6 +3357,9 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // Host-gesture gate: native confirm dialogs for the OS-launch commands. Rust-side only —
+        // the webview gets no dialog capability; the prompt is minted and answered at the host.
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             harness_store_key,

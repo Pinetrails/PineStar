@@ -39,4 +39,18 @@ A.ok(!/safe_native_artifact_extension[\s\S]{0,900}"exe"/.test(rust),
 A.ok(/starnet_open_artifact,\s*starnet_reveal_path,/.test(rust),
   'both constrained commands are registered with Tauri');
 
+// Host-gesture gate (docs/MISTAKES.md: a renderer IPC call is not a human gesture). Every
+// OS launch asks the user through a blocking NATIVE dialog naming the resolved path; the
+// answer is one-shot and never cached, and a Cancel is an answer the frontend respects.
+A.ok(/fn confirm_host_launch[\s\S]{0,900}blocking_show/.test(rust),
+  'the host gesture is a blocking native dialog answered at the host boundary');
+A.ok(/fn starnet_open_artifact[\s\S]{0,1500}confirm_host_launch/.test(rust),
+  'native open spawns nothing without a host-confirmed gesture');
+A.ok(/fn starnet_reveal_path[\s\S]{0,1500}confirm_host_launch/.test(rust),
+  'native reveal spawns nothing without a host-confirmed gesture');
+A.ok(/HOST_GESTURE_DECLINED/.test(rust) && /declined at the host confirmation/.test(rust),
+  'a declined gesture returns the marker error the frontend keys off');
+A.ok(/declined at the host/.test(chat),
+  'the renderer treats a host-dialog Cancel as an answer, not a failure to fall back around');
+
 A.report('desktop-artifact-open.test');
