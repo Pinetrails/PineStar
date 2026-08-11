@@ -83,7 +83,24 @@ function makeRouter(o) {
     const p = activePlan();
     if (!p) return null;
     const pick = (k, n) => { const c = rr[k] || 0; rr[k] = (c + 1) % n; return c; };
-    return Pipeline.resolveTarget(p, ctx || {}, pick);
+    ctx = ctx || {};
+    /* LINE-SCOPED DISPATCH (sample proof, 2026-08-10 audit — "sample not line-scoped"). An optional
+       ctx.lineId narrows the UNADDRESSED source walk to the named line's OWN doors: only the INBOX
+       sources whose intake prop the compiled plan puts on that line are walked, so the work enters
+       through that line's front door and nowhere else. Everything else is byte-identical — the same
+       Pipeline.resolveTarget walk, the same shared round-robin counters (a splitter on the named line
+       still spreads), and no caller that omits lineId changes behaviour (no production ctx carried a
+       lineId before this). The filter reads the plan's own compiled lineOfProp map — no second
+       derivation of line membership. A named line with no doors resolves null (the caller refuses
+       honestly; dispatch never silently widens to another line's intake). */
+    if (ctx.lineId != null && String(ctx.lineId)) {
+      const want = String(ctx.lineId);
+      const lop = p.lineOfProp || {};
+      const srcs = (p.sources || []).filter(s => s && s.propId != null && String(lop[String(s.propId)] || '') === want);
+      if (!srcs.length) return null;
+      return Pipeline.resolveTarget(Object.assign({}, p, { sources: srcs }), ctx, pick);
+    }
+    return Pipeline.resolveTarget(p, ctx, pick);
   }
 
   /* WHICH LINE DOES THIS DOCK BELONG TO? Read straight off the compiled plan (never re-derived) — the

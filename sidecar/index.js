@@ -8470,7 +8470,8 @@ function handleRoutingSampleStatus(_req, res) {
    (filter/splitter engage), the run goes through runOnce (budget governor, ledger, real cost), and the shared
    chain runner advances the rest of the drawn line. First-class ≠ wider: the run is surface:'autonomous' with
    NO unattendedGrants (the chain-grants law) — an ungranted mutation default-denies exactly like any headless
-   channel run, and the request body cannot smuggle authority (only {text} is read).
+   channel run, and the request body cannot smuggle authority (only {text} and the additive {line} are read;
+   `line` can only NARROW dispatch to a named drawn line's own doors — it grants nothing).
 
    Contract (the finish-the-line card feature-detects this endpoint):
      · every refusal is 409 {ok:false,error} — never 404, so "route exists but refuses" is distinguishable
@@ -8489,6 +8490,14 @@ let sampleHub = null;        // lazy singleton, one per station — mirrors getD
 let sampleResolved = null;   // one-shot resolution slot (one-resolver law: telemetry reads the hub's own pick)
 let sampleLineOutcome = null; // terminal chain truth for the current proof; clean runs alone are not OUTBOX proof
 let sampleInFlight = null;   // { streamId, workitemId, startedAt } — ONE sample per station, tracked
+/* LINE-SCOPED PROOF (2026-08-10 audit — "sample not line-scoped"). The FINISH card is titled for ONE line
+   ("FINISH ‹LINE B›") and posts { line: c.key } — the lineComponents key, which IS the compiled plan's
+   lineId (pipeline.js attaches lineId = c.key; one namespace by construction). The route used to read only
+   body.text, so on a two-line floor the card's sample dispatched down whichever line's source compiled
+   first. This slot carries the requested lineId for the CURRENT dispatch only — set under the in-flight
+   lock before onInbound, cleared in the same finally, and read by the hub's resolveAgent closure below so
+   the ONE counter-advancing resolution (one-resolver law) walks only the named line's own doors. */
+let sampleLineScope = null;
 const sampleReplies = [];    // outbound text the line delivered for the CURRENT sample (cleared per dispatch)
 function getSampleHub() {
   if (sampleHub) return sampleHub;
@@ -8507,7 +8516,8 @@ function getSampleHub() {
     secrets: devHubSecrets,   // the ONE headless resolution rule (see handleRuntimeAgent) — a second rule would drift
     persona: SAMPLE_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
     newId: () => crypto.randomUUID(), now: () => Date.now(),
-    resolveAgent: (ctx) => router.resolveTarget(ctx),
+    // line scope rides the ctx (additive): resolveTarget walks ONLY the named line's doors when set
+    resolveAgent: (ctx) => router.resolveTarget(sampleLineScope ? Object.assign({}, ctx, { lineId: sampleLineScope }) : ctx),
     chain: chainRunner,                                                       // the belts drawn PAST the dock run the rest of the line
     lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
@@ -8535,10 +8545,21 @@ async function handleRoutingSample(req, res) {
     try { const raw = await readBody(req, 1 << 16); body = raw && raw.trim() ? (JSON.parse(raw) || {}) : {}; }
     catch (_) { return json(400, { ok: false, error: 'bad json' }); }   // the finally releases the lock on every exit
     const text = String(body.text == null ? '' : body.text).trim().slice(0, 2000) || SAMPLE_TEXT;
+    /* the line this proof is FOR (additive, 2026-08-10): the FINISH card posts { line: c.key } — the same
+       lineId namespace the compiled plan carries (lineComponents key === plan lineId). Absent -> exactly
+       the old station-wide behaviour, so older cards and bare curl keep working byte-for-byte. */
+    const line = String(body.line == null ? '' : body.line).trim().slice(0, 200);
     // the armed plan is the precondition — a sample with no line to ride is a lie, not a fallback run.
     const plan = router.getPlan();
     if (!plan) {
       return json(409, { ok: false, error: 'no work line is armed — draw a complete line (INBOX → belts → a crewed dock) and it arms itself.' });
+    }
+    /* a NAMED line must exist on the armed plan — the same 409-never-404 contract as every refusal above/
+       below. An unknown key means the floor changed since the card was drawn (a line re-keys when its
+       oldest machine is deleted) or the browser's compile and the armed plan have drifted; running the
+       sample down some OTHER line instead would be the exact lie this parameter exists to end. */
+    if (line && !((Array.isArray(plan.lines) ? plan.lines : []).some(l => l && String(l.lineId) === line))) {
+      return json(409, { ok: false, error: 'no armed work line is named "' + line + '" — the floor changed since this card was drawn; re-open the line and try again.' });
     }
     /* side-effect-free precondition: does the armed line reach ANY crewed dock through its own doors?
 
@@ -8553,9 +8574,17 @@ async function handleRoutingSample(req, res) {
        construction and cannot disagree with any single dispatch. It is also the same fact lineOriginOf keys the
        line gate on, so the refusal and the line semantics quote ONE artifact. The hub's own resolveAgent call
        below stays the one and only counter-advancing resolution (one-resolver law). */
-    const reachedDocks = Object.keys((plan && plan.reach) || {}).filter(a => plan.reach[a]);
+    /* When the proof is line-scoped, the same reach question is asked OF THAT LINE: a dock counts only
+       when the plan's sources feed it AND it crews the named line (plan.lineOfAgent — the compiled map,
+       same artifact the gate reads). Lines are connected components, so a dock on line B is only ever
+       reachable through line B's own doors — the intersection is exact, still lane-choice-blind, and the
+       refusal still never names a dock. */
+    const reachedDocks = Object.keys((plan && plan.reach) || {})
+      .filter(a => plan.reach[a] && (!line || ((plan.lineOfAgent || {})[a] === line)));
     if (!reachedDocks.length) {
-      return json(409, { ok: false, error: 'the armed line routes this job to no dock — crew a bay on the line (bind an agent to it) and try again.' });
+      return json(409, line
+        ? { ok: false, error: 'line "' + line + '" routes this job to no dock — crew a bay on that line (bind an agent to it) and try again.' }
+        : { ok: false, error: 'the armed line routes this job to no dock — crew a bay on the line (bind an agent to it) and try again.' });
     }
     const sec = devHubSecrets();
     if (!sec.model || (!sec.configured && !sec.key)) {
@@ -8568,15 +8597,19 @@ async function handleRoutingSample(req, res) {
     const hub = getSampleHub();
     sampleResolved = null;
     sampleLineOutcome = null;
+    // scope the ONE resolution to the named line's doors (read by the hub's resolveAgent closure);
+    // safe under the in-flight lock — one sample per station means one scope per dispatch.
+    sampleLineScope = line || null;
     // same intercept shape as the dev seam: resolution lands synchronously in onInbound's first slice; only a
     // real TASK directive places a crate (the belt is work-only); the settle owns the queue decrement.
     const settled = Promise.resolve(hub.onInbound({ chatId: SAMPLE_CHAT, userId: String(body.userId || 'commander'), text: text, chatType: 'dm' }))
       .catch(e => { console.warn('[routing-sample] error:', (e && e.message) || e); return { error: (e && e.message) || String(e) }; });
-    let agentId = '', workitemId = '', isTask = false;
+    let agentId = '', workitemId = '', isTask = false, entryLineId = null;
     try {
       if (sampleResolved && String(sampleResolved.chatId) === SAMPLE_CHAT && sampleResolved.agentId) {
         agentId = String(sampleResolved.agentId);
         isTask = !!sampleResolved.isTask;
+        entryLineId = sampleResolved.lineId || null;   // the line the ENTRY dock actually belongs to (server-derived)
         if (isTask) {
           workitemId = crypto.randomUUID();
           sampleInFlight.workitemId = workitemId;
@@ -8598,7 +8631,12 @@ async function handleRoutingSample(req, res) {
     } catch (_) { runs = []; }
     // Outbound warning text is not delivery evidence. The proof succeeds only when every durable stage
     // outcome is clean, including every hop after the routed entry dock.
-    const completed = runs.length > 0 && runs.every(r => r.reason === 'done')
+    /* Belt-and-suspenders for a NAMED line: the entry dock's server-derived origin line (lineOriginFor,
+       read off the same compiled plan the gate reads) must BE the requested line. The scoped walk can
+       only land on that line's docks, but if resolution ever fell through to a hub fallback the proof
+       must fail honestly rather than 200 while claiming a line it never rode. */
+    const onLine = !line || entryLineId === line;
+    const completed = onLine && runs.length > 0 && runs.every(r => r.reason === 'done')
       && !!sampleLineOutcome && !sampleLineOutcome.stopped
       && router.chainShipsToOutbox(sampleLineOutcome.agentId);
     const delivered = completed ? runs[0] : null;
@@ -8609,19 +8647,22 @@ async function handleRoutingSample(req, res) {
       chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
     }
     if (!completed) {
-      return json(502, {
-        ok: false, sample: true, error: runs.length ? 'sample job did not complete cleanly' : 'sample job produced no durable run outcome',
+      // `line` is echoed only when it was requested, so a line-less POST's answer stays byte-identical.
+      return json(502, Object.assign({
+        ok: false, sample: true, error: !onLine ? 'sample job did not enter through line "' + line + '"'
+          : runs.length ? 'sample job did not complete cleanly' : 'sample job produced no durable run outcome',
         chatId: SAMPLE_CHAT, streamId: streamId, agentId: agentId || null, isTask: isTask,
         workitemId: workitemId || null, replies: sampleReplies.slice(), runs: runs, delivered: null, totalUsd: totalUsd
-      });
+      }, line ? { line: line } : null));
     }
-    return json(200, {
+    return json(200, Object.assign({
       ok: true, sample: true, chatId: SAMPLE_CHAT, streamId: streamId,
       agentId: agentId || null, isTask: isTask, workitemId: workitemId || null,
       replies: sampleReplies.slice(), runs: runs, delivered: delivered, totalUsd: totalUsd
-    });
+    }, line ? { line: line } : null));
   } finally {
     sampleInFlight = null;
+    sampleLineScope = null;
   }
 }
 
