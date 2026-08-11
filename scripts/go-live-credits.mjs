@@ -54,6 +54,7 @@ const NAV_LINK_PAGES = [
 const NAV_ANCHOR = '<a href="../index.html#download">DOWNLOAD</a>';
 const NAV_LINK = '<a href="../pricing.html">PRICING</a>';
 const NAV_INSERT = NAV_LINK + '\n    ';
+const CREDITS_SITE_SCRIPT = '<script src="site.js?v=20260811-credits-live"></script>';
 
 const EDITS = [
   {
@@ -79,6 +80,13 @@ const EDITS = [
     apply: (s) => s.replace(/(var CREDITS = \{\s*)live: false,/, '$1live: true,'),
     can: (s) => /var CREDITS = \{\s*live: false,/.test(s)
   },
+  ...['website/index.html', 'website/pricing.html'].map((file) => ({
+    file,
+    what: 'cache-bust site.js so returning visitors receive the live Credits flags',
+    done: (s) => s.includes(CREDITS_SITE_SCRIPT),
+    apply: (s) => s.replace(/<script src="site\.js\?v=[^"]+"><\/script>/, CREDITS_SITE_SCRIPT),
+    can: (s) => /<script src="site\.js\?v=[^"]+"><\/script>/.test(s)
+  })),
   ...NAV_LINK_PAGES.map((file) => ({
     file,
     what: 'restore the PRICING topnav link (this family does not load site.js, so no flag reaches it)',
