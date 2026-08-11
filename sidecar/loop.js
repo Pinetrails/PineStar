@@ -343,6 +343,43 @@
     return VOS_CHECK_RE.test(String(cmd));
   }
 
+  // A tool invocation may itself succeed while the command it ran proves failure (shell/MCP command
+  // wrappers intentionally return exitCode in ordinary result content). Detect only an EXPLICIT non-zero
+  // exit status from a check-shaped call; never infer failure from arbitrary prose or copy untrusted output
+  // into the system message. The fixed note is planning guidance, not a permission or dispatch gate.
+  function explicitNonzeroExit(content) {
+    let text;
+    try { text = typeof content === 'string' ? content : JSON.stringify(content); }
+    catch (_) { return false; }
+    const patterns = [
+      /["']exit(?:Code|_code)["']\s*:\s*(-?\d+)/gi,
+      /\[\s*exit\s+(-?\d+)\b/gi,
+      /\bexit\s+code\s*[:=]?\s*(-?\d+)\b/gi
+    ];
+    for (const re of patterns) {
+      let match;
+      while ((match = re.exec(String(text)))) if (Number(match[1]) !== 0) return true;
+    }
+    return false;
+  }
+  function isCheckShapedCall(call) {
+    const key = vosKey(call && call.name);
+    if (VOS_VERIFIERS.has(key)) return true;
+    if (key === 'shell_exec') return vosIsCheckCommand(call && call.args);
+    const leaf = key.slice(key.lastIndexOf('__') + 2);
+    return /(^|_)(run_)?(command|check|test)(_|$)/.test(leaf);
+  }
+  function failedCheckRepairNote(calls, results) {
+    const resultById = new Map((results || []).map(result => [result.callId, result]));
+    const failed = (calls || []).some(call => {
+      const result = resultById.get(call.id);
+      return result && isCheckShapedCall(call) && explicitNonzeroExit(result.content);
+    });
+    return failed
+      ? '<failed_check_repair>A command or verification just returned an explicit non-zero exit code. Do not mutate yet. Before any repair, inspect both the implicated implementation and the available test, check, or config that defines expected behavior; failure output alone does not prove the intended fix. Then make one evidence-based repair, rerun the same check, and use its real result.</failed_check_repair>'
+      : '';
+  }
+
   function canonicalJson(value) {
     if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
     if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(value[k])).join(',') + '}';
@@ -558,11 +595,13 @@
     // NO wait (keeps the loop deterministic + test-fast); when present it honors the classifier's retryAfterMs.
     const sleep = (typeof o.sleep === 'function') ? o.sleep : null;
     // mid-stream retry backoff schedule (same shape as the adapters' pre-stream RETRY_DELAYS).
-    // Widened 2026-07-31: [400,1200] gave the whole loop ~1.6s of patience, so a provider overload
-    // measured in tens of seconds (codex "servers overloaded" in the field) killed runs that every
-    // other harness rides out. ~16s of ladder (plus the adapters' own pre-stream retries and any
-    // server-stated retry-after, capped at 60s) survives a real overload window and still terminates.
-    const STREAM_RETRY_DELAYS = [400, 1200, 4000, 10000];
+    // Widened 2026-08-11 after the installed Hermes parity run: ~16.6s still lost all three StarNet
+    // attempts inside one real Codex overload window while valid Hermes turns took up to ~102s. The
+    // final 30s/60s rungs give the same model turn ~106s of bounded patience. This never re-dispatches
+    // completed tools: the retry loop sits wholly inside the current model call, after prior tool
+    // call/result pairs are durable in `messages` and before this turn's calls can reach executeCalls.
+    // A server-stated Retry-After still outranks each local rung and remains capped at 60s.
+    const STREAM_RETRY_DELAYS = [400, 1200, 4000, 10000, 30000, 60000];
     function noteUnpriced(modelId, c) {
       if (!c || !c.unpriced) return;
       unpricedUsage.push({ model: modelId || '(unknown)', tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 });
@@ -742,7 +781,7 @@
       let recoveries = 0;
       const maxRecoveries = 1 + fallbacks.length;
       let retriesUsed = 0;
-      const MAX_STREAM_RETRIES = 4;   // one per STREAM_RETRY_DELAYS rung; see the ladder's comment
+      const MAX_STREAM_RETRIES = STREAM_RETRY_DELAYS.length;   // one per rung; deriving it prevents policy drift
       // A truncation is its own (cheap, transient) retry class — kept separate from MAX_STREAM_RETRIES and
       // deliberately tighter, because a truncation costs a FULL generation to re-run.
       let truncRetries = 0;
@@ -1032,6 +1071,8 @@
         return end('error');
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
+      const repairNote = failedCheckRepairNote(calls, results);
+      if (repairNote) messages.push({ role: 'system', content: repairNote });
       if (calls.length === 1 && results.length === 1 && results[0].ok && !results[0].isError) {
         lastDeterministicCheck = deterministicCheckSignature(calls[0]);
       } else {
@@ -1161,5 +1202,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, explicitNonzeroExit, failedCheckRepairNote, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
 });
