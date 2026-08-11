@@ -781,6 +781,22 @@
        logs, and Referer headers, so a placeholder in the url is refused rather than silently sent. */
     const SECRET_REF_RE = /\$\{([A-Z][A-Z0-9_]*)\}/g;
     const SECRET_REF_TEST = /\$\{[A-Z][A-Z0-9_]*\}/;   // non-global twin: .test() on a /g regex is stateful
+    /* WORKSPACE FILES IN AN OUTBOUND REQUEST. Upload endpoints (Printify/Printful/Shopify-class) take file
+       BYTES — base64 inside JSON, or multipart/form-data — and the body is model-written text: a 2MB PNG is
+       ~2.8M base64 chars, orders of magnitude past any context budget, so for months the harness simply could
+       not carry the byte-bearing step of any API workflow. Same cure as ${KEY} headers: the model writes a
+       REFERENCE (${file:relative/path}, or a multipart part naming a file), the host resolves it at send
+       time, and the payload never enters model context in either direction. Files resolve through the SAME
+       resolveInside jail as fs.* and browser.upload (deps.readWorkspaceFile), so a request can only ever
+       carry the agent's own workspace. Lowercase 'file:' can never collide with SECRET_REF's [A-Z] names. */
+    const FILE_REF_RE = /\$\{file:([^}]*)\}/g;
+    const FILE_REF_TEST = /\$\{file:/;
+    const FILE_MAX_BYTES = 20 * 1024 * 1024;      // one referenced file
+    const PAYLOAD_MAX_BYTES = 25 * 1024 * 1024;   // the whole outbound body
+    const MIME_BY_EXT = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+      webp: 'image/webp', svg: 'image/svg+xml', pdf: 'application/pdf', json: 'application/json',
+      txt: 'text/plain', csv: 'text/csv', zip: 'application/zip', mp4: 'video/mp4', mp3: 'audio/mpeg' };
+    const guessMime = (name) => MIME_BY_EXT[String(name).replace(/^.*\./, '').toLowerCase()] || 'application/octet-stream';
     const REQUEST_MAX_CHARS = 8000;
     const SAFE_METHODS = new Set(['GET', 'HEAD']);
     const ALL_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']);
@@ -808,14 +824,36 @@
         'Call a third-party REST API (Printify, Etsy, Stripe, any service with an HTTP API) and return the response. ' +
         'To authenticate, reference a stored key by its environment-variable NAME inside a header value using ${NAME} — ' +
         'e.g. headers {"Authorization": "Bearer ${PRINTIFY_API_KEY}"}. The host substitutes the real value at send time; ' +
-        'you never see it and must never ask the user for it. Placeholders work in headers only, never in the url.',
+        'you never see it and must never ask the user for it. Placeholders work in headers only, never in the url. ' +
+        'For upload endpoints, attach workspace files host-side instead of pasting bytes: ${file:relative/path} in the ' +
+        'body inserts the file as base64, and the multipart parameter sends real multipart/form-data.',
       schema: {
         type: 'object', required: ['url'],
         properties: {
           url: { type: 'string', description: 'Full https URL of the API endpoint.' },
           method: { type: 'string', description: 'GET (default), HEAD, POST, PUT, PATCH or DELETE.' },
           headers: { type: 'object', description: 'Request headers. Use ${KEY_NAME} to reference a stored key.' },
-          body: { type: 'string', description: 'Request body for POST/PUT/PATCH (send JSON as a string).' },
+          body: {
+            type: 'string',
+            description: 'Request body for POST/PUT/PATCH (send JSON as a string). Write ${file:relative/path} where ' +
+              'a file\'s base64 belongs and the host reads + encodes the workspace file at send time — e.g. Printify: ' +
+              '{"file_name":"mockup.png","contents":"${file:mockups/mockup.png}"}. Never base64 a file yourself.'
+          },
+          multipart: {
+            type: 'array',
+            items: {
+              type: 'object', required: ['name'],
+              properties: {
+                name: { type: 'string', description: 'Form field name.' },
+                file: { type: 'string', description: 'Workspace-relative path to attach as this part (curl -F style).' },
+                value: { type: 'string', description: 'Literal text value for a plain field. Give file OR value, not both.' },
+                filename: { type: 'string', description: 'Filename to present (defaults to the file\'s own name).' },
+                contentType: { type: 'string', description: 'Part content-type (defaults from the file extension).' }
+              }
+            },
+            description: 'Send multipart/form-data instead of body — for endpoints that take file uploads as form ' +
+              'fields. Example: [{"name":"file","file":"mockups/a.png"},{"name":"title","value":"Mockup A"}].'
+          },
           auth: {
             type: 'object',
             description: 'For APIs that want the key as a query parameter instead of a header: ' +
@@ -831,6 +869,9 @@
         if (SECRET_REF_TEST.test(rawUrl)) {
           throw new Error('a ${KEY} placeholder cannot go in the url — secrets in URLs leak into logs and history. Put it in a header instead.');
         }
+        if (FILE_REF_TEST.test(rawUrl)) {
+          throw new Error('a ${file:...} reference cannot go in the url — files travel in the body or in multipart parts.');
+        }
         const u = assertSafeUrl(rawUrl);
         await assertResolvedSafe(u, doLookup);
 
@@ -845,6 +886,7 @@
         const src = (args && args.headers && typeof args.headers === 'object') ? args.headers : {};
         for (const k of Object.keys(src)) {
           if (/[\r\n]/.test(k) || /[\r\n]/.test(String(src[k]))) throw new Error('header contains a newline: ' + k);
+          if (FILE_REF_TEST.test(String(src[k]))) throw new Error('a ${file:...} reference cannot go in a header — files travel in the body or in multipart parts.');
           const before = used.length;
           const r = resolveSecretRefs(src[k], surface, used);
           if (r.failure) throw new Error(r.failure);
@@ -881,7 +923,69 @@
           else { headers[slot] = String(auth.prefix || '') + r.value; secretHeaders.add(slot.toLowerCase()); }
         }
 
-        const hasBody = method !== 'GET' && method !== 'HEAD' && args && args.body != null;
+        /* ---- assemble the outbound payload (string body, ${file:...} substitution, or multipart) ----
+           Bytes are read HOST-SIDE through the fs jail and never surface in the tool result — the label
+           names which files were sent (truthful provenance), the content itself stays out of context. */
+        const canCarryBody = method !== 'GET' && method !== 'HEAD';
+        const multipart = (args && Array.isArray(args.multipart)) ? args.multipart : null;
+        if (multipart && args && args.body != null) throw new Error('send either body or multipart, not both');
+        if (multipart && !canCarryBody) throw new Error('multipart needs POST, PUT or PATCH');
+        const sentFiles = [];
+        let payloadBytes = 0;
+        const readFileRef = async (rel) => {
+          const rr = String(rel == null ? '' : rel).trim();
+          if (!rr) throw new Error('a file reference needs a workspace-relative path');
+          if (typeof deps.readWorkspaceFile !== 'function') throw new Error('this run has no workspace, so it cannot attach files');
+          // throws on jail escape ('..', absolute, symlink out) and on a missing file — fail loudly pre-send
+          const buf = await deps.readWorkspaceFile((ctx && ctx.agentId) || 'agent', rr);
+          if (buf.length > FILE_MAX_BYTES) throw new Error('"' + rr + '" is ' + (buf.length / (1024 * 1024)).toFixed(1) + 'MB — the per-file limit is ' + (FILE_MAX_BYTES / (1024 * 1024)) + 'MB');
+          payloadBytes += buf.length;
+          if (payloadBytes > PAYLOAD_MAX_BYTES) throw new Error('the request payload exceeds the ' + (PAYLOAD_MAX_BYTES / (1024 * 1024)) + 'MB total limit');
+          sentFiles.push(rr);
+          return buf;
+        };
+        let bodyPayload;   // string | Buffer | undefined
+        if (multipart) {
+          if (!multipart.length) throw new Error('multipart needs at least one part');
+          // quotes/CRLF in a name or filename would break out of the Content-Disposition header line
+          const cleanToken = (s, what) => { s = String(s); if (/[\r\n"]/.test(s)) throw new Error(what + ' must not contain quotes or newlines'); return s; };
+          const boundary = '----StarNetPart' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+          const chunks = [];
+          for (const p of multipart) {
+            if (!p || typeof p !== 'object' || !p.name) throw new Error('each multipart part needs a "name"');
+            const hasFile = p.file != null, hasValue = p.value != null;
+            if (hasFile === hasValue) throw new Error('part "' + p.name + '": give exactly one of "file" (workspace path) or "value" (literal text)');
+            if (hasValue && SECRET_REF_TEST.test(String(p.value))) throw new Error('a ${KEY} placeholder cannot go in a multipart value — the host substitutes stored keys into HEADERS only.');
+            let head = '--' + boundary + '\r\nContent-Disposition: form-data; name="' + cleanToken(p.name, 'a part name') + '"';
+            let data;
+            if (hasFile) {
+              data = await readFileRef(p.file);
+              const fname = cleanToken(p.filename != null ? p.filename : String(p.file).replace(/^.*[\\/]/, ''), 'a filename');
+              head += '; filename="' + fname + '"\r\nContent-Type: ' + (p.contentType ? cleanToken(p.contentType, 'a part content-type') : guessMime(fname));
+            } else {
+              data = Buffer.from(String(p.value), 'utf8');
+              if (p.contentType) head += '\r\nContent-Type: ' + cleanToken(p.contentType, 'a part content-type');
+            }
+            chunks.push(Buffer.from(head + '\r\n\r\n', 'utf8'), data, Buffer.from('\r\n', 'utf8'));
+          }
+          chunks.push(Buffer.from('--' + boundary + '--\r\n', 'utf8'));
+          bodyPayload = Buffer.concat(chunks);
+          headers['Content-Type'] = 'multipart/form-data; boundary=' + boundary;   // ours wins: the boundary must match the encoding
+        } else if (canCarryBody && args && args.body != null) {
+          const s = String(args.body);
+          if (FILE_REF_TEST.test(s)) {
+            let out = '', last = 0, m;
+            FILE_REF_RE.lastIndex = 0;
+            while ((m = FILE_REF_RE.exec(s))) {
+              out += s.slice(last, m.index) + (await readFileRef(m[1])).toString('base64');
+              last = m.index + m[0].length;
+            }
+            bodyPayload = out + s.slice(last);
+          } else {
+            bodyPayload = s;
+          }
+        }
+        const hasBody = bodyPayload !== undefined;
         if (hasBody && !Object.keys(headers).some(k => k.toLowerCase() === 'content-type')) headers['Content-Type'] = 'application/json';
 
         /* Redirects are followed manually so every hop is re-validated against the SSRF guard. Credentials are
@@ -901,7 +1005,7 @@
             ? headers
             : Object.keys(headers).reduce((o, k) => (isCredential(k) ? o : (o[k] = headers[k], o)), {});
           res = await withTimeout(signal => doFetch(target.href, {
-            method, headers: sendHeaders, body: hasBody ? String(args.body) : undefined, redirect: 'manual', signal
+            method, headers: sendHeaders, body: hasBody ? bodyPayload : undefined, redirect: 'manual', signal
           }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await readBodyBounded(r) })), FETCH_TIMEOUT_MS, ctx && ctx.signal);
           if (res.status >= 300 && res.status < 400 && res.loc) {
             const next = assertSafeUrl(new URL(res.loc, target.href).href);
@@ -915,7 +1019,9 @@
         // hostile API body cannot issue instructions. redact() strips any secret that echoed back.
         const scrub = typeof deps.redact === 'function' ? deps.redact : (s => s);
         const bodyText = clamp(scrub(String(res.body || '')), REQUEST_MAX_CHARS);
-        const label = method + ' ' + u.origin + u.pathname + ' -> HTTP ' + res.status + (used.length ? ' (authenticated with ' + used.join(', ') + ')' : '');
+        const label = method + ' ' + u.origin + u.pathname + ' -> HTTP ' + res.status
+          + (used.length ? ' (authenticated with ' + used.join(', ') + ')' : '')
+          + (sentFiles.length ? ' (sent ' + Math.ceil(payloadBytes / 1024) + 'KB from workspace file' + (sentFiles.length > 1 ? 's' : '') + ': ' + sentFiles.join(', ') + ')' : '');
         return {
           content: fenceExternal(bodyText || '(empty response body)', label),
           summary: method + ' ' + hostOf(u) + ' ' + res.status

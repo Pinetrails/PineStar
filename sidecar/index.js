@@ -12762,6 +12762,12 @@ async function runOnce(o) {
     reader: stationWebReader,
     politeness: stationWebPoliteness,
     resolveServiceKey: (name, sfc) => serviceKeysMod.resolveForRequest(serviceKeys, name, sfc),
+    // workspace files in outbound requests (${file:...} body refs / multipart parts): resolved through the
+    // SAME resolveInside jail as fs.* and browser.upload, so a request can only carry this agent's own files.
+    readWorkspaceFile: async (aid, rel) => {
+      const { abs } = await fsJail.resolveInside(aid, rel, { scope: 'read' });
+      return fsp.readFile(abs);
+    },
     // web_fetch's clean-extraction path is keyed now (r.jina.ai 401s without a token), so it is attempted
     // ONLY when the Commander has actually connected one. Resolved through the same grant as any other key,
     // so an unattended run without the tick simply uses the direct fallback instead of failing.

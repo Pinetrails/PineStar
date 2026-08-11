@@ -262,7 +262,9 @@
         + (r.docsUrl ? ' (API docs: ' + r.docsUrl + ')' : ''));
     const how = [];
     if (canRequest) how.push('with web_request, by writing the NAME as a placeholder in a header — e.g. '
-      + 'headers {"Authorization": "Bearer ${' + rows[0].envVar + '}"} — which the host substitutes at send time');
+      + 'headers {"Authorization": "Bearer ${' + rows[0].envVar + '}"} — which the host substitutes at send time. '
+      + 'web_request can also SEND workspace files to upload endpoints: write ${file:relative/path} in the body '
+      + 'where the base64 belongs, or use its multipart parameter — never read and paste file bytes yourself');
     if (canShell) how.push('in your shell, where each name is an environment variable (curl etc.)');
     return '<service_keys>\n'
       + 'The Commander has connected API keys for these services. You can use them ' + how.join('; and ') + '.\n'
