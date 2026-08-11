@@ -9,9 +9,9 @@
      roster    : () -> Map(agentId -> { system, name, model }) — the live crew identities (pushed by the browser)
      key       : this run's API key (per-run)        model : the lead's model (worker fallback)
      perWorker : per-WORKER USD ceiling (a runaway worker can't blow the lead's per-run cap)
-     workerMaxIters: per-WORKER iteration ceiling (a runaway worker can't burn the lead's full loop)
+     workerMaxIters: optional per-WORKER iteration ceiling (0/omitted = unlimited)
      newId     : () -> a fresh runId for each child (crypto.randomUUID, injected so this UMD stays dep-free)
-     maxWorkers: hard cap on workers per dispatch (defensive)
+     maxWorkers: optional cap on workers per dispatch (0/omitted = unlimited)
 
    Safety (verified against the run host): each worker is a DISTINCT agentId so it takes its own concurrency
    slot + its own ledger/live-budget entry while the lead's slot stays held; ctx.signal is threaded into every
@@ -188,10 +188,15 @@
         + '\n\n[DELEGATED EXECUTION] Treat the task context above as settled input from the Commander. Do not ask the Commander another discovery question. If a truly blocking gap remains, report that gap to the lead agent.';
     }
     const perWorker = (typeof deps.perWorker === 'number' && isFinite(deps.perWorker) && deps.perWorker > 0) ? deps.perWorker : 0;
-    // A delegated research run commonly needs plan + several search/fetch turns + synthesis. Ten turns left no
-    // recovery room: three transient web failures could consume the whole job before it wrote the deliverable.
-    // Keep this well below the lead's 40-turn ceiling while allowing bounded recovery.
-    const workerMaxIters = (typeof deps.workerMaxIters === 'number' && isFinite(deps.workerMaxIters) && deps.workerMaxIters > 0) ? Math.floor(deps.workerMaxIters) : 16;
+    // Zero means no user-work quota. Narrow task contracts and structured-output repair
+    // still impose their own local ceilings below; those are correctness safeguards.
+    const workerMaxIters = (typeof deps.workerMaxIters === 'number' && isFinite(deps.workerMaxIters) && deps.workerMaxIters > 0) ? Math.floor(deps.workerMaxIters) : 0;
+    const lowerPositive = (a, b) => {
+      const aa = (typeof a === 'number' && isFinite(a) && a > 0) ? Math.floor(a) : 0;
+      const bb = (typeof b === 'number' && isFinite(b) && b > 0) ? Math.floor(b) : 0;
+      if (aa && bb) return Math.min(aa, bb);
+      return aa || bb || 0;
+    };
     let _seq = 0;
     const newId = (typeof deps.newId === 'function') ? deps.newId : (() => 'child_' + (++_seq));
     // Cross-provider dispatch: a roster identity carries its OWN mirrored provider (model is a roster
@@ -216,7 +221,8 @@
       if (auth) return { provider: auth.provider || wanted, key: auth.key || '', baseUrl: auth.baseUrl || '', model: ownModel, note: '' };
       return { provider, key, baseUrl, model, note: 'worker provider "' + wanted + '" has no credential on this station — ran on the lead\'s model instead' };
     }
-    const maxWorkers = (typeof deps.maxWorkers === 'number' && deps.maxWorkers > 0) ? deps.maxWorkers : 4;
+    // Opt-in ceiling only. Omitted/zero means dispatch every requested worker.
+    const maxWorkers = (typeof deps.maxWorkers === 'number' && isFinite(deps.maxWorkers) && deps.maxWorkers > 0) ? Math.floor(deps.maxWorkers) : 0;
     // A dispatch AWAITS one or more full worker agent-loops (each web-searching + multi-turn), which routinely
     // run for minutes. The host wraps every tool call in CAPS.toolTimeoutMs (30s — sized for fast web/file
     // tools), so WITHOUT this override team.dispatch is guaranteed to time out before any real worker returns:
@@ -363,8 +369,8 @@
         // Commander a confident final answer covering two subtasks that never ran. The overflow now comes BACK as
         // explicit not-dispatched rows (see overflowRows) so the model can see, and re-dispatch, exactly what it lost.
         const asked = Array.isArray(args.workers) ? args.workers : [];
-        const reqs = asked.slice(0, maxWorkers);
-        const overflow = asked.slice(maxWorkers);
+        const reqs = maxWorkers ? asked.slice(0, maxWorkers) : asked.slice();
+        const overflow = maxWorkers ? asked.slice(maxWorkers) : [];
         if (!reqs.length) return { content: 'No workers specified.', summary: 'noop' };
         const overflowRows = () => overflow.map(w => ({
           agentId: String((w && w.agentId) || '(unnamed)'),
@@ -466,7 +472,7 @@
               consent: ctx && ctx.consent,
               extraObjects: WORKER_KIT,
               maxCostUsd: perWorker,           // a runaway worker can't blow the lead's per-run ceiling
-              maxIters: bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
+              maxIters: bounded ? lowerPositive(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
               maxToolCalls: bounded ? bounded.workerMaxTools : undefined,
               steer: typeof o2.steer === 'function' ? o2.steer : undefined
             });
@@ -499,7 +505,7 @@
               sessionTitle: job.streamId ? (job.sessionTitle || job.session || '') : undefined,
               consent: ctx && ctx.consent, extraObjects: WORKER_KIT,
               maxCostUsd: perWorker > 0 ? remaining : 0,
-              maxIters: Math.min(4, bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters),
+              maxIters: lowerPositive(4, bounded ? lowerPositive(workerMaxIters, bounded.workerMaxIters) : workerMaxIters),
               maxToolCalls: bounded ? bounded.workerMaxTools : undefined,
               steer: typeof o2.steer === 'function' ? o2.steer : undefined
             });
@@ -562,7 +568,7 @@
         /* WAVES — one code path for both modes (2026-07-26 audit findings A + B).
            SEQUENTIAL is waves of 1: legible, one box at a time (the default).
            PARALLEL is waves sized to the station's REAL free fan-out capacity. It used to fan out all at once and
-           let the concurrency gate REFUSE the excess: at the shipped defaults (MAX_CONCURRENT_AGENTS 3, and the
+           let an explicitly configured concurrency gate REFUSE the excess: with MAX_CONCURRENT_AGENTS 3, and the
            lead holds a slot for the whole dispatch) a 4-worker parallel dispatch ran 2 and handed the lead two
            'refused' rows that nothing ever retried — half the crew silently didn't work. Waves run every worker,
            just not all in the same instant.
@@ -652,7 +658,7 @@
         // NO SILENT CAPS — same rule as team.dispatch (see its note): the tasks past the cap come back as
         // explicit not-spawned rows instead of vanishing from a "N done" summary.
         const askedTasks = Array.isArray(args.tasks) ? args.tasks : [];
-        const reqs = askedTasks.slice(0, maxWorkers).map((task, i) => {
+        const reqs = (maxWorkers ? askedTasks.slice(0, maxWorkers) : askedTasks).map((task, i) => {
           const contract = resultSchemaOf(task && task.resultSchema);
           return {
             prompt: String((task && task.prompt) || ''),
@@ -662,7 +668,7 @@
           };
         });
         markBatchQuality(reqs);
-        const overflow = askedTasks.slice(maxWorkers);
+        const overflow = maxWorkers ? askedTasks.slice(maxWorkers) : [];
         if (!reqs.length) return { content: 'No tasks specified.', summary: 'noop' };
         const overflowRows = () => overflow.map((t, i) => ({
           label: String((t && t.label) || ('subagent ' + (maxWorkers + i + 1))).slice(0, 60),
@@ -706,7 +712,7 @@
                 extraObjects: WORKER_KIT,                   // WORKBENCH only — NO 'lead' → no orchestrator object →
                                                             // team.spawn never exposed to it → FLAT DEPTH (no re-spawn)
                 maxCostUsd: perWorker,                       // a runaway clone can't blow the lead's per-run ceiling
-                maxIters: bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
+                maxIters: bounded ? lowerPositive(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
                 maxToolCalls: bounded ? bounded.workerMaxTools : undefined,
                 steer: h.steer
               });
@@ -733,7 +739,7 @@
                 signal: h.signal, runId: repairRunId, parentRunId: ctx && ctx.runId,
                 trigger: 'directive', surface: 'autonomous', consent: ctx && ctx.consent,
                 extraObjects: WORKER_KIT, maxCostUsd: perWorker > 0 ? remaining : 0,
-                maxIters: Math.min(4, bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters),
+                maxIters: lowerPositive(4, bounded ? lowerPositive(workerMaxIters, bounded.workerMaxIters) : workerMaxIters),
                 maxToolCalls: bounded ? bounded.workerMaxTools : undefined, steer: h.steer
               });
               return repair ? { text: lastAssistant(repair.messages), result: repair, runId: repairRunId } : null;
@@ -884,7 +890,7 @@
             consent: ctx && ctx.consent,
             extraObjects: WORKER_KIT,
             maxCostUsd: perWorker,
-            maxIters: bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
+            maxIters: bounded ? lowerPositive(workerMaxIters, bounded.workerMaxIters) : workerMaxIters,
             maxToolCalls: bounded ? bounded.workerMaxTools : undefined,
             steer: h.steer
           });
@@ -908,7 +914,7 @@
             parentRunId: ctx && ctx.runId, trigger: 'directive', surface: 'autonomous',
             consent: ctx && ctx.consent, extraObjects: WORKER_KIT,
             maxCostUsd: perWorker > 0 ? remaining : 0,
-            maxIters: Math.min(4, bounded ? Math.min(workerMaxIters, bounded.workerMaxIters) : workerMaxIters),
+            maxIters: lowerPositive(4, bounded ? lowerPositive(workerMaxIters, bounded.workerMaxIters) : workerMaxIters),
             maxToolCalls: bounded ? bounded.workerMaxTools : undefined, steer: h.steer
           });
           return repair ? { text: lastAssistant(repair.messages), result: repair, runId: repairRunId } : null;

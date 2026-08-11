@@ -542,38 +542,26 @@ function resolveKnob(envSuffix, savedKey, def) {
 }
 function knobEnvLocked(envSuffix) { const e = envSuffix ? ENV(envSuffix) : null; return e != null && String(e).trim() !== '' && Number(e) >= 0; }
 
-// maxIters: per-run tool-turn ceiling. Raised 16→40 (P0.3) so real multi-step work isn't truncated early;
-// env-overridable, now also UI-tunable (resolveKnob: env > saved > default). The loop adds one grace turn on top.
-const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 40), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
-// Spend governance ("Balanced" posture): per-RUN hard ceiling (the loop's maxCostUsd) + SOFT cross-run pools
-// (per-day, global) governed over the persisted ledger, each with one-click resume. Env-overridable so a deploy
-// can retune without a code change. perRun ($3) replaces the conservative $1 dev default once a budget is live.
+// maxIters: optional per-run tool-turn ceiling. Default OFF (0); users/deploys may opt into one.
+const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 0), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
+// Optional spend governance: per-run, per-agent, per-day, and global ceilings all default OFF.
 // num() passes a parsed value through (including 0 -> UNGOVERNED via budget.js capOf, e.g. SKYNET_BUDGET_PER_DAY=0
 // disables the day pool); only an empty/missing/negative/non-numeric value falls back to the default.
 const num = (v, d) => { if (v == null || String(v).trim() === '') return d; const n = Number(v); return (typeof n === 'number' && !isNaN(n) && n >= 0) ? n : d; };
-// DEFAULTS (2026-07-23, Andrew-approved budget-legibility pass): ONE generous per-run seatbelt for metered
-// (real-$) runs; every cross-run pool defaults OFF. The old dev-era defaults ($3 run / $5 AGENT LIFETIME /
-// $40 day / $100 global) silently strangled normal heavy use — the per-agent lifetime cap especially stopped
-// every run of an agent forever after $5 of ordinary work. Users can still set any cap in SETTINGS → BUDGET
-// (0/blank = no cap), and env vars still override for locked-down deploys. Unmetered (OAuth-subscription)
-// runs skip the per-run cap entirely at admission — their $ figures are estimates against a flat subscription.
+// Users may opt into any cap in SETTINGS → BUDGET (0/blank = no cap); environment variables
+// still override for locked-down deploys. Unmetered subscription runs remain ungoverned.
 const BUDGET_CAPS = {
-  perRun: num(ENV('BUDGET_PER_RUN'), 10),
+  perRun: num(ENV('BUDGET_PER_RUN'), 0),
   perAgent: num(ENV('BUDGET_PER_AGENT'), 0),   // multi-agent fairness rail: one agent's cumulative spend (0 = ungoverned; default OFF — a lifetime cap punishes engagement, not runaways)
   perDay: num(ENV('BUDGET_PER_DAY'), 0),
   global: num(ENV('BUDGET_GLOBAL'), 0)
 };
-// Multi-agent fan-out ceiling: the max number of DISTINCT agents that may have paid runs in flight at once
-// (hero + summoned crew). The day/global pools already cap aggregate $; this caps how many loops light up in
-// parallel so a summoned crew can't accidentally burn N streams at once. 0 = unlimited. See concurrency.js.
-const MAX_CONCURRENT_AGENTS = resolveKnob('MAX_CONCURRENT_AGENTS', 'maxConcurrentAgents', 3);   // P1-9: env > saved > default
-// Stage 2: per-WORKER USD ceiling for a delegated sub-run, so the lead fanning out to a crew can't let one
-// runaway worker blow the lead's own per-run cap. 0 = ungoverned (the cross-run pools still apply).
-const ORCH_PER_WORKER = num(ENV('BUDGET_PER_WORKER'), 1);
-// Stage 2 companion to ORCH_PER_WORKER: per-WORKER tool-turn ceiling. A delegated worker doing one
-// scoped subtask has no business burning the lead's whole 40-turn budget. runOnce clamps this DOWN
-// only (see runMaxIters) so a caller can never widen past the station's own CAPS.maxIters.
-const ORCH_WORKER_MAX_ITERS = num(ENV('WORKER_MAX_ITERS'), 16);
+// Optional multi-agent fan-out ceiling. 0 = unlimited (the product default). See concurrency.js.
+const MAX_CONCURRENT_AGENTS = resolveKnob('MAX_CONCURRENT_AGENTS', 'maxConcurrentAgents', 0);   // P1-9: env > saved > default
+// Optional per-worker USD ceiling for delegated sub-runs. 0 = ungoverned.
+const ORCH_PER_WORKER = num(ENV('BUDGET_PER_WORKER'), 0);
+// Optional per-worker tool-turn ceiling. 0 inherits the unlimited station policy.
+const ORCH_WORKER_MAX_ITERS = num(ENV('WORKER_MAX_ITERS'), 0);
 // ---- MANAGED CREDITS (opt-in, config-gated). The whole managed-credit path is INERT unless STARNET_CREDITS_URL
 // points at a credits backend: no payment client is built, admission stays pure BYOK, no STORE UI renders, and
 // /api/credits 404s (the honesty law — a control that does nothing is a bug). When wired, a managed account can
@@ -637,13 +625,9 @@ const CRON_HOST_TZ = (function () {
   })();
   return cron.isValidTz(candidate) ? (candidate || 'UTC') : 'UTC';
 })();
-const CRON_MAX_RUN_MS = num(ENV('CRON_MAX_RUN_MS'), CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
-// G4.4 global concurrency cap: at most this many cron runs may be IN-FLIGHT across all routines at once.
-// A tick whose due set would exceed it DEFERS the extra jobs to the next tick (without advancing their
-// nextRunAt, so they stay due) — a burst of simultaneously-due routines drains `maxParallel` at a time
-// rather than flooding the run host / spend all at once. Threaded as an INJECTED int so the cron driver
-// stays determinism-clean (it never reads process.env itself). Default 4.
-const CRON_MAX_PARALLEL = num(ENV('CRON_MAX_PARALLEL'), 4);
+const CRON_MAX_RUN_MS = num(ENV('CRON_MAX_RUN_MS'), 480000);   // operational lease/timeout, independent of user-work quotas
+// Optional routine-specific concurrency ceiling. The station-wide opt-in agent ceiling still applies.
+const CRON_MAX_PARALLEL = num(ENV('CRON_MAX_PARALLEL'), 0);
 // NS-0 LEASE HEARTBEAT knobs. The lease sweep + one-shot fireClaim now reclaim on a STALE HEARTBEAT rather than a
 // fixed wall-clock age, so a genuinely-long run that keeps emitting progress fires exactly once (the duplicate-fire
 // fix). CRON_STALENESS_MULT scales maxRunMs into the no-heartbeat staleness ceiling (default 1 = pre-NS-0 timing for
@@ -5550,7 +5534,7 @@ const LOOPS_HALT_FILE = path.join(WORKSPACES, 'loops.halt.json');
 // still looking at the screen. A loop with nothing to do costs one gate evaluation per tick — no model call.
 // ENV() already prefixes STARNET_/SKYNET_ — pass the bare suffix, never the prefixed name.
 const LOOP_TICK_MS = Math.max(5000, parseInt(ENV('LOOP_TICK_MS') || '20000', 10) || 20000);
-const LOOP_MAX_PARALLEL = Math.max(1, parseInt(ENV('LOOP_MAX_PARALLEL') || '2', 10) || 2);
+const LOOP_MAX_PARALLEL = num(ENV('LOOP_MAX_PARALLEL'), 0);
 const LOOP_MAX_RUN_MS = Math.max(60000, parseInt(ENV('LOOP_MAX_RUN_MS') || '1800000', 10) || 1800000);
 
 function loadLoops() {
@@ -7671,7 +7655,7 @@ const openaiCompat = makeOpenAiCompat({
   isAllowedHost: isAllowedHost,
   constTimeEq: apiauth.constTimeEq,
   defaultModel: () => String(ENV('V1_MODEL') || ENV('DEFAULT_MODEL') || '').trim(),
-  maxConcurrent: () => num(ENV('V1_MAX_CONCURRENT'), 10),
+  maxConcurrent: () => num(ENV('V1_MAX_CONCURRENT'), 0),
   version: () => { try { return computeVersionSurface().harness || 'dev'; } catch (_) { return 'dev'; } },
   newId: () => crypto.randomUUID(), now: () => Date.now(),
   readBody: (req, max) => readBody(req, max), redact: redact,
@@ -9102,8 +9086,8 @@ async function handleConfigReset(req, res) {
    var locks it (so the UI can gray it out honestly). POST persists overrides (env-locked knobs ignore the write).
    Saved values apply at NEXT BOOT (they feed the boot-frozen constants) — the UI discloses this. ---- */
 const RUNTIME_KNOB_DEFS = [
-  { key: 'maxIters', env: 'MAX_ITERS', def: 40, min: 1, max: 200 },
-  { key: 'maxConcurrentAgents', env: 'MAX_CONCURRENT_AGENTS', def: 3, min: 0, max: 32 },
+  { key: 'maxIters', env: 'MAX_ITERS', def: 0, min: 0, max: 200 },
+  { key: 'maxConcurrentAgents', env: 'MAX_CONCURRENT_AGENTS', def: 0, min: 0, max: 32 },
   { key: 'consentTimeoutMs', env: 'CONSENT_TIMEOUT_MS', def: 120000, min: 5000, max: 600000 },
   { key: 'cronTickMs', env: 'CRON_TICK_MS', def: 60000, min: 5000, max: 600000 }
 ];
@@ -12755,25 +12739,39 @@ async function runOnce(o) {
   // An UNMETERED (OAuth-subscription) run skips the default per-run $ cap: its "spend" is a token estimate
   // against a flat subscription, so stopping it at $N stops it at an imaginary number (2026-07-23, Andrew-
   // approved). An EXPLICIT caller cap (o.maxCostUsd — e.g. a delegated worker's perWorker) is still honored.
-  const runCapUsd = (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd
+  let runCapUsd = (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd
     : (providerUnmetered ? Infinity
     : ((effectiveCaps.perRun > 0 && isFinite(effectiveCaps.perRun)) ? effectiveCaps.perRun : Infinity));
   // Same rule as o.maxCostUsd for the TURN budget: an explicit caller cap (o.maxIters -- e.g. a delegated
   // worker's ORCH_WORKER_MAX_ITERS) is honored, but may only LOWER the ceiling. Without this the value
   // orchestration.js has always passed was silently dropped and every worker ran the lead's full budget.
+  const stationMaxIters = (CAPS.maxIters > 0 && isFinite(CAPS.maxIters)) ? CAPS.maxIters : Infinity;
   const runMaxIters = (o.maxIters > 0 && isFinite(o.maxIters))
-    ? Math.max(1, Math.min(Math.floor(o.maxIters), CAPS.maxIters))
-    : CAPS.maxIters;
+    ? Math.max(1, Math.min(Math.floor(o.maxIters), stationMaxIters))
+    : stationMaxIters;
   const managedRun = credits.configured() && !providerUnmetered;
   if (managedRun) {
-    // a managed reservation needs a FINITE cap to hold; an ungoverned per-run can't be pre-authorized.
-    if (!(runCapUsd > 0 && isFinite(runCapUsd))) {
-      emit('agent.run.start', { agentId, runId, trigger, model });
-      emit('agent.run.error', { agentId, runId, transient: false, message: 'Managed credits need a per-run budget cap — set STARNET_BUDGET_PER_RUN to a dollar amount.' });
-      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
-      return;   // the outer finally releases the concurrency slot; nothing was reserved (billed stays false)
-    }
     await credits.refresh(CREDITS_ACCOUNT).catch(() => {});   // reconcile the cached balance right before admission
+    // A managed reservation needs a FINITE cap to hold. With no opt-in cap the wallet itself is the run's
+    // only ceiling: reserve the full available balance — the least-limiting finite number there is — and
+    // settle refunds whatever the run didn't use. The reservation is also the loop's maxCostUsd (below),
+    // so a run can never overshoot what it reserved (that would fail the settle as over-cap).
+    if (!(runCapUsd > 0 && isFinite(runCapUsd))) {
+      const snap = credits.snapshot();
+      const avail = Number(snap && snap.balanceUsd);
+      runCapUsd = (isFinite(avail) && avail > 0) ? avail : 0;
+      if (!(runCapUsd > 0)) {
+        // fail closed — never spend against an unknown/empty managed balance (same surface as a beginRun refusal).
+        const exhausted = isFinite(avail);   // a known $0 balance vs. a balance the service never reported
+        const msg = exhausted
+          ? 'Out of managed credit — add credits in the STORE to keep running (or connect your own provider key).'
+          : 'Managed credits are unavailable right now — the credits service did not answer (try again, or use your own provider key).';
+        emit('agent.run.start', { agentId, runId, trigger, model });
+        emit('agent.run.error', { agentId, runId, transient: !exhausted, reason: 'billing', message: msg });
+        emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+        return;   // the outer finally releases the concurrency slot; nothing was reserved (billed stays false)
+      }
+    }
     const adm = credits.beginRun({ runId, agentId, capUsd: runCapUsd });
     if (!adm || adm.ok === false) {
       // fail closed — never spend against an unknown/exhausted managed balance. Surface it as a billing fault

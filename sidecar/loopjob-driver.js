@@ -68,7 +68,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (LJ, store) {
   'use strict';
 
-  const DEFAULT_MAX_PARALLEL = 4;
+  const DEFAULT_MAX_PARALLEL = 0;          // unlimited; positive values opt into a ceiling
   const DEFAULT_MAX_RUN_MS = 900000;      // 15 min — the zombie-claim ceiling, extended by live heartbeats
   const DEFAULT_HEARTBEAT_MS = 30000;     // durable liveness write interval while an iteration streams
   const TITLE_WORDS = 12;
@@ -504,7 +504,7 @@
         }
 
         planned++;
-        if (leases.size >= maxParallel) {
+        if (maxParallel > 0 && leases.size >= maxParallel) {
           // over the fan-out cap: HELD, not dropped. Nothing is advanced, so it is still eligible next tick.
           note('defer', loop, { reason: 'at-capacity', binding: 'concurrency-cap' });
           deferred++;

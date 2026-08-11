@@ -49,7 +49,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   // proven against a real AbortController in the "one worker's wall clock" section below.
   A.ok(ro.calls[0].signal && ro.calls[0].signal !== signal, "the child runs on its OWN abort signal (a straggler is stopped alone)");
   A.eq(ro.calls[0].maxCostUsd, 1, 'per-worker cost cap is passed to the child');
-  A.eq(ro.calls[0].maxIters, 16, 'default per-worker iteration cap leaves bounded recovery room');
+  A.eq(ro.calls[0].maxIters, 0, 'the default per-worker iteration ceiling is off');
   A.eq(ro.calls[0].surface, 'autonomous', 'workers run headless on the autonomous office baseline');
   // SAME ACCESS AS THE ORCHESTRATOR: a worker shares the lead's consent broker (its APPROVAL posture + grants)
   // and is handed the WORKBENCH, so shell/writes are available and gated by the lead's approvals — not auto-denied.
@@ -227,7 +227,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     const handle = JSON.parse(out.content)[0];
     A.ok(handle.id && handle.status === 'running', 'background dispatch returns a running durable handle immediately');
     await tick();
-    A.eq(ro.calls[0].maxIters, 16, 'background worker receives the same default iteration cap');
+    A.eq(ro.calls[0].maxIters, 0, 'background workers also have no default iteration ceiling');
     await tick(); await tick();
     const rec = subagents.get(handle.id);
     A.eq(rec.status, 'done', 'background worker completes into the durable record');
@@ -453,7 +453,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     A.ok(ro.calls[0].agentId !== ro.calls[1].agentId && ro.calls[0].agentId !== 'lead', 'each clone is a distinct, non-lead id');
     A.eq(ro.calls[0].isTask, true, 'the clone run is a task (tool-capable)');
     A.eq(ro.calls[0].maxCostUsd, 2, 'per-worker cost cap is passed to the clone');
-    A.eq(ro.calls[0].maxIters, 16, 'default per-worker iteration cap is passed to the clone');
+    A.eq(ro.calls[0].maxIters, 0, 'clones also have no default iteration ceiling');
     A.ok(ro.calls[0].consent === leadBroker, 'the clone shares the lead consent broker (same approval posture)');
     A.ok(Array.isArray(ro.calls[0].extraObjects) && ro.calls[0].extraObjects.some(o => o.objectType === 'workbench'), 'the clone gets the workbench (terminal)');
     A.ok(!ro.calls[0].lead, 'FLAT DEPTH: the clone is NOT a lead (no orchestrator object) so it cannot re-spawn');
@@ -524,13 +524,33 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
 }
 
-// ---- NO SILENT CAPS (2026-07-26 audit finding C): asking for MORE than maxWorkers used to slice(0,4) and say
+// ---- POWER-USER DEFAULT: a single parallel dispatch may run twenty workers when no cap is configured ----
+{
+  let active = 0; let peak = 0;
+  const ro = fakeRunOnce(async (o) => {
+    active++; peak = Math.max(peak, active);
+    await tick();
+    active--;
+    return { reason: 'done', messages: [{ role: 'assistant', content: 'out:' + o.agentId }], usd: 0 };
+  });
+  const roster = new Map(Array.from({ length: 20 }, (_, i) => ['w' + (i + 1), { system: 'S' + (i + 1) }]));
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter() });
+  const workers = Array.from({ length: 20 }, (_, i) => ({ agentId: 'w' + (i + 1), prompt: 'p' + (i + 1) }));
+  const out = await dispatchTool.run({ workers, parallel: true }, { agentId: 'lead', emit: () => {} });
+  const rows = JSON.parse(out.content);
+  A.eq(ro.calls.length, 20, 'the default dispatch starts all twenty requested workers');
+  A.eq(rows.filter(r => r.reason === 'done').length, 20, 'all twenty workers finish and are reported');
+  A.eq(rows.filter(r => r.reason === 'not-dispatched').length, 0, 'no hidden per-call ceiling drops work');
+  A.eq(peak, 20, 'all twenty workers may execute concurrently when no station ceiling is configured');
+}
+
+// ---- OPT-IN CAPS STAY HONEST (2026-07-26 audit finding C): asking for MORE than maxWorkers used to slice(0,4) and say
 //      nothing — "dispatched 4 worker(s), 4 done" for a 6-worker decomposition, so the lead reported on two
 //      subtasks that never ran. The overflow must come back as explicit rows AND be named in the summary. ----
 {
   const ro = fakeRunOnce();
   const roster = new Map([1, 2, 3, 4, 5, 6].map(i => ['w' + i, { system: 'S' + i }]));
-  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter() });
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), maxWorkers: 4 });
   const out = await dispatchTool.run({ workers: [1, 2, 3, 4, 5, 6].map(i => ({ agentId: 'w' + i, prompt: 'p' + i })) }, { agentId: 'agent', emit: () => {} });
   A.eq(ro.calls.length, 4, 'the per-call worker cap still bounds how many child runs start');
   const rows = JSON.parse(out.content);
@@ -549,7 +569,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   try {
     const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'sub.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
     const ro = fakeRunOnce();
-    const { spawnTool } = makeOrchestrationTools({ runOnce: ro, roster: () => new Map(), key: 'k', model: 'm', selfSystem: 'S', newId: counter(), subagents });
+    const { spawnTool } = makeOrchestrationTools({ runOnce: ro, roster: () => new Map(), key: 'k', model: 'm', selfSystem: 'S', newId: counter(), subagents, maxWorkers: 4 });
     const out = await spawnTool.run({ tasks: [1, 2, 3, 4, 5].map(i => ({ prompt: 'p' + i, label: 'L' + i })) }, { agentId: 'agent', emit: () => {} });
     const rows = JSON.parse(out.content);
     A.eq(ro.calls.length, 4, 'spawn still starts at most maxWorkers clones');
