@@ -343,6 +343,43 @@
     return VOS_CHECK_RE.test(String(cmd));
   }
 
+  // A tool invocation may itself succeed while the command it ran proves failure (shell/MCP command
+  // wrappers intentionally return exitCode in ordinary result content). Detect only an EXPLICIT non-zero
+  // exit status from a check-shaped call; never infer failure from arbitrary prose or copy untrusted output
+  // into the system message. The fixed note is planning guidance, not a permission or dispatch gate.
+  function explicitNonzeroExit(content) {
+    let text;
+    try { text = typeof content === 'string' ? content : JSON.stringify(content); }
+    catch (_) { return false; }
+    const patterns = [
+      /["']exit(?:Code|_code)["']\s*:\s*(-?\d+)/gi,
+      /\[\s*exit\s+(-?\d+)\b/gi,
+      /\bexit\s+code\s*[:=]?\s*(-?\d+)\b/gi
+    ];
+    for (const re of patterns) {
+      let match;
+      while ((match = re.exec(String(text)))) if (Number(match[1]) !== 0) return true;
+    }
+    return false;
+  }
+  function isCheckShapedCall(call) {
+    const key = vosKey(call && call.name);
+    if (VOS_VERIFIERS.has(key)) return true;
+    if (key === 'shell_exec') return vosIsCheckCommand(call && call.args);
+    const leaf = key.slice(key.lastIndexOf('__') + 2);
+    return /(^|_)(run_)?(command|check|test)(_|$)/.test(leaf);
+  }
+  function failedCheckRepairNote(calls, results) {
+    const resultById = new Map((results || []).map(result => [result.callId, result]));
+    const failed = (calls || []).some(call => {
+      const result = resultById.get(call.id);
+      return result && isCheckShapedCall(call) && explicitNonzeroExit(result.content);
+    });
+    return failed
+      ? '<failed_check_repair>A command or verification just returned an explicit non-zero exit code. Do not mutate yet. Before any repair, inspect both the implicated implementation and the available test, check, or config that defines expected behavior; failure output alone does not prove the intended fix. Then make one evidence-based repair, rerun the same check, and use its real result.</failed_check_repair>'
+      : '';
+  }
+
   function canonicalJson(value) {
     if (Array.isArray(value)) return '[' + value.map(canonicalJson).join(',') + ']';
     if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(k => JSON.stringify(k) + ':' + canonicalJson(value[k])).join(',') + '}';
@@ -1034,6 +1071,8 @@
         return end('error');
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
+      const repairNote = failedCheckRepairNote(calls, results);
+      if (repairNote) messages.push({ role: 'system', content: repairNote });
       if (calls.length === 1 && results.length === 1 && results[0].ok && !results[0].isError) {
         lastDeterministicCheck = deterministicCheckSignature(calls[0]);
       } else {
@@ -1163,5 +1202,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, explicitNonzeroExit, failedCheckRepairNote, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
 });

@@ -60,7 +60,8 @@ async function run(o) {
   });
   const nudges = messages.filter(m => m.role === 'system' && String(m.content).indexOf('<verify_before_done>') === 0);
   const externalNudges = messages.filter(m => m.role === 'system' && String(m.content).indexOf('<verify_external_before_done>') === 0);
-  return { res, messages, nudges, externalNudges };
+  const failedCheckNudges = messages.filter(m => m.role === 'system' && String(m.content).indexOf('<failed_check_repair>') === 0);
+  return { res, messages, nudges, externalNudges, failedCheckNudges };
 }
 
 (async () => {
@@ -180,6 +181,30 @@ async function run(o) {
 
     A.eq((await run({ fixture: fixture(action, { action: 'set_workbook_input' }), tools: toolDefs(action, verify), registry: externalReg(true) })).externalNudges.length, 0,
       'a failed external action changed no proven state and arms nothing');
+  }
+
+  // ---- 9. FAILED-CHECK REPAIR: a successful tool call can still prove a command failed. Put a fixed,
+  //          proximal system boundary immediately after that result so the next model turn inspects the
+  //          expectation source before mutating instead of guessing from an exit marker. ----
+  {
+    const command = 'mcp__parity_fixture_eval__fixture_run_command';
+    const failed = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: command }, { type: 'tool_args', index: 0, chunk: '{"name":"check"}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'I will inspect before repairing.' }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    const registry = makeRegistry();
+    registry.register({ name: command, schema: { type: 'object', properties: {} }, run: async () => JSON.stringify({ exitCode: 7, stderr: 'REPAIR-CHECK-FAIL-17 value=1' }) });
+    const { messages, failedCheckNudges } = await run({ fixture: failed, tools: toolDefs(command), registry });
+    A.eq(failedCheckNudges.length, 1, 'an explicit non-zero command result adds one proximal repair nudge');
+    A.ok(/Do not mutate yet/.test(failedCheckNudges[0].content) && /test, check, or config/.test(failedCheckNudges[0].content),
+      'the nudge requires expectation-source inspection before repair');
+    const resultAt = messages.findIndex(m => m.role === 'tool' && m.tool_call_id === 'c1');
+    A.eq(messages[resultAt + 1], failedCheckNudges[0], 'the repair boundary sits immediately after the failed command result');
+
+    const passingRegistry = makeRegistry();
+    passingRegistry.register({ name: command, schema: { type: 'object', properties: {} }, run: async () => JSON.stringify({ exitCode: 0, stdout: 'PASS' }) });
+    A.eq((await run({ fixture: failed, tools: toolDefs(command), registry: passingRegistry })).failedCheckNudges.length, 0,
+      'a zero exit code adds no failed-check repair nudge');
   }
 
   A.report('loop.verify-on-stop.test');
