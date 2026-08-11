@@ -173,7 +173,7 @@ const StationBake = (() => {
                     so it gets its own knob rather than being deleted. Scales ONLY the seam/bevel
                     steps — per-plate tone, material dressing and wear are untouched.
                     0 = a genuinely seamless deck · 1 = the old hard v3 grid. */
-  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, wallDetail: 1, deckSeam: 0.38 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
+  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, wallDetail: 1, deckSeam: 0.38, poolAlbedo: 1 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
 
   /* ============================ THE EXTERIOR SHELL (HULL SKINS) ============================
      Everything you see of a room from OUTSIDE: the plate surrounding its footprint, the texture
@@ -2701,6 +2701,55 @@ const StationBake = (() => {
      LIGHT.pitch spacing, so a lamp's ~7-tile carve overlaps its neighbour's instead of leaving the
      deck between them at raw ambient. A room shallower than one pitch keeps exactly one row and
      bakes identically to before. */
+  /* ---- LIGHT LANDS ON A SURFACE, IT IS NOT A SURFACE (2026-08-10) ----
+     Andrew, circling the lit band at the foot of a default HULL-floor room: "not a fan of how this
+     lighting is on top of this black dark area — it makes it look unrealistic."
+
+     He is describing a real modelling error, and the measurement backs him. In a room small enough
+     that ONE lamp carve covers the whole deck (a 9x7 hab: room cut r≈5.6 tiles, lamp cuts r≈7.8),
+     the multiplicative light map is SATURATED everywhere — set LIGHT.floor to 0 and the floor goes
+     flat, which means the additive warm pool was carrying essentially all of the visible modelling
+     on that deck. An additive wash is a constant: it adds the same warmth to a plate face and to
+     the near-black seam beside it, so it VEILS the material instead of revealing it. Over a dark
+     deck that reads exactly as reported — a warm decal floating on black.
+
+     Real diffuse light does not add, it SCALES: reflected light is albedo × illumination, so the
+     bright parts of a material gain more than its dark parts and the pattern comes UP under the
+     lamp. So the pool is now painted to its own layer and its alpha modulated by the deck already
+     under it before it composites. Seams stay seams, plate faces catch the light, and the pool's
+     shape is unchanged — it is the same lamp, finally landing on a surface.
+
+     `DEPTH.poolAlbedo` is the mix (0 = the old flat wash, 1 = fully albedo-scaled), live-tunable
+     in the CRT LAB like every other constant here. The gain is normalised at REF so a mid deck
+     bakes near its shipped strength and only the dark/bright extremes move. */
+  const POOL_REF = 96;
+  function additiveFloorPass(b, draw) {
+    const k = Math.max(0, Math.min(1, DEPTH.poolAlbedo));
+    if (k <= 0.001) { draw(b); return; }
+    const layer = canvas(CW, CH);
+    const lg = translatedContext(layer);
+    draw(lg);
+    // scale the layer's alpha by the albedo already painted underneath it
+    if (typeof b.getImageData === 'function' && typeof lg.getImageData === 'function') {
+      const dst = b.getImageData(0, 0, CW, CH).data;
+      const img = lg.getImageData(0, 0, CW, CH);
+      const src = img.data;
+      for (let i = 3; i < src.length; i += 4) {
+        const a = src[i];
+        if (!a) continue;
+        const luma = (dst[i - 3] * 299 + dst[i - 2] * 587 + dst[i - 1] * 114) / 1000;
+        const g = Math.max(0.18, Math.min(1.25, 0.35 + 0.65 * (luma / POOL_REF)));
+        src[i] = Math.round(a * (1 + k * (g - 1)));
+      }
+      lg.putImageData(img, 0, 0);
+    }
+    b.save();
+    b.globalCompositeOperation = 'lighter';
+    b.setTransform(1, 0, 0, 1, 0, 0);
+    b.drawImage(layer, 0, 0);
+    b.restore();
+  }
+
   const lampCols = (r) => Math.max(1, Math.round((r.x2 - r.x1 + 1) / Math.max(2, LIGHT.pitch)));
   function lampRows(Y, RH) {
     const y0 = Y + T * 1.6, yLast = Y + RH - T * 1.2;
@@ -2708,7 +2757,10 @@ const StationBake = (() => {
     return { rows, y0, step: rows > 1 ? (yLast - y0) / (rows - 1) : 0 };
   }
 
-  function bakeRoomLighting(b) {
+  /* the ADDITIVE half of the room lighting — every warm floor pool + its sheen, drawn to whatever
+     context `additiveFloorPass` hands it (the albedo layer when DEPTH.poolAlbedo is on, `b`
+     directly when it is off). Kept in its own function so the pass can never disagree with it. */
+  function bakeRoomPools(b) {
     b.globalCompositeOperation = 'lighter';
     const openSide = (r, side) => {
       if (side === 'n' || side === 's') { const y = side === 'n' ? r.y1 : r.y2; for (let x = r.x1; x <= r.x2; x++) if (isOpenJoin(x, y, side)) return true; }
@@ -2749,6 +2801,11 @@ const StationBake = (() => {
       bakeSheen(b, (x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T + T * 0.4, T * 0.4);
     }
     b.globalCompositeOperation = 'source-over';
+  }
+
+  function bakeRoomLighting(b) {
+    additiveFloorPass(b, bakeRoomPools);
+    b.globalCompositeOperation = 'source-over';
     for (const r of G.allRects) {
       if (G.isCorridor(r.z)) continue;
       const X = r.x1 * T, RW = (r.x2 - r.x1 + 1) * T;
@@ -2788,7 +2845,12 @@ const StationBake = (() => {
      LAW: if a surface looks wrong everywhere you put it, measure the LIGHT on it before redrawing
      it. Corridors stay DIMMER than rooms — that is the tunnel-vs-hall read and it is deliberate —
      but dim is a level, not an absence of modelling. */
-  function bakeCorridorDressing(b) {
+  /* the corridor's ADDITIVE half, split out for the same reason as bakeRoomPools — see the
+     albedo note above additiveFloorPass. (The pool loop now runs across ALL corridors before the
+     hardware loop instead of interleaving per corridor; the only pixels that can differ are a
+     neighbouring passage's fixture cap sitting inside this pool's unclipped square, which the
+     wash no longer paints over.) */
+  function bakeCorridorPools(b) {
     for (const r of G.allRects) {
       if (!G.isCorridor(r.z)) continue;
       const vertical = (r.y2 - r.y1) > (r.x2 - r.x1);
@@ -2823,6 +2885,16 @@ const StationBake = (() => {
          worldmodel's wallStyleOfRoom). */
       if (vertical) for (let y = r.y1 + 1; y <= r.y2; y += 4) pool(cx, (y + 0.5) * T);
       else for (let x = r.x1 + 1; x <= r.x2; x += 4) pool((x + 0.5) * T, cy);
+      b.globalCompositeOperation = 'source-over';
+    }
+  }
+
+  function bakeCorridorDressing(b) {
+    additiveFloorPass(b, bakeCorridorPools);
+    for (const r of G.allRects) {
+      if (!G.isCorridor(r.z)) continue;
+      const vertical = (r.y2 - r.y1) > (r.x2 - r.x1);
+      const cx = (r.x1 + r.x2 + 1) / 2 * T, cy = (r.y1 + r.y2 + 1) / 2 * T;
       b.globalCompositeOperation = 'source-over';
       // fixture caps + a coloured cable run on the wall side
       b.fillStyle = '#5b6066';
