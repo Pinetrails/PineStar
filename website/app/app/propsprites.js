@@ -2894,7 +2894,11 @@ const PropSprites = (() => {
       px(x + 7, y - 1, w - 14, 1, '#1e3a2c');
       ctx.fillStyle = '#7df0c8'; ctx.font = "8px 'VT323','Courier New',monospace";
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(String(f.agentId).replace(/^tg_/, '').slice(0, 5).toUpperCase(), x + (w >> 1), y + 1);
+      // the plate speaks the AGENT'S NAME (f.dockName — resolved LIVE by the caller from bodies/roster,
+      // never stored on the prop doc, so a rename repaints next frame). The raw id is only the fallback
+      // for a bay whose agent has no resolvable name (deleted agent, pre-name save) — an id like `agent`
+      // used to render every custom dock as the word AGENT.
+      ctx.fillText(String(f.dockName || String(f.agentId).replace(/^tg_/, '')).slice(0, 5).toUpperCase(), x + (w >> 1), y + 1);
       bloom(x + 7, y - 1, w - 14, 4, c, 0.10 + (act ? 0.10 : 0));
     } else {
       px(x + 8, y, w - 16, 1, '#2a3438'); px(x + 8, y + 2, w - 20, 1, '#232c30');   // dim UNASSIGNED bars

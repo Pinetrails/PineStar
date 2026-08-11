@@ -3855,10 +3855,18 @@ const Build = (() => {
     const tp = T(), zt = zoom * tp;
     const vx0 = (-panX) / zt - PROP_CULL_PAD, vy0 = (-panY) / zt - PROP_CULL_PAD;
     const vx1 = (cv.width - panX) / zt + PROP_CULL_PAD, vy1 = (cv.height - panY) / zt + PROP_CULL_PAD;
+    let bayNames = null;   // aid -> name, resolved once per paint (the roster read is a callback into app.js)
     for (const p of order) {
       if (p.x > vx1 || p.y > vy1 || p.x + (p.w || 1) - 1 < vx0 || p.y + (p.h || 1) - 1 < vy0) continue;
       const m = mountMap.get(p.id);
-      PropSprites.draw(m ? Object.assign({}, p, { mount: m }) : p, true);
+      let dp = m ? Object.assign({}, p, { mount: m }) : p;
+      // the editor draws the same gantry plate the live world does: a bound bay wears its agent's NAME
+      if (p.t === 'bay' && p.agentId) {
+        if (!bayNames) { bayNames = new Map(); for (const a of ((opts && typeof opts.agents === 'function' && opts.agents()) || [])) bayNames.set(a.id, a.name); }
+        const nm = bayNames.get(p.agentId);
+        if (nm) dp = Object.assign(dp === p ? Object.assign({}, p) : dp, { dockName: nm });
+      }
+      PropSprites.draw(dp, true);
     }
   }
   /* 4 tiles = 48px at TILE 12. The worst upward overshoot in the whole prop catalog is 21px above a
