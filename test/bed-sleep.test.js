@@ -108,8 +108,15 @@ const inBand = (r, y0, y1) => r[1] >= y0 && r[1] + r[3] <= y1 + 1;
 {
   const world = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'world.js'), 'utf8');
 
-  // getting IN: the mattress claim now carries a render anchor + the lying flag
-  A.ok(/self\.pendSeat = bedAnchor\(bed, self\);\s*\n\s*self\.lying = true;/.test(world), 'planBedSleep poses the body IN the bed');
+  // getting IN: the plan claims a mattress and seeds the render anchor, but the POSE is earned by
+  // arriving. Setting `lying` at plan time teleported the body into the bed the moment it decided to
+  // nap and the walk never rendered — reproduced live 2026-08-10 (dev/bed-click-repro.mjs), which is
+  // why these two assertions are split and why the planner is checked for the ABSENCE of the flag.
+  A.ok(/self\.pendSeat = bedAnchor\(bed, self\);/.test(world), 'planBedSleep seeds the render anchor');
+  const planner = world.slice(world.indexOf('function planBedSleep'), world.indexOf('function sleep(now)'));
+  A.ok(planner.length > 200, 'found the planner body');
+  A.eq(/self\.lying\s*=\s*true/.test(planner), false, 'the PLAN never sets the pose — a body walking to bed is drawn walking');
+  A.ok(/takeSeat\(\);\s*\n\s*self\.lying = !!\(self\.seated && self\.seatKey\);/.test(world), 'ARRIVING sets it, off the seat takeSeat() actually granted');
   A.ok(/function bedAnchor\(bed, who\)/.test(world), 'the head anchor is derived, not hardcoded per skin');
   A.ok(/who\.seatPy - who\.visTopPy/.test(world), 'it measures the body as actually drawn (skins differ in height)');
 

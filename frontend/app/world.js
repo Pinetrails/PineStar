@@ -1424,12 +1424,18 @@ const World = (() => {
       // seat law bans on a mattress. A bedless power-down (sleep()) still goes dormant standing.
       self.sitting = false; self.working = false; self.dir = self.useFace || 'south'; self.state = 'idle';
       self.glance = null; self.glanceCd = 0;                       // frozen: maybeGlance skips goal==='sleep'
+      // GETTING IN is what earns the pose. takeSeat() consumes planBedSleep's anchor and is the only
+      // thing that can prove this body actually reached the mattress it claimed, so `lying` — which the
+      // renderer draws the body ON the bed by — is set HERE and nowhere earlier. A bedless power-down
+      // (sleep(), no seatKey/pendSeat) leaves it false and goes dormant standing, as it always did.
+      takeSeat();
+      self.lying = !!(self.seated && self.seatKey);
       // A REAL SLEEP, 3-10 minutes (the Commander's number), not the ~1-minute doze a standing power-down
       // takes. It is safe to be this long precisely because every summon path wakes it: activity flipping
       // to task/thinking seizes the body (setActivityFor / the hero's summon-seize in tick), and that runs
       // whether the work came from the Commander typing, a schedule firing, or a channel message.
       self.studyUntil = now + (self.lying ? U.irnd(180000, 600000) : U.irnd(26000, 62000));
-      takeSeat(); curiositySay(USE_LINE.bed, 0.4, now);
+      curiositySay(USE_LINE.bed, 0.4, now);
     }
     else if (self.goal === 'inspect' || self.goal === 'watch' || self.goal === 'tend' || self.goal === 'gaze' || self.goal === 'quirk' || self.goal === 'stare') {
       // reached the thing — stand, face it, observe for a spell. Familiar things hold the gaze less (habituation).
@@ -3746,11 +3752,14 @@ const World = (() => {
         if (!geo.walkable(ax, ay, blocked)) continue;
         if (!setPathTo({ x: ax, y: ay })) continue;
         occupiedSeats.add(bed.id + ':0'); self.seatKey = bed.id + ':0';
-        // IN the bed: pendSeat is the render anchor takeSeat() consumes on arrival. The exact head
+        // IN the bed: pendSeat is the render anchor takeSeat() consumes ON ARRIVAL. The exact head
         // position is re-derived every frame from the drawn sprite (bedAnchor — skins differ in height),
         // so this is only the seed; what matters here is that a mattress claim now carries a pose.
+        // `lying` is NOT set here, and must never be: it is what the renderer draws the body on the
+        // mattress by, so setting it at PLAN time teleported the body into the bed the instant it
+        // decided to nap — the walk across the room never rendered ("I clicked the bed and the agent
+        // transferred into it"). The pose is earned by arriving; arrive() sets it after takeSeat().
         self.pendSeat = bedAnchor(bed, self);
-        self.lying = true;
         self.goal = 'sleep'; self.usingProp = bed.id; self.studyKey = null; self.quirkKind = null;
         self.useSit = false; self.useFace = 'south'; self.working = false;
         if (!self.target) arrive(now);                             // already beside the bed → power down now
