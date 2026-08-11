@@ -173,7 +173,7 @@ const StationBake = (() => {
                     so it gets its own knob rather than being deleted. Scales ONLY the seam/bevel
                     steps — per-plate tone, material dressing and wear are untouched.
                     0 = a genuinely seamless deck · 1 = the old hard v3 grid. */
-  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, wallDetail: 1, deckSeam: 0.38, poolAlbedo: 1 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
+  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, wallDetail: 1, deckSeam: 0.38, poolAlbedo: 1, edgeAO: 1, southFoot: 0 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
 
   /* ============================ THE EXTERIOR SHELL (HULL SKINS) ============================
      Everything you see of a room from OUTSIDE: the plate surrounding its footprint, the texture
@@ -1230,15 +1230,24 @@ const StationBake = (() => {
   }
 
   function bakeEdgeAO(b) {
-    // base edge AO — the short shade band hugging every wall foot (verbatim legacy look)
-    b.fillStyle = 'rgba(0,0,0,0.25)';
-    for (const e of edges) {
-      if (e.door) continue;
-      const X = e.x * T, Y = e.y * T, d = e.room ? 8 : 4, ds = e.room ? 5 : 3;
-      if (e.side === 'n') b.fillRect(X, Y, T, d);
-      else if (e.side === 's') b.fillRect(X, Y + T - ds, T, ds);
-      else if (e.side === 'w') b.fillRect(X, Y, ds, T);
-      else b.fillRect(X + T - ds, Y, ds, T);
+    // base edge AO — the short shade band hugging every wall foot (verbatim legacy look).
+    // DEPTH.edgeAO scales the pass (1 = the shipped band, 0 = off) so it can be dialled in the
+    // CRT LAB like every other depth cue; it used to be the one hardcoded band in the bake, which
+    // made "which pass owns this dark line at the wall?" unanswerable without editing the source.
+    const ea = Math.max(0, DEPTH.edgeAO);
+    if (ea > 0.001) {
+      b.fillStyle = 'rgba(0,0,0,' + (0.25 * ea).toFixed(3) + ')';
+      for (const e of edges) {
+        if (e.door) continue;
+        const X = e.x * T, Y = e.y * T, d = e.room ? 8 : 4, ds = e.room ? 5 : 3;
+        if (e.side === 'n') b.fillRect(X, Y, T, d);
+        // the SOUTH band belongs to DEPTH.southFoot, which owns every dark mark at that edge —
+        // it is the same black rule, and leaving half of it here is what made turning the other
+        // half off look like it had done nothing.
+        else if (e.side === 's') { if (DEPTH.southFoot > 0.001) b.fillRect(X, Y + T - ds, T, ds); }
+        else if (e.side === 'w') b.fillRect(X, Y, ds, T);
+        else b.fillRect(X + T - ds, Y, ds, T);
+      }
     }
     bakeWallCastShadow(b);
     bakeCornerAO(b);
@@ -2593,7 +2602,17 @@ const StationBake = (() => {
         // front of it — same contact-seam law as the north face, mirrored. Its top surface can
         // only ever hang SOUTH of the tile: extruding it toward the viewer like the north wall
         // would bury the walkable row in front of it.
-        b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X, Y + T - dep, T, 1);
+        /* ...AND THE CONTACT SHADOW IS NOW A DIAL, DEFAULTING OFF (2026-08-10). Andrew, circling the
+           foot of a room and then again after the deck's transverse seam was cut: "remove the black
+           line on the bottom". This band is it — `FACEW` rows of -0.62..-0.46 running the full width
+           of every room, the darkest thing on the deck, and the ONE dark cue here that no DEPTH dial
+           could reach. At the station's zoom it does not read as a shadow pooling under a wall, it
+           reads as a black rule drawn across the bottom of the room, with the lit crown right under
+           it making the contrast worse. The crown already separates deck from shell — it is a bright
+           band against a dark one, which is all the seating the edge needs.
+           `DEPTH.southFoot` keeps the old band one slider away (1 = the shipped sliver). */
+        const sf = Math.max(0, DEPTH.southFoot);
+        if (sf > 0.001) b.fillStyle = U.shade(pal.base, -0.62 * sf), b.fillRect(X, Y + T - dep, T, 1);
         /* THE SOUTH WALL HAS NO VISIBLE INNER FACE (2026-08-05, Andrew: "we need to remove the wall
            on the bottom it doesnt make sense to be there due to the angle").
            The camera sits above and SOUTH. That is what lets you see the north wall's inner face at
@@ -2605,9 +2624,12 @@ const StationBake = (() => {
            is therefore a CONTACT SHADOW, not a surface — darkest where the deck meets the wall's
            base, easing as it approaches the crown. It always was a flat dark sliver; giving it the
            material made it start asserting a face that cannot be there, which is what showed. */
-        for (let i = 0; i < fw; i++) {
-          b.fillStyle = U.shade(pal.base, -0.62 + 0.16 * (fw <= 1 ? 1 : i / (fw - 1)));
-          b.fillRect(X, Y + T - fw + i, T, 1);
+        if (sf > 0.001) {
+          const rows = Math.max(1, Math.round(fw * Math.min(1, sf)));
+          for (let i = 0; i < rows; i++) {
+            b.fillStyle = U.shade(pal.base, (-0.62 + 0.16 * (rows <= 1 ? 1 : i / (rows - 1))) * Math.min(1, sf));
+            b.fillRect(X, Y + T - rows + i, T, 1);
+          }
         }
         if (e.exterior) {
           b.fillStyle = shellEdge; b.fillRect(X, Y + T, T, Math.max(out, cw + 2));   // outer hull band

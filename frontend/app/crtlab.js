@@ -19,7 +19,7 @@
      RESET restored a state that never shipped and side 12 pushed the wall band past the hull
      silhouette it is pinned to. Add a WALL knob, add it here. */
   const WALL_DEFAULTS = { up: 22, corUp: 12, skirt: 32, side: 7, capH: 4, sideCap: 5 };
-  const DEPTH_DEFAULTS = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1, poolAlbedo: 1 };
+  const DEPTH_DEFAULTS = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1, poolAlbedo: 1, edgeAO: 1, southFoot: 0 };
   // TUBE APERTURE — the CSS glass vignette over the feed (app.css :root --tube-*). NOT the barrel warp:
   // `curve` bows the picture, these dim its outer band, and they move independently. Seeded from the live
   // custom properties at build time so opening the lab can never itself change the shipped look.
@@ -205,6 +205,8 @@
     sliders.push(buildSlider(body, depth, 'dither', 0, 1, 0.01, scheduleRebake));       // Bayer-dither the light map's falloff
     sliders.push(buildSlider(body, depth, 'floorWear', 0, 1, 0.01, scheduleRebake));    // deck scuffs / worn patches / traffic lanes
     sliders.push(buildSlider(body, depth, 'floorDetail', 0, 1.5, 0.01, scheduleRebake)); // V2 floor materials: plates/seams/rivets/trim amplitude
+    sliders.push(buildSlider(body, depth, 'southFoot', 0, 1, 0.05, scheduleRebake));   // the dark contact sliver at the room's SOUTH edge (0 = off, 1 = the legacy band)
+    sliders.push(buildSlider(body, depth, 'edgeAO', 0, 1, 0.05, scheduleRebake));      // the short shade band hugging every wall foot (0 = off)
     sliders.push(buildSlider(body, depth, 'poolAlbedo', 0, 1, 0.05, scheduleRebake));    // how far the warm floor pool is scaled by the deck's own albedo (0 = the old flat wash)
     sliders.push(buildSlider(body, depth, 'deckSeam', 0, 1, 0.01, scheduleRebake));      // how hard the joint between deck plates/boards reads (0 = seamless)
     sliders.push(buildSlider(body, depth, 'wallDetail', 0, 1.5, 0.01, scheduleRebake));  // V4 wall materials: ribs/panels/pipes/grain amplitude
