@@ -446,6 +446,9 @@
         ? deps.resolveServiceKey(name, sfc)
         : { ok: false, reason: 'unknown' })
     };
+    // rng for multipart boundaries: injectable (determinism lint bans ambient Math.random in backend
+    // logic); defaults to node crypto on the host. Only the requestTool's multipart path needs it.
+    const nodeCrypto = deps.crypto || (typeof require === 'function' ? require('crypto') : null);
 
     function searchHeaders(extra) {
       return Object.assign({
@@ -949,7 +952,8 @@
           if (!multipart.length) throw new Error('multipart needs at least one part');
           // quotes/CRLF in a name or filename would break out of the Content-Disposition header line
           const cleanToken = (s, what) => { s = String(s); if (/[\r\n"]/.test(s)) throw new Error(what + ' must not contain quotes or newlines'); return s; };
-          const boundary = '----StarNetPart' + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+          if (!nodeCrypto) throw new Error('multipart needs the Node host');
+          const boundary = '----StarNetPart' + nodeCrypto.randomBytes(16).toString('hex');
           const chunks = [];
           for (const p of multipart) {
             if (!p || typeof p !== 'object' || !p.name) throw new Error('each multipart part needs a "name"');
