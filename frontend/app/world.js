@@ -7371,6 +7371,23 @@ const World = (() => {
     // TEST/DEBUG ONLY — containment harness: raw-place a body (bypassing every walkable-checked picker)
     // so the per-tick containment backstop (containBody / hero ensureAgentValid) is provable live.
     _dbgTeleport: (aid, px, py) => { const b = bodyForAgent(aid); if (!b) return false; b.pathPts = null; b.target = null; b.sitting = false; b.seated = false; b.px = +px; b.py = +py; return true; },
+    // TEST/DEBUG ONLY — deterministically seat a body on a single-tile seat prop (stool/chair) through the
+    // REAL planSeat path (claim + pendSeat + lift + counterFace), so the perch render is provable live
+    // without waiting on the idle engine's dice. Same borrowed-actor discipline as spawnAgent (B1 restore).
+    _dbgSit: (aid, propId) => {
+      const b = bodyForAgent(aid); if (!b || !geo || !geo.props) return false;
+      const p = geo.props.find(q => q.id === propId); if (!p) return false;
+      // park the body on a walkable neighbour FIRST (geo frame, not doc coords — the local-pixel-frame
+      // trap) so the plan is position/zone-independent: a roam-anchored zone across the map would
+      // otherwise fail planSeat's in-zone check and the proof would be testing the caller's teleport math.
+      for (const [dx, dy] of SEAT_NB) {
+        const ax = p.x + dx, ay = p.y + dy;
+        if (geo.walkable(ax, ay, blocked)) { b.pathPts = null; b.target = null; b.sitting = false; b.seated = false; b.px = (ax + 0.5) * T; b.py = (ay + 0.5) * T; break; }
+      }
+      const keep = self; self = b;
+      try { return planSeat(performance.now(), p, zoneFor(b)); }
+      finally { self = keep; }
+    },
     // read-only body snapshot for the DEV test harness (window.__SKYNET_TEST__) — the Tier A/B/C substrate.
     // Pure read, no side effects: the hero + every crew body, each with tile/zone/glance/goal/moving so the
     // floor invariants (idle stays in-zone · awareness is gaze-only · summoned walks to its OWN workstation)
