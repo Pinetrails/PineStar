@@ -1893,14 +1893,14 @@ const World = (() => {
   function releaseSeat() {
     if (!self) return;
     if (self.seatKey) occupiedSeats.delete(self.seatKey);
-    self.seatKey = null; self.seated = false; self.pendSeat = null; self.barJoinUntil = 0;
+    self.seatKey = null; self.seated = false; self.pendSeat = null; self.barJoinUntil = 0; self.seatLift = 0;
   }
   /* on arrival, snap the render position onto the claimed stool/chair/couch seat (logical pos stays put).
      The ELSE branch is load-bearing: bed claims deliberately have no pendSeat, so without the reset a body
      that left a stool for a bunk could keep drawing itself back at the stool. */
   function takeSeat() {
-    if (self.seatKey && self.pendSeat) { self.seated = true; self.seatPx = self.pendSeat.px; self.seatPy = self.pendSeat.py; self.pendSeat = null; }
-    else self.seated = false;
+    if (self.seatKey && self.pendSeat) { self.seated = true; self.seatPx = self.pendSeat.px; self.seatPy = self.pendSeat.py; self.seatLift = self.pendSeat.lift || 0; self.pendSeat = null; }
+    else { self.seated = false; self.seatLift = 0; }
   }
   /* B2: drop ANY body's idle/leisure latch (couch cushion claim + the engine goal bookkeeping) when a task SEIZES
      it — the crew analogue of the hero summon-seize's releaseSeat()+goal-clear (tick ~1614). Without this, a crew
@@ -1910,7 +1910,7 @@ const World = (() => {
   function seizeFromIdle(b) {
     if (!b) return;
     if (b.seatKey) occupiedSeats.delete(b.seatKey);
-    b.seatKey = null; b.seated = false; b.pendSeat = null; b.barJoinUntil = 0;
+    b.seatKey = null; b.seated = false; b.pendSeat = null; b.barJoinUntil = 0; b.seatLift = 0;
     b.goal = null; b.usingProp = null; b.watchProp = null; b.studyKey = null; b.quirkKind = null; b.stilling = false;
     b.useBeat = null; setTalking(b, false);   // a seized body is not mid-leisure and is not talking to anyone
     b.pauseUntil = 0; b.pauseLook = null; b.idleUntil = 0;
@@ -1934,6 +1934,11 @@ const World = (() => {
      tvId != null → goal 'lounge' (watch + light the TV); else a plain couch dwell. */
   const LOUNGE_MAXT = 7;
   const SEAT_NB = [[0, 1], [0, -1], [1, 0], [-1, 0]];   // approach a cushion from any walkable neighbour
+  /* How many px above the tile's floor line a body PERCHES on each single-tile seat — measured off the
+     prop art, not guessed: the stool's pad underside sits at art-row y+4 (foot ring y+8..y+10), the
+     chair's front lip at y+7. Lifting the sit sprite this much leaves the stem + base visible UNDER the
+     body, which is the entire "on a stool" read. Couches stay 0 (the sofa back occludes instead). */
+  const SEAT_LIFT = { stool: 6, chair: 3 };
   function planCouchSit(now, couch, tvId, faceDir, zone) {
     /* STALE-CLAIM RULE: drop whatever seat this body still holds BEFORE claiming a new one. Committing to a
        new destination means it is leaving the old seat regardless, and an inherited `pendSeat` is worse than
@@ -1983,9 +1988,11 @@ const World = (() => {
       if (!geo.walkable(ax, ay, blocked)) continue;
       if (!setPathTo({ x: ax, y: ay })) continue;
       occupiedSeats.add(key); self.seatKey = key;
-      // foot on the seat tile's floor line: the sit sprite's legs then hang off the front of the seat,
-      // and the draw pass sorts the seat art just BEHIND this body so the body sits IN it, not under it.
-      self.pendSeat = { px: (p.x + 0.5) * T, py: (p.y + 1) * T - 1 };
+      // foot on the seat tile's floor line: sort key + shadow anchor stay here. The body's PIXELS are
+      // raised by `lift` (SEAT_LIFT, drawBody subtracts it) so the hips land on the seat PAD instead of
+      // the floor line — without it the sprite planted its butt where the stool's casters are and fully
+      // occluded the seat, which read as "standing where a stool used to be", not sitting on one.
+      self.pendSeat = { px: (p.x + 0.5) * T, py: (p.y + 1) * T - 1, lift: SEAT_LIFT[p.t] || 0 };
       self.goal = 'use'; self.usingProp = p.id; self.watchProp = null;
       // A STOOL PULLED UP TO SOMETHING FACES IT (2026-08-08, Andrew: "agents should sit on stools
       // facing the opposite direction, so they can sit at the bar"). A stool has no front of its
@@ -4379,6 +4386,11 @@ const World = (() => {
         if (mounted === 'surface') sy += 0.5;
         const dp = mounted ? Object.assign({}, p, { mount: mounted }) : p;
         items.push({ y: sy, draw: () => PropSprites.draw(dp, work, live) });
+        // SEAT-FRONT SLIVER: a stool/chair's pad front rim redraws just IN FRONT of its (lifted) sitter,
+        // so the body's lap tucks INTO the pad — the couch trick, at single-seat scale. Sorted a hair
+        // past the body's own key (sitter.seatPy) and well short of the next tile row.
+        if (sitter && sitterUse && sitterUse.kind === 'seat' && PropSprites.drawSeatFront)
+          items.push({ y: sitter.seatPy + 0.5, draw: () => PropSprites.drawSeatFront(dp) });
         // an ASSIGNED workstation is the hero's desk with another name: give it the same chair, in front,
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
         // to assigned PCs so a decorative/unmanned console keeps its existing look and the chair only ever

@@ -458,7 +458,12 @@ const SPRITES = (() => {
     // and the old image-bottom anchor left every skin hovering well above it.
     const GROUND_BITE = -3;
     const fp = getFootPad(set) * sc;
-    const y = snap(b.py - dh + GROUND_BITE + bob + fp);
+    // SEAT LIFT: a body seated on a raised single-tile seat (stool/chair) draws its pixels this many px
+    // higher so the hips land on the seat pad — world.js's planSeat measured it off the prop art. The
+    // sort key and the ground shadow deliberately stay at b.py (the seat tile's floor line): only the
+    // SPRITE rises, the shadow pool remains on the deck under the stool where light actually lands.
+    const seatLift = (b.sitting && b.seatLift) ? b.seatLift : 0;
+    const y = snap(b.py - dh + GROUND_BITE + bob + fp - seatLift);
     // the pool's outer half-width, taken from the body's DRAWN footprint. Masters carry side
     // padding, so this lands well under dw/2 — a pool wider than the boots reads as a puddle.
     const shR = Math.max(4.5, dw * 0.21);
@@ -472,7 +477,9 @@ const SPRITES = (() => {
         // the station leader's menacing red spill — a wider, slower pulse beneath his own pool
         groundShadow(ctx, b.px, b.py, shR * 1.55, { lift, color: '#ff4a3d', alpha: 0.55 + 0.25 * Math.sin(nowMs / 400) });
       }
-      groundShadow(ctx, b.px, b.py, shR, b.sitting ? { lift, alpha: 0.6, spread: 0.8 } : { lift });
+      // a perched body adds its seatLift to the shadow's lift: the pool tightens + fades the higher the
+      // seat, instead of claiming full floor contact the raised feet don't have
+      groundShadow(ctx, b.px, b.py, shR, b.sitting ? { lift: lift + seatLift, alpha: 0.6, spread: 0.8 } : { lift });
     }
     const prevSmooth = ctx.imageSmoothingEnabled;
     ctx.imageSmoothingEnabled = true;
