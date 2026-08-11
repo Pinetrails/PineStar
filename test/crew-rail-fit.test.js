@@ -87,9 +87,19 @@ A.eq(crewCap(CUTS, { railH: 443, spare: 600, rows: 6 }), 299, 'dragged the other
 A.eq(crewCap(CUTS, { railH: 774, spare: 600, rows: 9 }), 299, 'asking for more rows than the roster has stops at the last row');
 A.eq(crewCap(CUTS, { railH: 774, spare: 160, rows: 6 }), 151, 'the SESSIONS floor still wins over a dragged row count — and still by whole rows');
 A.eq(crewCap([52, 101], { railH: 774, spare: 600, rows: 5 }), 101, 'a 2-agent roster dragged tall is still shown entire');
-A.eq(crewCap(CUTS, { railH: 774, spare: 600, rows: 0 }), 299, 'rows:0 is "no preference" — the automatic budget, not an empty roster');
 A.eq(crewCap(CUTS, { railH: 652, spare: 500 }), crewCap(CUTS, { railH: 652, spare: 500, rows: null }),
   'an unset preference measures exactly as it did before the seam existed');
+
+/* THE ROSTER MAY BE DRAGGED SHUT (2026-08-10, round 2). Andrew: "maybe we should have it to where
+   the user can drag it over the crew tab in case the user wants to only see sessions." So 0 is a
+   real value of the preference — the roster closes and SESSIONS owns the column — and it is NOT
+   the same as "unset", which still means "measure it for me". The rail does not stop telling the
+   truth about the crew: the header and the WORKING/IDLE totals stay, and the seam is the way back. */
+A.eq(crewCap(CUTS, { railH: 774, spare: 600, rows: 0 }), 0, 'dragged shut: the roster takes no height at all and SESSIONS gets the column');
+A.eq(crewCap(CUTS, { railH: 774, spare: 10, rows: 0 }), 0, '…even when the column is too tight to have offered it automatically');
+A.eq(crewCap([52], { railH: 774, spare: 600, rows: 0 }), 0, 'a one-agent roster can be closed too — that is the second notch a lone agent now has');
+A.eq(crewCap(CUTS, { railH: 774, spare: 600, rows: null }), 299, 'and null still means "measure it", NOT "closed" — the two must never collapse into one falsy value');
+A.eq(crewCap([], { railH: 774, spare: 600, rows: 0 }), 0, 'an empty roster asks for no cap whether or not it was dragged shut');
 for (const rows of [1, 2, 3, 4, 5, 6, 7]) {
   A.ok(CUTS.indexOf(crewCap(CUTS, { railH: 774, spare: 900, rows })) >= 0, 'dragged to ' + rows + ': the cap is STILL a row cut, never a value between two rows');
 }
@@ -98,7 +108,10 @@ for (const rows of [1, 2, 3, 4, 5, 6, 7]) {
 A.eq(rowsAtHeight(CUTS, 101), 2, 'a drag landing exactly on a row cut takes that many rows');
 A.eq(rowsAtHeight(CUTS, 110), 2, 'a drag just past a cut has not reached the next row yet');
 A.eq(rowsAtHeight(CUTS, 130), 3, '…and past the midpoint it snaps forward to the next whole row');
-A.eq(rowsAtHeight(CUTS, -400), 1, 'dragging above the roster stops at one whole row');
+A.eq(rowsAtHeight(CUTS, 40), 1, 'a drag just under the first cut still keeps that row');
+A.eq(rowsAtHeight(CUTS, 20), 0, '…and past ITS midpoint the last notch is the roster shut');
+A.eq(rowsAtHeight(CUTS, 0), 0, 'dragging to the top of the roster closes it');
+A.eq(rowsAtHeight(CUTS, -400), 0, 'dragging above the rail entirely closes it, it does not bounce back to one row');
 A.eq(rowsAtHeight(CUTS, 9999), 6, 'dragging below the last row stops at the whole roster');
 A.eq(rowsAtHeight([], 200), 0, 'an empty roster has no notch to land on');
 
@@ -119,10 +132,18 @@ A.ok(/body\.row-resizing\s*\{[^}]*cursor:\s*row-resize/.test(appcss), 'the whole
 
 A.ok(/starnet\.crewrail\.rows/.test(js), 'the dragged split persists per machine');
 A.ok(/String\(wantRows\)/.test(js), '…as a ROW COUNT, not a px height: rows change height and the roster changes depth');
+// 0 is a NOTCH, not an empty value. Every guard on the drag path must test for null, never for
+// truthiness, or the closed roster silently refuses to persist / to flush / to be restored.
+A.ok(/wantRows != null\) localStorage\.setItem/.test(js), 'a roster dragged SHUT persists too — 0 is a choice, not an unset preference');
+A.ok(/if \(s >= 0\) wantRows = s/.test(js), '…and is restored as 0, not discarded as falsy');
+A.ok(/pendingRows != null/.test(js) && !/if \(pendingRows\)/.test(js), 'the drag flushes a pending 0 (closing the roster) instead of treating it as nothing pending');
+A.ok(/let best = 0, bestD = Math\.abs\(h\)/.test(js), 'the notch below the first row is the closed roster, and a drag above the rail lands there');
+A.ok(/classList\.toggle\('shut', cap === 0\)/.test(js), 'a shut roster is marked as such — the cap is a max-height and the list padding sits outside it');
+A.ok(/#crew\.shut\s*\{[^}]*padding:\s*0/.test(appcss), '…and that class takes the padding with it, so SHUT measures zero instead of a 4px sliver');
 A.ok(/setPointerCapture/.test(js) && /releasePointerCapture/.test(js), 'the drag captures the pointer like the two column seams');
 A.ok(/requestAnimationFrame\(flushRows\)/.test(js), '…and coalesces its writes to one per frame');
 A.ok(/'dblclick'[\s\S]{0,200}removeItem\(RKEY\)/.test(js), 'double-click hands the split back to the measured default');
-A.ok(/vseam\.hidden = cuts\.length < 2/.test(js), 'a roster with no split to move (0 or 1 agent) hides the handle rather than shipping a control that does nothing');
+A.ok(/vseam\.hidden = !cuts\.length/.test(js), 'only an EMPTY roster hides the handle — one agent still has two notches (shown, or closed)');
 A.ok(/rowsAtHeight\(cuts, \(clientY[\s\S]{0,60}\/ zoomOf\(\)\)/.test(js), 'the dragged height is converted through the body zoom exactly once (uiZoom law)');
 
 A.report('crew-rail-fit');

@@ -46,16 +46,19 @@
      point — and never fewer than one row, however tight the column gets.
      `o.rows` is the Commander's dragged row count: it names the budget instead of the automatic
      ROWS_MIN/SHARE pair, and everything after it (the SESSIONS floor, the whole-row rounding, the
-     one-row floor) still applies unchanged. */
+     one-row floor) still applies unchanged. ZERO is one of its legal values — the roster dragged
+     shut, SESSIONS owning the column — and is NOT the same as null, which means "measure it". */
   function crewCap(cuts, o) {
     o = o || {};
     const n = cuts.length;
     if (!n) return 0;
+    const rows = o.rows == null ? null : Math.max(0, Math.round(o.rows));
+    if (rows === 0) return 0;
     const rowsMin = o.rowsMin > 0 ? o.rowsMin : ROWS_MIN;
     const share = o.share >= 0 ? o.share : SHARE;
     const spare = isFinite(o.spare) ? o.spare : Infinity;
-    const want = o.rows > 0
-      ? cuts[Math.min(Math.round(o.rows), n) - 1]
+    const want = rows
+      ? cuts[Math.min(rows, n) - 1]
       : Math.max(cuts[Math.min(rowsMin, n) - 1], (o.railH || 0) * share);
     const budget = Math.min(want, spare);
     let i = n - 1;
@@ -65,11 +68,13 @@
 
   /* The seam's other half: which row count a dragged height lands on. Snaps to the NEAREST cut
      (rows stay whole — that is the roster window's whole law — so the drag moves in notches), and
-     never below one row: a CREW panel showing zero crew is not a smaller panel, it is a lie. */
+     the notch BELOW the first row is 0: the roster closes and SESSIONS takes the whole rail.
+     That is not the panel lying about the crew — the header and the WORKING/IDLE totals stay, so
+     the rail still reports the roster it is no longer listing, and the seam is the way back. */
   function rowsAtHeight(cuts, h) {
     const n = cuts.length;
     if (!n) return 0;
-    let best = 1, bestD = Infinity;
+    let best = 0, bestD = Math.abs(h);
     for (let i = 0; i < n; i++) {
       const d = Math.abs(cuts[i] - h);
       if (d < bestD) { bestD = d; best = i + 1; }
@@ -89,8 +94,8 @@
   // height on purpose: rows change height (a WORKING row opens its in-flight bar) and the roster
   // changes depth, so "show me 3 whole agents" survives both, where a stored px never would.
   const RKEY = 'starnet.crewrail.rows';
-  let wantRows = null;
-  try { const s = parseInt(localStorage.getItem(RKEY), 10); if (s > 0) wantRows = s; } catch (_) {}
+  let wantRows = null;                                     // null = measure it; 0 = dragged shut
+  try { const s = parseInt(localStorage.getItem(RKEY), 10); if (s >= 0) wantRows = s; } catch (_) {}
 
   // the max-height that ends the list flush under each row in turn (border-box sizing, so the
   // list's own padding counts) — summed from REAL geometry every time, never from a row constant
@@ -112,9 +117,9 @@
   function fitCrew() {
     if (!ul || !left || left.offsetParent === null) return;   // rail hidden — nothing to measure
     const cuts = rowCuts();
-    // A one-agent station has no split to move: one row is both the floor and the ceiling, so the
-    // handle would light up under the cursor and do nothing. Ship it from the second agent on.
-    if (vseam) vseam.hidden = cuts.length < 2;
+    // Only an EMPTY roster has nothing to move — even one agent has two notches now (show it, or
+    // close the roster and give SESSIONS the column). A handle that moves nothing would be a lie.
+    if (vseam) vseam.hidden = !cuts.length;
     if (!cuts.length) { ul.style.removeProperty('--crew-cap'); return; }   // empty state sizes itself
 
     // What the column can actually spare.
@@ -122,7 +127,12 @@
     const sumH = sumEl ? sumEl.getBoundingClientRect().height : 0;
     const spare = (left.getBoundingClientRect().bottom - ul.getBoundingClientRect().top - sumH) / z - WS_FLOOR;
 
-    const next = crewCap(cuts, { railH: left.clientHeight, spare: spare, rows: wantRows }) + 'px';
+    const cap = crewCap(cuts, { railH: left.clientHeight, spare: spare, rows: wantRows });
+    // A SHUT roster must measure zero, and `max-height: 0` alone does not get there: #crew's
+    // 1px/3px padding (panelchrome §4) is outside the capped box, so the closed list still painted
+    // a 4px phosphor sliver under the header. The class is what takes the padding with it.
+    ul.classList.toggle('shut', cap === 0);
+    const next = cap + 'px';
     if (ul.style.getPropertyValue('--crew-cap') !== next) ul.style.setProperty('--crew-cap', next);
   }
 
@@ -181,7 +191,7 @@
     function applyRows(n) {
       const cuts = rowCuts();
       if (!cuts.length) return;
-      wantRows = Math.max(1, Math.min(n, cuts.length));
+      wantRows = Math.max(0, Math.min(n, cuts.length));   // 0 = shut, and 0 is not "unset"
       fitCrew();
     }
     // Where the cursor is asking the roster's bottom edge to be. The seam sits under the
@@ -195,15 +205,17 @@
       return rowsAtHeight(cuts, (clientY - ulR.top - below) / zoomOf());
     }
 
-    let vDrag = false, pendingRows = 0, vRaf = 0;
+    // pendingRows is null-or-a-count, never 0-as-empty: 0 IS a notch (the roster dragged shut), so
+    // a falsy guard here would silently refuse to close it.
+    let vDrag = false, pendingRows = null, vRaf = 0;
     function flushRows() {
       vRaf = 0;
-      if (pendingRows) { applyRows(pendingRows); pendingRows = 0; }
+      if (pendingRows != null) { applyRows(pendingRows); pendingRows = null; }
     }
     function onVMove(e) {
       if (!vDrag) return;
       pendingRows = rowsAtCursor(e.clientY);
-      if (pendingRows && !vRaf) vRaf = requestAnimationFrame(flushRows);
+      if (!vRaf) vRaf = requestAnimationFrame(flushRows);
       e.preventDefault();
     }
     function onVUp(e) {
@@ -213,7 +225,7 @@
       flushRows();                                   // land the notch the rAF hadn't flushed
       document.body.classList.remove('row-resizing');
       try { vseam.releasePointerCapture(e.pointerId); } catch (_) {}
-      try { if (wantRows) localStorage.setItem(RKEY, String(wantRows)); } catch (_) {}
+      try { if (wantRows != null) localStorage.setItem(RKEY, String(wantRows)); } catch (_) {}
       try { if (typeof SFX === 'object' && SFX.click) SFX.click(); } catch (_) {}
     }
     vseam.addEventListener('pointerdown', (e) => {

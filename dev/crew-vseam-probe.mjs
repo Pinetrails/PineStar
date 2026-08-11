@@ -78,6 +78,10 @@ const MEASURE = `(() => {
     cap: getComputedStyle(ul).maxHeight,
     wsH: Math.round(wsR.height * 10) / 10,
     wsRows: document.querySelectorAll('#workstreams .ws-row').length,
+    // a CLOSED roster must still tell the truth about the crew it is no longer listing
+    sumText: sum.textContent.replace(/\\s+/g, ' ').trim(),
+    sumVisible: sumR.height > 0,
+    headVisible: (() => { const h = document.querySelector('#left h3'); return !!(h && h.getBoundingClientRect().height > 0); })(),
     // the seam must sit ON the gap: its anchor line between the strip's bottom and the module's top
     seamPresent: !!seam, seamHidden: seam ? seam.hidden : null,
     seamY: seamR ? Math.round(seamR.top * 10) / 10 : null,
@@ -188,11 +192,19 @@ async function main() {
       say(tag + ' 2 exchange', { crewGave: Math.round((dflt.crewH - up.crewH) * 10) / 10, sessionsGained: Math.round((up.wsH - dflt.wsH) * 10) / 10 });
       await capture(cdp, OUT, `${LABEL}-${tag}-2-sessions-tall`);
 
-      // 2 · past the top: one whole row is the floor
+      // 2 · past the top: the roster CLOSES and SESSIONS owns the column (round 2) — and the
+      //     header + WORKING/IDLE totals must survive, or the rail stopped reporting its crew
       await evalJS(cdp, drag(10));
       await sleep(400);
-      say(tag + ' 3 dragged past the top', await evalJS(cdp, MEASURE));
-      await capture(cdp, OUT, `${LABEL}-${tag}-3-floor`);
+      const shut = await evalJS(cdp, MEASURE);
+      say(tag + ' 3 dragged SHUT', shut);
+      say(tag + ' 3 exchange', { crewGave: Math.round((dflt.crewH - shut.crewH) * 10) / 10, sessionsGained: Math.round((shut.wsH - dflt.wsH) * 10) / 10 });
+      await capture(cdp, OUT, `${LABEL}-${tag}-3-shut`);
+
+      // 2b · and the way back: drag down again, the rows return
+      await evalJS(cdp, drag(Math.round(dflt.gapTop - 100)));
+      await sleep(400);
+      say(tag + ' 3b reopened from shut', await evalJS(cdp, MEASURE));
 
       // 3 · the other way: the whole roster, bounded by the SESSIONS floor
       await evalJS(cdp, drag(2000));

@@ -2245,6 +2245,11 @@ body.col-resizing #stage { pointer-events: none; }
   opacity: 1; background: var(--ph); box-shadow: 0 0 8px var(--ph-glow2);
 }
 body.row-resizing { cursor: row-resize; user-select: none; }
+/* the roster dragged fully SHUT (leftrail.js writes --crew-cap:0 and this class together). The cap
+   is a max-height, which panelchrome's 1px/3px padding sits OUTSIDE — so without this the closed
+   list still paints a 4px sliver under the header and reads as a rendering fault, not a choice.
+   id+class outranks panelchrome's later `#crew` rule, so load order does not matter here. */
+#crew.shut { padding: 0; }
 
 /* the v7 screen-flicker animation targets #app (which this app doesn't
    have) — re-point it at the live station so the SETTINGS toggle works */
