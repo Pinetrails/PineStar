@@ -4388,7 +4388,13 @@ const World = (() => {
         // a table-top object must draw AFTER its table: both occupy the same tiles, so their sort keys are
         // equal and array order would decide it — which is whichever the player happened to place first
         if (mounted === 'surface') sy += 0.5;
-        const dp = mounted ? Object.assign({}, p, { mount: mounted }) : p;
+        let dp = mounted ? Object.assign({}, p, { mount: mounted }) : p;
+        // a bound BAY's gantry plate carries its agent's NAME, resolved live from the body roster each
+        // frame (never persisted — the doc keeps only agentId, so renames and reassignment stay truthful)
+        if (p.t === 'bay' && p.agentId) {
+          const db = bodyForAgent(p.agentId);
+          if (db && db.name) dp = Object.assign(dp === p ? Object.assign({}, p) : dp, { dockName: db.name });
+        }
         items.push({ y: sy, draw: () => PropSprites.draw(dp, work, live) });
         // SEAT-FRONT SLIVER: a stool/chair's pad front rim redraws just IN FRONT of its (lifted) sitter,
         // so the body's lap tucks INTO the pad — the couch trick, at single-seat scale. Sorted a hair

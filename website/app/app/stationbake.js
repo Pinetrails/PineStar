@@ -630,7 +630,25 @@ const StationBake = (() => {
      down an open join they became a chain of dabs and a bright ambient trough tracing the boundary —
      the same border, drawn in light instead of paint. Two rooms open to each other need no help
      reading as connected: they already are. */
-  const pairIsSill = (x1, y1, x2, y2) => !isOpenJoin(x1, y1, x2 > x1 ? 'e' : 's');
+  /* ---- and a sill only belongs where the FLOOR CHANGES (Andrew 2026-08-10) ----
+     Three red circles on his own station, all on threshold dressing: two real corridor mouths and a
+     5-tile room|room join the minority rule had called a doorway (5 tiles of opening against a
+     6-tile jamb — walled both ends, "shorter than the wall", dressed end to end). Every floor in
+     that station is the same walnut plank, so to the eye there is ONE deck and every mark on it is
+     a separation line. The architectural test (a doorway is a hole in a wall) answers where an
+     opening IS; it cannot answer whether the floor through it needs a threshold. That is a property
+     of the two DECKS: a transition strip belongs where the surface changes — walnut meeting sterile
+     tile — and is exactly the line Andrew keeps circling when the same deck continues through.
+     So all four dressing passes (track+lip, guide ticks, sheen dab, door light cut) now also skip
+     any doorway whose two sides bake the identical deck — same material, same base colour at the
+     facing tiles (floorPaint overrides included). Different decks keep their sill: the material
+     change already draws a boundary there, and the threshold explains it. */
+  const deckContinues = (x1, y1, x2, y2) => {
+    const z1 = G.zoneGrid[G.idx(x1, y1)], z2 = G.zoneGrid[G.idx(x2, y2)];
+    if (z1 == null || z2 == null) return false;
+    return matOf(z1) === matOf(z2) && G.baseColorOf(z1, x1, y1) === G.baseColorOf(z2, x2, y2);
+  };
+  const pairIsSill = (x1, y1, x2, y2) => !isOpenJoin(x1, y1, x2 > x1 ? 'e' : 's') && !deckContinues(x1, y1, x2, y2);
 
   /* derive the wall edges from the zone grid (generalizes world.js's single-room IIFE).
      a boundary edge is where a zone tile faces a different/void neighbour; chamfer tiles
@@ -746,7 +764,12 @@ const StationBake = (() => {
     // 2-step body shade down the slab (upper course a hair lighter). The dimension comes
     // from edge placement, not contrast, so the deck stays a quiet background surface.
     const pxc = Math.floor(x / PW), pyc = Math.floor(y / PH);
-    const pn = h2(pxc, pyc, z + ':pl');
+    /* Per-plate tone is keyed on WORLD plate coords only, never the zone id. The lattice already
+       continues across a zone join (pxc/pyc are world-anchored); keying the tone on z re-rolled it
+       at the boundary, so a plate straddling two same-deck rooms changed tone exactly on the seam —
+       a full-length aligned step the eye reads as a border even at ±0.03. Same rule in every deck
+       painter below. */
+    const pn = h2(pxc, pyc, ':pl');
     const lx = x % PW, ly = y % PH;
     const checker = mat === 'tile' ? ((pxc + pyc) % 2 ? 0.022 : -0.016) : 0;
     const body = ((pn % 5) - 2) * 0.014 + checker;
@@ -817,7 +840,7 @@ const StationBake = (() => {
       // two passes so the offset row's half-cells at both tile edges are drawn
       for (let c = 0; c < (off ? 2 : 1); c++) {
         const ox0 = cx + c * 12;
-        const cn = h2(Math.floor((ox0 - X) / 12) + x * 2, y * 2 + row, z + ':hx');
+        const cn = h2(Math.floor((ox0 - X) / 12) + x * 2, y * 2 + row, ':hx');
         const body = ((cn % 5) - 2) * 0.016;
         px(Math.max(X, ox0 + 2), cy + 1, Math.min(8, X + T - Math.max(X, ox0 + 2)), 4, sh(body));   // cell body
         px(Math.max(X, ox0 + 2), cy, Math.min(8, X + T - Math.max(X, ox0 + 2)), 1, sh(-0.30));      // flat top grout
@@ -842,7 +865,7 @@ const StationBake = (() => {
     const PWp = MAT_PITCH.plank[0];
     const stagger = (y % 3) * 2;
     const rel = ((x - stagger) % PWp + PWp) % PWp;              // safe mod: x-stagger can go negative
-    const pn = h2(Math.floor((x - stagger) / PWp), y, z + ':pk');
+    const pn = h2(Math.floor((x - stagger) / PWp), y, ':pk');
     const body = ((pn % 7) - 3) * 0.018;                         // per-BOARD tone (whole board, not per tile)
     const sk = Math.max(0, DEPTH.deckSeam);                      // board joints ride the same knob
     px(X, Y, T, T, base);
@@ -866,7 +889,7 @@ const StationBake = (() => {
   function deckTurf(b, base, x, y, X, Y, z, n, fd) {
     const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
     const sh = d => U.shade(base, d * fd);
-    const clump = h2(x >> 1, y >> 1, z + ':cl');                 // 2×2-tile patches read denser/sparser
+    const clump = h2(x >> 1, y >> 1, ':cl');                 // 2×2-tile patches read denser/sparser
     const cl = ((clump % 5) - 2) * 0.018;
     /* v3 (2026-07-25, matched against a real grass reference). v2 gave every blade an INDEPENDENT
        random tone off a 5-step ramp, and that is the whole reason it read as static rather than as
@@ -951,7 +974,7 @@ const StationBake = (() => {
     const band = Math.floor(y / 3), off = (band % 2) * 2;
     const pcx = Math.floor((x - off) / 4);
     const lx = ((x - off) % 4 + 4) % 4, ly = ((y % 3) + 3) % 3;
-    const pn = h2(pcx, band, z + ':sp');
+    const pn = h2(pcx, band, ':sp');   // world-keyed, never per-zone — see deckSlab's note
     const body = ((pn % 5) - 2) * 0.013;
     px(X, Y, T, T, sh(body));
     for (let i = 1; i < T; i += 3) px(X, Y + i, T, 1, sh(body + ((i & 1) ? 0.026 : -0.020)));   // brushed grain
@@ -1000,7 +1023,7 @@ const StationBake = (() => {
     const band = Math.floor(y / 2), off = (band % 2);
     const pcx = Math.floor((x - off) / 2);
     const lx = ((x - off) % 2 + 2) % 2, ly = ((y % 2) + 2) % 2;
-    const pn = h2(pcx, band, z + ':rn');
+    const pn = h2(pcx, band, ':rn');
     const body = ((pn % 5) - 2) * 0.013;
     px(X, Y, T, T, sh(body));
     for (let i = 1; i < T; i += 3) px(X, Y + i, T, 1, sh(body + ((i & 1) ? 0.024 : -0.018)));   // brushed grain
@@ -1036,7 +1059,7 @@ const StationBake = (() => {
     const sh = d => U.shade(base, d * fd);
     const sk = Math.max(0, DEPTH.deckSeam);
     const pcx = Math.floor(x / 3), pcy = Math.floor(y / 2);
-    const pn = h2(pcx, pcy, z + ':tw');
+    const pn = h2(pcx, pcy, ':tw');
     const body = ((pn % 5) - 2) * 0.011;
     px(X, Y, T, T, sh(body));
     const lit = sh(body + 0.20), dim = sh(body - 0.20);
@@ -1084,7 +1107,7 @@ const StationBake = (() => {
     const sh = d => U.shade(base, d * fd);
     const sk = Math.max(0, DEPTH.deckSeam);
     const pcx = Math.floor(x / 3), pcy = Math.floor(y / 3);
-    const pn = h2(pcx, pcy, z + ':mw');
+    const pn = h2(pcx, pcy, ':mw');
     const body = ((pn % 5) - 2) * 0.012;
     px(X, Y, T, T, sh(body));
     px(X, Y + 1, T, 1, sh(body + 0.05));                                                          // faint rolled grain
@@ -1178,7 +1201,7 @@ const StationBake = (() => {
          read as a threshold only while the opening is one: on an open join (two rooms simply
          abutting) they ran the full length of the boundary and became a dashed border line, the
          same drift bakeThreshold had. Same test, same answer — a doorway is a hole in a wall. */
-      const sillTo = (nx, ny, side) => doorTo(x, y, nx, ny) && !isOpenJoin(x, y, side);
+      const sillTo = (nx, ny, side) => doorTo(x, y, nx, ny) && !isOpenJoin(x, y, side) && !deckContinues(x, y, nx, ny);
       const dN = sillTo(x, y - 1, 'n'), dS = sillTo(x, y + 1, 's'), dW = sillTo(x - 1, y, 'w'), dE = sillTo(x + 1, y, 'e');
       if (dN || dS || dW || dE) {
         b.fillStyle = sh(0.13);
@@ -2537,7 +2560,12 @@ const StationBake = (() => {
       // a doorway gets its sill; an OPEN JOIN gets nothing at all — see "A THRESHOLD IS A HOLE IN
       // A WALL". Painting a track down a seam with no wall on it is what put a bar between two
       // rooms that are one space.
-      if (e.door) { if (!e.open) bakeThreshold(b, e, X, Y); continue; }
+      if (e.door) {
+        // same-deck doorways carry no track either — the floor continues through (see deckContinues)
+        const dx = e.side === 'w' ? -1 : e.side === 'e' ? 1 : 0, dy = e.side === 'n' ? -1 : e.side === 's' ? 1 : 0;
+        if (!e.open && !deckContinues(e.x, e.y, e.x + dx, e.y + dy)) bakeThreshold(b, e, X, Y);
+        continue;
+      }
       const fw = e.room ? FACEW : 2, out = e.room ? 4 : 2, face = e.room ? NFACE : 5;
       const dep = fw + 1;
       // the SIDE faces (s/w/e) and interior seams carry the room's own wall tone too — otherwise a
@@ -2761,7 +2789,14 @@ const StationBake = (() => {
            sitting exactly on the seam. Those are the two little white dashes on the line in
            Andrew's screenshot, and they survived every paint pass being switched off because they
            are not seam dressing at all. The room keeps its light; only the hardware goes. */
-        if (isOpenJoin(Math.floor(lx / T), r.y1, 'n')) continue;
+        /* ... and a DOORWAY is not a wall either (2026-08-10). The open-join test alone still let
+           the mount float in a hallway mouth — with the same-deck sill gone there was nothing left
+           to disguise it, a lone lit tab on the seam. Keep the fixture only where the tile above is
+           genuinely solid: a different/void zone with no passage through. */
+        const fx = Math.floor(lx / T), fyT = r.y1;
+        const aboveZ = fyT - 1 < 0 ? null : G.zoneGrid[G.idx(fx, fyT - 1)];
+        const passable = aboveZ != null && (G.canStep(fx, fyT, fx, fyT - 1) || G.canStep(fx, fyT - 1, fx, fyT));
+        if (aboveZ === r.z || passable) continue;
         // when the tile behind the fixture carries a TALL exterior face, mount the flood
         // high on that wall (just under the crown); a door/interior seam keeps the old spot
         const up = Math.round(WALL.up);

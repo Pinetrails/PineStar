@@ -1383,15 +1383,25 @@ const Build = (() => {
       // bind arrow
       R(38, 36, 20, 2, PH); R(56, 33, 2, 8, PH); R(54, 35, 2, 4, PH);
     } else {
-      // two machines and the belt the click-click lays between them, crates riding it
-      R(6, 26, 26, 22, 'rgba(52,58,64,.95)'); R(6, 26, 26, 2, PH);
-      R(96, 26, 26, 22, 'rgba(52,58,64,.95)'); R(96, 26, 26, 2, GOLD);
-      R(32, 32, 64, 10, 'rgba(24,30,34,.95)'); R(32, 32, 64, 1, PH); R(32, 41, 64, 1, PH);
-      for (let i = 0; i < 6; i++) { const bx = 36 + i * 10; R(bx, 34, 2, 2, PH); R(bx + 2, 36, 2, 2, PH); R(bx, 38, 2, 2, PH); }
-      R(58, 22, 12, 10, GOLD); R(60, 24, 8, 6, 'rgba(120,90,30,.9)');   // a crate on the line
-      // the two clicks
-      R(14, 16, 10, 2, LIT); R(18, 12, 2, 10, LIT);
-      R(104, 16, 10, 2, LIT); R(108, 12, 2, 10, LIT);
+      /* the belt the click-click lays — THROUGH the bay from beat 2, never machine-to-machine direct.
+         The old art wired two anonymous machines straight together: exactly the bay-less line that
+         compiles fine and moves NOTHING (crates only ride a lane that reaches a crewed dock). The
+         first picture a Commander ever sees of the belt tool must not teach the one dead layout, so
+         the middle machine wears beat 2's gold display — the bay they just crewed, now on the line. */
+      R(2, 26, 22, 22, 'rgba(52,58,64,.95)'); R(2, 26, 22, 2, PH);                 // INBOX
+      R(53, 26, 22, 22, 'rgba(52,58,64,.95)'); R(53, 26, 22, 2, GOLD); R(53, 46, 22, 2, GOLD);   // the BAY
+      R(56, 30, 16, 8, 'rgba(20,26,30,.95)');
+      for (let i = 0; i < 3; i++) R(58 + i * 5, 32, 3, 4, GOLD);
+      R(104, 26, 22, 22, 'rgba(52,58,64,.95)'); R(104, 26, 22, 2, PH);             // OUTBOX
+      // two belt legs, one style: INBOX -> BAY, BAY -> OUTBOX
+      R(24, 32, 29, 10, 'rgba(24,30,34,.95)'); R(24, 32, 29, 1, PH); R(24, 41, 29, 1, PH);
+      R(75, 32, 29, 10, 'rgba(24,30,34,.95)'); R(75, 32, 29, 1, PH); R(75, 41, 29, 1, PH);
+      for (const bx of [27, 37, 47, 79, 89, 99]) { R(bx, 34, 2, 2, PH); R(bx + 2, 36, 2, 2, PH); R(bx, 38, 2, 2, PH); }
+      R(31, 22, 12, 10, GOLD); R(33, 24, 8, 6, 'rgba(120,90,30,.9)');   // a crate riding leg one
+      // the clicks: one per machine, in work order
+      R(8, 16, 10, 2, LIT); R(12, 12, 2, 10, LIT);
+      R(58, 16, 10, 2, LIT); R(62, 12, 2, 10, LIT);
+      R(106, 16, 10, 2, LIT); R(110, 12, 2, 10, LIT);
     }
   }
 
@@ -1466,7 +1476,7 @@ const Build = (() => {
           <div class="refit-step" data-art="belt">
             <span class="refit-step-n">3</span>
             <b>WIRE THE BELT</b>
-            <span>Pick <b>BELT</b>, click one machine then the next. The belt lays itself.</span>
+            <span>Pick <b>BELT</b>, click one machine then the next. The belt lays itself — but it only carries work through a crewed <b>BAY</b> (INBOX ▸ BAY ▸ OUTBOX).</span>
           </div>
         </div>
         <p class="refit-guide-foot">In a hurry? <b>LINES (9)</b> stamps a whole working layout you can edit. Every prop &amp; mechanic is in the <b>FIELD MANUAL</b> — SYSTEM ▸ FIELD MANUAL.</p>
@@ -3845,10 +3855,18 @@ const Build = (() => {
     const tp = T(), zt = zoom * tp;
     const vx0 = (-panX) / zt - PROP_CULL_PAD, vy0 = (-panY) / zt - PROP_CULL_PAD;
     const vx1 = (cv.width - panX) / zt + PROP_CULL_PAD, vy1 = (cv.height - panY) / zt + PROP_CULL_PAD;
+    let bayNames = null;   // aid -> name, resolved once per paint (the roster read is a callback into app.js)
     for (const p of order) {
       if (p.x > vx1 || p.y > vy1 || p.x + (p.w || 1) - 1 < vx0 || p.y + (p.h || 1) - 1 < vy0) continue;
       const m = mountMap.get(p.id);
-      PropSprites.draw(m ? Object.assign({}, p, { mount: m }) : p, true);
+      let dp = m ? Object.assign({}, p, { mount: m }) : p;
+      // the editor draws the same gantry plate the live world does: a bound bay wears its agent's NAME
+      if (p.t === 'bay' && p.agentId) {
+        if (!bayNames) { bayNames = new Map(); for (const a of ((opts && typeof opts.agents === 'function' && opts.agents()) || [])) bayNames.set(a.id, a.name); }
+        const nm = bayNames.get(p.agentId);
+        if (nm) dp = Object.assign(dp === p ? Object.assign({}, p) : dp, { dockName: nm });
+      }
+      PropSprites.draw(dp, true);
     }
   }
   /* 4 tiles = 48px at TILE 12. The worst upward overshoot in the whole prop catalog is 21px above a

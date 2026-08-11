@@ -363,7 +363,7 @@ const ARCADE = (() => {
 
     /* HUD */
     text('SCORE ' + String(st.score).padStart(5, '0'), 5, 4, C.ph);
-    text('HI ' + st.hi.name + ' ' + String(st.hi.score).padStart(5, '0'), W - 5, 4, st.beatHi ? C.bright : C.dim, 8, 'right');
+    text('HI ' + String(st.hi.score).padStart(5, '0'), W - 5, 4, st.beatHi ? C.bright : C.dim, 8, 'right');   // the holder's name lives on the records board, not the HUD
     px(0, 14, W, 1, C.faint);
 
     if (st.mode === 'attract' || st.mode === 'over') { drawSplash(); return; }

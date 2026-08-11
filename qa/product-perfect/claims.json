@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "47479f7f1458462f21d9e6bdedb0e318b13e084b",
+    "sourceCommit": "5e5692de05872609ad6f707839a7612f099d78ba",
     "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 307493,
-        "sha256": "9271332c8a4759e92d2af8c20e69b7be5318d6ff078e0e54601086c346a79483"
+        "bytes": 309075,
+        "sha256": "f385ff8e892d2ddd3985769b7cc93223f1aae9b9f98a5247636adc58ac5e2ab0"
       },
       {
         "path": "frontend/app/channels.js",
@@ -483,8 +483,8 @@
       },
       {
         "path": "frontend/app/propsprites.js",
-        "bytes": 567439,
-        "sha256": "fe11cdf44b9c55170169abbe30d9747af20b87278e89ccbc5f231acb6f8d6080"
+        "bytes": 566288,
+        "sha256": "aa44635c12eb9845aeac29fa7c419b757173039c0d4431521ed43c9a28af62e0"
       },
       {
         "path": "frontend/app/prospect.js",
@@ -713,8 +713,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 247570,
-        "sha256": "dd1fcc4c197298dff4c74846157d20b3d1ca516364bad6a8a77ac948327a320e"
+        "bytes": 250502,
+        "sha256": "f5e6e7aaf04ae088d62417a0cf1bd3b1f42d6b194e53531abdf3f2aa5ccb5aac"
       },
       {
         "path": "frontend/app/stationcommands.js",
@@ -938,8 +938,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 570632,
-        "sha256": "d363d97320c635cea85e8f90b7f74fb6732de2486481d1c469769b46fae394ee"
+        "bytes": 568141,
+        "sha256": "caa20fe22f4c5ea5225cbc3b9f8a0e92922acacaf522507cb110f0e861aa4c15"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -1038,13 +1038,13 @@
       },
       {
         "path": "frontend/js/arcade.js",
-        "bytes": 21693,
-        "sha256": "77a2d874837eda4027a5614add37d2c5460413fea512c254b2be30680452673f"
+        "bytes": 21737,
+        "sha256": "8a8954d8e0cd46288145ff42a2c60cc8a8866a2f5b14e3c8516c3716ad99c8da"
       },
       {
         "path": "frontend/js/assets.js",
-        "bytes": 34920,
-        "sha256": "cce4ed38be78209053dc769afef84eee0811b7bf1211d51223544fee35a419bd"
+        "bytes": 33122,
+        "sha256": "8ad28c18478fe7d8ee086c9bf2e9f9e5d97ef9942c6a58c84c31b3c8d12c4030"
       },
       {
         "path": "frontend/js/audio.js",
