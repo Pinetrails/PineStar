@@ -558,11 +558,13 @@
     // NO wait (keeps the loop deterministic + test-fast); when present it honors the classifier's retryAfterMs.
     const sleep = (typeof o.sleep === 'function') ? o.sleep : null;
     // mid-stream retry backoff schedule (same shape as the adapters' pre-stream RETRY_DELAYS).
-    // Widened 2026-07-31: [400,1200] gave the whole loop ~1.6s of patience, so a provider overload
-    // measured in tens of seconds (codex "servers overloaded" in the field) killed runs that every
-    // other harness rides out. ~16s of ladder (plus the adapters' own pre-stream retries and any
-    // server-stated retry-after, capped at 60s) survives a real overload window and still terminates.
-    const STREAM_RETRY_DELAYS = [400, 1200, 4000, 10000];
+    // Widened 2026-08-11 after the installed Hermes parity run: ~16.6s still lost all three StarNet
+    // attempts inside one real Codex overload window while valid Hermes turns took up to ~102s. The
+    // final 30s/60s rungs give the same model turn ~106s of bounded patience. This never re-dispatches
+    // completed tools: the retry loop sits wholly inside the current model call, after prior tool
+    // call/result pairs are durable in `messages` and before this turn's calls can reach executeCalls.
+    // A server-stated Retry-After still outranks each local rung and remains capped at 60s.
+    const STREAM_RETRY_DELAYS = [400, 1200, 4000, 10000, 30000, 60000];
     function noteUnpriced(modelId, c) {
       if (!c || !c.unpriced) return;
       unpricedUsage.push({ model: modelId || '(unknown)', tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 });
@@ -742,7 +744,7 @@
       let recoveries = 0;
       const maxRecoveries = 1 + fallbacks.length;
       let retriesUsed = 0;
-      const MAX_STREAM_RETRIES = 4;   // one per STREAM_RETRY_DELAYS rung; see the ladder's comment
+      const MAX_STREAM_RETRIES = STREAM_RETRY_DELAYS.length;   // one per rung; deriving it prevents policy drift
       // A truncation is its own (cheap, transient) retry class — kept separate from MAX_STREAM_RETRIES and
       // deliberately tighter, because a truncation costs a FULL generation to re-run.
       let truncRetries = 0;
