@@ -62,6 +62,21 @@ jobs:
 
       - run: npm ci
 
+      # The CDP e2e tests (scripts/lib/cdp.mjs) locate Chrome via SKYNET_CHROME or hardcoded
+      # Windows paths only — on a Linux runner the fallback list is empty and the gate dies at
+      # the first e2e step (proven on the v0.10.0 train, run 31536973575: crt-context-loss).
+      # ubuntu-latest ships Google Chrome; resolve it here and fail loudly if it ever vanishes.
+      - name: Resolve Chrome binary for e2e gate tests
+        run: |
+          set -euo pipefail
+          CHROME=$(command -v google-chrome || command -v google-chrome-stable || command -v chromium-browser || true)
+          if [ -z "$CHROME" ]; then
+            echo "::error::no Chrome/Chromium binary on this runner — the e2e gate tests cannot run. Install one or set SKYNET_CHROME."
+            exit 1
+          fi
+          echo "SKYNET_CHROME=$CHROME" >> "$GITHUB_ENV"
+          echo "::notice::e2e gate tests will use $CHROME"
+
       - name: Fast test gate (red = the whole train stops)
         run: npm run test:fast
 
