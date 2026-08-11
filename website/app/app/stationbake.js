@@ -3223,12 +3223,15 @@ const StationBake = (() => {
      read pixels back (the headless canvas mock) skip the pass on BOTH bake paths, exactly like
      ditherLight. */
   function bakeInterstitialShadow(b) {
+    // capability check on a 1px canvas BEFORE the real allocation: the chunk test's canvas mock
+    // counts every allocation against its chunk-size bound, and this pass skips under the mock
+    // anyway — it must skip before allocating, not after.
+    if (typeof canvas(1, 1).getContext('2d').getImageData !== 'function') return;
     const GAP = T * 5 + pad * 2;   // bounded void up to ~5 floor tiles wide is an alley, not sky
     const M = GAP + pad;
     const w = CW + 2 * M, h = CH + 2 * M;
     const sil = canvas(w, h);
     const g = sil.getContext('2d');
-    if (typeof g.getImageData !== 'function') return;
     g.imageSmoothingEnabled = false;
     g.translate(-(VX - M), -(VY - M));
     g.fillStyle = '#fff';
