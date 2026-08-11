@@ -3464,7 +3464,23 @@ const StationBake = (() => {
          which is what real coursing does at a corner and what the hull does too. */
       const cEd = WALL_EDGES[wallMatOf(G.zoneGrid[G.idx(ccx, ccy)])] || WALL_EDGES.bulkhead;
       let arcS = null, arcPrev = 0;
-      const vFace = sgnY < 0 ? NFACE : FACEW;   // top corners meet the deep north face; bottom ones the thin south wall
+      /* A CORNER MEETS THE WALL THAT IS ACTUALLY DRAWN (2026-08-10). `vFace` is how deep the face
+         band is at the n/s end of the arc, and on a BOTTOM corner it was hardcoded to FACEW — the
+         south wall's nominal thickness. But the south wall has no visible inner face (see the note
+         in bakeWalls), so on a straight south tile those rows are DECK. The corner painted them
+         solid wall tone, which is the dark block Andrew circled: "there is areas where the literal
+         wall is creeping through the interior." It reads as a chunk of wall sitting a tile inside
+         the room because that is exactly what it is.
+         Taking the south wall's REAL drawn depth (`FACEW * southFoot`, 0 by default) makes the
+         inner ellipse reach the tile's own bottom edge, so the face tapers to nothing at the south
+         end and the deck runs to the same row it does on the tile next door. At southFoot 1 the
+         old geometry comes back unchanged. Same law as the straight walls: one wall, one
+         convention — a corner may not assert a surface its own straight run does not have. */
+      const sFoot = Math.max(0, Math.min(1, DEPTH.southFoot));
+      const vFace = sgnY < 0 ? NFACE : Math.round(FACEW * sFoot);
+      // how much of the corner's foot dressing survives at a given point along the arc: full where
+      // it leaves the side wall, tapering to the south wall's own (absent) foot at the other end.
+      const footAt = ady => sgnY < 0 ? 1 : Math.max(0, Math.min(1, sFoot + (1 - sFoot) * (1 - ady / Rc)));
       const aIn = Math.max(1, Rc - FACEW), bIn = Math.max(1, Rc - vFace);
       eachCornerRow(kind, ax, ay, Rc, (py, edge) => {
         const ady = Math.abs(py + 0.5 - ay);
@@ -3527,7 +3543,10 @@ const StationBake = (() => {
           // -0.58). A 2px flat foot against the straight wall's graded 4px one left the corner ~9
           // luminance brighter than the wall it joins, which reads as a mismatch even once the
           // geometry lines up.
-          for (const [d, k] of [[4, -0.24], [2, -0.40], [1, -0.58]]) {
+          const ff = footAt(ady);
+          for (const [d0, k] of [[4, -0.24], [2, -0.40], [1, -0.58]]) {
+            const d = Math.round(d0 * ff);
+            if (d <= 0) continue;
             if (sgnX < 0) clamp(Math.max(lo, inner - d), inner, U.shade(cPal.face, k));
             else clamp(inner + 1, Math.min(hi + 1, inner + 1 + d), U.shade(cPal.face, k));
           }
@@ -3547,14 +3566,20 @@ const StationBake = (() => {
         const dy = bIn * Math.sqrt(1 - (adx / aIn) * (adx / aIn));
         const py = sgnY < 0 ? Math.round(ay - dy) : Math.round(ay + dy);
         if (py < Y || py >= Y + T) continue;
-        // same graded foot as the row pass, so the shallow stretch is shaded like the steep one
-        for (const [d, k] of [[4, -0.24], [2, -0.40], [1, -0.58]]) {
-          for (let j = 1; j <= d; j++) {
-            const fy = sgnY < 0 ? py - j : py + j;
-            if (fy >= Y && fy < Y + T) fill(ix, fy, 1, 1, U.shade(cPal.face, k));
+        // same graded foot as the row pass, so the shallow stretch is shaded like the steep one —
+        // and tapering the same way, or the column walk would put back the wall block the row walk
+        // just stopped drawing (this is the SHALLOW stretch, i.e. the south end, so it carries most
+        // of it).
+        const ff = footAt(Math.abs(py + 0.5 - ay));
+        if (ff > 0.001) {
+          for (const [d0, k] of [[4, -0.24], [2, -0.40], [1, -0.58]]) {
+            for (let j = 1; j <= Math.round(d0 * ff); j++) {
+              const fy = sgnY < 0 ? py - j : py + j;
+              if (fy >= Y && fy < Y + T) fill(ix, fy, 1, 1, U.shade(cPal.face, k));
+            }
           }
+          fill(ix, py, 1, 1, outerBand);
         }
-        fill(ix, py, 1, 1, outerBand);
       }
       const cZone = G.zoneGrid[G.idx(ccx, ccy)];
       const cRoom = !G.isCorridor(cZone);
