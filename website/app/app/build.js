@@ -4632,6 +4632,17 @@ const Build = (() => {
       })),
     } : null),
     finRegistry: () => finRead(station),
+    /* TEST-RIDE readouts for CDP proof scripts (conveyor-audit 2026-08-10). rideMouth runs the
+       REAL reach-aware picker (null agentId = the lineless ▸ TEST pick, WORLD tiles); ride()
+       reports the one-shot arming + the live preview crates and captions — where the ride
+       actually entered, straight from the engine, never a screenshot of the animated canvas. */
+    rideMouth: (agentId) => rideMouthFor(agentId || null),
+    ride: () => ({
+      pending: ridePending, timer: !!rideTimer, agentId: rideAgentId, seen: rideSeen(),
+      boxes: convey ? convey.peekBoxes().filter(b => b.payload && b.payload.test)
+        .map(b => ({ x: b.x, y: b.y, tag: (b.payload && b.payload.tag) || null, outbound: !!(b.payload && b.payload.outbound) })) : [],
+      notes: testNotes.map(n => ({ x: n.x, y: n.y, text: n.text })),
+    }),
     /* PLACEMENT readouts for CDP proof scripts — the EXACT state the wash and the snap run on.
        lineField reports the cached candidate set (count + a bounded sample, never the whole list);
        lineSnapAt answers what a click at a tile would actually commit. */
