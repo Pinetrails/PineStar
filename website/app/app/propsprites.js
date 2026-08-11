@@ -4247,6 +4247,40 @@ const PropSprites = (() => {
     }
   };
 
+  const WD = '#6b5030', WD_LIT = '#96723f', WD_DK = '#3d2c19';         // BED frame timber
+  const QLT = '#a83a3a', QLT_LIT = '#cf5f56', QLT_DK = '#6b2020';      // the quilt
+  const LIN = '#d0cabb', LIN_LIT = '#e8e1d3', LIN_DK = '#9a9384';      // linen, knocked off pure white
+  /* THE QUILT, lifted out of F.bunk so it can be painted in TWO passes (2026-08-10, sleeping agents).
+     A body dormant in the bed is drawn BETWEEN them: the frame + pillow go down, the sleeper is drawn on
+     the mattress, then this runs again ON TOP — which is the whole trick behind "under the covers with
+     its head poking out". With no sleeper F.bunk calls it inline and the bed is pixel-identical to v7.
+     `occupied` adds the one thing a covered body actually shows: the swell of it under the quilt, and a
+     slow breath. The hump is deliberately shallow — this is a top-down bed, not a side view. */
+  const bunkQuilt = (x, y, w, h, occupied, now) => {
+    const sT = y + h - 8, bx = x + 3, bw = w - 6;
+    px(bx, y + 7, bw, sT - y - 7, QLT);
+    px(bx, y + 7, bw, 2, QLT_LIT);                                      // turned-down fold, catching light
+    px(bx, y + 7, bw, 1, U.shade(QLT_LIT, 0.18));
+    px(bx, y + 9, bw, 1, QLT_DK);                                       // the fold's own shadow
+    px(bx, y + 10, 1, sT - y - 10, U.shade(QLT, 0.12));
+    px(bx + bw - 1, y + 10, 1, sT - y - 10, QLT_DK);
+    rimEdge(bx + bw - 1, y + 10, 1, sT - y - 10, 0.18);
+    for (const qx of [bx + 5, bx + bw - 6]) px(qx, y + 10, 1, sT - y - 10, U.shade(QLT, -0.16));  // stitching
+    for (let qy = y + 12; qy < sT - 1; qy += 4) px(bx + 1, qy, bw - 2, 1, U.shade(QLT, -0.13));
+    px(bx + 2, y + 11, 5, 1, U.shade(QLT_LIT, -0.22));                  // one soft crease, west-biased
+    wear(bx + 2, y + 11, bw - 4, sT - y - 13, 4, U.shade(QLT, -0.11));
+    if (!occupied) return;
+    // OCCUPIED: the quilt is tented over a body. One breath cycle (~4s) moves the crown by a single
+    // pixel — a sleeping body is nearly still, and anything faster reads as a machine, not a lung.
+    const breath = (Math.sin((now || 0) / 2000) > 0.2) ? 1 : 0;
+    const cx = bx + ((bw - 8) >> 1);
+    px(cx, y + 10 - breath, 8, sT - y - 11 + breath, U.shade(QLT, 0.10));       // the swell itself
+    px(cx, y + 10 - breath, 8, 1, U.shade(QLT_LIT, -0.06));                     // lit crown
+    px(cx - 1, y + 11 - breath, 1, sT - y - 12, U.shade(QLT, -0.10));           // the shoulders' shadow, west
+    px(cx + 8, y + 11 - breath, 1, sT - y - 12, QLT_DK);                        // ...and east
+    px(cx + 1, sT - 3, 6, 1, U.shade(QLT, -0.14));                              // the fold where the feet end
+  };
+
   F.bunk = (x, y, w, h, f) => {
     // BED (2x2) — v7, drawn FLAT, from above. v6 stood it up: a tall headboard, a tall footboard and
     // the bedding as flat frontal bands between them, so it read as a framed picture leaning against
@@ -4261,9 +4295,6 @@ const PropSprites = (() => {
     //
     // The catalog id stays 'bunk': saved stations carry the type string, and retiring a type strands
     // an invisible obstacle in them (the v5 lane law). Only the LABEL is BED.
-    const WD = '#6b5030', WD_LIT = '#96723f', WD_DK = '#3d2c19';         // frame timber
-    const QLT = '#a83a3a', QLT_LIT = '#cf5f56', QLT_DK = '#6b2020';      // the quilt
-    const LIN = '#d0cabb', LIN_LIT = '#e8e1d3', LIN_DK = '#9a9384';      // linen, knocked off pure white
     const sT = y + h - 8, bx = x + 3, bw = w - 6;                        // south face top / bedding span
     shadow2(x + 1, y + h - 1, w - 2);
     // ---- FOUR CORNER POSTS. The south pair carries the contact; the north pair is a hint behind the
@@ -4297,17 +4328,9 @@ const PropSprites = (() => {
     px(bx + 5, y + 4, 7, 1, U.shade(LIN, -0.22));
     px(bx + 1, y + 6, bw - 2, 1, LIN_DK);                               // the pillow's own under-shade
     // QUILT over the rest, hem to the foot. The turned-down fold at the head is the one asymmetry.
-    px(bx, y + 7, bw, sT - y - 7, QLT);
-    px(bx, y + 7, bw, 2, QLT_LIT);                                      // turned-down fold, catching light
-    px(bx, y + 7, bw, 1, U.shade(QLT_LIT, 0.18));
-    px(bx, y + 9, bw, 1, QLT_DK);                                       // the fold's own shadow
-    px(bx, y + 10, 1, sT - y - 10, U.shade(QLT, 0.12));
-    px(bx + bw - 1, y + 10, 1, sT - y - 10, QLT_DK);
-    rimEdge(bx + bw - 1, y + 10, 1, sT - y - 10, 0.18);
-    for (const qx of [bx + 5, bx + bw - 6]) px(qx, y + 10, 1, sT - y - 10, U.shade(QLT, -0.16));  // stitching
-    for (let qy = y + 12; qy < sT - 1; qy += 4) px(bx + 1, qy, bw - 2, 1, U.shade(QLT, -0.13));
-    px(bx + 2, y + 11, 5, 1, U.shade(QLT_LIT, -0.22));                  // one soft crease, west-biased
-    wear(bx + 2, y + 11, bw - 4, sT - y - 13, 4, U.shade(QLT, -0.11));
+    // SKIPPED while a body is dormant in the bed: world.js then draws the sleeper and calls drawOver()
+    // to lay the quilt over it (see bunkQuilt). Empty bed = one call, exactly the old paint.
+    if (!f.sleeper) bunkQuilt(x, y, w, h, false, 0);
     // ---- THE SOUTH FACE — the thickness of mattress and frame, seen edge-on under the top plane.
     // This band is what turns the plane into a solid object standing on legs. Paint the frame's face
     // FULL WIDTH first and hang the quilt over the middle of it: a first pass drew only the quilt's
@@ -7859,7 +7882,11 @@ const PropSprites = (() => {
     // DECOR — small dressing & plain seating.
     { id: "coffee", label: "COFFEE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, stack: true, use: { kind: 'coffee', sit: false, approach: 'auto' } },
     { id: "plant", label: "PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, stack: true },
-    { id: "rug", label: "RUG", cat: "decor", tier: "cosmetic", w: 4, h: 3, animated: true, blocks: false },
+    // `flat: true` = a FLOOR DECAL: deck paint with zero rise. Two consequences, both in one flag —
+    // it never blocks a placement (props stand ON it, and it unrolls UNDER props already there, see
+    // worldmodel checkProp) and it renders in the floor pass BENEATH every body and prop (world.js),
+    // so an agent crossing a rug walks on top of it instead of vanishing behind it.
+    { id: "rug", label: "RUG", cat: "decor", tier: "cosmetic", w: 4, h: 3, animated: true, blocks: false, flat: true },
     { id: "treasury_pnl_holo", label: "PNL HOLO", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_floorlight", label: "FLOOR LIGHT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_ladder", label: "LADDER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
@@ -7877,8 +7904,8 @@ const PropSprites = (() => {
     // DECOR EXPANSION (2026-07-15) — theming set. Flat paint/looms walk-over; solid bodies block.
     { id: "lavalamp", label: "LAVA LAMP", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "surface" },
     { id: "crt_pile", label: "CRT PILE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, stack: true },
-    { id: "cablerun", label: "CABLE RUN", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
-    { id: "hazardpad", label: "HAZARD PAD", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
+    { id: "cablerun", label: "CABLE RUN", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false, flat: true },
+    { id: "hazardpad", label: "HAZARD PAD", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false, flat: true },
     { id: "tallplant", label: "TALL PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     { id: "terrarium", label: "TERRARIUM", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'terra', sit: false, approach: 'auto' } },
     // DECOR EXPANSION wave 2 (2026-07-15, recurated) — fun/glow set. Flat holo/paint walk-over; cabinets block.
@@ -8011,6 +8038,20 @@ const PropSprites = (() => {
      `live` (G0.2/G0.3, optional) carries the seated agent's TRUTHFUL activity: { heat, prog } — heat
      is real token/tool flow (0..1, ~2s decay, world.js heatFor); prog is a real published task
      fraction or null (live harness runs have none). Only ever passed for a lit assigned workstation. */
+  /* THE OVERLAY PASS (2026-08-10). A prop whose art has to be split around a BODY registers here: draw()
+     paints everything under the body, drawOver() paints what covers it. Exactly one prop needs it today —
+     the BED, whose quilt has to lie over a sleeping agent while the pillow stays under its head — and the
+     map is deliberately keyed by type so a prop with no entry costs the world layer one lookup and no
+     behavior change. The world layer decides WHEN (world.js, the y-sorted item list). */
+  const OVER = {
+    bunk: (X, Y, W, H, o) => bunkQuilt(X, Y, W, H, true, o.now),
+  };
+  function hasOver(t) { return !!OVER[t]; }
+  function drawOver(f) {
+    const fn = OVER[f && f.t]; if (!fn) return;
+    const lift = f.mount === 'surface' ? SURFACE_RISE : 0;
+    fn(f.x * TILE, f.y * TILE - lift, (f.w || 1) * TILE, (f.h || 1) * TILE, { x: f.x, now });
+  }
   function draw(f, work, live) {
     const fn = F[f.t]; if (!fn) return;
     // MOUNT LIFT. A surface-standing prop is the SAME art as a floor prop, drawn higher: every prop
@@ -8028,6 +8069,7 @@ const PropSprites = (() => {
       o.fired = connectorFired(cid);
     }
     if (f.t === 'workbench') { const wf = workbenchFiredFor(f.id); o.fired = wf.fired; o.bad = wf.bad; }   // shell/verify pulse (room-scoped by propId)
+    if (f.t === 'bunk') o.sleeper = !!f.sleeper;      // a dormant body is IN it → hold the quilt back for drawOver
     if (f.t === 'jukebox') o.live = jukeConnected;   // dead until Spotify is connected in TOOLSETS (object=capability truth)
     if (f.t === 'outbox') o.crates = outboxCrates;   // G2.3: uncollected while-away runs stack as crates
     if (f.t === 'missionboard') { o.pins = missionPins; o.hot = missionHot; o.jam = missionJam; o.proposals = missionProposals; }   // G1b/G1c: open quests pinned + the station-gap beacon + the routine-JAM amber stub; G4: pending autojob PROPOSAL cards
@@ -8066,7 +8108,7 @@ const PropSprites = (() => {
   return {
     setCtx(c) { ctx = c; },
     setNow(t) { now = t; },
-    draw, CATALOG, CATS, spec, has, TILE,
+    draw, drawOver, hasOver, CATALOG, CATS, spec, has, TILE,
     // live connector state (the world layer feeds these; the connector_portal sprite reads them)
     setConnectorState, pulseConnector,
     // workbench pulse (the world layer feeds this off shell.exec / verify.result)

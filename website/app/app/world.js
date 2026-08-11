@@ -1419,13 +1419,16 @@ const World = (() => {
       takeSeat(); curiositySay(self.needs.rest < 35 ? SELF_REST : CURIO_WATCH, 0.45, now);
     }
     else if (self.goal === 'sleep') {
-      // reached a BED (planBedSleep walked it here) — power down AT the bunk. SEAT LAW: standing, and
-      // rendered on the tile it actually walked to. The old version pasted the chair-sit pose on the
-      // mattress, which is exactly the "agent sitting on the bed" bug. The bedless fallback in sleep()
-      // is now the same pose; the bed only changes WHERE the body goes dormant, not how it looks.
+      // reached a BED (planBedSleep walked it here) — get IN it and power down. `sitting` stays false:
+      // this is the LYING pose (see the bed exception on planBedSleep), never the chair-sit pose the
+      // seat law bans on a mattress. A bedless power-down (sleep()) still goes dormant standing.
       self.sitting = false; self.working = false; self.dir = self.useFace || 'south'; self.state = 'idle';
       self.glance = null; self.glanceCd = 0;                       // frozen: maybeGlance skips goal==='sleep'
-      self.studyUntil = now + U.irnd(26000, 62000);                // a bed is worth a longer dormancy than standing
+      // A REAL SLEEP, 3-10 minutes (the Commander's number), not the ~1-minute doze a standing power-down
+      // takes. It is safe to be this long precisely because every summon path wakes it: activity flipping
+      // to task/thinking seizes the body (setActivityFor / the hero's summon-seize in tick), and that runs
+      // whether the work came from the Commander typing, a schedule firing, or a channel message.
+      self.studyUntil = now + (self.lying ? U.irnd(180000, 600000) : U.irnd(26000, 62000));
       takeSeat(); curiositySay(USE_LINE.bed, 0.4, now);
     }
     else if (self.goal === 'inspect' || self.goal === 'watch' || self.goal === 'tend' || self.goal === 'gaze' || self.goal === 'quirk' || self.goal === 'stare') {
@@ -1811,6 +1814,15 @@ const World = (() => {
     const s = PropSprites.spec(p.t);
     return s && s.use ? s.use : null;
   }
+  // FLOOR DECAL? (catalog `flat` — rug / cable run / hazard pad). Deck paint with zero rise: it renders
+  // in its own pass UNDER every body and prop, because a decal y-sorted with the bodies buries whoever
+  // walks across its northern rows (a 4×3 rug sorts at its SOUTH edge, so an agent standing on its top
+  // row sorted first and the rug painted straight over the agent — "agents can't walk on the rug").
+  function isFlatProp(t) {
+    if (typeof PropSprites === 'undefined' || !PropSprites.spec) return false;
+    const s = PropSprites.spec(t);
+    return !!(s && s.flat);
+  }
   // the `use.kind` of a placed prop BY ID (what arrive() has to work with), or null
   function useKindOf(propId) {
     if (!propId || !geo || !geo.props) return null;
@@ -1894,13 +1906,16 @@ const World = (() => {
     if (!self) return;
     if (self.seatKey) occupiedSeats.delete(self.seatKey);
     self.seatKey = null; self.seated = false; self.pendSeat = null; self.barJoinUntil = 0;
+    self.lying = false;   // out of the seat is out of the BED: the covers pose dies with the claim
   }
-  /* on arrival, snap the render position onto the claimed stool/chair/couch seat (logical pos stays put).
-     The ELSE branch is load-bearing: bed claims deliberately have no pendSeat, so without the reset a body
-     that left a stool for a bunk could keep drawing itself back at the stool. */
+  /* on arrival, snap the render position onto the claimed stool/chair/couch/bed anchor (logical pos stays
+     put). The ELSE branch is load-bearing: it stops a body that left a stool for another destination from
+     drawing itself back at the stool. A BODY ALREADY IN BED is the one exemption — pendSeat is consumed on
+     the first arrival, so a second arrive() for the same goal (the engine can re-run it; the dev harness
+     does) would otherwise stand a sleeper up out of a mattress it still holds the claim to. */
   function takeSeat() {
     if (self.seatKey && self.pendSeat) { self.seated = true; self.seatPx = self.pendSeat.px; self.seatPy = self.pendSeat.py; self.pendSeat = null; }
-    else self.seated = false;
+    else if (!(self.lying && self.seatKey)) self.seated = false;
   }
   /* B2: drop ANY body's idle/leisure latch (couch cushion claim + the engine goal bookkeeping) when a task SEIZES
      it — the crew analogue of the hero summon-seize's releaseSeat()+goal-clear (tick ~1614). Without this, a crew
@@ -1910,7 +1925,7 @@ const World = (() => {
   function seizeFromIdle(b) {
     if (!b) return;
     if (b.seatKey) occupiedSeats.delete(b.seatKey);
-    b.seatKey = null; b.seated = false; b.pendSeat = null; b.barJoinUntil = 0;
+    b.seatKey = null; b.seated = false; b.pendSeat = null; b.barJoinUntil = 0; b.lying = false;   // seized out of bed too
     b.goal = null; b.usingProp = null; b.watchProp = null; b.studyKey = null; b.quirkKind = null; b.stilling = false;
     b.useBeat = null; setTalking(b, false);   // a seized body is not mid-leisure and is not talking to anyone
     b.pauseUntil = 0; b.pauseLook = null; b.idleUntil = 0;
@@ -3683,7 +3698,35 @@ const World = (() => {
      `use` row and sleep() had no walk. This claims the mattress the same way planCouchSit claims a
      cushion (occupiedSeats), so two bodies never stack on one bed and the claim is released by the same
      releaseSeat() paths. Returns false when there is no reachable in-zone bed, which is what keeps the
-     standing fallback intact. SEAT LAW: no pendSeat — the body powers down standing BESIDE the bunk. */
+     standing fallback intact.
+
+     SEAT LAW / THE BED EXCEPTION (2026-08-10, Commander's call): the body now goes IN the bed. This is
+     NOT the sit pose the seat law bans — a bolt-upright chair pose parked on a mattress was the exact
+     bug that law was written against. It is a third pose (`lying`): the body renders on the mattress
+     clipped to the bed's top plane, and the QUILT is painted over it (PropSprites.drawOver), so all you
+     see is a head on the pillow and the swell of a body under the covers. The claim, the walk and the
+     one-sleeper-per-bed rule are unchanged; only the pose and the dwell are. */
+  /* WHERE A SLEEPER DRAWS. The head belongs on the pillow — the bed's own art puts that at the top of
+     the 2×2 footprint — so the anchor is derived DOWN from the head, not up from the feet: a body draws
+     from its feet, and skins differ in height by several pixels, so a fixed foot offset lands short
+     bodies with their faces in the quilt. `visTopPy` is the top of the sprite as it was ACTUALLY drawn
+     last frame (drawAgent records it); the first frame after lying down uses the 15px fallback body's
+     height and the next frame corrects it. Clamped so a corrupt/absent read can never fling the body
+     off the mattress. */
+  const BED_HEAD_TOP = 1;   // px below the bed's top edge where the head-top rests (on the pillow's lit crown)
+  function bedAnchor(bed, who) {
+    const bodyH = (who && who.visTopPy != null && who.seatPy != null)
+      ? Math.max(8, Math.min(30, who.seatPy - who.visTopPy)) : 15;
+    return { px: (bed.x + (bed.w || 1) / 2) * T, py: bed.y * T + BED_HEAD_TOP + bodyH };
+  }
+  /* the BED a body is actually dormant in, or null. Derived from live state every time it is asked
+     (goal + the claimed prop + the catalog's use row) rather than trusted from the `lying` flag alone,
+     so a bed reclaimed mid-nap can never leave a body posed on a mattress that is no longer there. */
+  function lyingBed(b) {
+    if (!b || !b.lying || b.goal !== 'sleep' || !b.usingProp || !geo || !geo.props) return null;
+    const p = geo.props.find(q => q.id === b.usingProp);
+    return (p && (propUse(p) || {}).kind === 'bed') ? p : null;
+  }
   function planBedSleep(now) {
     if (!geo || !geo.props || !geo.props.length) return false;
     releaseSeat();                                             // STALE-CLAIM RULE (see planCouchSit)
@@ -3703,7 +3746,11 @@ const World = (() => {
         if (!geo.walkable(ax, ay, blocked)) continue;
         if (!setPathTo({ x: ax, y: ay })) continue;
         occupiedSeats.add(bed.id + ':0'); self.seatKey = bed.id + ':0';
-        self.pendSeat = null;                                      // SEAT LAW: dormant BESIDE the bunk, not posed on the mattress
+        // IN the bed: pendSeat is the render anchor takeSeat() consumes on arrival. The exact head
+        // position is re-derived every frame from the drawn sprite (bedAnchor — skins differ in height),
+        // so this is only the seed; what matters here is that a mattress claim now carries a pose.
+        self.pendSeat = bedAnchor(bed, self);
+        self.lying = true;
         self.goal = 'sleep'; self.usingProp = bed.id; self.studyKey = null; self.quirkKind = null;
         self.useSit = false; self.useFace = 'south'; self.working = false;
         if (!self.target) arrive(now);                             // already beside the bed → power down now
@@ -3860,6 +3907,16 @@ const World = (() => {
     // plant/coffee/cans/poster on random floor tiles (it read as nonsensical clutter). It still
     // USES the Commander's placed props (couch/TV/arcade) via planProp below — that stays.
     const n = self.needs, p = self.pers, ph = phaseOf(now), idleAge = now - (self.lastTaskAt || now);
+    /* THE NAP (2026-08-10). A placed BED was mostly furniture: the only route into it was the drift-mood
+       power-down below, which is mood-gated AND rest-gated and so almost never fired. This lane is the
+       bed's own: a body with nothing to do for two minutes goes and gets in one. It is bounded on three
+       sides — the idle stretch, a per-body cooldown (7-15 min, so it reads as an occasional nap and not
+       a habit), and planBedSleep itself, which returns false unless there is a free, in-zone, reachable
+       bed. No bed on the floor ⇒ this costs one filter and nothing changes.
+       Waking is NOT this lane's job and must never be: every summon path already seizes a dormant body
+       (setActivityFor for crew, the activity==='task' summon-seize in tick for the hero), which covers a
+       typed prompt, a schedule firing, a channel message and a delegation alike. */
+    if (idleAge > 120000 && now >= (self.napCd || 0) && U.chance(0.5) && planBedSleep(now)) { self.napCd = now + U.irnd(420000, 900000); return; }
     if (ph.tag === 'drift' && idleAge > 45000 && n.rest > 50 && U.chance(0.22) && sleep(now)) return;   // deep downtime in the wind-down mood -> power down where it stands
     if (idleAge > 60000 && planExplore(now)) return;                                  // after a while, deliberately visit another reachable room inside the stable home range
     /* TIER D SELECTION (hoisted 2026-07-02 — live-soak fix): these three used to sit INSIDE the `top < 28`
@@ -4342,7 +4399,7 @@ const World = (() => {
       convey.drawBelts(ctx, now, T, geo.belts, beltLiveSet);
     }
 
-    const items = [];
+    const items = [], decals = [];   // decals = the flat floor pass, painted under every item (see isFlatProp)
     // placeable props (furniture) — drawn over the bake, y-sorted with agents, under the lightmap
     if (geo && geo.props && geo.props.length && typeof PropSprites !== 'undefined') {
       PropSprites.setCtx(ctx); PropSprites.setNow(now);
@@ -4359,6 +4416,10 @@ const World = (() => {
       }
       const outboxLit = now - lastOutboxFlash < 600;   // the OUTBOX flares for 600ms after a reply dispatches
       for (const p of geo.props) {
+        // FLOOR DECALS never enter the y-sort: they are paint on the deck, so they go in the floor pass
+        // and everything else — props, crates, bodies — is drawn ON them. Decals carry no seat/mount/live
+        // state (no `use` row, nothing stands on them), so this branch skips work the decal cannot use.
+        if (isFlatProp(p.t)) { decals.push(p); continue; }
         const work = (p.t === 'outbox' && outboxLit) || (p.t === 'bay' && bayLit(p, now)) || workstationLit(p) || !!(agent && (agent.usingProp === p.id || agent.watchProp === p.id));
         // G0.2/G0.3 live desk truth: a LIT assigned workstation carries its agent's real activity heat
         // (token/tool-driven, heatFor) + a task-progress fraction ONLY when a real one was published
@@ -4366,8 +4427,14 @@ const World = (() => {
         const live = (p.agentId && workstationLit(p)) ? { heat: heatFor(p.agentId), prog: deskProgFor(p.agentId) } : null;
         // A stool/chair sorts just BEHIND its sitter; a couch sorts just IN FRONT so the tall sofa back
         // occludes the sitter's lower body. Beds/beanbags never set `seated` and never enter this branch.
-        const sitter = (agent && agent.seated && agent.usingProp === p.id) ? agent
-          : crew.find(b => b.seated && b.usingProp === p.id);
+        // A BODY IS IN THIS BED (lyingBed): the bed paints in TWO passes around it — frame + pillow under
+        // the sleeper, quilt over it — so the head shows on the pillow and the rest is under the covers.
+        const sleeper = ((agent && lyingBed(agent) === p) ? agent : crew.find(b => lyingBed(b) === p)) || null;
+        // a sleeper is `seated` (it holds a mattress claim with a render anchor) but it is NOT a sitter:
+        // the sitter branch pulls the prop's sort key onto the body, which is right for a stool and wrong
+        // for a bed, whose frame must keep its own footprint key with the body sorted INSIDE it.
+        const sitter = (agent && agent.seated && !agent.lying && agent.usingProp === p.id) ? agent
+          : crew.find(b => b.seated && !b.lying && b.usingProp === p.id);
         const sitterUse = sitter ? propUse(p) : null;
         let sy = sitter ? sitter.seatPy + (sitterUse && sitterUse.kind === 'couch' ? 1 : -1) : (p.y + (p.h || 1)) * T;
         // MOUNT LIFT, resolved per FRAME rather than stored on the prop: a table-top prop only rides the
@@ -4377,8 +4444,11 @@ const World = (() => {
         // a table-top object must draw AFTER its table: both occupy the same tiles, so their sort keys are
         // equal and array order would decide it — which is whichever the player happened to place first
         if (mounted === 'surface') sy += 0.5;
-        const dp = mounted ? Object.assign({}, p, { mount: mounted }) : p;
+        const dp = (mounted || sleeper) ? Object.assign({}, p, mounted ? { mount: mounted } : null, sleeper ? { sleeper: true } : null) : p;
         items.push({ y: sy, draw: () => PropSprites.draw(dp, work, live) });
+        // the COVERS, after the body (bodySortY puts a sleeper at sy + 0.5). Keyed off the same live
+        // `sleeper` read as the base pass, so the quilt is never held back with nobody under it.
+        if (sleeper && PropSprites.drawOver) items.push({ y: sy + 0.75, draw: () => PropSprites.drawOver(dp) });
         // an ASSIGNED workstation is the hero's desk with another name: give it the same chair, in front,
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
         // to assigned PCs so a decorative/unmanned console keeps its existing look and the chair only ever
@@ -4406,8 +4476,22 @@ const World = (() => {
     } });
     if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty, seat.cx) });
   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
-    if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
-    for (const b of crew) items.push({ y: (b.seated ? b.seatPy : b.py), draw: () => drawAgent(now, b) });   // the other agents, at their bays (seated → sort by the cushion pos like the hero's rposY, so a couch-lounging crew body tucks just behind the back-facing couch panel, head over the cap)
+    /* a body dormant IN a bed sorts INSIDE its bed — after the frame + pillow, before the quilt — which
+       is the whole two-pass trick. Everything else keeps the old key exactly (cushion pos when seated,
+       feet otherwise). Drawn through drawSleeper so the sprite is clipped to the mattress. */
+    const bodyItem = (b, fallbackY) => {
+      const bed = lyingBed(b);
+      return bed ? { y: (bed.y + (bed.h || 1)) * T + 0.5, draw: () => drawSleeper(now, b, bed) }
+                 : { y: fallbackY, draw: () => drawAgent(now, b) };
+    };
+    if (agent && !agent.unplaced) items.push(bodyItem(agent, rposY()));
+    for (const b of crew) items.push(bodyItem(b, (b.seated ? b.seatPy : b.py)));   // the other agents, at their bays (seated → sort by the cushion pos like the hero's rposY, so a couch-lounging crew body tucks just behind the back-facing couch panel, head over the cap)
+    // THE FLOOR PASS — every decal, in doc order, before anything that stands on the deck. This is what
+    // lets a body walk across a rug: the rug is already down when the sorted items paint over it.
+    if (decals.length && typeof PropSprites !== 'undefined') {
+      PropSprites.setCtx(ctx); PropSprites.setNow(now);
+      for (const p of decals) PropSprites.draw(p, false);
+    }
     items.sort((a, b) => a.y - b.y);
     for (const it of items) it.draw();
     if (convey) convey.drawBoxes(ctx, now, T);   // boxes ride on top of the belts
@@ -4908,6 +4992,25 @@ const World = (() => {
     ctx.globalCompositeOperation = 'source-over'; ctx.textBaseline = 'alphabetic'; ctx.setTransform(scale, 0, 0, scale, panX, panY);   // restore the baseline we changed, so later text drawers don't inherit 'top'
   }
 
+  /* A BODY ASLEEP IN A BED. Two things make the pose read, and both live here rather than in drawAgent
+     (which must stay the one path every normal body draws through):
+       1. the render anchor is refreshed from the LAST drawn frame (bedAnchor) so the head lands on the
+          pillow whatever skin this body wears;
+       2. the sprite is CLIPPED to the bed's top plane, so a body taller than the mattress cannot hang
+          out past the foot of the bed. Everything from the chest down is then buried by the quilt,
+          which the item after this one paints (PropSprites.drawOver).
+     The clip is a rect in world space — the same transform the props draw under — and is released
+     before anything else paints. */
+  function drawSleeper(now, who, bed) {
+    const a = bedAnchor(bed, who);
+    who.seated = true; who.seatPx = a.px; who.seatPy = a.py;   // the claim already exists; this is only WHERE it draws
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(bed.x * T, bed.y * T - 3, (bed.w || 1) * T, (bed.h || 1) * T - 5);   // the top plane (frame rim to the south face)
+    ctx.clip();
+    drawAgent(now, who);
+    ctx.restore();
+  }
   function drawAgent(now, who) {
     who = who || agent;   // default = the hero; a crew body passes itself. Hero path is byte-identical (who===agent).
     // voice cues animate the body while the HERO is actually speaking + a "listening" foot-pulse when the mic is
@@ -7258,6 +7361,7 @@ const World = (() => {
     usingProp: agent ? agent.usingProp : null,
     useKind: agent ? useKindOf(agent.usingProp) : null,
     sitting: !!(agent && agent.sitting),
+    lying: !!(agent && agent.lying),          // IN a bed, under the covers (never the chair-sit pose)
     seatKey: (agent && agent.seatKey) || null,
     seated: !!(agent && agent.seated),
     useMs: agent ? Math.max(0, Math.round((agent.useUntil || 0) - ((typeof performance !== 'undefined') ? performance.now() : fnow))) : 0,
