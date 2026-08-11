@@ -1908,12 +1908,14 @@ const World = (() => {
     self.seatKey = null; self.seated = false; self.pendSeat = null; self.barJoinUntil = 0;
     self.lying = false;   // out of the seat is out of the BED: the covers pose dies with the claim
   }
-  /* on arrival, snap the render position onto the claimed stool/chair/couch seat (logical pos stays put).
-     The ELSE branch is load-bearing: bed claims deliberately have no pendSeat, so without the reset a body
-     that left a stool for a bunk could keep drawing itself back at the stool. */
+  /* on arrival, snap the render position onto the claimed stool/chair/couch/bed anchor (logical pos stays
+     put). The ELSE branch is load-bearing: it stops a body that left a stool for another destination from
+     drawing itself back at the stool. A BODY ALREADY IN BED is the one exemption — pendSeat is consumed on
+     the first arrival, so a second arrive() for the same goal (the engine can re-run it; the dev harness
+     does) would otherwise stand a sleeper up out of a mattress it still holds the claim to. */
   function takeSeat() {
     if (self.seatKey && self.pendSeat) { self.seated = true; self.seatPx = self.pendSeat.px; self.seatPy = self.pendSeat.py; self.pendSeat = null; }
-    else self.seated = false;
+    else if (!(self.lying && self.seatKey)) self.seated = false;
   }
   /* B2: drop ANY body's idle/leisure latch (couch cushion claim + the engine goal bookkeeping) when a task SEIZES
      it — the crew analogue of the hero summon-seize's releaseSeat()+goal-clear (tick ~1614). Without this, a crew
@@ -7359,6 +7361,7 @@ const World = (() => {
     usingProp: agent ? agent.usingProp : null,
     useKind: agent ? useKindOf(agent.usingProp) : null,
     sitting: !!(agent && agent.sitting),
+    lying: !!(agent && agent.lying),          // IN a bed, under the covers (never the chair-sit pose)
     seatKey: (agent && agent.seatKey) || null,
     seated: !!(agent && agent.seated),
     useMs: agent ? Math.max(0, Math.round((agent.useUntil || 0) - ((typeof performance !== 'undefined') ? performance.now() : fnow))) : 0,
