@@ -311,14 +311,28 @@
   // follow-up turn, never whether a call is safe or whether an effect is proven. Unknown MCP verbs therefore
   // lean conservative (external mutation); familiar observation verbs are eligible read-back tools.
   const VOS_EXTERNAL_OBSERVE_RE = /(^|_)(verify|verification|check|confirm|read|get|list|fetch|status|inspect|search|show|lookup|query|describe|retrieve)(_|$)/i;
+  const VOS_EXTERNAL_STRONG_OBSERVE_RE = /(^|_)(verify|verification|check|confirm|validate|validation|audit)(_|$)/i;
+  const VOS_EXTERNAL_ARTIFACT_RE = /(^|_)(file|document|doc|workbook|spreadsheet|sheet|artifact|render|export|attachment|upload|download)(_|$)/i;
   function vosExternalEffect(name) {
     const n = String(name == null ? '' : name).toLowerCase();
     if (!/^mcp__.+__.+$/.test(n)) return null;
     const split = n.lastIndexOf('__');
     const leaf = n.slice(split + 2);
-    return { connector: n.slice(5, split), role: VOS_EXTERNAL_OBSERVE_RE.test(leaf) ? 'observe' : 'mutate' };
+    const observe = VOS_EXTERNAL_OBSERVE_RE.test(leaf);
+    return { connector: n.slice(5, split), leaf, role: observe ? 'observe' : 'mutate', strong: observe && VOS_EXTERNAL_STRONG_OBSERVE_RE.test(leaf) };
   }
   const vosExternalRole = name => { const effect = vosExternalEffect(name); return effect ? effect.role : ''; };
+  function vosExternalArtifactMutation(name, args) {
+    const effect = vosExternalEffect(name);
+    if (!effect || effect.role !== 'mutate') return false;
+    if (VOS_EXTERNAL_ARTIFACT_RE.test(effect.leaf)) return true;
+    if (!args || typeof args !== 'object' || Array.isArray(args)) return false;
+    for (const [key, value] of Object.entries(args)) {
+      if (VOS_EXTERNAL_ARTIFACT_RE.test(String(key).replace(/([a-z0-9])([A-Z])/g, '$1_$2'))) return true;
+      if (/^(action|operation|method|kind|type|command)$/i.test(key) && typeof value === 'string' && VOS_EXTERNAL_ARTIFACT_RE.test(value)) return true;
+    }
+    return false;
+  }
   // A check is a command whose whole job is to PASS or FAIL. `git status`, `ls`, `cat` are not evidence.
   const VOS_CHECK_RE = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?(test|build|lint|typecheck|check)|\b(pytest|tox|jest|vitest|mocha|ava|tsc|eslint|ruff|mypy|flake8|rubocop|clippy|gradle|mvn|make)\b|\b(cargo|go|dotnet|swift)\s+(test|build|vet)\b|\bnode\s+[^|;&]*\btest\b/i;
   function vosIsCodePath(p) {
@@ -341,6 +355,43 @@
     if (!args || typeof args !== 'object') return false;
     const cmd = args.command || args.cmd || args.script || '';
     return VOS_CHECK_RE.test(String(cmd));
+  }
+
+  // A tool invocation may itself succeed while the command it ran proves failure (shell/MCP command
+  // wrappers intentionally return exitCode in ordinary result content). Detect only an EXPLICIT non-zero
+  // exit status from a check-shaped call; never infer failure from arbitrary prose or copy untrusted output
+  // into the system message. The fixed note is planning guidance, not a permission or dispatch gate.
+  function explicitNonzeroExit(content) {
+    let text;
+    try { text = typeof content === 'string' ? content : JSON.stringify(content); }
+    catch (_) { return false; }
+    const patterns = [
+      /["']exit(?:Code|_code)["']\s*:\s*(-?\d+)/gi,
+      /\[\s*exit\s+(-?\d+)\b/gi,
+      /\bexit\s+code\s*[:=]?\s*(-?\d+)\b/gi
+    ];
+    for (const re of patterns) {
+      let match;
+      while ((match = re.exec(String(text)))) if (Number(match[1]) !== 0) return true;
+    }
+    return false;
+  }
+  function isCheckShapedCall(call) {
+    const key = vosKey(call && call.name);
+    if (VOS_VERIFIERS.has(key)) return true;
+    if (key === 'shell_exec') return vosIsCheckCommand(call && call.args);
+    const leaf = key.slice(key.lastIndexOf('__') + 2);
+    return /(^|_)(run_)?(command|check|test)(_|$)/.test(leaf);
+  }
+  function failedCheckRepairNote(calls, results) {
+    const resultById = new Map((results || []).map(result => [result.callId, result]));
+    const failed = (calls || []).some(call => {
+      const result = resultById.get(call.id);
+      return result && isCheckShapedCall(call) && explicitNonzeroExit(result.content);
+    });
+    return failed
+      ? '<failed_check_repair>A command or verification just returned an explicit non-zero exit code. Do not mutate yet. Before any repair, inspect both the implicated implementation and the available test, check, or config that defines expected behavior; failure output alone does not prove the intended fix. Then make one evidence-based repair, rerun the same check, and use its real result.</failed_check_repair>'
+      : '';
   }
 
   function canonicalJson(value) {
@@ -558,11 +609,13 @@
     // NO wait (keeps the loop deterministic + test-fast); when present it honors the classifier's retryAfterMs.
     const sleep = (typeof o.sleep === 'function') ? o.sleep : null;
     // mid-stream retry backoff schedule (same shape as the adapters' pre-stream RETRY_DELAYS).
-    // Widened 2026-07-31: [400,1200] gave the whole loop ~1.6s of patience, so a provider overload
-    // measured in tens of seconds (codex "servers overloaded" in the field) killed runs that every
-    // other harness rides out. ~16s of ladder (plus the adapters' own pre-stream retries and any
-    // server-stated retry-after, capped at 60s) survives a real overload window and still terminates.
-    const STREAM_RETRY_DELAYS = [400, 1200, 4000, 10000];
+    // Widened 2026-08-11 after the installed Hermes parity run: ~16.6s still lost all three StarNet
+    // attempts inside one real Codex overload window while valid Hermes turns took up to ~102s. The
+    // final 30s/60s rungs give the same model turn ~106s of bounded patience. This never re-dispatches
+    // completed tools: the retry loop sits wholly inside the current model call, after prior tool
+    // call/result pairs are durable in `messages` and before this turn's calls can reach executeCalls.
+    // A server-stated Retry-After still outranks each local rung and remains capped at 60s.
+    const STREAM_RETRY_DELAYS = [400, 1200, 4000, 10000, 30000, 60000];
     function noteUnpriced(modelId, c) {
       if (!c || !c.unpriced) return;
       unpricedUsage.push({ model: modelId || '(unknown)', tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 });
@@ -742,7 +795,7 @@
       let recoveries = 0;
       const maxRecoveries = 1 + fallbacks.length;
       let retriesUsed = 0;
-      const MAX_STREAM_RETRIES = 4;   // one per STREAM_RETRY_DELAYS rung; see the ladder's comment
+      const MAX_STREAM_RETRIES = STREAM_RETRY_DELAYS.length;   // one per rung; deriving it prevents policy drift
       // A truncation is its own (cheap, transient) retry class — kept separate from MAX_STREAM_RETRIES and
       // deliberately tighter, because a truncation costs a FULL generation to re-run.
       let truncRetries = 0;
@@ -989,16 +1042,30 @@
         // state now exists. When that same connector exposes a plausible observation/read-back tool, spend one
         // bounded turn asking the model to use it. Tool names and server annotations are untrusted, so this can
         // only cause a conservative nudge; it never clears consent, changes scope, or marks evidence as valid.
-        const externalObserverConnectors = new Set(tools.map(t => vosExternalEffect(t && t.function && t.function.name))
-          .filter(effect => effect && effect.role === 'observe').map(effect => effect.connector));
+        const externalObservers = new Map();
+        for (const tool of tools) {
+          const effect = vosExternalEffect(tool && tool.function && tool.function.name);
+          if (!effect || effect.role !== 'observe') continue;
+          const prior = externalObservers.get(effect.connector) || { any: false, strong: false };
+          prior.any = true; prior.strong = prior.strong || effect.strong;
+          externalObservers.set(effect.connector, prior);
+        }
         const externalTouched = [];
-        for (const [connector, names] of vosExternalUnverified) {
-          if (externalObserverConnectors.has(connector)) externalTouched.push(...names);
+        let externalArtifactTouched = false;
+        for (const [connector, pending] of vosExternalUnverified) {
+          const observers = externalObservers.get(connector);
+          if (!observers || !observers.any) continue;
+          for (const name of pending.names) {
+            if (pending.artifacts.has(name) && !observers.strong) continue;
+            externalTouched.push(name);
+            if (pending.artifacts.has(name)) externalArtifactTouched = true;
+          }
         }
         if (!empty && !graceUsed && vosExternalUsed < VOS_MAX && externalTouched.length) {
           vosExternalUsed++;
           const touched = externalTouched.slice(0, 8).join(', ');
-          messages.push({ role: 'system', content: '<verify_external_before_done>You used an external connector action in this run (' + touched + ') and are ending without a later read-back or verification call. A successful action response is not independent proof that the requested state persisted. Use the connector\'s narrowest read/check/verify tool now, then report only what that result proves. If no meaningful read-back can verify this action, say plainly that the external state was NOT independently verified instead of claiming it was.</verify_external_before_done>' });
+          const artifactRule = externalArtifactTouched ? ' This action changed a file, document, workbook, or other artifact; a generic status/read call does not prove that artifact is fresh. Use the connector\'s dedicated verify/check/confirm tool.' : ' Use the connector\'s narrowest read/check/verify tool now.';
+          messages.push({ role: 'system', content: '<verify_external_before_done>You used an external connector action in this run (' + touched + ') and are ending without a later read-back or verification call. A successful action response is not independent proof that the requested state persisted.' + artifactRule + ' Then report only what that result proves. If no meaningful read-back can verify this action, say plainly that the external state was NOT independently verified instead of claiming it was.</verify_external_before_done>' });
           continue;
         }
         const continuedTextExists = continuationParts.some(m => String((m && m.content) || '').trim());
@@ -1032,6 +1099,8 @@
         return end('error');
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
+      const repairNote = failedCheckRepairNote(calls, results);
+      if (repairNote) messages.push({ role: 'system', content: repairNote });
       if (calls.length === 1 && results.length === 1 && results[0].ok && !results[0].isError) {
         lastDeterministicCheck = deterministicCheckSignature(calls[0]);
       } else {
@@ -1085,10 +1154,16 @@
           if (VOS_VERIFIERS.has(k) || (k === 'shell_exec' && vosIsCheckCommand(c.args))) { vosUnverified.clear(); continue; }
           if (VOS_MUTATORS.has(k)) { const p = vosPathOf(c.args); if (vosIsCodePath(p)) vosUnverified.add(p); }
           const externalEffect = vosExternalEffect(c.name);
-          if (externalEffect && externalEffect.role === 'observe') vosExternalUnverified.delete(externalEffect.connector);
+          if (externalEffect && externalEffect.role === 'observe') {
+            const pending = vosExternalUnverified.get(externalEffect.connector);
+            if (externalEffect.strong || !pending || pending.artifacts.size === 0) vosExternalUnverified.delete(externalEffect.connector);
+            else pending.names = new Set(pending.artifacts);
+          }
           else if (externalEffect && externalEffect.role === 'mutate') {
-            if (!vosExternalUnverified.has(externalEffect.connector)) vosExternalUnverified.set(externalEffect.connector, new Set());
-            vosExternalUnverified.get(externalEffect.connector).add(String(c.name));
+            if (!vosExternalUnverified.has(externalEffect.connector)) vosExternalUnverified.set(externalEffect.connector, { names: new Set(), artifacts: new Set() });
+            const pending = vosExternalUnverified.get(externalEffect.connector), name = String(c.name);
+            pending.names.add(name);
+            if (vosExternalArtifactMutation(c.name, c.args)) pending.artifacts.add(name);
           }
         }
       }
@@ -1161,5 +1236,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, vosExternalArtifactMutation, explicitNonzeroExit, failedCheckRepairNote, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
 });
