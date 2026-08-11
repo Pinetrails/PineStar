@@ -8,7 +8,7 @@
    404s and nobody notices that a paid tier was announced early — with legal text citing a price
    list, on a domain where the price list resolves to the homepage.
 
-   The mirrored risk is the day it goes live: `scripts/go-live-credits.mjs` makes sixteen edits, and
+   The mirrored risk is the day it goes live: `scripts/go-live-credits.mjs` makes eighteen edits, and
    an edit whose anchor text has drifted since it was written would leave the site HALF-LAUNCHED.
    That has already happened once by hand (docs pages fixed, legal pages missed on the same pass).
    So this test does not check that the launch works — it checks that the script still RECOGNISES
@@ -73,7 +73,7 @@ if (!live) {
 
 /* ---- 3. the go-live script still recognises every file it claims to edit ------------------------ */
 // This is the assertion that earns the test. It runs offline and asserts the shape of the plan, not
-// the launch: sixteen edits, every one either already applied or matchable against the current tree.
+// the launch: eighteen edits, every one either already applied or matchable against the current tree.
 const golive = run('go-live-credits.mjs', ['--check', '--no-probe']);
 A.eq(golive.code, 0, 'go-live-credits.mjs --check --no-probe succeeds');
 A.ok(!/UNRECOGNISED/.test(golive.out),
@@ -81,7 +81,7 @@ A.ok(!/UNRECOGNISED/.test(golive.out),
 
 const done = Number(/already live\s*:\s*(\d+)/.exec(golive.out)[1]);
 const todo = Number(/to change\s*:\s*(\d+)/.exec(golive.out)[1]);
-A.eq(done + todo, 16, 'the go-live plan still covers all 16 edits (3 flags + 13 topnav links)');
+A.eq(done + todo, 18, 'the go-live plan still covers all 18 edits (3 flags + 2 cache keys + 13 topnav links)');
 if (!live) A.eq(done, 0, 'with the tier held, none of the go-live edits are applied yet');
 
 // Every docs and legal page is enumerated. The last hand-run of this checklist fixed the docs family
