@@ -111,6 +111,34 @@ let T = 0; const clock = () => (T += 10);
     A.ok(/\$1\.00 limit/.test(res.stopped), 'and names the limit');
   }
 
+  /* ---- THE $ CEILING COVERS THE WHOLE CHAIN — the entry run is not a free stage (2026-08-10 audit) ----
+     MAX_CHAIN_USD bounded only the hops: an expensive stage one rode outside its own line's cap on every
+     path, so "the whole chain's spend ceiling" was quietly a hops-only ceiling. The caller seeds the entry
+     run's reconciled spend; the cap is measured against entry + hops, while `usd` stays HOP-ONLY (both
+     production callers add it to their own entry accounting — totalling it here would double-count). */
+  {
+    let ran = 0;
+    const c = makeChainRunner({
+      nextAgent: a => ({ s0: 's1', s1: 's2' })[a] || null,
+      runAgent: async ({ agentId }) => { ran++; return { text: agentId + ' out', usd: 0.10 }; },
+      maxUsd: 1, now: clock
+    });
+    // an entry run that already blew the ceiling buys not one downstream dollar
+    const blown = await c.advance({ agentId: 's0', text: 'seed', entryUsd: 1.50 });
+    A.eq(ran, 0, 'an entry run that already blew the ceiling buys ZERO downstream runs');
+    A.ok(/\$1\.00 limit/.test(blown.stopped), 'and the stop names the limit');
+    A.eq(blown.text, 'seed', "stage one's answer is still delivered (the belt is never a gate)");
+    A.eq(blown.usd, 0, 'usd stays hop-only: nothing downstream ran, nothing is double-counted');
+    // entry + first hop cross the ceiling -> the second hop is never bought
+    const crossed = await c.advance({ agentId: 's0', text: 'seed', entryUsd: 0.95 });
+    A.eq(crossed.hops.length, 1, 'entry + hop crossing the ceiling stops the line before the next hop');
+    A.ok(/\$1\.00 limit/.test(crossed.stopped), 'honestly');
+    A.eq(crossed.usd, 0.10, "and `usd` reports the hops' spend alone (the caller already holds the entry's)");
+    // an absent or garbage seed is a 0 seed — yesterday's behaviour, byte for byte
+    const legacy = await c.advance({ agentId: 's0', text: 'seed', entryUsd: 'not-a-number' });
+    A.eq(legacy.hops.length, 2, 'a non-numeric seed is ignored (hops-only cap, exactly as before)');
+  }
+
   /* ---- E-STOP: an aborted signal stops the line where it stands ---- */
   {
     const c = makeChainRunner({ nextAgent: line({ a: 'b' }), runAgent: harness({}), now: clock });
