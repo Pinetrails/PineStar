@@ -1938,7 +1938,11 @@ const World = (() => {
      prop art, not guessed: the stool's pad underside sits at art-row y+4 (foot ring y+8..y+10), the
      chair's front lip at y+7. Lifting the sit sprite this much leaves the stem + base visible UNDER the
      body, which is the entire "on a stool" read. Couches stay 0 (the sofa back occludes instead). */
-  const SEAT_LIFT = { stool: 6, chair: 3 };
+  /* Tuned DOWN from {stool:6, chair:3} after the all-skin parade: every set's sit master is authored
+     feet-planted (squat-like, sit≈stand height), so a lift that lands the FEET on the pad crown reads
+     as standing on the stool (Andrew, skeleton). At 4/2 the butt still reaches the pad while the
+     drawSeatFront sliver swallows the planted feet/ankles — the legs read as dropping behind the seat. */
+  const SEAT_LIFT = { stool: 4, chair: 2 };
   function planCouchSit(now, couch, tvId, faceDir, zone) {
     /* STALE-CLAIM RULE: drop whatever seat this body still holds BEFORE claiming a new one. Committing to a
        new destination means it is leaving the old seat regardless, and an inherited `pendSeat` is worse than
