@@ -44,6 +44,8 @@ function externalReg(fail) {
     return 'changed';
   } });
   r.register({ name: 'mcp__parity_fixture_eval__fixture_verify_file', schema: { type: 'object', properties: {} }, run: async () => 'verified' });
+  r.register({ name: 'mcp__parity_fixture_eval__fixture_status', schema: { type: 'object', properties: {} }, run: async () => 'action completed' });
+  r.register({ name: 'mcp__parity_fixture_eval__fixture_read_file', schema: { type: 'object', properties: {} }, run: async () => 'file contents' });
   r.register({ name: 'mcp__other__read_status', schema: { type: 'object', properties: {} }, run: async () => 'other state' });
   return r;
 }
@@ -133,7 +135,7 @@ async function run(o) {
 
   // ---- 7. the pure classifiers, directly ----
   {
-    const { vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole } = _internals;
+    const { vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, vosExternalArtifactMutation } = _internals;
     A.eq(vosIsCodePath('src/a.js'), true, '.js is code');
     A.eq(vosIsCodePath('a.md'), false, '.md is prose');
     A.eq(vosIsCodePath('Makefile'), true, 'an extension-less build file is code');
@@ -146,6 +148,10 @@ async function run(o) {
     A.eq(vosKey('fs.write'), 'fs_write', 'dotted registry names and underscored wire names collapse to one key');
     A.eq(vosExternalRole('mcp__parity_fixture_eval__fixture_action'), 'mutate', 'an external action arms read-back enforcement');
     A.eq(vosExternalRole('mcp__parity_fixture_eval__fixture_verify_file'), 'observe', 'an external verifier is classified as read-back');
+    A.eq(vosExternalArtifactMutation('mcp__parity_fixture_eval__fixture_action', { action: 'set_workbook_input' }), true,
+      'an artifact-shaped action arms the stronger freshness rule');
+    A.eq(vosExternalArtifactMutation('mcp__parity_fixture_eval__fixture_action', { action: 'restart_service', note: 'spreadsheet mentioned in prose' }), false,
+      'unstructured prose does not turn an ordinary external action into an artifact mutation');
     A.eq(vosExternalRole('fs_write'), '', 'native tools stay outside the external-effect classifier');
   }
 
@@ -166,6 +172,36 @@ async function run(o) {
       [{ type: 'text', delta: 'Verified.' }, { type: 'done', finishReason: 'stop' }]
     ] };
     A.eq((await run({ fixture: actionThenVerify, tools: toolDefs(action, verify), registry: externalReg() })).externalNudges.length, 0, 'a successful connector read-back disarms the external guard');
+
+    const status = 'mcp__parity_fixture_eval__fixture_status';
+    const artifactActionThenStatus = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: action }, { type: 'tool_args', index: 0, chunk: '{"action":"set_workbook_input"}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'tool_start', index: 0, id: 'c2', name: status }, { type: 'tool_args', index: 0, chunk: '{}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'Verified.' }, { type: 'done', finishReason: 'stop' }],
+      [{ type: 'text', delta: 'The artifact was not independently verified.' }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    A.eq((await run({ fixture: artifactActionThenStatus, tools: toolDefs(action, status, verify), registry: externalReg() })).externalNudges.length, 1,
+      'generic status cannot discharge artifact verification debt when a dedicated verifier exists');
+
+    const readFile = 'mcp__parity_fixture_eval__fixture_read_file';
+    const artifactActionThenRead = { turns: [
+      artifactActionThenStatus.turns[0],
+      [{ type: 'tool_start', index: 0, id: 'c2', name: readFile }, { type: 'tool_args', index: 0, chunk: '{"path":"book.xlsx"}' }, { type: 'done', finishReason: 'tool_calls' }],
+      artifactActionThenStatus.turns[2], artifactActionThenStatus.turns[3]
+    ] };
+    A.eq((await run({ fixture: artifactActionThenRead, tools: toolDefs(action, readFile, verify), registry: externalReg() })).externalNudges.length, 1,
+      'reading artifact contents does not substitute for a dedicated freshness verifier when one exists');
+
+    A.eq((await run({ fixture: artifactActionThenStatus, tools: toolDefs(action, status), registry: externalReg() })).externalNudges.length, 0,
+      'artifact freshness does not spend an impossible turn when the connector exposes no strong verifier');
+
+    const ordinaryActionThenStatus = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: action }, { type: 'tool_args', index: 0, chunk: '{"action":"restart_service"}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'tool_start', index: 0, id: 'c2', name: status }, { type: 'tool_args', index: 0, chunk: '{}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'Verified.' }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    A.eq((await run({ fixture: ordinaryActionThenStatus, tools: toolDefs(action, status, verify), registry: externalReg() })).externalNudges.length, 0,
+      'generic status remains valid read-back for an ordinary non-artifact external action');
 
     const wrongConnector = { turns: [
       [{ type: 'tool_start', index: 0, id: 'c1', name: action }, { type: 'tool_args', index: 0, chunk: '{"action":"set_workbook_input"}' }, { type: 'done', finishReason: 'tool_calls' }],
