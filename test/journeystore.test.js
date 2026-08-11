@@ -6,6 +6,16 @@ global.document = { body: { dataset: {} } };
 global.StationUI = { rerender: key => calls.push({ rerender: key }), notify: (text, tone) => notes.push({ text, tone }) };
 global.SFX = { milestone: () => calls.push({ sfx: 'milestone' }) };
 let responseJourney = { evolution: { stage: 1, name: 'VECTOR', goalsReached: 1 }, metrics: [], mastery: [], receipts: [], outcomes: [], suppressed: {} };
+const { QuerySpine } = require('../frontend/app/queryspine.js');
+global.QuerySpine = QuerySpine;
+let queryError = null, clock = 1000;
+QuerySpine._resetForTest();
+QuerySpine._setClockForTest(() => clock);
+QuerySpine._setGetForTest(async url => {
+  calls.push({ query: url });
+  if (queryError) throw queryError;
+  return { ok: true, journey: responseJourney };
+});
 global.fetch = async (url, opts) => {
   calls.push({ url, opts: opts || {} });
   return { ok: true, json: async () => ({ ok: true, journey: responseJourney, metric: { id: 'jm:1' } }) };
@@ -20,6 +30,7 @@ const { JourneyStore } = require('../frontend/app/journeystore.js');
   A.eq(notes[0].tone, 'gold', 'a later proven stage increase produces one visible receipt beat');
   JourneyStore.init({ epoch: () => 42 });
   await new Promise(resolve => setImmediate(resolve));
+  A.ok(JourneyStore.state().hasData && !JourneyStore.state().stale, 'journey GET truth is fresh in QuerySpine after hydration');
 
   const created = await JourneyStore.createMetric({ label: 'Users', baseline: 0, target: 10 });
   A.ok(created.ok, 'metric create returns the sidecar acknowledgement');
@@ -33,5 +44,12 @@ const { JourneyStore } = require('../frontend/app/journeystore.js');
   A.eq(JSON.parse(calls.filter(c => c.url === '/api/journey').pop().opts.body).op, 'adaptation.suppress', 'Commander correction reaches the reversible adaptation operation');
   await JourneyStore.reset(99);
   A.eq(JSON.parse(calls.filter(c => c.url === '/api/journey').pop().opts.body), { op: 'journey.reset', epoch: 99 }, 'new-Commander reset clears the server-owned journey at its new generation');
+
+  const lastGood = JourneyStore.status();
+  queryError = new Error('journey offline'); clock += 1;
+  await JourneyStore.sync(true);
+  A.eq(JourneyStore.status(), lastGood, 'failed refresh retains the exact last-good journey projection');
+  A.ok(JourneyStore.state().stale && JourneyStore.state().error && JourneyStore.state().error.message === 'journey offline',
+    'failed refresh exposes explicit stale/error metadata to the renderer');
   A.report('journeystore.test');
 })().catch(e => { console.error(e); process.exitCode = 1; });
