@@ -790,7 +790,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const knobs = await j('GET', '/api/runtime/knobs');
     A.eq(knobs.status, 200, 'GET /api/runtime/knobs -> 200');
     A.ok(knobs.body.fields && knobs.body.fields.maxIters, 'knobs report the maxIters field');
-    A.eq(knobs.body.fields.maxIters.default, 40, 'maxIters default is 40');
+    A.eq(knobs.body.fields.maxIters.default, 0, 'maxIters defaults to unlimited');
+    A.eq(knobs.body.fields.maxConcurrentAgents.default, 0, 'agent concurrency defaults to unlimited');
     A.eq(knobs.body.fields.maxIters.saved, null, 'no saved override before any POST');
     const knobsSet = await j('POST', '/api/runtime/knobs', { maxIters: 55, cronTickMs: 30000 });
     A.eq(knobsSet.status, 200, 'POST /api/runtime/knobs -> 200');

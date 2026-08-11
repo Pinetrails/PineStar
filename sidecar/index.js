@@ -161,7 +161,8 @@ const { parseSlackTokens } = require('./channels/slack.js');                    
 const channelSecretsMod = require('./channels/secrets.js');                        // T1.4: token-vs-config split + keychain migration
 const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
-const relayWebhook = makeWebhookVerifier({ secret: process.env.STARNET_CHANNEL_WEBHOOK_SECRET || '', now: () => Date.now() });
+// relayWebhook (the signed-ingress verifier) is composed AFTER the WORKSPACES stores below —
+// its replay-nonce inbox is a durable JSONL sibling of the other ledgers.
 const { makeRouter } = require('./routing/router.js');
 const { makeChainRunner } = require('./routing/chain.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
@@ -392,6 +393,16 @@ const startupWorkspaceRecovery = workspaceRecovery.applyPendingRecovery({
   fs, path, platform: process.platform, home: os.homedir(), workspaceRoot: WORKSPACES,
   candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS, auto: !DEV_MODE, now: Date.now
 });
+if (startupWorkspaceRecovery && startupWorkspaceRecovery.lockUnavailable) {
+  // A LIVE concurrent process holds the parent-level recovery lock — it may be renaming this very
+  // workspace right now. Opening stores here would race that rename, so refuse the boot outright,
+  // matching the owner-claim refusal below (same fail-closed semantics, same exit code).
+  console.error('✗ StarNet refused to open this workspace because another process is recovering it.');
+  console.error('  workspace: ' + WORKSPACES);
+  console.error('  safety code: ' + String(startupWorkspaceRecovery.code || 'RECOVERY_LOCK_UNAVAILABLE'));
+  console.error('  Close the other StarNet process and retry. StarNet will not risk concurrent writes.');
+  process.exit(73);
+}
 if (startupWorkspaceRecovery && startupWorkspaceRecovery.applied) {
   console.warn('[recovery] restored prior station before opening stores; source preserved, rollback retained=' + !!startupWorkspaceRecovery.rollbackRetained);
 } else if (startupWorkspaceRecovery && startupWorkspaceRecovery.ok === false) {
@@ -531,38 +542,26 @@ function resolveKnob(envSuffix, savedKey, def) {
 }
 function knobEnvLocked(envSuffix) { const e = envSuffix ? ENV(envSuffix) : null; return e != null && String(e).trim() !== '' && Number(e) >= 0; }
 
-// maxIters: per-run tool-turn ceiling. Raised 16→40 (P0.3) so real multi-step work isn't truncated early;
-// env-overridable, now also UI-tunable (resolveKnob: env > saved > default). The loop adds one grace turn on top.
-const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 40), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
-// Spend governance ("Balanced" posture): per-RUN hard ceiling (the loop's maxCostUsd) + SOFT cross-run pools
-// (per-day, global) governed over the persisted ledger, each with one-click resume. Env-overridable so a deploy
-// can retune without a code change. perRun ($3) replaces the conservative $1 dev default once a budget is live.
+// maxIters: optional per-run tool-turn ceiling. Default OFF (0); users/deploys may opt into one.
+const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 0), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
+// Optional spend governance: per-run, per-agent, per-day, and global ceilings all default OFF.
 // num() passes a parsed value through (including 0 -> UNGOVERNED via budget.js capOf, e.g. SKYNET_BUDGET_PER_DAY=0
 // disables the day pool); only an empty/missing/negative/non-numeric value falls back to the default.
 const num = (v, d) => { if (v == null || String(v).trim() === '') return d; const n = Number(v); return (typeof n === 'number' && !isNaN(n) && n >= 0) ? n : d; };
-// DEFAULTS (2026-07-23, Andrew-approved budget-legibility pass): ONE generous per-run seatbelt for metered
-// (real-$) runs; every cross-run pool defaults OFF. The old dev-era defaults ($3 run / $5 AGENT LIFETIME /
-// $40 day / $100 global) silently strangled normal heavy use — the per-agent lifetime cap especially stopped
-// every run of an agent forever after $5 of ordinary work. Users can still set any cap in SETTINGS → BUDGET
-// (0/blank = no cap), and env vars still override for locked-down deploys. Unmetered (OAuth-subscription)
-// runs skip the per-run cap entirely at admission — their $ figures are estimates against a flat subscription.
+// Users may opt into any cap in SETTINGS → BUDGET (0/blank = no cap); environment variables
+// still override for locked-down deploys. Unmetered subscription runs remain ungoverned.
 const BUDGET_CAPS = {
-  perRun: num(ENV('BUDGET_PER_RUN'), 10),
+  perRun: num(ENV('BUDGET_PER_RUN'), 0),
   perAgent: num(ENV('BUDGET_PER_AGENT'), 0),   // multi-agent fairness rail: one agent's cumulative spend (0 = ungoverned; default OFF — a lifetime cap punishes engagement, not runaways)
   perDay: num(ENV('BUDGET_PER_DAY'), 0),
   global: num(ENV('BUDGET_GLOBAL'), 0)
 };
-// Multi-agent fan-out ceiling: the max number of DISTINCT agents that may have paid runs in flight at once
-// (hero + summoned crew). The day/global pools already cap aggregate $; this caps how many loops light up in
-// parallel so a summoned crew can't accidentally burn N streams at once. 0 = unlimited. See concurrency.js.
-const MAX_CONCURRENT_AGENTS = resolveKnob('MAX_CONCURRENT_AGENTS', 'maxConcurrentAgents', 3);   // P1-9: env > saved > default
-// Stage 2: per-WORKER USD ceiling for a delegated sub-run, so the lead fanning out to a crew can't let one
-// runaway worker blow the lead's own per-run cap. 0 = ungoverned (the cross-run pools still apply).
-const ORCH_PER_WORKER = num(ENV('BUDGET_PER_WORKER'), 1);
-// Stage 2 companion to ORCH_PER_WORKER: per-WORKER tool-turn ceiling. A delegated worker doing one
-// scoped subtask has no business burning the lead's whole 40-turn budget. runOnce clamps this DOWN
-// only (see runMaxIters) so a caller can never widen past the station's own CAPS.maxIters.
-const ORCH_WORKER_MAX_ITERS = num(ENV('WORKER_MAX_ITERS'), 16);
+// Optional multi-agent fan-out ceiling. 0 = unlimited (the product default). See concurrency.js.
+const MAX_CONCURRENT_AGENTS = resolveKnob('MAX_CONCURRENT_AGENTS', 'maxConcurrentAgents', 0);   // P1-9: env > saved > default
+// Optional per-worker USD ceiling for delegated sub-runs. 0 = ungoverned.
+const ORCH_PER_WORKER = num(ENV('BUDGET_PER_WORKER'), 0);
+// Optional per-worker tool-turn ceiling. 0 inherits the unlimited station policy.
+const ORCH_WORKER_MAX_ITERS = num(ENV('WORKER_MAX_ITERS'), 0);
 // ---- MANAGED CREDITS (opt-in, config-gated). The whole managed-credit path is INERT unless STARNET_CREDITS_URL
 // points at a credits backend: no payment client is built, admission stays pure BYOK, no STORE UI renders, and
 // /api/credits 404s (the honesty law — a control that does nothing is a bug). When wired, a managed account can
@@ -589,7 +588,7 @@ const CREDITS_LOW_USD = (() => { const n = Number(ENV('CREDITS_LOW_USD')); retur
 // flipped in the same breath, as `CREDITS.live` in website/site.js — the site's buy buttons and the app's link
 // button have to tell the same story on the same day. An explicit STARNET_CLOUD_URL always wins, so operators
 // and this repo's own live tests can point at a local service without touching the flag.
-const CLOUD_LIVE = false;                                    // ← launch switch: flip WITH website/site.js CREDITS.live
+const CLOUD_LIVE = true;                                    // ← launch switch: flip WITH website/site.js CREDITS.live
 const CLOUD_URL_DEFAULT = 'https://account.starnetos.com';   // the deployed StarNet Cloud (see starnet-cloud)
 const CLOUD_URL = String(ENV('CLOUD_URL') || (CLOUD_LIVE ? CLOUD_URL_DEFAULT : '')).trim();
 // The linked station's device token, injected by the DESKTOP from the OS keychain at spawn (keychain account
@@ -626,13 +625,9 @@ const CRON_HOST_TZ = (function () {
   })();
   return cron.isValidTz(candidate) ? (candidate || 'UTC') : 'UTC';
 })();
-const CRON_MAX_RUN_MS = num(ENV('CRON_MAX_RUN_MS'), CAPS.maxIters * CAPS.toolTimeoutMs);   // ≈8-min worst-case run bound
-// G4.4 global concurrency cap: at most this many cron runs may be IN-FLIGHT across all routines at once.
-// A tick whose due set would exceed it DEFERS the extra jobs to the next tick (without advancing their
-// nextRunAt, so they stay due) — a burst of simultaneously-due routines drains `maxParallel` at a time
-// rather than flooding the run host / spend all at once. Threaded as an INJECTED int so the cron driver
-// stays determinism-clean (it never reads process.env itself). Default 4.
-const CRON_MAX_PARALLEL = num(ENV('CRON_MAX_PARALLEL'), 4);
+const CRON_MAX_RUN_MS = num(ENV('CRON_MAX_RUN_MS'), 480000);   // operational lease/timeout, independent of user-work quotas
+// Optional routine-specific concurrency ceiling. The station-wide opt-in agent ceiling still applies.
+const CRON_MAX_PARALLEL = num(ENV('CRON_MAX_PARALLEL'), 0);
 // NS-0 LEASE HEARTBEAT knobs. The lease sweep + one-shot fireClaim now reclaim on a STALE HEARTBEAT rather than a
 // fixed wall-clock age, so a genuinely-long run that keeps emitting progress fires exactly once (the duplicate-fire
 // fix). CRON_STALENESS_MULT scales maxRunMs into the no-heartbeat staleness ceiling (default 1 = pre-NS-0 timing for
@@ -961,7 +956,8 @@ const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
 // Append+fsync must fail closed: the UI may only say "rated" after this ledger acknowledges the row.
 const GROWTH_RATINGS_FILE = path.join(WORKSPACES, 'growth-ratings.jsonl');
 const growthRatingsIo = {
-  readAll() { try { return readBoundedJsonl(GROWTH_RATINGS_FILE); } catch (_) { return []; } },
+  // This ledger decides first-wins XP authority. An unreadable file is unknown history, never empty history.
+  readAll() { return readBoundedJsonl(GROWTH_RATINGS_FILE); },
   append(entry) {
     let fd = null;
     try {
@@ -995,6 +991,41 @@ const autonomyLedgerIo = {
 const autonomyLedger = makeAutonomyLedger({ io: autonomyLedgerIo, clock: { now: () => Date.now() } });
 // record an autonomy decision without ever letting a ledger hiccup touch the caller (cron pass, run loop, …).
 function recordAutonomy(entry) { try { return autonomyLedger.record(entry); } catch (_) { return null; } }
+
+// Webhook replay-nonce inbox: accepted relay nonces are durable facts ({nonce, expiry, at}), append+fsync'd
+// like the growth-ratings ledger so durable at-most-once admission at /api/channels/webhook/* survives a sidecar
+// restart (an in-memory-only cache re-admitted the same signed request after a reboot within the skew
+// window). append() deliberately THROWS on failure — the verifier fails closed (503) rather than admit a
+// delivery whose nonce was never recorded. Pruned by expiry once the live segment passes the compact
+// threshold; rotateJsonl stays as the ultimate size bound.
+const WEBHOOK_NONCES_FILE = path.join(WORKSPACES, 'webhook-nonces.jsonl');
+const WEBHOOK_NONCES_COMPACT_BYTES = 256 * 1024;   // nonces expire in minutes — the compacted file is tiny
+function pruneWebhookNonces() {
+  try {
+    const st = fs.statSync(WEBHOOK_NONCES_FILE);
+    if (st.size <= WEBHOOK_NONCES_COMPACT_BYTES) return;
+    const nowMs = Date.now();
+    const live = readBoundedJsonl(WEBHOOK_NONCES_FILE).filter(r => r && typeof r.nonce === 'string' && Number(r.expiry) > nowMs);
+    const tmp = WEBHOOK_NONCES_FILE + '.tmp';
+    fs.writeFileSync(tmp, live.length ? live.map(r => JSON.stringify(r)).join('\n') + '\n' : '');
+    fs.renameSync(tmp, WEBHOOK_NONCES_FILE);       // atomic swap — a crash mid-prune never loses the live file
+    try { fs.unlinkSync(WEBHOOK_NONCES_FILE + '.1'); } catch (_) {}   // an old archive only holds expired rows
+    rotateJsonl(WEBHOOK_NONCES_FILE);              // fallback bound if expiry somehow kept everything live
+  } catch (_) {}                                    // pruning is best-effort; append correctness never depends on it
+}
+const webhookNonceIo = {
+  load() { return readBoundedJsonl(WEBHOOK_NONCES_FILE); },
+  append(entry) {
+    let fd = null;
+    try {
+      fd = fs.openSync(WEBHOOK_NONCES_FILE, 'a');
+      fs.writeSync(fd, JSON.stringify(entry) + '\n');
+      fs.fsyncSync(fd);
+    } finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    pruneWebhookNonces();
+  }
+};
+const relayWebhook = makeWebhookVerifier({ secret: process.env.STARNET_CHANNEL_WEBHOOK_SECRET || '', now: () => Date.now(), store: webhookNonceIo });
 
 /* ---- T3.9 DIAGNOSTICS: process start + a small in-memory error ring feeding the paste-ready bug-report block
    (GET /api/diagnostics). The ring holds only the newest few run-error MESSAGES (already redacted on write) so a
@@ -1158,7 +1189,7 @@ const fetchSkillDocument = makeSkillDocumentFetcher({
   assertResolvedSafe: skillWebInternals.assertResolvedSafe,
   lookup: (host) => dns.promises.lookup(host, { all: true })
 });
-const fetchSkillPackage = makeSkillPackageFetcher({ fetchDocument: fetchSkillDocument });
+const fetchSkillPackage = makeSkillPackageFetcher({ fetchDocument: fetchSkillDocument, now: () => Date.now() });
 const skillRegistry = makeSkillRegistry({ fetchDocument: fetchSkillDocument, now: () => Date.now() });
 const SKILL_REGISTRIES_FILE = path.join(WORKSPACES, 'skill-registries.json');
 let skillRegistrySources = [];
@@ -5504,7 +5535,7 @@ const LOOPS_HALT_FILE = path.join(WORKSPACES, 'loops.halt.json');
 // still looking at the screen. A loop with nothing to do costs one gate evaluation per tick — no model call.
 // ENV() already prefixes STARNET_/SKYNET_ — pass the bare suffix, never the prefixed name.
 const LOOP_TICK_MS = Math.max(5000, parseInt(ENV('LOOP_TICK_MS') || '20000', 10) || 20000);
-const LOOP_MAX_PARALLEL = Math.max(1, parseInt(ENV('LOOP_MAX_PARALLEL') || '2', 10) || 2);
+const LOOP_MAX_PARALLEL = num(ENV('LOOP_MAX_PARALLEL'), 0);
 const LOOP_MAX_RUN_MS = Math.max(60000, parseInt(ENV('LOOP_MAX_RUN_MS') || '1800000', 10) || 1800000);
 
 function loadLoops() {
@@ -7625,7 +7656,7 @@ const openaiCompat = makeOpenAiCompat({
   isAllowedHost: isAllowedHost,
   constTimeEq: apiauth.constTimeEq,
   defaultModel: () => String(ENV('V1_MODEL') || ENV('DEFAULT_MODEL') || '').trim(),
-  maxConcurrent: () => num(ENV('V1_MAX_CONCURRENT'), 10),
+  maxConcurrent: () => num(ENV('V1_MAX_CONCURRENT'), 0),
   version: () => { try { return computeVersionSurface().harness || 'dev'; } catch (_) { return 'dev'; } },
   newId: () => crypto.randomUUID(), now: () => Date.now(),
   readBody: (req, max) => readBody(req, max), redact: redact,
@@ -8470,7 +8501,8 @@ function handleRoutingSampleStatus(_req, res) {
    (filter/splitter engage), the run goes through runOnce (budget governor, ledger, real cost), and the shared
    chain runner advances the rest of the drawn line. First-class ≠ wider: the run is surface:'autonomous' with
    NO unattendedGrants (the chain-grants law) — an ungranted mutation default-denies exactly like any headless
-   channel run, and the request body cannot smuggle authority (only {text} is read).
+   channel run, and the request body cannot smuggle authority (only {text} and the additive {line} are read;
+   `line` can only NARROW dispatch to a named drawn line's own doors — it grants nothing).
 
    Contract (the finish-the-line card feature-detects this endpoint):
      · every refusal is 409 {ok:false,error} — never 404, so "route exists but refuses" is distinguishable
@@ -8489,6 +8521,14 @@ let sampleHub = null;        // lazy singleton, one per station — mirrors getD
 let sampleResolved = null;   // one-shot resolution slot (one-resolver law: telemetry reads the hub's own pick)
 let sampleLineOutcome = null; // terminal chain truth for the current proof; clean runs alone are not OUTBOX proof
 let sampleInFlight = null;   // { streamId, workitemId, startedAt } — ONE sample per station, tracked
+/* LINE-SCOPED PROOF (2026-08-10 audit — "sample not line-scoped"). The FINISH card is titled for ONE line
+   ("FINISH ‹LINE B›") and posts { line: c.key } — the lineComponents key, which IS the compiled plan's
+   lineId (pipeline.js attaches lineId = c.key; one namespace by construction). The route used to read only
+   body.text, so on a two-line floor the card's sample dispatched down whichever line's source compiled
+   first. This slot carries the requested lineId for the CURRENT dispatch only — set under the in-flight
+   lock before onInbound, cleared in the same finally, and read by the hub's resolveAgent closure below so
+   the ONE counter-advancing resolution (one-resolver law) walks only the named line's own doors. */
+let sampleLineScope = null;
 const sampleReplies = [];    // outbound text the line delivered for the CURRENT sample (cleared per dispatch)
 function getSampleHub() {
   if (sampleHub) return sampleHub;
@@ -8507,7 +8547,8 @@ function getSampleHub() {
     secrets: devHubSecrets,   // the ONE headless resolution rule (see handleRuntimeAgent) — a second rule would drift
     persona: SAMPLE_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
     newId: () => crypto.randomUUID(), now: () => Date.now(),
-    resolveAgent: (ctx) => router.resolveTarget(ctx),
+    // line scope rides the ctx (additive): resolveTarget walks ONLY the named line's doors when set
+    resolveAgent: (ctx) => router.resolveTarget(sampleLineScope ? Object.assign({}, ctx, { lineId: sampleLineScope }) : ctx),
     chain: chainRunner,                                                       // the belts drawn PAST the dock run the rest of the line
     lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
@@ -8535,10 +8576,21 @@ async function handleRoutingSample(req, res) {
     try { const raw = await readBody(req, 1 << 16); body = raw && raw.trim() ? (JSON.parse(raw) || {}) : {}; }
     catch (_) { return json(400, { ok: false, error: 'bad json' }); }   // the finally releases the lock on every exit
     const text = String(body.text == null ? '' : body.text).trim().slice(0, 2000) || SAMPLE_TEXT;
+    /* the line this proof is FOR (additive, 2026-08-10): the FINISH card posts { line: c.key } — the same
+       lineId namespace the compiled plan carries (lineComponents key === plan lineId). Absent -> exactly
+       the old station-wide behaviour, so older cards and bare curl keep working byte-for-byte. */
+    const line = String(body.line == null ? '' : body.line).trim().slice(0, 200);
     // the armed plan is the precondition — a sample with no line to ride is a lie, not a fallback run.
     const plan = router.getPlan();
     if (!plan) {
       return json(409, { ok: false, error: 'no work line is armed — draw a complete line (INBOX → belts → a crewed dock) and it arms itself.' });
+    }
+    /* a NAMED line must exist on the armed plan — the same 409-never-404 contract as every refusal above/
+       below. An unknown key means the floor changed since the card was drawn (a line re-keys when its
+       oldest machine is deleted) or the browser's compile and the armed plan have drifted; running the
+       sample down some OTHER line instead would be the exact lie this parameter exists to end. */
+    if (line && !((Array.isArray(plan.lines) ? plan.lines : []).some(l => l && String(l.lineId) === line))) {
+      return json(409, { ok: false, error: 'no armed work line is named "' + line + '" — the floor changed since this card was drawn; re-open the line and try again.' });
     }
     /* side-effect-free precondition: does the armed line reach ANY crewed dock through its own doors?
 
@@ -8553,9 +8605,17 @@ async function handleRoutingSample(req, res) {
        construction and cannot disagree with any single dispatch. It is also the same fact lineOriginOf keys the
        line gate on, so the refusal and the line semantics quote ONE artifact. The hub's own resolveAgent call
        below stays the one and only counter-advancing resolution (one-resolver law). */
-    const reachedDocks = Object.keys((plan && plan.reach) || {}).filter(a => plan.reach[a]);
+    /* When the proof is line-scoped, the same reach question is asked OF THAT LINE: a dock counts only
+       when the plan's sources feed it AND it crews the named line (plan.lineOfAgent — the compiled map,
+       same artifact the gate reads). Lines are connected components, so a dock on line B is only ever
+       reachable through line B's own doors — the intersection is exact, still lane-choice-blind, and the
+       refusal still never names a dock. */
+    const reachedDocks = Object.keys((plan && plan.reach) || {})
+      .filter(a => plan.reach[a] && (!line || ((plan.lineOfAgent || {})[a] === line)));
     if (!reachedDocks.length) {
-      return json(409, { ok: false, error: 'the armed line routes this job to no dock — crew a bay on the line (bind an agent to it) and try again.' });
+      return json(409, line
+        ? { ok: false, error: 'line "' + line + '" routes this job to no dock — crew a bay on that line (bind an agent to it) and try again.' }
+        : { ok: false, error: 'the armed line routes this job to no dock — crew a bay on the line (bind an agent to it) and try again.' });
     }
     const sec = devHubSecrets();
     if (!sec.model || (!sec.configured && !sec.key)) {
@@ -8568,15 +8628,19 @@ async function handleRoutingSample(req, res) {
     const hub = getSampleHub();
     sampleResolved = null;
     sampleLineOutcome = null;
+    // scope the ONE resolution to the named line's doors (read by the hub's resolveAgent closure);
+    // safe under the in-flight lock — one sample per station means one scope per dispatch.
+    sampleLineScope = line || null;
     // same intercept shape as the dev seam: resolution lands synchronously in onInbound's first slice; only a
     // real TASK directive places a crate (the belt is work-only); the settle owns the queue decrement.
     const settled = Promise.resolve(hub.onInbound({ chatId: SAMPLE_CHAT, userId: String(body.userId || 'commander'), text: text, chatType: 'dm' }))
       .catch(e => { console.warn('[routing-sample] error:', (e && e.message) || e); return { error: (e && e.message) || String(e) }; });
-    let agentId = '', workitemId = '', isTask = false;
+    let agentId = '', workitemId = '', isTask = false, entryLineId = null;
     try {
       if (sampleResolved && String(sampleResolved.chatId) === SAMPLE_CHAT && sampleResolved.agentId) {
         agentId = String(sampleResolved.agentId);
         isTask = !!sampleResolved.isTask;
+        entryLineId = sampleResolved.lineId || null;   // the line the ENTRY dock actually belongs to (server-derived)
         if (isTask) {
           workitemId = crypto.randomUUID();
           sampleInFlight.workitemId = workitemId;
@@ -8598,7 +8662,12 @@ async function handleRoutingSample(req, res) {
     } catch (_) { runs = []; }
     // Outbound warning text is not delivery evidence. The proof succeeds only when every durable stage
     // outcome is clean, including every hop after the routed entry dock.
-    const completed = runs.length > 0 && runs.every(r => r.reason === 'done')
+    /* Belt-and-suspenders for a NAMED line: the entry dock's server-derived origin line (lineOriginFor,
+       read off the same compiled plan the gate reads) must BE the requested line. The scoped walk can
+       only land on that line's docks, but if resolution ever fell through to a hub fallback the proof
+       must fail honestly rather than 200 while claiming a line it never rode. */
+    const onLine = !line || entryLineId === line;
+    const completed = onLine && runs.length > 0 && runs.every(r => r.reason === 'done')
       && !!sampleLineOutcome && !sampleLineOutcome.stopped
       && router.chainShipsToOutbox(sampleLineOutcome.agentId);
     const delivered = completed ? runs[0] : null;
@@ -8609,19 +8678,22 @@ async function handleRoutingSample(req, res) {
       chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
     }
     if (!completed) {
-      return json(502, {
-        ok: false, sample: true, error: runs.length ? 'sample job did not complete cleanly' : 'sample job produced no durable run outcome',
+      // `line` is echoed only when it was requested, so a line-less POST's answer stays byte-identical.
+      return json(502, Object.assign({
+        ok: false, sample: true, error: !onLine ? 'sample job did not enter through line "' + line + '"'
+          : runs.length ? 'sample job did not complete cleanly' : 'sample job produced no durable run outcome',
         chatId: SAMPLE_CHAT, streamId: streamId, agentId: agentId || null, isTask: isTask,
         workitemId: workitemId || null, replies: sampleReplies.slice(), runs: runs, delivered: null, totalUsd: totalUsd
-      });
+      }, line ? { line: line } : null));
     }
-    return json(200, {
+    return json(200, Object.assign({
       ok: true, sample: true, chatId: SAMPLE_CHAT, streamId: streamId,
       agentId: agentId || null, isTask: isTask, workitemId: workitemId || null,
       replies: sampleReplies.slice(), runs: runs, delivered: delivered, totalUsd: totalUsd
-    });
+    }, line ? { line: line } : null));
   } finally {
     sampleInFlight = null;
+    sampleLineScope = null;
   }
 }
 
@@ -9015,8 +9087,8 @@ async function handleConfigReset(req, res) {
    var locks it (so the UI can gray it out honestly). POST persists overrides (env-locked knobs ignore the write).
    Saved values apply at NEXT BOOT (they feed the boot-frozen constants) — the UI discloses this. ---- */
 const RUNTIME_KNOB_DEFS = [
-  { key: 'maxIters', env: 'MAX_ITERS', def: 40, min: 1, max: 200 },
-  { key: 'maxConcurrentAgents', env: 'MAX_CONCURRENT_AGENTS', def: 3, min: 0, max: 32 },
+  { key: 'maxIters', env: 'MAX_ITERS', def: 0, min: 0, max: 200 },
+  { key: 'maxConcurrentAgents', env: 'MAX_CONCURRENT_AGENTS', def: 0, min: 0, max: 32 },
   { key: 'consentTimeoutMs', env: 'CONSENT_TIMEOUT_MS', def: 120000, min: 5000, max: 600000 },
   { key: 'cronTickMs', env: 'CRON_TICK_MS', def: 60000, min: 5000, max: 600000 }
 ];
@@ -12668,25 +12740,39 @@ async function runOnce(o) {
   // An UNMETERED (OAuth-subscription) run skips the default per-run $ cap: its "spend" is a token estimate
   // against a flat subscription, so stopping it at $N stops it at an imaginary number (2026-07-23, Andrew-
   // approved). An EXPLICIT caller cap (o.maxCostUsd — e.g. a delegated worker's perWorker) is still honored.
-  const runCapUsd = (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd
+  let runCapUsd = (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd
     : (providerUnmetered ? Infinity
     : ((effectiveCaps.perRun > 0 && isFinite(effectiveCaps.perRun)) ? effectiveCaps.perRun : Infinity));
   // Same rule as o.maxCostUsd for the TURN budget: an explicit caller cap (o.maxIters -- e.g. a delegated
   // worker's ORCH_WORKER_MAX_ITERS) is honored, but may only LOWER the ceiling. Without this the value
   // orchestration.js has always passed was silently dropped and every worker ran the lead's full budget.
+  const stationMaxIters = (CAPS.maxIters > 0 && isFinite(CAPS.maxIters)) ? CAPS.maxIters : Infinity;
   const runMaxIters = (o.maxIters > 0 && isFinite(o.maxIters))
-    ? Math.max(1, Math.min(Math.floor(o.maxIters), CAPS.maxIters))
-    : CAPS.maxIters;
+    ? Math.max(1, Math.min(Math.floor(o.maxIters), stationMaxIters))
+    : stationMaxIters;
   const managedRun = credits.configured() && !providerUnmetered;
   if (managedRun) {
-    // a managed reservation needs a FINITE cap to hold; an ungoverned per-run can't be pre-authorized.
-    if (!(runCapUsd > 0 && isFinite(runCapUsd))) {
-      emit('agent.run.start', { agentId, runId, trigger, model });
-      emit('agent.run.error', { agentId, runId, transient: false, message: 'Managed credits need a per-run budget cap — set STARNET_BUDGET_PER_RUN to a dollar amount.' });
-      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
-      return;   // the outer finally releases the concurrency slot; nothing was reserved (billed stays false)
-    }
     await credits.refresh(CREDITS_ACCOUNT).catch(() => {});   // reconcile the cached balance right before admission
+    // A managed reservation needs a FINITE cap to hold. With no opt-in cap the wallet itself is the run's
+    // only ceiling: reserve the full available balance — the least-limiting finite number there is — and
+    // settle refunds whatever the run didn't use. The reservation is also the loop's maxCostUsd (below),
+    // so a run can never overshoot what it reserved (that would fail the settle as over-cap).
+    if (!(runCapUsd > 0 && isFinite(runCapUsd))) {
+      const snap = credits.snapshot();
+      const avail = Number(snap && snap.balanceUsd);
+      runCapUsd = (isFinite(avail) && avail > 0) ? avail : 0;
+      if (!(runCapUsd > 0)) {
+        // fail closed — never spend against an unknown/empty managed balance (same surface as a beginRun refusal).
+        const exhausted = isFinite(avail);   // a known $0 balance vs. a balance the service never reported
+        const msg = exhausted
+          ? 'Out of managed credit — add credits in the STORE to keep running (or connect your own provider key).'
+          : 'Managed credits are unavailable right now — the credits service did not answer (try again, or use your own provider key).';
+        emit('agent.run.start', { agentId, runId, trigger, model });
+        emit('agent.run.error', { agentId, runId, transient: !exhausted, reason: 'billing', message: msg });
+        emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+        return;   // the outer finally releases the concurrency slot; nothing was reserved (billed stays false)
+      }
+    }
     const adm = credits.beginRun({ runId, agentId, capUsd: runCapUsd });
     if (!adm || adm.ok === false) {
       // fail closed — never spend against an unknown/exhausted managed balance. Surface it as a billing fault
@@ -12762,6 +12848,12 @@ async function runOnce(o) {
     reader: stationWebReader,
     politeness: stationWebPoliteness,
     resolveServiceKey: (name, sfc) => serviceKeysMod.resolveForRequest(serviceKeys, name, sfc),
+    // workspace files in outbound requests (${file:...} body refs / multipart parts): resolved through the
+    // SAME resolveInside jail as fs.* and browser.upload, so a request can only carry this agent's own files.
+    readWorkspaceFile: async (aid, rel) => {
+      const { abs } = await fsJail.resolveInside(aid, rel, { scope: 'read' });
+      return fsp.readFile(abs);
+    },
     // web_fetch's clean-extraction path is keyed now (r.jina.ai 401s without a token), so it is attempted
     // ONLY when the Commander has actually connected one. Resolved through the same grant as any other key,
     // so an unattended run without the tick simply uses the direct fallback instead of failing.
@@ -16683,7 +16775,9 @@ async function handleSaveWrite(req, res) {
   // projection and temporarily erase XP. It can reload/replay the ledger, then save normally.
   const ratingSyncAt = Math.max(0, Number(body.stationStats && body.stationStats.ratingSyncAt) || 0);
   const growthEpoch = Math.max(1, Math.floor(Number(body.agent && body.agent.createdAt) || 1));
-  const latestRatingAt = growthRatings.latestTs(growthEpoch);
+  let latestRatingAt;
+  try { latestRatingAt = growthRatings.latestTs(growthEpoch); }
+  catch (_) { return json(503, { ok: false, error: 'rating history unavailable', growthUnavailable: true }); }
   if (latestRatingAt > ratingSyncAt) return json(200, { ok: false, stale: true, growthStale: true, latestRatingAt });
   try {
     const result = saveStore.save(agentId, body);
@@ -16730,6 +16824,7 @@ async function handleGrowthRatings(req, res) {
   if (!canonical) return json(400, { ok: false, error: 'invalid rating verdict' });
   canonical.epoch = epoch;
   const result = growthRatings.record(canonical);
+  if (result && result.unavailable) return json(503, { ok: false, error: result.error, growthUnavailable: true });
   if (!result || result.error) return json(400, { ok: false, error: (result && result.error) || 'rating failed' });
   return json(200, { ok: true, duplicate: !!result.duplicate, rating: result.rating });
 }
@@ -17101,7 +17196,9 @@ async function handleChannelHandoff(req, res) {
 }
 
 /* Authenticated relay ingress. API-token auth is still required by the global HTTP guard; this second HMAC
-   proves payload origin and the timestamp+nonce cache makes lifecycle delivery exactly-once at this boundary. */
+   proves payload origin and the timestamp+nonce inbox (durable JSONL, reloaded at boot — webhookNonceIo)
+   makes replay admission at-most-once across restart. No transactional channel-delivery guarantee is
+   asserted: a nonce that cannot be loaded or recorded fails closed (503), never accept-without-proof. */
 async function handleChannelWebhook(req, res) {
   const json = (code, value) => respondJson(res, code, value);
   const channel = decodeURIComponent(String(req.url || '').split('?')[0].slice('/api/channels/webhook/'.length));

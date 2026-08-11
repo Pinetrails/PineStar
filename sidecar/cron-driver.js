@@ -122,10 +122,10 @@
     // set would push the live-lease count over this, the EXTRA due jobs are DEFERRED to the next tick WITHOUT
     // advancing their nextRunAt (they stay due), so a burst of simultaneously-due routines never floods the run
     // host / blows the spend budget all at once — they drain `maxParallel` at a time over successive ticks. An
-    // INJECTED int (host threads SKYNET_CRON_MAX_PARALLEL), so this file stays determinism-clean. Default 4.
+    // INJECTED int (host threads SKYNET_CRON_MAX_PARALLEL), so this file stays determinism-clean. Default OFF.
     const maxParallel = (function () {
       const n = parseInt(d.maxParallel, 10);
-      return (Number.isFinite(n) && n > 0) ? n : 4;
+      return (Number.isFinite(n) && n >= 0) ? n : 0;
     })();
     // injected host tz (G4.1): a tz-LESS cron schedule is planned on this LOCAL wall-clock; a schedule's
     // own tz always wins. A string dep — the pure cron-math owns the Intl formatting, so this stays clean.
@@ -590,7 +590,7 @@
       //     when a slot frees. NS-0: the at-capacity deferral is now EMITTED as cron.skipped{at-capacity} (the
       //     reason value was added to the governed enum in shared/events.js) AND surfaced on the return value +
       //     the cron.tick.deferred count, so a night of quietly-deferred routines is finally observable.
-      let slotsLeft = maxParallel - leases.size;
+      let slotsLeft = maxParallel > 0 ? maxParallel - leases.size : Infinity;
       const deferred = [];
       const deferredSet = new Set();
       for (const f of plan.fire) {

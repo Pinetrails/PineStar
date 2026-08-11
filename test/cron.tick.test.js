@@ -57,7 +57,7 @@ function setup(jobs, runOnceFake, opts) {
     persona: 'PERSONA',
     agentExists: opts.agentExists,       // deleted-agent guard: absent -> pre-guard behavior (every agent passes)
     maxRunMs: opts.maxRunMs || 480000,
-    maxParallel: opts.maxParallel,       // G4.4: undefined -> driver default (4); a number caps in-flight fires
+    maxParallel: opts.maxParallel,       // G4.4: undefined/zero -> unlimited; a positive number caps in-flight fires
     resolveStation: opts.resolveStation  // B5 parity: absent -> station undefined (default office), like the host
   });
   return { driver, clock, events, runs, placed, deliveries, getJobs: () => store, getJob: (id) => cronStore.getJob(store, id),
@@ -469,6 +469,16 @@ const okRun = (text) => (o) => { o.emit('agent.run.start', { agentId: 'a', runId
     const summary = s.driver.applyTick(s.clock.now());
     A.eq(summary.fired, 0, 'no run fires without capability');
     A.eq(s.placed.length, 0, 'and no conveyor box rides — the floor never shows phantom work');
+  }
+
+  // ---- G4.4 DEFAULT: twenty simultaneously due routines all fire when no cap is configured ----
+  {
+    const jobs = Array.from({ length: 20 }, (_, i) => intervalJob('u' + (i + 1), 'every 1m'));
+    const s = setup(jobs, () => new Promise(() => {}));
+    s.clock.set(T0 + 60000);
+    const summary = s.driver.applyTick(s.clock.now());
+    A.eq(summary.fired, 20, 'the default routine scheduler starts all twenty due runs');
+    A.eq(summary.deferred.length, 0, 'no hidden routine concurrency ceiling defers work');
   }
 
   // ---- G4.4 CAP: maxParallel caps in-flight fires; the excess due jobs DEFER (stay due next tick) ----

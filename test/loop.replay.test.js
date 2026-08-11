@@ -432,7 +432,7 @@ function chatFixture() {
     {
       const r = await run({ m1: httpErr(503), m2: httpErr(503) }, ['m2']);
       A.eq(r.res.reason, 'error', 'exhausted chain -> error');
-      A.eq(r.provider.callCount(), 6, 'primary, the one fallback, then 4 bounded same-provider retries before giving up');
+      A.eq(r.provider.callCount(), 8, 'primary, the one fallback, then 6 bounded same-provider retries before giving up');
       A.eq(r.seq.find(e => e.name === 'agent.run.error').payload.transient, true, '503 is transient');
     }
     // no fallback configured -> bounded same-provider retries ride out a transient overload before dying.
@@ -441,7 +441,7 @@ function chatFixture() {
     {
       const r = await run({ m1: httpErr(503) }, []);
       A.eq(r.res.reason, 'error', 'no fallback + persistent 503 -> the run still ends error');
-      A.eq(r.provider.callCount(), 5, '1 initial + 4 same-provider retries when there is no chain to burn');
+      A.eq(r.provider.callCount(), 7, '1 initial + 6 same-provider retries when there is no chain to burn');
     }
     // a NON-failover error (malformed 400) is fatal immediately — the chain is not burned on a client bug
     {
@@ -469,6 +469,29 @@ function chatFixture() {
       A.ok(summarized >= 1, 'the summarizer ran as part of the overflow recovery');
       A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'exactly one compaction during recovery');
     }
+  }
+
+  // ---- no default iteration quota: productive work continues past the former 40-turn ceiling ----
+  {
+    const { emit } = setup();
+    let ran = 0;
+    const reg = makeRegistry();
+    reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async () => { ran++; return 'ok'; } });
+    const turns = Array.from({ length: 45 }, (_, i) => [
+      { type: 'tool_start', index: 0, id: 'c' + i, name: 'fs_write' },
+      { type: 'tool_args', index: 0, chunk: JSON.stringify({ path: 'p' + i + '.md', content: 'x' }) },
+      { type: 'done', finishReason: 'tool_calls' }
+    ]);
+    turns.push([{ type: 'text', delta: 'finished' }, { type: 'done', finishReason: 'stop' }]);
+    const provider = makeReplayProvider({ turns });
+    const res = await runAgentLoop({
+      messages: [{ role: 'user', content: 'do all 45 steps' }], provider, emit,
+      cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model',
+      dispatch: (c, ctx) => reg.dispatch(c, ctx), capCtx: openCtx()
+    });
+    A.eq(res.reason, 'done', 'an uncapped run completes normally after more than forty productive turns');
+    A.eq(ran, 45, 'all forty-five tool turns execute');
+    A.eq(provider.callCount(), 46, 'the final synthesis call also runs after all forty-five tool turns');
   }
 
   // ---- unpriced usage evidence: a cold catalog does not pretend the model was free; the host can backfill later ----

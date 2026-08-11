@@ -136,6 +136,19 @@ const QuerySpine = (() => {
     if (opts && opts.refresh) return refresh(key);
     return snapshotOf(r);
   }
+  function update(key, data) {
+    const r = resource(key);
+    if (r.validate && !r.validate(data)) throw new Error('invalid response for ' + r.key);
+    r.generation++;
+    r.data = data;
+    r.hasData = true;
+    r.updatedAt = now();
+    r.invalidated = false;
+    r.error = null;
+    r.errorAt = 0;
+    notify(r);
+    return snapshotOf(r);
+  }
 
   function ensureTimer(r) {
     if (!r.pollMs || !r.listeners.size || r.timer != null) return;
@@ -175,8 +188,17 @@ const QuerySpine = (() => {
     validate: data => !!(data && Array.isArray(data.jobs))
   });
 
+  // Durable Commander Journey truth. Polling is shared and subscriber-owned; failed reads keep
+  // last-good data with explicit stale/error metadata rather than manufacturing current proof.
+  define('journey', {
+    path: '/api/journey',
+    ttlMs: 12000,
+    pollMs: 4000,
+    validate: data => !!(data && data.ok && data.journey && typeof data.journey === 'object')
+  });
+
   return {
-    define, get, refresh, invalidate, subscribe, state,
+    define, get, refresh, invalidate, update, subscribe, state,
     _resetForTest() {
       for (const r of resources.values()) {
         stopTimer(r);

@@ -269,7 +269,17 @@ function world(opts) {
     A.eq(w3.loop().iterationCount, 0, 'and costs no iteration slot');
   }
 
-  // ---- 8. the fan-out cap DEFERS, never drops -------------------------------------------------------------
+  // ---- 8. no default fan-out quota: twenty standing loops may start together -----------------------------
+  {
+    let loops = [];
+    for (let i = 1; i <= 20; i++) loops = S.createLoop(loops, { id: 'u' + i, objective: 'o' + i, agentId: 'a' + i }, { now: T0 });
+    const w = world({ loops: loops });
+    const res = w.tick(T0);
+    A.eq(res.fired, 20, 'the default standing-loop driver starts all twenty eligible loops');
+    A.eq(res.deferred, 0, 'no hidden standing-loop concurrency ceiling defers work');
+  }
+
+  // ---- 8b. an opt-in fan-out cap DEFERS, never drops ------------------------------------------------------
   {
     let loops = [];
     for (let i = 1; i <= 4; i++) loops = S.createLoop(loops, { id: 'l' + i, objective: 'o' + i }, { now: T0 });

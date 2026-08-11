@@ -15,7 +15,10 @@
      5. ONE IN FLIGHT per station: a concurrent second post refuses 409 while the first is riding;
      6. NO GRANTS PROPAGATION (the chain-grants law): a sample whose model tries a consent-gated mutation
         (shell.exec) is default-denied — the request body cannot smuggle unattendedGrants — and the line
-        still delivers (a denial never gates the reply).
+        still delivers (a denial never gates the reply);
+     7. LINE SCOPE (2026-08-10): { line } in the body makes the sample enter through THAT line's own door
+        on a two-line floor (the FINISH card's { line: c.key } is finally honored); an unknown line refuses
+        409 with no spend; a line-less POST stays byte-compatible with today's behaviour.
 
    In test/http.list (a child-process boot test does not gate test:fast). */
 'use strict';
@@ -376,6 +379,74 @@ function twoStagePlan() {
     const noDock = await post({});
     A.eq(noDock.status, 409, 'a line with no crewed dock still refuses, and refuses honestly');
     A.ok(/no dock/.test(String(noDock.j.error || '')), 'naming the real reason: ' + noDock.j.error);
+
+    /* ---- 7. THE SAMPLE IS LINE-SCOPED (2026-08-10 audit) ----
+       The FINISH card is titled for ONE line ("FINISH ‹LINE B›") and posts { line: c.key } — the
+       lineComponents key, which IS the compiled plan's lineId (pipeline.js: lineId = c.key; one
+       namespace). The route used to read only body.text, so on a two-line floor the card's sample rode
+       whichever line's source compiled FIRST. Locked here on a floor with TWO disjoint complete lines
+       (A compiles first) plus one UNCREWED third line:
+         (c) no `line` -> byte-compatible today's behaviour: the sample rides the FIRST line (A);
+         (a) line: B -> the sample enters through B's OWN door, runs B's dock, and its crate carries B;
+         (b) an unknown line refuses 409 (never 404, never a ride down some other line), spending nothing;
+             a known-but-uncrewed line refuses with the honest no-dock reason. */
+    const twoLine = Pipeline.compileRoutingPlan({
+      props: [
+        // LINE A (oldest ids -> compiles first, keys 'p1'): INTAKE -> alpha-agent -> OUTBOX
+        { id: 'p1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+        { id: 'p2', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'alpha-agent' },
+        { id: 'p3', t: 'outbox', x: 7, y: 0, w: 1, h: 1 },
+        // LINE B (disjoint, keys 'p4'): INTAKE -> beta-agent -> OUTBOX
+        { id: 'p4', t: 'intake', x: 0, y: 10, w: 1, h: 1 },
+        { id: 'p5', t: 'bay', x: 4, y: 10, w: 1, h: 1, agentId: 'beta-agent' },
+        { id: 'p6', t: 'outbox', x: 7, y: 10, w: 1, h: 1 },
+        // LINE C (disjoint, keys 'p7'): drawn but UNCREWED — exists on the plan, routes to no dock
+        { id: 'p7', t: 'intake', x: 0, y: 20, w: 1, h: 1 },
+        { id: 'p8', t: 'bay', x: 4, y: 20, w: 1, h: 1 }
+      ],
+      belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E'),
+              belt(1, 10, 'E'), belt(2, 10, 'E'), belt(3, 10, 'E'), belt(5, 10, 'E'), belt(6, 10, 'E'),
+              belt(1, 20, 'E'), belt(2, 20, 'E'), belt(3, 20, 'E')]
+    });
+    A.ok(Pipeline.ok(twoLine), 'fixture: the two-line floor is deployable');
+    const lineA = twoLine.lineOfAgent['alpha-agent'], lineB = twoLine.lineOfAgent['beta-agent'];
+    const lineC = twoLine.lineOfProp['p7'];
+    A.ok(lineA && lineB && lineC && lineA !== lineB && lineB !== lineC, 'fixture: three distinct compiled lines: ' + [lineA, lineB, lineC].join(','));
+    A.eq(Pipeline.resolveTarget(twoLine, {}), 'alpha-agent', 'fixture: the unscoped source walk resolves LINE A first');
+    for (const b of twoLine.bays.concat(twoLine.dockBays)) b.objects = ['computer'];
+    A.eq((await fetch(B + '/api/routing', { method: 'POST', headers, body: JSON.stringify(twoLine) })).status, 200, 'the two-line floor deploys');
+
+    // (c) no `line` in the body -> EXACTLY today's behaviour: first-compiled line, no `line` echo
+    const plain = await post({});
+    A.eq(plain.status, 200, 'a line-less sample still delivers');
+    A.eq(plain.j.agentId, 'alpha-agent', 'a line-less sample rides the first-compiled line, unchanged');
+    A.ok(!('line' in plain.j), 'a line-less answer carries no line key (byte-compatible)');
+
+    // (a) line: B -> the sample enters through LINE B's own door, not the first-compiled one
+    const scoped = await post({ line: lineB });
+    A.eq(scoped.status, 200, 'the line-scoped sample delivers');
+    A.eq(scoped.j.agentId, 'beta-agent', 'the sample rode the NAMED line (B), not the first-compiled one (A)');
+    A.eq(scoped.j.line, lineB, 'the answer echoes the line it proved');
+    A.ok(scoped.j.runs.every(r => r.agentId === 'beta-agent'), 'every recorded run stayed on line B\'s dock: ' + JSON.stringify(scoped.j.runs.map(r => r.agentId)));
+    await sse.settle(800);
+    const scopedCrate = sse.events.filter(e => e.name === 'workitem.placed').map(e => e.payload || {})
+      .find(p => p.workitemId === scoped.j.workitemId);
+    A.ok(scopedCrate, 'the scoped sample\'s entry crate rode the station bus');
+    A.eq(scopedCrate.queueId, 'beta-agent', 'the crate queues at line B\'s dock');
+    A.eq(scopedCrate.lineId, lineB, 'the crate carries line B — the chain seed scopes the whole ride to the named line');
+
+    // (b) an unknown line refuses honestly — 409 (route exists), ok:false, and NOTHING dispatched
+    const reqBefore = mock.requests.length;
+    const unknown = await post({ line: 'p999' });
+    A.eq(unknown.status, 409, 'an unknown line refuses 409 — never a 404, never a ride down another line');
+    A.ok(unknown.j && unknown.j.ok === false, 'the unknown-line refusal says ok:false');
+    A.ok(/no armed work line is named "p999"/.test(String(unknown.j.error || '')), 'naming the real reason: ' + unknown.j.error);
+    A.eq(mock.requests.length, reqBefore, 'an unknown-line refusal spends nothing (no provider request)');
+    // …and a KNOWN line with no crewed dock refuses with the line-scoped no-dock reason
+    const bare7 = await post({ line: lineC });
+    A.eq(bare7.status, 409, 'a known-but-uncrewed line refuses 409');
+    A.ok(new RegExp('line "' + lineC + '" routes this job to no dock').test(String(bare7.j.error || '')), 'naming the uncrewed line itself: ' + bare7.j.error);
+    A.eq(mock.requests.length, reqBefore, 'the uncrewed-line refusal spends nothing either');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}

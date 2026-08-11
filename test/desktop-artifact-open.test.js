@@ -12,6 +12,7 @@ const path = require('path');
 
 const chat = fs.readFileSync(path.join(__dirname, '../frontend/app/chat.js'), 'utf8');
 const rust = fs.readFileSync(path.join(__dirname, '../src-tauri/src/main.rs'), 'utf8');
+const decisions = fs.readFileSync(path.join(__dirname, '../docs/DECISIONS.md'), 'utf8');
 
 A.ok(/core\.invoke\('starnet_open_artifact', \{ path: String\(title \|\| ''\), agentId: agentId \|\| 'agent' \}\)/.test(chat),
   'desktop filename click sends artifact identity + owner to the native host');
@@ -38,5 +39,21 @@ A.ok(!/safe_native_artifact_extension[\s\S]{0,900}"exe"/.test(rust),
   'executable files are not allowlisted for native opening');
 A.ok(/starnet_open_artifact,\s*starnet_reveal_path,/.test(rust),
   'both constrained commands are registered with Tauri');
+
+// Host-gesture gate (docs/MISTAKES.md: a renderer IPC call is not a human gesture). Every
+// OS launch asks the user through a blocking NATIVE dialog naming the resolved path; the
+// answer is one-shot and never cached, and a Cancel is an answer the frontend respects.
+A.ok(/fn confirm_host_launch[\s\S]{0,900}blocking_show/.test(rust),
+  'the host gesture is a blocking native dialog answered at the host boundary');
+A.ok(/fn starnet_open_artifact[\s\S]{0,1500}confirm_host_launch/.test(rust),
+  'native open spawns nothing without a host-confirmed gesture');
+A.ok(/fn starnet_reveal_path[\s\S]{0,1500}confirm_host_launch/.test(rust),
+  'native reveal spawns nothing without a host-confirmed gesture');
+A.ok(/HOST_GESTURE_DECLINED/.test(rust) && /declined at the host confirmation/.test(rust),
+  'a declined gesture returns the marker error the frontend keys off');
+A.ok(/declined at the host/.test(chat),
+  'the renderer treats a host-dialog Cancel as an answer, not a failure to fall back around');
+A.ok(/sole exception[\s\S]{0,500}host-boundary security confirmation[\s\S]{0,500}exact canonical target \+ action/i.test(decisions),
+  'the locked no-native-dialog law records the narrow host-security exception instead of contradicting it');
 
 A.report('desktop-artifact-open.test');

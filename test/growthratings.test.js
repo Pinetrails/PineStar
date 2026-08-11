@@ -50,6 +50,16 @@ A.ok(broken.record({ runId: 'lost', verdict: 'great', entries: [{ agentId: 'agen
   'an fsync/append failure is never acknowledged');
 A.eq(broken.count(), 0, 'a failed durable append cannot enter the in-memory source of truth');
 
+let unreadableAppends = 0;
+const unreadable = makeGrowthRatings({
+  io: { readAll: () => { throw new Error('EBUSY'); }, append: () => { unreadableAppends++; } },
+  clock: { now: () => 550 }
+});
+const refusedUnreadable = unreadable.record({ runId: 'unknown-history', verdict: 'great', entries: [{ agentId: 'agent', id: 'work:unknown-history', delta: 3 }] });
+A.ok(refusedUnreadable.unavailable && refusedUnreadable.error, 'an unreadable canonical ledger refuses new rating authority');
+A.eq(unreadableAppends, 0, 'an unreadable ledger cannot append a duplicate first-verdict claim');
+A.throws(() => unreadable.list({}), 'an unreadable canonical ledger is unavailable, never an empty successful history');
+
 const boundedDisk = [], bounded = makeGrowthRatings({ ramMax: 2, io: { readAll: () => boundedDisk.slice(), append: r => boundedDisk.push(r) }, clock: { now: () => ++now } });
 for (const id of ['old', 'middle', 'new']) bounded.record({ runId: id, verdict: 'great', entries: [{ agentId: 'agent', id: 'work:' + id, delta: 3 }] });
 A.eq(bounded.count(), 2, 'the served rating history window stays bounded in memory');

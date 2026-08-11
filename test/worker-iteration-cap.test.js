@@ -27,7 +27,9 @@ const orch = fs.readFileSync(path.join(__dirname, '../sidecar/tools/builtin/orch
 
 // --- PRODUCER half: orchestration.js still computes and sends a per-worker ceiling ---
 A.ok(/workerMaxIters/.test(orch), 'orchestration.js still computes a per-worker iteration ceiling');
-A.ok(/maxIters:\s*bounded\s*\?\s*Math\.min\(workerMaxIters,\s*bounded\.workerMaxIters\)\s*:\s*workerMaxIters/.test(orch),
+A.ok(/const\s+workerMaxIters[\s\S]{0,220}:\s*0;/.test(orch),
+  'orchestration.js defaults the delegated-worker ceiling off');
+A.ok(/maxIters:\s*bounded\s*\?\s*lowerPositive\(workerMaxIters,\s*bounded\.workerMaxIters\)\s*:\s*workerMaxIters/.test(orch),
   'orchestration.js passes the ordinary worker ceiling and only lowers it for a task-specific bound');
 
 // --- HOST half 1: the station actually SUPPLIES workerMaxIters (it previously never did) ---
@@ -39,8 +41,8 @@ A.ok(/workerMaxIters:\s*ORCH_WORKER_MAX_ITERS/.test(sidecar),
 // --- HOST half 2: runOnce CONSUMES o.maxIters, and only ever downward ---
 A.ok(/const\s+runMaxIters\s*=/.test(sidecar), 'runOnce computes a per-run iteration ceiling');
 A.ok(/o\.maxIters/.test(sidecar), 'runOnce reads the caller-supplied o.maxIters (it previously never did)');
-A.ok(/runMaxIters[\s\S]{0,240}Math\.min\([\s\S]{0,80}CAPS\.maxIters\)/.test(sidecar),
-  'the caller cap is clamped by Math.min against CAPS.maxIters — a caller may LOWER but never RAISE the ceiling');
+A.ok(/Math\.min\(Math\.floor\(o\.maxIters\),\s*stationMaxIters\)/.test(sidecar),
+  'the caller cap is clamped against the station policy — a caller may LOWER but never RAISE an explicit ceiling');
 
 // --- HOST half 3: the limits object uses the computed value, not the raw station cap ---
 A.ok(/limits:\s*\{\s*maxIters:\s*runMaxIters/.test(sidecar),
@@ -48,8 +50,8 @@ A.ok(/limits:\s*\{\s*maxIters:\s*runMaxIters/.test(sidecar),
 A.ok(!/limits:\s*\{\s*maxIters:\s*CAPS\.maxIters\s*,/.test(sidecar),
   'the old hardcoded limits.maxIters = CAPS.maxIters assignment is gone (that line WAS the bug)');
 
-// --- the default path is unchanged: an ordinary run supplies no o.maxIters and still gets CAPS.maxIters ---
-A.ok(/:\s*CAPS\.maxIters\s*;/.test(sidecar),
-  'runMaxIters falls back to CAPS.maxIters, so a normal (non-delegated) run is byte-identical to before');
+// --- the default path is unlimited: an ordinary run supplies no o.maxIters and inherits stationMaxIters ---
+A.ok(/:\s*stationMaxIters\s*;/.test(sidecar),
+  'runMaxIters inherits the station policy, which defaults to unlimited');
 
 A.report('worker-iteration-cap.test');

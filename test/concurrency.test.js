@@ -46,8 +46,12 @@ const { makeConcurrencyGate } = require('../sidecar/concurrency.js');
   A.eq(g.active(), 0, 'leaving an unknown agent is a no-op');
 
   const u = makeConcurrencyGate({ max: 0 });           // 0 = unlimited
-  for (const id of ['a', 'b', 'c', 'd', 'e']) A.ok(u.tryEnter(id), 'unlimited gate admits ' + id);
+  for (let i = 1; i <= 20; i++) A.ok(u.tryEnter('worker-' + i), 'unlimited gate admits worker-' + i);
   A.eq(u.max(), 0, 'max 0 reports unlimited');
+
+  const d = makeConcurrencyGate({});                   // omitted = unlimited product default
+  for (let i = 1; i <= 20; i++) A.ok(d.tryEnter('default-worker-' + i), 'default gate admits worker-' + i);
+  A.eq(d.active(), 20, 'the default gate admits twenty distinct agents concurrently');
 }
 
 // ---- inFlight() as TELEMETRY (concurrent-sessions lane, 2026-07-18): the old admission-time same-agent

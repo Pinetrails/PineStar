@@ -16,6 +16,7 @@
   <a class="brand" href="../index.html">STARNET TERMLINK</a>
   <nav class="topnav">
     <a href="../index.html#features">FEATURES</a>
+    <a href="../pricing.html">PRICING</a>
     <a href="../index.html#download">DOWNLOAD</a>
     <a href="index.html">DOCS</a>
     <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
@@ -113,6 +114,20 @@ the agent has finished composing the request.</p>
   auth: { "key": "SOME_API_KEY", "in": "query", "name": "api_key" }</code></pre>
 <p>The agent still never handles the value, and it is attached only to the first request — if the server
 redirects somewhere else, the credential is not carried along.</p>
+
+<h2>Uploading files — mockups, images, print files</h2>
+<p>Upload endpoints take file <b>bytes</b>, and the same substitution idea covers them. The agent never
+pastes file contents into a request; it writes a <b>reference</b> to a file in its workspace, and StarNet
+reads and encodes the bytes at the moment the request is sent. Printify's image upload, for example:</p>
+<pre><code>web_request
+  url:    https://api.printify.com/v1/uploads/images.json
+  method: POST
+  headers: { "Authorization": "Bearer ${PRINTIFY_API_KEY}" }
+  body:   {"file_name":"mockup.png","contents":"${file:mockups/mockup.png}"}</code></pre>
+<p>For APIs that want a classic form upload (<code>multipart/form-data</code>) there is a
+<code>multipart</code> parameter that attaches workspace files as form fields the same way. Either route:
+the file must live in the agent's own workspace (it can never reach outside it), the bytes never pass
+through the model, and the limit is 20MB per file / 25MB per request.</p>
 
 <h2>Letting it run while you are away</h2>
 <p>By default a key is usable only in <b>watched sessions</b> — you are at the station and approve the call.

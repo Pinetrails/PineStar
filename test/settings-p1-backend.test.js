@@ -32,8 +32,18 @@ ok(/handleConfigReset[\s\S]{0,2200}unknown or non-resettable section/.test(src),
 
 // ---- P1-9 advanced runtime knobs: env > saved > default ----
 ok(/function resolveKnob\(/.test(src), 'P1-9: resolveKnob implements the precedence');
-ok(/resolveKnob\('MAX_ITERS', 'maxIters', 40\)/.test(src), 'P1-9: maxIters resolves via resolveKnob');
-ok(/resolveKnob\('MAX_CONCURRENT_AGENTS', 'maxConcurrentAgents', 3\)/.test(src), 'P1-9: maxConcurrentAgents resolves via resolveKnob');
+ok(/resolveKnob\('MAX_ITERS', 'maxIters', 0\)/.test(src), 'P1-9: maxIters defaults to unlimited and resolves via resolveKnob');
+ok(/resolveKnob\('MAX_CONCURRENT_AGENTS', 'maxConcurrentAgents', 0\)/.test(src), 'P1-9: maxConcurrentAgents defaults to unlimited and resolves via resolveKnob');
+ok(/perRun:\s*num\(ENV\('BUDGET_PER_RUN'\), 0\)/.test(src), 'P1-9: the per-run spend ceiling defaults off');
+ok(/ORCH_PER_WORKER\s*=\s*num\(ENV\('BUDGET_PER_WORKER'\), 0\)/.test(src), 'P1-9: the delegated-worker spend ceiling defaults off');
+ok(/ORCH_WORKER_MAX_ITERS\s*=\s*num\(ENV\('WORKER_MAX_ITERS'\), 0\)/.test(src), 'P1-9: the delegated-worker iteration ceiling defaults off');
+ok(/maxConcurrent:\s*\(\)\s*=>\s*num\(ENV\('V1_MAX_CONCURRENT'\), 0\)/.test(src), 'P1-9: the external API concurrency ceiling defaults off');
+ok(/CRON_MAX_PARALLEL\s*=\s*num\(ENV\('CRON_MAX_PARALLEL'\), 0\)/.test(src), 'P1-9: scheduled-work concurrency defaults to unlimited');
+ok(/LOOP_MAX_PARALLEL\s*=\s*num\(ENV\('LOOP_MAX_PARALLEL'\), 0\)/.test(src), 'P1-9: standing-loop concurrency defaults to unlimited');
+// ---- managed credits stay functional with no opt-in cap: an uncapped run reserves the WALLET, never refuses ----
+ok(/runCapUsd = \(isFinite\(avail\) && avail > 0\) \? avail : 0;/.test(src), 'managed credits: an uncapped run reserves the full available balance (wallet is the only ceiling)');
+ok(!/Managed credits need a per-run budget cap/.test(src), 'managed credits: the set-an-env-var refusal is gone — no cap is required to run');
+ok(/if \(!\(runCapUsd > 0\)\) \{[\s\S]{0,1200}return;[\s\S]{0,300}const adm = credits\.beginRun\(\{ runId, agentId, capUsd: runCapUsd \}\);/.test(src), 'managed credits: an unknown/empty balance still fails CLOSED before any reservation (never spends against an unknown wallet)');
 ok(/resolveKnob\('CONSENT_TIMEOUT_MS', 'consentTimeoutMs', 120000\)/.test(src), 'P1-9: consent timeout is now env>saved>default (was hardcoded)');
 ok(/resolveKnob\('CRON_TICK_MS', 'cronTickMs', 60000\)/.test(src), 'P1-9: cron tick resolves via resolveKnob');
 ok(/function knobEnvLocked\(/.test(src) && /envLocked: locked/.test(src), 'P1-9: the status reports which knobs are env-locked');

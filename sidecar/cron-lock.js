@@ -36,12 +36,14 @@
    new Date() / Math.random literal here, so it passes lint-determinism.js (same shape as
    durable-write.js).
 
-   makeCronLock({ fs, path, lockfile, now, maxRunMs, pid?, nonce? }) -> { withLock(fn), release, _internals }
+   makeCronLock({ fs, path, lockfile, now, maxRunMs, pid?, nonce?, reclaimByAge? }) -> { withLock(fn), release, _internals }
      fs       : node:fs (needs openSync/writeSync/closeSync/readFileSync/statSync/renameSync/unlinkSync).
      path     : node:path (unused today; accepted for symmetry / future dir work).
      lockfile : absolute path to the advisory lockfile (e.g. WORKSPACES/cron.lock).
      now      : () -> ms wall clock — used only for the stale-age comparison against statSync mtime.
      maxRunMs : a lock older than this is STALE and reclaimable (mirror the cron lease ceiling).
+     reclaimByAge: defaults true for bounded cron work. Set false for an unbounded critical section
+                (workspace recovery) where a live holder must NEVER be stolen merely because it is old.
      pid      : optional holder id (defaults to process.pid). nonce: optional ()->string (defaults
                 to a crypto random hex) — pid:nonce is the holder stamp written + read-back-verified. */
 'use strict';
@@ -72,6 +74,7 @@ function makeCronLock(deps) {
   const lockfile = d.lockfile;
   const now = typeof d.now === 'function' ? d.now : function () { return 0; };
   const maxRunMs = d.maxRunMs || (8 * 60 * 1000);
+  const reclaimByAge = d.reclaimByAge !== false;
   const pid = (d.pid != null) ? d.pid : (typeof process !== 'undefined' && process.pid) || 0;
   const nonceFn = typeof d.nonce === 'function' ? d.nonce : defaultNonce;
   // injected for tests; defaults to the process.kill(pid,0) probe. Returns true when the holder pid is (or may be)
@@ -170,10 +173,10 @@ function makeCronLock(deps) {
     if (heldStamp) { depth++; return true; }   // already held by this instance -> re-entrant (depth-counted)
     let mine = tryCreateOwn();
     if (!mine) {
-      // the lock exists. Reclaim it iff it is stale by mtime OR its holder pid is PROVABLY dead (a crash-killed
-      // sidecar leaves a fresh-mtime lock that would otherwise mute cron for the whole maxRunMs window). A LIVE
-      // (or unprovable) holder is respected — we no-op this pass.
-      if (isStale() || deadHolder()) mine = tryReclaimStale();
+      // Bounded cron work may reclaim at its explicit age ceiling; unbounded callers disable that path.
+      // Every caller may reclaim a PROVABLY dead holder immediately. With reclaimByAge:false, a LIVE or
+      // unprovable holder is respected forever rather than risking concurrent entry.
+      if ((reclaimByAge && isStale()) || deadHolder()) mine = tryReclaimStale();
     }
     if (mine) { heldStamp = mine; depth = 1; return true; }
     return false;

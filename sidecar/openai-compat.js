@@ -34,7 +34,7 @@
 'use strict';
 const nodeCrypto = require('node:crypto');
 
-const DEFAULT_MAX_CONCURRENT = 10;   // matches the reference harness's default; env STARNET_V1_MAX_CONCURRENT overrides
+const DEFAULT_MAX_CONCURRENT = 0;   // unlimited by default; env STARNET_V1_MAX_CONCURRENT opts into a ceiling
 const MIN_KEY_LEN = 16;              // below this, refuse to enable (guessable key on a terminal-capable surface = RCE)
 const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const DEFAULT_MODEL_ID = 'starnet-agent';   // the stable advertised model id
@@ -606,7 +606,7 @@ function makeOpenAiCompat(deps) {
   // one boot line describing whether /v1 is live (called by index.js after construction).
   function announce() {
     const line = enabled()
-      ? '  · /v1 OpenAI-compatible API ENABLED (bearer auth; max ' + maxConcurrent() + ' concurrent)'
+      ? '  · /v1 OpenAI-compatible API ENABLED (bearer auth; ' + (maxConcurrent() > 0 ? 'max ' + maxConcurrent() + ' concurrent' : 'unlimited concurrency') + ')'
       : '  · /v1 OpenAI-compatible API disabled — set STARNET_API_KEY (>=' + MIN_KEY_LEN + ' chars) to enable external harness access';
     try { if (typeof d.logBoot === 'function') d.logBoot(line); else console.log(line); } catch (_) {}
   }

@@ -308,6 +308,23 @@ function tmpFile(name) { const f = path.join(tmpRoot, name); cleanup.push(f); re
     A.ok(!realFs.existsSync(lockfile), 'the lockfile is released after the OUTERMOST scope exits');
   }
 
+  /* ---- 6b. UNBOUNDED CRITICAL SECTION: recovery-style locks never steal from a live holder by age ---- */
+  {
+    const lockfile = tmpFile('unbounded-live.lock');
+    const clock = makeClock(T0);
+    const holder = makeCronLock({ fs: realFs, path, lockfile, now: () => clock.now(), maxRunMs: 480000, pid: 101, nonce: () => 'LIVE', pidAlive: () => true });
+    A.ok(holder._internals.acquire(), 'unbounded test holder acquires the parent-level lock');
+    clock.advance(9 * 60 * 1000);
+    const contender = makeCronLock({
+      fs: realFs, path, lockfile, now: () => clock.now(), maxRunMs: 480000,
+      pid: 202, nonce: () => 'NEXT', pidAlive: () => true, reclaimByAge: false
+    });
+    let ran = false;
+    A.ok(!contender.withLock(() => { ran = true; }).ran && !ran,
+      'reclaimByAge:false refuses an aged lock while its holder pid is alive');
+    holder.release();
+  }
+
   /* ---- 7. DEAD-PID RECLAIM: a lock stamped with a pid that is NOT alive is reclaimed IMMEDIATELY, even when
      its mtime is fresh (not yet stale). A crash-killed sidecar leaves a fresh-mtime lock; the mtime break alone
      would mute cron for the whole maxRunMs window. The pid probe (injected here) closes that gap. An ALIVE

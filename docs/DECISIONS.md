@@ -10,8 +10,10 @@ many of these — they win on any wording conflict.
 
 ## Product
 
-- **StarNet is a beginners product.** Sandbox freedom, full power from minute one, NEVER
-  grind/unlock/permission walls. (Locked; see also skills.)
+- **StarNet is for beginners and power users.** It is easier for beginners to use, never
+  beginner-limited: sandbox freedom, full power from minute one, and no grind/unlock/usage
+  walls. User-work quotas default off; users or deployers may opt into limits. Safety,
+  consent, sandbox, and truthful-telemetry boundaries remain enforced. (Locked; see also skills.)
 - **Truthful telemetry is THE core law.** The app must never assert state the harness can't
   prove. Object = capability: a prop in the world is a real grant, not decoration. Tool
   surface must never exceed wired reality.
@@ -43,9 +45,13 @@ many of these — they win on any wording conflict.
   SFX = one console voice. Never re-add music unasked.
 - **CRT look is BOLD not subtle**; iterate via `?crtlab=1` and copy values out.
 - **The OS paints NOTHING in StarNet** (2026-07-27, Andrew). The corollaries of the control law
-  below, for the other two surfaces the user agent will draw if nobody stops it: **no native
+  below, for the other two surfaces the user agent will draw if nobody stops it: **no renderer-native
   dialog** — `window.confirm/alert/prompt` is an OS modal over the phosphor terminal; arm through
-  `ArmConfirm` (that helper exists for this) or use a station panel. **No native tooltip** —
+  `ArmConfirm` (that helper exists for this) or use a station panel. The sole exception is a
+  **host-boundary security confirmation** for a renderer-callable OS launch: the host may show a
+  blocking native prompt only when it names the exact canonical target + action, remembers nothing,
+  asks on every call, and Cancel cannot fall through to another launch path. Renderer UI cannot mint
+  that proof; this exception is never reusable for ordinary product confirmation. **No native tooltip** —
   `frontend/app/tooltip.js` adopts every `[title]` into `[data-tip]`, removes the attribute, and
   draws the station's card; `data-no-tip` opts an element out when it owns a richer tip. Both
   locked by `test/station-tooltip.test.js`.
