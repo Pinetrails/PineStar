@@ -6045,10 +6045,21 @@ const World = (() => {
   /* WHOSE WORK IS THIS? (work belongs to a line, 2026-08-07 — Andrew's ruling.) A work-item that entered
      through a LINE'S OWN TRIGGER carries that line's `lineId` on its crate; a direct order (a COMMS
      directive, an ad-hoc job) carries none. The floor keeps the last answer per dock so the SHIP decision
-     below can tell the two apart. Keyed by agentId exactly like `runWork` — same one-item-in-flight-per-dock
-     basis the queue gauge already runs on. Truthful telemetry cuts both ways: never draw a workflow that
+     below can tell the two apart. Truthful telemetry cuts both ways: never draw a workflow that
      didn't run, never hide a run that did. */
-  const dockLineWork = new Map();   // agentId -> lineId of the work-item most recently placed at this dock (or absent)
+  /* OVERLAP-SAFE (2026-08-11 audit #5): liveRunsByAgent means one dock can have SEVERAL runs in
+     flight, so a single latched value per agentId is a lie under overlap — the newest work-item
+     overwrote whose-line-is-this for a run that started earlier. Each dock now keeps a bounded FIFO
+     of placed work-items' line identity; the ship decision consumes the OLDEST entry (runs end in
+     roughly placement order — the same pairing basis the queue gauge runs on). */
+  const dockLineWork = new Map();   // agentId -> [lineId|null, ...] per placed work-item, oldest first
+  function dockLineTake(aid) {
+    const q = dockLineWork.get(aid);
+    if (!q || !q.length) return null;
+    const v = q.shift();
+    if (!q.length) dockLineWork.delete(aid);
+    return v;
+  }
   function intakeMessage(payload) {
     const p = payload || {};
     /* THE HANDOFF ARRIVED — so the producing dock's own crate must NOT also ship (see shipProductCrate:
@@ -6058,7 +6069,12 @@ const World = (() => {
     if (p.kind === 'chain' && p.from) cancelDeferredShip(String(p.from));
     if (!convey) return;
     // tag the box with its content kind (the same getTag the sidecar routes by) so a FILTER sorts it visibly
-    if (p.agentId) { if (p.lineId) dockLineWork.set(p.agentId, String(p.lineId)); else dockLineWork.delete(p.agentId); }
+    if (p.agentId) {
+      const q = dockLineWork.get(p.agentId) || [];
+      q.push(p.lineId ? String(p.lineId) : null);          // a direct order queues NULL — "this one is nobody's line"
+      if (q.length > 8) q.shift();                          // bounded like every floor latch
+      dockLineWork.set(p.agentId, q);
+    }
     if (!p.tag && typeof Classify !== 'undefined' && Classify.getTag) p.tag = Classify.getTag(p.preview || p.text || '');
     // ride inbound work as ORE — a UNIFORM raw chunk: every incoming request is one identical piece of raw
     // material on the line. We deliberately DON'T size it; product-vs-slag is the rewarded signal,
@@ -6185,15 +6201,23 @@ const World = (() => {
      result or a produced deliverable during the run, tracked from the same bus events the tickers ride.
      The single crate source stays agent.run.end (no double-crate from workitem.delivered); no lane → no
      riding crate (the pallet + counter still tell the server's truth). */
-  const runWork = new Map();         // agentId -> { tools, dels } observed during the CURRENT run
+  /* Keyed per RUN, not per agent (overlap-safe, 2026-08-11 audit #5): every runtime event carries
+     runId, so two overlapping runs at one dock each keep their own proven-work tally — the old
+     per-agent slot let run 2's start wipe run 1's tools, and run 1's end delete run 2's tally, so a
+     productive overlapped run shipped nothing. `deliverable` is the one event WITHOUT a runId; it
+     attributes to the agent's OLDEST live run (same FIFO pairing basis as dockLineWork). */
+  const runWork = new Map();         // runId (or agentId when the event has none) -> { agentId, tools, dels }
+  const liveRunOrder = new Map();    // agentId -> [runWork keys, oldest first] — attribution for runId-less events
+  const runKey = p => (p && (p.runId || p.agentId)) || 'agent';
+  function oldestLiveRun(aid) { const l = liveRunOrder.get(aid || 'agent'); return (l && l.length) ? l[0] : null; }
   const shippedRunIds = new Set();   // dedup: run.end can be observed twice (local harness + SSE echo)
   // runId -> summed RECONCILED usd (folded from agent.cost, whose contract requires reconciled:true).
   // This is the ONLY source the product crate's mass may read — never cost.estimate, never run.end's usd
   // (crate-mass honesty: the crate that leaves the line weighs what the run actually cost). Bounded like
   // shippedRunIds; entries are dropped at run.end after the ship decision reads them.
   const runUsdRecon = new Map();
-  function runWorked(aid) {
-    const w = runWork.get(aid || 'agent');
+  function runWorked(p) {
+    const w = runWork.get(runKey(p));
     return !!(w && (w.tools > 0 || w.dels > 0));
   }
   /* NEVER NEITHER (2026-08-07 conveyor audit). The suppression below is right when the handoff crate
@@ -6205,12 +6229,16 @@ const World = (() => {
      window, cancel it the moment the upstream handoff is actually placed (intakeMessage cancels on the
      chain item's `from`), and ship it if the handoff never arrives. Exactly one crate either way. */
   const HANDOFF_GRACE_MS = 8000;   // generous: the hop is a real model run being dispatched, not a tick
-  const deferredShip = new Map();  // producing agentId -> timer id
+  /* A dock may hold SEVERAL waits at once (overlapping runs, audit #5): the old single-timer slot made
+     run 2's defer CANCEL run 1's held crate outright — paid work erased from the floor. Each wait is
+     its own entry; a real handoff cancels the OLDEST (the handoff the sidecar places first belongs to
+     the run that ended first), and an expiring wait removes only itself. K waits in, K crates out. */
+  const deferredShip = new Map();  // producing agentId -> [{ t: timerId }, ...] oldest first
   function cancelDeferredShip(aid) {
-    const t = aid && deferredShip.get(aid);
-    if (t) { clearTimeout(t); deferredShip.delete(aid); }
+    const q = aid && deferredShip.get(aid);
+    if (q && q.length) { clearTimeout(q.shift().t); if (!q.length) deferredShip.delete(aid); }
   }
-  function clearDeferredShips() { for (const t of deferredShip.values()) clearTimeout(t); deferredShip.clear(); }
+  function clearDeferredShips() { for (const q of deferredShip.values()) for (const e of q) clearTimeout(e.t); deferredShip.clear(); }
   // the crate's MASS must be read NOW: run.end drops runUsdRecon the instant this returns, so a deferred
   // ship that re-read it later would weigh every crate 0 (crate-mass honesty).
   function productCrateSpec(p) {
@@ -6240,9 +6268,17 @@ const World = (() => {
     // no reconciled cost ships weight 0 (the back-compat light look), never an estimate.
     const spec = productCrateSpec(p);
     const ch = (cAid && routingPlan && routingPlan.chains) ? routingPlan.chains[cAid] : null;
-    if (ch && ch.next && ch.next.length && dockLineWork.get(cAid)) {
-      cancelDeferredShip(cAid);
-      deferredShip.set(cAid, setTimeout(() => { deferredShip.delete(cAid); emitProductCrate(cAid, spec); }, HANDOFF_GRACE_MS));
+    // consume THIS run's placement entry (oldest first) — never cancel a sibling run's held crate
+    if (ch && ch.next && ch.next.length && dockLineTake(cAid)) {
+      const q = deferredShip.get(cAid) || [];
+      const entry = {};
+      entry.t = setTimeout(() => {
+        const l = deferredShip.get(cAid);
+        if (l) { const i = l.indexOf(entry); if (i >= 0) l.splice(i, 1); if (!l.length) deferredShip.delete(cAid); }
+        emitProductCrate(cAid, spec);
+      }, HANDOFF_GRACE_MS);
+      q.push(entry);
+      deferredShip.set(cAid, q);
       return;
     }
     emitProductCrate(cAid, spec);
@@ -6737,14 +6773,27 @@ const World = (() => {
       if (isFinite(usd) && usd > 0) line += ' · ' + U.usd(usd);
       // a DONE run that PROVABLY WORKED (tool result / deliverable) is a shipped job: bump the pallet
       // + tell the day's score in the same breath. A clean-but-workless finish is just RUN COMPLETE.
-      if (p.reason === 'done' && runWorked(p.agentId)) line += ' · ' + bumpShipped() + ' SHIPPED TODAY';
+      if (p.reason === 'done' && runWorked(p)) line += ' · ' + bumpShipped() + ' SHIPPED TODAY';
       pushTicker(line, '', tickerSuit(p.agentId));
     });
     // PROVEN-WORK tracker (crate-honesty): what did the CURRENT run actually do? Reset on run.start;
     // successful tool results + deliverables accumulate; run.end consumers read it, then it's dropped.
-    U.bus.on('agent.run.start', p => { if (p && p.agentId) runWork.set(p.agentId, { tools: 0, dels: 0 }); });
-    U.bus.on('agent.tool_result', p => { if (p && !p.isError) { const w = runWork.get(p.agentId || 'agent'); if (w) w.tools++; } });
-    U.bus.on('deliverable', p => { const w = runWork.get((p && p.agentId) || 'agent'); if (w) w.dels++; });
+    U.bus.on('agent.run.start', p => {
+      if (!p || !p.agentId) return;
+      const k = runKey(p);
+      runWork.set(k, { agentId: p.agentId, tools: 0, dels: 0 });
+      if (runWork.size > 200) runWork.delete(runWork.keys().next().value);   // bounded (a missed run.end must not leak forever)
+      const l = liveRunOrder.get(p.agentId) || [];
+      if (l.indexOf(k) < 0) l.push(k);
+      liveRunOrder.set(p.agentId, l);
+    });
+    U.bus.on('agent.tool_result', p => {
+      if (!p || p.isError) return;
+      const w = runWork.get(runKey(p)) || runWork.get(oldestLiveRun(p.agentId));
+      if (w) w.tools++;
+    });
+    // deliverable carries no runId — credit the agent's OLDEST live run (FIFO, same pairing as dockLineWork)
+    U.bus.on('deliverable', p => { const w = runWork.get(oldestLiveRun(p && p.agentId)); if (w) w.dels++; });
     U.bus.on('provider.fallback', p => {
       if (!p || !p.toModel) return;
       const to = String(p.toModel).split('/').pop();
@@ -6805,8 +6854,13 @@ const World = (() => {
       const r = p && p.reason;
       // A clean finish that PROVABLY WORKED ships: one product crate leaves the producing agent's bay
       // and rides to the OUTBOX. A done-but-workless run ("I couldn't do that") ships NOTHING.
-      if (r === 'done' && runWorked(p && p.agentId)) shipProductCrate(p);
-      if (p && p.agentId) runWork.delete(p.agentId);   // the run is over — drop its work tally either way
+      if (r === 'done' && runWorked(p)) shipProductCrate(p);
+      if (p) {                                          // the run is over — drop ITS tally (and only its), either way
+        const k = runKey(p);
+        runWork.delete(k);
+        const l = p.agentId && liveRunOrder.get(p.agentId);
+        if (l) { const i = l.indexOf(k); if (i >= 0) l.splice(i, 1); if (!l.length) liveRunOrder.delete(p.agentId); }
+      }
       if (p && p.runId) runUsdRecon.delete(p.runId);   // the ship decision above has read it — drop the cost fold
       if (r !== 'max_iters' && r !== 'budget' && r !== 'error' && r !== 'refusal') return;
       // UNPRODUCTIVE RUN: pulse the SLAG cell, then turn the failed outcome into a lesson — a real post-mortem in the
@@ -7341,7 +7395,7 @@ const World = (() => {
     ship: { known: shipStats.known, day: shipStats.day, done: shipStats.done },
     boxes: convey ? convey.peekBoxes() : [],   // the crates riding RIGHT NOW (id/tile/dir/payload)
     ghost: ghost ? ghost.peek() : null,        // the projection's own state (never mixed into `boxes` — dedicated engine)
-    work: (() => { const o = {}; for (const [k, v] of runWork) o[k] = { tools: v.tools, dels: v.dels }; return o; })(),   // proven-work tally per in-flight run
+    work: (() => { const o = {}; for (const v of runWork.values()) { const k = v.agentId || 'agent'; const c = o[k] || (o[k] = { tools: 0, dels: 0 }); c.tools += v.tools; c.dels += v.dels; } return o; })(),   // proven-work tally per agent, summed over ITS live runs (runWork is per-run since audit #5)
     routeAt: (x, y) => routeTagFor(x, y),
     outboundAt: aid => outboundBeltTile(aid),   // where would this agent's product crate spawn (verify hook)
     sourceAt: aid => (routingPlan && typeof Pipeline !== 'undefined' && Pipeline.sourceFor) ? Pipeline.sourceFor(routingPlan, aid) : null,   // which INBOX would an addressed item enter through (verify hook)
