@@ -124,8 +124,11 @@ const inBand = (r, y0, y1) => r[1] >= y0 && r[1] + r[3] <= y1 + 1;
   A.ok(/self\.lying \? U\.irnd\(180000, 600000\) : U\.irnd\(26000, 62000\)/.test(world), 'a bed sleep lasts 3-10 minutes; a standing power-down does not');
 
   // getting OUT: both claim-drop paths must clear the pose, or a woken body keeps drawing in the bed
-  A.ok(/self\.seatKey = null; self\.seated = false; self\.pendSeat = null; self\.barJoinUntil = 0;\s*\n\s*self\.lying = false;/.test(world), 'releaseSeat clears the lying pose');
-  A.ok(/b\.seatKey = null; b\.seated = false; b\.pendSeat = null; b\.barJoinUntil = 0; b\.lying = false;/.test(world), 'a summon-seize clears it too');
+  // matched by CLAIM-DROP + the flag, never by the whole line: every seat lane adds fields to these two
+  // (seatLift arrived with the stool perch and broke both of these on the very next trunk sync), and the
+  // invariant is "dropping the claim drops the pose", not the field order it drops them in.
+  A.ok(/function releaseSeat\(\)[\s\S]{0,400}?self\.lying = false;/.test(world), 'releaseSeat clears the lying pose');
+  A.ok(/function seizeFromIdle\(b\)[\s\S]{0,400}?b\.lying = false;/.test(world), 'a summon-seize clears it too');
   A.ok(/if \(now >= self\.studyUntil\) \{ releaseSeat\(\);/.test(world), 'the nap ends through releaseSeat (no leaked mattress claim)');
 
   // WAKING is the summon path's job — the two seizes that cover a typed prompt, a schedule and a channel
@@ -137,7 +140,7 @@ const inBand = (r, y0, y1) => r[1] >= y0 && r[1] + r[3] <= y1 + 1;
   A.ok(/self\.napCd = now \+ U\.irnd\(420000, 900000\)/.test(world), 'and then leaves it alone for a while');
 
   // the two-pass render, in the right order
-  A.ok(/sleeper \? \{ sleeper: true \} : null/.test(world), 'the bed is told it is occupied');
+  A.ok(/if \(sleeper\) dp = Object\.assign\(.*\{ sleeper: true \}\)/.test(world), 'the bed is told it is occupied');
   A.ok(/items\.push\(\{ y: sy \+ 0\.75, draw: \(\) => PropSprites\.drawOver\(dp\) \}\)/.test(world), 'the covers sort AFTER the body (sy+0.75 > the sleeper at sy+0.5)');
   A.ok(/y: \(bed\.y \+ \(bed\.h \|\| 1\)\) \* T \+ 0\.5, draw: \(\) => drawSleeper\(now, b, bed\)/.test(world), 'the sleeper sorts INSIDE its bed');
   A.ok(/function lyingBed\(b\)/.test(world) && /b\.goal !== 'sleep' \|\| !b\.usingProp/.test(world), 'the pose is re-derived from live state every frame, never trusted from a flag');
