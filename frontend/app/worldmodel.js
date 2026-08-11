@@ -633,6 +633,29 @@ const WorldModel = (() => {
       const moved = rm.rects.map(r => ({ x1: r.x1 + dTx, y1: r.y1 + dTy, x2: r.x2 + dTx, y2: r.y2 + dTy }));
       const v = checkRects(moved, rm.kind, id);
       if (!v.ok) return v;
+      /* the room carries its contents: every prop standing WHOLLY on this room's tiles rides the
+         move, and so does every belt tile on them (pipeline edges are prop-id based, so a wired
+         line survives untouched). A machine straddling the join with a neighbour belongs to
+         neither room — it stays. The landing needs one extra guard: rooms can't overlap, so the
+         only stationary props/belts the destination can contain are straddlers reaching into the
+         old∩new overlap of a short move. A rider that would land on one vetoes the whole move —
+         all-or-nothing, one undo slot, same shape as placeBeltRun. */
+      const inRoom = (x, y) => { for (const r of rm.rects) if (x >= r.x1 && x <= r.x2 && y >= r.y1 && y <= r.y2) return true; return false; };
+      const wholly = f => { for (let y = f.y1; y <= f.y2; y++) for (let x = f.x1; x <= f.x2; x++) if (!inRoom(x, y)) return false; return true; };
+      const riders = doc.props.filter(p => wholly(propFootprint(p)));
+      const riding = new Set(riders.map(p => p.id));
+      const hits = (a, b) => a.x1 <= b.x2 && a.x2 >= b.x1 && a.y1 <= b.y2 && a.y2 >= b.y1;
+      const stayers = doc.props.filter(p => !riding.has(p.id));
+      for (const p of riders) {
+        const f = propFootprint(p);
+        const nf = { x1: f.x1 + dTx, y1: f.y1 + dTy, x2: f.x2 + dTx, y2: f.y2 + dTy };
+        for (const q of stayers) if (hits(nf, propFootprint(q))) return fail('OVERLAP', 'a machine straddling the edge is in the way');
+      }
+      const beltRiders = Object.keys(doc.belts).filter(k => { const p = k.split(','); return inRoom(+p[0], +p[1]); });
+      for (const k of beltRiders) {
+        const p = k.split(','), t = { x1: +p[0] + dTx, y1: +p[1] + dTy, x2: +p[0] + dTx, y2: +p[1] + dTy };
+        for (const q of stayers) if (q.block !== false && hits(t, propFootprint(q))) return fail('OVERLAP', 'a machine straddling the edge is in the way');
+      }
       snapshot();
       const before = rm.rects.slice();
       rm.rects = moved;
@@ -640,6 +663,16 @@ const WorldModel = (() => {
         const np = {};
         for (const k in rm.floorPaint) { const p = k.split(',').map(Number); np[(p[0] + dTx) + ',' + (p[1] + dTy)] = rm.floorPaint[k]; }
         rm.floorPaint = np;
+      }
+      for (const p of riders) { p.x += dTx; p.y += dTy; }
+      if (beltRiders.length) {
+        const ride = new Set(beltRiders), nb = {};
+        for (const k in doc.belts) {
+          if (!ride.has(k)) { nb[k] = doc.belts[k]; continue; }
+          const p = k.split(',');
+          nb[beltKey(+p[0] + dTx, +p[1] + dTy)] = doc.belts[k];
+        }
+        doc.belts = nb;
       }
       emit(before.concat(moved));
       return { ok: true };

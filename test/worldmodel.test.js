@@ -240,6 +240,38 @@ const sp2 = WM.deserialize(spDoc);
 A.eq(sp2.props().length, 1, 'deserialize preserves props');
 A.eq(JSON.stringify(sp2.serialize()), JSON.stringify(spDoc), 'props serialize round-trips identically');
 
+/* ---- moveRoom carries its contents: props + belts ride, straddlers stay ---- */
+const mc = WM.create();                                   // HAB-01 {0..17,0..10}
+const mcRoom = mc.spawnRoomId();
+const deskM = mc.addProp({ t: 'desk', x: 4, y: 2, w: 2, h: 1 });
+A.ok(deskM.ok, 'contents test: desk placed');
+A.ok(mc.setBelt(6, 6, 'E').ok, 'contents test: belt laid');
+A.ok(mc.moveRoom(mcRoom, 0, 30).ok, 'moveRoom with contents succeeds');
+A.eq(mc.propById(deskM.id).x, 4, 'prop x untouched by a pure-Y move');
+A.eq(mc.propById(deskM.id).y, 32, 'a prop wholly inside the room rides the move');
+A.eq(mc.beltAt(6, 36), 'E', 'a belt tile inside the room rides the move');
+A.eq(mc.beltAt(6, 6), null, 'no belt is left behind on the old tiles');
+mc.undo();
+A.eq(mc.propById(deskM.id).y, 2, 'undo restores the riding prop (one slot for the whole move)');
+A.eq(mc.beltAt(6, 6), 'E', 'undo restores the riding belt');
+
+/* a machine straddling a flush join belongs to neither room: it stays, and a rider that would
+   land on it vetoes the whole move (all-or-nothing) */
+const ms = WM.create();
+const msHab = ms.spawnRoomId();
+A.ok(ms.addRoom({ kind: 'lab', rect: { x1: 18, y1: 0, x2: 25, y2: 10 } }).ok, 'flush lab placed beside the hab');
+const strad = ms.addProp({ t: 'desk', x: 17, y: 5, w: 2, h: 1 });   // one tile in each room
+A.ok(strad.ok, 'straddling desk placed across the join');
+const rider = ms.addProp({ t: 'tv', x: 17, y: 0, w: 1, h: 1 });
+A.ok(rider.ok, 'rider placed inside the hab');
+const veto = ms.moveRoom(msHab, 0, 5);                    // rider would land exactly on the straddler
+A.ok(!veto.ok && veto.error === 'OVERLAP', 'a rider landing on a straddler vetoes the move');
+A.eq(ms.roomById(msHab).rects[0].y1, 0, 'a vetoed move leaves the room where it was');
+A.eq(ms.propById(rider.id).y, 0, 'a vetoed move leaves the riders where they were');
+A.ok(ms.moveRoom(msHab, 0, 30).ok, 'a clear move away still succeeds');
+A.eq(ms.propById(rider.id).y, 30, 'the rider rode the clear move');
+A.eq(ms.propById(strad.id).y, 5, 'the straddler stayed behind (it belongs to neither room)');
+
 /* block:false decor (rugs / wall panels) is drawn but never blocks walkability */
 const sd = WM.create();
 const rugRoom = sd.spawnRoomId(), rz = sd.roomById(rugRoom).rects[0];
