@@ -8023,7 +8023,7 @@ const PropSprites = (() => {
     // applied — a prop function must never bake its own mount height.
     const lift = f.mount === 'surface' ? SURFACE_RISE : 0;
     const X = f.x * TILE, Y = f.y * TILE - lift, W = (f.w || 1) * TILE, H = (f.h || 1) * TILE;
-    const o = { x: f.x, work: !!work, agentId: f.agentId || null, door: f.door || null };
+    const o = { x: f.x, work: !!work, agentId: f.agentId || null, dockName: f.dockName || null, door: f.door || null };
     if (live) { o.heat = +live.heat || 0; o.prog = (live.prog == null) ? null : Math.max(0, Math.min(1, +live.prog || 0)); }
     if (f.t === 'connector_portal') {                 // a bound portal rides its connector's live state
       const cid = f.connectorId || null;
