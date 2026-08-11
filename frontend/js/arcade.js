@@ -3,13 +3,21 @@
    Space-Invaders descendant where rogue scraper-bots besiege the station and
    the Commander mans the point-defense turret. Renders into a low-res canvas
    inside a prop window (PROPTERM mounts/unmounts it), colors pulled live from
-   the active theme so it matches the terminal skin. Hi-score persists in
-   localStorage — VYBES holds the house record until you take it. */
+   the active theme so it matches the terminal skin. A top-5 STATION RECORDS board
+   persists in localStorage — the house crew hold the seed scores until you take them. */
 'use strict';
 
 const ARCADE = (() => {
-  const W = 232, H = 290;            // internal phosphor resolution
+  const W = 232, H = 290;            // internal phosphor resolution (logical units)
+  /* SUPERSAMPLE. The cabinet lives in a ~430px window, so a 232-wide bitmap used to be
+     stretched ~1.97x by `width:100%` + image-rendering:pixelated. Sprites survived that
+     (they're solid 1px blocks) but the 7-8px VT323 HUD did not: the browser antialiased
+     it into grey soup at 8px and then the upscale magnified the soup — SCORE/HI were
+     unreadable. Fix: give the canvas S x more device pixels and scale the draw transform,
+     so every glyph rasterizes at 16 device px while ALL draw code keeps logical coords. */
+  const S = 2;
   const HI_KEY = 'starnet_arcade_hi';
+  const SCORES_KEY = 'starnet_arcade_scores';
   let cv = null, ctx = null, raf = 0, mounted = false, hidden = false;
   let last = 0, acc = 0, frameN = 0;
   let keys = {}, kd = null, ku = null;
@@ -82,8 +90,23 @@ const ARCADE = (() => {
     ],
     hi: 'ULTRON> New station record. VYBES is going to sulk.'
   };
+  /* Never let the attract loop claim VYBES holds a record the Commander already took. */
+  function attractQuip(board) {
+    const top = board && board[0];
+    return U.pick(top && top.name !== 'VYBES' ? Q.attract.filter(q => q.indexOf('VYBES') < 0) : Q.attract);
+  }
 
-  /* ---------- hi-score ---------- */
+  /* ---------- score board ----------
+     The cabinet keeps a real top-5 ledger, not just a single hi-score: every finished
+     (or abandoned) run posts its score + the wave it died on, and the board persists to
+     localStorage. The house crew hold the seed records until the Commander takes them. */
+  const HOUSE = [
+    { name: 'VYBES', score: 2600, wave: 6 },
+    { name: 'ATLAS', score: 1840, wave: 5 },
+    { name: 'ORACLE', score: 1120, wave: 3 },
+    { name: 'PROBE', score: 760, wave: 3 },
+    { name: 'RELAY', score: 430, wave: 2 }
+  ];
   function loadHi() {
     try {
       const o = JSON.parse(localStorage.getItem(HI_KEY));
@@ -92,6 +115,32 @@ const ARCADE = (() => {
     return { name: 'VYBES', score: 2600 };
   }
   function saveHi(o) { try { localStorage.setItem(HI_KEY, JSON.stringify(o)); } catch (e) { } }
+
+  function loadScores() {
+    try {
+      const a = JSON.parse(localStorage.getItem(SCORES_KEY));
+      if (Array.isArray(a) && a.length) return a.filter(r => r && r.score >= 0).slice(0, 5);
+    } catch (e) { }
+    // first run on this station — fold any legacy single hi-score into the seeded board
+    const hi = loadHi(), b = HOUSE.map(r => ({ ...r }));
+    if (hi.score && !b.some(r => r.name === hi.name && r.score === hi.score)) b.push({ name: hi.name, score: hi.score, wave: 0 });
+    return b.sort((x, y) => y.score - x.score).slice(0, 5);
+  }
+  function saveScores(a) {
+    try { localStorage.setItem(SCORES_KEY, JSON.stringify(a.map(({ name, score, wave }) => ({ name, score, wave })))); } catch (e) { }
+    saveHi({ name: a[0].name, score: a[0].score });   // keep the legacy key in step
+  }
+  /* Bank THIS run onto the board. Rebuilt every time from st.base — the pre-run snapshot —
+     so it is idempotent: taking the record mid-run, dying, and closing the window can all
+     call it and the run still appears exactly once. */
+  function bank() {
+    if (!st || st.score <= 0) return;
+    const b = st.base.map(r => ({ ...r, me: false }));
+    b.push({ name: 'CMDR', score: st.score, wave: st.wave, me: true });
+    b.sort((x, y) => y.score - x.score);
+    st.board = b.slice(0, 5);
+    saveScores(st.board);
+  }
 
   /* ---------- theme colors ---------- */
   function sampleColors() {
@@ -149,18 +198,19 @@ const ARCADE = (() => {
     st.saucer = null; st.saucerT = U.irnd(700, 1300); st.marchN = 0;
   }
   function reset(mode) {
+    const board = loadScores();
     st = {
-      mode, t: 0, score: 0, lives: 3, wave: 1, hi: loadHi(), beatHi: false,
+      mode, t: 0, score: 0, lives: 3, wave: 1, board, base: board, hi: { ...board[0] }, beatHi: false,
       px: W / 2 - 6, pb: null, bombs: [], inv: [], dir: 1, stepT: 0, frame: 0,
       saucer: null, saucerT: 999, marchN: 0, modeT: 0,
       bunkers: [0.22, 0.5, 0.78].map(f => makeBunker(Math.round(W * f) - 12, H - 66)),
-      quip: U.pick(Q.attract), flash: 0
+      quip: attractQuip(board), flash: 0
     };
     newWave();
   }
   function startGame() {
     reset('play');
-    st.quip = U.pick(Q.attract);
+    st.quip = attractQuip(st.board);
     SFX.open();
   }
 
@@ -175,7 +225,7 @@ const ARCADE = (() => {
     st.t++;
     if (st.flash > 0) st.flash--;
     if (st.mode === 'attract' || st.mode === 'over') {
-      if (st.t % 360 === 0) st.quip = U.pick(st.mode === 'over' ? Q.over : Q.attract);
+      if (st.t % 360 === 0) st.quip = st.mode === 'over' ? U.pick(Q.over) : attractQuip(st.board);
       return;
     }
     if (st.mode === 'pause') return;
@@ -278,14 +328,14 @@ const ARCADE = (() => {
   function gameOver() {
     st.mode = 'over'; st.t = 0;
     st.quip = st.beatHi ? Q.hi : U.pick(Q.over);
-    if (st.beatHi) saveHi({ name: 'CMDR', score: st.score });
+    bank();                          // the run lands on the board win or lose
     SFX.close();
   }
   function checkHi() {
     if (!st.beatHi && st.score > st.hi.score) {
       st.beatHi = true; st.hi = { name: 'CMDR', score: st.score };
       st.quip = Q.hi; SFX.notify();
-      saveHi(st.hi); // persist the record the moment it falls — closing the window can't lose it
+      bank();        // persist the record the moment it falls — closing the window can't lose it
       if (typeof SIM !== 'undefined' && SIM.S) SIM.crewChat('VYBES', 'commander just cracked the BREACH PROTOCOL record. respect. rematch after my shift.');
     } else if (st.beatHi) st.hi.score = st.score;
   }
@@ -307,12 +357,13 @@ const ARCADE = (() => {
   }
 
   function draw() {
+    ctx.setTransform(S, 0, 0, S, 0, 0);   // every draw below stays in logical (W x H) units
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
     if (st.flash > 0) { ctx.fillStyle = C.faint; ctx.fillRect(0, 0, W, H); }
 
     /* HUD */
     text('SCORE ' + String(st.score).padStart(5, '0'), 5, 4, C.ph);
-    text('HI ' + st.hi.name + ' ' + String(st.hi.score).padStart(5, '0'), W - 5, 4, st.beatHi ? C.bright : C.dim, 8, 'right');
+    text('HI ' + String(st.hi.score).padStart(5, '0'), W - 5, 4, st.beatHi ? C.bright : C.dim, 8, 'right');   // the holder's name lives on the records board, not the HUD
     px(0, 14, W, 1, C.faint);
 
     if (st.mode === 'attract' || st.mode === 'over') { drawSplash(); return; }
@@ -346,16 +397,33 @@ const ARCADE = (() => {
     text(st.quip, W / 2, H - 7, C.dim, 7, 'center');
   }
 
+  /* the station records ledger — the run you just played is the bright row */
+  function drawBoard(y0, gap) {
+    text('STATION RECORDS', W / 2, y0, C.dim, 8, 'center');
+    st.board.forEach((r, i) => {
+      const y = y0 + 12 + i * gap;
+      const col = r.me ? C.bright : i === 0 ? C.ph : C.dim;
+      text((i + 1) + '.', 46, y, col, 8);
+      text(r.name, 60, y, col, 8);
+      text('WAVE ' + (r.wave || 1), 132, y, col, 8);
+      text(String(r.score).padStart(5, '0'), W - 46, y, col, 8, 'right');
+    });
+  }
+
   function drawSplash() {
     const blink = (st.t >> 5) & 1;
+    const over = st.mode === 'over';
     text('ULTRON COMMAND PRESENTS', W / 2, 36, C.dim, 8, 'center');
     text('BREACH', W / 2, 52, C.bright, 26, 'center');
     text('PROTOCOL', W / 2, 80, C.bright, 26, 'center');
     px(36, 112, W - 72, 1, C.ph);
-    if (st.mode === 'over') {
-      text('GAME OVER', W / 2, 126, C.red, 14, 'center');
-      text('FINAL SCORE ' + st.score, W / 2, 146, C.ph, 9, 'center');
-      if (st.beatHi) text('★ NEW STATION RECORD ★', W / 2, 160, C.bright, 9, 'center');
+    if (over) {
+      text('GAME OVER', W / 2, 118, C.red, 14, 'center');
+      text((st.beatHi ? '★ ' : '') + 'FINAL SCORE ' + String(st.score).padStart(5, '0') + (st.beatHi ? ' ★' : ''),
+        W / 2, 136, st.beatHi ? C.bright : C.ph, 9, 'center');
+      drawBoard(152, 9);
+    } else if (((st.t / 300) | 0) & 1) {
+      drawBoard(124, 9);              // attract mode alternates bounty <-> records every 5s
     } else {
       // bounty table
       const rows = [
@@ -371,8 +439,8 @@ const ARCADE = (() => {
         text(pts, 176, y, C.dim, 8, 'right');
       });
     }
-    if (blink) text('INSERT TOKEN — SPACE OR CLICK', W / 2, 198, C.bright, 9, 'center');
-    text('◄ ► MOVE   SPACE FIRE   P PAUSE', W / 2, 216, C.dim, 8, 'center');
+    if (blink) text('INSERT TOKEN — SPACE OR CLICK', W / 2, over ? 222 : 198, C.bright, 9, 'center');
+    text('◄ ► MOVE   SPACE FIRE   P PAUSE', W / 2, over ? 240 : 216, C.dim, 8, 'center');
     text(st.quip, W / 2, H - 7, C.dim, 7, 'center');
   }
 
@@ -409,7 +477,7 @@ const ARCADE = (() => {
   /* ---------- public: window shell + lifecycle ---------- */
   function shell() {
     return '<div class="arc-wrap">' +
-      '<canvas id="arc-cv" class="arc-cv" width="' + W + '" height="' + H + '"></canvas>' +
+      '<canvas id="arc-cv" class="arc-cv" width="' + (W * S) + '" height="' + (H * S) + '"></canvas>' +
       '<div class="arc-foot"><span>CABINET 01 ▪ 1 TOKEN / PLAY</span><span>REV. 2086 ULTRON COMMAND</span></div>' +
       '</div>';
   }
@@ -430,7 +498,7 @@ const ARCADE = (() => {
   function unmount() {
     if (!mounted) return;
     mounted = false; hidden = false;
-    if (st && st.beatHi) saveHi(st.hi);
+    bank();                          // walking away mid-run still banks the score
     cancelAnimationFrame(raf);
     if (kd) window.removeEventListener('keydown', kd);
     if (ku) window.removeEventListener('keyup', ku);

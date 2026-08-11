@@ -230,7 +230,7 @@ const Build = (() => {
     for (const k in layerFailed) delete layerFailed[k];
     propCardKey = null; ordersSeenDone = null; propQuery = ''; lastTier = '';
     tool = 'select';   // SELECT is the default mode — a fresh REFIT session never opens with a placement tool armed
-    ridePending = false;   // the auto first-ride re-arms from THIS session's compile, never a stale one
+    ridePending = false; rideAgentId = null; ridePrevReach = null;   // the auto first-ride re-arms (and re-baselines its reach snapshot) from THIS session's compile, never a stale one
     // finish-the-line: fresh session state (the registry itself persists in localStorage) + one seam probe
     finSample = null; finKeySel = null; finSig = ''; finCardEl = null; finComp = null; valComps = null; lastStampIds = null; finPollTs = 0;
     for (const k in stampNameOf) delete stampNameOf[k];   // session-scoped blueprint-name placeholders (line naming)
@@ -1383,15 +1383,25 @@ const Build = (() => {
       // bind arrow
       R(38, 36, 20, 2, PH); R(56, 33, 2, 8, PH); R(54, 35, 2, 4, PH);
     } else {
-      // two machines and the belt the click-click lays between them, crates riding it
-      R(6, 26, 26, 22, 'rgba(52,58,64,.95)'); R(6, 26, 26, 2, PH);
-      R(96, 26, 26, 22, 'rgba(52,58,64,.95)'); R(96, 26, 26, 2, GOLD);
-      R(32, 32, 64, 10, 'rgba(24,30,34,.95)'); R(32, 32, 64, 1, PH); R(32, 41, 64, 1, PH);
-      for (let i = 0; i < 6; i++) { const bx = 36 + i * 10; R(bx, 34, 2, 2, PH); R(bx + 2, 36, 2, 2, PH); R(bx, 38, 2, 2, PH); }
-      R(58, 22, 12, 10, GOLD); R(60, 24, 8, 6, 'rgba(120,90,30,.9)');   // a crate on the line
-      // the two clicks
-      R(14, 16, 10, 2, LIT); R(18, 12, 2, 10, LIT);
-      R(104, 16, 10, 2, LIT); R(108, 12, 2, 10, LIT);
+      /* the belt the click-click lays — THROUGH the bay from beat 2, never machine-to-machine direct.
+         The old art wired two anonymous machines straight together: exactly the bay-less line that
+         compiles fine and moves NOTHING (crates only ride a lane that reaches a crewed dock). The
+         first picture a Commander ever sees of the belt tool must not teach the one dead layout, so
+         the middle machine wears beat 2's gold display — the bay they just crewed, now on the line. */
+      R(2, 26, 22, 22, 'rgba(52,58,64,.95)'); R(2, 26, 22, 2, PH);                 // INBOX
+      R(53, 26, 22, 22, 'rgba(52,58,64,.95)'); R(53, 26, 22, 2, GOLD); R(53, 46, 22, 2, GOLD);   // the BAY
+      R(56, 30, 16, 8, 'rgba(20,26,30,.95)');
+      for (let i = 0; i < 3; i++) R(58 + i * 5, 32, 3, 4, GOLD);
+      R(104, 26, 22, 22, 'rgba(52,58,64,.95)'); R(104, 26, 22, 2, PH);             // OUTBOX
+      // two belt legs, one style: INBOX -> BAY, BAY -> OUTBOX
+      R(24, 32, 29, 10, 'rgba(24,30,34,.95)'); R(24, 32, 29, 1, PH); R(24, 41, 29, 1, PH);
+      R(75, 32, 29, 10, 'rgba(24,30,34,.95)'); R(75, 32, 29, 1, PH); R(75, 41, 29, 1, PH);
+      for (const bx of [27, 37, 47, 79, 89, 99]) { R(bx, 34, 2, 2, PH); R(bx + 2, 36, 2, 2, PH); R(bx, 38, 2, 2, PH); }
+      R(31, 22, 12, 10, GOLD); R(33, 24, 8, 6, 'rgba(120,90,30,.9)');   // a crate riding leg one
+      // the clicks: one per machine, in work order
+      R(8, 16, 10, 2, LIT); R(12, 12, 2, 10, LIT);
+      R(58, 16, 10, 2, LIT); R(62, 12, 2, 10, LIT);
+      R(106, 16, 10, 2, LIT); R(110, 12, 2, 10, LIT);
     }
   }
 
@@ -1466,7 +1476,7 @@ const Build = (() => {
           <div class="refit-step" data-art="belt">
             <span class="refit-step-n">3</span>
             <b>WIRE THE BELT</b>
-            <span>Pick <b>BELT</b>, click one machine then the next. The belt lays itself.</span>
+            <span>Pick <b>BELT</b>, click one machine then the next. The belt lays itself — but it only carries work through a crewed <b>BAY</b> (INBOX ▸ BAY ▸ OUTBOX).</span>
           </div>
         </div>
         <p class="refit-guide-foot">In a hurry? <b>LINES (9)</b> stamps a whole working layout you can edit. Every prop &amp; mechanic is in the <b>FIELD MANUAL</b> — SYSTEM ▸ FIELD MANUAL.</p>
@@ -2141,7 +2151,9 @@ const Build = (() => {
     // no merge caption: the merger is a LANE FUNNEL — conveyor.js never emits `absorbed` (the old
     // "held for the batch" branch described a combine the harness never performed; see chooseExit).
   }
-  // the INTAKE's belt-adjacent tile (where a box spawns), or null if no INTAKE sits on a belt
+  // the INTAKE's belt-adjacent tile (where a box spawns), or null if no INTAKE sits on a belt.
+  // DOC-ORDER FIRST INTAKE — kept ONLY as the manual ▸ TEST's last-resort fallback when no
+  // compiled lane reaches a bound dock yet (the "③ SANK" caption is the honest teaching there).
   function intakeBeltTile() {
     const intake = station.props().find(p => p.t === 'intake');
     if (!intake) return null;
@@ -2151,16 +2163,51 @@ const Build = (() => {
         if (station.beltAt(xx, yy)) return { x: xx, y: yy };
     return null;
   }
+  /* the ride's SPAWN mouth, WORLD tiles — reach-aware (conveyor-audit 2026-08-10). The first
+     intake in doc order can be a decorative/unfinished one on a DIFFERENT line; a ride that
+     enters there sinks with "③ SANK" at the exact teachable moment. So the ride enters through
+     a door that provably leads somewhere, read from the SAME compiled plan the sidecar routes by
+     (mirror of ghostline's spawn rule + world.js's addressed-crate physics):
+       • agentId given (the line under test — the first ride names the dock whose reach flipped) →
+         Pipeline.sourceFor: the mouth whose lane actually REACHES that dock, or null (no guess);
+       • lineless (the toolbar ▸ TEST) → the first source in PLAN order with a reaching mouth.
+     Plan mouths are LOCAL-frame (valPlan compiles from cacheGeo) → rebase by the geo origin,
+     the same rebase testStops() rides. */
+  function rideMouthFor(agentId) {
+    if (!valPlan || !valPlan.sources || !valPlan.sources.length || !cacheGeo) return null;
+    if (typeof Pipeline === 'undefined' || !Pipeline.sourceFor) return null;
+    const o = cacheGeo.origin || { tx: 0, ty: 0 }, rb = t => ({ x: t.x + o.tx, y: t.y + o.ty });
+    if (agentId) { const t = Pipeline.sourceFor(valPlan, agentId); return t ? rb(t) : null; }
+    // lineless: every reaching dock names its own front door; the earliest such mouth in plan
+    // order wins (deterministic — plan order + ring-scan order are both fixed, like resolveTarget)
+    const mouths = [];
+    for (const a in (valPlan.reach || {})) {
+      if (!valPlan.reach[a]) continue;
+      const t = Pipeline.sourceFor(valPlan, a);
+      if (t) mouths.push(t);
+    }
+    if (!mouths.length) return null;
+    for (const s of valPlan.sources) {
+      const ts = (s.tiles && s.tiles.length) ? s.tiles : (s.tile ? [s.tile] : []);
+      for (const mt of ts) if (mouths.some(m => m.x === mt.x && m.y === mt.y)) return rb(mt);
+    }
+    return rb(mouths[0]);
+  }
   let _testN = 0;
-  // fire one box per content tag at the INTAKE so you watch them SORT through your FILTERs to the right bays
-  function sendTestBoxes(ev, auto) {
-    if (!convey) return;
-    const t = intakeBeltTile();
-    if (!t) { if (!auto) { flashTip(ev, 'place an INBOX on a belt first', false); sfx('bad'); } return; }
+  // fire one box per content tag at the INTAKE so you watch them SORT through your FILTERs to the right
+  // bays. Returns true only when boxes actually rode — the auto first ride burns its one-shot on that.
+  function sendTestBoxes(ev, auto, agentId) {
+    if (!convey) return false;
+    // reach-verified mouth first; the doc-order intake only for a MANUAL test on a floor where
+    // nothing reaches yet. The AUTO ride never takes the fallback: it only ever fires because a
+    // line powered on, and a decorative intake would spend the one narration on a sink.
+    const t = rideMouthFor(agentId) || (auto ? null : intakeBeltTile());
+    if (!t) { if (!auto) { flashTip(ev, 'place an INBOX on a belt first', false); sfx('bad'); } return false; }
     for (const tag of ['code', 'research', 'general']) convey.enqueueAt(t.x, t.y, { workitemId: 'test-' + (++_testN), tag, preview: 'test ' + tag, test: true });
     note(t.x, t.y, '① OUTSIDE WORK ENTERS HERE (DMs · routines)', '#e8c860');
     flashTip(ev, auto ? 'LINE COMPLETE — the first crate rides itself. ▸ TEST replays this any time' : 'test work riding — watch the loop', true);
     sfx('click');
+    return true;
   }
 
   /* ---------- THE FIRST CRATE NARRATES ITSELF (2026-08-04 onramp) ----------
@@ -2194,20 +2241,32 @@ const Build = (() => {
   const RIDE_KEY = () => 'starnet.refit.firstride.' + stationKeyOf(station);
   function rideSeen() { try { return !!localStorage.getItem(RIDE_KEY()); } catch (e) { return true; } }   // broken storage → never risk a repeat
   function markRide() { try { localStorage.setItem(RIDE_KEY(), '1'); } catch (e) {} }
-  let ridePending = false, rideTimer = 0;
+  let ridePending = false, rideTimer = 0, rideAgentId = null, ridePrevReach = null;
   function maybeFirstRide() {
-    if (ridePending || !valPlan || !valPlan.reach) return;
-    if (rideSeen()) return;
-    let complete = false;
-    for (const a in valPlan.reach) if (valPlan.reach[a]) { complete = true; break; }
-    if (!complete || !intakeBeltTile()) return;   // complete = an intake lane reaches a bound bay
+    /* THE RIDE NAMES ITS LINE (conveyor-audit 2026-08-10). "Complete" used to be any reach=true
+       plus any doc-order intake — on a floor with an older decorative intake, the one narrated
+       ride entered the WRONG line and sank. Now the arm records WHICH dock powered on (prefer
+       the reach that flipped true THIS compile — that bind is the teachable moment; a session's
+       first compile baselines against nothing, so an already-complete floor still narrates), and
+       fireFirstRide rides THAT dock's own front door via rideMouthFor. */
+    const prev = ridePrevReach || {}, now = {};
+    if (valPlan && valPlan.reach) for (const a in valPlan.reach) if (valPlan.reach[a]) now[a] = true;
+    ridePrevReach = now;
+    if (ridePending || rideSeen()) return;
+    let rideA = null;
+    for (const a in now) if (!prev[a]) { rideA = a; break; }   // freshly powered line first
+    if (!rideA) for (const a in now) { rideA = a; break; }     // else any provably-reaching one
+    if (!rideA || !rideMouthFor(rideA)) return;   // complete = an intake lane reaches a bound bay, entered through ITS OWN mouth
+    rideAgentId = rideA;
     ridePending = true;   // armed — frame() fires it once nothing coach-like is up
   }
   function fireFirstRide() {
     ridePending = false;
     // a beat after the bind flash so the two tips don't stomp each other mid-read. The flag is
-    // consumed WHEN THE RIDE ACTUALLY RUNS — closing REFIT inside the beat keeps the one shot.
-    rideTimer = setTimeout(() => { rideTimer = 0; if (running && convey) { markRide(); sendTestBoxes(null, true); } }, 700);
+    // consumed ONLY WHEN THE RIDE ACTUALLY NARRATES — sendTestBoxes returning true on the reaching
+    // line's own mouth. Closing REFIT inside the beat, or a floor edit that dissolves the line
+    // under it, keeps the one shot (the next compile re-arms via maybeFirstRide).
+    rideTimer = setTimeout(() => { rideTimer = 0; if (running && convey && sendTestBoxes(null, true, rideAgentId)) markRide(); }, 700);
   }
   // render the stage captions: VT323 phosphor, brief rise + fade, world coords (drawn after the boxes)
   function drawTestNotes(now, t) {
@@ -3845,10 +3904,18 @@ const Build = (() => {
     const tp = T(), zt = zoom * tp;
     const vx0 = (-panX) / zt - PROP_CULL_PAD, vy0 = (-panY) / zt - PROP_CULL_PAD;
     const vx1 = (cv.width - panX) / zt + PROP_CULL_PAD, vy1 = (cv.height - panY) / zt + PROP_CULL_PAD;
+    let bayNames = null;   // aid -> name, resolved once per paint (the roster read is a callback into app.js)
     for (const p of order) {
       if (p.x > vx1 || p.y > vy1 || p.x + (p.w || 1) - 1 < vx0 || p.y + (p.h || 1) - 1 < vy0) continue;
       const m = mountMap.get(p.id);
-      PropSprites.draw(m ? Object.assign({}, p, { mount: m }) : p, true);
+      let dp = m ? Object.assign({}, p, { mount: m }) : p;
+      // the editor draws the same gantry plate the live world does: a bound bay wears its agent's NAME
+      if (p.t === 'bay' && p.agentId) {
+        if (!bayNames) { bayNames = new Map(); for (const a of ((opts && typeof opts.agents === 'function' && opts.agents()) || [])) bayNames.set(a.id, a.name); }
+        const nm = bayNames.get(p.agentId);
+        if (nm) dp = Object.assign(dp === p ? Object.assign({}, p) : dp, { dockName: nm });
+      }
+      PropSprites.draw(dp, true);
     }
   }
   /* 4 tiles = 48px at TILE 12. The worst upward overshoot in the whole prop catalog is 21px above a
@@ -4565,6 +4632,17 @@ const Build = (() => {
       })),
     } : null),
     finRegistry: () => finRead(station),
+    /* TEST-RIDE readouts for CDP proof scripts (conveyor-audit 2026-08-10). rideMouth runs the
+       REAL reach-aware picker (null agentId = the lineless ▸ TEST pick, WORLD tiles); ride()
+       reports the one-shot arming + the live preview crates and captions — where the ride
+       actually entered, straight from the engine, never a screenshot of the animated canvas. */
+    rideMouth: (agentId) => rideMouthFor(agentId || null),
+    ride: () => ({
+      pending: ridePending, timer: !!rideTimer, agentId: rideAgentId, seen: rideSeen(),
+      boxes: convey ? convey.peekBoxes().filter(b => b.payload && b.payload.test)
+        .map(b => ({ x: b.x, y: b.y, tag: (b.payload && b.payload.tag) || null, outbound: !!(b.payload && b.payload.outbound) })) : [],
+      notes: testNotes.map(n => ({ x: n.x, y: n.y, text: n.text })),
+    }),
     /* PLACEMENT readouts for CDP proof scripts — the EXACT state the wash and the snap run on.
        lineField reports the cached candidate set (count + a bounded sample, never the whole list);
        lineSnapAt answers what a click at a tile would actually commit. */

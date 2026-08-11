@@ -146,6 +146,16 @@ const SPRITES = (() => {
     return (cycleCache[set] = out);
   }
 
+  /* per-TRACK content-bottom padding, for the seat perch: the set-level footPad is measured off a
+     STANDING frame, but a sit frame carries its own (often larger) transparent margin below the tucked
+     legs — anchoring skeleton's sit by its standing pad hung the body in the air above the stool pad
+     (Andrew, 2026-08-10). Measured once per key from the frame that will actually be drawn. */
+  const trackPad = {};
+  function getTrackPad(key) {
+    if (trackPad[key] != null) return trackPad[key];
+    const fr = frames[key];
+    return (trackPad[key] = (fr && fr[0]) ? measureFootPad(fr[0]) : DEFAULT_FOOT);
+  }
   function getFootPad(set) {
     if (footPad[set] != null) return footPad[set];
     let ref = null;
@@ -457,8 +467,17 @@ const SPRITES = (() => {
     // feet a few px ABOVE the shadow so it shows just beneath them — flush (0/positive) looks sunk,
     // and the old image-bottom anchor left every skin hovering well above it.
     const GROUND_BITE = -3;
-    const fp = getFootPad(set) * sc;
-    const y = snap(b.py - dh + GROUND_BITE + bob + fp);
+    // SEAT LIFT: a body seated on a raised single-tile seat (stool/chair) draws its pixels this many px
+    // higher so the hips land on the seat pad — world.js's planSeat measured it off the prop art. The
+    // sort key and the ground shadow deliberately stay at b.py (the seat tile's floor line): only the
+    // SPRITE rises, the shadow pool remains on the deck under the stool where light actually lands.
+    // Gated on the RESOLVED track actually being a sit pose: a set with no sit frames (minionchar,
+    // 2026-08-10) falls back to rot/stand, and lifting a STANDING body onto the pad reads as levitation.
+    const seatLift = (b.sitting && b.seatLift && key.indexOf('.sit.') !== -1) ? b.seatLift : 0;
+    // perched: anchor by THIS sit frame's own bottom padding (getTrackPad), not the standing footPad —
+    // sets whose sit master carries extra empty rows below the tucked legs (skeleton) otherwise float.
+    const pad = (seatLift ? getTrackPad(key) : getFootPad(set)) * sc;
+    const y = snap(b.py - dh + GROUND_BITE + bob + pad - seatLift);
     // the pool's outer half-width, taken from the body's DRAWN footprint. Masters carry side
     // padding, so this lands well under dw/2 — a pool wider than the boots reads as a puddle.
     const shR = Math.max(4.5, dw * 0.21);
@@ -472,7 +491,9 @@ const SPRITES = (() => {
         // the station leader's menacing red spill — a wider, slower pulse beneath his own pool
         groundShadow(ctx, b.px, b.py, shR * 1.55, { lift, color: '#ff4a3d', alpha: 0.55 + 0.25 * Math.sin(nowMs / 400) });
       }
-      groundShadow(ctx, b.px, b.py, shR, b.sitting ? { lift, alpha: 0.6, spread: 0.8 } : { lift });
+      // a perched body adds its seatLift to the shadow's lift: the pool tightens + fades the higher the
+      // seat, instead of claiming full floor contact the raised feet don't have
+      groundShadow(ctx, b.px, b.py, shR, b.sitting ? { lift: lift + seatLift, alpha: 0.6, spread: 0.8 } : { lift });
     }
     const prevSmooth = ctx.imageSmoothingEnabled;
     ctx.imageSmoothingEnabled = true;
