@@ -19,7 +19,7 @@
      RESET restored a state that never shipped and side 12 pushed the wall band past the hull
      silhouette it is pinned to. Add a WALL knob, add it here. */
   const WALL_DEFAULTS = { up: 22, corUp: 12, skirt: 32, side: 7, capH: 4, sideCap: 5 };
-  const DEPTH_DEFAULTS = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 };
+  const DEPTH_DEFAULTS = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1, poolAlbedo: 1, edgeAO: 1, southFoot: 0 };
   // TUBE APERTURE — the CSS glass vignette over the feed (app.css :root --tube-*). NOT the barrel warp:
   // `curve` bows the picture, these dim its outer band, and they move independently. Seeded from the live
   // custom properties at build time so opening the lab can never itself change the shipped look.
@@ -36,14 +36,14 @@
     'Balanced':        { light: { ambient: 0.66, pool: 0.95, floor: 0.22 } },
     'Dark + pools':    { light: { ambient: 0.82, pool: 1.0, floor: 0.26 } },
     // side is pinned at `pad` (7) — past it the wall band juts out of the station's own silhouette
-    'Flat (old)':      { wall: { up: 0, corUp: 0, skirt: 12, side: 4 }, depth: { wallShadow: 0, sheen: 0, cornerAO: 0, dither: 0, floorWear: 0, floorDetail: 0, deckSeam: 0, wallDetail: 0 } },
+    'Flat (old)':      { wall: { up: 0, corUp: 0, skirt: 12, side: 4 }, depth: { wallShadow: 0, sheen: 0, cornerAO: 0, dither: 0, floorWear: 0, floorDetail: 0, deckSeam: 0, wallDetail: 0, poolAlbedo: 0 } },
     'Tall halls':      { wall: { up: 10, corUp: 6, skirt: 32, side: 7 } },
     'Towering':        { wall: { up: 32, corUp: 15, skirt: 38, side: 7 } },
     // the pre-2026-08-08 room: short walls, ONE row of lamps at the north edge, circular corners
     'Room: pre-08-08': { wall: { up: 14, corUp: 8, capH: 3 }, light: { pitch: 40 }, shape: { cornerN: 2 } },
     'Corner: chamfer': { shape: { cornerN: 1 } },
     'Corner: fillet':  { shape: { cornerN: 2 } },
-    'Depth+':          { crt: { dust: 0.5, aberr: 0.35, grain: 0.24 }, depth: { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 } },
+    'Depth+':          { crt: { dust: 0.5, aberr: 0.35, grain: 0.24 }, depth: { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1, poolAlbedo: 1 } },
     // A/B the WHOLE aperture — in-canvas vignette + overscan + the CSS glass together. `curve` is 0.09 in
     // every one of them: these change how much of the panel the picture gets, never how hard it bows.
     'Ap: old (tight)': { crt: { vig: 0.55, over: 1 },    tube: { clear: 50, mid: 82, midA: 0.34, edgeA: 0.82, inset: 60 } },
@@ -205,6 +205,9 @@
     sliders.push(buildSlider(body, depth, 'dither', 0, 1, 0.01, scheduleRebake));       // Bayer-dither the light map's falloff
     sliders.push(buildSlider(body, depth, 'floorWear', 0, 1, 0.01, scheduleRebake));    // deck scuffs / worn patches / traffic lanes
     sliders.push(buildSlider(body, depth, 'floorDetail', 0, 1.5, 0.01, scheduleRebake)); // V2 floor materials: plates/seams/rivets/trim amplitude
+    sliders.push(buildSlider(body, depth, 'southFoot', 0, 1, 0.05, scheduleRebake));   // the dark contact sliver at the room's SOUTH edge (0 = off, 1 = the legacy band)
+    sliders.push(buildSlider(body, depth, 'edgeAO', 0, 1, 0.05, scheduleRebake));      // the short shade band hugging every wall foot (0 = off)
+    sliders.push(buildSlider(body, depth, 'poolAlbedo', 0, 1, 0.05, scheduleRebake));    // how far the warm floor pool is scaled by the deck's own albedo (0 = the old flat wash)
     sliders.push(buildSlider(body, depth, 'deckSeam', 0, 1, 0.01, scheduleRebake));      // how hard the joint between deck plates/boards reads (0 = seamless)
     sliders.push(buildSlider(body, depth, 'wallDetail', 0, 1.5, 0.01, scheduleRebake));  // V4 wall materials: ribs/panels/pipes/grain amplitude
 

@@ -2894,7 +2894,11 @@ const PropSprites = (() => {
       px(x + 7, y - 1, w - 14, 1, '#1e3a2c');
       ctx.fillStyle = '#7df0c8'; ctx.font = "8px 'VT323','Courier New',monospace";
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(String(f.agentId).replace(/^tg_/, '').slice(0, 5).toUpperCase(), x + (w >> 1), y + 1);
+      // the plate speaks the AGENT'S NAME (f.dockName — resolved LIVE by the caller from bodies/roster,
+      // never stored on the prop doc, so a rename repaints next frame). The raw id is only the fallback
+      // for a bay whose agent has no resolvable name (deleted agent, pre-name save) — an id like `agent`
+      // used to render every custom dock as the word AGENT.
+      ctx.fillText(String(f.dockName || String(f.agentId).replace(/^tg_/, '')).slice(0, 5).toUpperCase(), x + (w >> 1), y + 1);
       bloom(x + 7, y - 1, w - 14, 4, c, 0.10 + (act ? 0.10 : 0));
     } else {
       px(x + 8, y, w - 16, 1, '#2a3438'); px(x + 8, y + 2, w - 20, 1, '#232c30');   // dim UNASSIGNED bars
@@ -8011,6 +8015,29 @@ const PropSprites = (() => {
      `live` (G0.2/G0.3, optional) carries the seated agent's TRUTHFUL activity: { heat, prog } — heat
      is real token/tool flow (0..1, ~2s decay, world.js heatFor); prog is a real published task
      fraction or null (live harness runs have none). Only ever passed for a lit assigned workstation. */
+  /* SEAT-FRONT OVERLAY (stool-sit lane): ONLY the front rim of a single-tile seat's pad, redrawn by the
+     world layer just IN FRONT of the body sitting on it, so the sitter's lap tucks INTO the pad instead
+     of floating over it — the couch's sort-in-front trick at single-seat scale. The rows repainted here
+     are byte-for-byte the same rows F.stool / F.chair already drew (sorted just BEHIND the sitter); a
+     divergent copy would ghost a second seat when the body wanders mid-frame. Keep them in lockstep. */
+  function drawSeatFront(f) {
+    const lift = f.mount === 'surface' ? SURFACE_RISE : 0;
+    const x = f.x * TILE, y = f.y * TILE - lift;
+    const r = RAMP.steel;
+    if (f.t === 'stool') {
+      px(x + 2, y + 3, 8, 1, '#2f6a62');                          // pad south face (lower body row)
+      px(x + 2, y + 3, 1, 1, '#4a8a82'); px(x + 9, y + 3, 1, 1, '#26554e');
+      px(x + 3, y + 3, 1, 1, '#26554e'); px(x + 8, y + 3, 1, 1, '#26554e');   // piping stitches
+      px(x + 3, y + 4, 6, 1, r.dk);                               // rounded underside rim
+      px(x + 4, y + 5, 4, 1, U.shade(r.dk, -0.30));               // seat AO onto the stem
+    } else if (f.t === 'chair') {
+      px(x + 2, y + 6, 8, 1, '#2f6a62');                          // pad south row
+      px(x + 3, y + 6, 1, 1, '#26554e'); px(x + 8, y + 6, 1, 1, '#26554e');   // seat stitches
+      px(x + 2, y + 7, 8, 1, r.face); px(x + 2, y + 7, 3, 1, r.lit);          // front lip
+      px(x + 3, y + 8, 6, 1, r.dk);                               // rounded skirt
+    }
+  }
+
   function draw(f, work, live) {
     const fn = F[f.t]; if (!fn) return;
     // MOUNT LIFT. A surface-standing prop is the SAME art as a floor prop, drawn higher: every prop
@@ -8019,7 +8046,7 @@ const PropSprites = (() => {
     // applied — a prop function must never bake its own mount height.
     const lift = f.mount === 'surface' ? SURFACE_RISE : 0;
     const X = f.x * TILE, Y = f.y * TILE - lift, W = (f.w || 1) * TILE, H = (f.h || 1) * TILE;
-    const o = { x: f.x, work: !!work, agentId: f.agentId || null, door: f.door || null };
+    const o = { x: f.x, work: !!work, agentId: f.agentId || null, dockName: f.dockName || null, door: f.door || null };
     if (live) { o.heat = +live.heat || 0; o.prog = (live.prog == null) ? null : Math.max(0, Math.min(1, +live.prog || 0)); }
     if (f.t === 'connector_portal') {                 // a bound portal rides its connector's live state
       const cid = f.connectorId || null;
@@ -8066,7 +8093,7 @@ const PropSprites = (() => {
   return {
     setCtx(c) { ctx = c; },
     setNow(t) { now = t; },
-    draw, CATALOG, CATS, spec, has, TILE,
+    draw, drawSeatFront, CATALOG, CATS, spec, has, TILE,
     // live connector state (the world layer feeds these; the connector_portal sprite reads them)
     setConnectorState, pulseConnector,
     // workbench pulse (the world layer feeds this off shell.exec / verify.result)

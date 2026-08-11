@@ -464,6 +464,9 @@
           Promise.resolve(advanceChain({
             agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''),
             signal: ac.signal, streamId: 'cron-' + runId, key: key, model: model, provider: provider,
+            // the entry run's reconciled spend: the chain's $ ceiling covers the WHOLE line, stage one
+            // included (2026-08-10 audit — the entry run rode outside its own line's cap on every path).
+            entryUsd: state.usd,
             /* ONLY A ROUTINE THAT BELONGS TO A LINE RUNS THE LINE (Andrew's ruling, 2026-08-07). Read straight
                off the durable job record — true only for a routine created from a line's own INBOX trigger
                zone. The seam (index.js) turns it into the lineId the chain gate needs; false/absent means the

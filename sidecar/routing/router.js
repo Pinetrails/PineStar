@@ -35,8 +35,11 @@ function makeRouter(o) {
     // every bay-bound agent the DEFAULT OFFICE while the world still painted "NO COMPUTE" over its bay: the
     // UI asserting a restriction the harness had stopped applying, and the looser grant of the two. Keeping
     // the bay projection here means the claim and the grant stay one fact; ROUTING still refuses below.
+    // The refusal carries `caps: true` so the persistence seam (index.js handleRouting) keeps this plan on
+    // disk: capsPlan was memory-only, so a refusal followed by a RESTART re-opened the same default-office
+    // hole this block closed live (2026-08-10 audit #1). Boot replays the file through this same function.
     capsPlan = p;
-    if (!Pipeline.ok(p)) { plan = null; return { ok: false, error: 'plan has blocking errors', codes: p.errors.filter(e => !e.warn).map(e => e.code) }; }
+    if (!Pipeline.ok(p)) { plan = null; return { ok: false, error: 'plan has blocking errors', caps: true, codes: p.errors.filter(e => !e.warn).map(e => e.code) }; }
     /* KEEP SPLITTER BALANCE ACROSS A NO-OP RE-POST (2026-08-07). `rr` is the per-splitter round-robin counter
        that makes dispatch SPREAD across a splitter's lanes; resetting it on every accepted plan meant any
        re-post restarted every splitter at lane 0. plan.hash is exactly the dispatch topology (sources, bays,
@@ -80,7 +83,24 @@ function makeRouter(o) {
     const p = activePlan();
     if (!p) return null;
     const pick = (k, n) => { const c = rr[k] || 0; rr[k] = (c + 1) % n; return c; };
-    return Pipeline.resolveTarget(p, ctx || {}, pick);
+    ctx = ctx || {};
+    /* LINE-SCOPED DISPATCH (sample proof, 2026-08-10 audit — "sample not line-scoped"). An optional
+       ctx.lineId narrows the UNADDRESSED source walk to the named line's OWN doors: only the INBOX
+       sources whose intake prop the compiled plan puts on that line are walked, so the work enters
+       through that line's front door and nowhere else. Everything else is byte-identical — the same
+       Pipeline.resolveTarget walk, the same shared round-robin counters (a splitter on the named line
+       still spreads), and no caller that omits lineId changes behaviour (no production ctx carried a
+       lineId before this). The filter reads the plan's own compiled lineOfProp map — no second
+       derivation of line membership. A named line with no doors resolves null (the caller refuses
+       honestly; dispatch never silently widens to another line's intake). */
+    if (ctx.lineId != null && String(ctx.lineId)) {
+      const want = String(ctx.lineId);
+      const lop = p.lineOfProp || {};
+      const srcs = (p.sources || []).filter(s => s && s.propId != null && String(lop[String(s.propId)] || '') === want);
+      if (!srcs.length) return null;
+      return Pipeline.resolveTarget(Object.assign({}, p, { sources: srcs }), ctx, pick);
+    }
+    return Pipeline.resolveTarget(p, ctx, pick);
   }
 
   /* WHICH LINE DOES THIS DOCK BELONG TO? Read straight off the compiled plan (never re-derived) — the

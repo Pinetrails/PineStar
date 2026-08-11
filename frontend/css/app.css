@@ -2220,6 +2220,37 @@ body.crew-rail-off .crew-resizer { display: none; }
 body.col-resizing { cursor: col-resize; user-select: none; }
 body.col-resizing #stage { pointer-events: none; }
 
+/* ---------- CREW / SESSIONS divider: drag the rail's own horizontal split (leftrail.js) ----------
+   Same law as the column seams: THE HIT ZONE MUST SIT ON THE SEAM THE EYE SEES. Here the seam the
+   eye reads is the 10px gap between the recessed WORKING/IDLE strip and the framed SESSIONS module
+   (panelchrome.css §4) — so the handle is a ZERO-HEIGHT flex child sitting between them, and its
+   ::before straddles that gap. The flex flow puts it exactly on the boundary at every roster
+   height, so there is no arithmetic against the strip's margin or the module's frame; ::after is
+   the same invisible-until-hovered grip the column seams use, turned 90°. */
+.row-resizer {
+  flex: 0 0 auto; height: 0; position: relative; z-index: 12; touch-action: none;
+}
+/* the hit strip: the whole gap, plus reach ABOVE it into the (inert) counter strip rather than
+   below it — 2px of stolen SESSIONS head is 2px the tabs no longer get */
+.row-resizer::before {
+  content: ''; position: absolute; left: 6px; right: 6px; top: -6px; height: 16px;
+  cursor: row-resize;
+}
+.row-resizer::after {                       /* the grip */
+  content: ''; position: absolute; left: 50%; top: 4px; width: 46px; height: 2px;
+  margin-left: -23px; border-radius: 2px; background: var(--ph-dim); opacity: 0;
+  pointer-events: none; transition: opacity .12s, background .12s, box-shadow .12s;
+}
+.row-resizer:hover::after, body.row-resizing .row-resizer::after {
+  opacity: 1; background: var(--ph); box-shadow: 0 0 8px var(--ph-glow2);
+}
+body.row-resizing { cursor: row-resize; user-select: none; }
+/* the roster dragged fully SHUT (leftrail.js writes --crew-cap:0 and this class together). The cap
+   is a max-height, which panelchrome's 1px/3px padding sits OUTSIDE — so without this the closed
+   list still paints a 4px sliver under the header and reads as a rendering fault, not a choice.
+   id+class outranks panelchrome's later `#crew` rule, so load order does not matter here. */
+#crew.shut { padding: 0; }
+
 /* the v7 screen-flicker animation targets #app (which this app doesn't
    have) — re-point it at the live station so the SETTINGS toggle works */
 body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }

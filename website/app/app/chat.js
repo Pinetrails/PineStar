@@ -1886,8 +1886,13 @@ const Chat = (() => {
         ev.preventDefault(); ev.stopPropagation();
         if (window.getSelection && String(window.getSelection())) return;   // a drag-selection release is not an open (the delegated handler's SELECTION GUARD law)
         Promise.resolve(core.invoke('starnet_open_artifact', { path: String(title || ''), agentId: agentId || 'agent' }))
-          .catch(() => Promise.resolve(core.invoke('open_external_url', { url: a.href })))
-          .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file — use folder or copy path to find it on disk', 'warn'); });
+          .catch(err => {
+            // The host shows a native confirm before any OS launch (renderer clicks are not host
+            // gestures). Cancel there is an ANSWER, not a failure — never fall back around it.
+            if (/declined at the host/i.test(String(err || ''))) return;
+            return Promise.resolve(core.invoke('open_external_url', { url: a.href }))
+              .catch(() => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not open that file — use folder or copy path to find it on disk', 'warn'); });
+          });
       });
     }
   }
@@ -2027,7 +2032,10 @@ const Chat = (() => {
       if (core && core.invoke) {
         Promise.resolve(core.invoke('starnet_reveal_path', { path: String(relPath || ''), agentId: agentId || 'agent' })).then(() => {
           lbl.textContent = 'opened'; setTimeout(() => resetFeedbackLabel(b), 1400);
-        }).catch(() => copyArtifactPath(b, agentId, relPath));
+        }).catch(err => {
+          if (/declined at the host/i.test(String(err || ''))) { resetFeedbackLabel(b); return; }   // native-prompt Cancel: no reveal, no clipboard fallback
+          copyArtifactPath(b, agentId, relPath);
+        });
       } else copyArtifactPath(b, agentId, relPath);
     });
     return b;
@@ -3210,7 +3218,7 @@ const Chat = (() => {
           const core = tauriCore();   // desktop shell only — a real Explorer/Finder reveal exists there
           if (core && core.invoke) {
             const rv = document.createElement('button'); rv.className = 'consent-btn'; rv.textContent = '📂 open folder';
-            rv.onclick = () => { Promise.resolve(core.invoke('starnet_reveal_path', { path: destPath })).catch(() => { rv.textContent = 'could not open'; setTimeout(() => { rv.textContent = '📂 open folder'; }, 1600); }); };
+            rv.onclick = () => { Promise.resolve(core.invoke('starnet_reveal_path', { path: destPath })).catch(err => { if (/declined at the host/i.test(String(err || ''))) return; rv.textContent = 'could not open'; setTimeout(() => { rv.textContent = '📂 open folder'; }, 1600); }); };
             chips.appendChild(rv);
           }
           // UNDO KEEP (EL-11 #8) — reverse the copy-out: delete exactly the files Implement wrote to destPath and

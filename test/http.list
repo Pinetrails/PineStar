@@ -52,6 +52,7 @@ test/channels.telegram.connect-pairing.e2e.test.js
 test/channels.telegram.multibot.e2e.test.js
 test/channels.telegram.botchain.e2e.test.js
 test/channels.telegram.buttons.e2e.test.js
+test/webhook-replay.e2e.test.js
 test/cron.arm.test.js
 test/lifecycle-armed.http.test.js
 test/checkpoint-store.test.js

@@ -161,7 +161,8 @@ const { parseSlackTokens } = require('./channels/slack.js');                    
 const channelSecretsMod = require('./channels/secrets.js');                        // T1.4: token-vs-config split + keychain migration
 const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
-const relayWebhook = makeWebhookVerifier({ secret: process.env.STARNET_CHANNEL_WEBHOOK_SECRET || '', now: () => Date.now() });
+// relayWebhook (the signed-ingress verifier) is composed AFTER the WORKSPACES stores below —
+// its replay-nonce inbox is a durable JSONL sibling of the other ledgers.
 const { makeRouter } = require('./routing/router.js');
 const { makeChainRunner } = require('./routing/chain.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
@@ -392,6 +393,16 @@ const startupWorkspaceRecovery = workspaceRecovery.applyPendingRecovery({
   fs, path, platform: process.platform, home: os.homedir(), workspaceRoot: WORKSPACES,
   candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS, auto: !DEV_MODE, now: Date.now
 });
+if (startupWorkspaceRecovery && startupWorkspaceRecovery.lockUnavailable) {
+  // A LIVE concurrent process holds the parent-level recovery lock — it may be renaming this very
+  // workspace right now. Opening stores here would race that rename, so refuse the boot outright,
+  // matching the owner-claim refusal below (same fail-closed semantics, same exit code).
+  console.error('✗ StarNet refused to open this workspace because another process is recovering it.');
+  console.error('  workspace: ' + WORKSPACES);
+  console.error('  safety code: ' + String(startupWorkspaceRecovery.code || 'RECOVERY_LOCK_UNAVAILABLE'));
+  console.error('  Close the other StarNet process and retry. StarNet will not risk concurrent writes.');
+  process.exit(73);
+}
 if (startupWorkspaceRecovery && startupWorkspaceRecovery.applied) {
   console.warn('[recovery] restored prior station before opening stores; source preserved, rollback retained=' + !!startupWorkspaceRecovery.rollbackRetained);
 } else if (startupWorkspaceRecovery && startupWorkspaceRecovery.ok === false) {
@@ -577,7 +588,7 @@ const CREDITS_LOW_USD = (() => { const n = Number(ENV('CREDITS_LOW_USD')); retur
 // flipped in the same breath, as `CREDITS.live` in website/site.js — the site's buy buttons and the app's link
 // button have to tell the same story on the same day. An explicit STARNET_CLOUD_URL always wins, so operators
 // and this repo's own live tests can point at a local service without touching the flag.
-const CLOUD_LIVE = false;                                    // ← launch switch: flip WITH website/site.js CREDITS.live
+const CLOUD_LIVE = true;                                    // ← launch switch: flip WITH website/site.js CREDITS.live
 const CLOUD_URL_DEFAULT = 'https://account.starnetos.com';   // the deployed StarNet Cloud (see starnet-cloud)
 const CLOUD_URL = String(ENV('CLOUD_URL') || (CLOUD_LIVE ? CLOUD_URL_DEFAULT : '')).trim();
 // The linked station's device token, injected by the DESKTOP from the OS keychain at spawn (keychain account
@@ -979,6 +990,41 @@ const autonomyLedgerIo = {
 const autonomyLedger = makeAutonomyLedger({ io: autonomyLedgerIo, clock: { now: () => Date.now() } });
 // record an autonomy decision without ever letting a ledger hiccup touch the caller (cron pass, run loop, …).
 function recordAutonomy(entry) { try { return autonomyLedger.record(entry); } catch (_) { return null; } }
+
+// Webhook replay-nonce inbox: accepted relay nonces are durable facts ({nonce, expiry, at}), append+fsync'd
+// like the growth-ratings ledger so the exactly-once claim at /api/channels/webhook/* survives a sidecar
+// restart (an in-memory-only cache re-admitted the same signed request after a reboot within the skew
+// window). append() deliberately THROWS on failure — the verifier fails closed (503) rather than admit a
+// delivery whose nonce was never recorded. Pruned by expiry once the live segment passes the compact
+// threshold; rotateJsonl stays as the ultimate size bound.
+const WEBHOOK_NONCES_FILE = path.join(WORKSPACES, 'webhook-nonces.jsonl');
+const WEBHOOK_NONCES_COMPACT_BYTES = 256 * 1024;   // nonces expire in minutes — the compacted file is tiny
+function pruneWebhookNonces() {
+  try {
+    const st = fs.statSync(WEBHOOK_NONCES_FILE);
+    if (st.size <= WEBHOOK_NONCES_COMPACT_BYTES) return;
+    const nowMs = Date.now();
+    const live = readBoundedJsonl(WEBHOOK_NONCES_FILE).filter(r => r && typeof r.nonce === 'string' && Number(r.expiry) > nowMs);
+    const tmp = WEBHOOK_NONCES_FILE + '.tmp';
+    fs.writeFileSync(tmp, live.length ? live.map(r => JSON.stringify(r)).join('\n') + '\n' : '');
+    fs.renameSync(tmp, WEBHOOK_NONCES_FILE);       // atomic swap — a crash mid-prune never loses the live file
+    try { fs.unlinkSync(WEBHOOK_NONCES_FILE + '.1'); } catch (_) {}   // an old archive only holds expired rows
+    rotateJsonl(WEBHOOK_NONCES_FILE);              // fallback bound if expiry somehow kept everything live
+  } catch (_) {}                                    // pruning is best-effort; append correctness never depends on it
+}
+const webhookNonceIo = {
+  load() { try { return readBoundedJsonl(WEBHOOK_NONCES_FILE); } catch (_) { return []; } },
+  append(entry) {
+    let fd = null;
+    try {
+      fd = fs.openSync(WEBHOOK_NONCES_FILE, 'a');
+      fs.writeSync(fd, JSON.stringify(entry) + '\n');
+      fs.fsyncSync(fd);
+    } finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    pruneWebhookNonces();
+  }
+};
+const relayWebhook = makeWebhookVerifier({ secret: process.env.STARNET_CHANNEL_WEBHOOK_SECRET || '', now: () => Date.now(), store: webhookNonceIo });
 
 /* ---- T3.9 DIAGNOSTICS: process start + a small in-memory error ring feeding the paste-ready bug-report block
    (GET /api/diagnostics). The ring holds only the newest few run-error MESSAGES (already redacted on write) so a
@@ -1933,6 +1979,21 @@ function channelRunConfigFor(agentId) {
     reasoningEffort: resolveReasoningEffort(provider, ident.reasoningEffort),
     system: ident.system || ''
   };
+}
+/* A cron/Run-Now HOP's run config: the TARGET dock's own roster provider/model/credential, exactly like a
+   channel hop resolves it (channelRunConfigFor above). The 2026-08-10 audit finding was the same drawn floor
+   buying DIFFERENT models per trigger surface — a channel-routed hop ran on the receiving dock's roster while
+   a scheduled hop ran on the ROUTINE's provider/model/key, spending the routine's credential as a foreign
+   agent. EMPTY-roster grace mirrors agentExists (cron driver deps): a headless sidecar that has never seen a
+   roster push still runs scheduled lines on the routine's own config — fail-open on ABSENT data, never on a
+   roster that disagrees. An unconfigured target on a live roster fails honestly; the chain law then delivers
+   the last good output with a stop note. */
+function cronHopConfigFor(agentId, fallback) {
+  if (agentRoster.size === 0) {
+    const f = fallback || {};
+    return { ok: true, key: f.key, model: f.model, provider: f.provider, baseUrl: '', reasoningEffort: undefined };
+  }
+  return channelRunConfigFor(agentId);
 }
 function cronProviderFor(job) {
   const ident = cronIdentityFor(job && job.agentId);
@@ -3415,6 +3476,9 @@ const ROUTING_FILE = path.join(WORKSPACES, 'routing.plan.json');
     if (plan && typeof plan === 'object') {
       const r = router.setPlan(plan);
       if (r && r.ok) console.log('  · routing plan restored from disk (hash ' + (plan.hash || '?') + ')');
+      // a persisted REFUSED plan is the capability view on purpose (see handleRouting): bays stay isolated,
+      // routing stays unarmed — the restart may not widen what the live refusal kept narrow (2026-08-10 #1).
+      else if (r && r.caps) console.log('  · routing plan restored for CAPABILITY only (' + ((r && r.error) || 'refused') + ') — bays stay isolated; routing unarmed until the app posts a deployable plan');
       else console.warn('[routing] persisted plan refused at boot (' + ((r && r.error) || 'invalid') + ') — routing unarmed until the app posts one');
     }
   } catch (e) { console.warn('[routing] plan restore failed:', (e && e.message) || e); }
@@ -4233,6 +4297,9 @@ const cronDriver = makeCronDriver({
      no chat transcript; its hops ride the routine's own stream so the session shows the whole line). */
   advanceChain: (o) => chainRunner.advance({
     agentId: o.agentId, text: o.text, originalText: o.originalText, signal: o.signal,
+    // the entry run's reconciled spend: MAX_CHAIN_USD bounds the WHOLE chain, and stage one is part of the
+    // chain (2026-08-10 audit — the entry run rode outside its own line's $ ceiling on every path).
+    entryUsd: o.entryUsd,
     /* ONLY A ROUTINE THAT BELONGS TO THE LINE RUNS THE LINE (Andrew's ruling, 2026-08-07). `o.runsLine` is
        the durable opt-in the driver reads off the job record (cron-store `runsLine`): true only for a routine
        created from a line's own INBOX trigger zone. Without it this is a routine that predates the workflow
@@ -4242,6 +4309,14 @@ const cronDriver = makeCronDriver({
     lineId: o.runsLine === true ? router.lineOfAgent(o.agentId) : null,
     runAgent: async (h) => {
       if (o.onHop) { try { o.onHop(); } catch (_) {} }
+      /* A HOP RUNS AS THE TARGET AGENT ON THE TARGET'S OWN ROSTER CONFIG (2026-08-10 audit #3): a channel
+         hop already resolves the receiving dock's provider/model/credential (hub.js resolveRunConfig); this
+         seam ran every hop on the ROUTINE's — same floor, different model, and the routine's key spending
+         as a foreign agent, depending on nothing but what triggered the line. */
+      const hopConfig = cronHopConfigFor(h.agentId, o);
+      if (!hopConfig || hopConfig.ok === false) {
+        return { text: '', usd: 0, error: (hopConfig && hopConfig.error) || ('target agent ' + h.agentId + ' is not configured') };
+      }
       const hs = { buf: '', errMsg: null, usd: 0 };
       const sink = (name, payload) => {
         const p = payload || {};
@@ -4254,7 +4329,9 @@ const cronDriver = makeCronDriver({
       };
       try {
         await runOnce({
-          key: o.key, model: o.model, provider: o.provider, system: cronSystemFor(h.agentId),
+          key: hopConfig.key, model: hopConfig.model, provider: hopConfig.provider,
+          baseUrl: hopConfig.baseUrl || '', reasoningEffort: hopConfig.reasoningEffort,
+          system: cronSystemFor(h.agentId),
           messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
           emit: sink, signal: h.signal, runId: crypto.randomUUID(), streamId: o.streamId,
           surface: 'autonomous', trigger: 'schedule', reflect: true,
@@ -8368,11 +8445,13 @@ function handleRouting(req, res) {
     if (raw && raw.trim()) { try { plan = JSON.parse(raw); } catch (_) { res.writeHead(400); return res.end('bad json'); } }
     const r = router.setPlan(plan);
     // persist every ACCEPTED plan (incl. an accepted clear) so routing survives a sidecar restart (2026-07-06).
-    // A REFUSED post persists the CLEAR (2026-08-04): setPlan drops the in-memory plan on refusal, so leaving
-    // the previously-accepted file on disk would re-arm STALE routing at boot — live behavior (unrouted
-    // fallback) and post-restart behavior (old floor's routing) diverged for the same posted state. Boot must
-    // match live: accepted plan -> persist it; accepted clear OR refusal -> persist null (same durable idiom).
-    try { saveResilient(ROUTING_FILE, (r && r.ok) ? plan : null); } catch (e) { console.warn('[routing] plan persist failed:', (e && e.message) || e); }
+    // A REFUSED post persists the REFUSED PLAN ITSELF, never the previously-accepted file (2026-08-04): stale
+    // routing must not re-arm at boot. But a well-formed refusal is still the CAPABILITY view (r.caps — see
+    // router.setPlan), and keeping capsPlan memory-only meant a refusal followed by a headless restart handed
+    // every bay-bound cron/routed run the FULL default office while the floor still painted bay restrictions
+    // (2026-08-10 audit #1). Boot replays this file through the same setPlan, which re-refuses routing AND
+    // restores the bay projection — boot matches live for BOTH facts. Malformed post or clear -> null.
+    try { saveResilient(ROUTING_FILE, (r && (r.ok || r.caps)) ? plan : null); } catch (e) { console.warn('[routing] plan persist failed:', (e && e.message) || e); }
     res.writeHead(r.ok ? 200 : 422, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(r));
   }).catch(() => { try { res.writeHead(400); res.end(); } catch (_) {} });
@@ -8421,7 +8500,8 @@ function handleRoutingSampleStatus(_req, res) {
    (filter/splitter engage), the run goes through runOnce (budget governor, ledger, real cost), and the shared
    chain runner advances the rest of the drawn line. First-class ≠ wider: the run is surface:'autonomous' with
    NO unattendedGrants (the chain-grants law) — an ungranted mutation default-denies exactly like any headless
-   channel run, and the request body cannot smuggle authority (only {text} is read).
+   channel run, and the request body cannot smuggle authority (only {text} and the additive {line} are read;
+   `line` can only NARROW dispatch to a named drawn line's own doors — it grants nothing).
 
    Contract (the finish-the-line card feature-detects this endpoint):
      · every refusal is 409 {ok:false,error} — never 404, so "route exists but refuses" is distinguishable
@@ -8440,6 +8520,14 @@ let sampleHub = null;        // lazy singleton, one per station — mirrors getD
 let sampleResolved = null;   // one-shot resolution slot (one-resolver law: telemetry reads the hub's own pick)
 let sampleLineOutcome = null; // terminal chain truth for the current proof; clean runs alone are not OUTBOX proof
 let sampleInFlight = null;   // { streamId, workitemId, startedAt } — ONE sample per station, tracked
+/* LINE-SCOPED PROOF (2026-08-10 audit — "sample not line-scoped"). The FINISH card is titled for ONE line
+   ("FINISH ‹LINE B›") and posts { line: c.key } — the lineComponents key, which IS the compiled plan's
+   lineId (pipeline.js attaches lineId = c.key; one namespace by construction). The route used to read only
+   body.text, so on a two-line floor the card's sample dispatched down whichever line's source compiled
+   first. This slot carries the requested lineId for the CURRENT dispatch only — set under the in-flight
+   lock before onInbound, cleared in the same finally, and read by the hub's resolveAgent closure below so
+   the ONE counter-advancing resolution (one-resolver law) walks only the named line's own doors. */
+let sampleLineScope = null;
 const sampleReplies = [];    // outbound text the line delivered for the CURRENT sample (cleared per dispatch)
 function getSampleHub() {
   if (sampleHub) return sampleHub;
@@ -8458,7 +8546,8 @@ function getSampleHub() {
     secrets: devHubSecrets,   // the ONE headless resolution rule (see handleRuntimeAgent) — a second rule would drift
     persona: SAMPLE_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
     newId: () => crypto.randomUUID(), now: () => Date.now(),
-    resolveAgent: (ctx) => router.resolveTarget(ctx),
+    // line scope rides the ctx (additive): resolveTarget walks ONLY the named line's doors when set
+    resolveAgent: (ctx) => router.resolveTarget(sampleLineScope ? Object.assign({}, ctx, { lineId: sampleLineScope }) : ctx),
     chain: chainRunner,                                                       // the belts drawn PAST the dock run the rest of the line
     lineOriginFor: (agentId) => router.lineOriginFor(agentId),   // work belongs to a line: which line does work ARRIVING at this dock belong to? (null = a direct order)
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
@@ -8486,10 +8575,21 @@ async function handleRoutingSample(req, res) {
     try { const raw = await readBody(req, 1 << 16); body = raw && raw.trim() ? (JSON.parse(raw) || {}) : {}; }
     catch (_) { return json(400, { ok: false, error: 'bad json' }); }   // the finally releases the lock on every exit
     const text = String(body.text == null ? '' : body.text).trim().slice(0, 2000) || SAMPLE_TEXT;
+    /* the line this proof is FOR (additive, 2026-08-10): the FINISH card posts { line: c.key } — the same
+       lineId namespace the compiled plan carries (lineComponents key === plan lineId). Absent -> exactly
+       the old station-wide behaviour, so older cards and bare curl keep working byte-for-byte. */
+    const line = String(body.line == null ? '' : body.line).trim().slice(0, 200);
     // the armed plan is the precondition — a sample with no line to ride is a lie, not a fallback run.
     const plan = router.getPlan();
     if (!plan) {
       return json(409, { ok: false, error: 'no work line is armed — draw a complete line (INBOX → belts → a crewed dock) and it arms itself.' });
+    }
+    /* a NAMED line must exist on the armed plan — the same 409-never-404 contract as every refusal above/
+       below. An unknown key means the floor changed since the card was drawn (a line re-keys when its
+       oldest machine is deleted) or the browser's compile and the armed plan have drifted; running the
+       sample down some OTHER line instead would be the exact lie this parameter exists to end. */
+    if (line && !((Array.isArray(plan.lines) ? plan.lines : []).some(l => l && String(l.lineId) === line))) {
+      return json(409, { ok: false, error: 'no armed work line is named "' + line + '" — the floor changed since this card was drawn; re-open the line and try again.' });
     }
     /* side-effect-free precondition: does the armed line reach ANY crewed dock through its own doors?
 
@@ -8504,9 +8604,17 @@ async function handleRoutingSample(req, res) {
        construction and cannot disagree with any single dispatch. It is also the same fact lineOriginOf keys the
        line gate on, so the refusal and the line semantics quote ONE artifact. The hub's own resolveAgent call
        below stays the one and only counter-advancing resolution (one-resolver law). */
-    const reachedDocks = Object.keys((plan && plan.reach) || {}).filter(a => plan.reach[a]);
+    /* When the proof is line-scoped, the same reach question is asked OF THAT LINE: a dock counts only
+       when the plan's sources feed it AND it crews the named line (plan.lineOfAgent — the compiled map,
+       same artifact the gate reads). Lines are connected components, so a dock on line B is only ever
+       reachable through line B's own doors — the intersection is exact, still lane-choice-blind, and the
+       refusal still never names a dock. */
+    const reachedDocks = Object.keys((plan && plan.reach) || {})
+      .filter(a => plan.reach[a] && (!line || ((plan.lineOfAgent || {})[a] === line)));
     if (!reachedDocks.length) {
-      return json(409, { ok: false, error: 'the armed line routes this job to no dock — crew a bay on the line (bind an agent to it) and try again.' });
+      return json(409, line
+        ? { ok: false, error: 'line "' + line + '" routes this job to no dock — crew a bay on that line (bind an agent to it) and try again.' }
+        : { ok: false, error: 'the armed line routes this job to no dock — crew a bay on the line (bind an agent to it) and try again.' });
     }
     const sec = devHubSecrets();
     if (!sec.model || (!sec.configured && !sec.key)) {
@@ -8519,15 +8627,19 @@ async function handleRoutingSample(req, res) {
     const hub = getSampleHub();
     sampleResolved = null;
     sampleLineOutcome = null;
+    // scope the ONE resolution to the named line's doors (read by the hub's resolveAgent closure);
+    // safe under the in-flight lock — one sample per station means one scope per dispatch.
+    sampleLineScope = line || null;
     // same intercept shape as the dev seam: resolution lands synchronously in onInbound's first slice; only a
     // real TASK directive places a crate (the belt is work-only); the settle owns the queue decrement.
     const settled = Promise.resolve(hub.onInbound({ chatId: SAMPLE_CHAT, userId: String(body.userId || 'commander'), text: text, chatType: 'dm' }))
       .catch(e => { console.warn('[routing-sample] error:', (e && e.message) || e); return { error: (e && e.message) || String(e) }; });
-    let agentId = '', workitemId = '', isTask = false;
+    let agentId = '', workitemId = '', isTask = false, entryLineId = null;
     try {
       if (sampleResolved && String(sampleResolved.chatId) === SAMPLE_CHAT && sampleResolved.agentId) {
         agentId = String(sampleResolved.agentId);
         isTask = !!sampleResolved.isTask;
+        entryLineId = sampleResolved.lineId || null;   // the line the ENTRY dock actually belongs to (server-derived)
         if (isTask) {
           workitemId = crypto.randomUUID();
           sampleInFlight.workitemId = workitemId;
@@ -8549,7 +8661,12 @@ async function handleRoutingSample(req, res) {
     } catch (_) { runs = []; }
     // Outbound warning text is not delivery evidence. The proof succeeds only when every durable stage
     // outcome is clean, including every hop after the routed entry dock.
-    const completed = runs.length > 0 && runs.every(r => r.reason === 'done')
+    /* Belt-and-suspenders for a NAMED line: the entry dock's server-derived origin line (lineOriginFor,
+       read off the same compiled plan the gate reads) must BE the requested line. The scoped walk can
+       only land on that line's docks, but if resolution ever fell through to a hub fallback the proof
+       must fail honestly rather than 200 while claiming a line it never rode. */
+    const onLine = !line || entryLineId === line;
+    const completed = onLine && runs.length > 0 && runs.every(r => r.reason === 'done')
       && !!sampleLineOutcome && !sampleLineOutcome.stopped
       && router.chainShipsToOutbox(sampleLineOutcome.agentId);
     const delivered = completed ? runs[0] : null;
@@ -8560,19 +8677,22 @@ async function handleRoutingSample(req, res) {
       chanEmit('queue.status', { queueId: agentId, depth: d, maxCapacity: QUEUE_CAP, nextAdvanceAt: 0 });
     }
     if (!completed) {
-      return json(502, {
-        ok: false, sample: true, error: runs.length ? 'sample job did not complete cleanly' : 'sample job produced no durable run outcome',
+      // `line` is echoed only when it was requested, so a line-less POST's answer stays byte-identical.
+      return json(502, Object.assign({
+        ok: false, sample: true, error: !onLine ? 'sample job did not enter through line "' + line + '"'
+          : runs.length ? 'sample job did not complete cleanly' : 'sample job produced no durable run outcome',
         chatId: SAMPLE_CHAT, streamId: streamId, agentId: agentId || null, isTask: isTask,
         workitemId: workitemId || null, replies: sampleReplies.slice(), runs: runs, delivered: null, totalUsd: totalUsd
-      });
+      }, line ? { line: line } : null));
     }
-    return json(200, {
+    return json(200, Object.assign({
       ok: true, sample: true, chatId: SAMPLE_CHAT, streamId: streamId,
       agentId: agentId || null, isTask: isTask, workitemId: workitemId || null,
       replies: sampleReplies.slice(), runs: runs, delivered: delivered, totalUsd: totalUsd
-    });
+    }, line ? { line: line } : null));
   } finally {
     sampleInFlight = null;
+    sampleLineScope = null;
   }
 }
 
@@ -10139,14 +10259,16 @@ async function handleCronRun(req, res) {
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
   const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e) console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
-  const state = { buf: '', errMsg: null, reason: null, transient: false };
+  const state = { buf: '', errMsg: null, reason: null, transient: false, usd: 0 };
   const teeEmit = (name, payload) => {
     try { emit(name, payload); } catch (_) {}
     const p = payload || {};
     if (name === 'agent.token') state.buf += (p.delta || '');
     else if (name === 'agent.tool_call') state.buf = '';
     else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
-    else if (name === 'agent.run.end') state.reason = p.reason;
+    // usd rides the same terminal event (mirrors cron-driver's sink): the entry run's reconciled spend seeds
+    // the chain's $ ceiling below, so a Run-Now line is bounded exactly like the scheduled fire.
+    else if (name === 'agent.run.end') { state.reason = p.reason; if (typeof p.usd === 'number' && isFinite(p.usd)) state.usd = Math.max(state.usd, p.usd); }
   };
   try { cronEmit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: Date.now() }); } catch (_) {}
   // NS-0: a manual Run Now is still a cron FIRE decision — record it in the autonomy ledger (binding:'run-now'
@@ -10203,6 +10325,7 @@ async function handleCronRun(req, res) {
       try {
         const line = await chainRunner.advance({
           agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''), signal: ac.signal,
+          entryUsd: state.usd,   // stage one is part of the chain — its spend counts against MAX_CHAIN_USD (2026-08-10)
           // SAME ORIGIN AS THE SCHEDULED FIRE (work belongs to a line, 2026-08-07): Run Now is this routine's
           // own trigger pressed by hand, so it carries the dock's lineId and the line runs — but ONLY for a
           // routine that belongs to the line (the durable `runsLine` opt-in, read off the same job record the
@@ -10210,6 +10333,13 @@ async function handleCronRun(req, res) {
           // four from the button, and a terminal routine must buy exactly one run from either.
           lineId: job.runsLine === true ? router.lineOfAgent(job.agentId) : null,
           runAgent: async (h) => {
+            /* A HOP RUNS AS THE TARGET AGENT ON THE TARGET'S OWN ROSTER CONFIG (2026-08-10 audit #3) —
+               mirrors the scheduled seam (cron driver advanceChain) and the channel hub's resolveRunConfig:
+               same floor, same models, whatever triggered the line. */
+            const hopConfig = cronHopConfigFor(h.agentId, { key: key, model: model, provider: provider });
+            if (!hopConfig || hopConfig.ok === false) {
+              return { text: '', usd: 0, error: (hopConfig && hopConfig.error) || ('target agent ' + h.agentId + ' is not configured') };
+            }
             const hs = { buf: '', errMsg: null, usd: 0 };
             const hopSink = (name, payload) => {
               try { emit(name, payload); } catch (_) {}
@@ -10222,7 +10352,9 @@ async function handleCronRun(req, res) {
             };
             try {
               await runOnce({
-                key: key, model: model, provider: provider, system: cronSystemFor(h.agentId),
+                key: hopConfig.key, model: hopConfig.model, provider: hopConfig.provider,
+                baseUrl: hopConfig.baseUrl || '', reasoningEffort: hopConfig.reasoningEffort,
+                system: cronSystemFor(h.agentId),
                 messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
                 emit: hopSink, signal: h.signal, runId: crypto.randomUUID(), streamId: 'cron-' + runId,
                 surface: 'autonomous', trigger: 'schedule', broadcast: true, reflect: true,
@@ -12715,6 +12847,12 @@ async function runOnce(o) {
     reader: stationWebReader,
     politeness: stationWebPoliteness,
     resolveServiceKey: (name, sfc) => serviceKeysMod.resolveForRequest(serviceKeys, name, sfc),
+    // workspace files in outbound requests (${file:...} body refs / multipart parts): resolved through the
+    // SAME resolveInside jail as fs.* and browser.upload, so a request can only carry this agent's own files.
+    readWorkspaceFile: async (aid, rel) => {
+      const { abs } = await fsJail.resolveInside(aid, rel, { scope: 'read' });
+      return fsp.readFile(abs);
+    },
     // web_fetch's clean-extraction path is keyed now (r.jina.ai 401s without a token), so it is attempted
     // ONLY when the Commander has actually connected one. Resolved through the same grant as any other key,
     // so an unattended run without the tick simply uses the direct fallback instead of failing.
@@ -17054,7 +17192,9 @@ async function handleChannelHandoff(req, res) {
 }
 
 /* Authenticated relay ingress. API-token auth is still required by the global HTTP guard; this second HMAC
-   proves payload origin and the timestamp+nonce cache makes lifecycle delivery exactly-once at this boundary. */
+   proves payload origin and the timestamp+nonce inbox (durable JSONL, reloaded at boot — webhookNonceIo)
+   makes lifecycle delivery exactly-once at this boundary, INCLUDING across a sidecar restart: a nonce that
+   cannot be recorded on disk fails closed (503), never accept-without-record. */
 async function handleChannelWebhook(req, res) {
   const json = (code, value) => respondJson(res, code, value);
   const channel = decodeURIComponent(String(req.url || '').split('?')[0].slice('/api/channels/webhook/'.length));

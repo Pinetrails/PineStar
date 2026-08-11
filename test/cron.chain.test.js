@@ -70,6 +70,21 @@ async function fireAndSettle(s, reply) {
     A.eq(lastOf(s.events, 'cron.result').outcome, 'ok', 'the run settled normally, not as a stale lease');
   }
 
+  /* ---- the driver hands the seam the ENTRY run's reconciled spend (2026-08-10 audit): the chain's $
+     ceiling covers the WHOLE line, so advanceChain must know what stage one already cost. ---- */
+  {
+    const s = setup({ advanceChain: async () => ({ text: 'line done', hops: [{ agentId: 'writer' }], stopped: null }) });
+    s.clock.set(T0 + 60000);
+    s.driver.applyTick(s.clock.now());
+    A.eq(s.runs.length, 1, 'the routine fired one run');
+    s.runs[0].opts.emit('agent.token', { delta: 'stage one work' });
+    s.runs[0].opts.emit('agent.run.end', { reason: 'done', usd: 0.42 });
+    s.runs[0].resolve();
+    await flush(); await flush(); await flush();
+    A.eq(s.chainCalls.length, 1, 'the line advanced');
+    A.eq(s.chainCalls[0].entryUsd, 0.42, "the seam carries stage one's reconciled spend into the chain's ceiling");
+  }
+
   /* ---- A CHAIN FAILURE NEVER CHANGES THE ROUTINE'S OUTCOME ---- */
   {
     const s = setup({ advanceChain: async () => { throw new Error('downstream exploded'); } });
