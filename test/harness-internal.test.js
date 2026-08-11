@@ -76,6 +76,7 @@ A.ok(/const\s+workDisciplineNote\s*=/.test(sidecar), 'sidecar builds a dedicated
 A.ok(/anchor shell_exec\.cwd to that exact folder/.test(sidecar), 'work discipline anchors shell cwd before project commands');
 A.ok(/change strategy instead of retrying the same bad path/.test(sidecar), 'work discipline discourages repeated bad path attempts');
 A.ok(/Inspect before editing with fs_search\/fs_list\/fs_read/.test(sidecar), 'work discipline requires inspection before editing');
+A.ok(/Before the first repair after a failing check or test[\s\S]{0,260}test\/check\/config that defines expected behavior[\s\S]{0,220}do not infer the desired fix only from failure output/.test(sidecar), 'failed-check repair inspects the expectation source before the first mutation');
 A.ok(/prefer fs_patch for multi-line edits/.test(sidecar), 'work discipline prefers structured patch edits for source changes');
 A.ok(/Avoid temporary patch scripts/.test(sidecar), 'work discipline steers away from throwaway patch scripts');
 A.ok(/run the narrowest real verification/.test(sidecar), 'work discipline requires targeted verification');

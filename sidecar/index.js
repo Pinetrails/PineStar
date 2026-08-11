@@ -13951,6 +13951,7 @@ async function runOnce(o) {
   const workDisciplineNote = ''
     + (hasShellExec ? 'When the Commander names a local project folder, first anchor shell_exec.cwd to that exact folder, then keep later shell paths relative to it. After a path or cwd failure, run one small working-directory diagnostic plus a listing, and change strategy instead of retrying the same bad path. ' : '')
     + (hasReadTools ? 'Inspect before editing with fs_search/fs_list/fs_read, or one small shell diagnostic when the file tools cannot see the project; do not guess file contents or shotgun failed paths. ' : '')
+    + (hasReadTools ? 'Before the first repair after a failing check or test, inspect both the implicated implementation and the test/check/config that defines expected behavior when it is available; do not infer the desired fix only from failure output. Then make one evidence-based repair, rerun the check, and use the new result to decide whether more work is needed. ' : '')
     + (hasWriteTools ? (hasPatchTool
       ? 'For source changes, prefer fs_patch for multi-line edits and fs_edit only for small exact replacements. Avoid temporary patch scripts, giant quoted shell rewrites, or minified/quoting-mangled edits unless the normal file tools cannot do the job; leave code readable. '
       : 'For source changes, prefer fs_edit/fs_write over giant quoted shell rewrites, and leave code readable. ') : '')
