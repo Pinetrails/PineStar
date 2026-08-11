@@ -129,6 +129,8 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
   inherit API/provider secrets; renderer script can invoke native commands; MCP servers can lie with
   `readOnlyHint`. Strip host credentials from children, keep OS-launch routes inert, classify all custom
   connectors as unknown, and require an exact non-cacheable live confirmation at the host boundary.
+  This is the sole native-dialog exception: it names the exact canonical target + action, asks every
+  time, stores no approval, and Cancel must never fall through to another launch path.
 
 - **Scan the process that will run, not a convenient parent project.** `verify.run` once executed from
   `environment.getCwd()` while inspecting `workspaceRoot()`, and project-root discovery selected the
