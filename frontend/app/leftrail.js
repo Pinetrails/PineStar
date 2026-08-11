@@ -1,11 +1,14 @@
-/* STARNET — leftrail.js : the CREW rail's own layout. Three things, in this order:
+/* STARNET — leftrail.js : the CREW rail's own layout. Four things, in this order:
    (1) the ROSTER WINDOW — how many crew rows the rail shows whole before it scrolls;
-   (2) hide/show — ◂ in the rail header hides the whole left column (the stage absorbs the space
+   (2) the ROSTER SEAM — the horizontal handle between the WORKING/IDLE strip and SESSIONS, which
+       lets the Commander choose that row count by dragging (up = a shorter roster, a taller
+       SESSIONS; down = the reverse);
+   (3) hide/show — ◂ in the rail header hides the whole left column (the stage absorbs the space
        via the body.crew-rail-off grid overrides in app.css); a slim ▸ CREW drawer tab on the
        stage's left edge brings it back;
-   (3) WIDTH — the seam on the stage's left edge writes --crew-w, the same way chatresize.js
+   (4) WIDTH — the seam on the stage's left edge writes --crew-w, the same way chatresize.js
        writes --chat-w.
-   All three persist per machine; the width also resets on double-click. (1) re-measures on any
+   All of them persist per machine; both seams also reset on double-click. (1) re-measures on any
    of the others moving — its ResizeObserver watches #left, which a width drag resizes too. */
 'use strict';
 
@@ -26,6 +29,10 @@
        · and it never takes so much that SESSIONS drops below WS_FLOOR.
      Whatever that budget works out to, the cap is then rounded DOWN to a whole row.
 
+     …unless the Commander has dragged the ROSTER SEAM (below), in which case their row count
+     replaces the automatic budget outright — the WS_FLOOR clamp and the whole-row rounding still
+     apply, because those are what keep the result honest rather than what keeps it automatic.
+
      Rows are not a fixed height — a WORKING row grows the in-flight bar, a duplicate name grows an
      id chip — so the cap is summed from real row geometry every time, never from a constant. */
   const ROWS_MIN = 4;     // agents the rail shows whole even when the column is tight
@@ -36,7 +43,10 @@
      `cuts` is the max-height that would end the window flush under each row in turn (so it is
      already monotonically increasing and already carries the list's own padding). Returns the
      largest of those that the budget allows — never a value BETWEEN two cuts, which is the whole
-     point — and never fewer than one row, however tight the column gets. */
+     point — and never fewer than one row, however tight the column gets.
+     `o.rows` is the Commander's dragged row count: it names the budget instead of the automatic
+     ROWS_MIN/SHARE pair, and everything after it (the SESSIONS floor, the whole-row rounding, the
+     one-row floor) still applies unchanged. */
   function crewCap(cuts, o) {
     o = o || {};
     const n = cuts.length;
@@ -44,39 +54,75 @@
     const rowsMin = o.rowsMin > 0 ? o.rowsMin : ROWS_MIN;
     const share = o.share >= 0 ? o.share : SHARE;
     const spare = isFinite(o.spare) ? o.spare : Infinity;
-    const budget = Math.min(Math.max(cuts[Math.min(rowsMin, n) - 1], (o.railH || 0) * share), spare);
+    const want = o.rows > 0
+      ? cuts[Math.min(Math.round(o.rows), n) - 1]
+      : Math.max(cuts[Math.min(rowsMin, n) - 1], (o.railH || 0) * share);
+    const budget = Math.min(want, spare);
     let i = n - 1;
     while (i > 0 && cuts[i] > budget) i--;
     return Math.ceil(cuts[i]);
   }
 
-  if (typeof module !== 'undefined' && module.exports) module.exports = { crewCap, ROWS_MIN, SHARE, WS_FLOOR };
+  /* The seam's other half: which row count a dragged height lands on. Snaps to the NEAREST cut
+     (rows stay whole — that is the roster window's whole law — so the drag moves in notches), and
+     never below one row: a CREW panel showing zero crew is not a smaller panel, it is a lie. */
+  function rowsAtHeight(cuts, h) {
+    const n = cuts.length;
+    if (!n) return 0;
+    let best = 1, bestD = Infinity;
+    for (let i = 0; i < n; i++) {
+      const d = Math.abs(cuts[i] - h);
+      if (d < bestD) { bestD = d; best = i + 1; }
+    }
+    return best;
+  }
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = { crewCap, rowsAtHeight, ROWS_MIN, SHARE, WS_FLOOR };
   if (typeof document === 'undefined') return;   // headless require(): the decision only, no rail to wire
 
   const ul = document.getElementById('crew');
   const left = document.getElementById('left');
   const sumEl = document.getElementById('crew-sum');
+  const vseam = document.getElementById('crew-vresizer');
 
-  function fitCrew() {
-    if (!ul || !left || left.offsetParent === null) return;   // rail hidden — nothing to measure
+  // The dragged row count, or null for "measure it for me". Stored as a ROW COUNT and not as a
+  // height on purpose: rows change height (a WORKING row opens its in-flight bar) and the roster
+  // changes depth, so "show me 3 whole agents" survives both, where a stored px never would.
+  const RKEY = 'starnet.crewrail.rows';
+  let wantRows = null;
+  try { const s = parseInt(localStorage.getItem(RKEY), 10); if (s > 0) wantRows = s; } catch (_) {}
+
+  // the max-height that ends the list flush under each row in turn (border-box sizing, so the
+  // list's own padding counts) — summed from REAL geometry every time, never from a row constant
+  function rowCuts() {
     const rows = ul.querySelectorAll('.crew-row');
-    if (!rows.length) { ul.style.removeProperty('--crew-cap'); return; }   // empty state sizes itself
+    if (!rows.length) return [];
     const cs = getComputedStyle(ul);
     const padBottom = parseFloat(cs.paddingBottom) || 0;
     // offsetTop is measured from the offsetParent, which is #crew itself only if #crew is
     // positioned (then row tops exclude its border) and the shared ancestor otherwise.
     const base = rows[0].offsetParent === ul ? -(parseFloat(cs.borderTopWidth) || 0) : ul.offsetTop;
-    // the max-height that ends the list flush under each row (border-box sizing, so padding counts)
-    const cuts = [].map.call(rows, (r) => (r.offsetTop - base) + r.offsetHeight + padBottom);
+    return [].map.call(rows, (r) => (r.offsetTop - base) + r.offsetHeight + padBottom);
+  }
 
-    // What the column can actually spare. Rects are VISUAL px while the cap we write is #crew's own
-    // px — TEXT SIZE zooms the body — so convert once (uiZoom law); clientHeight is already in
-    // #crew's px and needs no conversion.
-    const z = (typeof U !== 'undefined' && U.elZoom) ? (U.elZoom(ul) || 1) : 1;
+  // TEXT SIZE is a body zoom: rects are VISUAL px while #crew's own px (the cap, clientHeight) are
+  // zoomed ones. Convert exactly once, where the rects are read (uiZoom law).
+  const zoomOf = () => ((typeof U !== 'undefined' && U.elZoom) ? (U.elZoom(ul) || 1) : 1);
+
+  function fitCrew() {
+    if (!ul || !left || left.offsetParent === null) return;   // rail hidden — nothing to measure
+    const cuts = rowCuts();
+    // A one-agent station has no split to move: one row is both the floor and the ceiling, so the
+    // handle would light up under the cursor and do nothing. Ship it from the second agent on.
+    if (vseam) vseam.hidden = cuts.length < 2;
+    if (!cuts.length) { ul.style.removeProperty('--crew-cap'); return; }   // empty state sizes itself
+
+    // What the column can actually spare.
+    const z = zoomOf();
     const sumH = sumEl ? sumEl.getBoundingClientRect().height : 0;
     const spare = (left.getBoundingClientRect().bottom - ul.getBoundingClientRect().top - sumH) / z - WS_FLOOR;
 
-    const next = crewCap(cuts, { railH: left.clientHeight, spare: spare }) + 'px';
+    const next = crewCap(cuts, { railH: left.clientHeight, spare: spare, rows: wantRows }) + 'px';
     if (ul.style.getPropertyValue('--crew-cap') !== next) ul.style.setProperty('--crew-cap', next);
   }
 
@@ -118,6 +164,75 @@
     if (typeof ResizeObserver === 'function') new ResizeObserver(schedule).observe(left);
     window.addEventListener('resize', schedule);
     schedule();
+  }
+
+  /* ================= ROSTER SEAM (2026-08-10) =================
+     Andrew: "users should have the option to raise the sessions way higher if they want more space
+     to see their sessions." The roster window above is a good default and NOT a decision — a
+     Commander running four agents and forty sessions wants the split the other way round, and
+     until now the only lever was hiding the rail entirely.
+
+     So the split gets a handle, in the same vocabulary as the two column seams (pointer capture,
+     rAF-coalesced writes, per-machine persistence, double-click resets to the measured default) —
+     with one thing they don't have: it SNAPS. The roster window's whole law is that a cap landing
+     between two rows reads as broken, so a dragged cap lands on a row cut too. The drag moves in
+     notches by design; dragging past the last row simply stops, and one whole row is the floor. */
+  if (ul && left && vseam) {
+    function applyRows(n) {
+      const cuts = rowCuts();
+      if (!cuts.length) return;
+      wantRows = Math.max(1, Math.min(n, cuts.length));
+      fitCrew();
+    }
+    // Where the cursor is asking the roster's bottom edge to be. The seam sits under the
+    // WORKING/IDLE strip, so everything between #crew's bottom edge and the handle (that strip and
+    // its margin) rides along and comes off the target — measured, never a constant.
+    function rowsAtCursor(clientY) {
+      const cuts = rowCuts();
+      if (!cuts.length) return 0;
+      const ulR = ul.getBoundingClientRect();
+      const below = sumEl ? (sumEl.getBoundingClientRect().bottom - ulR.bottom) : 0;
+      return rowsAtHeight(cuts, (clientY - ulR.top - below) / zoomOf());
+    }
+
+    let vDrag = false, pendingRows = 0, vRaf = 0;
+    function flushRows() {
+      vRaf = 0;
+      if (pendingRows) { applyRows(pendingRows); pendingRows = 0; }
+    }
+    function onVMove(e) {
+      if (!vDrag) return;
+      pendingRows = rowsAtCursor(e.clientY);
+      if (pendingRows && !vRaf) vRaf = requestAnimationFrame(flushRows);
+      e.preventDefault();
+    }
+    function onVUp(e) {
+      if (!vDrag) return;
+      vDrag = false;
+      if (vRaf) { cancelAnimationFrame(vRaf); vRaf = 0; }
+      flushRows();                                   // land the notch the rAF hadn't flushed
+      document.body.classList.remove('row-resizing');
+      try { vseam.releasePointerCapture(e.pointerId); } catch (_) {}
+      try { if (wantRows) localStorage.setItem(RKEY, String(wantRows)); } catch (_) {}
+      try { if (typeof SFX === 'object' && SFX.click) SFX.click(); } catch (_) {}
+    }
+    vseam.addEventListener('pointerdown', (e) => {
+      vDrag = true;
+      document.body.classList.add('row-resizing');
+      try { vseam.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+    vseam.addEventListener('pointermove', onVMove);
+    vseam.addEventListener('pointerup', onVUp);
+    vseam.addEventListener('pointercancel', onVUp);
+
+    // double-click hands the split back to the measured default
+    vseam.addEventListener('dblclick', () => {
+      wantRows = null;
+      try { localStorage.removeItem(RKEY); } catch (_) {}
+      fitCrew();
+      try { if (typeof SFX === 'object' && SFX.close) SFX.close(); } catch (_) {}
+    });
   }
 
   /* ================= HIDE / SHOW ================= */

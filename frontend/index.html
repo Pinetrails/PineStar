@@ -471,6 +471,10 @@
     <h3>▮ CREW<span class="crew-h3-right"><button id="crew-hide" class="crew-hide" type="button" title="Hide the crew rail" aria-label="Hide the crew rail" aria-expanded="true">◂</button></span></h3>
     <ul id="crew"></ul>
     <div id="crew-sum"></div>
+    <!-- ROSTER SEAM (leftrail.js): drag the CREW/SESSIONS split. A zero-height flex anchor whose
+         ::before covers the gap the eye reads as the seam — the flex flow places it exactly there,
+         with no arithmetic against the strip above or the module below. -->
+    <div id="crew-vresizer" class="row-resizer" title="drag to resize CREW vs SESSIONS (double-click to reset)" role="separator" aria-orientation="horizontal" aria-label="Resize the crew roster"></div>
     <div id="ws-wrap">
       <div class="ws-head"><span class="ws-view" role="tablist" aria-label="rail view"><button id="ws-tab-sessions" class="ws-tab on" role="tab" aria-selected="true" title="your saved conversations">SESSIONS</button><button id="ws-tab-projects" class="ws-tab" role="tab" aria-selected="false" title="trusted project folders">PROJECTS</button></span><span class="ws-head-acts"><button id="ws-new" title="start a new COMMS session">+ NEW</button><button id="ws-addproject" title="bless a folder as a trusted project" hidden>+ ADD</button></span></div>
       <!-- RAIL SEARCH (2026-07-17): the SESSION TOOLS window was retired — search lives ON the rail now

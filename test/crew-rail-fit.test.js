@@ -17,7 +17,7 @@
 const A = require('./_assert.js');
 const fs = require('fs');
 const path = require('path');
-const { crewCap, ROWS_MIN, SHARE, WS_FLOOR } = require('../frontend/app/leftrail.js');
+const { crewCap, rowsAtHeight, ROWS_MIN, SHARE, WS_FLOOR } = require('../frontend/app/leftrail.js');
 
 /* ---- 1. GENUINE: the cap always lands ON one of the row cuts, never between them ---- */
 // a 6-agent roster, rows ~49px: the max-height that ends the list flush under each row in turn
@@ -76,5 +76,53 @@ A.ok(/\.crew-row \.crew-prog\s*\{[^}]*transition:\s*height/.test(fs.readFileSync
   '…and that transition is still the reason: motion.css animates the bar height');
 A.ok(/new ResizeObserver\([\s\S]{0,40}observe\(left\)/.test(js), 're-measures when the rail itself resizes (window, TEXT SIZE, rail show/hide)');
 A.ok(/requestAnimationFrame/.test(js), 'the re-measure is coalesced into one frame, not run per mutation');
+
+/* ---- 3. THE ROSTER SEAM (2026-08-10) — the Commander may set that row count by dragging ----
+   "users should have the option to raise the sessions way higher if they want more space to see
+   their sessions." A dragged split replaces the automatic budget, and NOTHING else: rows stay
+   whole, SESSIONS keeps its floor, and one whole row is still the bottom of the range. */
+A.eq(crewCap(CUTS, { railH: 774, spare: 600, rows: 2 }), 101, 'dragged to 2 rows: the roster takes 2 whole rows and SESSIONS gets the rest');
+A.eq(crewCap(CUTS, { railH: 774, spare: 600, rows: 1 }), 52, 'dragged to the floor: one whole row, never zero — a CREW panel showing no crew is a lie');
+A.eq(crewCap(CUTS, { railH: 443, spare: 600, rows: 6 }), 299, 'dragged the other way: 6 rows on a short rail, past the automatic 40% share');
+A.eq(crewCap(CUTS, { railH: 774, spare: 600, rows: 9 }), 299, 'asking for more rows than the roster has stops at the last row');
+A.eq(crewCap(CUTS, { railH: 774, spare: 160, rows: 6 }), 151, 'the SESSIONS floor still wins over a dragged row count — and still by whole rows');
+A.eq(crewCap([52, 101], { railH: 774, spare: 600, rows: 5 }), 101, 'a 2-agent roster dragged tall is still shown entire');
+A.eq(crewCap(CUTS, { railH: 774, spare: 600, rows: 0 }), 299, 'rows:0 is "no preference" — the automatic budget, not an empty roster');
+A.eq(crewCap(CUTS, { railH: 652, spare: 500 }), crewCap(CUTS, { railH: 652, spare: 500, rows: null }),
+  'an unset preference measures exactly as it did before the seam existed');
+for (const rows of [1, 2, 3, 4, 5, 6, 7]) {
+  A.ok(CUTS.indexOf(crewCap(CUTS, { railH: 774, spare: 900, rows })) >= 0, 'dragged to ' + rows + ': the cap is STILL a row cut, never a value between two rows');
+}
+
+// the drag→rows half: a dragged height snaps to the NEAREST cut, so the seam moves in whole notches
+A.eq(rowsAtHeight(CUTS, 101), 2, 'a drag landing exactly on a row cut takes that many rows');
+A.eq(rowsAtHeight(CUTS, 110), 2, 'a drag just past a cut has not reached the next row yet');
+A.eq(rowsAtHeight(CUTS, 130), 3, '…and past the midpoint it snaps forward to the next whole row');
+A.eq(rowsAtHeight(CUTS, -400), 1, 'dragging above the roster stops at one whole row');
+A.eq(rowsAtHeight(CUTS, 9999), 6, 'dragging below the last row stops at the whole roster');
+A.eq(rowsAtHeight([], 200), 0, 'an empty roster has no notch to land on');
+
+/* ---- 4. SOURCE-LOCK the seam: the handle, the persistence unit, the drag vocabulary ---- */
+const html = fs.readFileSync(path.join(__dirname, '../frontend/index.html'), 'utf8');
+const appcss = fs.readFileSync(path.join(__dirname, '../frontend/css/app.css'), 'utf8');
+
+A.ok(/id="crew-vresizer"[^>]*class="row-resizer"/.test(html), 'the rail ships the CREW/SESSIONS seam');
+A.ok(/role="separator"[^>]*aria-orientation="horizontal"/.test(html), '…announced as a horizontal separator');
+// the flex flow is what puts the handle on the seam — the same "no arithmetic" law the column seam
+// learned. If it ever stops being a sibling BETWEEN the counter strip and the module, it has to be
+// positioned by hand against margins that move.
+const railOrder = /<div id="crew-sum">[\s\S]{0,600}?<div id="crew-vresizer"[\s\S]{0,600}?<div id="ws-wrap">/.test(html);
+A.ok(railOrder, 'the seam sits BETWEEN #crew-sum and #ws-wrap, so the flex flow places it on the gap the eye reads');
+A.ok(/\.row-resizer\s*\{[^}]*height:\s*0/.test(appcss), '…and is layout-neutral (zero height): it moves the split, it does not take space from it');
+A.ok(/\.row-resizer::before\s*\{[^}]*cursor:\s*row-resize/.test(appcss), 'the hit strip is a pseudo covering the gap, and it reads as a resize handle');
+A.ok(/body\.row-resizing\s*\{[^}]*cursor:\s*row-resize/.test(appcss), 'the whole document keeps the resize cursor mid-drag (the col-resizing vocabulary)');
+
+A.ok(/starnet\.crewrail\.rows/.test(js), 'the dragged split persists per machine');
+A.ok(/String\(wantRows\)/.test(js), '…as a ROW COUNT, not a px height: rows change height and the roster changes depth');
+A.ok(/setPointerCapture/.test(js) && /releasePointerCapture/.test(js), 'the drag captures the pointer like the two column seams');
+A.ok(/requestAnimationFrame\(flushRows\)/.test(js), '…and coalesces its writes to one per frame');
+A.ok(/'dblclick'[\s\S]{0,200}removeItem\(RKEY\)/.test(js), 'double-click hands the split back to the measured default');
+A.ok(/vseam\.hidden = cuts\.length < 2/.test(js), 'a roster with no split to move (0 or 1 agent) hides the handle rather than shipping a control that does nothing');
+A.ok(/rowsAtHeight\(cuts, \(clientY[\s\S]{0,60}\/ zoomOf\(\)\)/.test(js), 'the dragged height is converted through the body zoom exactly once (uiZoom law)');
 
 A.report('crew-rail-fit');
