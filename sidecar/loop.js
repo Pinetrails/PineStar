@@ -313,6 +313,8 @@
   const VOS_EXTERNAL_OBSERVE_RE = /(^|_)(verify|verification|check|confirm|read|get|list|fetch|status|inspect|search|show|lookup|query|describe|retrieve)(_|$)/i;
   const VOS_EXTERNAL_STRONG_OBSERVE_RE = /(^|_)(verify|verification|check|confirm|validate|validation|audit)(_|$)/i;
   const VOS_EXTERNAL_ARTIFACT_RE = /(^|_)(file|document|doc|workbook|spreadsheet|sheet|artifact|render|export|attachment|upload|download)(_|$)/i;
+  const VOS_EXTERNAL_SOURCE_DISCOVERY_RE = /(^|_)(inspect|search|list|lookup|query|discover|catalog)(_|$)/i;
+  const VOS_EXTERNAL_SOURCE_READ_RE = /(^|_)(fetch|read|get|retrieve|open|download)(_|$)/i;
   function vosExternalEffect(name) {
     const n = String(name == null ? '' : name).toLowerCase();
     if (!/^mcp__.+__.+$/.test(n)) return null;
@@ -322,6 +324,21 @@
     return { connector: n.slice(5, split), leaf, role: observe ? 'observe' : 'mutate', strong: observe && VOS_EXTERNAL_STRONG_OBSERVE_RE.test(leaf) };
   }
   const vosExternalRole = name => { const effect = vosExternalEffect(name); return effect ? effect.role : ''; };
+  function vosExternalSourceRole(name) {
+    const effect = vosExternalEffect(name);
+    if (!effect) return '';
+    if (VOS_EXTERNAL_SOURCE_READ_RE.test(effect.leaf)) return 'read';
+    if (VOS_EXTERNAL_SOURCE_DISCOVERY_RE.test(effect.leaf)) return 'discover';
+    return '';
+  }
+  function sourceGroundingRequested(messages) {
+    const text = (Array.isArray(messages) ? messages : []).filter(m => m && m.role === 'user').map(m => {
+      if (typeof m.content === 'string') return m.content;
+      if (!Array.isArray(m.content)) return '';
+      return m.content.filter(p => p && p.type === 'text').map(p => String(p.text || '')).join(' ');
+    }).join(' ');
+    return /\b(cite|cites|cited|citation|citations|source|sources|sourced|research|link|links)\b/i.test(text);
+  }
   function vosExternalArtifactMutation(name, args) {
     const effect = vosExternalEffect(name);
     if (!effect || effect.role !== 'mutate') return false;
@@ -540,8 +557,11 @@
     const VOS_MAX = (_vos === false) ? 0 : (_vos && _vos.max != null ? _vos.max : 1);
     const vosUnverified = new Set();
     const vosExternalUnverified = new Map();
+    const vosSourcesUnfetched = new Map();
+    const sourceGroundingTask = sourceGroundingRequested(messages);
     let vosUsed = 0;
     let vosExternalUsed = 0;
+    let vosSourceUsed = 0;
 
     // NO-OP TURN REFUND (reference-harness iteration-budget parity): a turn that produced NO tool call AND no NEW assistant
     // content (empty/whitespace text, OR text byte-identical to the immediately-prior assistant turn) is wasted work
@@ -1068,6 +1088,21 @@
           messages.push({ role: 'system', content: '<verify_external_before_done>You used an external connector action in this run (' + touched + ') and are ending without a later read-back or verification call. A successful action response is not independent proof that the requested state persisted.' + artifactRule + ' Then report only what that result proves. If no meaningful read-back can verify this action, say plainly that the external state was NOT independently verified instead of claiming it was.</verify_external_before_done>' });
           continue;
         }
+        // SOURCE VERIFY-ON-STOP: search/list/inspect output discovers candidates; it does not prove the
+        // contents of a source the model cites. When the user explicitly asked for sourced work and that same
+        // connector exposes a real fetch/read tool, spend one bounded turn requiring retrieval. This never
+        // trusts result prose, widens tool authority, or demands an impossible call.
+        const sourceReaders = new Set(tools.map(t => vosExternalEffect(t && t.function && t.function.name))
+          .filter(effect => effect && VOS_EXTERNAL_SOURCE_READ_RE.test(effect.leaf)).map(effect => effect.connector));
+        const unfetchedSources = [];
+        if (sourceGroundingTask) {
+          for (const [connector, names] of vosSourcesUnfetched) if (sourceReaders.has(connector)) unfetchedSources.push(...names);
+        }
+        if (!empty && !graceUsed && vosSourceUsed < VOS_MAX && unfetchedSources.length) {
+          vosSourceUsed++;
+          messages.push({ role: 'system', content: '<verify_sources_before_done>You are ending a sourced/research task after using only a connector search, list, or inspect tool. Discovery metadata and snippets are not source retrieval. Use the connector\'s fetch/read tool to retrieve every source you cite, then make each claim only from what those source reads actually returned. If a source cannot be retrieved, label that claim unverified instead of citing the discovery result as proof.</verify_sources_before_done>' });
+          continue;
+        }
         const continuedTextExists = continuationParts.some(m => String((m && m.content) || '').trim());
         if ((empty || duplicate) && !continuedTextExists && refundsUsed < REFUND_MAX) {
           refundsUsed++;
@@ -1165,6 +1200,12 @@
             pending.names.add(name);
             if (vosExternalArtifactMutation(c.name, c.args)) pending.artifacts.add(name);
           }
+          const sourceRole = vosExternalSourceRole(c.name);
+          if (sourceRole === 'read') vosSourcesUnfetched.delete(externalEffect.connector);
+          else if (sourceRole === 'discover') {
+            if (!vosSourcesUnfetched.has(externalEffect.connector)) vosSourcesUnfetched.set(externalEffect.connector, new Set());
+            vosSourcesUnfetched.get(externalEffect.connector).add(String(c.name));
+          }
         }
       }
 
@@ -1236,5 +1277,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, vosExternalArtifactMutation, explicitNonzeroExit, failedCheckRepairNote, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, vosExternalArtifactMutation, vosExternalSourceRole, sourceGroundingRequested, explicitNonzeroExit, failedCheckRepairNote, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
 });

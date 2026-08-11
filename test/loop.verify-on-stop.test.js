@@ -46,13 +46,15 @@ function externalReg(fail) {
   r.register({ name: 'mcp__parity_fixture_eval__fixture_verify_file', schema: { type: 'object', properties: {} }, run: async () => 'verified' });
   r.register({ name: 'mcp__parity_fixture_eval__fixture_status', schema: { type: 'object', properties: {} }, run: async () => 'action completed' });
   r.register({ name: 'mcp__parity_fixture_eval__fixture_read_file', schema: { type: 'object', properties: {} }, run: async () => 'file contents' });
+  r.register({ name: 'mcp__parity_fixture_eval__fixture_inspect', schema: { type: 'object', properties: {} }, run: async () => 'sources: /a, /b' });
+  r.register({ name: 'mcp__parity_fixture_eval__fixture_fetch', schema: { type: 'object', properties: {} }, run: async (a) => 'source content for ' + a.path });
   r.register({ name: 'mcp__other__read_status', schema: { type: 'object', properties: {} }, run: async () => 'other state' });
   return r;
 }
 async function run(o) {
   const { emit } = setup();
   const provider = makeReplayProvider(o.fixture);
-  const messages = [{ role: 'user', content: 'go' }];
+  const messages = [{ role: 'user', content: o.user || 'go' }];
   const r = o.registry || reg();
   const res = await runAgentLoop({
     messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
@@ -63,7 +65,8 @@ async function run(o) {
   const nudges = messages.filter(m => m.role === 'system' && String(m.content).indexOf('<verify_before_done>') === 0);
   const externalNudges = messages.filter(m => m.role === 'system' && String(m.content).indexOf('<verify_external_before_done>') === 0);
   const failedCheckNudges = messages.filter(m => m.role === 'system' && String(m.content).indexOf('<failed_check_repair>') === 0);
-  return { res, messages, nudges, externalNudges, failedCheckNudges };
+  const sourceNudges = messages.filter(m => m.role === 'system' && String(m.content).indexOf('<verify_sources_before_done>') === 0);
+  return { res, messages, nudges, externalNudges, failedCheckNudges, sourceNudges };
 }
 
 (async () => {
@@ -135,7 +138,7 @@ async function run(o) {
 
   // ---- 7. the pure classifiers, directly ----
   {
-    const { vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, vosExternalArtifactMutation } = _internals;
+    const { vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, vosExternalArtifactMutation, vosExternalSourceRole, sourceGroundingRequested } = _internals;
     A.eq(vosIsCodePath('src/a.js'), true, '.js is code');
     A.eq(vosIsCodePath('a.md'), false, '.md is prose');
     A.eq(vosIsCodePath('Makefile'), true, 'an extension-less build file is code');
@@ -152,6 +155,10 @@ async function run(o) {
       'an artifact-shaped action arms the stronger freshness rule');
     A.eq(vosExternalArtifactMutation('mcp__parity_fixture_eval__fixture_action', { action: 'restart_service', note: 'spreadsheet mentioned in prose' }), false,
       'unstructured prose does not turn an ordinary external action into an artifact mutation');
+    A.eq(vosExternalSourceRole('mcp__parity_fixture_eval__fixture_inspect'), 'discover', 'connector inspection is source discovery');
+    A.eq(vosExternalSourceRole('mcp__parity_fixture_eval__fixture_fetch'), 'read', 'connector fetch is source retrieval');
+    A.eq(sourceGroundingRequested([{ role: 'user', content: 'Report reference code QZ-731.' }]), false,
+      'an ordinary reference identifier does not falsely request research grounding');
     A.eq(vosExternalRole('fs_write'), '', 'native tools stay outside the external-effect classifier');
   }
 
@@ -241,6 +248,33 @@ async function run(o) {
     passingRegistry.register({ name: command, schema: { type: 'object', properties: {} }, run: async () => JSON.stringify({ exitCode: 0, stdout: 'PASS' }) });
     A.eq((await run({ fixture: failed, tools: toolDefs(command), registry: passingRegistry })).failedCheckNudges.length, 0,
       'a zero exit code adds no failed-check repair nudge');
+  }
+
+  // ---- 10. SOURCE GROUNDING: discovery metadata and search snippets are not retrieved sources. If the
+  //           user asked for citations and the same connector exposes a fetch/read tool, buy one bounded turn. ----
+  {
+    const inspect = 'mcp__parity_fixture_eval__fixture_inspect';
+    const fetch = 'mcp__parity_fixture_eval__fixture_fetch';
+    const inspectOnly = await run({
+      user: 'Use both sources and attach each source to its claim.',
+      fixture: fixture(inspect, {}, 2), tools: toolDefs(inspect, fetch), registry: externalReg()
+    });
+    A.eq(inspectOnly.sourceNudges.length, 1,
+      'a source-citation task cannot stop after discovery metadata when a source reader exists');
+    A.ok(/every source you cite/.test(inspectOnly.sourceNudges[0].content) && /not source retrieval/.test(inspectOnly.sourceNudges[0].content),
+      'the nudge distinguishes discovery from retrieval and requires every cited source');
+
+    const inspectThenFetch = { turns: [
+      [{ type: 'tool_start', index: 0, id: 'c1', name: inspect }, { type: 'tool_args', index: 0, chunk: '{}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'tool_start', index: 0, id: 'c2', name: fetch }, { type: 'tool_args', index: 0, chunk: '{"path":"/a"}' }, { type: 'done', finishReason: 'tool_calls' }],
+      [{ type: 'text', delta: 'Grounded answer with /a.' }, { type: 'done', finishReason: 'stop' }]
+    ] };
+    A.eq((await run({ user: 'Cite the source.', fixture: inspectThenFetch, tools: toolDefs(inspect, fetch), registry: externalReg() })).sourceNudges.length, 0,
+      'a successful source fetch disarms the grounding guard');
+    A.eq((await run({ user: 'Cite the source.', fixture: fixture(inspect, {}), tools: toolDefs(inspect), registry: externalReg() })).sourceNudges.length, 0,
+      'source grounding does not spend an impossible turn when the connector exposes no reader');
+    A.eq((await run({ user: 'Summarize the available connector capabilities.', fixture: fixture(inspect, {}), tools: toolDefs(inspect, fetch), registry: externalReg() })).sourceNudges.length, 0,
+      'an inspect-only task that asks for no source grounding does not spend an extra turn');
   }
 
   A.report('loop.verify-on-stop.test');
