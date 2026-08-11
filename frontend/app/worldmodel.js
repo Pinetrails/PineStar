@@ -829,6 +829,10 @@ const WorldModel = (() => {
                            agents that place their own decor on open deck.)
          neither         — deck only; a table is an obstacle like any other prop.
 
+       A FOURTH, orthogonal axis: flat:true (a floor DECAL — rug / cable run / hazard pad). It is not a
+       mount state (a decal hosts nothing; it has no top surface, it IS the deck), it is an exemption
+       from the overlap test in both directions — see checkProp.
+
        There was briefly a mount 'wall' rule too (hang a prop on the face the bake raises along a
        room's north edge). Andrew rejected the look outright and every wall-only prop was retired with
        it, so the rule is gone rather than left dormant: a placement constraint with no props subject
@@ -864,16 +868,24 @@ const WorldModel = (() => {
       } else if (rule.stack) {
         host = surfaceHostFor(foot, ignoreId);   // optional: on a table if there is one, else plain deck
       }
+      // FLOOR DECALS (`flat` — rug / cable run / hazard pad) are deck PAINT, not furniture: zero rise,
+      // walkable, and transparent to the overlap test in BOTH directions. A decal being placed skips the
+      // test entirely (a rug may be unrolled UNDER props that are already standing there), and a decal
+      // already on the deck is never an obstacle to anything placed on top of it. Before this a 4×3 rug
+      // was a 12-tile exclusion zone you could not put a single lamp on.
       // two integer rects hit iff they share a tile, so only the props REGISTERED on foot's tiles can
       // collide — the index turns this from a walk of the whole prop list into a walk of the footprint
-      for (let y = foot.y1; y <= foot.y2; y++) {
-        for (let x = foot.x1; x <= foot.x2; x++) {
-          const at = propsAtTile(x, y);
-          if (!at) continue;
-          for (const p of at) {
-            if (p.id === ignoreId) continue;
-            if (host && p.id === host.id) continue;         // its own table is not an obstacle
-            return fail('OVERLAP', 'overlaps a prop');
+      if (!rule.flat) {
+        for (let y = foot.y1; y <= foot.y2; y++) {
+          for (let x = foot.x1; x <= foot.x2; x++) {
+            const at = propsAtTile(x, y);
+            if (!at) continue;
+            for (const p of at) {
+              if (p.id === ignoreId) continue;
+              if (host && p.id === host.id) continue;         // its own table is not an obstacle
+              if (ruleOf(p.t).flat) continue;                 // standing ON a rug is the point of a rug
+              return fail('OVERLAP', 'overlaps a prop');
+            }
           }
         }
       }

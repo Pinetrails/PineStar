@@ -2751,7 +2751,7 @@ const App = (() => {
     if (typeof PropSprites !== 'undefined' && WorldModel.setPropRules) {
       WorldModel.setPropRules((t) => {
         const s = PropSprites.spec(t);
-        return s ? { mount: s.mount || null, stack: !!s.stack, surface: !!s.surface } : null;
+        return s ? { mount: s.mount || null, stack: !!s.stack, surface: !!s.surface, flat: !!s.flat } : null;
       });
     }
     // STATION IDENTITY: did the save we are loading already carry one? (worldmodel stamps meta.createdAt

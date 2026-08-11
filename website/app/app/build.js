@@ -3937,7 +3937,11 @@ const Build = (() => {
     // MOUNT LIFT sort key, unchanged: a mounted prop and its table cover the same tiles, so their
     // keys would tie and raw array order would decide who draws on top. `p.mount` is still consulted
     // for the unmounted branch exactly as the old map+sort did.
-    const key = p => (p.y + (p.h || 1)) + ((mounts.get(p.id) || p.mount) ? 0.5 : 0);
+    // FLOOR DECALS (catalog `flat`: rug / cable run / hazard pad) sort BELOW the whole floor: they are
+    // deck paint, and anything placed on them must draw on top (the same floor pass world.js runs, in
+    // the form this sorted list can express). -1e6 is unreachable by a real footprint key.
+    const flatOf = p => { const s = PropSprites.spec(p.t); return !!(s && s.flat); };
+    const key = p => flatOf(p) ? -1e6 : (p.y + (p.h || 1)) + ((mounts.get(p.id) || p.mount) ? 0.5 : 0);
     const arr = list.slice().sort((a, b) => key(a) - key(b));   // stable, and never touches doc.props
     mountMap = mounts;
     return (mountOrder = arr);
