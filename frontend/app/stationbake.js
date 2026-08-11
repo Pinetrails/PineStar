@@ -3199,6 +3199,88 @@ const StationBake = (() => {
     });
   }
 
+  /* ---------- INTERSTITIAL SHADOW ----------
+     (2026-08-11, Andrew circling two wall junctions: "the overlap of walls is terrible now. we
+     need to fix this and make sure its layered correctly".)
+
+     On a station whose footprints sit 1–2 tiles apart (every pre-snap save does), the void
+     slivers BETWEEN hulls are where all the exterior dressing collides: one room's skirt hangs
+     32px down, the neighbour's north face and corner arc rise to meet it, and a chamfer's
+     silhouette erase bites the skirt diagonally. None of that is a draw-order bug — the nearer
+     wall correctly paints over the farther one. What made the junctions read as BROKEN is the
+     pixels none of them own: raw transparent void inside the sliver, where the space backdrop
+     shines through a gap that the eye reads as a hole punched in the wall.
+
+     So: any void pixel enclosed between hull silhouettes within ~5 tiles — vertically OR
+     horizontally — is an alley the camera cannot see the sky through, and it fills with flat
+     near-black shadow, composited UNDER everything already painted. The skirts, arcs and crowns
+     then read as layered walls standing in front of a dark shaft, which is exactly what the
+     geometry says they are. Open concave coastline (a run unbounded on either side, or wider
+     than the window) keeps its backdrop.
+
+     Chunk parity: the silhouette canvas carries a margin of the full window + pad, so a
+     footprint just outside a chunk's viewport still bounds runs inside it; contexts that cannot
+     read pixels back (the headless canvas mock) skip the pass on BOTH bake paths, exactly like
+     ditherLight. */
+  function bakeInterstitialShadow(b) {
+    // capability check on a 1px canvas BEFORE the real allocation: the chunk test's canvas mock
+    // counts every allocation against its chunk-size bound, and this pass skips under the mock
+    // anyway — it must skip before allocating, not after.
+    if (typeof canvas(1, 1).getContext('2d').getImageData !== 'function') return;
+    const GAP = T * 5 + pad * 2;   // bounded void up to ~5 floor tiles wide is an alley, not sky
+    const M = GAP + pad;
+    const w = CW + 2 * M, h = CH + 2 * M;
+    const sil = canvas(w, h);
+    const g = sil.getContext('2d');
+    g.imageSmoothingEnabled = false;
+    g.translate(-(VX - M), -(VY - M));
+    g.fillStyle = '#fff';
+    // stamped as wide as the DRAWN facade, not the footprint: the e/w hull band's outer edge is
+    // x*T - WALL.side (see the exterior side band in bakeWalls) while the silhouette's is
+    // x*T - pad, and without the difference an alley MOUTH on the station's coastline kept its
+    // jagged gap between the two rooms' side bands while the alley behind it filled.
+    const sw = Math.max(0, Math.round(WALL.side) - pad);
+    for (const r of G.allRects) g.fillRect(r.x1 * T - pad - sw, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2 + sw * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
+    // the same all-chamfers erase the skirt silhouettes take, so the shadow's bounds follow the
+    // rounded corners and the fill reaches into the wedge the erase cut out of a neighbour's skirt
+    for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(g, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
+    let img;
+    try { img = g.getImageData(0, 0, w, h); } catch (e) { return; }
+    const d = img.data;
+    const mark = new Uint8Array(w * h);
+    for (let x = 0; x < w; x++) {          // vertical runs of void bounded above AND below
+      let last = -1;
+      for (let y = 0; y < h; y++) {
+        if (!d[(((y * w) + x) << 2) + 3]) continue;
+        if (last >= 0 && y - last > 1 && y - last - 1 <= GAP) for (let k = last + 1; k < y; k++) mark[k * w + x] = 1;
+        last = y;
+      }
+    }
+    for (let y = 0; y < h; y++) {          // horizontal runs of void bounded left AND right
+      let last = -1;
+      const row = y * w;
+      for (let x = 0; x < w; x++) {
+        if (!d[((row + x) << 2) + 3]) continue;
+        if (last >= 0 && x - last > 1 && x - last - 1 <= GAP) for (let k = last + 1; k < x; k++) mark[row + k] = 1;
+        last = x;
+      }
+    }
+    const out = canvas(CW, CH), og = out.getContext('2d');
+    const oi = og.createImageData(CW, CH), od = oi.data;
+    for (let y = 0; y < CH; y++) {
+      const src = (y + M) * w + M;
+      for (let x = 0; x < CW; x++) {
+        if (!mark[src + x]) continue;
+        const q = ((y * CW) + x) << 2;
+        od[q] = 12; od[q + 1] = 11; od[q + 2] = 9; od[q + 3] = 255;
+      }
+    }
+    og.putImageData(oi, 0, 0);
+    b.globalCompositeOperation = 'destination-over';
+    b.drawImage(out, VX, VY);
+    b.globalCompositeOperation = 'source-over';
+  }
+
   /* ORDERED DITHER — the light map is the one surface still painted in smooth alpha falloff,
      which reads soft/"digital" against the hard-stepped floors and walls. This pass quantizes
      its alpha into a few hard levels and breaks each transition with a 4x4 Bayer checker, so
@@ -3385,9 +3467,18 @@ const StationBake = (() => {
     // hull plate behind ROOMS first (notches between distant rooms show stars)
     for (const r of G.allRects) if (!G.isCorridor(r.z)) plate(r);
 
+    /* CORNERS PAINT IN DEPTH ORDER, NOT CREATION ORDER (2026-08-11, Andrew circling two wall
+       junctions: "the overlap of walls is terrible now"). G.chamfers comes back in doc.order, so
+       when two rooms' corners contend for the same pixels — which happens at every alley between
+       near-adjacent footprints — the OLDER room's arc, rim and coursing painted over the newer
+       one's regardless of which wall is nearer the camera. Same law the props follow: the surface
+       further down-screen is nearer and paints later. Sorted by the corner point's row, so a
+       southern room's corner correctly overlaps the northern neighbour it stands in front of. */
+    const chamfersByDepth = [...G.chamfers].sort((a, b) => ((a[1] + CORNER[a[2]].cy) - (b[1] + CORNER[b[2]].cy)) || (a[0] - b[0]));
+
     // chamfer hull spandrel erase + curved rim — BEFORE corridor connectors, so a corridor kissing a
     // room's rounded corner keeps its hull (v7 render.js ordering: corridors drawn after the erase)
-    for (const [ccx, ccy, kind] of G.chamfers) {
+    for (const [ccx, ccy, kind] of chamfersByDepth) {
       const A = CORNER[kind], ax = (ccx + A.cx) * T, ay = (ccy + A.cy) * T;
       eraseSpandrel(b, kind, ax, ay, HR);
       /* THE RIM HAS TO FOLLOW THE SAME PROFILE THE ERASE CUT (2026-08-08). This was the file's
@@ -3462,8 +3553,8 @@ const StationBake = (() => {
        read as a dark blob beside a lit wall, and no amount of geometric alignment fixes that,
        because the mismatch is tonal. Lighting the corner with everything else is what actually
        makes it connect. */
-    // chamfer floor-cut + curved interior wall pass
-    for (const [ccx, ccy, kind] of G.chamfers) {
+    // chamfer floor-cut + curved interior wall pass — depth order, same as the rim pass above
+    for (const [ccx, ccy, kind] of chamfersByDepth) {
       const X = ccx * T, Y = ccy * T, A = CORNER[kind], ax = X + A.cx * T, ay = Y + A.cy * T;
       // a rounded corner belongs to the room it was cut from — take that room's wall palette so a
       // coloured room's corner arc doesn't revert to the old universal brown-grey.
@@ -3659,6 +3750,7 @@ const StationBake = (() => {
     }
 
     bakeHullExtrusion(b);
+    bakeInterstitialShadow(b);   // after the skirts: it only claims pixels no wall painted
     b.setTransform(1, 0, 0, 1, 0, 0);
     return baseCv;
   }
