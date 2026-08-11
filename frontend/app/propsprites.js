@@ -4351,50 +4351,66 @@ const PropSprites = (() => {
     px(x + 1, sT + 5, w - 2, 1, U.shade(WD_DK, -0.34));                 // floor-line AO under the rail
   };
 
-  F.rug = (x, y, w, h, f) => {   // v4 lounge rug (4x3) — the station's biggest FLOOR DECAL. Zero rise, ever.
-    // The whole point of this prop is that it is IN the ground plane: no oblique body, no front face, no
-    // contact shadow. It's the largest walked-over surface in the game, so any 3D read here would make
-    // every agent that crosses it look like it is clipping through furniture.
-    const edge = '#1b2126', band = '#28313a', field = '#2f3a43', motif = '#48565f', acc = '#2f6a62';
-    // soft rounded slab: union of two rects + stepped corners (a hard rectangle reads as a floor TILE,
-    // not as textile)
-    px(x + 2, y, w - 4, h, edge); px(x, y + 2, w, h - 4, edge);
-    px(x + 1, y + 1, 1, 1, edge); px(x + w - 2, y + 1, 1, 1, edge);
-    px(x + 1, y + h - 2, 1, 1, edge); px(x + w - 2, y + h - 2, 1, 1, edge);
-    rr(x + 1, y + 1, w - 2, h - 2, band);
-    // two-tone light read FLAT: the north half faces the ceiling strips (warm), the south half only sees
-    // the cold bounce. On a floor decal this is the ONLY depth cue available — there are no facets to shade.
-    px(x + 2, y + 1, w - 4, 1, U.shade(band, 0.14));
-    keyEdge(x + 3, y + 1, w - 6, 2, 0.09);
-    px(x + 2, y + h - 2, w - 4, 1, U.shade(band, -0.20));
-    rimEdge(x + 2, y + h - 4, w - 4, 2, 0.07);
-    px(x + 1, y + 2, 1, h - 4, U.shade(band, 0.06)); px(x + w - 2, y + 2, 1, h - 4, U.shade(band, -0.12));
-    // border dashes in the lounge accent
-    for (let i = 0; i < (w - 16) / 6; i++) { px(x + 8 + i * 6, y + 2, 3, 1, acc); px(x + 8 + i * 6, y + h - 3, 3, 1, acc); }
-    for (let j = 0; j < (h - 16) / 6; j++) { px(x + 2, y + 8 + j * 6, 1, 3, acc); px(x + w - 3, y + 8 + j * 6, 1, 3, acc); }
-    // inner field + herringbone weave — the texture that says textile rather than painted deck
-    rr(x + 4, y + 4, w - 8, h - 8, field);
-    for (let j = 0; j < h - 12; j += 2)
-      for (let i = ((j >> 1) & 1) * 2; i < w - 12; i += 4)
-        px(x + 6 + i, y + 6 + j, 2, 1, ((i + j) & 4) ? '#37434c' : '#2b353e');
-    // bold diamond medallion with a teal core — one strong shape carries the read from across the room
-    const cx = x + (w >> 1), cy = y + (h >> 1);
-    for (let d = 0; d < 5; d++) {
-      px(cx - 8 + d * 2, cy - d, 2, 1, motif); px(cx + 6 - d * 2, cy - d, 2, 1, motif);
-      px(cx - 8 + d * 2, cy + d, 2, 1, motif); px(cx + 6 - d * 2, cy + d, 2, 1, motif);
+  /* v5 RUG (4x3) — the station's biggest FLOOR DECAL. Zero rise, ever.
+     The whole point of this prop is that it is IN the ground plane: no oblique body, no front face, no
+     contact shadow. It's the largest walked-over surface in the game, so any 3D read here would make
+     every agent that crosses it look like it is clipping through furniture.
+
+     v4 was slate-on-slate — the same value and hue as the deck it lies on, so at station zoom it read as
+     a patch of dirty floor rather than as textile. v5 fixes that with VALUE and MATERIAL, not with
+     pattern: a warm oxblood wool against a cold deck, and the rug's read carried by pile and wear.
+
+     Two rejected rounds are the reason it looks like this. The first (persian / brass / kilim) had bone
+     highlights, saturated ochre and a hard bordered frame — decorative clip-art in a room whose entire
+     palette is muted and matte, and it was rejected on sight. So v5 holds ONE narrow value band: nothing
+     lighter than ~+8% or darker than ~-14% of its own base, no white, no second hue, no border teeth and
+     no fringe ticks. The medallion is an OUTLINE at +8%, half-erased by the traffic path over it — a rug
+     you notice the second time you look, which is what everything else in this station does. */
+  const RUG_BASE = '#54332e', RUG_RIM = '#472b27';
+  F.rug = (x, y, w, h, f) => {
+    const INK = U.shade(RUG_BASE, -0.13), PALE = U.shade(RUG_BASE, 0.08);
+    // the silhouette: soft corners and a bound rim. NOT a black outline — a rug has no lip to cast one,
+    // and v4's near-black edge is half of why it read as a hole in the floor.
+    px(x + 2, y, w - 4, h, RUG_RIM); px(x, y + 2, w, h - 4, RUG_RIM);
+    px(x + 1, y + 1, 1, 1, RUG_RIM); px(x + w - 2, y + 1, 1, 1, RUG_RIM);
+    px(x + 1, y + h - 2, 1, 1, RUG_RIM); px(x + w - 2, y + h - 2, 1, 1, RUG_RIM);
+    rr(x + 2, y + 2, w - 4, h - 4, RUG_BASE);
+    /* PILE — single-pixel fleck on a 3px stride whose phase is hashed per ROW. A regular stride (or the
+       2px runs the first cut used) lines the flecks up into courses and the wool reads as brickwork.
+       Integer coordinate hashing, no string keys: this is the one loop that runs over the whole 48x36
+       footprint every frame, and PropSprites is already the heaviest thing in the frame. */
+    for (let jy = 3; jy < h - 2; jy += 2) px(x + 2, y + jy, w - 4, 1, U.shade(RUG_BASE, -0.028));   // weft courses: the weave, almost subliminal
+    const lit = U.shade(RUG_BASE, 0.035), dk = U.shade(RUG_BASE, -0.045);
+    for (let jy = 2; jy < h - 2; jy++) {
+      const phase = ((jy * 19349663) >>> 0) % 3;
+      for (let ix = 2 + phase; ix < w - 2; ix += 3) {
+        const n = ((ix * 73856093) ^ (jy * 2654435761)) >>> 0;
+        if ((n & 7) > 1) continue;                         // ~1 pixel in 12 — grain, not polka dots
+        px(x + ix, y + jy, 1, 1, (n & 8) ? lit : dk);
+      }
     }
-    px(cx - 4, cy - 1, 8, 3, '#39454e'); px(cx - 2, cy - 2, 4, 5, '#39454e');
-    px(cx - 2, cy - 1, 4, 3, acc); px(cx - 1, cy - 1, 2, 1, '#4a8a82');
-    keyEdge(cx - 2, cy - 1, 4, 1, 0.16);                        // the pile catches light on its north nap
-    px(cx - 12, cy, 2, 1, motif); px(cx + 10, cy, 2, 1, motif);
-    px(cx - 1, cy - 7, 2, 1, motif); px(cx - 1, cy + 6, 2, 1, motif);
-    // WEAR is what makes a rug read as lived-on: a traffic path worn across it, sun-fade, threadbare pile
-    ctx.globalAlpha = 0.13; px(x + 6, y + (h >> 1) - 2, w - 12, 5, '#0d1114'); ctx.globalAlpha = 1;
-    ctx.globalAlpha = 0.14; px(x + 9, y + 7, 8, 4, '#8a98a8'); px(x + w - 16, y + h - 12, 7, 4, '#8a98a8'); ctx.globalAlpha = 1;
-    wear(x + 5, y + 5, w - 10, h - 10, 12, '#232c33');
-    // frayed edge ticks — the fringe is drawn IN the floor plane, so it reads as threads, not as a lip
-    for (let j = 4; j < h - 4; j += 6) { px(x - 1, y + j, 1, 3, edge); px(x + w, y + j, 1, 3, edge); }
-    for (let i = 5; i < w - 5; i += 7) { px(x + i, y - 1, 3, 1, edge); px(x + i, y + h, 3, 1, edge); }
+    // the ceiling strips, at a QUARTER of v4's contrast — on a decal this is the only depth cue there is,
+    // and any more of it turns the rug back into a lit 3D slab.
+    px(x + 3, y + 2, w - 6, 1, U.shade(RUG_BASE, 0.05));
+    px(x + 3, y + h - 3, w - 6, 1, U.shade(RUG_BASE, -0.07));
+    ctx.globalAlpha = 0.5; px(x + 2, y + 3, 1, h - 6, U.shade(RUG_BASE, 0.04)); px(x + w - 3, y + 3, 1, h - 6, U.shade(RUG_BASE, -0.05)); ctx.globalAlpha = 1;
+    px(x + 4, y + 4, w - 8, 1, INK); px(x + 4, y + h - 5, w - 8, 1, INK);          // one quiet border line
+    px(x + 4, y + 4, 1, h - 8, INK); px(x + w - 5, y + 4, 1, h - 8, INK);
+    const cx = x + (w >> 1), cy = y + (h >> 1);
+    ctx.globalAlpha = 0.55; px(cx - 8, cy - 4, 16, 9, U.shade(RUG_BASE, 0.035)); ctx.globalAlpha = 1;   // the medallion's washed field
+    for (let d = 0; d <= 7; d++) {                                                 // ...and the lozenge, outline only
+      const ww = 17 - d * 2, lx = cx - (ww >> 1), rx = cx + (ww >> 1) - 1;
+      if (d === 7) { px(lx, cy - d, ww, 1, PALE); px(lx, cy + d, ww, 1, PALE); continue; }
+      px(lx, cy - d, 1, 1, PALE); px(rx, cy - d, 1, 1, PALE);
+      px(lx, cy + d, 1, 1, PALE); px(rx, cy + d, 1, 1, PALE);
+    }
+    px(cx - 2, cy - 1, 4, 3, PALE);
+    // WEAR is what makes a rug read as lived-on, and here it also half-erases the motif on purpose.
+    ctx.globalAlpha = 0.13; px(x + 4, y + (h >> 1) - 3, w - 8, 7, '#0f1113'); ctx.globalAlpha = 1;      // the walked path
+    ctx.globalAlpha = 0.09; px(x + w - 17, y + 5, 12, 6, '#d8cec0'); ctx.globalAlpha = 1;               // a bleached corner
+    wear(x + 4, y + 4, w - 8, h - 8, 14, U.shade(RUG_BASE, -0.14));
+    // the frayed short ends, dithered IN the floor plane so they read as threads and never as a lip
+    for (let jy = 2; jy < h - 2; jy++) if (((jy * 2654435761) >>> 0) & 1) { px(x - 1, y + jy, 1, 1, RUG_RIM); px(x + w, y + jy, 1, 1, RUG_RIM); }
   };
 
   F.chair = (x, y, w, h, f) => {
