@@ -161,7 +161,8 @@ const { parseSlackTokens } = require('./channels/slack.js');                    
 const channelSecretsMod = require('./channels/secrets.js');                        // T1.4: token-vs-config split + keychain migration
 const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
-const relayWebhook = makeWebhookVerifier({ secret: process.env.STARNET_CHANNEL_WEBHOOK_SECRET || '', now: () => Date.now() });
+// relayWebhook (the signed-ingress verifier) is composed AFTER the WORKSPACES stores below —
+// its replay-nonce inbox is a durable JSONL sibling of the other ledgers.
 const { makeRouter } = require('./routing/router.js');
 const { makeChainRunner } = require('./routing/chain.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
@@ -995,6 +996,41 @@ const autonomyLedgerIo = {
 const autonomyLedger = makeAutonomyLedger({ io: autonomyLedgerIo, clock: { now: () => Date.now() } });
 // record an autonomy decision without ever letting a ledger hiccup touch the caller (cron pass, run loop, …).
 function recordAutonomy(entry) { try { return autonomyLedger.record(entry); } catch (_) { return null; } }
+
+// Webhook replay-nonce inbox: accepted relay nonces are durable facts ({nonce, expiry, at}), append+fsync'd
+// like the growth-ratings ledger so the exactly-once claim at /api/channels/webhook/* survives a sidecar
+// restart (an in-memory-only cache re-admitted the same signed request after a reboot within the skew
+// window). append() deliberately THROWS on failure — the verifier fails closed (503) rather than admit a
+// delivery whose nonce was never recorded. Pruned by expiry once the live segment passes the compact
+// threshold; rotateJsonl stays as the ultimate size bound.
+const WEBHOOK_NONCES_FILE = path.join(WORKSPACES, 'webhook-nonces.jsonl');
+const WEBHOOK_NONCES_COMPACT_BYTES = 256 * 1024;   // nonces expire in minutes — the compacted file is tiny
+function pruneWebhookNonces() {
+  try {
+    const st = fs.statSync(WEBHOOK_NONCES_FILE);
+    if (st.size <= WEBHOOK_NONCES_COMPACT_BYTES) return;
+    const nowMs = Date.now();
+    const live = readBoundedJsonl(WEBHOOK_NONCES_FILE).filter(r => r && typeof r.nonce === 'string' && Number(r.expiry) > nowMs);
+    const tmp = WEBHOOK_NONCES_FILE + '.tmp';
+    fs.writeFileSync(tmp, live.length ? live.map(r => JSON.stringify(r)).join('\n') + '\n' : '');
+    fs.renameSync(tmp, WEBHOOK_NONCES_FILE);       // atomic swap — a crash mid-prune never loses the live file
+    try { fs.unlinkSync(WEBHOOK_NONCES_FILE + '.1'); } catch (_) {}   // an old archive only holds expired rows
+    rotateJsonl(WEBHOOK_NONCES_FILE);              // fallback bound if expiry somehow kept everything live
+  } catch (_) {}                                    // pruning is best-effort; append correctness never depends on it
+}
+const webhookNonceIo = {
+  load() { try { return readBoundedJsonl(WEBHOOK_NONCES_FILE); } catch (_) { return []; } },
+  append(entry) {
+    let fd = null;
+    try {
+      fd = fs.openSync(WEBHOOK_NONCES_FILE, 'a');
+      fs.writeSync(fd, JSON.stringify(entry) + '\n');
+      fs.fsyncSync(fd);
+    } finally { if (fd != null) { try { fs.closeSync(fd); } catch (_) {} } }
+    pruneWebhookNonces();
+  }
+};
+const relayWebhook = makeWebhookVerifier({ secret: process.env.STARNET_CHANNEL_WEBHOOK_SECRET || '', now: () => Date.now(), store: webhookNonceIo });
 
 /* ---- T3.9 DIAGNOSTICS: process start + a small in-memory error ring feeding the paste-ready bug-report block
    (GET /api/diagnostics). The ring holds only the newest few run-error MESSAGES (already redacted on write) so a
@@ -17148,7 +17184,9 @@ async function handleChannelHandoff(req, res) {
 }
 
 /* Authenticated relay ingress. API-token auth is still required by the global HTTP guard; this second HMAC
-   proves payload origin and the timestamp+nonce cache makes lifecycle delivery exactly-once at this boundary. */
+   proves payload origin and the timestamp+nonce inbox (durable JSONL, reloaded at boot — webhookNonceIo)
+   makes lifecycle delivery exactly-once at this boundary, INCLUDING across a sidecar restart: a nonce that
+   cannot be recorded on disk fails closed (503), never accept-without-record. */
 async function handleChannelWebhook(req, res) {
   const json = (code, value) => respondJson(res, code, value);
   const channel = decodeURIComponent(String(req.url || '').split('?')[0].slice('/api/channels/webhook/'.length));
