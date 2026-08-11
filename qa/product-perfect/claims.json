@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "6d7b0f56a15c14ce657dffabd92f5041019d6014",
+    "sourceCommit": "0c847bc371392083374b21af2451e605d2881c7b",
     "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
     "files": [
       {
@@ -313,8 +313,8 @@
       },
       {
         "path": "frontend/app/journeystore.js",
-        "bytes": 4081,
-        "sha256": "9c04fad5867a2a3d267418d4e0b3571db1d344c0202fb7a5d0babd93b304d7da"
+        "bytes": 5277,
+        "sha256": "8c19eda5e57b815497db8872a027749bc330fff9e7919312d96d40f2896506b9"
       },
       {
         "path": "frontend/app/keepawake.js",
@@ -498,8 +498,8 @@
       },
       {
         "path": "frontend/app/queryspine.js",
-        "bytes": 6681,
-        "sha256": "c7c3c8b9242a1732e2dc2a816072396259f2e90d42343c038ec159c86d3afd2b"
+        "bytes": 7414,
+        "sha256": "736a9903d73799c5df862b8ee022e8670a47ce46b1b0b6d3ca3189d29ad1d606"
       },
       {
         "path": "frontend/app/questledgerstore.js",
@@ -733,8 +733,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 596295,
-        "sha256": "140d0a88bed7351f945da002bb6330f99451536d2f70c8a72e4c2f51b885f73c"
+        "bytes": 596600,
+        "sha256": "e87f20fcca48ef77bfd01671f3c21d011617106d2890df2c3a5bf0dd94e63250"
       },
       {
         "path": "frontend/app/study.js",
