@@ -9,6 +9,7 @@ const events = require('../shared/events.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { makeCostEngine } = require('../sidecar/cost.js');
 const { runAgentLoop } = require('../sidecar/loop.js');
+const { makeRegistry } = require('../sidecar/tools/registry.js');
 
 function setup() {
   const bus = A.makeBus();
@@ -24,6 +25,7 @@ function scriptedProvider(genFn) {
   return { stream: (req) => genFn(req), priceOf, contextLimit: () => 0 };
 }
 const timeoutErr = () => { const e = new Error('provider stream idle timed out after 120000ms'); e.code = 'PROVIDER_STREAM_TIMEOUT'; return e; };
+const openCtx = () => ({ canRun: () => true, canUse: () => ({ ok: true }), agentId: 'a', room: 'office' });
 
 (async () => {
   // (2a) SAME-PROVIDER RETRY: the first attempt throws a `timeout` (retryable, no failover chain); the loop
@@ -52,7 +54,7 @@ const timeoutErr = () => { const e = new Error('provider stream idle timed out a
     const provider = scriptedProvider(async function* () { attempt++; throw timeoutErr(); yield; });   // always throws
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
     A.eq(res.reason, 'error', 'a persistent timeout eventually ends the run in error');
-    A.eq(attempt, 5, 'bounded: 1 initial + 4 retries (one per backoff rung) then give up');
+    A.eq(attempt, 7, 'bounded: 1 initial + 6 retries (one per backoff rung) then give up');
     A.eq(seq.find(e => e.name === 'agent.run.error').payload.transient, true, 'a timeout error is transient');
   }
 
@@ -92,13 +94,54 @@ const timeoutErr = () => { const e = new Error('provider stream idle timed out a
     A.eq(seq.filter(e => e.name === 'provider.fallback').length, 0, 'no failover was claimed — same-provider retries are silent and truthful');
   }
 
+  // (2a-live-parity) The installed Hermes comparison exposed a longer overload window after a successful
+  //     host action: StarNet's four-rung (~16.6s) ladder ended the run while Hermes kept working for up to
+  //     ~102s. Repeating the CURRENT model turn is safe here because the prior turn's tool result is already
+  //     paired in messages; the completed host effect must never be dispatched a second time.
+  {
+    const { seq, emit } = setup();
+    let streamAttempt = 0, toolRuns = 0;
+    const waits = [];
+    const provider = scriptedProvider(async function* () {
+      streamAttempt++;
+      if (streamAttempt === 1) {
+        yield { type: 'tool_start', index: 0, id: 'effect-1', name: 'fixture_action' };
+        yield { type: 'tool_args', index: 0, chunk: '{"action":"identify_seam"}' };
+        yield { type: 'usage', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } };
+        yield { type: 'done', finishReason: 'tool_calls' };
+        return;
+      }
+      if (streamAttempt <= 6) throw new Error('Our servers are currently overloaded. Please try again later.');
+      yield { type: 'text', delta: 'recovered after the provider window' };
+      yield { type: 'usage', usage: { prompt_tokens: 12, completion_tokens: 6, total_tokens: 18 } };
+      yield { type: 'done', finishReason: 'stop' };
+    });
+    const registry = makeRegistry();
+    registry.register({
+      name: 'fixture_action',
+      schema: { type: 'object', required: ['action'], properties: { action: { type: 'string' } } },
+      run: async () => { toolRuns++; return 'host effect complete'; }
+    });
+    const res = await runAgentLoop({
+      messages: [{ role: 'user', content: 'inspect the fixture' }], provider, emit, cost: cost(), model: 'm',
+      agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx) => registry.dispatch(c, ctx), capCtx: openCtx(),
+      sleep: async ms => { waits.push(ms); }
+    });
+    A.eq(res.reason, 'done', 'a Hermes-length overload window is ridden out instead of ending the task');
+    A.eq(streamAttempt, 7, 'one tool turn + five overloaded continuation attempts + one recovered continuation');
+    A.eq(toolRuns, 1, 'the completed host effect executes exactly once across continuation retries');
+    A.eq(waits, [400, 1200, 4000, 10000, 30000], 'the longer bounded ladder is used in deterministic order');
+    A.eq(seq.filter(e => e.name === 'agent.tool_call').length, 1, 'no duplicate tool call is surfaced');
+    A.eq(seq.filter(e => e.name === 'agent.run.error').length, 0, 'a recovered provider window emits no terminal error');
+  }
+
   // (2a-exhausted-chain-bound) a PERSISTENT overload with no chain still terminates in error — patience is bounded.
   {
     const { seq, emit } = setup();
     let attempt = 0;
     const provider = scriptedProvider(async function* () { attempt++; throw new Error('overloaded'); yield; });
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
-    A.eq(attempt, 5, 'bounded: 1 initial + 4 same-provider retries, then give up');
+    A.eq(attempt, 7, 'bounded: 1 initial + 6 same-provider retries, then give up');
     A.eq(res.reason, 'error', 'a genuinely down backend still ends the run honestly');
     A.eq(seq.find(e => e.name === 'agent.run.error').payload.transient, true, 'the terminal overload error is marked transient');
   }

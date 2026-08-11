@@ -432,7 +432,7 @@ function chatFixture() {
     {
       const r = await run({ m1: httpErr(503), m2: httpErr(503) }, ['m2']);
       A.eq(r.res.reason, 'error', 'exhausted chain -> error');
-      A.eq(r.provider.callCount(), 6, 'primary, the one fallback, then 4 bounded same-provider retries before giving up');
+      A.eq(r.provider.callCount(), 8, 'primary, the one fallback, then 6 bounded same-provider retries before giving up');
       A.eq(r.seq.find(e => e.name === 'agent.run.error').payload.transient, true, '503 is transient');
     }
     // no fallback configured -> bounded same-provider retries ride out a transient overload before dying.
@@ -441,7 +441,7 @@ function chatFixture() {
     {
       const r = await run({ m1: httpErr(503) }, []);
       A.eq(r.res.reason, 'error', 'no fallback + persistent 503 -> the run still ends error');
-      A.eq(r.provider.callCount(), 5, '1 initial + 4 same-provider retries when there is no chain to burn');
+      A.eq(r.provider.callCount(), 7, '1 initial + 6 same-provider retries when there is no chain to burn');
     }
     // a NON-failover error (malformed 400) is fatal immediately — the chain is not burned on a client bug
     {
