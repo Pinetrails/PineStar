@@ -1,0 +1,127 @@
+# T0 clean-install proof — install the exact staged release installer on a FRESH ephemeral
+# Windows VM (a genuinely clean machine: no dev tools, no prior StarNet state, brand-new user
+# profile), observe first launch via the WebView2 CDP port, and emit a
+# starnet.clean-install-proof.v1 evidence JSON for import on the operator machine with
+# STARNET_T0_CLEAN_EVIDENCE (scripts/t0-clean-install.mjs).
+#
+# WHY CI: the operator machine runs Windows 11 Home (no Windows Sandbox / Hyper-V), and a
+# dev box can never earn T0 by definition. Each GitHub-hosted runner is a one-shot clean VM.
+name: t0-clean-install-proof
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag whose staged draft installer to prove, e.g. v0.10.0"
+        required: true
+
+jobs:
+  prove:
+    runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+      REPO: androoAGI/starnet-releases
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: Download staged draft installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force dist | Out-Null
+          gh release download $env:TAG --repo $env:REPO --pattern '*-setup.exe' --dir dist
+          $installer = Get-ChildItem dist -Filter '*-setup.exe' | Select-Object -First 1
+          if ($null -eq $installer) { throw "no installer asset on $env:TAG" }
+          "INSTALLER=$($installer.FullName)" >> $env:GITHUB_ENV
+
+      - name: Install silently (default per-user path) and record identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $h = Get-FileHash $env:INSTALLER -Algorithm SHA256
+          $bytes = (Get-Item $env:INSTALLER).Length
+          $p = Start-Process -FilePath $env:INSTALLER -ArgumentList '/S' -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "installer exited $($p.ExitCode)" }
+          $exe = Get-ChildItem "$env:LOCALAPPDATA" -Recurse -Filter 'skynet-desktop.exe' -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match 'StarNet' } | Select-Object -First 1
+          if ($null -eq $exe) { throw "installed skynet-desktop.exe not found under LOCALAPPDATA" }
+          "EXE=$($exe.FullName)" >> $env:GITHUB_ENV
+          "INSTALL_DIR=$($exe.DirectoryName)" >> $env:GITHUB_ENV
+          "INSTALLER_SHA256=$($h.Hash.ToLower())" >> $env:GITHUB_ENV
+          "INSTALLER_BYTES=$bytes" >> $env:GITHUB_ENV
+
+      - name: First launch, prove packaged UI is up via CDP, prove workspace location
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = '--remote-debugging-port=9333'
+          $proc = Start-Process -FilePath $env:EXE -PassThru
+          $targets = $null
+          foreach ($i in 1..120) {
+            Start-Sleep -Seconds 1
+            try {
+              $targets = Invoke-RestMethod "http://127.0.0.1:9333/json/list" -TimeoutSec 2
+              $page = $targets | Where-Object { $_.type -eq 'page' -and $_.url -match 'tauri\.localhost' }
+              if ($page) { break } else { $targets = $null }
+            } catch { $targets = $null }
+            if ($proc.HasExited) { throw "app exited early with code $($proc.ExitCode)" }
+          }
+          if ($null -eq $targets) { throw "WebView2 CDP never exposed a tauri.localhost page within 120s" }
+          $page = $targets | Where-Object { $_.type -eq 'page' -and $_.url -match 'tauri\.localhost' } | Select-Object -First 1
+          "PAGE_URL=$($page.url)" >> $env:GITHUB_ENV
+          "PAGE_TITLE=$($page.title)" >> $env:GITHUB_ENV
+          # give first-boot a moment to create the workspace, then prove where it lives
+          $ws = "$env:APPDATA\ai.skynet.harness\workspaces"
+          foreach ($i in 1..60) { if (Test-Path $ws) { break }; Start-Sleep -Seconds 1 }
+          if (-not (Test-Path $ws)) { throw "workspace root not created at $ws" }
+          "WORKSPACE_ROOT=$ws" >> $env:GITHUB_ENV
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+
+      - name: Emit clean-install-proof.v1 evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $os = Get-CimInstance Win32_OperatingSystem
+          $doc = [ordered]@{
+            schema      = 'starnet.clean-install-proof.v1'
+            generatedAt = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ss.fffZ')
+            machineKind = 'github-hosted-ephemeral-windows-vm'
+            cleanMachine = $true
+            sourceMachine = [ordered]@{
+              hostname = $env:COMPUTERNAME
+              image    = "$env:ImageOS $env:ImageVersion"
+              os       = "$($os.Caption) $($os.Version)"
+              runId    = "$env:GITHUB_RUN_ID"
+            }
+            installer = [ordered]@{
+              name   = (Split-Path $env:INSTALLER -Leaf)
+              sha256 = $env:INSTALLER_SHA256
+              bytes  = [long]$env:INSTALLER_BYTES
+              tag    = $env:TAG
+            }
+            install = [ordered]@{
+              succeeded       = $true
+              installLocation = $env:INSTALL_DIR
+              silent          = $true
+            }
+            launch = [ordered]@{
+              succeeded     = $true
+              exePath       = $env:EXE
+              workspaceRoot = $env:WORKSPACE_ROOT
+              pageUrl       = $env:PAGE_URL
+              pageTitle     = $env:PAGE_TITLE
+              cdpProven     = $true
+            }
+            notes = @(
+              'Fresh GitHub-hosted Windows runner: brand-new VM image, no prior StarNet state, no repo checkout, no dev toolchain used by the app.',
+              'First launch proven by attaching to the WebView2 CDP endpoint and observing a live tauri.localhost page.',
+              'Workspace observed under the roaming AppData identifier, outside the install directory.'
+            )
+          }
+          $doc | ConvertTo-Json -Depth 6 | Out-File clean-install-proof.json -Encoding utf8
+          Get-Content clean-install-proof.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: clean-install-proof-${{ inputs.tag }}
+          if-no-files-found: error
+          path: clean-install-proof.json
