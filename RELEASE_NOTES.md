@@ -1,18 +1,16 @@
-# StarNet v0.10.0
+# StarNet v0.10.1
 
-This candidate consolidates the 0.10.0 execution, reliability, and interface work. Release
-readiness remains evidence-bound: implementation and automated coverage are not presented as
-live host proof.
+This release candidate is a focused trust and reliability patch for v0.10.0.
+
+## Fixed
+
+- Overseer follow-through now catches realistic promises such as “I’ll work on that,” “I’ll take care of it,” and multi-day commitments. A run cannot silently finish after promising work without taking an action; durable future work is created when the appropriate tool is available.
+- Telegram HTTP 409 polling conflicts now trigger a bounded re-probe and recovery path instead of leaving the channel offline until a manual reconnect or restart.
+- Etsy is now labelled honestly as manual, watched-session OAuth only. StarNet does not yet own Etsy’s consent and access-token refresh lifecycle, so unattended, scheduled, messaged, and Night Shift authority is disabled for Etsy credentials.
+- The Windows soak observer now uses a persistent watcher instead of spawning PowerShell every minute, reducing observer resource pressure and separating observer failures from product failures.
 
 ## Candidate verification boundaries
 
-- **Attended browser login is not yet release-proven.** The watched-COMMS flow opens a visible
-  Chrome window so the Commander can sign in without sharing a password with the agent. On the
-  audited Windows host, Chrome connected at browser-level CDP but `Page.enable` failed before a
-  page session was adopted, so the Done-card handoff and authenticated-session reuse were not
-  proven.
-- **Safe Cell stdio MCP is container-only and not yet live-proven.** Local stdio connectors
-  require an existing Safe Cell agent and a working Docker runtime through the exact container
-  broker path; the installed desktop does not fall back to an interactive host child. The
-  audited host had no Docker, Podman, nerdctl, or WSL, so real container stdio could not run.
-  Remote HTTP remains the available MCP route on such a host.
+- Attended browser-login reuse remains outside this patch and still requires release-candidate proof on a host where the headed Chrome page session can be adopted.
+- Safe Cell stdio MCP remains container-only and requires a working Docker-compatible runtime; remote HTTP remains the available MCP route on hosts without one.
+- This candidate is not public until the exact installed artifact completes the release soak and the draft release is explicitly reviewed and published.
