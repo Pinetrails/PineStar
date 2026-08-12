@@ -40,6 +40,12 @@
 
   // a poll error whose .fatal is set (e.g. a 401 invalid-token) stops the loop for good rather than backing off.
   const isFatal = (e) => !!(e && e.fatal);
+  // a poll error whose .conflict is set (Telegram 409: another poller/webhook holds the token) is a LIVE contest,
+  // not a verdict on the token — the loop stays alive on a slow re-probe cadence and recovers by itself the
+  // moment the other consumer stops. Killing the channel here (the old behaviour) also froze channel.send,
+  // because `connected` derives from poll state — one transient 409 took BOTH directions down until a restart.
+  const isConflict = (e) => !!(e && e.conflict);
+  const DEFAULT_CONFLICT_RETRY_MS = 60000;   // slow enough not to fight the other poller, fast enough to self-heal
   const isAbort = (e) => !!(e && (e.name === 'AbortError' || e.aborted));
 
   function normalizeAllowed(allowedChats) {
@@ -71,6 +77,7 @@
     const onMembership = typeof o.onMembership === 'function' ? o.onMembership : null;   // we were added/blocked/kicked
     const pollTimeoutSec = o.pollTimeoutSec || DEFAULT_POLL_TIMEOUT_SEC;
     const backoff = Array.isArray(o.backoffMs) && o.backoffMs.length ? o.backoffMs.slice() : DEFAULT_BACKOFF.slice();
+    const conflictRetryMs = Number(o.conflictRetryMs) > 0 ? Number(o.conflictRetryMs) : DEFAULT_CONFLICT_RETRY_MS;
     const sleep = typeof o.sleep === 'function' ? o.sleep : (ms => new Promise(r => setTimeout(r, ms)));
     const dropPending = o.dropPendingOnConnect === true;   // generic default OFF; the Telegram layer turns it on
 
@@ -265,6 +272,10 @@
       if (down) { down = false; onStatus && onStatus({ state: 'up' }); }
     }
     function statusDown(detail) { if (!down) { down = true; onStatus && onStatus({ state: 'down', detail: detail }); } }
+    // A token conflict is reported as 'error' (the panel's actionable state), but through the same `down` latch:
+    // emitted once per outage, and BECAUSE `down` is set, the first successful re-probe emits a real 'up' —
+    // recovery is announced, never silent.
+    function statusConflict(detail) { if (!down) { down = true; onStatus && onStatus({ state: 'error', detail: detail }); } }
 
     function dispatch(raw) {
       let n;
@@ -387,6 +398,13 @@
           // poll must recover, not kill the channel).
           if (stopped || (ac && ac.signal && ac.signal.aborted)) break;
           if (isFatal(e)) { onStatus && onStatus({ state: 'error', detail: (e && e.message) || 'fatal' }); break; }
+          // token conflict (Telegram 409): stay alive on a slow cadence and self-heal when the other poller stops.
+          if (isConflict(e)) {
+            statusConflict((e && e.message) || 'token conflict');
+            await sleep(conflictRetryMs);
+            attempt = 0;   // a conflict is its own ladder — the transient backoff restarts clean afterwards
+            continue;
+          }
           statusDown((e && e.message) || 'poll error');
           await sleep(backoff[Math.min(attempt, backoff.length - 1)]);
           attempt++;
@@ -592,9 +610,9 @@
         return { id: String(chatId), type: allowed.has(String(chatId)) ? 'group' : 'dm' };
       },
 
-      _internals: { admitted, admission, ownerOk, ownerDecision, normalizeAllowed, dispatch, isFatal, isAbort, DEFAULT_BACKOFF, rememberSent, wasOurs, sentIds, MAX_SENT_IDS, wakeWords, namedUs, MIN_WAKE_WORD, get offset() { return offset; }, get owner() { return owner; } }
+      _internals: { admitted, admission, ownerOk, ownerDecision, normalizeAllowed, dispatch, isFatal, isConflict, isAbort, DEFAULT_BACKOFF, DEFAULT_CONFLICT_RETRY_MS, rememberSent, wasOurs, sentIds, MAX_SENT_IDS, wakeWords, namedUs, MIN_WAKE_WORD, get offset() { return offset; }, get owner() { return owner; } }
     };
   }
 
-  return { makeChannelAdapter, normalizeAllowed, _internals: { isFatal, isAbort, DEFAULT_BACKOFF, DEFAULT_POLL_TIMEOUT_SEC } };
+  return { makeChannelAdapter, normalizeAllowed, _internals: { isFatal, isConflict, isAbort, DEFAULT_BACKOFF, DEFAULT_POLL_TIMEOUT_SEC, DEFAULT_CONFLICT_RETRY_MS } };
 });

@@ -435,6 +435,39 @@ async function run() {
     await a.disconnect();
   }
 
+  // ---- H2. a token CONFLICT (Telegram 409) keeps the loop alive on the slow re-probe cadence and SELF-HEALS ----
+  // The old behaviour treated 409 as fatal: one transient conflict (webhook-delete race, restart overlap, a
+  // briefly-open second instance) killed the poll loop for good, and because `connected` derives from poll
+  // state, channel.send died with it. Now: state:'error' once (actionable), keep re-probing, 'up' on recovery.
+  {
+    const statuses = [];
+    let calls = 0, conflictSleeps = 0;
+    const conflict = () => Object.assign(new Error('another instance or a webhook is using this bot token'), { conflict: true });
+    const transport = {
+      getUpdates({ signal }) {
+        calls++;
+        if (calls <= 3) return Promise.reject(conflict());                             // contested for 3 rounds
+        if (calls === 4) return Promise.resolve([{ id: 1, chat: 'c', type: 'dm', user: 'u', text: 'hi', mid: '1' }]);
+        return new Promise((resolve, reject) => {                                      // then park (abortable)
+          if (signal && signal.aborted) return reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+          signal && signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+        });
+      },
+      send() { return Promise.resolve({ ok: true }); }
+    };
+    const inbox = [];
+    const a = makeChannelAdapter({ transport, normalize, name: 'telegram', conflictRetryMs: 12345,
+      onInbound: m => inbox.push(m), onStatus: s => statuses.push(s), clock: CLOCK,
+      sleep: (ms) => { if (ms === 12345) conflictSleeps++; return Promise.resolve(); } });
+    await a.connect();
+    for (let i = 0; i < 12 && !inbox.length; i++) await tick();
+    A.eq(inbox.length, 1, 'a 409 conflict does NOT kill the channel — polling recovered once the contest ended');
+    A.eq(statuses.filter(s => s.state === 'error').length, 1, 'the conflict is reported as ONE actionable state:error, not spammed per retry');
+    A.ok(statuses.some(s => s.state === 'up'), 'recovery from a conflict emits a real state:up (connected/channel.send come back)');
+    A.eq(conflictSleeps, 3, 'each contested round waited the slow conflictRetryMs cadence, not the transient backoff ladder');
+    await a.disconnect();
+  }
+
   // ---- I. surface invariants + pure helpers ----
   {
     A.eq([...normalizeAllowed(['a', 1, 'a'])].sort(), ['1', 'a'], 'normalizeAllowed stringifies + dedupes');
