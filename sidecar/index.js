@@ -3625,8 +3625,21 @@ const SERVICEKEYS_RESERVED_ENV = (() => {
   return names;
 })();
 function loadServiceKeys() {
-  try { const raw = loadResilient(SERVICEKEYS_FILE, 'servicekeys'); return (raw && Array.isArray(raw.keys)) ? raw.keys : []; }
+  try {
+    const raw = loadResilient(SERVICEKEYS_FILE, 'servicekeys');
+    return ((raw && Array.isArray(raw.keys)) ? raw.keys : []).map(applyServiceKeyCatalogPolicy);
+  }
   catch (_) { return []; }
+}
+function applyServiceKeyCatalogPolicy(record) {
+  if (!record || typeof record !== 'object' || Array.isArray(record)) return record;
+  const catalog = serviceKeysCatalog.byId(record.id) || serviceKeysCatalog.PLATFORMS.find(p => p && p.envVar === record.envVar);
+  if (!catalog || catalog.unattendedSupported !== false) return record;
+  return Object.assign({}, record, {
+    autonomous: false,
+    unattendedSupported: false,
+    unattendedReason: String(catalog.unattendedReason || 'unattended use is not supported for this integration')
+  });
 }
 let serviceKeys = loadServiceKeys();
 let serviceKeysOwnedEnv = {};   // env vars WE set (the applyEnv clobber guard) — rebuilt on every apply
@@ -9309,12 +9322,18 @@ function handleServiceKeysList(req, res) {
 async function handleServiceKeyUpsert(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
-  const r = serviceKeysMod.upsert(serviceKeys, { name: body.name, key: body.key, docsUrl: body.docsUrl }, Date.now(), { reservedEnv: SERVICEKEYS_RESERVED_ENV });
+  const catalog = serviceKeysCatalog.byId(serviceKeysMod.slug(body.name));
+  const r = serviceKeysMod.upsert(serviceKeys, {
+    name: body.name, key: body.key, docsUrl: body.docsUrl,
+    unattendedSupported: !(catalog && catalog.unattendedSupported === false),
+    unattendedReason: catalog && catalog.unattendedReason
+  }, Date.now(), { reservedEnv: SERVICEKEYS_RESERVED_ENV });
   if (r.error) return json(400, { error: r.error });
-  serviceKeys = r.list;
+  serviceKeys = r.list.map(applyServiceKeyCatalogPolicy);
+  const record = serviceKeys.find(row => row.id === r.record.id) || r.record;
   applyServiceKeysEnv();
   const saved = saveServiceKeys();   // verified read-back; on false the key is LIVE but not durable — say so honestly
-  return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(r.record), error: saved ? undefined : 'key is active for this session but could not be verified on disk' });
+  return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(record), error: saved ? undefined : 'key is active for this session but could not be verified on disk' });
 }
 async function handleServiceKeyToggle(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -9345,7 +9364,7 @@ async function handleServiceKeyAutonomy(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 12)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   if (typeof body.autonomous !== 'boolean') return json(400, { error: 'autonomous must be a boolean' });
   const r = serviceKeysMod.setAutonomous(serviceKeys, body.id, body.autonomous);
-  if (r.error) return json(404, { error: r.error });
+  if (r.error) return json(serviceKeys.some(row => row && row.id === String(body.id || '')) ? 409 : 404, { error: r.error });
   serviceKeys = r.list;
   const saved = saveServiceKeys();
   return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(r.record) });

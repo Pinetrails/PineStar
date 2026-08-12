@@ -67,6 +67,16 @@ const SECRET = 'rk-live-verySECRET-9876';
     A.eq((await j('POST', '/api/servicekeys/toggle', { id: 'nope', enabled: false })).status, 404, 'toggle unknown id -> 404');
     A.eq((await j('POST', '/api/servicekeys/remove', { id: 'nope' })).status, 404, 'remove unknown id -> 404');
 
+    // ---- Etsy is honest: manual/watched OAuth only until StarNet owns token refresh ----
+    const etsy = await j('POST', '/api/servicekeys', { name: 'Etsy', key: 'etsy-manual-token' });
+    A.eq(etsy.status, 200, 'Etsy manual credential can be saved for a watched session');
+    A.eq(etsy.body.key.unattendedSupported, false, 'Etsy response truthfully marks unattended mode unsupported');
+    A.eq(etsy.body.key.autonomous, false, 'Etsy never starts with unattended authority');
+    const etsyAuto = await j('POST', '/api/servicekeys/autonomy', { id: 'etsy', autonomous: true });
+    A.eq(etsyAuto.status, 409, 'Etsy unattended grant is refused as a policy conflict');
+    A.ok(/OAuth|refresh|unattended/i.test(String(etsyAuto.body.error || '')), 'Etsy refusal explains the missing refresh lifecycle');
+    A.eq((await j('POST', '/api/servicekeys/remove', { id: 'etsy' })).status, 200, 'Etsy test credential removed');
+
     // ---- update with EMPTY key keeps the saved secret (the edit idiom) ----
     const upd = await j('POST', '/api/servicekeys', { name: 'Resend', key: '', docsUrl: 'https://new.docs' });
     A.eq(upd.status, 200, 'update with empty key -> 200 (saved key kept)');

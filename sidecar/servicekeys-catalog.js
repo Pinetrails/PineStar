@@ -51,8 +51,10 @@
 
     { id: 'etsy', name: 'Etsy', category: 'Commerce & Print-on-Demand', envVar: 'ETSY_API_KEY',
       docsUrl: 'https://developers.etsy.com/documentation/', apiBase: 'https://openapi.etsy.com/v3',
-      blurb: 'Marketplace listings, shops, and orders.',
-      note: 'Etsy v3 needs an OAuth 2 access token for most endpoints, not just the app keystring — read the docs link before expecting writes to work.' },
+      blurb: 'Public/manual API work only — persistent shop automation is not connected.',
+      unattendedSupported: false,
+      unattendedReason: 'StarNet does not yet manage Etsy OAuth consent or refresh its one-hour access tokens.',
+      note: 'MANUAL OAUTH ONLY: Etsy private/write endpoints need OAuth 2.0; access tokens expire after one hour. StarNet does not refresh them yet, so this key cannot be enabled for scheduled, messaged, or Night Shift runs.' },
 
     // ── Payments ──
     { id: 'stripe', name: 'Stripe', category: 'Payments', envVar: 'STRIPE_API_KEY',

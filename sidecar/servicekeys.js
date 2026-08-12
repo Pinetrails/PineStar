@@ -95,6 +95,8 @@
       docsUrl: String(r.docsUrl || ''),
       enabled: r.enabled !== false,
       autonomous: r.autonomous === true,   // shown so the panel can state the unattended grant honestly
+      unattendedSupported: r.unattendedSupported !== false,
+      unattendedReason: String(r.unattendedReason || ''),
       addedAt: (typeof r.addedAt === 'number') ? r.addedAt : 0,
       last4: mask(r.key)
     };
@@ -130,6 +132,8 @@
     // a rename collision (two names deriving the same env var under different ids) would silently
     // shadow one key with the other in the run env — refuse it instead.
     if (src.some(r => r.id !== id && r.envVar === envVar)) return { error: 'another entry already uses ' + envVar };
+    const unattendedSupported = input.unattendedSupported !== false;
+    const unattendedReason = unattendedSupported ? '' : String(input.unattendedReason || 'unattended use is not supported for this integration').slice(0, 240);
     const record = {
       id: id, name: name, envVar: envVar, key: key,
       docsUrl: input.docsUrl ? String(input.docsUrl).trim() : (prev ? String(prev.docsUrl || '') : ''),
@@ -138,7 +142,9 @@
       // while you are watching"; `autonomous` additionally means "...and while you are not". A scheduled,
       // Night-Shift, or messaged run can only spend a key carrying this flag, so adding a key never
       // silently widens what happens overnight. Preserved across edits; only setAutonomous flips it.
-      autonomous: prev ? (prev.autonomous === true) : false,
+      autonomous: unattendedSupported && prev ? (prev.autonomous === true) : false,
+      unattendedSupported: unattendedSupported,
+      unattendedReason: unattendedReason,
       addedAt: prev ? (prev.addedAt || 0) : (typeof now === 'number' ? now : 0)
     };
     return { list: src.filter(r => r.id !== id).concat([record]), record: record };
@@ -158,6 +164,7 @@
     const src = cleanList(list);
     const prev = src.find(r => r.id === String(id || ''));
     if (!prev) return { error: 'no such service key' };
+    if (autonomous && prev.unattendedSupported === false) return { error: prev.unattendedReason || 'unattended use is not supported for this integration' };
     const record = Object.assign({}, prev, { autonomous: !!autonomous });
     return { list: src.map(r => (r.id === prev.id ? record : r)), record: record };
   }
@@ -174,7 +181,14 @@
     if (!want) return { ok: false, reason: 'unknown' };
     const row = cleanList(list).find(r => r.envVar === want && r.enabled !== false && r.key);
     if (!row) return { ok: false, reason: 'unknown' };
-    if (surface !== 'interactive' && row.autonomous !== true) return { ok: false, reason: 'unattended', name: row.name };
+    if (surface !== 'interactive' && (row.autonomous !== true || row.unattendedSupported === false)) {
+      return {
+        ok: false,
+        reason: 'unattended',
+        name: row.name,
+        detail: row.unattendedSupported === false ? String(row.unattendedReason || 'unattended use is not supported for this integration') : ''
+      };
+    }
     return { ok: true, value: String(row.key), name: row.name };
   }
 
@@ -234,7 +248,7 @@
     const out = {};
     for (const r of cleanList(list)) {
       if (r.enabled === false) continue;
-      if (surface !== 'interactive' && r.autonomous !== true) continue;   // no unattended grant -> no key for an unattended run
+      if (surface !== 'interactive' && (r.autonomous !== true || r.unattendedSupported === false)) continue;   // no unattended support/grant -> no key for an unattended run
       if (!r.envVar || reserved.has(r.envVar)) continue;   // never let a paste shadow a provider/billing key
       const v = src[r.envVar];
       if (v != null && v !== '') out[r.envVar] = String(v);
@@ -258,7 +272,7 @@
     const lines = rows
       .slice().sort((a, b) => String(a.name).localeCompare(String(b.name)))
       .map(r => '- ' + r.name + ': ' + r.envVar
-        + (r.autonomous === true ? '' : ' [watched sessions only]')
+        + (r.unattendedSupported === false ? ' [watched sessions only; unattended unsupported]' : (r.autonomous === true ? '' : ' [watched sessions only]'))
         + (r.docsUrl ? ' (API docs: ' + r.docsUrl + ')' : ''));
     const how = [];
     if (canRequest) how.push('with web_request, by writing the NAME as a placeholder in a header — e.g. '
