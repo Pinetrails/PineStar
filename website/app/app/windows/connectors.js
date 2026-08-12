@@ -1143,6 +1143,7 @@
     }
     // BOTTOM: the custom store. Checkbox = kill-switch (key stays saved, agents stop seeing it); ✕ deletes.
     function kyRow(k, i) {
+      const unattendedSupported = k.unattendedSupported !== false;
       const docs = k.docsUrl ? ' <a class="dim" href="' + esc(k.docsUrl) + '" target="_blank" rel="noopener">docs ↗</a>' : '';
       return '<div class="mc-row" data-id="' + esc(k.id) + '" style="--ci:' + (i || 0) + '">' +
         '<div class="mc-top">' +
@@ -1154,10 +1155,12 @@
         // this second switch = ...and while you don't (cron, Night Shift, a Telegram message). Default OFF
         // and never inferred, so pasting a key can't silently change what happens overnight.
         '<div class="set-row ky-auto"><input type="checkbox" data-ky-act="autonomy"' + (k.autonomous ? ' checked' : '') +
-          (k.enabled ? '' : ' disabled') + ' aria-label="Allow unattended use of ' + esc(k.name) + '">' +
-          '<span class="dim">' + (k.autonomous
-            ? 'usable in scheduled &amp; messaged runs'
-            : 'watched sessions only — tick to allow scheduled &amp; messaged runs') + '</span></div>' +
+          (k.enabled && unattendedSupported ? '' : ' disabled') + ' aria-label="Allow unattended use of ' + esc(k.name) + '">' +
+          '<span class="dim">' + (!unattendedSupported
+            ? 'watched sessions only — ' + esc(k.unattendedReason || 'unattended use is unsupported')
+            : (k.autonomous
+              ? 'usable in scheduled &amp; messaged runs'
+              : 'watched sessions only — tick to allow scheduled &amp; messaged runs')) + '</span></div>' +
         '<div class="mc-acts"><button class="bb xs danger" data-ky-act="remove">✕ REMOVE</button></div>' +
       '</div>';
     }
@@ -1238,7 +1241,9 @@
               ((Array.isArray(p.aliases) && p.aliases.length) ? ' data-search="' + esc(p.aliases.join(' ')) + '"' : '') +
               ' style="--ci:' + i + '">' +
               '<div class="cc-top"><b>' + esc(p.name) + '</b>' +
-                (p.installed ? '<span class="cc-tier cc-lg-none">✓ ADDED</span>' : '<span class="cc-tier cc-lg-key">API key</span>') + '</div>' +
+                (p.installed ? '<span class="cc-tier cc-lg-none">✓ ADDED</span>' : (p.unattendedSupported === false
+                  ? '<span class="cc-tier cc-lg-oauth">MANUAL OAUTH</span>'
+                  : '<span class="cc-tier cc-lg-key">API key</span>')) + '</div>' +
               '<div class="cc-blurb dim">' + esc(p.blurb || '') + '</div>' +
               (p.note ? '<div class="mc-hint">' + esc(p.note) + '</div>' : '') +
               '<div class="mc-url dim"><code>' + esc(p.envVar) + '</code>' +
@@ -1265,9 +1270,11 @@
         kyNameEl.value = p.name;
         kyDocsEl.value = p.docsUrl || '';
         kyMsgEl.classList.remove('ok');
-        kyMsgEl.textContent = p.authHint
-          ? 'paste your ' + p.name + ' key — the agent will send it as  ' + p.authHint
-          : 'paste your ' + p.name + ' key — the agent reads ' + (p.docsUrl || 'the docs') + ' for the right header';
+        kyMsgEl.textContent = p.unattendedSupported === false
+          ? p.name + ' is watched/manual only — ' + (p.unattendedReason || 'unattended use is unsupported')
+          : (p.authHint
+            ? 'paste your ' + p.name + ' key — the agent will send it as  ' + p.authHint
+            : 'paste your ' + p.name + ' key — the agent reads ' + (p.docsUrl || 'the docs') + ' for the right header');
         kyKeyEl.focus();
         sfx('click');
       } catch (_) { sfx('bad'); }

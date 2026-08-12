@@ -240,6 +240,10 @@ function fakeStack(tools) {
     'KEYS recognizes catalog connectors authenticated through a protected custom header');
   A.ok(/c\.hasHeaders && !c\.hasToken \? 'header saved' : 'token saved'/.test(station),
     'KEYS labels custom-header credentials truthfully instead of calling every credential a token');
+  A.ok(/k\.unattendedSupported !== false/.test(station) && /k\.enabled && unattendedSupported \? '' : ' disabled'/.test(station),
+    'KEYS disables the unattended control for watched-only integrations');
+  A.ok(/MANUAL OAUTH/.test(station) && /p\.unattendedSupported === false/.test(station),
+    'KEYS labels watched-only catalog entries as manual OAuth instead of API-key automation');
 
   A.report('connectors-ui');
 })().catch(e => { console.log('FAIL: threw ' + (e && e.stack || e)); process.exit(1); });

@@ -91,6 +91,13 @@ function harness(hostEnv, getKeys) {
   A.eq(K.runEnv(keys, host, { reservedEnv: RESERVED }).UNGRANTED_API_KEY, 'u',
     'an un-wired caller (no surface) behaves exactly as before');
 
+  const watchedOnly = [{
+    id: 'etsy', name: 'Etsy', envVar: 'ETSY_API_KEY', key: 'e', enabled: true,
+    autonomous: true, unattendedSupported: false
+  }];
+  A.ok(!('ETSY_API_KEY' in K.runEnv(watchedOnly, { ETSY_API_KEY: 'e' }, { surface: 'autonomous' })),
+    'watched-only policy overrides a stale autonomous=true record on the shell route');
+
   // and through the REAL composition: the surface travels execute() -> backend -> serviceEnv hook
   const h = harness(host, () => keys);
   const shellAuto = h.shellEnv('autonomous');

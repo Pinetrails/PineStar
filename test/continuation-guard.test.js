@@ -57,6 +57,21 @@ const run = (provider, extra) => runAgentLoop(Object.assign({
     A.ok(/fixed/.test(String(last.content)), 'the final assistant answer is the delivery, not the announcement');
   }
 
+  // ---- A2. realistic future-work promises cannot end the run as fake done ----
+  for (const phrase of [
+    "I'll work on that.",
+    "I'll take care of it.",
+    "I'll get this done over the next few days.",
+    "I'm going to work on it."
+  ]) {
+    const provider = scripted([textTurn(phrase), toolTurn(0), textTurn('The durable work item is created and visible now.')]);
+    const res = await run(provider);
+    A.eq(provider.callCount(), 3, phrase + ' is nudged into a real tool call before delivery');
+    const nudges = res.messages.filter(m => m.role === 'system' && /<continuation>/.test(m.content));
+    A.eq(nudges.length, 1, phrase + ' receives exactly one continuation nudge');
+    A.ok(/durable routine\/task/.test(nudges[0].content), phrase + ' is told to create durable future work rather than promise it');
+  }
+
   // ---- B. narrate-forever model: nudge budget (default 2) bounds it -> terminates 'done' ----
   {
     const provider = scripted([

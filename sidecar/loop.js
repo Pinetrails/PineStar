@@ -280,11 +280,12 @@
   // "Reading the file now", "Fixing all three now." Deliberately conservative — "let me know…" (a closing
   // pleasantry) never matches. A false positive costs one bounded extra turn; a false negative just keeps
   // today's behavior. Only the tail is scanned: intent that ends a message is what signals a premature stop.
-  const CG_VERBS = 'read|re-?read|check|look|open|find|fix|run|apply|write|patch|search|scan|inspect|start|create|update|edit|trace|dig|verify|test|grep|examine|review|implement|investigate|continue|proceed|execute|analy[sz]e|debug';
+  const CG_VERBS = 'read|re-?read|check|look|open|find|fix|run|apply|write|patch|search|scan|inspect|start|create|update|edit|trace|dig|verify|test|grep|examine|review|implement|investigate|continue|proceed|execute|analy[sz]e|debug|work(?:\\s+on)?|handle|finish|complete';
   const CG_GERUNDS = 'reading|checking|looking|opening|finding|fixing|running|applying|writing|patching|searching|scanning|inspecting|starting|creating|updating|editing|tracing|digging|verifying|testing|examining|reviewing|implementing|investigating|proceeding|executing|analy[sz]ing|debugging';
   const CG_PATTERNS = [
     new RegExp('\\blet me\\s+(?!know\\b)[a-z]', 'i'),                                                       // "Let me read the file"
     new RegExp('\\b(i\'?ll|i\\s+will|i\'?m\\s+going\\s+to|about\\s+to|now\\s+i(?:\'?ll|\\s+will)?)\\s+(now\\s+)?(' + CG_VERBS + ')\\b', 'i'),  // "I'll fix all three"
+    new RegExp('\\b(i\'?ll|i\\s+will|i\'?m\\s+going\\s+to)\\s+(?:take\\s+care\\s+of|(?:get|have)\\s+(?:this|that|it|the\\s+(?:task|work|job))\\s+done)\\b', 'i'), // "I'll take care of it" / "I'll get this done"
     new RegExp('\\b(' + CG_GERUNDS + ')\\b[^.!?\\n]{0,80}\\bnow\\b', 'i'),                                  // "Reading the full main.js now"
     new RegExp('\\bnow\\b[^.!?\\n]{0,40}\\b(' + CG_GERUNDS + ')\\b', 'i')                                   // "now fixing the death path"
   ];
@@ -1048,7 +1049,7 @@
         // model that narrates forever still terminates through the normal end below.
         if (!empty && !duplicate && !graceUsed && cgUsed < CG_MAX && tools.length > 0 && announcesIntent(text)) {
           cgUsed++;
-          messages.push({ role: 'system', content: '<continuation>Your last message only ANNOUNCED an action but you called no tools — ending your reply without tool calls ends the run with the work not done. Do not narrate intentions. If work remains, make the actual tool call(s) NOW in this same turn; if the task is truly complete, give your final answer without announcing further actions.</continuation>' });
+          messages.push({ role: 'system', content: '<continuation>Your last message only ANNOUNCED an action but you called no tools — ending your reply without tool calls ends the run with the work not done. Do not narrate intentions. If work remains, make the actual tool call(s) NOW in this same turn. If you promised future or multi-day work, create the appropriate durable routine/task now when that tool is available; otherwise say plainly that no background work was started. If the task is truly complete, give your final answer without announcing further actions.</continuation>' });
           continue;
         }
         // VERIFY-ON-STOP: the run CHANGED code and is now trying to finish without having run anything against

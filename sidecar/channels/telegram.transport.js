@@ -244,11 +244,14 @@
         const err = new Error('telegram getUpdates failed: ' + code + ' ' + desc);
         err.code = code;
         if (code === 401 || code === 404) err.fatal = true;   // invalid/unknown token -> stop polling for good
-        // 409: another poller or a webhook owns this token. We proactively deleteWebhook on connect, so a
-        // persistent 409 means a SECOND instance is polling — stop with an actionable status instead of looping.
+        // 409: another poller or a webhook holds this token RIGHT NOW. Unlike a 401 this is not a verdict on the
+        // token — Telegram throws one-off 409s during webhook-delete races and restart overlaps, and even a real
+        // second instance can be closed a minute later. So it is CONFLICT, not fatal: the adapter keeps the loop
+        // alive on a slow re-probe cadence (state 'error' until a poll succeeds) instead of killing the channel —
+        // a dead-forever channel over one transient 409 also took channel.send down with it (connected=false).
         if (code === 409 || /terminated by other getupdates|another.*instance|webhook is active/i.test(desc)) {
-          err.fatal = true;
-          err.message = 'another instance or a webhook is using this bot token — stop the other poller (or it will keep stealing updates)';
+          err.conflict = true;
+          err.message = 'another instance or a webhook is using this bot token — stop the other poller (I will keep re-checking and reconnect on my own once it stops)';
         }
         throw err;
       },

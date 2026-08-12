@@ -62,6 +62,9 @@ for (const p of C.PLATFORMS) {
   A.ok(/Bearer/.test(byId('printify').authHint || ''), 'Printify carries its verified bearer hint');
   // Etsy needs OAuth for most endpoints — it must SAY so rather than imply a key is enough
   A.ok(/OAuth/i.test(byId('etsy').note || ''), 'Etsy warns that a keystring alone is not enough');
+  A.eq(byId('etsy').unattendedSupported, false, 'Etsy explicitly disables unattended mode until OAuth refresh is managed');
+  A.ok(/one[- ]hour/i.test(byId('etsy').note || ''), 'Etsy warning explains the one-hour access-token lifetime');
+  A.ok(/does not.*refresh/i.test(byId('etsy').unattendedReason || ''), 'Etsy policy explains the missing refresh lifecycle');
   // Shopify is per-store, so a fixed apiBase would be a lie
   A.ok(/\{/.test(byId('shopify').apiBase || ''), 'Shopify apiBase is templated on the store host');
 }

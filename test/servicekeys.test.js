@@ -143,6 +143,24 @@ const K = require('../sidecar/servicekeys.js');
   A.ok(K.remove([], 'x').error, 'remove unknown id errors');
 }
 
+// ---- H. watched-only integrations cannot silently acquire unattended authority ----
+{
+  const reason = 'StarNet does not yet manage Etsy OAuth refresh.';
+  const add = K.upsert([], {
+    name: 'Etsy', key: 'etsy-key', unattendedSupported: false, unattendedReason: reason
+  }, 1);
+  A.eq(add.record.autonomous, false, 'watched-only key starts with unattended authority disabled');
+  A.eq(add.record.unattendedSupported, false, 'watched-only policy is retained on the stored record');
+  const grant = K.setAutonomous(add.list, 'etsy', true);
+  A.ok(!!grant.error && /OAuth|unattended/i.test(grant.error), 'watched-only key refuses unattended authority');
+  const forced = [Object.assign({}, add.record, { autonomous: true })];
+  const resolved = K.resolveForRequest(forced, 'ETSY_API_KEY', 'autonomous');
+  A.eq(resolved.ok, false, 'legacy/stale autonomous=true cannot bypass watched-only policy');
+  A.ok(/OAuth|unattended/i.test(resolved.detail || ''), 'runtime refusal explains the policy');
+  A.eq(K.toPublic(add.record).unattendedSupported, false, 'public shape exposes watched-only policy');
+  A.ok(/unattended unsupported/i.test(K.promptBlock(add.list)), 'prompt truthfully labels watched-only access');
+}
+
 // report() LAST — it is what calls process.exit(fail?1:0). This file ended in a bare console.log,
 // which is why it could sit in NO gate for months and then be adopted into one without anybody
 // noticing it could never turn the gate red.
