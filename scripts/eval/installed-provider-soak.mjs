@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createReadStream, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,11 +22,17 @@ export function hashFileStreamed(file) {
     input.on('end', () => done(hash.digest('hex')));
   });
 }
-async function retryObserver(fn, attempts = 3) {
-  let last;
+export async function retryObserver(fn, attempts = 3, options = {}) {
+  let last; const failures = [];
+  const retrySleep = options.sleep || sleep, baseDelayMs = finite(options.baseDelayMs, 250);
   for (let attempt = 1; attempt <= attempts; attempt++) {
-    try { return await fn(); } catch (error) { last = error; if (attempt < attempts) await sleep(250 * attempt); }
+    try { return await fn(attempt); }
+    catch (error) {
+      last = error; failures.push(String(error?.message || error));
+      if (attempt < attempts) await retrySleep(baseDelayMs * attempt);
+    }
   }
+  if (last && typeof last === 'object') last.observerFailures = failures;
   throw last;
 }
 function argsOf(argv) { const out = {}; for (let i = 0; i < argv.length; i += 2) out[String(argv[i] || '').replace(/^--/, '')] = argv[i + 1]; return out; }
@@ -59,17 +65,105 @@ export function requiredSoakCoverage(durationHours, intervalSeconds) {
   return Math.max(1, Math.floor((Number(durationHours) * 3600 / Number(intervalSeconds)) * 0.99));
 }
 
-async function processStats(pid) {
-  if (process.platform !== 'win32') return { rssBytes: null, cpuSeconds: null };
-  const script = `$p=Get-Process -Id ${Number(pid)} -ErrorAction Stop; [Console]::Write($p.WorkingSet64.ToString()+'|'+$p.CPU.ToString([Globalization.CultureInfo]::InvariantCulture))`;
-  try {
-    return await retryObserver(async () => {
-      const raw = execFileSync('powershell.exe', ['-NoProfile', '-Command', script], { encoding: 'utf8', windowsHide: true, timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] }).trim().split('|');
-      const stats = { rssBytes: finite(raw[0]), cpuSeconds: finite(raw[1]) };
-      if (!(stats.rssBytes > 0) || !(stats.cpuSeconds >= 0)) throw new Error('process telemetry was incomplete');
-      return stats;
+function windowsObserverScript(pid) {
+  return [
+    "$ErrorActionPreference='Stop'",
+    '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)',
+    "while (($request = [Console]::In.ReadLine()) -ne $null) {",
+    '  try {',
+    `    $p=Get-Process -Id ${Number(pid)} -ErrorAction Stop`,
+    "    [Console]::Out.WriteLine('OK|'+$p.WorkingSet64.ToString()+'|'+$p.CPU.ToString([Globalization.CultureInfo]::InvariantCulture))",
+    '  } catch {',
+    "    $detail=[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($_.Exception.ToString()))",
+    "    [Console]::Out.WriteLine('ERR|'+$detail)",
+    '  }',
+    '  [Console]::Out.Flush()',
+    '}'
+  ].join("\n");
+}
+
+export function parseWindowsObserverLine(line) {
+  const fields = String(line || '').trim().split('|');
+  if (fields[0] === 'ERR') {
+    let detail = 'Windows process observer failed';
+    try { detail = Buffer.from(fields.slice(1).join('|'), 'base64').toString('utf8') || detail; } catch (_) {}
+    throw new Error(detail);
+  }
+  if (fields[0] !== 'OK') throw new Error(`unexpected Windows observer response: ${String(line || '').slice(0, 160)}`);
+  const stats = { rssBytes: finite(fields[1]), cpuSeconds: finite(fields[2]) };
+  if (!(stats.rssBytes > 0) || !(stats.cpuSeconds >= 0)) throw new Error('process telemetry was incomplete');
+  return stats;
+}
+
+export function createWindowsProcessObserver(pid, options = {}) {
+  const spawnProcess = options.spawn || spawn, attempts = Math.max(1, finite(options.attempts, 6));
+  const requestTimeoutMs = Math.max(100, finite(options.requestTimeoutMs, 5000));
+  const baseDelayMs = Math.max(0, finite(options.baseDelayMs, 1000));
+  const encoded = Buffer.from(windowsObserverScript(pid), 'utf16le').toString('base64');
+  let child = null, buffer = '', inflight = null, stderr = '', closed = false;
+
+  const failInflight = error => {
+    if (!inflight) return;
+    const pending = inflight; inflight = null; clearTimeout(pending.timer); pending.reject(error);
+  };
+  const discardChild = error => {
+    const stale = child; child = null; buffer = '';
+    failInflight(error || new Error('Windows process observer restarted'));
+    if (stale && stale.exitCode == null) { try { stale.kill(); } catch (_) {} }
+  };
+  const ensureChild = () => {
+    if (closed) throw new Error('Windows process observer is closed');
+    if (child && child.exitCode == null && !child.killed) return child;
+    stderr = ''; buffer = '';
+    const active = spawnProcess('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded], {
+      windowsHide: true, stdio: ['pipe', 'pipe', 'pipe']
     });
-  } catch (error) { return { rssBytes: null, cpuSeconds: null, error: String(error.message || error).slice(0, 240) }; }
+    child = active;
+    active.stdout.setEncoding('utf8'); active.stderr.setEncoding('utf8');
+    active.stdout.on('data', chunk => {
+      if (child !== active) return;
+      buffer += chunk;
+      let newline;
+      while ((newline = buffer.indexOf('\n')) >= 0) {
+        const line = buffer.slice(0, newline).replace(/\r$/, ''); buffer = buffer.slice(newline + 1);
+        if (!inflight) continue;
+        const pending = inflight; inflight = null; clearTimeout(pending.timer); pending.resolve(line);
+      }
+    });
+    active.stderr.on('data', chunk => { if (child === active) stderr = (stderr + chunk).slice(-4000); });
+    active.on('error', error => { if (child === active) discardChild(error); });
+    active.on('exit', (code, signal) => {
+      if (child !== active) return;
+      const detail = stderr.trim().replace(/\u0000/g, ' ').slice(-1000);
+      discardChild(new Error(`Windows process observer exited code=${code} signal=${signal || ''}${detail ? `: ${detail}` : ''}`));
+    });
+    return active;
+  };
+  const request = () => new Promise((resolveRequest, rejectRequest) => {
+    const active = ensureChild();
+    if (inflight) return rejectRequest(new Error('Windows process observer request overlap'));
+    const timer = setTimeout(() => {
+      if (!inflight) return;
+      inflight = null; discardChild(); rejectRequest(new Error(`Windows process observer timed out after ${requestTimeoutMs}ms`));
+    }, requestTimeoutMs);
+    inflight = { resolve: resolveRequest, reject: rejectRequest, timer };
+    active.stdin.write("sample\n", error => { if (error && inflight) discardChild(error); });
+  });
+
+  return {
+    async sample() {
+      try {
+        return await retryObserver(async () => {
+          try { return parseWindowsObserverLine(await request()); }
+          catch (error) { discardChild(error); throw error; }
+        }, attempts, { baseDelayMs });
+      } catch (error) {
+        const history = Array.isArray(error?.observerFailures) ? `; attempts: ${error.observerFailures.join(' | ')}` : '';
+        return { rssBytes: null, cpuSeconds: null, error: (String(error?.message || error) + history).slice(0, 1000) };
+      }
+    },
+    close() { closed = true; discardChild(new Error('Windows process observer closed')); }
+  };
 }
 
 async function main() {
@@ -89,7 +183,7 @@ async function main() {
   const executablePath = resolve(subject.executable.path), expectedExecutableSha256 = subject.executable.sha256;
   const desktopExecutable = resolve(opts['desktop-executable']);
   if (desktopExecutable !== executablePath) throw new Error('soak desktop executable does not match the candidate manifest path');
-  const fixtureServer = await startFixtureMcpServer(); let driver = null, interrupted = false;
+  const fixtureServer = await startFixtureMcpServer(); let driver = null, resourceObserver = null, interrupted = false;
   const startedAt = Date.now(), deadline = startedAt + durationHours * 3600000;
   const report = {
     schemaVersion: 'starnet.eval.installed-provider-soak.v1', mode: 'installed-provider-backed-active-idle', qualifyingDuration: durationHours >= 48, qualifiesRelease: false,
@@ -102,6 +196,7 @@ async function main() {
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   try {
     driver = await startStarNetDriver({ desktopExecutable, root: opts['runtime-root'], workspaces: opts.workspaces, fixtureUrl: fixtureServer.url, outputDir, timeoutMs: 300000 });
+    if (process.platform === 'win32') resourceObserver = createWindowsProcessObserver(driver.process.pid);
     if (driver.identity.mode !== 'installed-desktop' || driver.identity.health?.status !== 'ok' || String(driver.identity.health?.version || '') !== String(subject.provenance.describe)) throw new Error('installed desktop soak health identity does not match the manifest');
     report.runtime.rawHealthVersion = String(driver.identity.health?.version || '');
     report.runtime.port = Number(new URL(driver.base).port);
@@ -130,7 +225,8 @@ async function main() {
         try { executableHashMatch = await retryObserver(async () => await hashFileStreamed(executablePath) === expectedExecutableSha256); } catch (caught) { error = String(caught.message || caught).slice(0, 240); }
         try { const response = await fetch(driver.base + '/health', { signal: AbortSignal.timeout(5000) }); status = response.status; const body = await response.json(); version = String(body.version || ''); healthOk = response.ok && body.status === 'ok' && version === String(subject.provenance.describe); }
         catch (caught) { error = String(caught.message || caught).slice(0, 240); }
-        const stats = await processStats(driver.process.pid), exited = driver.process.exitCode != null;
+        const exited = driver.process.exitCode != null;
+        const stats = exited ? { rssBytes: null, cpuSeconds: null, error: 'installed desktop process exited' } : (resourceObserver ? await resourceObserver.sample() : { rssBytes: null, cpuSeconds: null });
         const observerOk = executableHashMatch !== null && (process.platform !== 'win32' || (stats.rssBytes > 0 && stats.cpuSeconds >= 0));
         const ok = healthOk && executableHashMatch === true;
         const observerError = [error, stats.error].filter(Boolean).join('; ').slice(0, 480);
@@ -159,7 +255,7 @@ async function main() {
     console.log(`[agent-eval] receipt ${receiptPath}`);
   } catch (error) {
     report.endedAt = report.endedAt || iso(Date.now()); report.interrupted = interrupted; report.error = String(error.stack || error).slice(0, 4000); writeAtomic(output, report); throw error;
-  } finally { if (driver) await driver.close(); await fixtureServer.close(); }
+  } finally { if (resourceObserver) resourceObserver.close(); if (driver) await driver.close(); await fixtureServer.close(); }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
