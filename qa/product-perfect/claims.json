@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "56eea00c6014738a65f293c95a927bba87fad64b",
+    "sourceCommit": "a2a4ce210ad28d58b394f4fb31626bd37157fc4a",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -668,8 +668,8 @@
       },
       {
         "path": "frontend/app/schedpicker.js",
-        "bytes": 14876,
-        "sha256": "a29bd0a8ecdf7b8a29afebab3de13d67d64b85946c6d82432a28d936bd544943"
+        "bytes": 15254,
+        "sha256": "292b183ae787b9b9f50bcc2f1391b19d2a016ebcf1e4707ceb81a6f060e4b56f"
       },
       {
         "path": "frontend/app/seedcredit.js",
