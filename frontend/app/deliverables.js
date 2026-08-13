@@ -151,20 +151,6 @@
     const days = Math.floor(h / 24); if (days < 30) return days + 'd ago';
     return Math.floor(days / 30) + 'mo ago';
   }
-  function fmtDur(ms) {
-    ms = Number(ms) || 0; if (ms <= 0) return '';
-    if (ms < 1000) return ms + 'ms';
-    const s = Math.round(ms / 1000); if (s < 60) return s + 's';
-    const m = Math.floor(s / 60); return m + 'm ' + (s % 60) + 's';
-  }
-  // Sub-cent spend is real spend: rendering $0.00 for a run that cost money is the same class of lie as a
-  // fabricated status. Show enough precision to stay true, and never invent a figure for an unmetered run.
-  function fmtUsd(usd, unmetered) {
-    if (unmetered) return 'included in your plan';
-    const n = Number(usd) || 0;
-    if (n <= 0) return '$0';
-    return n < 0.01 ? '<$0.01' : '$' + n.toFixed(2);
-  }
 
   // status -> the pill a person can read. `pending` is the only one that asks for something, so it alone is gold.
   const PILLS = {
@@ -224,40 +210,32 @@
        carries the identity and the verdict and NO buttons, and everything that needs reading or deciding lives
        one click down. One drawer open at a time. The glance answers "what is this and is it done"; the drawer
        answers "what exactly did I get, what did it cost, and where is it". */
+    /* THE DRAWER — three things, and nothing else: what was asked, what came back, and what you can open.
+       An earlier draft also listed model, cost, duration, turns and tool counts. Andrew cut every one of them:
+       run metrics are the LOGBOOK's subject, and putting them on the card that answers "what did I get" only
+       made that answer harder to find. Anything added back here must be ABOUT THE OUTPUT, not the machinery. */
     function detailHtml(r) {
       const run = r.run || null;
       const files = r.files || [];
       const sec = (label, inner) => inner ? '<div class="dlv-sec"><h5>' + label + '</h5>' + inner + '</div>' : '';
-      // THE ASK — the Commander's own words, so it is quoted, not paraphrased.
+      // THE ASK — the Commander's own words, quoted rather than paraphrased.
       const ask = sec('WHAT YOU ASKED FOR', r.ask ? '<p class="dlv-quote">' + esc(r.ask) + '</p>' : '');
-      // WHAT THE AGENT SAID — its real recorded closing message. Never a generated summary of the run.
-      const said = sec('WHAT THE AGENT SAID', (run && run.deliveryText) ? '<div class="dlv-said">' + esc(run.deliveryText) + '</div>' : '');
-      // FILES — each one openable on its own, with the size we measured off disk.
+      // WHAT CAME BACK — the agent's recorded closing message, and ONLY when the run kept one. It deliberately
+      // does NOT fall back to the deliverable's summary: that sentence is already on the row directly above, and
+      // reprinting it here would put the same words on screen twice, forty pixels apart. A section that repeats
+      // what you just read is the added complexity this pass exists to remove.
+      const back = sec('WHAT CAME BACK', (run && run.deliveryText) ? '<div class="dlv-said">' + esc(run.deliveryText) + '</div>' : '');
+      // THE FILES — each openable on its own, with the size measured off disk.
       const fileRows = files.length
         ? '<ul class="dlv-files">' + (r.files || []).map((f, fi) => f.openUrl
             ? '<li><a class="bb sm' + (r.main && f.path === r.main ? ' dlv-hero' : '') + '" data-file="' + fi + '" href="' + esc(fileHref(f)) + '" target="_blank" rel="noopener">OPEN</a><span class="dlv-fname">' + esc(f.path) + '</span><span class="dlv-fsize">' + esc(fmtSize(f.bytes)) + '</span>' + (r.main && f.path === r.main ? '<span class="dlv-fmain">the main one</span>' : '') + '</li>'
             : '<li><span class="dlv-fname off">' + esc(f.path) + '</span><span class="dlv-fsize">no longer available</span></li>').join('') + '</ul>'
         : '<p class="dlv-none">This run recorded no files.</p>';
-      // RUN FACTS — every value read straight off the durable run row, so this can never disagree with the LOGBOOK.
-      const facts = [];
-      if (run) {
-        if (run.model) facts.push(['model', run.model]);
-        facts.push(['cost', fmtUsd(run.usd, run.unmetered)]);
-        if (run.durationMs) facts.push(['took', fmtDur(run.durationMs)]);
-        if (run.turns) facts.push(['turns', String(run.turns)]);
-        if (run.toolsOk) facts.push(['successful tool steps', String(run.toolsOk)]);
-      }
-      if (r.createdAt) facts.push(['finished', new Date(r.createdAt).toLocaleString()]);
-      facts.push(['filed under', r.project ? r.project : 'no project — this run was not scoped to a folder']);
-      const factRows = '<dl class="dlv-dl">' + facts.map(f => '<dt>' + esc(f[0]) + '</dt><dd>' + esc(f[1]) + '</dd>').join('') + '</dl>';
-      // A run that fell back to the station persona was NOT the named specialist — say so where it is being read.
-      const standIn = (r.contributors || []).some(c => c.identityFallback)
-        ? '<p class="dlv-warn">One of these runs fell back to the station’s default persona, so it was not the named specialist.</p>' : '';
-      const openSession = (run && run.streamId) ? '<button class="bb sm" data-act="session">↗ OPEN THE SESSION THIS CAME FROM</button>' : '';
+      const openSession = (run && run.streamId) ? '<button class="bb sm" data-act="session">↗ OPEN THE FULL CONVERSATION</button>' : '';
       const decide = ((r.actions && r.actions.keep) ? '<button class="bb sm" data-act="keep">KEEP IT</button>' : '') +
         ((r.actions && r.actions.discard) ? '<button class="bb sm danger" data-act="discard">DISCARD</button>' : '');
       const acts = (openSession || decide) ? '<div class="row dlv-acts">' + openSession + decide + '</div>' : '';
-      return ask + said + sec('WHAT YOU GOT', fileRows) + sec('THE RUN', factRows + standIn) + acts;
+      return ask + back + sec('FILES', fileRows) + acts;
     }
 
     function cardHtml(r, i, now) {
@@ -428,5 +406,5 @@
     body._deliverablesCleanup = revoke;
     load();
   }
-  return { esc, safeMarkdown, safeCsv, openUrl, fileHref, artifactPath, handleOpenClick, bucketOf, pillOf, agentLabel, agoOf, fmtDur, fmtUsd, mount, BUCKETS };
+  return { esc, safeMarkdown, safeCsv, openUrl, fileHref, artifactPath, handleOpenClick, bucketOf, pillOf, agentLabel, agoOf, mount, BUCKETS };
 });

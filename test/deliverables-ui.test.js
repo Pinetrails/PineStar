@@ -24,16 +24,6 @@ A.eq(D.agoOf(NOW - 30000, NOW), 'just now', 'sub-minute reads as just now');
 A.eq(D.agoOf(NOW - 3 * 3600000, NOW), '3h ago', 'hours read as hours');
 A.eq(D.agoOf(0, NOW), '', 'no timestamp produces no relative stamp, never a fabricated one');
 
-// SUB-CENT HONESTY: a run that cost money must never render as $0.00. That is the same class of lie as a
-// fabricated status -- it tells the Commander the work was free.
-A.eq(D.fmtUsd(0.0004, false), '<$0.01', 'sub-cent spend is shown as under a cent, never rounded to $0.00');
-A.eq(D.fmtUsd(0, false), '$0', 'genuinely zero spend reads as zero');
-A.eq(D.fmtUsd(1.239, false), '$1.24', 'real spend rounds to cents');
-A.eq(D.fmtUsd(0.5, true), 'included in your plan', 'unmetered subscription usage is never priced as spend');
-
-A.eq(D.fmtDur(0), '', 'an unrecorded duration prints nothing rather than 0ms');
-A.eq(D.fmtDur(450), '450ms', 'sub-second durations keep their precision');
-A.eq(D.fmtDur(95000), '1m 35s', 'longer runs read in minutes and seconds');
 
 // the status pill vocabulary, including the prototype-key trap that bit this repo before
 A.eq(D.pillOf('pending').label, 'NEEDS A DECISION', 'pending is the only status that asks the user for something');

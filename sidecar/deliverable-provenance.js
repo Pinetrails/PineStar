@@ -87,26 +87,17 @@
       return out;
     }
 
-    /* The run FACTS a detail view may show: what it cost, how long it took, which model, how much real tool work,
-       and the agent's closing message. Every field is read straight off the durable run row — this function
-       computes nothing and infers nothing, so a card that renders it cannot drift from the logbook. Fields the row
-       never had (older rows predate them) come back null/0 rather than as a plausible-looking number. */
+    /* What a card needs ABOUT THE WORK — and deliberately nothing about the machinery.
+       An earlier draft returned model, cost, tokens, turns, tool counts and duration. Andrew cut all of it:
+       a person opening this area wants to know what they asked for, what came back, and what they can open —
+       run metrics are the LOGBOOK's job, and repeating them here bought confusion, not detail. So this returns
+       exactly two things, both of which are about the OUTPUT: the agent's closing message, and the session it
+       belongs to (so the card can offer to open the full conversation). Read straight off the durable run row. */
     function factsOf(runId) {
       const row = byId.get(str(runId));
       if (!row) return null;
-      const num = v => (typeof v === 'number' && isFinite(v)) ? v : 0;
       return {
-        model: str(row.model),
-        usd: num(row.usd),
-        tokens: num(row.tokens),
-        turns: num(row.turns),
-        toolsOk: num(row.toolsOk),
-        durationMs: num(row.durationMs),
-        reason: str(row.reason),
         streamId: str(row.streamId),           // lets a card offer "open the session this came from"
-        recipeId: str(row.recipeId),
-        unmetered: !!row.unmetered,            // subscription usage is COUNTED, never rendered as $0 spend
-        identityFallback: !!row.identityFallback,
         // the agent's closing message for this run — real recorded output, not a summary anyone generated
         deliveryText: str(row.deliveryText)
       };
