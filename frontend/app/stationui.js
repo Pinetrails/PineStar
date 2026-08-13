@@ -7996,7 +7996,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // check-it-now surface, not a setting).
     updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
-    deliverables:['DELIVERABLES',         body => { if (typeof Deliverables !== 'undefined') Deliverables.mount(body); }, { w: '760px' }],
+    // DELIVERABLES is console-WIDE (a project rail beside the cards needs the room) and holds a STEADY height for
+    // the same reason the dossier does: a never-moved window is CSS-centred, so a content-fit box would re-centre
+    // itself every time a card's details drawer opens — the row you just clicked would slide out from under you.
+    // The `dlv` class owns that height; the card list scrolls inside it.
+    deliverables:['DELIVERABLES',         body => { if (typeof Deliverables !== 'undefined') Deliverables.mount(body); }, { console: true, className: 'dlv-win' }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder

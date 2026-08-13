@@ -10957,6 +10957,10 @@ async function deliverableRows() {
     row.project = row.runId ? provenance.projectOf(row.runId) : '';
     const crew = row.runId ? provenance.contributorsOf(row.runId) : [];
     row.contributors = crew.length ? crew : (row.agentId ? [{ agentId: row.agentId, role: 'lead', identityFallback: false }] : []);
+    // `run` powers the card's DETAILS drawer — cost, model, duration, real tool work, and the agent's closing
+    // message. Read straight off the durable run row, so the drawer and the LOGBOOK can never disagree. A row
+    // whose run has aged out of the log gets null and the drawer simply omits the section.
+    row.run = row.runId ? provenance.factsOf(row.runId) : null;
   }
   return rows.sort((a, b) => (b.updatedAt - a.updatedAt) || String(a.id).localeCompare(String(b.id)));
 }
@@ -10981,6 +10985,17 @@ function deliverableProjectFacet(rows) {
   if (unfiled) out.push({ root: '', name: 'UNFILED', count: unfiled, lastAt: unfiledAt, blessed: true, unfiled: true });
   return out;
 }
+// The KIND chips, folded out of the list the same way (and, like the project facet, computed BEFORE filtering).
+// Ordered by count so the shapes a Commander actually produces lead; ties break alphabetically for stability.
+function deliverableKindFacet(rows) {
+  const byKind = new Map();
+  for (const r of (Array.isArray(rows) ? rows : [])) {
+    const k = String((r && r.kind) || 'files');
+    byKind.set(k, (byKind.get(k) || 0) + 1);
+  }
+  return Array.from(byKind.entries()).map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => (b.count - a.count) || a.kind.localeCompare(b.kind));
+}
 async function handleDeliverablesList(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   const u = new URL(req.url, 'http://x');
@@ -10995,11 +11010,21 @@ async function handleDeliverablesList(req, res) {
     // The project FACET is computed before the project filter is applied, so the rail keeps showing every project
     // (with honest counts) while one of them is selected — a filter must never be able to hide its own siblings.
     const projects = deliverableProjectFacet(items);
+    // The same pre-filter rule as the project facet: a KIND chip and the "needs a decision" count must describe
+    // the whole library, not the slice currently on screen, or the filters start hiding the reason to use them.
+    const kinds = deliverableKindFacet(items);
+    const summary = {
+      total: items.length,
+      pending: items.filter(r => r.status === 'pending').length,
+      failed: items.filter(r => r.status === 'failed').length,
+      oldestAt: items.reduce((m, r) => (r.createdAt && (!m || r.createdAt < m)) ? r.createdAt : m, 0),
+      newestAt: items.reduce((m, r) => Math.max(m, Number(r.createdAt) || 0), 0)
+    };
     if (status) items = items.filter(r => r.status === status);
     if (kind) items = items.filter(r => r.kind === kind);
     if (project) items = items.filter(r => project === 'unfiled' ? !r.project : r.project === project);
     if (query) items = items.filter(r => [r.title, r.summary, r.source, r.agentId, r.runId, r.project, (r.contributors || []).map(c => c.agentId).join(' ')].join(' ').toLowerCase().indexOf(query) >= 0);
-    json(200, { ok: true, items: items.slice(0, 500), total: items.length, projects: projects, previewLimits: { markdown: DELIVERABLE_PREVIEW_MAX, csv: DELIVERABLE_PREVIEW_MAX, image: DELIVERABLE_IMAGE_MAX } });
+    json(200, { ok: true, items: items.slice(0, 500), total: items.length, projects: projects, kinds: kinds, summary: summary, previewLimits: { markdown: DELIVERABLE_PREVIEW_MAX, csv: DELIVERABLE_PREVIEW_MAX, image: DELIVERABLE_IMAGE_MAX } });
   } catch (e) { json(500, { ok: false, error: 'could not read the deliverable library' }); }
 }
 async function handleDeliverablesCleanupPreview(req, res) {

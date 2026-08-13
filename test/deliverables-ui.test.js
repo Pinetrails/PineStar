@@ -12,4 +12,33 @@ A.ok(csv.indexOf('<td>3</td>') < 0 && csv.indexOf('<td>4</td>') < 0, 'CSV previe
 
 A.eq(D.openUrl('/workshop-run/a/r/index.html', 'secret'), '/workshop-run/a/r/index.html?token=secret', 'sandboxed HTML navigation receives the launch token');
 A.eq(D.openUrl('/api/file?agent=a&path=x.md', 'secret'), '/api/file?agent=a&path=x.md&token=secret', 'file preview receives the launch token');
+
+/* ---- the organized library's display helpers (2026-08-13) ---- */
+const NOW = new Date('2026-08-13T15:00:00').getTime();
+A.eq(D.bucketOf(new Date('2026-08-13T00:30:00').getTime(), NOW), 'TODAY', 'anything since local midnight is TODAY');
+A.eq(D.bucketOf(NOW - 2 * 86400000, NOW), 'THIS WEEK', 'two days back is THIS WEEK');
+A.eq(D.bucketOf(NOW - 30 * 86400000, NOW), 'EARLIER', 'a month back is EARLIER');
+A.eq(D.bucketOf(0, NOW), 'EARLIER', 'a row with no timestamp falls to EARLIER rather than claiming TODAY');
+
+A.eq(D.agoOf(NOW - 30000, NOW), 'just now', 'sub-minute reads as just now');
+A.eq(D.agoOf(NOW - 3 * 3600000, NOW), '3h ago', 'hours read as hours');
+A.eq(D.agoOf(0, NOW), '', 'no timestamp produces no relative stamp, never a fabricated one');
+
+// SUB-CENT HONESTY: a run that cost money must never render as $0.00. That is the same class of lie as a
+// fabricated status -- it tells the Commander the work was free.
+A.eq(D.fmtUsd(0.0004, false), '<$0.01', 'sub-cent spend is shown as under a cent, never rounded to $0.00');
+A.eq(D.fmtUsd(0, false), '$0', 'genuinely zero spend reads as zero');
+A.eq(D.fmtUsd(1.239, false), '$1.24', 'real spend rounds to cents');
+A.eq(D.fmtUsd(0.5, true), 'included in your plan', 'unmetered subscription usage is never priced as spend');
+
+A.eq(D.fmtDur(0), '', 'an unrecorded duration prints nothing rather than 0ms');
+A.eq(D.fmtDur(450), '450ms', 'sub-second durations keep their precision');
+A.eq(D.fmtDur(95000), '1m 35s', 'longer runs read in minutes and seconds');
+
+// the status pill vocabulary, including the prototype-key trap that bit this repo before
+A.eq(D.pillOf('pending').label, 'NEEDS A DECISION', 'pending is the only status that asks the user for something');
+A.eq(D.pillOf('produced').cls, 'ok', 'a finished run reads as good');
+A.eq(D.pillOf('failed').cls, 'bad', 'a failed run reads as bad');
+A.eq(D.pillOf('constructor').cls, 'off', 'a prototype key cannot resolve through Object.prototype into a fake pill');
+
 A.report('deliverables-ui.test');

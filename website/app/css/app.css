@@ -5023,7 +5023,16 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
 
 /* the card */
 .dlv-card { border: 1px solid var(--ph-faint); border-radius: var(--r-sm); background: var(--panel2);
-  box-shadow: var(--raise); padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+  box-shadow: var(--raise); min-width: 0; overflow: hidden; transition: border-color 0.15s; }
+.dlv-card:has(.dlv-head.on) { border-color: var(--ph-dim); box-shadow: var(--raise), inset 0 0 14px var(--ph-glow2); }
+/* THE GLANCE — a real button so the whole row is one keyboard-reachable target */
+.dlv-head { display: flex; align-items: flex-start; gap: 8px; width: 100%; text-align: left; padding: 10px 12px;
+  background: transparent; border: 0; color: inherit; font: inherit; cursor: pointer; min-width: 0; }
+.dlv-head:hover, .dlv-head:focus-visible { background: rgba(255, 255, 255, 0.03); outline: none; }
+.dlv-head:focus-visible { box-shadow: inset 0 0 0 1px var(--ph); }
+.dlv-caret { flex: none; color: var(--ph-dim); font-size: 11px; line-height: 1.6; transition: transform 0.15s; }
+.dlv-head.on .dlv-caret { transform: rotate(90deg); color: var(--ph); }
+.dlv-headmain { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
 .dlv-say { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .dlv-title { color: var(--ph); font-weight: 600; letter-spacing: 0.4px; overflow-wrap: anywhere; }
 /* an UNNAMED row's title is a filename, not a description — say it in the file voice, not the prose voice */
@@ -5048,12 +5057,7 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
 .dlv-who i { font-style: normal; opacity: 0.7; }
 .dlv-meta { font-size: 10.5px; color: var(--ph-dim); letter-spacing: 0.6px; font-variant-numeric: tabular-nums; }
 
-/* the Commander's own words, kept visibly distinct from the agent's */
-.dlv-ask { margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--text); opacity: 0.6;
-  border-left: 1px solid var(--ph-faint); padding-left: 8px; overflow-wrap: anywhere; }
-.dlv-ask span { font-size: 9.5px; letter-spacing: 1.4px; color: var(--ph-dim); margin-right: 5px; }
-
-.dlv-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.dlv-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
 /* the ONE file that IS the deliverable, when the agent named one */
 .dlv-hero { border-color: var(--gold); color: var(--gold); }
 
@@ -5061,3 +5065,61 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
   font-size: 11px; letter-spacing: 1.6px; color: var(--ph-dim); }
 .dlv-empty span { display: block; margin-top: 7px; font-size: 12px; letter-spacing: 0; line-height: 1.5;
   color: var(--text); opacity: 0.6; }
+
+/* ---- DELIVERABLES: the wide shell, the summary strip, the kind chips, and the details drawer ---- */
+/* STEADY SHELL, same reasoning as .term.console.dossier: a card's drawer changes the content height, and a
+   never-moved window is CSS-centred — without a fixed height the whole window would re-centre on every toggle
+   and the row you just clicked would slide out from under the pointer. The card list scrolls inside instead. */
+.term.console.dlv-win { height: var(--con-h); }
+
+/* the one-line answer to "what have I been working on" */
+.dlv-head-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 8px 10px; margin-bottom: 9px; border: 1px solid var(--ph-faint); border-radius: var(--r-sm);
+  background: var(--ph-faint); }
+.dlv-sumline { font-size: 12px; color: var(--text); opacity: 0.8; letter-spacing: 0.3px; }
+.dlv-sumline b { color: var(--ph); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* the only count that is also an ACTION — it routes to the rows actually waiting on the user */
+.dlv-needs { font: inherit; font-size: 11px; letter-spacing: 0.6px; padding: 3px 9px; cursor: pointer;
+  background: rgba(var(--gold-rgb), 0.1); color: var(--gold); border: 1px solid var(--gold); border-radius: 2px; }
+.dlv-needs:hover { background: rgba(var(--gold-rgb), 0.2); }
+.dlv-needs:focus-visible { outline: 1px solid var(--gold); outline-offset: 2px; }
+
+/* KIND chips — the second axis */
+.dlv-kinds { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 4px; }
+.dlv-chip { display: inline-flex; align-items: baseline; gap: 5px; font: inherit; font-size: 10.5px;
+  letter-spacing: 1px; text-transform: uppercase; padding: 3px 8px; cursor: pointer; border-radius: 2px;
+  background: transparent; color: var(--ph-dim); border: 1px solid var(--ph-faint); }
+.dlv-chip:hover { border-color: var(--ph-dim); color: var(--text); }
+.dlv-chip:focus-visible { outline: 1px solid var(--ph); outline-offset: 1px; }
+.dlv-chip.on { background: var(--ph-faint); border-color: var(--ph); color: var(--ph); }
+.dlv-chip span { font-size: 9.5px; opacity: 0.7; font-variant-numeric: tabular-nums; }
+
+/* THE DRAWER — everything that needs reading or deciding, one click down */
+.dlv-more { border-top: 1px solid var(--ph-faint); padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 11px; }
+.dlv-more[hidden] { display: none; }
+.dlv-sec { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.dlv-sec h5 { margin: 0; font-size: 9.5px; letter-spacing: 2px; color: var(--ph-dim); font-weight: 500; }
+/* the Commander's own words — quoted, never paraphrased */
+.dlv-quote { margin: 0; font-size: 12px; line-height: 1.5; color: var(--text); opacity: 0.85;
+  border-left: 2px solid var(--ph-faint); padding-left: 9px; overflow-wrap: anywhere; }
+/* the agent's REAL recorded closing message; scrolls in place rather than pushing the actions off-screen */
+.dlv-said { font-size: 12px; line-height: 1.5; color: var(--text); opacity: 0.85; white-space: pre-wrap;
+  word-break: break-word; max-height: 190px; overflow: auto; padding-right: 4px;
+  scrollbar-width: thin; scrollbar-color: var(--ph-dim) transparent; }
+
+/* the file list — one row per artifact, each openable on its own */
+.dlv-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.dlv-files li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.dlv-fname { flex: 1; min-width: 0; font-size: 12px; color: var(--text); overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.dlv-fname.off { opacity: 0.45; text-decoration: line-through; }
+.dlv-fsize { flex: none; font-size: 10.5px; color: var(--ph-dim); font-variant-numeric: tabular-nums; }
+.dlv-fmain { flex: none; font-size: 9.5px; letter-spacing: 1px; color: var(--gold); }
+
+/* the run's own facts, read straight off the durable row */
+.dlv-dl { display: grid; grid-template-columns: minmax(96px, auto) minmax(0, 1fr); gap: 3px 12px; margin: 0; }
+.dlv-dl dt { font-size: 10.5px; letter-spacing: 0.8px; color: var(--ph-dim); }
+.dlv-dl dd { margin: 0; font-size: 11.5px; color: var(--text); opacity: 0.85; overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums; }
+.dlv-warn { margin: 6px 0 0; font-size: 11.5px; line-height: 1.45; color: var(--gold); opacity: 0.9; }
+.dlv-none { margin: 0; font-size: 12px; color: var(--text); opacity: 0.55; }
