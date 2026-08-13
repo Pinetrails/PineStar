@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "7a051b33318cb7bd338677faa401767ea7e34130",
+    "sourceCommit": "5b29c517bc4544e1ab433fdb1387f82ba5c4a185",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -283,8 +283,8 @@
       },
       {
         "path": "frontend/app/goalstore.js",
-        "bytes": 27842,
-        "sha256": "48e0ed3dd889bc63c08f6872dc567fca5f51ce48d0e755b4679bf26770e3aa36"
+        "bytes": 27849,
+        "sha256": "fd3d86cf37054fd6b0b91487b42b9fff502a7700572632b8c197cbfa0d14a943"
       },
       {
         "path": "frontend/app/harness.js",
@@ -318,8 +318,8 @@
       },
       {
         "path": "frontend/app/journeystore.js",
-        "bytes": 6300,
-        "sha256": "bf392a1e78214ad349528cadaa106a104def3b97cd95feeaa5a1542789e457be"
+        "bytes": 6307,
+        "sha256": "3847c5b572ec3e93cf8e8fe10b2c2a9da71d9b644fb6c1beaef8bf0c54d03d93"
       },
       {
         "path": "frontend/app/keepawake.js",
@@ -368,8 +368,8 @@
       },
       {
         "path": "frontend/app/maintqueststore.js",
-        "bytes": 10294,
-        "sha256": "575ac9efa001ea4919db71de2862d5a7554e4b4868d606baba3c5ce38f1548c7"
+        "bytes": 10301,
+        "sha256": "8d94def9116f827b23aa18a450e380697a81af5604bdcc984323805d4be71577"
       },
       {
         "path": "frontend/app/marketplace.js",
@@ -508,18 +508,18 @@
       },
       {
         "path": "frontend/app/questledgerstore.js",
-        "bytes": 12339,
-        "sha256": "f154fb12b7a86f20a242e3e51d062e817e6f17a580372caf81fb000fa6f90095"
+        "bytes": 12425,
+        "sha256": "8306799aa7cdcbf40c8a5a7758a41d1612fa366bb40962d6948d22259ab44781"
       },
       {
         "path": "frontend/app/questrefreshstore.js",
-        "bytes": 11829,
-        "sha256": "caf69cfacd9ab8026d8b0768e5e2d290c4694a71b8ff0a3641d8132861331d6b"
+        "bytes": 11843,
+        "sha256": "ed7a91942f1283b03029accf1a1d9e7a2a0e9951d96c277fc606e5acc3bca489"
       },
       {
         "path": "frontend/app/quests.js",
-        "bytes": 10824,
-        "sha256": "3b6453c40edd4bce47199c16bfa9def79e987ce17e388af4e1acb38dffdf016e"
+        "bytes": 11989,
+        "sha256": "c58440075b4d47671dba68326a12c21c9f73d0c48ff7acee6402d54a6a83b764"
       },
       {
         "path": "frontend/app/queststate.js",
@@ -528,8 +528,8 @@
       },
       {
         "path": "frontend/app/queststatestore.js",
-        "bytes": 5510,
-        "sha256": "eb8b058d2b6276f20cedcc7ed5ed9a9b110a0f7604d340186ecfbb439c573060"
+        "bytes": 5517,
+        "sha256": "730da8f2bf0bfe139645705a99e2906c3e8947a910220e3b178feeabac99252b"
       },
       {
         "path": "frontend/app/queststore.js",
@@ -738,13 +738,13 @@
       },
       {
         "path": "frontend/app/stationqueststore.js",
-        "bytes": 12379,
-        "sha256": "6e0a08b809c334f96460ce7b02c04fcc59622d13fb5ceccc017542cf125e87e5"
+        "bytes": 12386,
+        "sha256": "205d7e31999f8a650ce62b942869d4ee28b0a1c397f48575ef1e63b2070cf492"
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 605665,
-        "sha256": "41590b295ca03588d18f5450e9d288f28025c3ee4026c598a8c6f4da8f14dddd"
+        "bytes": 606408,
+        "sha256": "948a3b77b4d5e25140da1a249cb3db07f009133466377ac515a0fba143705fd4"
       },
       {
         "path": "frontend/app/study.js",
@@ -923,8 +923,8 @@
       },
       {
         "path": "frontend/app/workqueststore.js",
-        "bytes": 10502,
-        "sha256": "9517cd2ca7228cabb5a6c6503483a64a711cb34fb698e34f53cb6c7c443adedb"
+        "bytes": 10509,
+        "sha256": "62961664d2a6de4f8c0d2a373ebef55dfc996740fcf209c0318206201c52944f"
       },
       {
         "path": "frontend/app/workshopstore.js",
@@ -973,8 +973,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 360846,
-        "sha256": "d544dd8f61548526521bd7764c1603016fbc5535510b9ceb0e334575d307ddbc"
+        "bytes": 361583,
+        "sha256": "352f6336e1e1231d5d79b7cbe9d18a54981c50d451772b1702ccb295eb89e612"
       },
       {
         "path": "frontend/css/asciifx.css",
