@@ -2788,7 +2788,19 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-dot.seen { background: var(--ph-dim); box-shadow: none; }
 .ws-dot.unseen { background: var(--gold); box-shadow: 0 0 7px rgba(var(--gold-rgb), .6); }
 .ws-dot.working { background: var(--ph-bright); animation: wsPulse 1.15s ease-in-out infinite; }
-.ws-dot.needsyou { background: var(--gold); animation: wsPulse 1.15s ease-in-out infinite; }
+/* NEEDS YOU gets its own RHYTHM, not just its own colour — faster, and dipping harder. The six
+   preset themes separate --gold from --ph-bright by ΔE 38-57, so colour alone would do there; the
+   CUSTOM theme does not. Its --gold is the base hue rotated +42°, and hue is meaningless at low
+   saturation, so a user who drags SATURATION toward 0 collapses the pair to two greys (measured:
+   ΔE 65 at sat 100, 44 at 60, 23 at 25, 17 at 0). Both states pulse, so at that end the ONLY thing
+   telling "the agent is working" from "it is blocked on you" would be a small lightness step.
+   Rhythm survives every palette, and this is the one state on a fail-closed deny timer — so the
+   more urgent beat is honest rather than decorative. */
+.ws-dot.needsyou { background: var(--gold); animation: wsPulseUrgent .72s ease-in-out infinite; }
+@keyframes wsPulseUrgent {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(var(--gold-rgb), .7); }
+  50% { opacity: .18; box-shadow: 0 0 2px rgba(var(--gold-rgb), .3); }
+}
 /* the right-edge token joins whatever the dot is saying, so the two never disagree */
 .ws-dot.unseen ~ .ws-meta { color: var(--gold); letter-spacing: .5px; text-shadow: 0 0 6px rgba(var(--gold-rgb), .45); }
 @keyframes wsPulse {
