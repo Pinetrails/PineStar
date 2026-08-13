@@ -159,6 +159,20 @@ const clock = { now: () => clk };
   A.eq(cappedTrace.toolTrace[0].ms, 0, 'negative tool durations clamp to zero');
   A.ok(cappedTrace.toolTrace[0].summary.length <= 240, 'tool summaries are bounded');
 
+  // ---- recovery telemetry: bounded failure classification + only dispatched mutations ----
+  const recovery = s.record({
+    runId: 'recovery-trace', failureStage: 'tool_result_persist', failureCode: 'recovery-journal-failed',
+    uncertainMutations: [
+      { callId: 'c-write', name: 'fs.write', mutating: true, state: 'dispatched' },
+      { callId: 'c-read', name: 'fs.read', mutating: false, state: 'dispatched' },
+      { callId: '', name: 'bad', mutating: true }
+    ]
+  });
+  A.eq(recovery.failureStage, 'tool_result_persist', 'failure lifecycle stage persists');
+  A.eq(recovery.failureCode, 'recovery-journal-failed', 'stable failure code persists');
+  A.eq(recovery.uncertainMutations, [{ callId: 'c-write', name: 'fs.write', mutating: true, state: 'dispatched' }], 'only valid dispatched mutations persist as uncertainty');
+  A.eq(s.record({ runId: 'recovery-defaults' }).uncertainMutations, [], 'legacy and ordinary rows default to no asserted uncertainty');
+
   // ---- (P1.2 identity-honesty) identityFallback rides the row: honest marker when the agentId missed the roster ----
   A.eq(s.record({ runId: 'w9', agentId: 'a', reason: 'done', identityFallback: true }).identityFallback, true, 'identityFallback:true recorded on a fallback run (was not the named specialist)');
   A.eq(s.record({ runId: 'w10', agentId: 'a', reason: 'done' }).identityFallback, false, 'missing identityFallback defaults to false (old rows / normal runs are not falsely flagged)');

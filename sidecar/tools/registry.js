@@ -11,7 +11,8 @@
 
    dispatch order (each step short-circuits to an isError result; run() is reached only if all pass):
      parseError -> unknown-tool -> capability gate (ctx.canUse) -> schema-validate ->
-     consent gate (tool.requiresConsent && ctx.consent) -> per-tool timeout -> run() once. */
+     consent gate (tool.requiresConsent && ctx.consent) -> pre-tool hook -> durable dispatch callback ->
+     per-tool timeout -> run() once. */
 'use strict';
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) {
@@ -244,6 +245,20 @@
       const startedAt = (ctx.clock && typeof ctx.clock.now === 'function') ? ctx.clock.now() : 0;
       const elapsed = () => ((ctx.clock && typeof ctx.clock.now === 'function') ? ctx.clock.now() - startedAt : 0);
       try {
+        // This is the final host-owned seam before tool.run can begin. The run journal uses it to distinguish a
+        // merely prepared mutation (safe to retry) from a dispatched mutation (outcome uncertain after a crash).
+        // A failed callback returns a terminal error and the tool is NOT invoked; registry.dispatch still honors
+        // its never-throw contract.
+        if (typeof ctx.beforeToolExecute === 'function') {
+          let boundary;
+          try { boundary = await ctx.beforeToolExecute(call, tool); }
+          catch (e) {
+            boundary = Object.assign(errResult('tool dispatch boundary failed: ' + ((e && e.message) || String(e)), 'dispatch-boundary-failed'), {
+              control: { final: true, reason: 'error', text: 'I stopped before the tool ran because its dispatch boundary failed.' }
+            });
+          }
+          if (boundary && boundary.ok === false) return boundary;
+        }
         const out = await withTimeout(tool.run(call.args, runCtx), timeoutMs, () => { try { ac.abort(new Error('tool timeout')); } catch (_) { try { ac.abort(); } catch (_) {} } });
         const shaped = (out && typeof out === 'object' && 'content' in out);
         const raw = shaped ? out.content : (out == null ? '' : out);

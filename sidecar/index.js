@@ -79,7 +79,7 @@ const { makeRunExecutionState } = require('./run-execution-state.js'); // one li
 const transcriptStoreModule = require('./transcriptstore.js');
 const { makeTranscriptStore } = transcriptStoreModule;
 const TRANSCRIPT_PERSISTED = transcriptStoreModule._internals && transcriptStoreModule._internals.PERSISTED;
-const { makeRunJournal } = require('./run-journal.js');
+const { makeRunJournal, DISPATCH_BOUNDARY_MODEL } = require('./run-journal.js');
 const RunRecovery = require('./run-recovery.js');
 const { makeSegmentedTranscriptIo } = require('./transcript-history.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
@@ -14048,25 +14048,47 @@ async function runOnce(o) {
         }
       });
     }
-    // Persist the exact call before it can have side effects. If the process dies after this barrier but before a
-    // durable result, restart classifies the outcome as unknown and never replays it automatically.
+    // Persist the exact prepared call before registry gates run. The separate last-moment toolDispatch record
+    // below is what means "the effect may already have happened"; prepared-only calls are safe to retry.
     const fatalToolBoundary = (stage, cause) => {
       const detail = String((cause && cause.message) || cause || 'unknown failure');
+      execution.recordFailure('tool_' + stage + '_persist', 'recovery-journal-failed');
       const e = new Error('tool outcome could not be durably established (' + stage + '): ' + detail);
       e.fatalToRun = true;
       return e;
     };
     if (execution.journalStarted()) {
       try {
+        const mutating = !!(liveTool && liveTool.scope !== 'read');
         runJournal.toolIntent(runId, {
           callId: c.id, name: c.name, argsRaw: c.argsRaw || '{}',
           replayFingerprint: RunRecovery.replayFingerprint(c.name, c.argsRaw || '{}'),
-          mutating: !!(liveTool && liveTool.scope !== 'read')
+          mutating, boundaryModel: DISPATCH_BOUNDARY_MODEL
         });
+        execution.markToolPrepared({ callId: c.id, name: c.name, mutating });
       } catch (e) {
         // No tool may execute after the recovery barrier itself failed.
         throw fatalToolBoundary('intent', e);
       }
+    }
+    if (execution.journalStarted()) {
+      dctx = Object.assign({}, dctx, {
+        beforeToolExecute: async (call, tool) => {
+          const mutating = !!(tool && tool.scope !== 'read');
+          try {
+            runJournal.toolDispatch(runId, {
+              callId: call.id, name: call.name,
+              replayFingerprint: RunRecovery.replayFingerprint(call.name, call.argsRaw || '{}'),
+              mutating
+            });
+            execution.markToolDispatched(call.id);
+            return null;
+          } catch (e) {
+            // Registry consumes this terminal result and, critically, never invokes tool.run.
+            return execution.failJournal(e, { beforeDispatch: true, stage: 'tool_dispatch_persist' });
+          }
+        }
+      });
     }
     let r;
     try {
@@ -14074,12 +14096,13 @@ async function runOnce(o) {
       if (DomainTask.isTargetFetch(c, directDomainTask) && DomainTask.isDomainMissing(r)) {
         r = Object.assign({}, r, { control: Object.assign({}, r && r.control, DomainTask.stopControl(directDomainTask)) });
       }
-      // Persist the full model-visible result before the loop advances to another call/turn. Once intent is
+      // Persist the full model-visible result before the loop advances to another call/turn. Once dispatch is
       // durable, any exception before this result boundary means the side effect is unknown and must end the run.
-      if (execution.journalStarted()) runJournal.toolResult(runId, {
+      if (execution.journalStarted() && !execution.journalFailed()) runJournal.toolResult(runId, {
         callId: c.id, ok: !!(r && r.ok), isError: !!(r && r.isError),
         content: r && r.content != null ? r.content : '', summary: r && r.summary ? r.summary : ''
       });
+      if (execution.journalStarted() && !execution.journalFailed()) execution.markToolSettled(c.id);
     } catch (e) {
       if (execution.journalStarted()) throw fatalToolBoundary('result', e);
       throw e;
@@ -14729,7 +14752,7 @@ async function runOnce(o) {
         }
       }
       const runEndedAt = Date.now();
-      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), failureStage: execution.failureStage(), failureCode: execution.failureCode(), uncertainMutations: execution.uncertainMutations(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new

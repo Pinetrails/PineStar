@@ -55,6 +55,8 @@
   const DELIVERY_TEXT_MAX = 24000;
   const TOOL_TRACE_MAX = 200;
   const TOOL_SUMMARY_MAX = 240;
+  const FAILURE_FIELD_MAX = 80;
+  const UNCERTAIN_MUTATIONS_MAX = 200;
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
   function nonnegative(v) { return Math.max(0, num(v)); }
   function str(v) { return v == null ? '' : String(v); }
@@ -112,6 +114,20 @@
     return out;
   }
 
+  function uncertainMutationList(v) {
+    if (!Array.isArray(v)) return [];
+    const out = [];
+    for (const item of v) {
+      if (out.length >= UNCERTAIN_MUTATIONS_MAX) break;
+      if (!item || typeof item !== 'object') continue;
+      const callId = str(item.callId).slice(0, 100);
+      const name = str(item.name).slice(0, 80);
+      if (!callId || item.mutating !== true) continue;
+      out.push({ callId, name, mutating: true, state: 'dispatched' });
+    }
+    return out;
+  }
+
   // RAM mirror ceiling: the largest served query is list({ limit: 1000 }) (insights) / 500 (run list), so keep
   // generous headroom (~3x) and splice the oldest off when the in-process mirror grows past it. On-disk history
   // stays complete (the append-only log + its rotated segment); only the RAM mirror is bounded so a 24/7 process
@@ -157,6 +173,9 @@
         internal: !!e.internal,                 // progression catch-up excludes harness self-talk from agent work
         clarifying: !!e.clarifying,             // additive outcome truth; `reason` remains the execution terminal
         toolTrace: toolTraceList(e.toolTrace),
+        failureStage: str(e.failureStage).trim().slice(0, FAILURE_FIELD_MAX),
+        failureCode: str(e.failureCode).trim().slice(0, FAILURE_FIELD_MAX),
+        uncertainMutations: uncertainMutationList(e.uncertainMutations),
         startedAt: nonnegative(e.startedAt), endedAt: nonnegative(e.endedAt), durationMs: nonnegative(e.durationMs),
         ts: num(e.ts) || clock.now()
       };

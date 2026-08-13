@@ -55,6 +55,18 @@ A.ok(state.journalFailed(), 'a journal boundary failure latches for the rest of 
 A.ok(journalStop.isError && journalStop.control && journalStop.control.final && journalStop.control.reason === 'error',
   'journal failure returns a host-terminal error result instead of allowing a done synthesis');
 A.ok(/requires review/i.test(journalStop.content), 'the model-visible result names the uncertain outcome');
+state.markToolPrepared({ callId: 'mutation-1', name: 'fs.write', mutating: true });
+A.eq(state.uncertainMutations(), [], 'prepared mutation is not yet uncertain');
+state.markToolDispatched('mutation-1');
+A.eq(state.uncertainMutations().map(x => x.callId), ['mutation-1'], 'dispatched unsettled mutation is exposed for durable telemetry');
+state.markToolSettled('mutation-1');
+A.eq(state.uncertainMutations(), [], 'durable result settlement clears mutation uncertainty');
+A.eq(state.failureStage(), 'tool_result_persist', 'journal failure records its exact lifecycle stage');
+A.eq(state.failureCode(), 'recovery-journal-failed', 'journal failure records a stable machine code');
+const preDispatchState = makeRunExecutionState();
+const preDispatchStop = preDispatchState.failJournal(new Error('disk full'), { beforeDispatch: true });
+A.ok(/not started/i.test(preDispatchStop.content), 'pre-dispatch journal failure never implies the tool returned');
+A.eq(preDispatchState.failureStage(), 'tool_dispatch_persist', 'pre-dispatch persistence has its own failure stage');
 state.observeArtifact({ toolName: 'fs.write' });
 A.eq(state.artifactList(), [{ toolName: 'fs.write' }], 'artifact collector is owned by the run state');
 
