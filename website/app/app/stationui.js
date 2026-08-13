@@ -1009,7 +1009,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     try { w.focus(); } catch (_) {}
     syncBB(); syncScrim();
   }
-  function rerender(key) { if (open[key]) open[key]._render(true); }
+  /* swap=false → no body crossfade: a DATA poke repaints in place (the taskboard's kbLive precedent at
+     `open.tasks._render(false)`). Default stays true so every existing caller — user-driven swaps —
+     keeps its fade. Store pokes (quests) pass false: a background poll must never visibly blink a
+     panel the Commander is reading. */
+  function rerender(key, swap) { if (open[key]) open[key]._render(swap !== false); }
   function syncBB() {
     document.querySelectorAll('.bb[data-term]').forEach(b => b.classList.toggle('active', !!open[b.dataset.term]));
   }
@@ -7599,7 +7603,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const existing = (w.list ? w.list() : []).find(s => s && !s.archived && s.title === title);
     let sid = existing ? existing.id : null;
     if (!sid) {
-      const made = w.create(title, { activate: false, agentId: (heroAgent() && heroAgent().id) || 'agent' });
+      // a ledger quest names the agent that minted it — its session binds to THAT agent; kinds that carry
+      // no agent (station work, builds) fall to the hero, same as the away-workshop queue path.
+      const boundAgent = (q.agentId && String(q.agentId)) || (heroAgent() && heroAgent().id) || 'agent';
+      const made = w.create(title, { activate: false, agentId: boundAgent });
       sid = made && made.id;
       if (sid) persistWS();
     }
@@ -8118,7 +8125,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
     manual:   ['FIELD MANUAL',           body => { if (typeof Tutorial !== 'undefined' && Tutorial.fillFieldManual) Tutorial.fillFieldManual(body); }, { w: '640px' }],
-    quests:   ['QUEST LOG',              buildQuests,    { w: '1000px' }],   // a card grid, not a column: 560px forced 4 quest cards into ~130px each
+    quests:   ['QUEST LOG',              buildQuests,    { w: '1000px', className: 'quests-win' }],   // a card grid, not a column (560px forced 4 cards into ~130px); quests-win = STEADY height so a data poke can never re-centre the window mid-read
   };
 
   /* ============== EXTRACTED-WINDOW SEAM (frontend/app/windows/*.js) ==============

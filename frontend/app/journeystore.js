@@ -43,7 +43,7 @@ const JourneyStore = (() => {
       try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('◆ station vector evolved — ' + name, 'gold'); } catch (_) {}
     }
     seeded = true;
-    try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests'); } catch (_) {}
+    try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests', false); } catch (_) {}
     return true;
   }
 

@@ -52,7 +52,7 @@ const GoalStore = (() => {
 
   function load() { try { const raw = localStorage.getItem(KEY); return raw ? JSON.parse(raw) : null; } catch (_) { return null; } }
   function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (_) {} }
-  function poke() { try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests'); } catch (_) {} }
+  function poke() { try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests', false); } catch (_) {} }
 
   // defensively rebuild the persisted slice — every goal + milestone re-validated, junk dropped (never a crash).
   function hydrate(raw) {

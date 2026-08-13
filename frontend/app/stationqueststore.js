@@ -113,7 +113,7 @@ const StationQuestStore = (() => {
   }
 
   // if the log is open, refresh it so the new pin/row lands immediately (a no-op when closed).
-  function poke() { try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests'); } catch (_) {} }
+  function poke() { try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests', false); } catch (_) {} }
 
   /* ---------- the STANDING candidate (a non-tool gap folded through the same engine) ----------
      The STUDIO gap needs no special case: it's a plain tool-gap — the moment an `image_generate` fires in a

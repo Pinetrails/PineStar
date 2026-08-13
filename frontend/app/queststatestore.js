@@ -55,7 +55,7 @@ const QuestStateStore = (() => {
     flourish[q.id] = Date.now() + FLOURISH_MS;
     try { if (typeof SFX === 'object' && SFX.quest) SFX.quest(); } catch (_) {}
     if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('⚑ quest complete — ' + (q.title || q.id), 'gold');
-    if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests');   // if the log is open, the row flashes gold NOW (rerender is a no-op when closed)
+    if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests', false);   // if the log is open, the row flashes gold NOW (rerender is a no-op when closed)
     // COMMS: the terse quest-complete broadcast — an ambient system line, not a beat-slot card (coalesced +
     // in-game-gated inside Chat.broadcast, so it never competes with the post-run ask chain).
     if (typeof Chat !== 'undefined' && Chat.broadcast) {

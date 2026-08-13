@@ -126,12 +126,26 @@
       }
     }
 
-    // 2) get-to-know-you quests — one per dossier dimension.
+    // 2) get-to-know-you quests — one per dossier dimension. Each says what the station DOES with that
+    //    dimension (all of these are true: the dossier rides every agent's system prompt), because nine
+    //    cards repeating one generic sentence read as one wall — the reader can't tell why THIS one
+    //    matters. Unknown/new dimensions keep the honest generic line rather than inventing a claim.
+    const DIM_WHY = {
+      identity: 'who you are frames how every agent addresses you and pitches its work.',
+      stack: 'agents reach for the tools you actually use instead of guessing.',
+      goals: 'suggested work gets weighed against what you’re actually trying to reach.',
+      style: 'agents match how you like work done — depth, pace, and format.',
+      standing_orders: 'rules every agent follows on every run, without being reminded.',
+      pain: 'the work that eats your time becomes the work agents offer to take.',
+      ambition: 'the things you never find time for become work the station can pick up.',
+      people: 'output lands in the right voice for whoever it’s really for.',
+      schedule: 'work and check-ins land when you’re actually at the desk.'
+    };
     for (const d of dims) {
       if (!d || !d.key) continue;   // a dimension needs a real key — no key, no quest (never a 'dim:null')
       const label = String(d.label || d.key).trim();
       if (!label) continue;
-      const q = { id: 'dim:' + d.key, kind: 'dossier', title: 'Tell the station your ' + label.toLowerCase(), desc: 'every agent on the station will know this about you.', reward: 'sharper, personalized agents', status: d.known ? 'done' : 'open' };
+      const q = { id: 'dim:' + d.key, kind: 'dossier', title: 'Tell the station your ' + label.toLowerCase(), desc: DIM_WHY[d.key] || 'every agent on the station will know this about you.', reward: 'sharper, personalized agents', status: d.known ? 'done' : 'open' };
       (d.known ? done : open).push(q);
     }
 

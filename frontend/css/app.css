@@ -3366,6 +3366,14 @@ body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
 .q-actions .q-queue { margin-left: 0; flex: 0 0 auto; border-color: var(--ph-glow2); padding: 4px 7px; }
 /* the lede sits under the OPEN heading now — quiet, one line, never competing with the cards */
 .q-lede { margin: -2px 0 9px; font-size: 10.5px; opacity: .6; }
+/* STEADY SHELL, the `.term.console.dossier`/`.dlv-win` reasoning: quest data changes (a fold, a poke, a
+   completed step) change content height, and a never-moved window is CSS-centred — content-fit height
+   would re-centre the whole window on every such change, sliding the card the Commander is reading out
+   from under their eyes. Fixed height; the quest list scrolls inside instead.
+   `--con-h` is declared on `.term.console`, which this window is NOT — restate the same formula here
+   (an undefined var would make the height silently invalid → back to content-fit, the bug this exists
+   to prevent). */
+.term.quests-win { --con-h: min(var(--term-band, calc(78vh * var(--sn-unzoom, 1))), 720px); height: var(--con-h); }
 
 /* ---- QUEST LOG rhythm: one vertical scale for the whole panel ----
    The window is now wide enough that inconsistent gutters read as sloppiness rather than density. These

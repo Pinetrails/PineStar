@@ -79,6 +79,31 @@ const REFRESH_BTN = `(async () => {
     refreshLine: (document.querySelector('.q-refresh, .gx-quests .q-refresh-line') || {}).textContent || '' });
 })()`;
 
+// SWEEP CHECKS (2026-08-13): steady shell, crossfade-free data pokes, distinct dossier explanations.
+const SWEEP = `(async () => {
+  const win = [...document.querySelectorAll('.term')].find(t => /QUEST LOG/.test(t.textContent));
+  const body = win.querySelector('.term-body') || win;
+  const h1 = getComputedStyle(win).height;
+  // 1) a DATA poke must not blink: clear any prior crossfade class, poke as data, class must stay absent.
+  body.classList.remove('swap-in');
+  StationUI.rerender('quests', false);
+  await new Promise(r => setTimeout(r, 150));
+  const dataPokeBlinks = body.classList.contains('swap-in');
+  StationUI.rerender('quests');   // a user-driven swap still fades (the default is unchanged)
+  await new Promise(r => setTimeout(r, 150));
+  const userSwapFades = body.classList.contains('swap-in');
+  // 2) content change must not resize/re-centre the steady shell.
+  WorkQuestStore.accept({ title: 'Sweep probe quest', build: { kind: 'freeform' } });
+  await new Promise(r => setTimeout(r, 400));
+  const h2 = getComputedStyle(win).height;
+  // 3) dossier cards explain WHY each dimension matters — distinct sentences, not one repeated wall.
+  const dossierDescs = [...document.querySelectorAll('.q-open .q-card')]
+    .filter(c => /ABOUT YOU/.test(c.textContent)).map(c => c.querySelector('.sub').textContent.trim());
+  return JSON.stringify({ steadyHeight: h1 === h2, h1, h2, dataPokeBlinks, userSwapFades,
+    dossierCount: dossierDescs.length, distinctDescs: new Set(dossierDescs).size,
+    sample: dossierDescs.slice(0, 3) });
+})()`;
+
 // Stage a REAL work quest through the shipped mint seam (WorkQuestStore.accept — the same call an accepted
 // pitch makes). Nothing is hand-written into the panel: the card comes from the store's own projection.
 const STAGE_WORK_QUEST = `(async () => {
@@ -138,6 +163,7 @@ const START_QUEST = `(async () => {
     console.log('refresh    ->', await evalJS(cdp, REFRESH_BTN));
     console.log(' shot      ->', JSON.stringify(await capture(cdp, OUT, '2-after-refresh')));
 
+    console.log('sweep      ->', await evalJS(cdp, SWEEP));
     console.log('stage work ->', await evalJS(cdp, STAGE_WORK_QUEST));
     console.log('startquest ->', await evalJS(cdp, START_QUEST));
     console.log(' shot      ->', JSON.stringify(await capture(cdp, OUT, '3-quest-session')));

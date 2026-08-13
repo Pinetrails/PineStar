@@ -34,7 +34,7 @@ const MaintQuestStore = (() => {
   const MIN = () => (typeof MaintQuests !== 'undefined' && MaintQuests.MIN_HITS) || 2;
 
   // if the log is open, refresh it so the new/cleared row lands immediately (a no-op when closed).
-  function poke() { try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests'); } catch (_) {} }
+  function poke() { try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests', false); } catch (_) {} }
 
   /* ---------- the SLAG source: tally the live ring, mint recurring causes, clear cleared ones ---------- */
   function ring() { try { return (typeof World !== 'undefined' && World.slagPostmortems) ? (World.slagPostmortems() || []) : []; } catch (_) { return []; } }
