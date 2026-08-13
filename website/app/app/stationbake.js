@@ -467,6 +467,32 @@ const StationBake = (() => {
      kind of silent regression this file's whole raster discipline exists to prevent). */
   const SHAPE = { cornerN: 1 };   // 1 = 45° chamfer (2026-08-08) · 2 = the legacy circular fillet
 
+  /* THE CORNER PROFILE LIVES HERE, AND NOWHERE ELSE (2026-08-13).
+     `reach(rad, a)` is how far the corner's edge stands out from the centre line at distance `a`
+     along it — the ONE crossing function the note above promises every concentric layer follows.
+     It did not: `bakeCornerCrown` was a SECOND PAINTER drawing the same corner from its own
+     hardcoded `sqrt(r² - a²)`, so the knob moved the deck cut and the hull rim while the crown ring
+     and the inner boundary the wall face stops on both stayed circular. Between a chamfered deck cut
+     and a circular face limit lies a lens of tile — widest at exactly 45°, tapering to nothing at
+     both ends — that the deck cut had already filled with the room's HULL tone and nothing ever
+     painted over. That is the black wedge Andrew circled at the bottom corners: "i cant stand how
+     the edge of the shell is showing on the bottom left and right sides".
+     Same law the lane that introduced the knob wrote down after the silhouette outline fooled it:
+     ⛔ WHEN A SHAPE KNOB LOOKS INERT, FIND THE SECOND PAINTER DRAWING THAT EDGE FROM ITS OWN MATHS.
+     n === 2 keeps the original sqrt verbatim — see the SHAPE note. */
+  const cornerExp = () => Math.max(0.35, +SHAPE.cornerN || 2);
+  const cornerReach = (rad, a) => {
+    const n = cornerExp();
+    return n === 2 ? Math.sqrt(rad * rad - a * a) : rad * Math.pow(1 - Math.pow(a / rad, n), 1 / n);
+  };
+  /* ...and its inverse question: which of the profile's nested outlines does (dx, dy) sit on? This
+     is the radius for a circle and |dx| + |dy| for a 45° chamfer — the measure that makes "depth in
+     from the edge" mean the same thing at 45° as it does on the straight run. */
+  const cornerNorm = (dx, dy) => {
+    const n = cornerExp(), adx = Math.abs(dx), ady = Math.abs(dy);
+    return n === 2 ? Math.sqrt(dx * dx + dy * dy) : Math.pow(Math.pow(adx, n) + Math.pow(ady, n), 1 / n);
+  };
+
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },
     tr: { cx: 0, cy: 1, a0: 1.5 * Math.PI, a1: 2 * Math.PI },
@@ -498,11 +524,9 @@ const StationBake = (() => {
     const A = CORNER[kind];
     const ox = Math.round(A.cx ? ax - rad : ax), oy = Math.round(A.cy ? ay - rad : ay);
     const r = Math.round(rad);
-    const n = Math.max(0.35, +SHAPE.cornerN || 2);
-    // how far the profile reaches out from the corner's centre line at vertical distance `ady`.
-    // n === 2 is the original sqrt, written out, so the fillet rasters to the same pixels it always did.
-    const reach = (ady) => (n === 2 ? Math.sqrt(r * r - ady * ady)
-                                    : r * Math.pow(1 - Math.pow(ady / r, n), 1 / n));
+    // how far the profile reaches out from the corner's centre line at vertical distance `ady` —
+    // the shared crossing function, so this walk and bakeCornerCrown's cannot drift apart again.
+    const reach = (ady) => cornerReach(r, ady);
     for (let py = oy; py < oy + r; py++) {
       const ady = Math.abs(py + 0.5 - ay);
       const ex = ady >= r ? null : (A.cx ? Math.round(ax - reach(ady))
@@ -2473,7 +2497,11 @@ const StationBake = (() => {
       if (!record) return;
       for (let ix = x0; ix < x1; ix++) { const p = record.get(ix); if (p === undefined || y0 < p) record.set(ix, y0); }
     };
-    const K = HR * Math.SQRT1_2;              // the 45° split between the two duals
+    /* the 45° split between the two duals — where the profile's own reach equals the distance along
+       it, i.e. rad·2^(-1/n). At n = 2 that is the circle's HR/√2, written verbatim; at n = 1 (the
+       shipped chamfer) it is HR/2, and using the circle's split there handed a slab of the chamfer
+       to the wrong walk. */
+    const K = cornerExp() === 2 ? HR * Math.SQRT1_2 : HR * Math.pow(2, -1 / cornerExp());
     /* arc length of a point on the ring, measured from the corner's horizontal. Both duals feed the
        SAME measure, so the pattern runs unbroken across the 45° handoff between them. */
     const sOf = (px, py) => HR * Math.atan2(Math.abs(py + 0.5 - cy), Math.abs(px + 0.5 - ax));
@@ -2491,9 +2519,12 @@ const StationBake = (() => {
     const faceMap = (px, py) => {
       const dx = px + 0.5 - ax, dy = py + 0.5 - cy;
       const ang = Math.atan2(Math.abs(dy), Math.abs(dx));
-      const r = Math.sqrt(dx * dx + dy * dy);
+      const r = cornerNorm(dx, dy);
       const w = crownEase(Math.min(1, (HR * ang) / arcEnd), capW, capFar);
-      /* ALONG IS THE PIXEL'S OWN WORLD X — the BACK WALL'S axis — not arc length.
+      /* DEPTH IS MEASURED IN THE PROFILE'S OWN NORM (cornerNorm), not as a Euclidean radius: the
+         face's concentric bands have to run PARALLEL to the edge they hang off, and on a chamfer a
+         circle's radius crosses that edge at every angle but 0 and 90. Identical at n = 2.
+         ALONG IS THE PIXEL'S OWN WORLD X — the BACK WALL'S axis — not arc length.
          Arc length is the truer surface coordinate and it is what the hull's skirt uses, but here it
          aliases badly: `a = HR·ang` makes the marks RADIAL, so they converge as the radius falls and
          at the inner edge a 4px material (RIBBED) lands ~2.5px apart and beats into a checkerboard.
@@ -2511,13 +2542,13 @@ const StationBake = (() => {
     const deckXAt = py => {
       const ady = Math.abs(py + 0.5 - ay);
       if (ady >= Rc) return null;
-      const d = Math.sqrt(Rc * Rc - ady * ady);
+      const d = cornerReach(Rc, ady);
       return outX < 0 ? Math.round(ax - d) : Math.round(ax + d);
     };
     const deckYAt = ix => {
       const adx = Math.abs(ix + 0.5 - ax);
       if (adx >= Rc) return null;
-      const d = Math.sqrt(Rc * Rc - adx * adx);
+      const d = cornerReach(Rc, adx);
       return outY < 0 ? Math.round(ay - d) : Math.round(ay + d);
     };
     // ROW dual — the steep stretch (and the vertical run below it), where the ring hands off to
@@ -2527,7 +2558,7 @@ const StationBake = (() => {
       if (t >= HR) continue;                                      // past the top of the arc
       if (t > K) continue;                                        // shallow — the column dual owns it
       // below the arc's widest point the outline is simply the straight run at the e/w wall's edge
-      const off = t <= 0 ? HR : Math.sqrt(HR * HR - t * t);
+      const off = t <= 0 ? HR : cornerReach(HR, t);
       const ex = outX < 0 ? Math.round(ax - off) : Math.round(ax + off) - 1;   // -1: see the half-open note above
       const w = crownEase(Math.max(0, t) / HR, capW, capFar);
       const dx = deckXAt(py), inner = dx == null ? (outX < 0 ? X + T : X - 1) : dx;
@@ -2550,7 +2581,7 @@ const StationBake = (() => {
     for (let ix = xLo; ix < xHi; ix++) {
       const adx = Math.abs(ix + 0.5 - ax);
       if (adx >= K) continue;                                     // steep — the row dual owns it
-      const s = Math.sqrt(HR * HR - adx * adx);
+      const s = cornerReach(HR, adx);
       const ey = outY < 0 ? Math.round(cy - s) : Math.round(cy + s) - 1;       // -1: see the half-open note above
       const w = crownEase(s / HR, capW, capFar);
       const dy = deckYAt(ix), inner = dy == null ? (outY < 0 ? Y + T : Y - 1) : dy;
