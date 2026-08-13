@@ -738,6 +738,7 @@
 <script src="app/autonomy.js"></script>
 <script src="app/nightreport.js"></script><!-- NS-4: pure MORNING-REPORT engine (night-shift status+ledger+drafts → one honest digest; local-time formatting) -->
 <script src="app/autojobs.js"></script>
+<script src="app/cronhuman.js"></script><!-- pure schedule TRANSLATOR: picker state <-> a schedule sidecar/cron.js parses, and cron's own display -> plain English -->
 <script src="app/autopilot.js"></script>
 <script src="app/permissions.js"></script>
 <script src="app/trust.js"></script><!-- GROWTH Tier 3: pure EARNED-AUTONOMY engine (track record → trust) — folds run/feedback outcomes, mints consent-gated dial-raise/grant offers, demotes on a bad streak -->
@@ -801,6 +802,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/windows/rewind.js"></script><!-- RESTORE dossier lane — per-agent workspace checkpoints, two-step confirmed restore (mounts in the AGENTS dossier) -->
 <script src="app/windows/outbox.js"></script><!-- OUTBOX — FINISHED WORK: uncollected finished runs, readable + rateable accordion -->
 <script src="app/windows/automation.js"></script><!-- AUTOMATION — the merged ROUTINES+LOOPS console window; owns the window slot + the lane registry the next two files register into -->
+<script src="app/schedpicker.js"></script><!-- the WHEN builder (cadence keys + day chips + clock) the ROUTINES lane mounts; types a real schedule into the same text input the form always posted -->
 <script src="app/windows/routines.js"></script><!-- ROUTINES lane — scheduled autonomous runs (thin CRUD client over /api/cron) -->
 <script src="app/windows/loops.js"></script><!-- LOOPS lane — standing objectives (thin polling client over /api/loops); needs loop-templates.js above -->
 <script src="app/windows/connectors.js"></script><!-- TOOLSETS & CONNECTORS — toolset kill-switches, MCP manager, catalog + service keys (Spotify flow embedded) -->

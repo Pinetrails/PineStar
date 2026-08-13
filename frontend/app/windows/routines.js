@@ -12,6 +12,34 @@
   const consoleSection = H.consoleSection;
   let routineAgentId = 'agent'; // selected roster agent for new scheduled routines (window-local state)
 
+  // the browser's IANA zone, or undefined when the runtime won't resolve one (then the host default
+  // applies server-side, exactly as before). Sent with every create / preview / reschedule so all three
+  // agree about which 9:00 they mean.
+  function deviceTz() {
+    try { return (Intl.DateTimeFormat().resolvedOptions().timeZone) || undefined; } catch (_) { return undefined; }
+  }
+  /* an authoritative ISO instant -> the viewer's own wall clock ("Thu, Aug 13, 5:30 PM EDT"). Pure
+     display: the instant comes from the server's schedule math, this only decides which clock face it is
+     read off. '' when the runtime has no Intl/zone, so callers fall back to the server's own rendering. */
+  function wallClock(iso) {
+    const t = Date.parse(String(iso || ''));
+    if (isNaN(t)) return '';
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+        hour12: true, timeZoneName: 'short'
+      }).format(t);
+    } catch (_) { return ''; }
+  }
+  /* cron.js's display string -> the sentence we actually show ("cron 0 9 * * 2" -> "every Tuesday at
+     9:00 AM"). CronHuman falls back to the RAW display for any shape it cannot state exactly, and so do
+     we if the module is missing — a schedule label never guesses. */
+  function human(display) {
+    return (typeof CronHuman !== 'undefined' && CronHuman.describeDisplay)
+      ? CronHuman.describeDisplay(display, { tz: deviceTz() })
+      : String(display == null ? '' : display);
+  }
+
   /* ============== ROUTINES — scheduled autonomous runs (server-owned cron) ==============
      A routine wakes on a schedule and runs the agent UNATTENDED. The definitions live SERVER-side
      (schedule + boot-frozen secrets never touch the browser), so this panel is a thin CRUD client over
@@ -58,12 +86,18 @@
         // floor does NOT grant them here. Users were writing "run my tests nightly" routines, getting nothing,
         // and placing a workbench to fix it. Say both halves where the routine is actually written.
         'Web, files, memory, images and the browser all work. The <b>terminal</b> and your <b>connected tools</b> are ' +
-        'off unless you grant them below — placing a WORKBENCH on the floor does not grant them to a routine. ' +
-        '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", "0 9 * * *", or an ISO timestamp like 2026-07-01T09:00.)</span></div></div>' +
+        'off unless you grant them below — placing a WORKBENCH on the floor does not grant them to a routine.</div></div>' +
       '<div class="mc-form">' +
         '<input id="rt-name" class="key-input" placeholder="name — e.g. Morning AI brief" maxlength="80" autocomplete="off">' +
         '<textarea id="rt-prompt" class="key-input" rows="2" placeholder="what should it do each run? e.g. search for new AI-policy news and summarize the top 3" style="resize:vertical"></textarea>' +
-        '<input id="rt-sched" class="key-input" placeholder="schedule — every 30m · 0 9 * * * · in 2h" autocomplete="off">' +
+        // WHEN — the schedule PICKER (frontend/app/schedpicker.js). It owns the `#rt-sched` text input and
+        // types into it, so the preview below, #rt-add, the QA journey and every existing selector are
+        // unchanged; without the module we fall back to that same bare input, never to a dead form.
+        '<div class="rt-when" id="rt-when"><div class="rt-when-k">WHEN SHOULD IT RUN?</div>' +
+        (typeof SchedPicker !== 'undefined'
+          ? SchedPicker.html({ inputId: 'rt-sched' })
+          : '<input id="rt-sched" class="key-input" placeholder="schedule — every 30m · 0 9 * * * · in 2h" autocomplete="off">') +
+        '</div>' +
         '<div id="rt-preview" class="dim" style="min-height:1em;font-size:.9em"></div>' +
         '<div class="rt-agent-pick" role="group" aria-label="Routine agent">' + roster.map(agentButton).join('') + '</div>' +
         '<input id="rt-agent" type="hidden" value="' + esc(routineAgentId) + '">' +
@@ -194,13 +228,21 @@
         grantBadge(!!(j.contextFrom && j.contextFrom.length), '⇢ pipeline', 'uses successful output from upstream routines') +
         grantBadge(j.enabledToolsets != null, '⊣ restricted tools', 'this routine has an explicit per-job toolset intersection') +
         grantBadge(String(j.deliver || 'local') !== 'local', '↗ delivery', 'results are delivered to approved destinations');
-      return '<div class="mc-row" data-id="' + esc(j.id) + '" data-on="' + (on ? '1' : '0') + '">' +
-        '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + termBadge + runtimeBadge + fromRecipe + '</div>' +
+      // the cadence in words, with the exact expression kept as the tip — a beginner reads "every Tuesday
+      // at 9:00 AM", and the audit string that actually fires the job is one hover away, never hidden.
+      const sched = j.scheduleDisplay || '';
+      const schedHuman = human(sched);
+      return '<div class="mc-row" data-id="' + esc(j.id) + '" data-on="' + (on ? '1' : '0') + '" data-sched="' + esc(sched) + '">' +
+        '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim"' +
+          (schedHuman !== sched ? ' title="' + esc(sched) + '"' : '') + '>' + esc(schedHuman) + '</span> ' + stateBadge + termBadge + runtimeBadge + fromRecipe + '</div>' +
         '<div class="mc-url dim">runs as ' + esc(agentLabel(j.agentId || 'agent')) + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
         (j.lastError ? '<div class="mc-detail">' + esc(j.lastError) + '</div>' : '') +
         deliveryLine(j) +
         '<div class="mc-acts">' +
           '<button class="bb xs" data-act="run">▶ RUN NOW</button>' +
+          // RESCHEDULE — the same picker, opened on this routine's current schedule. Before this you could
+          // only DELETE and re-create a routine to move it an hour, which also threw away its run history.
+          '<button class="bb xs" data-act="resched">◷ RESCHEDULE</button>' +
           '<button class="bb xs" data-act="toggle">' + (on ? '⏸ DISABLE' : '▶ ENABLE') + '</button>' +
           // REVOKE — a standing unattended permission must be withdrawable without deleting the routine.
           // Only rendered when there is something to revoke, so an ordinary routine's action row is unchanged.
@@ -288,16 +330,20 @@
       } catch (_) {} finally { propBtn.disabled = false; }
     });
 
-    // live schedule preview (debounced) — the honest "next fires", straight from the server math.
-    let pvTimer = null;
-    const schedInp = body.querySelector('#rt-sched'), pvEl = body.querySelector('#rt-preview');
-    schedInp.addEventListener('input', () => {
+    /* live schedule preview (debounced) — the honest "next fires", straight from the server math. Bound
+       as a function so the RESCHEDULE editor previews through the IDENTICAL path: two implementations of
+       "when does this run" would eventually disagree, and this panel's entire job is to be right about it. */
+    function wirePreview(inp, pvEl) {
+      let pvTimer = null;
+      inp.addEventListener('input', () => {
       clearTimeout(pvTimer);
-      const v = schedInp.value.trim();
+      const v = inp.value.trim();
       if (!v) { pvEl.textContent = ''; return; }
       pvTimer = setTimeout(async () => {
         try {
-          const r = await (await post('/api/cron/preview', { schedule: v })).json();
+          // tz honesty in the PREVIEW too: the create POST sends the device zone, so a preview computed
+          // without it would quote a different 9:00 than the routine will actually keep.
+          const r = await (await post('/api/cron/preview', { schedule: v, tz: deviceTz() })).json();
           if (r && r.ok) {
             // show the LOCAL wall-clock time the routine fires (with its tz), not just a relative delta, so a
             // cron schedule reads honestly across DST (e.g. "next: 9:00 AM EDT (in 3h)"). Falls back to the
@@ -305,15 +351,30 @@
             const ln = Array.isArray(r.localNext) ? r.localNext : [];
             const tzNote = (r.kind === 'cron' && r.tz && r.tz !== 'UTC') ? ' <span class="dim">[' + esc(r.tz) + ']</span>' : '';
             const nxt = r.next.slice(0, 3).map((t, i) => {
-              const local = ln[i] ? esc(ln[i]) : '';
+              // r.next carries the AUTHORITATIVE instants; r.localNext is the server rendering them in the
+              // SCHEDULE's zone, which for an interval or a one-shot is UTC. Rendering the same instant in
+              // the VIEWER's zone stops the panel printing "9:30 PM UTC" under a picker that says 5:30 PM —
+              // same moment, two clocks, and the beginner has no way to know that. Server text is the
+              // fallback whenever the runtime won't give us a zone.
+              const local = esc(wallClock(t) || ln[i] || '');
               return local ? (local + ' <span class="dim">(' + esc(fmtRel(t)) + ')</span>') : esc(fmtRel(t));
             }).join(', ');
-            pvEl.innerHTML = '✓ ' + esc(r.display) + tzNote + ' → next: ' + nxt;
+            pvEl.innerHTML = '✓ ' + esc(human(r.display)) + tzNote + ' → next: ' + nxt;
           }
           else pvEl.innerHTML = '<span style="color:var(--bad)">' + esc((r && r.error) || 'unrecognized schedule') + '</span>';
         } catch (_) {}
       }, 300);
-    });
+      });
+    }
+    const schedInp = body.querySelector('#rt-sched'), pvEl = body.querySelector('#rt-preview');
+    wirePreview(schedInp, pvEl);
+
+    /* Mount the WHEN picker LAST of the create-form wiring, so the seed value it types into #rt-sched
+       lands on a preview listener that already exists — the form opens showing a real server-computed
+       "next fires" for its default (every day, 9:00 AM) instead of an empty line. */
+    const picker = (typeof SchedPicker !== 'undefined')
+      ? SchedPicker.mount(body.querySelector('#rt-when'), { onChange: () => sfx('click') })
+      : null;
 
     body.querySelectorAll('.rt-agent-btn').forEach(btn => btn.addEventListener('click', () => {
       routineAgentId = btn.dataset.agent || 'agent';
@@ -327,11 +388,62 @@
       sfx('click');
     }));
 
+    /* RESCHEDULE — the same WHEN picker, inline under the row, opened on the routine's CURRENT schedule.
+       It patches only `schedule` (plus the device tz, which the update route folds onto schedule.tz), so
+       the routine keeps its id, its history and its grants — moving a routine an hour used to mean
+       deleting it and re-creating it from scratch. */
+    function closeResched() {
+      listEl.querySelectorAll('.rt-resched').forEach(el => el.remove());
+      listEl.querySelectorAll('button[data-act="resched"]').forEach(b => b.classList.remove('on'));
+    }
+    function openResched(rowEl, id, btn) {
+      const host = document.createElement('div');
+      host.className = 'rt-resched';
+      host.innerHTML =
+        '<div class="rt-when-k">MOVE THIS ROUTINE TO…</div>' +
+        (typeof SchedPicker !== 'undefined' ? SchedPicker.html({}) : '<input class="key-input" data-sp-input autocomplete="off">') +
+        '<div class="rt-resched-pv dim"></div>' +
+        '<div class="mc-acts"><button class="bb xs" data-resched="save">✓ SAVE SCHEDULE</button>' +
+        '<button class="bb xs" data-resched="cancel">CANCEL</button></div>';
+      rowEl.insertAdjacentElement('afterend', host);
+      btn.classList.add('on');
+      const inp = host.querySelector('[data-sp-input]'), pv = host.querySelector('.rt-resched-pv');
+      if (inp && pv) wirePreview(inp, pv);
+      const p = (typeof SchedPicker !== 'undefined') ? SchedPicker.mount(host, {}) : null;
+      if (p) p.set(rowEl.dataset.sched || '');
+      else if (inp) { inp.value = String(rowEl.dataset.sched || '').replace(/^cron /, ''); inp.dispatchEvent(new Event('input', { bubbles: true })); }
+      host.addEventListener('click', async ev2 => {
+        const b = ev2.target.closest('button[data-resched]'); if (!b) return;
+        if (b.dataset.resched === 'cancel') { sfx('click'); closeResched(); return; }
+        const value = (p ? p.value() : (inp ? inp.value : '')).trim();
+        if (!value) { sfx('bad'); notify('pick a schedule first', 'warn'); return; }
+        b.disabled = true; b.textContent = '… saving';
+        // A RESCHEDULE CLAIM MUST BE PROVEN: fetch resolves on 4xx, so a rejected schedule would otherwise
+        // toast "rescheduled" over a routine still firing on its old time.
+        try {
+          const r = await (await post('/api/cron/update', { id, patch: { schedule: value, tz: deviceTz() } })).json();
+          if (r && r.ok) { notify('rescheduled — ' + human((r.job && r.job.scheduleDisplay) || value), 'good'); sfx('click'); closeResched(); }
+          else { notify((r && r.error) || 'could not reschedule — it still runs on its old schedule', 'warn'); sfx('bad'); b.disabled = false; b.textContent = '✓ SAVE SCHEDULE'; return; }
+        } catch (_) {
+          notify('could not reach the station — the schedule was NOT changed', 'warn'); sfx('bad');
+          b.disabled = false; b.textContent = '✓ SAVE SCHEDULE'; return;
+        }
+        refresh();
+      });
+    }
+
     // row actions: run-now (stream + show the reply), toggle enable/disable, delete (two-step arm/confirm).
     listEl.addEventListener('click', async ev => {
       const btn = ev.target.closest('button[data-act]'); if (!btn) return;
       const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
       const act = btn.dataset.act;
+      if (act === 'resched') {
+        sfx('click');
+        const wasOpen = btn.classList.contains('on');
+        closeResched();                       // one editor at a time; the button toggles its own
+        if (!wasOpen) openResched(rowEl, id, btn);
+        return;
+      }
       if (act === 'remove') {
         if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '✕ CONFIRM'; sfx('bad'); setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '✕ DELETE'; } }, 5000); return; }
         // ⛔ FETCH RESOLVES ON 4xx/5xx. `await post(...)` only rejects on a network failure, so the toast used to
@@ -425,9 +537,12 @@
           if (arm) notify('routine "' + (name || 'unnamed') + '" ' + arm.text, 'warn');
           else notify('routine "' + (name || 'unnamed') + '" scheduled for ' + agentLabel(agentId || 'agent'), 'good');
           sfx('click');
-          ['#rt-name', '#rt-prompt', '#rt-sched'].forEach(s => { body.querySelector(s).value = ''; });
+          ['#rt-name', '#rt-prompt'].forEach(s => { body.querySelector(s).value = ''; });
           ['#rt-term', '#rt-conn'].forEach(s => { const el = body.querySelector(s); if (el) el.checked = false; });   // a grant is never sticky across creates
-          pvEl.textContent = '';
+          // the WHEN selection SURVIVES a create (people add three morning routines in a row) — but a
+          // sticky cadence with a cleared field would be a lie, so we re-emit it and let the preview
+          // redraw from the server rather than blanking one half of the pair.
+          if (picker) picker.refresh(); else { body.querySelector('#rt-sched').value = ''; pvEl.textContent = ''; }
         }
       } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'failed to reach the sidecar') + '</span>'; sfx('bad'); }
       refresh();
