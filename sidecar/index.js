@@ -10915,7 +10915,11 @@ async function deliverableRows() {
   for (const run of runStore.list(null, { limit: 1000 })) {
     if (/^workshop-/.test(String(run.streamId || ''))) continue;
     const arts = run.artifacts || [];
-    if (!arts.length) continue;
+    // A run with no artifacts AND no name is not a deliverable — it is a conversation, and COMMS owns those.
+    // But a run the agent explicitly NAMED belongs here even if it wrote nothing to disk: dropping it would
+    // silently discard a declaration the agent made on the record, and the Commander would have no way to know
+    // the work was ever filed. The drawer already says "This run recorded no files" honestly.
+    if (!arts.length && !run.deliverable) continue;
     const status = run.reason === 'done' ? 'produced' : 'failed';
     // `ask` is the Commander's OWN request (runstore titles a run with the last user text), which is why it can be
     // shown beside the agent's prose without becoming a second agent claim. Kept distinct from `summary` — the old
@@ -11023,7 +11027,10 @@ async function handleDeliverablesList(req, res) {
     if (status) items = items.filter(r => r.status === status);
     if (kind) items = items.filter(r => r.kind === kind);
     if (project) items = items.filter(r => project === 'unfiled' ? !r.project : r.project === project);
-    if (query) items = items.filter(r => [r.title, r.summary, r.source, r.agentId, r.runId, r.project, (r.contributors || []).map(c => c.agentId).join(' ')].join(' ').toLowerCase().indexOf(query) >= 0);
+    // `ask` is in the haystack deliberately: months later a Commander remembers what they ASKED for ("the churn
+    // thing") long before they remember what the agent named the file. Leaving their own words out of the search
+    // was the difference between a library you can find things in and one you have to scroll.
+    if (query) items = items.filter(r => [r.title, r.summary, r.ask, r.source, r.agentId, r.runId, r.project, (r.contributors || []).map(c => c.agentId).join(' ')].join(' ').toLowerCase().indexOf(query) >= 0);
     json(200, { ok: true, items: items.slice(0, 500), total: items.length, projects: projects, kinds: kinds, summary: summary, previewLimits: { markdown: DELIVERABLE_PREVIEW_MAX, csv: DELIVERABLE_PREVIEW_MAX, image: DELIVERABLE_IMAGE_MAX } });
   } catch (e) { json(500, { ok: false, error: 'could not read the deliverable library' }); }
 }
