@@ -246,9 +246,11 @@
         ? '<b class="dlv-title">' + esc(r.title || 'Untitled output') + '</b>' + (r.summary ? '<p class="dlv-sum">' + esc(r.summary) + '</p>' : '')
         : '<b class="dlv-title plain">' + esc(r.title || 'Untitled output') + '</b>' + (r.summary ? '<p class="dlv-sum">' + esc(r.summary) + '</p>' : '<p class="dlv-sum none">the agent did not name this one</p>');
       // THE FACTS BAND — every item here is provable from the run log.
+      // "size unknown" is for a file we could not measure. A row with NO files has nothing to measure, so it says
+      // so — the two are different facts and the wrong one reads as a failed read.
+      const bulk = nFiles ? (nFiles + (nFiles === 1 ? ' file · ' : ' files · ') + fmtSize(r.size)) : 'no files';
       const facts = '<span class="dlv-pill ' + pill.cls + '">' + esc(pill.label) + '</span>' + crewHtml(r) +
-        '<span class="dlv-meta">' + (nFiles ? nFiles + (nFiles === 1 ? ' file' : ' files') + ' · ' : '') + esc(fmtSize(r.size)) +
-        (r.createdAt ? ' · ' + esc(agoOf(r.createdAt, now)) : '') + '</span>';
+        '<span class="dlv-meta">' + esc(bulk) + (r.createdAt ? ' · ' + esc(agoOf(r.createdAt, now)) : '') + '</span>';
       return '<article class="dlv-card" data-i="' + i + '">' +
         '<button class="dlv-head" type="button" aria-expanded="false" aria-controls="dlv-more-' + i + '">' +
         '<span class="dlv-caret" aria-hidden="true">▸</span><span class="dlv-headmain"><span class="dlv-say">' + say2 + '</span>' +

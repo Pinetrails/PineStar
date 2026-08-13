@@ -39,7 +39,6 @@ const TOKEN = 'dev-deliverables-seed-token';
    counting how many tool results the conversation already carries, so it stays in step with the real loop. */
 const SCENARIOS = [
   {
-    match: /signups|dropping off/i,
     project: 'churn-study',
     prompt: 'Look at the Q3 signups and tell me where people are dropping off.',
     turns: [
@@ -50,7 +49,6 @@ const SCENARIOS = [
     ]
   },
   {
-    match: /landing page/i,
     project: 'coffee-site',
     prompt: 'Build me a small landing page for the coffee shop.',
     turns: [
@@ -60,8 +58,18 @@ const SCENARIOS = [
     ]
   },
   {
-    match: /tidy|cleanup/i,
-    project: '',
+    // NAMED but FILELESS — the agent declares a deliverable without writing anything to disk. Exercises the path
+    // that used to drop such a run silently (the note vanished with no trace); the row must survive and the
+    // drawer must say plainly that there are no files rather than showing an empty list.
+    project: '', slug: 'pricing',
+    prompt: 'Compare the three competitor pricing pages and tell me what you find.',
+    turns: [
+      { tool: 'deliverable_note', args: { title: 'Competitor pricing comparison', summary: 'All three anchor on a mid tier; only one publishes per-seat pricing.', kind: 'doc' } },
+      { text: 'All three lead with a mid tier. Only one publishes per-seat pricing; the others gate it behind a call.' }
+    ]
+  },
+  {
+    project: '', slug: 'cleanup',
     prompt: 'Write me a quick script to tidy up old log files.',
     turns: [
       { tool: 'fs.write', args: { path: 'cleanup.py', content: 'import os, time\n\nCUTOFF = 30 * 86400\n\nfor name in os.listdir("logs"):\n    p = os.path.join("logs", name)\n    if os.path.isfile(p) and time.time() - os.path.getmtime(p) > CUTOFF:\n        os.remove(p)\n' } },
@@ -72,9 +80,28 @@ const SCENARIOS = [
 ];
 
 function scenarioFor(messages) {
-  const first = messages.find(m => m && m.role === 'user');
-  const text = String((first && first.content) || '');
-  return SCENARIOS.find(s => s.match.test(text)) || null;
+  /* Match the CURRENT ask — the LAST user turn — exactly, never by keyword and never the first turn.
+
+     Two things made earlier versions of this pick the wrong script, and both are real StarNet behaviour:
+       1. a BACKGROUND SKILL REVIEW fork runs after each completed run through this same mock, and its prompt
+          EMBEDS the run it reviews, so keyword matching hit the fork too;
+       2. two runs sharing a streamId make the sidecar REPLAY the stream's earlier turns into the request, so
+          the first user message is the PREVIOUS ask, not this one.
+     Exact equality against the last user turn is immune to both. Anything unrecognised gets the neutral
+     "Nothing to do." reply, which is the right answer for a background fork. */
+  const users = messages.filter(m => m && m.role === 'user');
+  const text = String((users[users.length - 1] || {}).content || '').trim();
+  return SCENARIOS.find(s => s.prompt === text) || null;
+}
+
+/* How many tool results this ASK has already collected. Counted only since the last user turn, for the same
+   replay reason above — older tool results belong to a previous scenario and would skip this one's steps. */
+function stepOf(messages) {
+  let i = messages.length - 1;
+  for (; i >= 0; i--) if (messages[i] && messages[i].role === 'user') break;
+  let n = 0;
+  for (let k = i + 1; k < messages.length; k++) if (messages[k] && messages[k].role === 'tool') n++;
+  return n;
 }
 
 function startMock() {
@@ -93,7 +120,7 @@ function startMock() {
           const msgs = Array.isArray(body.messages) ? body.messages : [];
           const sc = scenarioFor(msgs);
           // step = how many tool RESULTS the loop has already fed back, so the mock never gets out of phase
-          const done = msgs.filter(m => m && m.role === 'tool').length;
+          const done = stepOf(msgs);
           if (sc) turn = sc.turns[Math.min(done, sc.turns.length - 1)];
         } catch (_) {}
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
@@ -183,7 +210,7 @@ async function waitForBoot() {
       messages: [{ role: 'user', content: sc.prompt }],
       placed: ['cabinet'],                 // a placed CABINET is what grants fs.* — same projection the floor uses
       projectRoot: root || undefined,
-      streamId: 'seed-' + (sc.project || 'misc')
+      streamId: 'seed-' + (sc.project || sc.slug)   // one stream per scenario: a shared stream replays the previous ask into this one
     });
     console.log('[seed-deliverables] run "' + sc.prompt.slice(0, 40) + '…" -> ' + JSON.stringify(out).slice(0, 500));
   }
