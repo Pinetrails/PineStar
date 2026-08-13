@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "c87f3a864495e47fdafd093379d450aebd95a923",
+    "sourceCommit": "62e432621cac0b6a5cbdb2a8e51ee291e1c1e382",
     "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
     "files": [
       {
@@ -208,8 +208,8 @@
       },
       {
         "path": "frontend/app/deliverables.js",
-        "bytes": 20586,
-        "sha256": "4c6d29e9cc69d5148472139b360507148a4965288bdb732dd2e6a5c9ac577d7d"
+        "bytes": 29669,
+        "sha256": "02b06daa75764aac0a4bb1b05ea910a99c65972067d1b42f36a3614f0d3ad741"
       },
       {
         "path": "frontend/app/diagnostics.js",
@@ -733,8 +733,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 596600,
-        "sha256": "e87f20fcca48ef77bfd01671f3c21d011617106d2890df2c3a5bf0dd94e63250"
+        "bytes": 597045,
+        "sha256": "202355150c0d8773eba99e3310a0b819683444d74cf5c466b5f806d891a14571"
       },
       {
         "path": "frontend/app/study.js",
@@ -963,8 +963,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 339812,
-        "sha256": "e9bdeb4666e55ee8dc6cda77b5b9ff643547e46e451f16aae7ba52cc0521d016"
+        "bytes": 344749,
+        "sha256": "f308b4e80d8310b06c3ae0d2e7f91f2f488bf6ff092d03580dbff211b8bdc250"
       },
       {
         "path": "frontend/css/asciifx.css",
