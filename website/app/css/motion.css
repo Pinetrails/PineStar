@@ -641,7 +641,10 @@ button:active {
    rail and only four cards fit on screen. auto-fill against the same 272px readable minimum keeps the
    old 2-up at the old width and simply uses the room when there is room. This is the CANONICAL quest-grid
    rule — motion.css loads after app.css and outranks it, so grid changes belong here, not stacked there. */
-.gx-quests .q-grid { grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 9px; align-items: start; }
+/* STRETCH, not start: cards in a row share one height so every primary action lands on the same
+   baseline. Ragged card bottoms put START QUEST, OPEN REFIT and ANSWER IT at three different heights
+   across a single row, which is what made the grid read as unaligned. */
+.gx-quests .q-grid { grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 9px; align-items: stretch; }
 .gx-quests .q-grid .gx-tro { padding: 11px 12px; }
 .gx-quests .q-grid .gx-tro .nm { font-size: 12.5px; margin-top: 0; }
 .gx-quests .q-grid .gx-tro .sub { font-size: 11px; margin-top: 5px; line-height: 1.4; }

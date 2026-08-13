@@ -3317,13 +3317,23 @@ body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
    silent second painter for the same property. The card takes the station's existing card language —
    one top-left light, matte, `--raise`, no gloss — so it belongs to the same family as the catalog
    and deliverable cards instead of inventing a look for quests alone. */
-.q-grid .q-card { display: flex; flex-direction: column; gap: 3px; padding: 10px 11px;
+.q-grid .q-card { display: flex; flex-direction: column; gap: 3px; padding: 11px 13px 12px;
+  height: 100%; position: relative; overflow: hidden;
   border: 1px solid var(--ph-dim); border-radius: var(--r-sm); box-shadow: var(--raise);
   background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.36) 62%);
   transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out),
               translate var(--t-fast) var(--ease-out); }
+/* THE KIND RAIL — a 2px spine down the card's leading edge, lit for the two kinds that are work you
+   asked for and dim for the rest. It gives the grid a scannable rhythm at a glance, using the same
+   left-rail vocabulary `.q-goalbar` already established for goal and proposal cards. */
+.q-grid .q-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 2px;
+  background: var(--ph-glow2); }
+.q-grid .q-card.off:has(.q-kind-ledger)::before,
+.q-grid .q-card.off:has(.q-kind-work)::before { background: var(--gold); opacity: .75; }
+.q-grid .q-card.on::before { background: var(--gold); }
 /* a quest you can still act on lifts under the pointer; a done one is a trophy and stays put */
-.q-grid .q-card.off:hover { border-color: var(--ph); translate: 0 -1px; }
+.q-grid .q-card.off:hover { border-color: var(--ph); translate: 0 -1px;
+  box-shadow: var(--raise), inset 0 0 22px rgba(var(--ph-rgb), .07); }
 .q-grid .q-card.on { border-color: var(--gold); }
 /* the title earns real type: 11px at 130px wide was the single biggest legibility loss */
 .q-grid .q-card .nm { font-size: 12.5px; line-height: 1.35; margin-top: 0; letter-spacing: .02em; }
@@ -3337,8 +3347,14 @@ body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
   padding: 1px 5px; opacity: .85; white-space: nowrap; }
 .q-kind-ledger, .q-kind-work { color: var(--gold); border-color: rgba(var(--gold-rgb), .5); }
 .q-kind + .q-dismiss { margin-left: 4px; }
+/* HANGING GLYPHS: the ✓ and ◆ lines lead with a glyph, so their text has to hang off it or the second
+   wrapped line slides back under the marker and the column edge goes ragged. */
+.q-grid .q-card .q-cw, .q-grid .q-card .q-reward { padding-left: 11px; text-indent: -11px; }
 /* the reward, styled as what it is: the real thing this pays out in */
 .q-grid .q-card .q-reward { color: var(--gold); opacity: .82; margin-top: 4px; font-size: 10.5px; }
+/* the last text line before the action row breathes; the row itself is pushed to the card's floor so
+   every primary action in a row shares one baseline (see the stretch note in motion.css) */
+.q-grid .q-card .q-actions { margin-top: auto; padding-top: 9px; }
 /* THE ACTION ROW — the primary action gets the foot of the card and full width. It used to be a 9px chip
    wedged between the title and the dismiss ✕; a control that STARTS a quest must not sit a few pixels from
    the control that dismisses it forever. */
@@ -3350,6 +3366,19 @@ body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
 .q-actions .q-queue { margin-left: 0; flex: 0 0 auto; border-color: var(--ph-glow2); padding: 4px 7px; }
 /* the lede sits under the OPEN heading now — quiet, one line, never competing with the cards */
 .q-lede { margin: -2px 0 9px; font-size: 10.5px; opacity: .6; }
+
+/* ---- QUEST LOG rhythm: one vertical scale for the whole panel ----
+   The window is now wide enough that inconsistent gutters read as sloppiness rather than density. These
+   set ONE spacing scale (18px between movements, 11px inside a card) and give the OPEN count the same
+   chip treatment the kind badges use, so the headers stop being bare text with a number floated right. */
+.gx-quests .gx-sec { height: auto; padding-bottom: 6px; margin-bottom: 10px; }
+.gx-quests .gx-sec .gx-tag { border: 1px solid var(--ph-glow2); border-radius: 2px; padding: 0 6px;
+  font-size: 9.5px; line-height: 1.6; color: var(--ph); opacity: .85; font-variant-numeric: tabular-nums; }
+/* the north star is the thing every quest below points at — give it the presence to lead the panel */
+.gx-quests .q-refresh-card { padding: 11px 13px; }
+.gx-quests .q-ns-text { font-size: 14px; line-height: 1.4; margin-top: 5px; }
+.gx-quests .q-refresh-row { margin-top: 10px; }
+.gx-quests .q-refresh-last { margin-top: 7px; }
 
 /* G1a — quest-log dynamics: the dismiss ✕ on get-to-know-you quests + the completion flourish.
    The flourish is a MOMENT (one ~2.4s gold flash, bold not subtle), never a lingering state. */

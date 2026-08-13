@@ -20,7 +20,18 @@ const MEASURE = `(async () => {
   const gcs = getComputedStyle(grid);
   const card = grid.querySelector('.q-card');
   const zoom = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+  // LEFT/RIGHT EDGE AUDIT — every top-level block in the panel should share one column. Rects are visual
+  // px and all measured in the same frame, so comparing them to each other is valid (we never convert).
+  const edge = sel => { const e = document.querySelector(sel); if (!e) return null;
+    const r = e.getBoundingClientRect(); return { l: Math.round(r.left), r: Math.round(r.right) }; };
+  const edges = {
+    directionSec: edge('.q-refresh-sec'), directionCard: edge('.q-refresh-card'),
+    openSec: edge('.gx-quests .gx-sec:nth-of-type(2)'), lede: edge('.q-lede'),
+    grid: edge('.q-open.q-grid'), firstCard: edge('.q-open .q-card'),
+    journeyCard: edge('.q-journey-card'), meterSec: edge('.gx-quests .gx-sec')
+  };
   return JSON.stringify({
+    edges,
     winWidth: getComputedStyle(win).width,
     bodyWidth: getComputedStyle(body).width,
     gridWidth: gcs.width,
