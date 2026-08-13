@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "bea46121de6486d13089ce039e83d7b2b68916f0",
-    "pathSetSha256": "a63f7e4ca704c0bf834fcbba600a59a572956db613619bfeac1a72c40705c12f",
+    "sourceCommit": "6a7ab4763e1e5174d1de6c856551d231e214afa7",
+    "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
         "path": "INSTALL.md",
@@ -180,6 +180,11 @@
         "path": "frontend/app/conveyor.js",
         "bytes": 43859,
         "sha256": "37f4017cdf870e62e4317c378f9270dd79274d039ada5d434967dcbedda2a457"
+      },
+      {
+        "path": "frontend/app/cronhuman.js",
+        "bytes": 13992,
+        "sha256": "cd5a04d495c15865a55a063ce0ae8924a415647cb0b4d134ffe373384e6d69ac"
       },
       {
         "path": "frontend/app/crtlab.js",
@@ -662,6 +667,11 @@
         "sha256": "09e57736aafe63190edd6c9a903f08e58976ba2d821ca83369388199ed169e84"
       },
       {
+        "path": "frontend/app/schedpicker.js",
+        "bytes": 15254,
+        "sha256": "292b183ae787b9b9f50bcc2f1391b19d2a016ebcf1e4707ceb81a6f060e4b56f"
+      },
+      {
         "path": "frontend/app/seedcredit.js",
         "bytes": 4962,
         "sha256": "5a586801329597d3b1d231a0b08f4c7e4e82949fc9baa03cbc9edfbff238c3c8"
@@ -898,8 +908,8 @@
       },
       {
         "path": "frontend/app/windows/routines.js",
-        "bytes": 35147,
-        "sha256": "50f0125d9b92d15c36baee29c2279583b691423c4038fa6449b654ead2cbd066"
+        "bytes": 42902,
+        "sha256": "93e37b525e19e03f11c9a76e0b27c81c890f0eeaca2d929ae02b1c77c1add09d"
       },
       {
         "path": "frontend/app/windows/trophies.js",
@@ -963,8 +973,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 340467,
-        "sha256": "32b6c33e6cbf64493eb0a03c56b0b4d6e7a6870bd912cf7567bfaa670cd2518b"
+        "bytes": 345501,
+        "sha256": "5e9ea8ff6d6e5620b8a8cfe70e880f2bb924d39a19c47a880e7da861585c7601"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -1033,8 +1043,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 75941,
-        "sha256": "db5f1780a16e865529c565c20fc7c1818b245a74713bff48912e5f7eba95eaa3"
+        "bytes": 76307,
+        "sha256": "949b4790c200a304a50b6dbc9d92f9bc52badf48237065610c46ce7612f054d2"
       },
       {
         "path": "frontend/js/arcade.js",
