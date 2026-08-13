@@ -3355,6 +3355,26 @@ const App = (() => {
     }
     return { dot: 'ws-dot lane-' + w.lane, meta: railRelTime(w.lastActiveAt), busy: false, attn: false, status: '' };
   }
+  /* ---------- INBOX row extras (SESSION ROWS = inbox) ----------
+     Both lines are rendered ALWAYS and hidden by CSS in COMPACT, so the setting is a pure repaint —
+     no re-render, no lost rail focus/scroll, and updateRailLive keeps working untouched.
+     Every value is a read of state that already exists; nothing here is derived or guessed. */
+  function railAgentName(w) {
+    const a = agents.get(w.agentId);                      // the live registry, same one the world reads
+    return (a && a.name) ? a.name : (w.agentId || 'AGENT');
+  }
+  // "<model> · <n> MSG". The model is the one the SIDECAR reported for this stream's last run
+  // (Workstreams.lastModel) — never the agent's current dropdown value, which would assert a model
+  // over a transcript other models may have written. Unmeasured reads '—', which is the honest answer.
+  function railReceipt(w) {
+    const n = (Workstreams.visibleMessages ? Workstreams.visibleMessages(w) : []).length;
+    // the vendor prefix is dropped for the ROW only ('anthropic/claude-sonnet-4.5' → 'claude-sonnet-4.5'):
+    // a 232px rail cannot hold the full id, and a clipped id reads as a different model. The complete,
+    // unabbreviated id stays in the row's tooltip (railModelFull), so nothing is actually hidden.
+    const model = (w.lastModel || '').trim().split('/').pop();
+    return (model || '—') + ' · ' + n + ' MSG';
+  }
+  function railModelFull(w) { return (w.lastModel || '').trim(); }
   function rowClass(w, st, activeId) {
     return 'ws-row' + (w.id === activeId ? ' sel' : '') + (st.busy ? ' busy' : '') + (st.attn ? ' attn' : '')
       + (w.pinned ? ' pinned' : '') + (w.archived ? ' archived' : '')
@@ -3374,14 +3394,19 @@ const App = (() => {
     ul.innerHTML = rows.map((w, index) => {
       const title = w.title || 'General';
       const st = railRowState(w);
+      const full = railModelFull(w);
       const tip = title + (w.archived ? ' · archived' : '') + (st.busy ? ' · ' + st.status : '')
-        + (Workstreams.unread(w) ? ' · new activity' : '') + ' — Shift+F10 or right-click for actions';
+        + (Workstreams.unread(w) ? ' · new activity' : '')
+        + (full ? ' · last run on ' + full : '')   // the UNABBREVIATED id the row had to shorten
+        + ' — Shift+F10 or right-click for actions';
       return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" tabindex="' + (w.id === railFocusId ? '0' : '-1') + '" role="option" aria-selected="' + (w.id === activeId ? 'true' : 'false') + '" aria-posinset="' + (index + 1) + '" aria-setsize="' + rows.length + '" aria-label="' + U.esc(title + ' session; Enter to open; Shift+F10 for actions') + '" aria-keyshortcuts="Shift+F10" title="' + U.esc(tip) + '">' +
         '<span class="' + st.dot + '"></span>' +
         (w.pinned ? '<span class="ws-pin" aria-hidden="true">★</span>' : '') +
+        '<span class="ws-agent" aria-hidden="true">' + U.esc(railAgentName(w)) + '</span>' +
         '<span class="ws-title">' + U.esc(title) + '</span>' +
         '<span class="ws-unread" aria-hidden="true"></span>' +
         '<span class="ws-meta">' + U.esc(st.meta) + '</span>' +
+        '<span class="ws-receipt" aria-hidden="true">' + U.esc(railReceipt(w)) + '</span>' +
         '<button class="ws-kebab" tabindex="-1" aria-label="session actions" title="session actions">⋯</button>' +
         '</li>';
     }).join('');
@@ -3441,6 +3466,10 @@ const App = (() => {
       const st = railRowState(w);
       const dot = li.querySelector('.ws-dot'); if (dot && dot.className !== st.dot) dot.className = st.dot;
       const meta = li.querySelector('.ws-meta'); if (meta && meta.textContent !== st.meta) meta.textContent = st.meta;
+      // the INBOX receipt ages like the rest of the row: a reply landing mid-run moves the count, and a
+      // model measured for the first time replaces the '—'. Change-detected, so a quiet rail touches no DOM.
+      const rec = li.querySelector('.ws-receipt');
+      if (rec) { const next = railReceipt(w); if (rec.textContent !== next) rec.textContent = next; }
       const cls = rowClass(w, st, activeId); if (li.className !== cls) li.className = cls;
     });
   }

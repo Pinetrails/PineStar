@@ -801,7 +801,9 @@ const Harness = (() => {
             // U.bus subscription (foldContextCost) already saw this payload via the re-emit above;
             // fold directly only when the bus is unavailable (headless/test embeds).
             if (typeof U === 'undefined' || !U.bus) foldContextCost(payload);
-            lastUsage = { total_tokens: (payload.tokensIn || 0) + (payload.tokensOut || 0), cost: payload.usd };
+            // `model` rides along because it is the SIDECAR's report of what actually served this call —
+            // the only model fact a caller can attribute to a run. Additive: existing readers ignore it.
+            lastUsage = { total_tokens: (payload.tokensIn || 0) + (payload.tokensOut || 0), cost: payload.usd, model: payload.model || '' };
             onUsage && onUsage(lastUsage); break;
           case 'capdenied': errMsg = errMsg || ('no ' + (payload.need || 'capability') + ' — ' + (payload.reason || '')); break;
           case 'agent.run.error': if (!payload.runId || payload.runId === runId) errMsg = payload.message; break;   // the lead's own error (a worker's rides the tool result)

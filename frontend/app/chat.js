@@ -7413,6 +7413,10 @@ const Chat = (() => {
     let runStartedAt = 0;   // P3.2: this lead run's start wall-clock → the window claimCrew uses to attribute forwarded worker spend
     activeLiveRow = streamingAgent();
     let acc = '';
+    // the model the SIDECAR reported for this run's usage — captured from the usage payload rather than
+    // read off the agent's config, so the SESSIONS rail's INBOX receipt names what actually answered.
+    // Last write wins: a run that hopped models is honestly labelled by the one that finished it.
+    let ranModel = '';
     // VOICE STREAMING: when the agent will speak (🔊 on), hand each COMPLETE sentence to Voice as it
     // streams — so it starts talking while the rest is still generating, instead of after the whole reply
     // is done + synthesized. spokenIdx tracks how much of `acc` we've already queued.
@@ -7471,7 +7475,7 @@ const Chat = (() => {
         onRunId: id => { thisRunId = id; runStartedAt = Date.now(); try { RUN_META.set(id, { isTask: !!isTask, title: (ws && ws.title) || '', directive: String(text || ''), intentOfferText: intentOfferText, fromRecipe: fromRecipe, recipeId: recipeId, agentId: ws.agentId || 'agent', rec: recClaimRun(id, ws.agentId || 'agent') }); if (RUN_META.size > 60) RUN_META.delete(RUN_META.keys().next().value); } catch (_) {} Channels.setRunId(ws.id, id, Date.now()); if (walkedToDesk && Channels.setStatus) Channels.setStatus(ws.id, 'working…'); if (isActiveWs(ws)) { syncStatus(); renderPresence(); } if (typeof Workstreams !== 'undefined') { Workstreams.appendRun(ws.id, id); if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail(); } },
         onToken: d => { acc += d; Channels.appendToken(ws.id, d); if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.append(d); if (!isTask) World.say(acc); } if (willSpeak) pushSpeech(false); App.refreshUsage(); },
         onTerminalReset: () => { acc = ''; spokenIdx = 0; Channels.setAcc(ws.id, ''); },
-        onUsage: () => App.refreshUsage(),
+        onUsage: (u) => { if (u && u.model) ranModel = u.model; App.refreshUsage(); },
         // COMMS-PREMIUM: the Channels store still records the pre-formatted STRING (replay/switch-survival is
         // unchanged — replayChannel renders those via toolLine), but the LIVE surface renders a structured CHIP.
         // breakLive() closes the prose paragraph AND the prior chip rail only when it's a *call after prose*; a
@@ -7759,6 +7763,9 @@ const Chat = (() => {
       if (typeof Workstreams !== 'undefined') {
         const a = Harness.totals();
         Workstreams.addCost(ws.id, { tokens: a.tokens - before.tokens, usd: a.cost - before.cost, calls: a.calls - before.calls });
+        // file the measured model alongside the measured spend — same truthful-telemetry path. noteModel
+        // refuses an empty value, so a run whose usage omitted the field leaves the prior reading intact.
+        if (Workstreams.noteModel) Workstreams.noteModel(ws.id, ranModel);
         Workstreams.touch(ws.id);
       }
       App.refreshUsage();

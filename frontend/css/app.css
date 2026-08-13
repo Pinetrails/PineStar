@@ -2800,6 +2800,46 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-row.busy .ws-meta { color: var(--ph-bright); }
 .ws-row.attn .ws-meta { color: var(--gold); }
 
+/* ---------- SESSION ROWS = INBOX (StationUI setting `sessionRow`, body.rows-inbox) ----------
+   The SAME .ws-row markup, re-laid as a three-line card. The two extra spans (.ws-agent, .ws-receipt)
+   are ALWAYS in the DOM and simply display:none in COMPACT, so switching the setting is a repaint —
+   renderRail is never re-run, and rail focus, scroll position and an in-place rename all survive it.
+
+   Three lines, not four: a preview of the last message is the line that clips to uselessness in a rail
+   that is 232px and does not widen (--crew-w), so what the row gains instead is provenance —
+   WHO ran it, WHAT it is, and WHICH model over HOW MANY messages. */
+.ws-agent, .ws-receipt { display: none; }
+body.rows-inbox .ws-row {
+  display: grid; align-items: center;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "dot   agent agent meta"
+    "title title title title"
+    "recpt recpt recpt recpt";
+  gap: 1px 8px; padding: 6px 8px 7px;
+}
+body.rows-inbox .ws-row > .ws-dot { grid-area: dot; }
+body.rows-inbox .ws-agent {
+  display: block; grid-area: agent; min-width: 0;
+  font-size: 12px; letter-spacing: 1.6px; color: var(--ph-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+body.rows-inbox .ws-row.sel .ws-agent, body.rows-inbox .ws-row.busy .ws-agent { color: var(--ph); }
+body.rows-inbox .ws-row > .ws-meta { grid-area: meta; }
+body.rows-inbox .ws-title { grid-area: title; font-size: 15px; line-height: 1.1; }
+body.rows-inbox .ws-receipt {
+  display: block; grid-area: recpt; min-width: 0;
+  font-size: 11px; line-height: 1.1; color: var(--ph-dim);
+  letter-spacing: .8px; font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* the pin and the unread spark ride the top line beside the agent rather than claiming grid cells */
+body.rows-inbox .ws-pin, body.rows-inbox .ws-unread { grid-area: agent; justify-self: end; }
+body.rows-inbox .ws-row.unread .ws-unread { display: inline-block; }
+/* the kebab overlays the meta corner on hover exactly as it does in COMPACT (see the rule below that
+   swaps .ws-meta for .ws-kebab) — same cell, so the row height never changes when the mouse enters */
+body.rows-inbox .ws-kebab { grid-area: meta; }
+
 /* ---- SESSIONS ↔ PROJECTS view toggle (NS-5c): a segmented control in the rail head, ink-on-phosphor ---- */
 .ws-view { display: inline-flex; align-items: center; gap: 0; }
 .ws-tab {
