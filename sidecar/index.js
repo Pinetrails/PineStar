@@ -218,6 +218,7 @@ const MemoryStore = require('./memory-store.js');                               
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = MemoryStore;
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
+const { makeProvenanceIndex } = require('./deliverable-provenance.js'); // WHO made a deliverable + WHAT project it belongs to, derived from the run log
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
 const { makeJourneyStore } = require('./journey-store.js'); // Commander journey: verified outcomes -> mastery/adaptation/evolution (never XP or gating)
 const { makeQuestTools } = require('./tools/builtin/quests.js'); // QUEST V2 §B: quest.update — the agent's read/write reach into the ledger
@@ -10895,7 +10896,41 @@ async function deliverableRows() {
       rows.push({ id: 'run:' + run.runId + ':' + i, agentId: run.agentId, runId: run.runId, title: path.basename(p || a.target || (run.title + ' output')), source: 'run', status: run.reason === 'done' ? 'produced' : 'failed', kind: a.kind, summary: run.title || '', files, target: a.target || '', size: deliverableSize(files), createdAt: run.ts || 0, updatedAt: run.ts || 0, actions: { open: files.length > 0, keep: false, discard: false } });
     });
   }
+  // DELIVERABLE ORGANIZATION — stamp the two DERIVED fields on every row, whatever source built it. Done in one
+  // pass here rather than in each of the three loops above so there is exactly ONE place that decides how a
+  // deliverable is attributed and filed. Both answers come from the run log; neither is ever model-supplied.
+  //   project      — the blessed root the owning run was scoped to (a worker inherits its lead's), '' = unfiled.
+  //   contributors — the lead agent plus any delegated workers, deduped, lead first.
+  // A row whose run has aged out of the log's window simply gets '' + a single-agent fallback built from the row's
+  // own agentId: an unknown crew is rendered as the one agent we can still prove, never as an invented roster.
+  const provenance = makeProvenanceIndex(runStore.all(), { isInternal: sid => contextpack.isInternalStream(sid) });
+  for (const row of rows) {
+    row.project = row.runId ? provenance.projectOf(row.runId) : '';
+    const crew = row.runId ? provenance.contributorsOf(row.runId) : [];
+    row.contributors = crew.length ? crew : (row.agentId ? [{ agentId: row.agentId, role: 'lead', identityFallback: false }] : []);
+  }
   return rows.sort((a, b) => (b.updatedAt - a.updatedAt) || String(a.id).localeCompare(String(b.id)));
+}
+// The PROJECT rail's rows, folded out of the deliverable list itself. Ordered newest-touched first (the same order
+// the Projects rail uses), with the UNFILED bucket pinned last because it is a residue, not a project.
+// TRUTHFUL TELEMETRY: `blessed` mirrors the LIVE grant — a root whose path grant was revoked still appears, marked,
+// exactly as the Projects rail renders it. Silently dropping it would erase work the Commander really did.
+function deliverableProjectFacet(rows) {
+  const leaf = p => { const s = String(p || '').replace(/[\\/]+$/, ''); const parts = s.split(/[\\/]/); return parts[parts.length - 1] || s; };
+  const byRoot = new Map();
+  let unfiled = 0, unfiledAt = 0;
+  for (const r of (Array.isArray(rows) ? rows : [])) {
+    const root = String((r && r.project) || '');
+    if (!root) { unfiled++; unfiledAt = Math.max(unfiledAt, Number(r && r.updatedAt) || 0); continue; }
+    const cur = byRoot.get(root) || { root: root, name: leaf(root), count: 0, lastAt: 0, blessed: false };
+    cur.count++;
+    cur.lastAt = Math.max(cur.lastAt, Number(r && r.updatedAt) || 0);
+    byRoot.set(root, cur);
+  }
+  for (const row of byRoot.values()) { try { row.blessed = !!isBlessedRoot(row.root); } catch (_) { row.blessed = false; } }
+  const out = Array.from(byRoot.values()).sort((a, b) => (b.lastAt - a.lastAt) || a.name.localeCompare(b.name));
+  if (unfiled) out.push({ root: '', name: 'UNFILED', count: unfiled, lastAt: unfiledAt, blessed: true, unfiled: true });
+  return out;
 }
 async function handleDeliverablesList(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -10903,12 +10938,19 @@ async function handleDeliverablesList(req, res) {
   const query = String(u.searchParams.get('query') || '').trim().toLowerCase().slice(0, 120);
   const status = String(u.searchParams.get('status') || '').trim();
   const kind = String(u.searchParams.get('kind') || '').trim();
+  // DELIVERABLE ORGANIZATION: the project axis. '' = every project; the literal 'unfiled' selects the rows with no
+  // provable project (which, before any project-scoped session has run, is all of them).
+  const project = String(u.searchParams.get('project') || '').trim().slice(0, 4096);
   try {
     let items = await deliverableRows();
+    // The project FACET is computed before the project filter is applied, so the rail keeps showing every project
+    // (with honest counts) while one of them is selected — a filter must never be able to hide its own siblings.
+    const projects = deliverableProjectFacet(items);
     if (status) items = items.filter(r => r.status === status);
     if (kind) items = items.filter(r => r.kind === kind);
-    if (query) items = items.filter(r => [r.title, r.summary, r.source, r.agentId, r.runId].join(' ').toLowerCase().indexOf(query) >= 0);
-    json(200, { ok: true, items: items.slice(0, 500), total: items.length, previewLimits: { markdown: DELIVERABLE_PREVIEW_MAX, csv: DELIVERABLE_PREVIEW_MAX, image: DELIVERABLE_IMAGE_MAX } });
+    if (project) items = items.filter(r => project === 'unfiled' ? !r.project : r.project === project);
+    if (query) items = items.filter(r => [r.title, r.summary, r.source, r.agentId, r.runId, r.project, (r.contributors || []).map(c => c.agentId).join(' ')].join(' ').toLowerCase().indexOf(query) >= 0);
+    json(200, { ok: true, items: items.slice(0, 500), total: items.length, projects: projects, previewLimits: { markdown: DELIVERABLE_PREVIEW_MAX, csv: DELIVERABLE_PREVIEW_MAX, image: DELIVERABLE_IMAGE_MAX } });
   } catch (e) { json(500, { ok: false, error: 'could not read the deliverable library' }); }
 }
 async function handleDeliverablesCleanupPreview(req, res) {
@@ -12472,6 +12514,11 @@ async function handleRun(req, res) {
       taskSource: 'interactive',
       taskAction: body && body.taskAction,
       recipeId,        // provenance spine (lane A): rides to the durable run row so a rating can be attributed
+      // DELIVERABLE ORGANIZATION: the project this run is scoped to rides to the durable run row, so the FILES the
+      // run produces can be filed under the thing the Commander was working ON (not just under a runId). Recorded
+      // only when the root is STILL blessed — the same proof gate projectLine uses above. An unblessed root files
+      // the work as unscoped rather than asserting a folder relationship the grant layer can't back.
+      projectRoot: projectBlessed ? projectRootRaw : '',
       preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
       stationObjects,  // Class Loadouts (shared-gear): station-wide gear for SKILL availability (tools stay room-scoped)
@@ -14564,7 +14611,7 @@ async function runOnce(o) {
         }
       }
       const runEndedAt = Date.now();
-      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
