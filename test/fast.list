@@ -38,6 +38,7 @@ test/domain-store.test.js
 test/provider-runtime.test.js
 test/run-execution-state.test.js
 test/tool-dispatch-boundary.test.js
+test/completion-evidence.test.js
 test/todo.durability.test.js
 test/halt.test.js
 test/readbody.test.js

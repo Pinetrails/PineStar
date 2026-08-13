@@ -75,6 +75,7 @@ const { makeRunStore } = require('./runstore.js');
 const { makeGrowthRatings, deriveRating: deriveGrowthRating } = require('./growthratings.js');
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
+const { makeCompletionEvidence } = require('./completion-evidence.js'); // structured effect proof; never guesses task completion
 const { makeRunExecutionState } = require('./run-execution-state.js'); // one lifecycle for per-run latches/counters/artifacts
 const transcriptStoreModule = require('./transcriptstore.js');
 const { makeTranscriptStore } = transcriptStoreModule;
@@ -12756,6 +12757,7 @@ async function runOnce(o) {
   const execution = makeRunExecutionState({
     initialTaint: o.initialTaint ? String(o.initialTaint === true ? 'scheduled upstream context' : o.initialTaint) : null,
     artifacts: makeArtifactCollector(),
+    completion: makeCompletionEvidence(),
     now: () => Date.now()
   });
   // The desktop shell is the native host boundary. Only an adapter-minted, locally paired owner DM gets its
@@ -14134,7 +14136,10 @@ async function runOnce(o) {
       execution.latchTaint(c.name);
     }
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.
-    if (!internalBriefControl) try { execution.observeArtifact({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
+    if (!internalBriefControl) {
+      try { execution.observeCompletion({ callId: c.id, name: c.name, args: c.args, tool: liveTool, scope: liveTool && liveTool.scope, result: r }); } catch (_) { /* evidence telemetry never breaks work */ }
+      try { execution.observeArtifact({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
+    }
     // The registry parks a result only when that ONE result crosses its cap. The run-wide cap can still clip a
     // perfectly ordinary later command after earlier calls used the allowance, so preserve that result here too.
     // This happens before clipping and the parker returns a path only after byte-identical read-back.
@@ -14752,7 +14757,7 @@ async function runOnce(o) {
         }
       }
       const runEndedAt = Date.now();
-      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), failureStage: execution.failureStage(), failureCode: execution.failureCode(), uncertainMutations: execution.uncertainMutations(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), failureStage: execution.failureStage(), failureCode: execution.failureCode(), uncertainMutations: execution.uncertainMutations(), completionEvidence: execution.completionEvidence(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new

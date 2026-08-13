@@ -90,5 +90,15 @@ A.eq(clocked.toolTraceList()[0].startedAt, 777, 'tool timing uses the injected r
 const clean = makeRunExecutionState();
 A.eq(clean.latchTaint('browser.read'), 'browser.read', 'first runtime taint is retained');
 A.eq(clean.artifactList(), [], 'missing artifact collector safely produces an empty list');
+A.eq(clean.completionEvidence().completionVerdict, 'not_assessed', 'missing completion collector never fabricates a completion verdict');
+
+const completionEvents = [];
+const completionState = makeRunExecutionState({ completion: {
+  observe: event => completionEvents.push(event),
+  snapshot: () => ({ schemaVersion: 'starnet.completion-evidence.v1', completionVerdict: 'not_assessed', effectVerdict: 'unverified_effects', effects: [], evidence: [] })
+} });
+completionState.observeCompletion({ callId: 'c', name: 'fs.write' });
+A.eq(completionEvents.map(x => x.callId), ['c'], 'run state owns completion evidence observation lifecycle');
+A.eq(completionState.completionEvidence().effectVerdict, 'unverified_effects', 'run state exposes the collector snapshot');
 
 A.report('run-execution-state.test');

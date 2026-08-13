@@ -8,6 +8,7 @@
 function makeRunExecutionState(options) {
   const opts = options || {};
   const artifacts = opts.artifacts;
+  const completion = opts.completion;
   const injectedNow = typeof opts.now === 'function' ? opts.now : () => 0;
   const failures = new Map();
   let taintedBy = opts.initialTaint ? String(opts.initialTaint) : null;
@@ -89,6 +90,16 @@ function makeRunExecutionState(options) {
 
   function artifactList() {
     return artifacts && typeof artifacts.list === 'function' ? artifacts.list() : [];
+  }
+
+  function observeCompletion(event) {
+    if (completion && typeof completion.observe === 'function') completion.observe(event);
+  }
+
+  function completionEvidence() {
+    return completion && typeof completion.snapshot === 'function'
+      ? completion.snapshot()
+      : { schemaVersion: 'starnet.completion-evidence.v1', completionVerdict: 'not_assessed', effectVerdict: 'no_observed_effects', effects: [], evidence: [] };
   }
 
   function consumeToolCall(maxCalls) {
@@ -201,6 +212,8 @@ function makeRunExecutionState(options) {
     markToolSettled,
     uncertainMutations,
     failJournal,
+    observeCompletion,
+    completionEvidence,
     observeArtifact,
     artifactList
   };

@@ -57,6 +57,7 @@
   const TOOL_SUMMARY_MAX = 240;
   const FAILURE_FIELD_MAX = 80;
   const UNCERTAIN_MUTATIONS_MAX = 200;
+  const COMPLETION_ROWS_MAX = 100;
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
   function nonnegative(v) { return Math.max(0, num(v)); }
   function str(v) { return v == null ? '' : String(v); }
@@ -128,6 +129,29 @@
     return out;
   }
 
+  function completionEvidence(v) {
+    const allowedEffects = new Set(['no_observed_effects', 'unverified_effects', 'judgment_required', 'mechanically_verified']);
+    const allowedStates = new Set(['unverified', 'judgment_required', 'mechanically_verified']);
+    const src = v && typeof v === 'object' ? v : {};
+    const effects = [];
+    for (const item of (Array.isArray(src.effects) ? src.effects : [])) {
+      if (effects.length >= COMPLETION_ROWS_MAX) break;
+      if (!item || typeof item !== 'object') continue;
+      const callId = str(item.callId).slice(0, 100), tool = str(item.tool).slice(0, 80);
+      if (!callId || !tool || !allowedStates.has(item.state)) continue;
+      effects.push({
+        callId, tool, domain: str(item.domain).slice(0, 20), target: str(item.target).slice(0, ARTIFACT_STR_MAX),
+        state: item.state, evidence: (Array.isArray(item.evidence) ? item.evidence : []).slice(0, 20).map(x => str(x).slice(0, 40))
+      });
+    }
+    return {
+      schemaVersion: 'starnet.completion-evidence.v1',
+      completionVerdict: 'not_assessed',
+      effectVerdict: allowedEffects.has(src.effectVerdict) ? src.effectVerdict : 'no_observed_effects',
+      effects
+    };
+  }
+
   // RAM mirror ceiling: the largest served query is list({ limit: 1000 }) (insights) / 500 (run list), so keep
   // generous headroom (~3x) and splice the oldest off when the in-process mirror grows past it. On-disk history
   // stays complete (the append-only log + its rotated segment); only the RAM mirror is bounded so a 24/7 process
@@ -176,6 +200,7 @@
         failureStage: str(e.failureStage).trim().slice(0, FAILURE_FIELD_MAX),
         failureCode: str(e.failureCode).trim().slice(0, FAILURE_FIELD_MAX),
         uncertainMutations: uncertainMutationList(e.uncertainMutations),
+        completionEvidence: completionEvidence(e.completionEvidence),
         startedAt: nonnegative(e.startedAt), endedAt: nonnegative(e.endedAt), durationMs: nonnegative(e.durationMs),
         ts: num(e.ts) || clock.now()
       };

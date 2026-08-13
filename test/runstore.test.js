@@ -173,6 +173,14 @@ const clock = { now: () => clk };
   A.eq(recovery.uncertainMutations, [{ callId: 'c-write', name: 'fs.write', mutating: true, state: 'dispatched' }], 'only valid dispatched mutations persist as uncertainty');
   A.eq(s.record({ runId: 'recovery-defaults' }).uncertainMutations, [], 'legacy and ordinary rows default to no asserted uncertainty');
 
+  const completion = s.record({ runId: 'completion-evidence', completionEvidence: {
+    completionVerdict: 'completed_verified', effectVerdict: 'judgment_required',
+    effects: [{ callId: 'b1', tool: 'browser.click', domain: 'browser', target: '#save', state: 'judgment_required', evidence: ['ev-1'] }]
+  } }).completionEvidence;
+  A.eq(completion.completionVerdict, 'not_assessed', 'run store cannot persist a caller-invented completion claim');
+  A.eq(completion.effectVerdict, 'judgment_required', 'bounded effect verdict persists');
+  A.eq(completion.effects[0].state, 'judgment_required', 'effect-level judgment requirement persists');
+
   // ---- (P1.2 identity-honesty) identityFallback rides the row: honest marker when the agentId missed the roster ----
   A.eq(s.record({ runId: 'w9', agentId: 'a', reason: 'done', identityFallback: true }).identityFallback, true, 'identityFallback:true recorded on a fallback run (was not the named specialist)');
   A.eq(s.record({ runId: 'w10', agentId: 'a', reason: 'done' }).identityFallback, false, 'missing identityFallback defaults to false (old rows / normal runs are not falsely flagged)');
