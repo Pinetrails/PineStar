@@ -2774,15 +2774,35 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-row:hover { background: var(--ph-faint); border-left-color: var(--ph); }
 .ws-row.sel { border-left-color: var(--ph-bright); background: var(--ph-faint); }
 .ws-row.busy { border-left-color: var(--ph-bright); }
+/* ---------- THE RAIL DOT: whose turn is it? ----------
+   THREE states and nothing else, so one glance down the rail sorts the list:
+     FADED   (.seen)     — you have seen everything here; nothing owed either way.
+     BRIGHT  (.unseen)   — finished, output NOT seen yet. Steady: it waits as long as you need.
+     FLASHING            — live right now. .working = the agent has it; .needsyou = it is paused
+                           on YOU, and that is the only state on a fail-closed deny timer.
+   Colour carries whose turn: GOLD is yours, PHOSPHOR is the agent's, DIM is nobody's. That rule is
+   why the kanban lane no longer tints this dot — gold meant approval AND review AND 'shipped', so it
+   meant nothing, and a read 'active' session outshone an unread one. Lane is in the row tooltip now.
+   (.kb-live on the task board keeps its own copy of the pulse; it shares only @keyframes wsPulse.) */
 .ws-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; background: var(--ph-dim); }
-.ws-dot.lane-active { background: var(--ph-bright); box-shadow: 0 0 6px var(--ph-glow); }
-.ws-dot.lane-shipped { background: var(--gold); }
-/* LIVE: a run is in flight on this stream (phosphor pulse), or it is paused awaiting your approval (gold pulse) */
-.ws-dot.running { background: var(--ph-bright); animation: wsPulse 1.15s ease-in-out infinite; }
-.ws-dot.attn { background: var(--gold); animation: wsPulse 1.15s ease-in-out infinite; }
-/* an idle-built deliverable awaiting review — gold, steady (a decision owed, not a live run) */
-.ws-dot.review { background: var(--gold); box-shadow: 0 0 7px rgba(var(--gold-rgb), .6); }
-.ws-dot.review ~ .ws-meta { color: var(--gold); letter-spacing: .5px; text-shadow: 0 0 6px rgba(var(--gold-rgb), .45); }
+.ws-dot.seen { background: var(--ph-dim); box-shadow: none; }
+.ws-dot.unseen { background: var(--gold); box-shadow: 0 0 7px rgba(var(--gold-rgb), .6); }
+.ws-dot.working { background: var(--ph-bright); animation: wsPulse 1.15s ease-in-out infinite; }
+/* NEEDS YOU gets its own RHYTHM, not just its own colour — faster, and dipping harder. The six
+   preset themes separate --gold from --ph-bright by ΔE 38-57, so colour alone would do there; the
+   CUSTOM theme does not. Its --gold is the base hue rotated +42°, and hue is meaningless at low
+   saturation, so a user who drags SATURATION toward 0 collapses the pair to two greys (measured:
+   ΔE 65 at sat 100, 44 at 60, 23 at 25, 17 at 0). Both states pulse, so at that end the ONLY thing
+   telling "the agent is working" from "it is blocked on you" would be a small lightness step.
+   Rhythm survives every palette, and this is the one state on a fail-closed deny timer — so the
+   more urgent beat is honest rather than decorative. */
+.ws-dot.needsyou { background: var(--gold); animation: wsPulseUrgent .72s ease-in-out infinite; }
+@keyframes wsPulseUrgent {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(var(--gold-rgb), .7); }
+  50% { opacity: .18; box-shadow: 0 0 2px rgba(var(--gold-rgb), .3); }
+}
+/* the right-edge token joins whatever the dot is saying, so the two never disagree */
+.ws-dot.unseen ~ .ws-meta { color: var(--gold); letter-spacing: .5px; text-shadow: 0 0 6px rgba(var(--gold-rgb), .45); }
 @keyframes wsPulse {
   0%, 100% { opacity: 1; box-shadow: 0 0 7px var(--ph-glow); }
   50% { opacity: .3; box-shadow: 0 0 2px var(--ph-glow); }
@@ -2791,14 +2811,67 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-row.sel .ws-title { color: var(--ph-bright); }
 /* UNREAD: the stream did real work since the Commander last had it open (lastActiveAt > lastReadAt) —
    a small gold spark beside the meta + a lit title. Clears the moment the row is opened. */
-.ws-unread { display: none; flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 6px rgba(var(--gold-rgb), .55); }
-.ws-row.unread .ws-unread { display: inline-block; }
+/* The separate gold unread spark is RETIRED. It existed because the dot was busy encoding the lane
+   and could not say "not seen yet"; now that the dot says exactly that, the spark repeated it 200px
+   away in the same row — two marks for one fact, which the one-voice rule forbids and which is worse
+   than useless on a rail you are meant to scan. The brightened title stays: that is the thing you
+   actually read, and it reinforces the dot rather than duplicating it. */
 .ws-row.unread .ws-title { color: var(--ph-bright); }
 /* compact right-edge meta: live elapsed while busy (bright / gold when it needs you), a dim "last worked" stamp when idle */
 .ws-meta { flex: 0 0 auto; font-size: 11px; line-height: 1; color: var(--ph-dim); letter-spacing: .3px; font-variant-numeric: tabular-nums; }
 .ws-meta:empty { display: none; }
 .ws-row.busy .ws-meta { color: var(--ph-bright); }
 .ws-row.attn .ws-meta { color: var(--gold); }
+
+/* ---------- SESSION ROWS = INBOX (StationUI setting `sessionRow`, body.rows-inbox) ----------
+   The SAME .ws-row markup, re-laid as a three-line card. The two extra spans (.ws-agent, .ws-receipt)
+   are ALWAYS in the DOM and simply display:none in COMPACT, so switching the setting is a repaint —
+   renderRail is never re-run, and rail focus, scroll position and an in-place rename all survive it.
+
+   Three lines, not four: a preview of the last message is the line that clips to uselessness in a rail
+   that is 232px and does not widen (--crew-w), so what the row gains instead is provenance —
+   WHO ran it, WHAT it is, and WHICH model over HOW MANY messages. */
+.ws-agent, .ws-receipt { display: none; }
+/* SCOPED TO #workstreams ON PURPOSE. The PROJECTS rail reuses this exact row vocabulary in its own
+   <ul id="projects"> (see the .ws-row.proj-row block below), so an unscoped `body.rows-inbox .ws-row`
+   re-grids the project list too — a rail the setting says nothing about. Every rule here names the
+   sessions list; .ws-search-hit is a separate class and is untouched either way. */
+body.rows-inbox #workstreams .ws-row {
+  display: grid; align-items: center;
+  /* the top line gets REAL columns rather than stacking the pin and the unread spark into the agent
+     cell — three end-justified children in one cell overlap each other and clip the agent name */
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "dot   agent pin   meta"
+    "title title title title"
+    "recpt recpt recpt recpt";
+  gap: 1px 8px; padding: 6px 8px 7px;
+}
+body.rows-inbox #workstreams .ws-row > .ws-dot { grid-area: dot; }
+body.rows-inbox #workstreams .ws-agent {
+  display: block; grid-area: agent; min-width: 0;
+  font-size: 12px; letter-spacing: 1.6px; color: var(--ph-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+body.rows-inbox #workstreams .ws-row.sel .ws-agent,
+body.rows-inbox #workstreams .ws-row.busy .ws-agent { color: var(--ph); }
+body.rows-inbox #workstreams .ws-pin { grid-area: pin; }
+body.rows-inbox #workstreams .ws-row > .ws-meta { grid-area: meta; }
+body.rows-inbox #workstreams .ws-title { grid-area: title; font-size: 15px; line-height: 1.1; }
+/* RENAME-IN-PLACE swaps the title span for an input (app.js replaceWith), and an element with no
+   grid-area gets AUTO-PLACED — in a 3-row template that lands it outside the title row entirely
+   (measured: 112x48 in a 175px row, and the row grew 76->83px). It inherits the title's cell so
+   editing a name looks like editing a name. Its `flex: 1` is inert here; the cell owns the width. */
+body.rows-inbox #workstreams .ws-rename { grid-area: title; }
+body.rows-inbox #workstreams .ws-receipt {
+  display: block; grid-area: recpt; min-width: 0;
+  font-size: 11px; line-height: 1.1; color: var(--ph-dim);
+  letter-spacing: .8px; font-variant-numeric: tabular-nums;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+/* the kebab overlays the meta corner on hover exactly as it does in COMPACT (see the rule below that
+   swaps .ws-meta for .ws-kebab) — same cell, so the row height never changes when the mouse enters */
+body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
 
 /* ---- SESSIONS ↔ PROJECTS view toggle (NS-5c): a segmented control in the rail head, ink-on-phosphor ---- */
 .ws-view { display: inline-flex; align-items: center; gap: 0; }
@@ -2962,10 +3035,20 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-row.archived { opacity: .5; }
 .ws-row.archived .ws-title { font-style: italic; }
 .ws-row.archived:hover { opacity: .85; }
-/* rename-in-place: the title becomes a compact phosphor input inside the same row */
-.ws-rename {
-  flex: 1; min-width: 0; font-family: inherit; font-size: 14px; color: var(--ph-bright);
+/* rename-in-place: the title becomes a compact phosphor input inside the same row.
+
+   SPECIFICITY, and it matters: app.js builds this with `input.type = 'text'`, so the row's editor
+   matches the input FOUNDATION at the top of this file (`input[type=text], …`) — an attribute
+   selector at (0,1,1). A bare `.ws-rename` class is (0,1,0) and LOSES, so the compact metrics
+   declared here were dead the day that foundation landed: the editor rendered at the foundation's
+   19px / 8px 11px / width:100% and shoved the rail row from 35px to 61px mid-edit (and 76→102 in
+   INBOX). Scoping to #workstreams makes this (1,1,0) so the intended metrics actually apply.
+   Fixed HERE rather than in the foundation on purpose — the foundation and the control floor below
+   it are shared safety nets, and this is one surface's skin, which is where material belongs. */
+#workstreams .ws-rename {
+  flex: 1; min-width: 0; width: auto; font-family: inherit; font-size: 14px; color: var(--ph-bright);
   background: var(--panel2); border: 1px solid var(--ph); outline: none; padding: 1px 4px; border-radius: 3px;
+  box-shadow: none; text-shadow: none;
 }
 
 /* ---- the floating actions menu (phosphor chrome, never the native context menu) ---- */
