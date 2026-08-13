@@ -712,13 +712,25 @@ async function journeyDeliverableOpen(cdp, A, base, token, mock) {
 
   // Open the real WORK-dock surface and prove the just-built backend row reaches its physical controls.
   await evalJS(cdp, `(() => { StationUI.openTerm('deliverables'); return true; })()`).catch(() => false);
+  /* 2026-08-13 (deliverables-area): the library is now a glance + a details drawer, so the controls this
+     journey exists to prove live one click down instead of on the row. Same INTENT, current DOM:
+       .deliverable-row -> .dlv-card, title -> .dlv-title, and OPEN is an <a data-file> (a real href, since
+       the OPEN fix that removed window.open), with KEEP/DISCARD inside .dlv-more.
+     So we EXPAND the matching card first. That makes this a stronger check than before — it now proves the
+     accordion reaches the controls, not just that they were rendered somewhere on the page. */
   let library = null;
   for (let i = 0; i < 30; i++) {
     library = await evalJS(cdp, `(() => {
-      const q=document.querySelector('#dl-query'), s=document.querySelector('#dl-status'), row=document.querySelector('.deliverable-row');
+      const q=document.querySelector('#dl-query'), s=document.querySelector('#dl-status');
+      const cards=[...document.querySelectorAll('.dlv-card')];
+      const card=cards.find(c=>/Journey Demo Tool/.test(c.textContent))||cards[0]||null;
+      const head=card&&card.querySelector('.dlv-head');
+      if (head && card.querySelector('.dlv-more') && card.querySelector('.dlv-more').hidden) head.click();
+      const more=card&&card.querySelector('.dlv-more');
       return { q:!!q, status:!!s, refresh:!!document.querySelector('#dl-refresh'), clean:!!document.querySelector('#dl-clean'),
-        title:row?row.textContent:'', open:!!document.querySelector('.deliverable-row button[data-file]'),
-        keep:!!document.querySelector('.deliverable-row button[data-act="keep"]'), discard:!!document.querySelector('.deliverable-row button[data-act="discard"]') };
+        title:card?(card.querySelector('.dlv-title')||{}).textContent||card.textContent:'',
+        open:!!(more&&more.querySelector('a[data-file]')),
+        keep:!!(more&&more.querySelector('button[data-act="keep"]')), discard:!!(more&&more.querySelector('button[data-act="discard"]')) };
     })()`).catch(() => null);
     if (library && library.title && library.title.indexOf('Journey Demo Tool') >= 0) break;
     await sleep(200);
@@ -728,7 +740,10 @@ async function journeyDeliverableOpen(cdp, A, base, token, mock) {
   const filtered = await evalJS(cdp, `(() => { const q=document.querySelector('#dl-query'); q.value='no-such-deliverable'; q.dispatchEvent(new Event('input',{bubbles:true})); return true; })()`).catch(() => false);
   await sleep(400);
   const emptyText = await evalJS(cdp, `document.querySelector('#dl-list')?.textContent || ''`).catch(() => '');
-  A.ok('J4/library-search-filters', filtered && /No deliverables match/.test(emptyText), 'search result=' + String(emptyText).trim().slice(0, 100));
+  // The empty state now distinguishes a FILTERED miss from a genuinely empty library — "NO MATCHES" vs
+  // "NOTHING HERE YET" — because the second headline over a library with rows behind a filter is simply false.
+  // Assert the filtered headline specifically, so this keeps failing if the two ever collapse back into one.
+  A.ok('J4/library-search-filters', filtered && /NO MATCHES/.test(emptyText), 'search result=' + String(emptyText).trim().slice(0, 100));
 }
 
 /* ═══════════════════════════ J6 — bay-bound crew idle life (desk-stuck escape) ═══════════════════════════
