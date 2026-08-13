@@ -2809,36 +2809,42 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
    that is 232px and does not widen (--crew-w), so what the row gains instead is provenance —
    WHO ran it, WHAT it is, and WHICH model over HOW MANY messages. */
 .ws-agent, .ws-receipt { display: none; }
-body.rows-inbox .ws-row {
+/* SCOPED TO #workstreams ON PURPOSE. The PROJECTS rail reuses this exact row vocabulary in its own
+   <ul id="projects"> (see the .ws-row.proj-row block below), so an unscoped `body.rows-inbox .ws-row`
+   re-grids the project list too — a rail the setting says nothing about. Every rule here names the
+   sessions list; .ws-search-hit is a separate class and is untouched either way. */
+body.rows-inbox #workstreams .ws-row {
   display: grid; align-items: center;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  /* the top line gets REAL columns rather than stacking the pin and the unread spark into the agent
+     cell — three end-justified children in one cell overlap each other and clip the agent name */
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   grid-template-areas:
-    "dot   agent agent meta"
-    "title title title title"
-    "recpt recpt recpt recpt";
+    "dot   agent pin    unread meta"
+    "title title title  title  title"
+    "recpt recpt recpt  recpt  recpt";
   gap: 1px 8px; padding: 6px 8px 7px;
 }
-body.rows-inbox .ws-row > .ws-dot { grid-area: dot; }
-body.rows-inbox .ws-agent {
+body.rows-inbox #workstreams .ws-row > .ws-dot { grid-area: dot; }
+body.rows-inbox #workstreams .ws-agent {
   display: block; grid-area: agent; min-width: 0;
   font-size: 12px; letter-spacing: 1.6px; color: var(--ph-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-body.rows-inbox .ws-row.sel .ws-agent, body.rows-inbox .ws-row.busy .ws-agent { color: var(--ph); }
-body.rows-inbox .ws-row > .ws-meta { grid-area: meta; }
-body.rows-inbox .ws-title { grid-area: title; font-size: 15px; line-height: 1.1; }
-body.rows-inbox .ws-receipt {
+body.rows-inbox #workstreams .ws-row.sel .ws-agent,
+body.rows-inbox #workstreams .ws-row.busy .ws-agent { color: var(--ph); }
+body.rows-inbox #workstreams .ws-pin { grid-area: pin; }
+body.rows-inbox #workstreams .ws-unread { grid-area: unread; }
+body.rows-inbox #workstreams .ws-row > .ws-meta { grid-area: meta; }
+body.rows-inbox #workstreams .ws-title { grid-area: title; font-size: 15px; line-height: 1.1; }
+body.rows-inbox #workstreams .ws-receipt {
   display: block; grid-area: recpt; min-width: 0;
   font-size: 11px; line-height: 1.1; color: var(--ph-dim);
   letter-spacing: .8px; font-variant-numeric: tabular-nums;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-/* the pin and the unread spark ride the top line beside the agent rather than claiming grid cells */
-body.rows-inbox .ws-pin, body.rows-inbox .ws-unread { grid-area: agent; justify-self: end; }
-body.rows-inbox .ws-row.unread .ws-unread { display: inline-block; }
 /* the kebab overlays the meta corner on hover exactly as it does in COMPACT (see the rule below that
    swaps .ws-meta for .ws-kebab) — same cell, so the row height never changes when the mouse enters */
-body.rows-inbox .ws-kebab { grid-area: meta; }
+body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
 
 /* ---- SESSIONS ↔ PROJECTS view toggle (NS-5c): a segmented control in the rail head, ink-on-phosphor ---- */
 .ws-view { display: inline-flex; align-items: center; gap: 0; }
