@@ -166,6 +166,7 @@ function analyze(records, corrupt) {
   const intents = new Map();
   const dispatched = new Map();
   const completed = [];
+  const recoveryAttempts = [];
   let baseCheckpoint = null;
   let latestCheckpoint = null;
   let resolution = null;
@@ -184,6 +185,7 @@ function analyze(records, corrupt) {
       intents.delete(callId);
       dispatched.delete(callId);
     }
+    if (r.type === 'recovery_attempt' && r.payload) recoveryAttempts.push(r.payload);
     if (r.type === 'resolution' && r.payload) resolution = r.payload;
     if (r.type === 'finish') finishPayload = r.payload || {};
     if (r.type === 'continuation_ready' && r.payload) continuation = Object.assign({ state: 'ready' }, r.payload);
@@ -236,7 +238,8 @@ function analyze(records, corrupt) {
     // remains review-required even if the loop caught an exception and cleanly emitted run.end afterward.
     status: resolutionValid ? 'resolved' : (uncertain.length ? 'needs_review' : (terminal ? (transcriptAck ? 'finished' : 'awaiting_commit') : 'resumable')),
     meta: first && first.type === 'begin' ? first.payload : {},
-    uncertain, replayableReads, replayablePrepared, completed, baseCheckpoint: baseCheckpoint || {}, deltaCheckpoint: latestCheckpoint || {},
+    uncertain, replayableReads, replayablePrepared, completed, recoveryAttempts,
+    baseCheckpoint: baseCheckpoint || {}, deltaCheckpoint: latestCheckpoint || {},
     checkpoint: checkpoint || {}, finish: finishPayload,
     resolution: resolutionValid ? resolution : null,
     continuation: resolutionValid ? continuation : null
@@ -295,6 +298,7 @@ function makeRunJournal(opts) {
   return {
     begin(meta) { return record(meta && meta.runId, 'begin', meta, true); },
     checkpoint(runId, payload) { return record(runId, 'checkpoint', payload); },
+    recoveryAttempt(runId, payload) { return record(runId, 'recovery_attempt', payload); },
     toolIntent(runId, payload) { return record(runId, 'tool_intent', payload); },
     toolDispatch(runId, payload) { return record(runId, 'tool_dispatch', payload); },
     toolResult(runId, payload) { return record(runId, 'tool_result', payload); },

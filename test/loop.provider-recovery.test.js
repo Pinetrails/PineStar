@@ -47,6 +47,24 @@ const openCtx = () => ({ canRun: () => true, canUse: () => ({ ok: true }), agent
     A.eq(seq.filter(e => e.name === 'agent.run.error').length, 0, 'no run.error was emitted (the retry recovered)');
   }
 
+  // Recovery decisions are observable through the host callback without inventing a fallback event for a retry.
+  {
+    const { emit } = setup();
+    let attempt = 0;
+    const attempts = [];
+    const provider = scriptedProvider(async function* () {
+      attempt++;
+      if (attempt === 1) throw timeoutErr();
+      yield { type: 'text', delta: 'ok' };
+      yield { type: 'done', finishReason: 'stop' };
+    });
+    await runAgentLoop({
+      messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r',
+      onRecovery: row => attempts.push(row), sleep: async () => {}
+    });
+    A.eq(attempts.map(x => [x.sequence, x.stage, x.action, x.reason, x.attempt]), [[1, 'provider_stream', 'retry', 'timeout', 1]], 'central recovery decision is reported once with stable fields');
+  }
+
   // (2a-bound) a PERSISTENT timeout still terminates: retries are bounded, then the run ends 'error'.
   {
     const { seq, emit } = setup();
@@ -54,6 +72,7 @@ const openCtx = () => ({ canRun: () => true, canUse: () => ({ ok: true }), agent
     const provider = scriptedProvider(async function* () { attempt++; throw timeoutErr(); yield; });   // always throws
     const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
     A.eq(res.reason, 'error', 'a persistent timeout eventually ends the run in error');
+    A.eq([res.failureStage, res.failureCode], ['provider_stream', 'timeout'], 'terminal provider failure carries stable failure-stage telemetry');
     A.eq(attempt, 7, 'bounded: 1 initial + 6 retries (one per backoff rung) then give up');
     A.eq(seq.find(e => e.name === 'agent.run.error').payload.transient, true, 'a timeout error is transient');
   }

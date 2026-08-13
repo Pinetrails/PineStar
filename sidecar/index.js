@@ -14631,6 +14631,13 @@ async function runOnce(o) {
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
       // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
       sleep: (ms) => new Promise(r => setTimeout(r, ms)),
+      onRecovery: (attempt) => {
+        execution.recordRecoveryAttempt(attempt);
+        if (execution.journalStarted()) {
+          try { runJournal.recoveryAttempt(runId, attempt); }
+          catch (e) { execution.recordFailure('recovery_attempt_persist', 'recovery-journal-failed'); }
+        }
+      },
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
@@ -14671,6 +14678,7 @@ async function runOnce(o) {
       // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
       approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
     });
+    if (result && result.failureStage) execution.recordFailure(result.failureStage, result.failureCode || 'run_failure');
     if (imageTask && result && result.reason === 'done') {
       let clarifying = false;
       if (taskBrief && Array.isArray(result.messages)) {
@@ -14757,7 +14765,7 @@ async function runOnce(o) {
         }
       }
       const runEndedAt = Date.now();
-      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), failureStage: execution.failureStage(), failureCode: execution.failureCode(), uncertainMutations: execution.uncertainMutations(), completionEvidence: execution.completionEvidence(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), failureStage: execution.failureStage(), failureCode: execution.failureCode(), uncertainMutations: execution.uncertainMutations(), completionEvidence: execution.completionEvidence(), recoveryAttempts: execution.recoveryAttempts(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new

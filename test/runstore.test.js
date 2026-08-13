@@ -180,6 +180,11 @@ const clock = { now: () => clk };
   A.eq(completion.completionVerdict, 'not_assessed', 'run store cannot persist a caller-invented completion claim');
   A.eq(completion.effectVerdict, 'judgment_required', 'bounded effect verdict persists');
   A.eq(completion.effects[0].state, 'judgment_required', 'effect-level judgment requirement persists');
+  const recoveryAttempts = s.record({ runId: 'recovery-attempts', recoveryAttempts: [
+    { sequence: 1, stage: 'provider_stream', action: 'retry', reason: 'timeout', attempt: 1, model: 'm', delayMs: 400 }
+  ] }).recoveryAttempts;
+  A.eq(recoveryAttempts[0].action, 'retry', 'recovery action persists in run history');
+  A.eq(recoveryAttempts[0].delayMs, 400, 'recovery delay persists as observed policy telemetry');
 
   // ---- (P1.2 identity-honesty) identityFallback rides the row: honest marker when the agentId missed the roster ----
   A.eq(s.record({ runId: 'w9', agentId: 'a', reason: 'done', identityFallback: true }).identityFallback, true, 'identityFallback:true recorded on a fallback run (was not the named specialist)');

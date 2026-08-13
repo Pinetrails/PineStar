@@ -58,6 +58,7 @@
   const FAILURE_FIELD_MAX = 80;
   const UNCERTAIN_MUTATIONS_MAX = 200;
   const COMPLETION_ROWS_MAX = 100;
+  const RECOVERY_ATTEMPTS_MAX = 100;
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
   function nonnegative(v) { return Math.max(0, num(v)); }
   function str(v) { return v == null ? '' : String(v); }
@@ -152,6 +153,15 @@
     };
   }
 
+  function recoveryAttemptList(v) {
+    if (!Array.isArray(v)) return [];
+    return v.slice(0, RECOVERY_ATTEMPTS_MAX).filter(x => x && typeof x === 'object').map((x, index) => ({
+      sequence: nonnegative(x.sequence) || index + 1,
+      stage: str(x.stage).slice(0, 80), action: str(x.action).slice(0, 40), reason: str(x.reason).slice(0, 80),
+      attempt: nonnegative(x.attempt), model: str(x.model).slice(0, 80), delayMs: nonnegative(x.delayMs)
+    }));
+  }
+
   // RAM mirror ceiling: the largest served query is list({ limit: 1000 }) (insights) / 500 (run list), so keep
   // generous headroom (~3x) and splice the oldest off when the in-process mirror grows past it. On-disk history
   // stays complete (the append-only log + its rotated segment); only the RAM mirror is bounded so a 24/7 process
@@ -201,6 +211,7 @@
         failureCode: str(e.failureCode).trim().slice(0, FAILURE_FIELD_MAX),
         uncertainMutations: uncertainMutationList(e.uncertainMutations),
         completionEvidence: completionEvidence(e.completionEvidence),
+        recoveryAttempts: recoveryAttemptList(e.recoveryAttempts),
         startedAt: nonnegative(e.startedAt), endedAt: nonnegative(e.endedAt), durationMs: nonnegative(e.durationMs),
         ts: num(e.ts) || clock.now()
       };

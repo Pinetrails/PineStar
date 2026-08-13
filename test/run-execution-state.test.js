@@ -100,5 +100,7 @@ const completionState = makeRunExecutionState({ completion: {
 completionState.observeCompletion({ callId: 'c', name: 'fs.write' });
 A.eq(completionEvents.map(x => x.callId), ['c'], 'run state owns completion evidence observation lifecycle');
 A.eq(completionState.completionEvidence().effectVerdict, 'unverified_effects', 'run state exposes the collector snapshot');
+completionState.recordRecoveryAttempt({ sequence: 1, stage: 'provider_stream', action: 'retry', reason: 'timeout', attempt: 1, model: 'm', delayMs: 400 });
+A.eq(completionState.recoveryAttempts(), [{ sequence: 1, stage: 'provider_stream', action: 'retry', reason: 'timeout', attempt: 1, model: 'm', delayMs: 400 }], 'recovery attempts are bounded run-owned telemetry');
 
 A.report('run-execution-state.test');

@@ -32,6 +32,8 @@ A.eq(state.status, 'resumable', 'a paired result is safe to resume');
 A.eq(state.checkpoint.phase, 'tool_results', 'latest provider-valid checkpoint wins');
 A.eq(state.completed.length, 1, 'paired intent/result evidence survives recovery analysis');
 A.eq(state.meta.agentId, 'a', 'run metadata remains available to the restart reconciler');
+j.recoveryAttempt('r1', { sequence: 1, stage: 'provider_stream', action: 'retry', reason: 'timeout' });
+A.eq(j.inspect('r1').recoveryAttempts.map(x => x.action), ['retry'], 'recovery attempt survives journal inspection');
 
 j.finish('r1', { reason: 'done', transcriptAck: true });
 state = j.inspect('r1');

@@ -23,6 +23,7 @@ function makeRunExecutionState(options) {
   let failureStage = '';
   let failureCode = '';
   const toolBoundaries = new Map();
+  const recoveryAttempts = [];
 
   function latchTaint(source) {
     if (!taintedBy && source) taintedBy = String(source);
@@ -162,6 +163,16 @@ function makeRunExecutionState(options) {
       .map(rec => Object.assign({}, rec));
   }
 
+  function recordRecoveryAttempt(row) {
+    if (recoveryAttempts.length >= 100 || !row || typeof row !== 'object') return;
+    recoveryAttempts.push({
+      sequence: Math.max(0, Number(row.sequence) || recoveryAttempts.length + 1),
+      stage: String(row.stage || '').slice(0, 80), action: String(row.action || '').slice(0, 40),
+      reason: String(row.reason || '').slice(0, 80), attempt: Math.max(0, Number(row.attempt) || 0),
+      model: String(row.model || '').slice(0, 80), delayMs: Math.max(0, Number(row.delayMs) || 0)
+    });
+  }
+
   function failJournal(error, meta) {
     meta = meta || {};
     if (!journalFailure) journalFailure = String((error && error.message) || error || 'unknown journal failure').slice(0, 500);
@@ -211,6 +222,8 @@ function makeRunExecutionState(options) {
     markToolDispatched,
     markToolSettled,
     uncertainMutations,
+    recordRecoveryAttempt,
+    recoveryAttempts: () => recoveryAttempts.map(row => Object.assign({}, row)),
     failJournal,
     observeCompletion,
     completionEvidence,
