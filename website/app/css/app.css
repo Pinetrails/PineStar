@@ -3311,6 +3311,46 @@ body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
 .gx-tro.off .nm { color:var(--ph-dim); opacity:.75; }
 .gx-tro .sub { font-family:inherit; font-size:10px; letter-spacing:.04em; margin-top:3px; color:var(--ph-dim); opacity:.7; }
 
+/* ---- THE QUEST CARD (2026-08-13) ---------------------------------------------------------------
+   The card's SKIN lives here; its GRID lives in motion.css (`.gx-quests .q-grid`), which loads after
+   this file and outranks it — putting a second `grid-template-columns` here would just create a
+   silent second painter for the same property. The card takes the station's existing card language —
+   one top-left light, matte, `--raise`, no gloss — so it belongs to the same family as the catalog
+   and deliverable cards instead of inventing a look for quests alone. */
+.q-grid .q-card { display: flex; flex-direction: column; gap: 3px; padding: 10px 11px;
+  border: 1px solid var(--ph-dim); border-radius: var(--r-sm); box-shadow: var(--raise);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .05), rgba(0,0,0,.36) 62%);
+  transition: border-color var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out),
+              translate var(--t-fast) var(--ease-out); }
+/* a quest you can still act on lifts under the pointer; a done one is a trophy and stays put */
+.q-grid .q-card.off:hover { border-color: var(--ph); translate: 0 -1px; }
+.q-grid .q-card.on { border-color: var(--gold); }
+/* the title earns real type: 11px at 130px wide was the single biggest legibility loss */
+.q-grid .q-card .nm { font-size: 12.5px; line-height: 1.35; margin-top: 0; letter-spacing: .02em; }
+.q-grid .q-card .sub { font-size: 11px; line-height: 1.45; opacity: .78; }
+.q-grid .q-card .q-hd { align-items: flex-start; gap: 7px; }
+.q-grid .q-card .gl { margin-top: 1px; }
+/* THE KIND BADGE — names which of the six real sources a card came from, so a mixed list stops reading
+   as one wall. Quiet by default; it labels, never shouts over the title. */
+.q-kind { flex: 0 0 auto; margin-left: auto; align-self: flex-start; font-size: 8.5px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--ph-dim); border: 1px solid var(--ph-glow2); border-radius: 2px;
+  padding: 1px 5px; opacity: .85; white-space: nowrap; }
+.q-kind-ledger, .q-kind-work { color: var(--gold); border-color: rgba(var(--gold-rgb), .5); }
+.q-kind + .q-dismiss { margin-left: 4px; }
+/* the reward, styled as what it is: the real thing this pays out in */
+.q-grid .q-card .q-reward { color: var(--gold); opacity: .82; margin-top: 4px; font-size: 10.5px; }
+/* THE ACTION ROW — the primary action gets the foot of the card and full width. It used to be a 9px chip
+   wedged between the title and the dismiss ✕; a control that STARTS a quest must not sit a few pixels from
+   the control that dismisses it forever. */
+.q-actions { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.q-actions .q-go { margin-left: 0; flex: 1 1 auto; text-align: center; font-size: 10px; letter-spacing: .1em;
+  padding: 5px 8px; border-color: var(--ph-dim); color: var(--ph); opacity: 1; }
+.q-actions .q-go:hover { color: var(--gold); border-color: var(--gold);
+  box-shadow: inset 0 0 12px rgba(var(--gold-rgb), .16); }
+.q-actions .q-queue { margin-left: 0; flex: 0 0 auto; border-color: var(--ph-glow2); padding: 4px 7px; }
+/* the lede sits under the OPEN heading now — quiet, one line, never competing with the cards */
+.q-lede { margin: -2px 0 9px; font-size: 10.5px; opacity: .6; }
+
 /* G1a — quest-log dynamics: the dismiss ✕ on get-to-know-you quests + the completion flourish.
    The flourish is a MOMENT (one ~2.4s gold flash, bold not subtle), never a lingering state. */
 /* .q-dismiss composes .x-btn (bright hover) — ghost + opacity delta */

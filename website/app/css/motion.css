@@ -636,9 +636,14 @@ button:active {
    padding + a 2-up grid so they read clearly; DONE cards dim so the eye
    goes to what's still open. All colour/opacity/spacing — no logic.
    ============================================================ */
-.gx-quests .q-grid { grid-template-columns: repeat(2, 1fr); gap: 9px; }
+/* COLUMN COUNT FOLLOWS THE WINDOW (2026-08-13). A hard 2-up was right when the log was a 560px column;
+   in the widened window it stretched every card to ~480px, so a one-line quest carried 400px of empty
+   rail and only four cards fit on screen. auto-fill against the same 272px readable minimum keeps the
+   old 2-up at the old width and simply uses the room when there is room. This is the CANONICAL quest-grid
+   rule — motion.css loads after app.css and outranks it, so grid changes belong here, not stacked there. */
+.gx-quests .q-grid { grid-template-columns: repeat(auto-fill, minmax(272px, 1fr)); gap: 9px; align-items: start; }
 .gx-quests .q-grid .gx-tro { padding: 11px 12px; }
-.gx-quests .q-grid .gx-tro .nm { font-size: 12px; margin-top: 6px; }
+.gx-quests .q-grid .gx-tro .nm { font-size: 12.5px; margin-top: 0; }
 .gx-quests .q-grid .gx-tro .sub { font-size: 11px; margin-top: 5px; line-height: 1.4; }
 /* DONE column reads as settled history — dimmer, so OPEN stays the focus.
    (Keeps the gold "earned" accent; just drops overall emphasis.) */

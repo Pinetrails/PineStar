@@ -7564,13 +7564,56 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
   // §C — the GO destination token for a quest that has a real, already-existing openable surface (never a new
   // window). null → no GO button. dossier → the Commander dossier; work/build → the TASK BOARD; a floor gap → REFIT.
-  const GO_LABEL = { commander: 'GO ▸ dossier', tasks: 'GO ▸ task board', refit: 'GO ▸ REFIT' };
+  /* WHERE A QUEST IS ACTUALLY DONE. A build/work quest used to send the Commander to the TASK BOARD — a
+     board of OTHER work, where the quest itself does not appear and nothing tells you what to do next. The
+     work happens in a conversation with an agent, so that is where the button goes: its OWN session, opened
+     on the quest, with the ask already typed. The other two destinations were already right and are
+     unchanged: a dossier question is answered in the dossier, a floor gap is fixed in REFIT. */
+  const GO_LABEL = { commander: '▶ ANSWER IT', session: '▶ START QUEST', refit: '▶ OPEN REFIT' };
+  /* A one-word badge naming WHICH KIND of thing a card is. The log mixes six genuinely different sources —
+     a personalized ledger quest, a goal-arc step, a capability gap on your floor, an accepted build, a
+     recurring maintenance cause, a dossier question, a milestone — and rendering them identically is what
+     made 26 cards read as one undifferentiated wall. Naming the kind is the opposite of collapsing them. */
+  const QUEST_KIND_TAG = {
+    ledger: 'FOR YOU', work: 'BUILD', 'station-gap': 'FLOOR', maintenance: 'FIX',
+    dossier: 'ABOUT YOU', milestone: 'MILESTONE', station: 'STATION', idea: 'IDEA'
+  };
   function questGoDest(q) {
     if (!q || q.status === 'done') return null;
     if (q.kind === 'dossier') return 'commander';
-    if (q.kind === 'work' || (q.kind === 'ledger' && (q.ledgerKind === 'work' || (q.contract && (q.contract.type === 'run' || q.contract.type === 'artifact'))))) return 'tasks';
+    if (q.kind === 'work' || (q.kind === 'ledger' && (q.ledgerKind === 'work' || (q.contract && (q.contract.type === 'run' || q.contract.type === 'artifact'))))) return 'session';
     if (q.kind === 'station-gap' || q.kind === 'station') return (typeof Build !== 'undefined' && Build.open) ? 'refit' : null;
     return null;
+  }
+
+  /* THE QUEST'S OWN SESSION. Idempotent by TITLE: clicking START QUEST twice returns to the same conversation
+     instead of littering the rail with duplicates (the same title-match idiom WorkQuestStore uses to refuse a
+     duplicate build). The composer is PREFILLED, never sent — the Commander's words stay theirs to edit, and
+     no turn is fabricated on their behalf (the OUTBOX ⊕ NEW SESSION precedent). Returns false honestly when
+     the workstream seam is unavailable, so the caller can say so instead of dead-clicking. */
+  function questSessionTitle(q) { return ('quest: ' + String((q && q.title) || 'a quest')).slice(0, 80); }
+  function questOpenSession(q) {
+    const w = WS();
+    if (!q || !w || !w.create) return false;
+    const title = questSessionTitle(q);
+    const existing = (w.list ? w.list() : []).find(s => s && !s.archived && s.title === title);
+    let sid = existing ? existing.id : null;
+    if (!sid) {
+      const made = w.create(title, { activate: false, agentId: (heroAgent() && heroAgent().id) || 'agent' });
+      sid = made && made.id;
+      if (sid) persistWS();
+    }
+    if (!sid) return false;
+    if (typeof App !== 'undefined' && App.openWorkstream) App.openWorkstream(sid);
+    // The ask names the quest and the honest completion condition, so the agent starts on the real objective
+    // rather than a title fragment. Left in the composer for the Commander to edit or send.
+    if (typeof Chat !== 'undefined' && Chat.prefill) {
+      const cw = questCompletesWhen(q);
+      Chat.prefill('Help me with this quest: ' + String(q.title || '').trim()
+        + (q.desc ? ' — ' + String(q.desc).trim() : '')
+        + (cw ? '\n\nIt counts as done when: ' + cw : '') + '\n\n');
+    }
+    return true;
   }
 
   // QUEST V3 — relative-time from an epoch-ms stamp (the fmtRel idiom, but for ms not ISO). 0/junk -> '—'.
@@ -7616,7 +7659,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     }
     // LAST OUTCOME — the most recent honest attempt (minted/none/rejected/skipped/error) the refresher recorded.
     const last = s && s.ledger && s.ledger.length ? s.ledger[s.ledger.length - 1] : null;
-    const OUTCOME_LABEL = { minted: 'minted a quest', none: 'no new step needed', rejected: 'rejected', skipped: 'skipped', error: 'error' };
+    const OUTCOME_LABEL = { minted: 'added a quest', none: 'nothing new needed', rejected: 'nothing passed', skipped: 'skipped', error: 'error' };
+    // The engine's own reason is kept verbatim on the row; these say what it MEANS for the Commander. A
+    // rejected cycle is the confusing one — it reads as a failure when it is the station refusing to invent
+    // a quest it cannot ground, so it says that outright rather than leaving "rejected" to be guessed at.
+    const OUTCOME_PLAIN = {
+      rejected: 'the station had nothing it could honestly ground — no quest was invented',
+      none: 'your direction is already covered',
+      skipped: 'the cycle did not need to run'
+    };
     let lastReason = last ? String(last.reason || '') : '';
     let lastRawTip = '';
     if (last && last.outcome === 'error' && lastReason && typeof Friendly !== 'undefined') {
@@ -7625,9 +7676,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (fe && fe.userMessage) { lastRawTip = lastReason; lastReason = fe.userMessage; }
       } catch (_) {}
     }
+    // the plain sentence leads; the engine's exact wording rides the station tooltip, never dropped
+    const plain = last ? (OUTCOME_PLAIN[last.outcome] || '') : '';
+    const reasonHtml = plain
+      ? '<span title="' + esc(lastReason) + '">' + esc(plain) + '</span>'
+      : (lastRawTip ? '<span title="' + esc(lastRawTip) + '">' + esc(lastReason) + '</span>' : esc(lastReason));
     const lastHtml = last
       ? '<div class="sub q-refresh-last"><span class="q-outcome q-oc-' + esc(last.outcome || 'skipped') + '">' + esc(OUTCOME_LABEL[last.outcome] || last.outcome || '—') + '</span> '
-          + (lastRawTip ? '<span title="' + esc(lastRawTip) + '">' + esc(lastReason) + '</span>' : esc(lastReason))
+          + reasonHtml
           + (last.title ? ' &mdash; &ldquo;' + esc(last.title) + '&rdquo;' : '')
           + ' <span class="dim">&middot; ' + esc(qrRel(last.at)) + '</span></div>'
       : '<div class="sub q-refresh-last dim">no refresh has run yet.</div>';
@@ -7782,7 +7838,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // §C — a GO affordance where a real, openable destination exists (never invents a window): dossier asks →
       // the Commander dossier; work/build → the TASK BOARD; a floor gap → REFIT. Absent target → no button.
       const goDest = questGoDest(q);
-      const goBtn = goDest ? '<button class="q-go" data-dest="' + esc(goDest) + '" title="Open where you do this next">' + esc(GO_LABEL[goDest] || 'GO') + '</button>' : '';
+      const goBtn = goDest ? '<button class="q-go" data-dest="' + esc(goDest) + '" data-qid="' + esc(q.id) + '" title="Open where you do this next">' + esc(GO_LABEL[goDest] || 'GO') + '</button>' : '';
       // §C — EVERY open row answers "what do I do next": the honest completion condition in words.
       const cw = q.status !== 'done' ? questCompletesWhen(q) : '';
       const cwHtml = cw ? '<div class="sub q-cw">✓ completes when: ' + esc(cw) + '</div>' : '';
@@ -7801,14 +7857,22 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // §C — a prior declined attest on a still-open ledger quest: show the note so the ask reads honestly.
       const declineHtml = (q.kind === 'ledger' && q.status !== 'done' && !pend && q.declineNote && q.declineNote.note)
         ? '<div class="sub q-note">&#8617; you said not yet: &ldquo;' + esc(String(q.declineNote.note).slice(0, 120)) + '&rdquo;</div>' : '';
-      return '<div class="gx-tro ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + '">'
+      /* CARD SHAPE: header = what this is · body = what it means · ACTION ROW = what you can do. The three
+         controls used to share the title row as 9px chips, where the one that starts the quest looked exactly
+         like the one that dismisses it forever — that adjacency is what made the options confusing. Now the
+         primary action is a full-width button at the foot of the card and the destructive ✕ stays small and
+         alone in the header, where a misclick cannot land on it while reaching for START. */
+      const kindTag = QUEST_KIND_TAG[q.kind] || '';
+      const kindHtml = kindTag ? '<span class="q-kind q-kind-' + esc(q.kind) + '">' + esc(kindTag) + '</span>' : '';
+      const rewardHtml = q.reward ? '<div class="sub q-reward">&#9670; ' + esc(q.reward) + '</div>' : '';
+      const actionRow = (goBtn || queueBtn) ? '<div class="q-actions">' + goBtn + queueBtn + '</div>' : '';
+      return '<div class="gx-tro q-card ' + (q.status === 'done' ? 'on' : 'off') + (glow ? ' q-celebrate' : '') + '" style="--ci:' + (i || 0) + '">'
         + '<div class="q-hd"><span class="gl">' + (q.status === 'done' ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + esc(q.title) + '</span>'
-        + goBtn
-        + queueBtn
+        + kindHtml
         + (dis ? '<button class="q-dismiss" data-qid="' + esc(q.id) + '" title="Dismiss — the station will never raise this again">&#10005;</button>' : '')
         + '</div>'
         + '<div class="sub">' + esc(q.status === 'done' ? ('▸ ' + q.reward) : q.desc) + '</div>'
-        + cwHtml + attestHtml + declineHtml + '</div>';
+        + cwHtml + (q.status === 'done' ? '' : rewardHtml) + attestHtml + declineHtml + actionRow + '</div>';
     };
     const meterHtml = m
       ? '<div class="gx-sec"><span class="gx-title">AGENT GROWTH</span> <span class="gx-tag">Lv ' + m.level + ' &middot; ' + m.pct + '% to next &middot; ' + esc(String(m.confLabel) + ' ' + String(m.band)) + '</span></div>'
@@ -7829,16 +7893,23 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       ? '<div class="gx-sec"><span class="gx-title">PROPOSALS</span> <span class="gx-tag">' + proposals.length + '</span></div>'
         + '<div class="gx-tros">' + proposals.map(propRow).join('') + '</div>'
       : '';
+    /* ORDER OF THE PANEL (2026-08-13). This window is opened to answer ONE question — what should I do next —
+       and it used to answer it fourth: the agent-growth meter, the direction card, and the whole Commander
+       Journey console (metrics, mastery, adaptation receipts, station evolution) all sat above the first
+       quest, so an ordinary window opened with ZERO quests on screen. Nothing has been removed or collapsed;
+       the bookkeeping simply now sits UNDER the quests it describes. DIRECTION stays on top because the north
+       star and REFRESH QUESTS are what the quest list is derived from — it is the header of this list, not a
+       separate console. */
     body.innerHTML = '<div class="gx gx-quests">'
-      + meterHtml
       + questRefreshHtml()
-      + journeyHtml()
-      + '<div class="dim" style="margin:4px 0 10px;">every quest pays out in real capability or work &mdash; never points. nothing here is locked; the order just shows what tends to come next.</div>'
       + proposalsHtml
       + '<div class="gx-sec"><span class="gx-title">OPEN</span> <span class="gx-tag">' + open.length + '</span></div>'
+      + '<div class="dim q-lede">every quest pays out in real capability or work &mdash; never points. nothing is locked; the order just shows what tends to come next.</div>'
       + '<div class="gx-tros q-grid q-open">' + (open.map(tro).join('') || '<p class="dim">all caught up.</p>') + '</div>'
       + '<div class="gx-sec"><span class="gx-title">DONE</span> <span class="gx-tag">' + done.length + '</span></div>'
       + '<div class="gx-tros q-grid q-done">' + (done.map(tro).join('') || '<p class="dim">nothing yet.</p>') + '</div>'
+      + meterHtml
+      + journeyHtml()
       + '</div>';
     // COMMANDER JOURNEY writes are explicit. Empty/invalid numeric fields are rejected in the panel before the
     // request, and every successful response re-renders from the backend's returned proof snapshot.
@@ -7966,6 +8037,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       ev.stopPropagation();
       const d = b.dataset.dest;
       if (d === 'refit') { if (typeof Build !== 'undefined' && Build.open) { try { Build.open(); } catch (_) {} } }
+      else if (d === 'session') {
+        // the quest's own conversation — never the TASK BOARD, which shows other work and not this quest
+        const q = qs.find(x => x && x.id === b.dataset.qid);
+        if (!questOpenSession(q)) { notify('could not open a session for that quest', 'bad'); return; }
+      }
       else if (d) openTerm(d);
       sfx('click');
     }));
@@ -8000,10 +8076,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const r = await QuestRefreshStore.run();
       if (r && r.started) { sfx('click'); notify('◆ refreshing quests — the station is re-deriving your direction', 'gold'); }
       else { notify('refresh not started: ' + ((r && r.error) || 'unavailable'), 'warn'); }
-      // the cycle is async on the server; re-render now (shows inFlight + the launch), then again shortly so the
-      // recorded outcome (mint/reject/skip reason) lands in the panel without the Commander re-opening it.
+      // The cycle is async on the server. The STORE now follows it to the end (watchSettle) and pokes one
+      // re-render carrying the recorded outcome, so this render is only the launch state — no blind timer,
+      // and no way for the button to stay stuck on REFRESHING… past the end of the cycle.
       rerender('quests');   // no-op if the panel was closed meanwhile (rerender guards on open[key])
-      if (r && r.started) setTimeout(() => { try { rerender('quests'); } catch (_) {} }, 3500);
     });
     // QUEST V3 — NORTH STAR verdict: confirm (adopt the inferred star) or correct (decline → denylisted, the
     // station re-infers next cycle). Both route through QuestRefreshStore.verdict → POST /northstar, then re-render
@@ -8042,7 +8118,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
     manual:   ['FIELD MANUAL',           body => { if (typeof Tutorial !== 'undefined' && Tutorial.fillFieldManual) Tutorial.fillFieldManual(body); }, { w: '640px' }],
-    quests:   ['QUEST LOG',              buildQuests,    { w: '560px' }],
+    quests:   ['QUEST LOG',              buildQuests,    { w: '1000px' }],   // a card grid, not a column: 560px forced 4 quest cards into ~130px each
   };
 
   /* ============== EXTRACTED-WINDOW SEAM (frontend/app/windows/*.js) ==============

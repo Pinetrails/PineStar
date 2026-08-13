@@ -110,6 +110,32 @@ const QuestRefreshStore = (() => {
     }
   }
   function afterVerdict() { if (typeof StationUI !== 'undefined' && StationUI.rerender) { try { StationUI.rerender('quests'); } catch (_) {} } }
+  function poke() { try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests'); } catch (_) {} }
+
+  /* FOLLOW THE CYCLE TO ITS END (2026-08-13). Starting a refresh is not finishing one: the POST returns
+     `started` in milliseconds while the engine works for seconds afterwards, and `inFlight` only clears on a
+     later fetch. The panel used to paint REFRESHING… and re-render once on a blind 3.5s timer, so a cycle that
+     outlived the guess left the button disabled and labelled REFRESHING… with no outcome — which is what
+     "refresh quests barely works" looked like. Now the store watches its own cycle: bounded polls of the real
+     status until the engine reports it is no longer in flight, then ONE re-render carrying the recorded
+     outcome. Bounded (never an unbounded spinner) and it pokes on give-up too, so the control always comes
+     back — truthfully labelled by whatever the engine actually reported. */
+  const SETTLE_POLL_MS = 1200, SETTLE_MAX_MS = 45000;
+  let watching = false;
+  async function watchSettle() {
+    if (watching) return;
+    watching = true;
+    const started = Date.now();
+    try {
+      while (Date.now() - started < SETTLE_MAX_MS) {
+        await new Promise(r => setTimeout(r, SETTLE_POLL_MS));
+        lastFetch = 0;
+        await refetch();
+        if (!isRunning()) break;   // the engine says the cycle is done — its ledger row is now the truth
+      }
+    } catch (_) { /* fail-soft: the poke below still frees the control */ }
+    finally { watching = false; poke(); }
+  }
 
   // THROTTLED poll — safe to call every tick + every quest-log render. Only actually hits the network once the
   // POLL_MS window has elapsed since the last good fetch (or on the very first call / after a run reset it).
@@ -133,6 +159,7 @@ const QuestRefreshStore = (() => {
       out = j && typeof j === 'object' ? { ok: !!j.ok, started: !!j.started, error: j.error || '' } : out;
     } catch (_) { out = { ok: false, started: false, error: 'could not reach the station' }; }
     finally { running = false; lastFetch = 0; await refetch(); }   // immediate: inFlight/ledger reflect the launch now
+    if (out.started) watchSettle();   // and then follow it to the end, so the outcome lands without a re-open
     return out;
   }
 
@@ -154,7 +181,7 @@ const QuestRefreshStore = (() => {
   // init on enter-game: a clean fetch so the first quest-log render already has the status (the tick keeps it fresh).
   function init() { cache = null; lastFetch = 0; running = false; beaten.clear(); refetch(); }
   // a fresh Commander inherits no cached status (mirrors the sibling stores' reset).
-  function reset() { cache = null; lastFetch = 0; running = false; beaten.clear(); }
+  function reset() { cache = null; lastFetch = 0; running = false; watching = false; beaten.clear(); }
 
   return { init, sync, status, isRunning, run, verdict, reset, _shape: shape };
 })();
