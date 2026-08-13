@@ -246,7 +246,12 @@
       if (sp.dom) f('dom').value = String(sp.dom);
       if (sp.every) f('every').value = String(sp.every);
       if (sp.unit) f('unit').value = sp.unit;
-      if (input) input.value = String(scheduleString == null ? '' : scheduleString).replace(/^cron /, '');
+      // the input must hold a string the PARSER accepts, not the display verbatim. toSpec already did
+      // the translation (a once-job's display "once at <iso>" becomes the bare iso in sp.raw); for the
+      // builder modes the stripped display and the built string are byte-equal, so either works.
+      if (input) input.value = mode === 'advanced' && sp.raw != null
+        ? String(sp.raw)
+        : String(scheduleString == null ? '' : scheduleString).replace(/^cron /, '');
       paint();
       emit(true);
       // always announce the seeded value, even when emit() found nothing to rewrite — the caller's

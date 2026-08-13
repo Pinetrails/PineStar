@@ -181,11 +181,16 @@ async function journeyRoutines(cdp, A) {
   A.ok('JW-routines/api-cron-readable', baseCount >= 0, 'GET /api/cron baseline jobs = ' + baseCount);
 
   await evalJS(cdp, `(typeof StationUI !== 'undefined' && StationUI.openTerm) ? StationUI.openTerm('routines') : null`).catch(() => {});
-  const winOpen = await waitSel(cdp, '#con-tab-routines-create', 40);
+  // NAV CONDENSE (2026-08-04): ROUTINES is a lane of the AUTOMATION console, so its tab ids carry the
+  // console key — con-tab-automation-<section>. The pre-condense id this waited on ('#con-tab-routines-
+  // create') stopped existing then, and because mountConsole mounts every pane up-front, every LATER
+  // step still passed against the hidden pane — the journey ran 25/26 for a week and the one FAIL read
+  // as "window never opened" when the window was open the whole time.
+  const winOpen = await waitSel(cdp, '#con-tab-automation-routines-create', 40);
   A.ok('JW-routines/window-open', winOpen, winOpen ? 'ROUTINES console open (create/active tabs present)' : 'ROUTINES window never opened');
 
   // CREATE tab: reveal the create pane, then drive the server-math preview.
-  await clickSel(cdp, '#con-tab-routines-create');
+  await clickSel(cdp, '#con-tab-automation-routines-create');
   await waitSel(cdp, '#rt-sched', 40);
   const preview = await evalJS(cdp, `(() => {
     const s = document.querySelector('#rt-sched'); if (!s) return 'NO_SCHED';
