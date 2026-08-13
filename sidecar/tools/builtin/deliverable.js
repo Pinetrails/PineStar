@@ -59,7 +59,7 @@
       // NO consent gate and NO capability requirement: this writes no file, reaches no network, and has no outward
       // effect — it labels work the run already did. Gating it would mean the runs most in need of a readable name
       // (a plain chat run with no cabinet) are exactly the ones that could never supply one.
-      name: 'deliverable_note', capability: null, scope: 'write', requiresConsent: false, timeoutMs: 5000,
+      name: 'deliverable_note', capability: 'deliverable', scope: 'write', requiresConsent: false, timeoutMs: 5000,
       description: 'Name the work you produced in this task, so the Commander can find it later in DELIVERABLES. '
         + 'Call this ONCE, at the end, only when you actually created or changed files. '
         + 'title: a short plain-English name for the thing you made (not a filename). '

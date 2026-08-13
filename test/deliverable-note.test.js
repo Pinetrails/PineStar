@@ -47,7 +47,12 @@ const toolFor = notes => makeDeliverableTool({ notes: notes }).deliverableTool;
   {
     const notes = bag(), tool = toolFor(notes);
     A.eq(tool.requiresConsent, false, 'naming your own work needs no consent — it has no outward effect');
-    A.eq(tool.capability, null, 'no capability gate: a plain chat run must still be able to name what it made');
+    // Its own freebie capId — never one of the placed-hardware families (cabinet/dish/notebook/workbench).
+    // That is what lets it ride the COMPUTER object in CAP_REGISTRY and so exist on the compute-only interactive
+    // office: the surface most likely to write one file and least likely to have gear on the floor. The grant
+    // itself is asserted in capgate.test.js; this pins that it never became a hardware-gated tool.
+    A.eq(tool.capability, 'deliverable', 'carries its own freebie capability, like quest.update');
+    A.ok(['cabinet', 'dish', 'notebook', 'workbench', 'studio'].indexOf(tool.capability) < 0, 'a plain chat run with no gear can still name what it made');
     A.ok(/do not judge it/i.test(tool.description), 'the description asks for a description, never a verdict');
 
     const out = await tool.run({ title: 'Q3 churn analysis', summary: 'Three cohorts.', kind: 'doc' }, { runId: 'r1' });
