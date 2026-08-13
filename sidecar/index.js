@@ -77,6 +77,7 @@ const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durab
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
 const { makeCompletionEvidence } = require('./completion-evidence.js'); // structured effect proof; never guesses task completion
 const { makeRunExecutionState } = require('./run-execution-state.js'); // one lifecycle for per-run latches/counters/artifacts
+const { recoverToolResult } = require('./tool-recovery.js'); // bounded retry for host-trusted transient reads only
 const transcriptStoreModule = require('./transcriptstore.js');
 const { makeTranscriptStore } = transcriptStoreModule;
 const TRANSCRIPT_PERSISTED = transcriptStoreModule._internals && transcriptStoreModule._internals.PERSISTED;
@@ -12760,6 +12761,16 @@ async function runOnce(o) {
     completion: makeCompletionEvidence(),
     now: () => Date.now()
   });
+  // One sequence across provider and tool recovery. Adapter-local counters restart at one, but the durable run
+  // record must preserve the actual cross-stage order in which recovery actions happened.
+  const recordRunRecoveryAttempt = (attempt) => {
+    const row = Object.assign({}, attempt, { sequence: execution.recoveryAttempts().length + 1 });
+    execution.recordRecoveryAttempt(row);
+    if (execution.journalStarted()) {
+      try { runJournal.recoveryAttempt(runId, row); }
+      catch (e) { execution.recordFailure('recovery_attempt_persist', 'recovery-journal-failed'); }
+    }
+  };
   // The desktop shell is the native host boundary. Only an adapter-minted, locally paired owner DM gets its
   // remote desktop lease; no prompt text, task flag, stored approval, or generic API caller can manufacture it.
   const remoteDesktopAuthorized = ownerTrusted && DESKTOP_SHELL
@@ -13477,7 +13488,7 @@ async function runOnce(o) {
   try {
     const room = station.rooms && station.agents && station.agents[agentId] && station.rooms[station.agents[agentId].room];
     for (const def of connectors.toolDefsForObjects((room && room.objects) || [])) {
-      registry.register(def);
+      registry.register(def, { provenance: 'connector' });
       if (resolved.tools.indexOf(def.name) < 0) resolved.tools.push(def.name);
       resolved.networkCaps[def.name] = true;
       resolved.approvalRules[def.name] = { requiresConsent: !!def.requiresConsent, scope: def.scope, network: true };
@@ -14094,7 +14105,16 @@ async function runOnce(o) {
     }
     let r;
     try {
+      // Keep the first dispatch explicit at this security boundary: the taint gate above is visibly and
+      // mechanically before execution. Recovery can only repeat this call after the pure policy proves it is a
+      // host-defined read with a transient failure; registry.dispatch re-runs every authority/gate/hook on retry.
       r = await registry.dispatch(c, dctx);
+      r = await recoverToolResult({
+        result: r,
+        dispatch: (call, dispatchCtx) => registry.dispatch(call, dispatchCtx),
+        call: c, ctx: dctx, tool: liveTool, signal: dctx && dctx.signal,
+        onRecovery: recordRunRecoveryAttempt
+      });
       if (DomainTask.isTargetFetch(c, directDomainTask) && DomainTask.isDomainMissing(r)) {
         r = Object.assign({}, r, { control: Object.assign({}, r && r.control, DomainTask.stopControl(directDomainTask)) });
       }
@@ -14631,13 +14651,7 @@ async function runOnce(o) {
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
       // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
       sleep: (ms) => new Promise(r => setTimeout(r, ms)),
-      onRecovery: (attempt) => {
-        execution.recordRecoveryAttempt(attempt);
-        if (execution.journalStarted()) {
-          try { runJournal.recoveryAttempt(runId, attempt); }
-          catch (e) { execution.recordFailure('recovery_attempt_persist', 'recovery-journal-failed'); }
-        }
-      },
+      onRecovery: recordRunRecoveryAttempt,
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.

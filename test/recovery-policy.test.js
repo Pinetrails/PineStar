@@ -16,4 +16,16 @@ A.eq(P.providerFailure({ classification: { retryable: true }, preStreamRetriesEx
   'fail', 'adapter-exhausted pre-stream ladder is never multiplied');
 A.eq(P.providerFailure({ classification: { retryable: true }, cancelled: true }).action,
   'fail', 'cancellation cannot enter recovery');
+
+const transientRead = { provenance: 'host', scope: 'read', readOnly: true };
+A.eq(P.toolFailure({ tool: transientRead, result: { isError: true, summary: 'timeout', content: 'timed out' }, retriesUsed: 0, maxRetries: 1 }).action,
+  'retry', 'a transient host-defined read is retryable');
+A.eq(P.toolFailure({ tool: { provenance: 'host', scope: 'write', readOnly: false }, result: { isError: true, summary: 'timeout' } }).action,
+  'fail', 'mutations are never retried automatically');
+A.eq(P.toolFailure({ tool: { provenance: 'connector', scope: 'read', readOnly: true }, result: { isError: true, summary: 'timeout' } }).action,
+  'fail', 'remote read-only metadata never grants retry authority');
+A.eq(P.toolFailure({ tool: transientRead, result: { isError: true, summary: 'error', content: 'invalid arguments' } }).action,
+  'fail', 'deterministic read failures are not retried');
+A.eq(P.toolFailure({ tool: transientRead, result: { isError: true, summary: 'timeout' }, retriesUsed: 1, maxRetries: 1 }).action,
+  'fail', 'tool retry budget is a hard one-attempt bound');
 A.report('recovery-policy.test');

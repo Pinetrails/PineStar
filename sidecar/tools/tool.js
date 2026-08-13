@@ -1,8 +1,9 @@
 /* sidecar/tools/tool.js — a tool definition (normalized).
-   makeTool({ name, description, schema, scope, readOnly, capability, requiresConsent, timeoutMs, run })
+   makeTool({ name, description, schema, scope, readOnly, capability, requiresConsent, timeoutMs, provenance, run })
      schema         : JSON-schema-lite for the arguments (validated host-side before run)
      scope          : 'read' | 'write' | 'execute'
      readOnly       : defaults true when scope==='read'
+     provenance     : host registration boundary; 'host' or 'connector'
      capability     : the capId this tool belongs to (object=capability mapping; M1.3)
      requiresConsent: prompt before running (write/execute/network; M1.4)
      timeoutMs      : per-tool execution bound (0 = none)
@@ -23,6 +24,7 @@
       schema: def.schema || { type: 'object', properties: {} },
       scope: def.scope || 'read',
       readOnly: def.readOnly != null ? def.readOnly : (def.scope === 'read' || def.scope == null),
+      provenance: def.provenance === 'connector' ? 'connector' : 'host',
       capability: def.capability || null,
       impact: def.impact || null,
       requiresConsent: !!def.requiresConsent,

@@ -40,6 +40,7 @@ test/run-execution-state.test.js
 test/tool-dispatch-boundary.test.js
 test/completion-evidence.test.js
 test/recovery-policy.test.js
+test/tool-recovery.test.js
 test/run-journal-disk-boundary.test.js
 test/todo.durability.test.js
 test/halt.test.js

@@ -145,7 +145,12 @@
   function makeRegistry() {
     const tools = {};
 
-    function register(def) { const t = toolMod.makeTool(def); tools[t.name] = t; return t; }
+    function register(def, registration) {
+      const provenance = registration && registration.provenance === 'connector' ? 'connector' : 'host';
+      const t = toolMod.makeTool(Object.assign({}, def, { provenance }));
+      tools[t.name] = t;
+      return t;
+    }
     function get(name) { return tools[name]; }
 
     function list(capSet) {
