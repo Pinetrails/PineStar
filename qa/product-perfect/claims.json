@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "fd89d610e786ba7836ae7121ae94a08e008664af",
+    "sourceCommit": "40f09b5d7ec71b0463e160b97b5b400fad75eb86",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -213,8 +213,8 @@
       },
       {
         "path": "frontend/app/deliverables.js",
-        "bytes": 29484,
-        "sha256": "d332e3796cab8bb10393ca3174c9b2cb818f2b575ed5108c03ae7c6f0b837cc1"
+        "bytes": 29493,
+        "sha256": "59fd2d1e43501a46e28866685219c9b46f2a7348fc10ed5b5928def0fa2c9bc4"
       },
       {
         "path": "frontend/app/diagnostics.js",
@@ -898,8 +898,8 @@
       },
       {
         "path": "frontend/app/windows/outbox.js",
-        "bytes": 11000,
-        "sha256": "2193ed1aff46128597e9685cdd36d67a47e8eabaa56014d2c1435506e5c420e1"
+        "bytes": 15050,
+        "sha256": "7284c9c746ff2c97e0ca0141c039a44449d0bdfdb6c2aadde334418e1e6c6567"
       },
       {
         "path": "frontend/app/windows/rewind.js",
