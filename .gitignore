@@ -31,6 +31,7 @@ dev/.scratch-mock-comms/
 dev/.scratch-calm-errors/
 dev/.scratch-adversarial/
 dev/.scratch-deliverables/
+dev/.shots-deliverables/
 
 # rust / tauri desktop shell build output
 src-tauri/target/

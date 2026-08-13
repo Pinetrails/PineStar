@@ -10904,7 +10904,10 @@ async function deliverableRows() {
         // record's end time as the legacy fallback), never the queue time — the old item.ts made an
         // overnight build sort and display as if it were days old (or, post-undo, freshly re-queued).
         const bts = workshopBuiltAtOf(item) || item.ts || 0;
-        rows.push({ id, agentId, runId: item.builtRunId, title: man.title, source: item.source || 'workshop', status: 'pending', kind: man.kind || 'files', summary: man.summary || '', files, size: deliverableSize(files), createdAt: bts, updatedAt: bts, actions: { open: files.length > 0, keep: true, discard: true } });
+        // `ask` for a Workshop build is the BACKLOG ITEM the Commander queued — their own words, exactly like the
+        // last user message is for a chat run. Without it the card's "what you asked for" was blank on precisely
+        // the rows that ask them to make a decision, which is the worst place to be missing the question.
+        rows.push({ id, agentId, runId: item.builtRunId, title: man.title, source: item.source || 'workshop', status: 'pending', kind: man.kind || 'files', summary: man.summary || '', authored: true, ask: String(item.title || item.detail || ''), files, size: deliverableSize(files), createdAt: bts, updatedAt: bts, actions: { open: files.length > 0, keep: true, discard: true } });
         seen.add(id);
       } else if ((Number(item.attempts) || 0) >= 2) {
         const id = 'workshop-failed:' + agentId + ':' + item.id; if (seen.has(id)) continue;
@@ -12416,12 +12419,8 @@ async function handleRun(req, res) {
   // byte-stable for the whole run and never shifts the cached system prefix mid-stream (providers/anthropic.js).
   let projectRules = '';
   try { projectRules = (await projectInstructions.load(projectRootRaw, projectBlessed)).text || ''; } catch (_) { projectRules = ''; }
-  // DELIVERABLE ORGANIZATION: a nudge to name finished work, so the library shows a person what they got instead of
-  // "output.md". A byte-stable CONSTANT, appended like projectLine above, so it never shifts the cached prefix.
-  // Phrased as a description request, never a verdict request — ask a model to "summarize what you completed" and it
-  // will report success, and the card would then carry a claim the run log cannot back. Other surfaces (cron,
-  // workshop, messaging) rely on the tool's own description for now; only this watched surface adds the nudge.
-  const deliverableClause = DELIVERABLE_NOTE_CLAUSE;
+  // (The deliverable-naming nudge is NOT appended here. It rides runOnce's one final prompt seam instead, so every
+  // surface — watched, cron, Workshop, messaging — gets it identically and the away runs are not left out.)
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
   // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify
@@ -12589,7 +12588,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     const continuedResult = await runOnce({
-      key, keyPool: body && body.keyPool, model, system: (projectLine || projectRules || deliverableClause) ? (String(system || '') + projectLine + projectRules + deliverableClause) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
+      key, keyPool: body && body.keyPool, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive', internal, evidence,
       initialTaint: hasUserAttachments ? 'user attachment' : null,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
@@ -14452,9 +14451,19 @@ async function runOnce(o) {
   // Commander suppresses that domain. It grants no tools or authority; it is a bounded planning prior.
   let journeyBlock = '';
   if (!internal) { try { const jb = journeyStore.adaptationBlock(agentId); if (jb) journeyBlock = '\n\n' + jb; } catch (_) { journeyBlock = ''; } }
+  /* DELIVERABLE NAMING — asked for at THE one final prompt seam, so every real-work surface gets it identically:
+     the watched browser run, a cron routine, a Workshop shift, a messaging reply. Putting it on handleRun alone
+     (as a first draft did) left the AWAY runs — the ones nobody watched and therefore most need a readable name —
+     with only the tool description to go on.
+     Gated on the tool actually being GRANTED to this run: instructing a model to call a tool it does not have is
+     the same class of dishonesty as a UI asserting unprovable state, and it would waste tokens on every run that
+     legitimately lacks it. Skipped for `internal` self-talk, whose prompt stays verbatim by contract.
+     A byte-stable constant, so it never shifts the cached system prefix. */
+  const canName = !!(resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('deliverable_note') >= 0);
+  const deliverableNote = canName ? DELIVERABLE_NOTE_CLAUSE : '';
   const sys = internal
     ? (String(system || '') + evidenceBlock)
-    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock + deliverableNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real

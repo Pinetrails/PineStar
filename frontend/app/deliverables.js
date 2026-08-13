@@ -99,7 +99,13 @@
       }
     } catch (e) {
       host.innerHTML = '';
-      if (say) say('Could not preview that file: ' + e.message, true);
+      // A 404 here has ONE ordinary cause: the file was moved or deleted on disk after the library recorded it.
+      // KEEP copies rather than moves, so the archive normally survives — but the Commander owns that folder and
+      // may clear it. Say the real reason instead of showing them an HTTP code they cannot act on.
+      const gone = /\b404\b/.test(String((e && e.message) || ''));
+      if (say) say(gone
+        ? 'That file is no longer on disk — it was moved or deleted after this deliverable was recorded.'
+        : 'Could not preview that file: ' + e.message, true);
     }
     return true;
   }
@@ -173,7 +179,7 @@
     let rows = [], projects = [], kinds = [], summary = null, loadSeq = 0, project = '', kind = '';
     const openState = { blobUrl: '', previewHost: null };
     const revoke = () => revokePreview(openState);
-    body.innerHTML = '<div class="cfg dlv"><h3>DELIVERABLES / WORKSHOP LIBRARY</h3><p class="muted">Everything your agents actually made, filed under the project it was made for. Open any one to see what you asked for, what came back, and what it cost. Previews open safely inside StarNet in a browser; desktop OPEN uses your file app.</p>' +
+    body.innerHTML = '<div class="cfg dlv"><h3>DELIVERABLES / WORKSHOP LIBRARY</h3><p class="muted">Everything your agents actually made, filed under the project it was made for. Open any one to see what you asked for, what came back, and every file it produced. Previews open safely inside StarNet in a browser; desktop OPEN uses your file app.</p>' +
       '<div id="dl-head" class="dlv-head-strip"></div>' +
       '<div class="deliverables-toolbar"><input id="dl-query" aria-label="Search deliverables" placeholder="search title, agent, project"><select id="dl-status" aria-label="Filter deliverables"><option value="">ALL STATUS</option><option>pending</option><option>kept</option><option>discarded</option><option>produced</option><option>failed</option></select><button class="bb sm" id="dl-refresh">REFRESH</button><button class="bb sm" id="dl-clean">CLEAN OLD RECORDS</button></div>' +
       '<div id="dl-kinds" class="dlv-kinds"></div>' +
@@ -316,7 +322,7 @@
         ArmConfirm.wire(b, {
           armedLabel: 'DISCARD — SURE?',
           onArm: () => say('Discarding “' + (r.title || 'this output') + '” also removes its Workshop files permanently. Click again to confirm.', true),
-          onDisarm: () => say(rows.length + ' real record' + (rows.length === 1 ? '' : 's')),
+          onDisarm: () => say(''),   // disarming just clears the warning; it is not an excuse to restate the count
           onConfirm: () => decide(r, 'discard', b)
         });
       });
@@ -332,7 +338,10 @@
         kinds = Array.isArray(j.kinds) ? j.kinds : [];
         summary = j.summary || null;
         render();
-        say(rows.length + ' real record' + (rows.length === 1 ? '' : 's'));
+        // The summary strip above already states the count. This line is for TRANSIENT status only — loading,
+        // errors, and the result of an action — so a second standing count does not sit under it saying the
+        // same number in different words.
+        say('');
       }
       catch (e) { say('Could not load the library: ' + e.message, true); }
     }
