@@ -62,6 +62,7 @@ const CodeMode = require('./tools/builtin/code.js');                      // cod
 const { makeCodeTools } = CodeMode;
 const { makeSkillTools } = require('./tools/builtin/skills.js');    // H4: the agent's reusable skill library tools
 const Todo = require('./tools/builtin/todo.js');
+const DeliverableTool = require('./tools/builtin/deliverable.js');   // deliverable_note — the agent NAMES its finished work (prose only; never status/crew)
 const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
 const { makeConnectorTools } = require('./tools/builtin/connectors.js');  // WEB: connectors.list — what the station HAS wired, and what it could (read-only, no secrets)
 const { makeVoiceTools } = require('./tools/builtin/voice.js');           // STUDIO: voice_generate — speech saved into the workspace as a playable clip
@@ -218,6 +219,7 @@ const MemoryStore = require('./memory-store.js');                               
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = MemoryStore;
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
+const { makeProvenanceIndex } = require('./deliverable-provenance.js'); // WHO made a deliverable + WHAT project it belongs to, derived from the run log
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
 const { makeJourneyStore } = require('./journey-store.js'); // Commander journey: verified outcomes -> mastery/adaptation/evolution (never XP or gating)
 const { makeQuestTools } = require('./tools/builtin/quests.js'); // QUEST V2 §B: quest.update — the agent's read/write reach into the ledger
@@ -1582,6 +1584,29 @@ const deliverableStore = makeDeliverableStore({
   onCorrupt: (key, file) => quarantineCorrupt(file, 'deliverables')
 });
 function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
+
+/* The agent's OWN name for the work it just did (deliverable_note), held between the tool call and the end of the
+   run that made it, then drained onto that run's durable row. Deliberately in-memory and bounded: a note is worth
+   nothing without the run it describes, so an unclaimed one is garbage — if the process dies mid-run there is no
+   run row either, and the note should die with it rather than resurface attached to something else later.
+   FIFO-evicted rather than unbounded because runIds come from a live loop and a leak here would be permanent. */
+/* Appended to the watched surface's system prefix (handleRun). Constant, so the cached prefix stays byte-stable. */
+const DELIVERABLE_NOTE_CLAUSE = '\n\nWhen a task ends with files you created or changed, call deliverable_note once to '
+  + 'name them: a short plain-English title and one sentence saying what the thing is. Describe it; do not judge it. '
+  + 'The station records the outcome, cost, file list and crew itself.';
+const DELIVERABLE_NOTES_MAX = 64;
+const deliverableNotes = (() => {
+  const bag = new Map();
+  return {
+    set(runId, note) {
+      const id = String(runId || ''); if (!id) return;
+      bag.delete(id); bag.set(id, note);
+      while (bag.size > DELIVERABLE_NOTES_MAX) bag.delete(bag.keys().next().value);
+    },
+    get(runId) { return bag.get(String(runId || '')) || null; },
+    take(runId) { const id = String(runId || ''); const v = bag.get(id) || null; bag.delete(id); return v; }
+  };
+})();
 
 // QUEST V2 §A — the station-wide, harness-owned quest ledger (`_station.quests.json` under WORKSPACES). One
 // durable single-file store for the whole station (unlike the per-agent workshop store): quests are minted with
@@ -10879,7 +10904,10 @@ async function deliverableRows() {
         // record's end time as the legacy fallback), never the queue time — the old item.ts made an
         // overnight build sort and display as if it were days old (or, post-undo, freshly re-queued).
         const bts = workshopBuiltAtOf(item) || item.ts || 0;
-        rows.push({ id, agentId, runId: item.builtRunId, title: man.title, source: item.source || 'workshop', status: 'pending', kind: man.kind || 'files', summary: man.summary || '', files, size: deliverableSize(files), createdAt: bts, updatedAt: bts, actions: { open: files.length > 0, keep: true, discard: true } });
+        // `ask` for a Workshop build is the BACKLOG ITEM the Commander queued — their own words, exactly like the
+        // last user message is for a chat run. Without it the card's "what you asked for" was blank on precisely
+        // the rows that ask them to make a decision, which is the worst place to be missing the question.
+        rows.push({ id, agentId, runId: item.builtRunId, title: man.title, source: item.source || 'workshop', status: 'pending', kind: man.kind || 'files', summary: man.summary || '', authored: true, ask: String(item.title || item.detail || ''), files, size: deliverableSize(files), createdAt: bts, updatedAt: bts, actions: { open: files.length > 0, keep: true, discard: true } });
         seen.add(id);
       } else if ((Number(item.attempts) || 0) >= 2) {
         const id = 'workshop-failed:' + agentId + ':' + item.id; if (seen.has(id)) continue;
@@ -10889,13 +10917,91 @@ async function deliverableRows() {
   }
   for (const run of runStore.list(null, { limit: 1000 })) {
     if (/^workshop-/.test(String(run.streamId || ''))) continue;
-    (run.artifacts || []).forEach((a, i) => {
+    const arts = run.artifacts || [];
+    // A run with no artifacts AND no name is not a deliverable — it is a conversation, and COMMS owns those.
+    // But a run the agent explicitly NAMED belongs here even if it wrote nothing to disk: dropping it would
+    // silently discard a declaration the agent made on the record, and the Commander would have no way to know
+    // the work was ever filed. The drawer already says "This run recorded no files" honestly.
+    if (!arts.length && !run.deliverable) continue;
+    const status = run.reason === 'done' ? 'produced' : 'failed';
+    // `ask` is the Commander's OWN request (runstore titles a run with the last user text), which is why it can be
+    // shown beside the agent's prose without becoming a second agent claim. Kept distinct from `summary` — the old
+    // code assigned the ask INTO summary, which read on the card as if the agent had described its own work.
+    const ask = run.title || '';
+    const note = run.deliverable || null;
+    if (note) {
+      // The agent NAMED this run's work, so the run is ONE deliverable with N files — not N unrelated rows. The
+      // authored title/summary/kind ride as prose; `main` is only honored when it names a file the run actually
+      // produced (never trust the model's path — the same rule the Workshop manifest applies to its own file list).
+      const files = arts.filter(a => a.path).map(a => deliverableFile(run.agentId, run.runId, a, false));
+      const main = note.main && files.some(f => f.path === note.main) ? note.main : '';
+      rows.push({
+        id: 'run:' + run.runId, agentId: run.agentId, runId: run.runId, title: note.title, source: 'run', status: status,
+        kind: note.kind || 'files', summary: note.summary || '', authored: true, ask: ask, main: main,
+        files, size: deliverableSize(files), createdAt: run.ts || 0, updatedAt: run.ts || 0,
+        actions: { open: files.length > 0, keep: false, discard: false }
+      });
+      continue;
+    }
+    // UNNAMED run: unchanged behaviour — one row per artifact, titled by basename. We do NOT invent a grouping the
+    // agent never declared, and `authored:false` lets the card show the basename as the plain fact it is instead of
+    // dressing it up as a description.
+    arts.forEach((a, i) => {
       const p = a.path || '';
       const files = p ? [deliverableFile(run.agentId, run.runId, a, false)] : [];
-      rows.push({ id: 'run:' + run.runId + ':' + i, agentId: run.agentId, runId: run.runId, title: path.basename(p || a.target || (run.title + ' output')), source: 'run', status: run.reason === 'done' ? 'produced' : 'failed', kind: a.kind, summary: run.title || '', files, target: a.target || '', size: deliverableSize(files), createdAt: run.ts || 0, updatedAt: run.ts || 0, actions: { open: files.length > 0, keep: false, discard: false } });
+      rows.push({ id: 'run:' + run.runId + ':' + i, agentId: run.agentId, runId: run.runId, title: path.basename(p || a.target || (run.title + ' output')), source: 'run', status: status, kind: a.kind, summary: '', authored: false, ask: ask, files, target: a.target || '', size: deliverableSize(files), createdAt: run.ts || 0, updatedAt: run.ts || 0, actions: { open: files.length > 0, keep: false, discard: false } });
     });
   }
+  // DELIVERABLE ORGANIZATION — stamp the two DERIVED fields on every row, whatever source built it. Done in one
+  // pass here rather than in each of the three loops above so there is exactly ONE place that decides how a
+  // deliverable is attributed and filed. Both answers come from the run log; neither is ever model-supplied.
+  //   project      — the blessed root the owning run was scoped to (a worker inherits its lead's), '' = unfiled.
+  //   contributors — the lead agent plus any delegated workers, deduped, lead first.
+  // A row whose run has aged out of the log's window simply gets '' + a single-agent fallback built from the row's
+  // own agentId: an unknown crew is rendered as the one agent we can still prove, never as an invented roster.
+  const provenance = makeProvenanceIndex(runStore.all(), { isInternal: sid => contextpack.isInternalStream(sid) });
+  for (const row of rows) {
+    row.project = row.runId ? provenance.projectOf(row.runId) : '';
+    const crew = row.runId ? provenance.contributorsOf(row.runId) : [];
+    row.contributors = crew.length ? crew : (row.agentId ? [{ agentId: row.agentId, role: 'lead', identityFallback: false }] : []);
+    // `run` powers the card's DETAILS drawer — cost, model, duration, real tool work, and the agent's closing
+    // message. Read straight off the durable run row, so the drawer and the LOGBOOK can never disagree. A row
+    // whose run has aged out of the log gets null and the drawer simply omits the section.
+    row.run = row.runId ? provenance.factsOf(row.runId) : null;
+  }
   return rows.sort((a, b) => (b.updatedAt - a.updatedAt) || String(a.id).localeCompare(String(b.id)));
+}
+// The PROJECT rail's rows, folded out of the deliverable list itself. Ordered newest-touched first (the same order
+// the Projects rail uses), with the UNFILED bucket pinned last because it is a residue, not a project.
+// TRUTHFUL TELEMETRY: `blessed` mirrors the LIVE grant — a root whose path grant was revoked still appears, marked,
+// exactly as the Projects rail renders it. Silently dropping it would erase work the Commander really did.
+function deliverableProjectFacet(rows) {
+  const leaf = p => { const s = String(p || '').replace(/[\\/]+$/, ''); const parts = s.split(/[\\/]/); return parts[parts.length - 1] || s; };
+  const byRoot = new Map();
+  let unfiled = 0, unfiledAt = 0;
+  for (const r of (Array.isArray(rows) ? rows : [])) {
+    const root = String((r && r.project) || '');
+    if (!root) { unfiled++; unfiledAt = Math.max(unfiledAt, Number(r && r.updatedAt) || 0); continue; }
+    const cur = byRoot.get(root) || { root: root, name: leaf(root), count: 0, lastAt: 0, blessed: false };
+    cur.count++;
+    cur.lastAt = Math.max(cur.lastAt, Number(r && r.updatedAt) || 0);
+    byRoot.set(root, cur);
+  }
+  for (const row of byRoot.values()) { try { row.blessed = !!isBlessedRoot(row.root); } catch (_) { row.blessed = false; } }
+  const out = Array.from(byRoot.values()).sort((a, b) => (b.lastAt - a.lastAt) || a.name.localeCompare(b.name));
+  if (unfiled) out.push({ root: '', name: 'UNFILED', count: unfiled, lastAt: unfiledAt, blessed: true, unfiled: true });
+  return out;
+}
+// The KIND chips, folded out of the list the same way (and, like the project facet, computed BEFORE filtering).
+// Ordered by count so the shapes a Commander actually produces lead; ties break alphabetically for stability.
+function deliverableKindFacet(rows) {
+  const byKind = new Map();
+  for (const r of (Array.isArray(rows) ? rows : [])) {
+    const k = String((r && r.kind) || 'files');
+    byKind.set(k, (byKind.get(k) || 0) + 1);
+  }
+  return Array.from(byKind.entries()).map(([kind, count]) => ({ kind, count }))
+    .sort((a, b) => (b.count - a.count) || a.kind.localeCompare(b.kind));
 }
 async function handleDeliverablesList(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -10903,12 +11009,32 @@ async function handleDeliverablesList(req, res) {
   const query = String(u.searchParams.get('query') || '').trim().toLowerCase().slice(0, 120);
   const status = String(u.searchParams.get('status') || '').trim();
   const kind = String(u.searchParams.get('kind') || '').trim();
+  // DELIVERABLE ORGANIZATION: the project axis. '' = every project; the literal 'unfiled' selects the rows with no
+  // provable project (which, before any project-scoped session has run, is all of them).
+  const project = String(u.searchParams.get('project') || '').trim().slice(0, 4096);
   try {
     let items = await deliverableRows();
+    // The project FACET is computed before the project filter is applied, so the rail keeps showing every project
+    // (with honest counts) while one of them is selected — a filter must never be able to hide its own siblings.
+    const projects = deliverableProjectFacet(items);
+    // The same pre-filter rule as the project facet: a KIND chip and the "needs a decision" count must describe
+    // the whole library, not the slice currently on screen, or the filters start hiding the reason to use them.
+    const kinds = deliverableKindFacet(items);
+    const summary = {
+      total: items.length,
+      pending: items.filter(r => r.status === 'pending').length,
+      failed: items.filter(r => r.status === 'failed').length,
+      oldestAt: items.reduce((m, r) => (r.createdAt && (!m || r.createdAt < m)) ? r.createdAt : m, 0),
+      newestAt: items.reduce((m, r) => Math.max(m, Number(r.createdAt) || 0), 0)
+    };
     if (status) items = items.filter(r => r.status === status);
     if (kind) items = items.filter(r => r.kind === kind);
-    if (query) items = items.filter(r => [r.title, r.summary, r.source, r.agentId, r.runId].join(' ').toLowerCase().indexOf(query) >= 0);
-    json(200, { ok: true, items: items.slice(0, 500), total: items.length, previewLimits: { markdown: DELIVERABLE_PREVIEW_MAX, csv: DELIVERABLE_PREVIEW_MAX, image: DELIVERABLE_IMAGE_MAX } });
+    if (project) items = items.filter(r => project === 'unfiled' ? !r.project : r.project === project);
+    // `ask` is in the haystack deliberately: months later a Commander remembers what they ASKED for ("the churn
+    // thing") long before they remember what the agent named the file. Leaving their own words out of the search
+    // was the difference between a library you can find things in and one you have to scroll.
+    if (query) items = items.filter(r => [r.title, r.summary, r.ask, r.source, r.agentId, r.runId, r.project, (r.contributors || []).map(c => c.agentId).join(' ')].join(' ').toLowerCase().indexOf(query) >= 0);
+    json(200, { ok: true, items: items.slice(0, 500), total: items.length, projects: projects, kinds: kinds, summary: summary, previewLimits: { markdown: DELIVERABLE_PREVIEW_MAX, csv: DELIVERABLE_PREVIEW_MAX, image: DELIVERABLE_IMAGE_MAX } });
   } catch (e) { json(500, { ok: false, error: 'could not read the deliverable library' }); }
 }
 async function handleDeliverablesCleanupPreview(req, res) {
@@ -12293,6 +12419,8 @@ async function handleRun(req, res) {
   // byte-stable for the whole run and never shifts the cached system prefix mid-stream (providers/anthropic.js).
   let projectRules = '';
   try { projectRules = (await projectInstructions.load(projectRootRaw, projectBlessed)).text || ''; } catch (_) { projectRules = ''; }
+  // (The deliverable-naming nudge is NOT appended here. It rides runOnce's one final prompt seam instead, so every
+  // surface — watched, cron, Workshop, messaging — gets it identically and the away runs are not left out.)
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
   // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify
@@ -12472,6 +12600,11 @@ async function handleRun(req, res) {
       taskSource: 'interactive',
       taskAction: body && body.taskAction,
       recipeId,        // provenance spine (lane A): rides to the durable run row so a rating can be attributed
+      // DELIVERABLE ORGANIZATION: the project this run is scoped to rides to the durable run row, so the FILES the
+      // run produces can be filed under the thing the Commander was working ON (not just under a runId). Recorded
+      // only when the root is STILL blessed — the same proof gate projectLine uses above. An unblessed root files
+      // the work as unscoped rather than asserting a folder relationship the grant layer can't back.
+      projectRoot: projectBlessed ? projectRootRaw : '',
       preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
       stationObjects,  // Class Loadouts (shared-gear): station-wide gear for SKILL availability (tools stay room-scoped)
@@ -12987,6 +13120,7 @@ async function runOnce(o) {
     }
   }).register(registry);   // H4: skill.write/list/view/manage — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
+  DeliverableTool.makeDeliverableTool({ notes: deliverableNotes }).register(registry);   // deliverable_note — the agent's OWN name for what it made; drained by runOnce at run end
   makeToolSearchTool({ registry }).register(registry);   // tool.search — finds a GRANTED but unadvertised tool (CAP_REGISTRY `deferred: true`) and reveals it for the rest of the run; rides the computer object so no surface is stranded
   makeCodeTools({}).register(registry);   // code.run — child Node/vm owns no authority; every nested read returns through this run's parent dispatcher
   makeQuestTools({ store: questStore, clock: { now: () => Date.now() }, activeGoal: () => commanderGoals.get() }).register(registry);   // QUEST V2 §B + journey binding: personalized mints inherit the current goal id/domain evidence
@@ -14317,9 +14451,19 @@ async function runOnce(o) {
   // Commander suppresses that domain. It grants no tools or authority; it is a bounded planning prior.
   let journeyBlock = '';
   if (!internal) { try { const jb = journeyStore.adaptationBlock(agentId); if (jb) journeyBlock = '\n\n' + jb; } catch (_) { journeyBlock = ''; } }
+  /* DELIVERABLE NAMING — asked for at THE one final prompt seam, so every real-work surface gets it identically:
+     the watched browser run, a cron routine, a Workshop shift, a messaging reply. Putting it on handleRun alone
+     (as a first draft did) left the AWAY runs — the ones nobody watched and therefore most need a readable name —
+     with only the tool description to go on.
+     Gated on the tool actually being GRANTED to this run: instructing a model to call a tool it does not have is
+     the same class of dishonesty as a UI asserting unprovable state, and it would waste tokens on every run that
+     legitimately lacks it. Skipped for `internal` self-talk, whose prompt stays verbatim by contract.
+     A byte-stable constant, so it never shifts the cached system prefix. */
+  const canName = !!(resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('deliverable_note') >= 0);
+  const deliverableNote = canName ? DELIVERABLE_NOTE_CLAUSE : '';
   const sys = internal
     ? (String(system || '') + evidenceBlock)
-    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock + deliverableNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -14564,7 +14708,7 @@ async function runOnce(o) {
         }
       }
       const runEndedAt = Date.now();
-      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new

@@ -99,7 +99,13 @@
       }
     } catch (e) {
       host.innerHTML = '';
-      if (say) say('Could not preview that file: ' + e.message, true);
+      // A 404 here has ONE ordinary cause: the file was moved or deleted on disk after the library recorded it.
+      // KEEP copies rather than moves, so the archive normally survives — but the Commander owns that folder and
+      // may clear it. Say the real reason instead of showing them an HTTP code they cannot act on.
+      const gone = /\b404\b/.test(String((e && e.message) || ''));
+      if (say) say(gone
+        ? 'That file is no longer on disk — it was moved or deleted after this deliverable was recorded.'
+        : 'Could not preview that file: ' + e.message, true);
     }
     return true;
   }
@@ -120,18 +126,187 @@
     return previewInCard(f, card.querySelector('[data-preview]'), state || {}, say);
   }
 
+  /* ============== THE ORGANIZED LIBRARY (2026-08-13) ==============
+     Every card is TWO LAYERS and they are never allowed to blur:
+       · the SAY band  — the agent's own title + one-line description (deliverable_note). Prose. No authority.
+       · the FACTS band — status, crew, file count, size, time. All derived by the harness from the run log.
+     The pill outranks the prose: if a card says "churn analysis" and the run failed, FAILED is what reads loudest.
+     A row the agent never named shows its filename as the plain fact it is (`authored:false`) rather than dressing
+     a basename up as a description — a title we invented would be the same lie in a nicer font. */
+
+  const DAY_MS = 86400000;
+  // Time buckets, the axis people actually search on when they can't remember the project. Injected `now` so this
+  // is testable headlessly and never reads an ambient clock mid-render.
+  function bucketOf(ts, now) {
+    if (!ts) return 'EARLIER';
+    const midnight = new Date(now); midnight.setHours(0, 0, 0, 0);
+    if (ts >= midnight.getTime()) return 'TODAY';
+    if (ts >= midnight.getTime() - 6 * DAY_MS) return 'THIS WEEK';
+    return 'EARLIER';
+  }
+  const BUCKETS = ['TODAY', 'THIS WEEK', 'EARLIER'];
+
+  // "2h ago" for the glance; the exact stamp still shows in the details drawer. Same vocabulary the sessions and
+  // projects rails already use, so the three surfaces read as one system.
+  function agoOf(ts, now) {
+    if (!ts) return '';
+    const d = Math.max(0, now - ts);
+    if (d < 60000) return 'just now';
+    const m = Math.floor(d / 60000); if (m < 60) return m + 'm ago';
+    const h = Math.floor(m / 60); if (h < 24) return h + 'h ago';
+    const days = Math.floor(h / 24); if (days < 30) return days + 'd ago';
+    return Math.floor(days / 30) + 'mo ago';
+  }
+
+  // status -> the pill a person can read. `pending` is the only one that asks for something, so it alone is gold.
+  const PILLS = {
+    kept: { label: 'KEPT', cls: 'ok' },
+    produced: { label: 'DONE', cls: 'ok' },
+    pending: { label: 'NEEDS A DECISION', cls: 'warn' },
+    failed: { label: 'FAILED', cls: 'bad' },
+    discarded: { label: 'DISCARDED', cls: 'off' }
+  };
+  function pillOf(status) {
+    return Object.prototype.hasOwnProperty.call(PILLS, status) ? PILLS[status] : { label: String(status || 'UNKNOWN').toUpperCase(), cls: 'off' };
+  }
+  // A raw agentId reads as debug output; resolve through the live roster the same way every other window does.
+  function agentLabel(id) {
+    if (typeof App !== 'undefined' && App && typeof App.agentName === 'function') { try { return App.agentName(id) || id; } catch (_) {} }
+    return String(id || 'agent');
+  }
+
   function mount(body) {
-    let rows = [], loadSeq = 0;
+    let rows = [], projects = [], kinds = [], summary = null, loadSeq = 0, project = '', kind = '';
     const openState = { blobUrl: '', previewHost: null };
     const revoke = () => revokePreview(openState);
-    body.innerHTML = '<div class="cfg"><h3>DELIVERABLES / WORKSHOP LIBRARY</h3><p class="muted">Real run outputs and Workshop builds. Previews open safely inside StarNet in a browser; desktop OPEN uses your file app. Original files remain unchanged until you choose an action.</p>' +
-      '<div class="deliverables-toolbar"><input id="dl-query" aria-label="Search deliverables" placeholder="search title, run, source"><select id="dl-status" aria-label="Filter deliverables"><option value="">ALL STATUS</option><option>pending</option><option>kept</option><option>discarded</option><option>produced</option><option>failed</option></select><button class="bb sm" id="dl-refresh">REFRESH</button><button class="bb sm" id="dl-clean">CLEAN OLD RECORDS</button></div>' +
-      '<div id="dl-msg" class="msg" aria-live="polite"></div><div id="dl-cleanup"></div><div id="dl-list"></div></div>';
-    const q = body.querySelector('#dl-query'), status = body.querySelector('#dl-status'), list = body.querySelector('#dl-list'), msg = body.querySelector('#dl-msg'), cleanup = body.querySelector('#dl-cleanup');
+    body.innerHTML = '<div class="cfg dlv"><h3>DELIVERABLES / WORKSHOP LIBRARY</h3><p class="muted">Everything your agents actually made, filed under the project it was made for. Open any one to see what you asked for, what came back, and every file it produced. Previews open safely inside StarNet in a browser; desktop OPEN uses your file app.</p>' +
+      '<div id="dl-head" class="dlv-head-strip"></div>' +
+      '<div class="deliverables-toolbar"><input id="dl-query" aria-label="Search deliverables" placeholder="search title, agent, project"><select id="dl-status" aria-label="Filter deliverables"><option value="">ALL STATUS</option><option>pending</option><option>kept</option><option>discarded</option><option>produced</option><option>failed</option></select><button class="bb sm" id="dl-refresh">REFRESH</button><button class="bb sm" id="dl-clean">CLEAN OLD RECORDS</button></div>' +
+      '<div id="dl-kinds" class="dlv-kinds"></div>' +
+      '<div id="dl-msg" class="msg" aria-live="polite"></div><div id="dl-cleanup"></div>' +
+      '<div class="dlv-split"><nav id="dl-rail" class="dlv-rail" aria-label="Projects"></nav><div id="dl-list" class="dlv-main"></div></div></div>';
+    const q = body.querySelector('#dl-query'), status = body.querySelector('#dl-status'), list = body.querySelector('#dl-list'), rail = body.querySelector('#dl-rail'), msg = body.querySelector('#dl-msg'), cleanup = body.querySelector('#dl-cleanup'), head = body.querySelector('#dl-head'), kindbar = body.querySelector('#dl-kinds');
     const say = (s, bad) => { msg.textContent = s || ''; msg.className = 'msg ' + (bad ? 'bad' : 'ok'); };
+
+    /* THE PROJECT RAIL. Counts come from the server's facet, which is computed BEFORE the project filter runs —
+       so selecting one project can never hide the others. A root whose path grant was revoked still appears,
+       marked: it names work that really happened, and hiding it would be the library lying by omission. */
+    function renderRail() {
+      const total = projects.reduce((n, p) => n + (Number(p.count) || 0), 0);
+      const row = (key, name, count, extra) =>
+        '<button class="dlv-proj' + (project === key ? ' on' : '') + '" data-project="' + esc(key) + '">' +
+        '<span class="dlv-proj-n">' + esc(name) + '</span><span class="dlv-proj-c">' + count + '</span>' + (extra || '') + '</button>';
+      rail.innerHTML = row('', 'ALL WORK', total) + projects.map(p =>
+        row(p.unfiled ? 'unfiled' : p.root, p.name, p.count, p.blessed ? '' : '<span class="dlv-proj-rev">folder access revoked</span>')
+      ).join('');
+    }
+
+    function crewHtml(r) {
+      const crew = Array.isArray(r.contributors) ? r.contributors : [];
+      if (!crew.length) return '';
+      // The LEAD carries the phosphor rail, workers are dim chips — the same "position identifies the speaker"
+      // idea COMMS uses, so a two-agent card reads as a hierarchy without anyone having to parse a legend.
+      // `identityFallback` is surfaced, never swallowed: that run was NOT the named specialist.
+      return '<span class="dlv-crew">' + crew.map(c =>
+        '<span class="dlv-who' + (c.role === 'lead' ? ' lead' : '') + '">' + esc(agentLabel(c.agentId)) +
+        (c.identityFallback ? '<i> stand-in</i>' : '') + '</span>').join('') + '</span>';
+    }
+
+    /* ONE CARD = a glance + a drawer, following the shape Andrew locked for the OUTBOX window: the collapsed row
+       carries the identity and the verdict and NO buttons, and everything that needs reading or deciding lives
+       one click down. One drawer open at a time. The glance answers "what is this and is it done"; the drawer
+       answers "what exactly did I get, what did it cost, and where is it". */
+    /* THE DRAWER — three things, and nothing else: what was asked, what came back, and what you can open.
+       An earlier draft also listed model, cost, duration, turns and tool counts. Andrew cut every one of them:
+       run metrics are the LOGBOOK's subject, and putting them on the card that answers "what did I get" only
+       made that answer harder to find. Anything added back here must be ABOUT THE OUTPUT, not the machinery. */
+    function detailHtml(r) {
+      const run = r.run || null;
+      const files = r.files || [];
+      const sec = (label, inner) => inner ? '<div class="dlv-sec"><h5>' + label + '</h5>' + inner + '</div>' : '';
+      // THE ASK — the Commander's own words, quoted rather than paraphrased.
+      const ask = sec('WHAT YOU ASKED FOR', r.ask ? '<p class="dlv-quote">' + esc(r.ask) + '</p>' : '');
+      // WHAT CAME BACK — the agent's recorded closing message, and ONLY when the run kept one. It deliberately
+      // does NOT fall back to the deliverable's summary: that sentence is already on the row directly above, and
+      // reprinting it here would put the same words on screen twice, forty pixels apart. A section that repeats
+      // what you just read is the added complexity this pass exists to remove.
+      const back = sec('WHAT CAME BACK', (run && run.deliveryText) ? '<div class="dlv-said">' + esc(run.deliveryText) + '</div>' : '');
+      // THE FILES — each openable on its own, with the size measured off disk.
+      const fileRows = files.length
+        ? '<ul class="dlv-files">' + (r.files || []).map((f, fi) => f.openUrl
+            ? '<li><a class="bb sm' + (r.main && f.path === r.main ? ' dlv-hero' : '') + '" data-file="' + fi + '" href="' + esc(fileHref(f)) + '" target="_blank" rel="noopener">OPEN</a><span class="dlv-fname">' + esc(f.path) + '</span><span class="dlv-fsize">' + esc(fmtSize(f.bytes)) + '</span>' + (r.main && f.path === r.main ? '<span class="dlv-fmain">the main one</span>' : '') + '</li>'
+            : '<li><span class="dlv-fname off">' + esc(f.path) + '</span><span class="dlv-fsize">no longer available</span></li>').join('') + '</ul>'
+        : '<p class="dlv-none">This run recorded no files.</p>';
+      const openSession = (run && run.streamId) ? '<button class="bb sm" data-act="session">↗ OPEN THE FULL CONVERSATION</button>' : '';
+      const decide = ((r.actions && r.actions.keep) ? '<button class="bb sm" data-act="keep">KEEP IT</button>' : '') +
+        ((r.actions && r.actions.discard) ? '<button class="bb sm danger" data-act="discard">DISCARD</button>' : '');
+      const acts = (openSession || decide) ? '<div class="row dlv-acts">' + openSession + decide + '</div>' : '';
+      return ask + back + sec('FILES', fileRows) + acts;
+    }
+
+    function cardHtml(r, i, now) {
+      const pill = pillOf(r.status);
+      const nFiles = (r.files || []).length;
+      // THE SAY BAND — the agent's words, or an honest admission that there aren't any.
+      const say2 = r.authored
+        ? '<b class="dlv-title">' + esc(r.title || 'Untitled output') + '</b>' + (r.summary ? '<p class="dlv-sum">' + esc(r.summary) + '</p>' : '')
+        : '<b class="dlv-title plain">' + esc(r.title || 'Untitled output') + '</b>' + (r.summary ? '<p class="dlv-sum">' + esc(r.summary) + '</p>' : '<p class="dlv-sum none">the agent did not name this one</p>');
+      // THE FACTS BAND — every item here is provable from the run log.
+      // "size unknown" is for a file we could not measure. A row with NO files has nothing to measure, so it says
+      // so — the two are different facts and the wrong one reads as a failed read.
+      const bulk = nFiles ? (nFiles + (nFiles === 1 ? ' file · ' : ' files · ') + fmtSize(r.size)) : 'no files';
+      const facts = '<span class="dlv-pill ' + pill.cls + '">' + esc(pill.label) + '</span>' + crewHtml(r) +
+        '<span class="dlv-meta">' + esc(bulk) + (r.createdAt ? ' · ' + esc(agoOf(r.createdAt, now)) : '') + '</span>';
+      return '<article class="dlv-card" data-i="' + i + '">' +
+        '<button class="dlv-head" type="button" aria-expanded="false" aria-controls="dlv-more-' + i + '">' +
+        '<span class="dlv-caret" aria-hidden="true">▸</span><span class="dlv-headmain"><span class="dlv-say">' + say2 + '</span>' +
+        '<span class="dlv-facts">' + facts + '</span></span></button>' +
+        '<div class="dlv-more" id="dlv-more-' + i + '" hidden>' + detailHtml(r) + '</div>' +
+        '<div class="deliverable-preview" data-preview aria-live="polite"></div></article>';
+    }
+
+    /* The one-line answer to "what have I been working on", above everything else. Counts come from the server's
+       pre-filter summary, so this describes the whole library even while a filter is narrowing the list below —
+       and "needs a decision" is a real, clickable route to the only rows that are actually waiting on the user. */
+    function renderSummary() {
+      if (!summary) { head.innerHTML = ''; return; }
+      const bits = [];
+      bits.push('<b>' + summary.total + '</b> ' + (summary.total === 1 ? 'output' : 'outputs'));
+      const nProjects = projects.filter(p => !p.unfiled).length;
+      if (nProjects) bits.push('across <b>' + nProjects + '</b> ' + (nProjects === 1 ? 'project' : 'projects'));
+      if (summary.newestAt) bits.push('newest <b>' + esc(agoOf(summary.newestAt, Date.now())) + '</b>');
+      const pend = summary.pending
+        ? '<button class="dlv-needs" data-status="pending">' + summary.pending + ' need' + (summary.pending === 1 ? 's' : '') + ' a decision</button>' : '';
+      head.innerHTML = '<div class="dlv-sumline">' + bits.join(' · ') + '</div>' + pend;
+    }
+
+    // KIND chips — the second axis, after project. Counts are pre-filter for the same reason the rail's are.
+    function renderKinds() {
+      if (!kinds.length) { kindbar.innerHTML = ''; return; }
+      const chip = (k, label, count) => '<button class="dlv-chip' + (kind === k ? ' on' : '') + '" data-kind="' + esc(k) + '">' + esc(label) + '<span>' + count + '</span></button>';
+      kindbar.innerHTML = chip('', 'ALL KINDS', kinds.reduce((n, k) => n + k.count, 0)) + kinds.map(k => chip(k.kind, k.kind, k.count)).join('');
+    }
+
     function render() {
-      list.innerHTML = rows.length ? rows.map((r, i) => '<article class="cfg-block deliverable-row" data-i="' + i + '"><div><b>' + esc(r.title || 'Untitled output') + '</b> <span class="tag">' + esc(r.status) + '</span></div><small>' + esc(r.source) + ' · ' + esc(r.agentId || 'station') + ' · ' + fmtSize(r.size) + ' · ' + esc(r.createdAt ? new Date(r.createdAt).toLocaleString() : 'time unknown') + '</small><p>' + esc(r.summary || '') + '</p><div class="row">' +
-        ((r.actions && r.actions.open) ? (r.files || []).map((f, fi) => f.openUrl ? '<a class="bb sm" data-file="' + fi + '" href="' + esc(fileHref(f)) + '" target="_blank" rel="noopener">OPEN ' + esc(f.path) + '</a>' : '').join('') : '') + ((r.actions && r.actions.keep) ? '<button class="bb sm" data-act="keep">KEEP</button>' : '') + ((r.actions && r.actions.discard) ? '<button class="bb sm danger" data-act="discard">DISCARD</button>' : '') + '</div><div class="deliverable-preview" data-preview aria-live="polite"></div></article>').join('') : '<p class="muted">No deliverables match this view.</p>';
+      renderRail();
+      renderSummary();
+      renderKinds();
+      if (!rows.length) {
+        // Say what MAKES a deliverable rather than just reporting absence — an empty library is the one moment
+        // the window has to teach what it is for.
+        // A filtered miss and an empty library are different facts and must not share a headline — "NOTHING HERE
+        // YET" over a library that has 40 rows behind a filter is simply false.
+        const filtered = !!(project || kind || q.value || status.value);
+        list.innerHTML = '<div class="dlv-empty">' + (filtered ? 'NO MATCHES.' : 'NOTHING HERE YET.') + '<br><span>' +
+          (filtered ? 'Nothing in the library fits this view. Clear the filters to see everything.' : 'When a run creates or changes files, it lands here with the agent’s own name for it, the crew that worked on it, and the project it was for.') +
+          '</span></div>';
+        return;
+      }
+      const now = Date.now();
+      const groups = {};
+      rows.forEach((r, i) => { const b = bucketOf(Number(r.createdAt) || 0, now); (groups[b] = groups[b] || []).push(cardHtml(r, i, now)); });
+      list.innerHTML = BUCKETS.filter(b => groups[b] && groups[b].length)
+        .map(b => '<section class="dlv-bucket"><h4>' + b + '</h4>' + groups[b].join('') + '</section>').join('');
       wireDiscards();
     }
     // Re-wired after every render: innerHTML replaces the buttons, so the previous listeners die with the
@@ -147,15 +322,27 @@
         ArmConfirm.wire(b, {
           armedLabel: 'DISCARD — SURE?',
           onArm: () => say('Discarding “' + (r.title || 'this output') + '” also removes its Workshop files permanently. Click again to confirm.', true),
-          onDisarm: () => say(rows.length + ' real record' + (rows.length === 1 ? '' : 's')),
+          onDisarm: () => say(''),   // disarming just clears the warning; it is not an excuse to restate the count
           onConfirm: () => decide(r, 'discard', b)
         });
       });
     }
     async function load() {
       const seq = ++loadSeq; say('Loading…');
-      const url = '/api/deliverables?query=' + encodeURIComponent(q.value) + '&status=' + encodeURIComponent(status.value);
-      try { const j = await fetch(url, { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }); if (seq !== loadSeq) return; rows = j.items || []; render(); say(rows.length + ' real record' + (rows.length === 1 ? '' : 's')); }
+      const url = '/api/deliverables?query=' + encodeURIComponent(q.value) + '&status=' + encodeURIComponent(status.value) + '&project=' + encodeURIComponent(project) + '&kind=' + encodeURIComponent(kind);
+      try {
+        const j = await fetch(url, { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+        if (seq !== loadSeq) return;
+        rows = j.items || [];
+        projects = Array.isArray(j.projects) ? j.projects : [];   // an older sidecar simply sends none -> rail shows ALL WORK only
+        kinds = Array.isArray(j.kinds) ? j.kinds : [];
+        summary = j.summary || null;
+        render();
+        // The summary strip above already states the count. This line is for TRANSIENT status only — loading,
+        // errors, and the result of an action — so a second standing count does not sit under it saying the
+        // same number in different words.
+        say('');
+      }
       catch (e) { say('Could not load the library: ' + e.message, true); }
     }
     // DISCARD is irreversible (it deletes the Workshop files), so it asks — but with the station's own
@@ -168,12 +355,59 @@
       try { const j = await post('/api/workshop/decide', { agentId: r.agentId, runId: r.runId, decision: act }); say(j.decision === 'keep' ? ('Kept ' + r.title + (j.destPath ? ' in ' + j.destPath : '')) : ('Discarded ' + r.title)); await load(); }
       catch (e) { b.disabled = false; say(e.message, true); }
     }
+    /* ONE DRAWER OPEN AT A TIME — the same rule the OUTBOX accordion follows. Two open drawers turn a scannable
+       list back into the wall of text this window exists to replace. Toggling closed also clears any preview the
+       drawer painted, so a collapsed card never leaves a stray file rendered under it. */
+    function toggleCard(headBtn) {
+      const card = headBtn.closest('[data-i]');
+      const more = card && card.querySelector('.dlv-more');
+      if (!more) return;
+      const wasOpen = !more.hidden;
+      list.querySelectorAll('.dlv-more').forEach(d => { d.hidden = true; });
+      list.querySelectorAll('.dlv-head').forEach(h => { h.setAttribute('aria-expanded', 'false'); h.classList.remove('on'); });
+      list.querySelectorAll('[data-preview]').forEach(p => { p.innerHTML = ''; });
+      revoke();
+      if (!wasOpen) {
+        more.hidden = false;
+        headBtn.setAttribute('aria-expanded', 'true');
+        headBtn.classList.add('on');
+        wireDiscards();   // the drawer's DISCARD only exists once it is open
+      }
+    }
+
     list.addEventListener('click', async ev => {
       const fileLink = ev.target.closest('a[data-file]');
       if (fileLink) return handleOpenClick(ev, rows, openState, say);
+      const headBtn = ev.target.closest('.dlv-head');
+      if (headBtn) return toggleCard(headBtn);
       const b = ev.target.closest('button[data-act]'); if (!b) return; const card = b.closest('[data-i]'), r = rows[Number(card.dataset.i)]; if (!r) return;
+      // "open the session this came from" — the run's real workstream, via the same seam the OUTBOX uses.
+      if (b.dataset.act === 'session') {
+        const sid = r.run && r.run.streamId;
+        if (!sid) return say('That run did not record a session to open.', true);
+        if (typeof App !== 'undefined' && App && typeof App.openWorkstream === 'function') { try { App.openWorkstream(sid); return; } catch (_) {} }
+        return say('Could not open that session from here.', true);
+      }
       if (b.dataset.act === 'discard' && b.dataset.wired === '1') return;   // its own ArmConfirm listener owns it
       decide(r, b.dataset.act, b);
+    });
+    rail.addEventListener('click', ev => {
+      const b = ev.target.closest('button[data-project]'); if (!b) return;
+      project = b.dataset.project || '';
+      renderRail();   // paint the selection immediately; the list follows when the fetch lands
+      load();
+    });
+    kindbar.addEventListener('click', ev => {
+      const b = ev.target.closest('button[data-kind]'); if (!b) return;
+      kind = b.dataset.kind || '';
+      renderKinds();
+      load();
+    });
+    // the summary's "N need a decision" is a route, not a label — it drives the real status filter
+    head.addEventListener('click', ev => {
+      const b = ev.target.closest('button[data-status]'); if (!b) return;
+      status.value = b.dataset.status || '';
+      load();
     });
     let debounce = 0; q.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(load, 180); }); status.addEventListener('change', load); body.querySelector('#dl-refresh').addEventListener('click', load);
     body.querySelector('#dl-clean').addEventListener('click', async () => {
@@ -183,5 +417,5 @@
     body._deliverablesCleanup = revoke;
     load();
   }
-  return { esc, safeMarkdown, safeCsv, openUrl, fileHref, artifactPath, handleOpenClick, mount };
+  return { esc, safeMarkdown, safeCsv, openUrl, fileHref, artifactPath, handleOpenClick, bucketOf, pillOf, agentLabel, agoOf, mount, BUCKETS };
 });

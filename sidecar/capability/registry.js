@@ -29,6 +29,17 @@
       // freebie, like compute), it is not in capsummary's CAPS list so it is never advertised/nagged, and capdrift
       // keys on objectTypes (unchanged) so the prop⇄cap seam is intact. (see tools/builtin/quests.js)
       { capId: 'quest', tool: 'quest.update', scope: 'write', requiresConsent: false, network: false },
+      // DELIVERABLE NOTE: the agent's own plain-English name for the files it just made. Rides `computer` for
+      // exactly the reason quest.update does — it is the ONE object in both the compute-only interactive office
+      // and fullOffice, so the runs MOST in need of a readable name (a plain chat that wrote one file, with no
+      // cabinet on the floor) are not the ones that can never supply one. capId is 'deliverable', NOT 'compute':
+      // resolve.js treats a 'compute' grant as the COMPUTE GATE and never emits it as a callable tool, which is
+      // the trap quest.update documents directly above. It writes no file, reaches no network and has no outward
+      // effect — it only labels work the run already did — so it is the same freebie class as compute and quest,
+      // with no TOOLSETS_META row (never a toggleable family) and no capsummary CAPS row (never advertised or
+      // nagged). It can NEVER assert status, crew or byte counts: the tool takes a four-key allowlist and drops
+      // everything else, because those facts are the harness's to derive. (see tools/builtin/deliverable.js)
+      { capId: 'deliverable', tool: 'deliverable_note', scope: 'write', requiresConsent: false, network: false },
       // TOOL SEARCH: how the agent reaches a DEFERRED tool. Rides `computer` for the same reason quest.update
       // does — it is the ONE object in both the compute-only interactive office and fullOffice, so a deferred
       // tool is never stranded on a surface that cannot look it up. capId is 'toolsearch', NOT 'compute'

@@ -24,7 +24,13 @@
 
    Roster-honesty P1.2 (ADDITIVE): `identityFallback` — TRUE when the run's agentId was missing from the roster so
    the run executed on the station-persona/default-model FALLBACK rather than the named specialist. An honest
-   durable marker (never impersonate silently). Defaults false; old rows lack it and parse fine. */
+   durable marker (never impersonate silently). Defaults false; old rows lack it and parse fine.
+
+   Deliverable organization (ADDITIVE): `projectRoot` — the blessed project folder this run was scoped to, so the
+   work a run PRODUCES can be filed under the thing the Commander was working ON. Same additive-provenance shape as
+   `recipeId`: old rows lack it and default ''. The caller records it ONLY when the root is still a standing path
+   grant — an unblessed/revoked root files nothing, because the station must never assert a project relationship the
+   grant layer can't prove. */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -43,6 +49,8 @@
   const ARTIFACTS_MAX = 50;         // a run that writes 500 files still records a bounded row
   const ARTIFACT_STR_MAX = 260;     // classic MAX_PATH — a path/target is a display label, not a blob
   const SESSION_TITLE_MAX = 80;
+  const PROJECT_ROOT_MAX = 4096;    // matches handleRun's own clamp on the incoming projectRoot
+  const DELIVERABLE_KINDS = new Set(['doc', 'data', 'page', 'patch', 'image', 'files']);   // mirrors tools/builtin/deliverable.js
   const DELIVERY_PROMPT_MAX = 4000;
   const DELIVERY_TEXT_MAX = 24000;
   const TOOL_TRACE_MAX = 200;
@@ -66,6 +74,24 @@
       if (rec.path || rec.target) out.push(rec);
     }
     return out;
+  }
+
+  /* The agent's own prose name for what the run produced (the deliverable_note tool). Sanitized AGAIN here at the
+     persistence boundary, the same defense-in-depth the artifact list gets: the tool already allowlists its four
+     keys, but this log must stay safe against any other caller. Note what is NOT here — no status, no crew, no
+     bytes, no "verified". Those are harness facts derived from this very row; a model-supplied copy of them could
+     only ever be a competing claim. Absent/garbage -> null, and the row simply has no authored name. */
+  function deliverableNote(v) {
+    if (!v || typeof v !== 'object') return null;
+    const title = str(v.title).replace(/\s+/g, ' ').trim().slice(0, 80);
+    if (!title) return null;
+    const kind = str(v.kind).trim().toLowerCase();
+    return {
+      title: title,
+      summary: str(v.summary).replace(/\s+/g, ' ').trim().slice(0, 240),
+      kind: DELIVERABLE_KINDS.has(kind) ? kind : 'files',
+      main: str(v.main).trim().slice(0, ARTIFACT_STR_MAX)
+    };
   }
 
   function toolTraceList(v) {
@@ -120,6 +146,8 @@
         deliveryPrompt: str(e.deliveryPrompt).slice(0, DELIVERY_PROMPT_MAX),
         deliveryText: str(e.deliveryText).slice(0, DELIVERY_TEXT_MAX),
         recipeId: str(e.recipeId).slice(0, 60),   // provenance spine (additive): WHICH recipe launched this run ('' for non-recipe runs; old rows lack it and default '')
+        projectRoot: str(e.projectRoot).slice(0, PROJECT_ROOT_MAX),   // deliverable organization (additive): the BLESSED project folder this run was scoped to ('' when unscoped/unblessed)
+        deliverable: deliverableNote(e.deliverable),                  // deliverable organization (additive): the agent's own PROSE name for the work (null when it never named it)
         reasoningEffort: str(e.reasoningEffort).trim().slice(0, 20),
         model: modelName(e.model),   // H3.3/G6: actual model used, or explicit (unknown) as a last resort
         unmetered: !!e.unmetered,    // G6.2: subscription usage is counted, not summed as $0 spend
