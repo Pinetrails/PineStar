@@ -2858,6 +2858,11 @@ body.rows-inbox #workstreams .ws-row.busy .ws-agent { color: var(--ph); }
 body.rows-inbox #workstreams .ws-pin { grid-area: pin; }
 body.rows-inbox #workstreams .ws-row > .ws-meta { grid-area: meta; }
 body.rows-inbox #workstreams .ws-title { grid-area: title; font-size: 15px; line-height: 1.1; }
+/* RENAME-IN-PLACE swaps the title span for an input (app.js replaceWith), and an element with no
+   grid-area gets AUTO-PLACED — in a 3-row template that lands it outside the title row entirely
+   (measured: 112x48 in a 175px row, and the row grew 76->83px). It inherits the title's cell so
+   editing a name looks like editing a name. Its `flex: 1` is inert here; the cell owns the width. */
+body.rows-inbox #workstreams .ws-rename { grid-area: title; }
 body.rows-inbox #workstreams .ws-receipt {
   display: block; grid-area: recpt; min-width: 0;
   font-size: 11px; line-height: 1.1; color: var(--ph-dim);
@@ -3030,10 +3035,20 @@ body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
 .ws-row.archived { opacity: .5; }
 .ws-row.archived .ws-title { font-style: italic; }
 .ws-row.archived:hover { opacity: .85; }
-/* rename-in-place: the title becomes a compact phosphor input inside the same row */
-.ws-rename {
-  flex: 1; min-width: 0; font-family: inherit; font-size: 14px; color: var(--ph-bright);
+/* rename-in-place: the title becomes a compact phosphor input inside the same row.
+
+   SPECIFICITY, and it matters: app.js builds this with `input.type = 'text'`, so the row's editor
+   matches the input FOUNDATION at the top of this file (`input[type=text], …`) — an attribute
+   selector at (0,1,1). A bare `.ws-rename` class is (0,1,0) and LOSES, so the compact metrics
+   declared here were dead the day that foundation landed: the editor rendered at the foundation's
+   19px / 8px 11px / width:100% and shoved the rail row from 35px to 61px mid-edit (and 76→102 in
+   INBOX). Scoping to #workstreams makes this (1,1,0) so the intended metrics actually apply.
+   Fixed HERE rather than in the foundation on purpose — the foundation and the control floor below
+   it are shared safety nets, and this is one surface's skin, which is where material belongs. */
+#workstreams .ws-rename {
+  flex: 1; min-width: 0; width: auto; font-family: inherit; font-size: 14px; color: var(--ph-bright);
   background: var(--panel2); border: 1px solid var(--ph); outline: none; padding: 1px 4px; border-radius: 3px;
+  box-shadow: none; text-shadow: none;
 }
 
 /* ---- the floating actions menu (phosphor chrome, never the native context menu) ---- */
