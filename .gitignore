@@ -162,3 +162,7 @@ dev/.shots-conveyor-correctness.log
 
 # CREW rail roster-window proof shots (same pattern)
 dev/.shots-crew-fit/
+
+# SHELL-CORNER lane proof shots — corner attribution + multi-room sweep (same pattern)
+dev/.shots-shellcorner*/
+dev/.shots-shellsweep/
