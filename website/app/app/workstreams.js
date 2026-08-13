@@ -81,6 +81,12 @@
       // run yet, a run currently in flight (appendRun resets it), or a pre-upgrade save. The board's DONE
       // chip reads this so a run that died can never wear "DONE — REVIEW & SHIP" (truthful telemetry).
       lastRunOk: opts.lastRunOk === true ? true : (opts.lastRunOk === false ? false : null),
+      // the model id the SIDECAR reported for this stream's most recent run (harness usage payload,
+      // not local config) — the only model claim about a session this app can actually prove. '' = we
+      // have never measured one here: no run yet, or a save written before this field existed. The
+      // rail's INBOX receipt renders '' as an em dash rather than borrowing the agent's current model,
+      // which would assert a model over a transcript three different ones may have written.
+      lastModel: opts.lastModel != null ? clamp(opts.lastModel, 60) : '',
       deliverables: Array.isArray(opts.deliverables) ? opts.deliverables.slice() : [],
       cost: { tokens: +c.tokens || 0, usd: +c.usd || 0, calls: +c.calls || 0 },
       pinned: !!opts.pinned,
@@ -390,6 +396,18 @@
     return true;
   }
   function costOf(id) { const w = find(id); return w ? { tokens: w.cost.tokens, usd: w.cost.usd, calls: w.cost.calls } : zeroCost(); }
+  // file the model the sidecar REPORTED for this stream's latest run (chat.js reads it off the usage
+  // payload, which is the harness's own measurement — never the local model dropdown). An empty/absent
+  // model is refused rather than stored as '' so a usage event that omitted the field can't erase a
+  // model we already measured.
+  function noteModel(id, model) {
+    const w = find(id); if (!w) return false;
+    const m = String(model == null ? '' : model).trim();
+    if (!m) return false;
+    w.lastModel = clamp(m, 60);
+    return true;
+  }
+  function modelOf(id) { const w = find(id); return w ? (w.lastModel || '') : ''; }
 
   // ---------- session power tools: visible search/export + reversible cleanup ----------
   // Only actual Commander/agent dialogue belongs in search or export. Local/system records can contain
@@ -558,7 +576,10 @@
     create, startSession, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
     switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, isDeleted, touch, markUnread, markRead, unread: isUnread,
     autoTitle, retitle, deriveTitle, needsModelTitle, isLowSignal, titleBasis,
-    appendRun, noteRunEnd, recordDeliverable, addCost, costOf,
+    appendRun, noteRunEnd, recordDeliverable, addCost, costOf, noteModel, modelOf,
+    // the rail's INBOX row reads these directly: the same sys/hidden/internal filter search and
+    // export already trust, so the count and the preview can never surface machine chatter.
+    visibleMessages,
     migrateV1, importTasks,
     LANES
   };

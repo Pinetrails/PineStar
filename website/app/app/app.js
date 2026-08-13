@@ -3338,6 +3338,16 @@ const App = (() => {
   // the live presentation of one row: the dot class (pulsing run / gold attention / idle lane color), the compact
   // right-edge meta (elapsed while busy, relative stamp when idle), and the busy/attn flags + full status word for
   // the hover tooltip. Pure read of Channels + the record — no mutation.
+  /* THE DOT ANSWERS EXACTLY ONE QUESTION: whose turn is this session on?
+       FLASHING      — live right now. Phosphor = the agent is working; GOLD = it is paused on YOU
+                       (an approval, which is the one state burning down a fail-closed deny timer).
+       STEADY BRIGHT — finished, and you have NOT seen the output yet. This is the "ready" state.
+       FADED         — you have seen everything here. Nothing is owed in either direction.
+     The dot used to encode the kanban LANE instead, which inverted the very glance it exists for: a
+     read 'active' session sat at --ph-bright with a glow while an UNREAD 'todo' session sat at
+     --ph-dim, so seen sessions looked louder than unseen ones. Lane moved to the row tooltip — the
+     task board is the surface that owns it, and for a 'chat' stream (most of the rail) lane is
+     inferred rather than chosen, so it was never a fact worth the loudest pixel in the row. */
   function railRowState(w) {
     if (typeof Channels !== 'undefined' && Channels.isBusy(w.id)) {
       const status = Channels.statusOf(w.id);
@@ -3345,16 +3355,42 @@ const App = (() => {
       const started = Channels.startedAtOf(w.id);
       // EL-11: a pending consent gets an EXPLICIT marker on its own row (not just the dot recolor) — a
       // background session's paused run must be findable at a glance before the sidecar's deny timer runs out.
-      return { dot: 'ws-dot ' + (attn ? 'attn' : 'running'), meta: attn ? '▣ NEEDS YOU' : (started ? railFmtElapsed(Date.now() - started) : '…'), busy: true, attn, status };
+      return { dot: 'ws-dot ' + (attn ? 'needsyou' : 'working'), meta: attn ? '▣ NEEDS YOU' : (started ? railFmtElapsed(Date.now() - started) : '…'), busy: true, attn, status };
     }
     // a DELIVERY session ('workshop-<runId>' — idle-built work) that hasn't been reviewed is a decision the
     // Commander owes, not just an unread chat: say REVIEW on the row itself (2026-07-15 UX audit — the ⚒ prefix
     // alone didn't distinguish "your agent made you something" from ordinary unread activity).
     if (String(w.id).indexOf('workshop-') === 0 && Workstreams.unread(w)) {
-      return { dot: 'ws-dot review', meta: '⚒ REVIEW', busy: false, attn: false, status: 'a build is waiting for your review' };
+      return { dot: 'ws-dot unseen', meta: '⚒ REVIEW', busy: false, attn: false, status: 'a build is waiting for your review' };
     }
-    return { dot: 'ws-dot lane-' + w.lane, meta: railRelTime(w.lastActiveAt), busy: false, attn: false, status: '' };
+    // UNSEEN vs SEEN is the whole idle axis now. `unread` is two real stored timestamps
+    // (lastActiveAt > lastReadAt) and is never true for the stream you have open, so the dot goes
+    // faded the instant you actually look at it — which is what makes a glance down the rail mean
+    // something. The ⚒ REVIEW branch above keeps its own wording: a BUILD waiting is a different
+    // errand from a reply waiting, even though both are "unseen".
+    if (Workstreams.unread(w)) return { dot: 'ws-dot unseen', meta: railRelTime(w.lastActiveAt), busy: false, attn: false, status: '' };
+    return { dot: 'ws-dot seen', meta: railRelTime(w.lastActiveAt), busy: false, attn: false, status: '' };
   }
+  /* ---------- INBOX row extras (SESSION ROWS = inbox) ----------
+     Both lines are rendered ALWAYS and hidden by CSS in COMPACT, so the setting is a pure repaint —
+     no re-render, no lost rail focus/scroll, and updateRailLive keeps working untouched.
+     Every value is a read of state that already exists; nothing here is derived or guessed. */
+  function railAgentName(w) {
+    const a = agents.get(w.agentId);                      // the live registry, same one the world reads
+    return (a && a.name) ? a.name : (w.agentId || 'AGENT');
+  }
+  // "<model> · <n> MSG". The model is the one the SIDECAR reported for this stream's last run
+  // (Workstreams.lastModel) — never the agent's current dropdown value, which would assert a model
+  // over a transcript other models may have written. Unmeasured reads '—', which is the honest answer.
+  function railReceipt(w) {
+    const n = (Workstreams.visibleMessages ? Workstreams.visibleMessages(w) : []).length;
+    // the vendor prefix is dropped for the ROW only ('anthropic/claude-sonnet-4.5' → 'claude-sonnet-4.5'):
+    // a 232px rail cannot hold the full id, and a clipped id reads as a different model. The complete,
+    // unabbreviated id stays in the row's tooltip (railModelFull), so nothing is actually hidden.
+    const model = (w.lastModel || '').trim().split('/').pop();
+    return (model || '—') + ' · ' + n + ' MSG';
+  }
+  function railModelFull(w) { return (w.lastModel || '').trim(); }
   function rowClass(w, st, activeId) {
     return 'ws-row' + (w.id === activeId ? ' sel' : '') + (st.busy ? ' busy' : '') + (st.attn ? ' attn' : '')
       + (w.pinned ? ' pinned' : '') + (w.archived ? ' archived' : '')
@@ -3374,14 +3410,22 @@ const App = (() => {
     ul.innerHTML = rows.map((w, index) => {
       const title = w.title || 'General';
       const st = railRowState(w);
+      const full = railModelFull(w);
       const tip = title + (w.archived ? ' · archived' : '') + (st.busy ? ' · ' + st.status : '')
-        + (Workstreams.unread(w) ? ' · new activity' : '') + ' — Shift+F10 or right-click for actions';
-      return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" tabindex="' + (w.id === railFocusId ? '0' : '-1') + '" role="option" aria-selected="' + (w.id === activeId ? 'true' : 'false') + '" aria-posinset="' + (index + 1) + '" aria-setsize="' + rows.length + '" aria-label="' + U.esc(title + ' session; Enter to open; Shift+F10 for actions') + '" aria-keyshortcuts="Shift+F10" title="' + U.esc(tip) + '">' +
+        + (Workstreams.unread(w) ? ' · not seen yet' : '')
+        // LANE lives here now rather than in the dot. Only a board DIRECTIVE ('task') actually chose
+        // its lane; a plain chat's lane is inferred, so naming it on every row would dress a guess
+        // up as a decision. The board remains the surface that owns and edits this.
+        + (w.kind === 'task' ? ' · board: ' + w.lane : '')
+        + (full ? ' · last run on ' + full : '')   // the UNABBREVIATED id the row had to shorten
+        + ' — Shift+F10 or right-click for actions';
+      return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" tabindex="' + (w.id === railFocusId ? '0' : '-1') + '" role="option" aria-selected="' + (w.id === activeId ? 'true' : 'false') + '" aria-posinset="' + (index + 1) + '" aria-setsize="' + rows.length + '" aria-label="' + U.esc(title + ' session' + (railAgentName(w) === title ? '' : ', ' + railAgentName(w)) + (Workstreams.unread(w) ? ', not seen yet' : '') + '; Enter to open; Shift+F10 for actions') + '" aria-keyshortcuts="Shift+F10" title="' + U.esc(tip) + '">' +
         '<span class="' + st.dot + '"></span>' +
         (w.pinned ? '<span class="ws-pin" aria-hidden="true">★</span>' : '') +
+        '<span class="ws-agent" aria-hidden="true">' + U.esc(railAgentName(w)) + '</span>' +
         '<span class="ws-title">' + U.esc(title) + '</span>' +
-        '<span class="ws-unread" aria-hidden="true"></span>' +
         '<span class="ws-meta">' + U.esc(st.meta) + '</span>' +
+        '<span class="ws-receipt" aria-hidden="true">' + U.esc(railReceipt(w)) + '</span>' +
         '<button class="ws-kebab" tabindex="-1" aria-label="session actions" title="session actions">⋯</button>' +
         '</li>';
     }).join('');
@@ -3441,6 +3485,10 @@ const App = (() => {
       const st = railRowState(w);
       const dot = li.querySelector('.ws-dot'); if (dot && dot.className !== st.dot) dot.className = st.dot;
       const meta = li.querySelector('.ws-meta'); if (meta && meta.textContent !== st.meta) meta.textContent = st.meta;
+      // the INBOX receipt ages like the rest of the row: a reply landing mid-run moves the count, and a
+      // model measured for the first time replaces the '—'. Change-detected, so a quiet rail touches no DOM.
+      const rec = li.querySelector('.ws-receipt');
+      if (rec) { const next = railReceipt(w); if (rec.textContent !== next) rec.textContent = next; }
       const cls = rowClass(w, st, activeId); if (li.className !== cls) li.className = cls;
     });
   }

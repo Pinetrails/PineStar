@@ -89,7 +89,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // every save that predates this key merges to the exact look it already had.
   // panelBright (0–100, default 0) is the tube's BRIGHTNESS knob: it lifts the panel glass's black
   // level toward the phosphor colour (never toward white). 0 = the shipped look, untouched.
-  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, panelBright: 0, textScale: 0, flicker: true, crtGlass: 'full', sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, panelBright: 0, textScale: 0, flicker: true, crtGlass: 'full', sound: true, backdrop: 'void', sessionRow: 'compact', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
   // TEXT SIZE steps (percent → chip label; 0 = AUTO, the default). Applied as a body zoom in
   // applySettings(): zoom scales layout too, so every hard-px face (COMMS included) grows together —
   // a root font-size can't reach the ~800 px-sized declarations. world.js resize() reads the same
@@ -123,6 +123,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (v === false || v === 'easy' || v === 'soft' || v === 'off') return 'dulled';
     return GLASS_STEPS.some(([id]) => id === v) ? v : 'full';
   }
+  // SESSION ROWS (value → chip label → tooltip), same shape as GLASS_STEPS. COMPACT is the shipped
+  // one-line rail and stays the DEFAULT: a sidebar that reshapes itself on upgrade is a sidebar the
+  // user has to re-learn for a change they never asked for. INBOX trades roughly two thirds of the
+  // rows in view for the three facts that let you tell sessions apart without opening them.
+  // Deliberately NOT surfaced in the rail head: .ws-head is SESSIONS/PROJECTS + NEW by directive, and
+  // app.css's own note records that a fourth control there wrapped "+ NEW" out of the molded head.
+  const ROW_STEPS = [
+    ['compact', 'COMPACT', 'one line per session — the most sessions in view'],
+    ['inbox', 'INBOX', 'three lines per session — agent, title, and the model + message count'],
+  ];
+  function resolveSessionRow(v) { return ROW_STEPS.some(([id]) => id === v) ? v : 'compact'; }
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
@@ -262,6 +273,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // flatten the feed for star-pixel checks) and is never written from settings — a toggle() here
     // would remove it out from under a verification run.
     document.body.classList.toggle('crt-dull', resolveGlass(s.crtGlass) === 'dulled');
+    // SESSION ROWS — one body class; app.css re-lays the SAME .ws-row markup as a three-line card.
+    // The rail is not re-rendered here: the extra lines are always in the DOM, so flipping this is a
+    // pure repaint and cannot disturb rail focus, scroll position, or an in-place rename.
+    document.body.classList.toggle('rows-inbox', resolveSessionRow(s.sessionRow) === 'inbox');
     // TEXT SIZE — one dial for every hard-px UI face at once (0/absent = AUTO from screen size).
     // Removed (not '1') at 100% so the plain-desktop default leaves no inline style behind.
     const tz = resolveTextScale(s.textScale);
@@ -5613,6 +5628,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         return '<button class="set-theme ' + (cur === v ? 'sel' : '') + '" aria-pressed="' + (cur === v ? 'true' : 'false') + '" data-ts="' + v + '" title="' + title + '">' + name + '</button>';
       }).join('') +
       '</div>' +
+      // SESSION ROWS — what one row of the SESSIONS rail is allowed to say. Sits with TEXT SIZE
+      // because it is the same kind of dial: how much of a fixed-width rail one entry may spend.
+      '<div class="set-row"><span class="dim">SESSION ROWS — COMPACT is one line each; INBOX adds the agent and the model + message count so you can tell sessions apart without opening them</span></div>' +
+      '<div class="set-themes" id="set-sessionrow">' +
+      ROW_STEPS.map(([v, name, why]) => {
+        const cur = resolveSessionRow(s.sessionRow);
+        return '<button class="set-theme ' + (cur === v ? 'sel' : '') + '" aria-pressed="' + (cur === v ? 'true' : 'false') + '" data-srow="' + v + '" title="' + why + '">' + name + '</button>';
+      }).join('') +
+      '</div>' +
       // CRT — its own section, and a LEVEL rather than a named mode. Framing this as an
       // accessibility fix ("easy read") tells the people who like the tube that they are enduring
       // something, which is not what most of them report. There is no OFF: the station is a CRT.
@@ -5826,6 +5850,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       s.crtGlass = resolveGlass(b.dataset.glass);
       applySettings(); save(); sfx('click');
       syncGlass(); flashSaved(appMsg());
+    }));
+    // SESSION ROWS chips — same instant-apply + persist idiom as CRT GLASS above. applySettings()
+    // only flips a body class, so the rail repaints in place and never loses focus or scroll.
+    const srChips = host.querySelectorAll('#set-sessionrow [data-srow]');
+    const syncSessionRow = () => srChips.forEach(x => {
+      const on = x.dataset.srow === resolveSessionRow(s.sessionRow);
+      x.classList.toggle('sel', on);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    srChips.forEach(b => b.addEventListener('click', () => {
+      s.sessionRow = resolveSessionRow(b.dataset.srow);
+      applySettings(); save(); sfx('click');
+      syncSessionRow(); flashSaved(appMsg());
     }));
     // TEXT SIZE chips — instant-apply + persist, same idiom as the theme row above.
     const tsChips = host.querySelectorAll('#set-textsize [data-ts]');
