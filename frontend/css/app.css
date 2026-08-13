@@ -4989,3 +4989,75 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
 .exec-ssh .set-row{display:grid;grid-template-columns:minmax(100px,130px) minmax(0,1fr);gap:8px;align-items:center}
 .exec-ssh .key-input{width:100%;min-width:0}
 .exec-ssh .mc-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+
+/* ============== DELIVERABLES — the organized library (2026-08-13) ==============
+   Two bands per card, and the whole visual grammar exists to keep them apart:
+     .dlv-say   — the AGENT'S prose (title + one line). Reads like writing.
+     .dlv-facts — HARNESS truth (status pill, crew chips, counts). Reads like instrumentation.
+   A person must be able to tell at a glance which half the station is standing behind, so the say band gets
+   normal text colour and the facts band gets chips/rails. Matte throughout: recessed fills and 1px structure,
+   no gloss, and no glow standing in for an edge. */
+.dlv-split { display: grid; grid-template-columns: minmax(132px, 168px) minmax(0, 1fr); gap: 12px; align-items: start; }
+@media (max-width: 640px) { .dlv-split { grid-template-columns: minmax(0, 1fr); } }
+
+/* the PROJECT rail — the axis a person actually thinks in */
+.dlv-rail { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dlv-proj { display: flex; align-items: baseline; gap: 6px; width: 100%; padding: 6px 8px; text-align: left;
+  background: transparent; border: 1px solid transparent; border-left: 2px solid var(--ph-faint); border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  color: var(--text); font: inherit; font-size: 12px; cursor: pointer; min-width: 0; }
+.dlv-proj:hover { background: rgba(255, 255, 255, 0.03); border-left-color: var(--ph-dim); }
+.dlv-proj:focus-visible { outline: 1px solid var(--ph); outline-offset: -1px; }
+.dlv-proj.on { background: var(--ph-faint); border-left-color: var(--ph); color: var(--ph); }
+.dlv-proj-n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dlv-proj-c { flex: none; font-size: 10.5px; color: var(--ph-dim); font-variant-numeric: tabular-nums; }
+.dlv-proj.on .dlv-proj-c { color: var(--ph); }
+/* a revoked root is SHOWN, marked — it names work that really happened */
+.dlv-proj-rev { flex-basis: 100%; font-size: 9.5px; letter-spacing: 0.5px; color: var(--bad); opacity: 0.85; }
+
+/* time buckets */
+.dlv-main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.dlv-bucket { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dlv-bucket h4 { margin: 0; font-size: 10px; letter-spacing: 2px; color: var(--ph-dim); font-weight: 500;
+  display: flex; align-items: center; gap: 8px; }
+.dlv-bucket h4::after { content: ''; flex: 1; height: 1px; background: var(--ph-faint); }
+
+/* the card */
+.dlv-card { border: 1px solid var(--ph-faint); border-radius: var(--r-sm); background: var(--panel2);
+  box-shadow: var(--raise); padding: 10px 12px; display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.dlv-say { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dlv-title { color: var(--ph); font-weight: 600; letter-spacing: 0.4px; overflow-wrap: anywhere; }
+/* an UNNAMED row's title is a filename, not a description — say it in the file voice, not the prose voice */
+.dlv-title.plain { color: var(--text); font-weight: 500; font-size: 12.5px; letter-spacing: 0; opacity: 0.9; }
+.dlv-sum { margin: 0; font-size: 12px; line-height: 1.45; color: var(--text); opacity: 0.82; overflow-wrap: anywhere; }
+.dlv-sum.none { opacity: 0.45; font-style: italic; }
+
+/* the facts band — instrumentation, never prose */
+.dlv-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 8px; min-width: 0; }
+.dlv-pill { font-size: 9.5px; letter-spacing: 1.4px; padding: 2px 7px; border-radius: 2px; flex: none;
+  border: 1px solid currentColor; }
+.dlv-pill.ok { color: var(--ok); }
+.dlv-pill.warn { color: var(--gold); background: rgba(var(--gold-rgb), 0.09); }
+.dlv-pill.bad { color: var(--bad); background: rgba(var(--bad-rgb), 0.09); }
+.dlv-pill.off { color: var(--ph-dim); }
+.dlv-crew { display: inline-flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+/* LEAD reads as an inverted phosphor chip (the COMMS speaker vocabulary); workers stay outlined and dim, so
+   the hierarchy is legible without a legend and a single-agent card costs nothing. */
+.dlv-who { font-size: 10px; letter-spacing: 0.8px; padding: 1px 6px; border-radius: 2px;
+  border: 1px solid var(--ph-faint); color: var(--ph-dim); }
+.dlv-who.lead { background: var(--ph); color: var(--panel2); border-color: var(--ph); font-weight: 600; }
+.dlv-who i { font-style: normal; opacity: 0.7; }
+.dlv-meta { font-size: 10.5px; color: var(--ph-dim); letter-spacing: 0.6px; font-variant-numeric: tabular-nums; }
+
+/* the Commander's own words, kept visibly distinct from the agent's */
+.dlv-ask { margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--text); opacity: 0.6;
+  border-left: 1px solid var(--ph-faint); padding-left: 8px; overflow-wrap: anywhere; }
+.dlv-ask span { font-size: 9.5px; letter-spacing: 1.4px; color: var(--ph-dim); margin-right: 5px; }
+
+.dlv-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+/* the ONE file that IS the deliverable, when the agent named one */
+.dlv-hero { border-color: var(--gold); color: var(--gold); }
+
+.dlv-empty { border: 1px dashed var(--ph-faint); border-radius: var(--r-sm); padding: 18px 14px; text-align: center;
+  font-size: 11px; letter-spacing: 1.6px; color: var(--ph-dim); }
+.dlv-empty span { display: block; margin-top: 7px; font-size: 12px; letter-spacing: 0; line-height: 1.5;
+  color: var(--text); opacity: 0.6; }

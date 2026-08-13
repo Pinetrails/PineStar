@@ -120,18 +120,110 @@
     return previewInCard(f, card.querySelector('[data-preview]'), state || {}, say);
   }
 
+  /* ============== THE ORGANIZED LIBRARY (2026-08-13) ==============
+     Every card is TWO LAYERS and they are never allowed to blur:
+       · the SAY band  — the agent's own title + one-line description (deliverable_note). Prose. No authority.
+       · the FACTS band — status, crew, file count, size, time. All derived by the harness from the run log.
+     The pill outranks the prose: if a card says "churn analysis" and the run failed, FAILED is what reads loudest.
+     A row the agent never named shows its filename as the plain fact it is (`authored:false`) rather than dressing
+     a basename up as a description — a title we invented would be the same lie in a nicer font. */
+
+  const DAY_MS = 86400000;
+  // Time buckets, the axis people actually search on when they can't remember the project. Injected `now` so this
+  // is testable headlessly and never reads an ambient clock mid-render.
+  function bucketOf(ts, now) {
+    if (!ts) return 'EARLIER';
+    const midnight = new Date(now); midnight.setHours(0, 0, 0, 0);
+    if (ts >= midnight.getTime()) return 'TODAY';
+    if (ts >= midnight.getTime() - 6 * DAY_MS) return 'THIS WEEK';
+    return 'EARLIER';
+  }
+  const BUCKETS = ['TODAY', 'THIS WEEK', 'EARLIER'];
+
+  // status -> the pill a person can read. `pending` is the only one that asks for something, so it alone is gold.
+  const PILLS = {
+    kept: { label: 'KEPT', cls: 'ok' },
+    produced: { label: 'DONE', cls: 'ok' },
+    pending: { label: 'NEEDS A DECISION', cls: 'warn' },
+    failed: { label: 'FAILED', cls: 'bad' },
+    discarded: { label: 'DISCARDED', cls: 'off' }
+  };
+  function pillOf(status) {
+    return Object.prototype.hasOwnProperty.call(PILLS, status) ? PILLS[status] : { label: String(status || 'UNKNOWN').toUpperCase(), cls: 'off' };
+  }
+  // A raw agentId reads as debug output; resolve through the live roster the same way every other window does.
+  function agentLabel(id) {
+    if (typeof App !== 'undefined' && App && typeof App.agentName === 'function') { try { return App.agentName(id) || id; } catch (_) {} }
+    return String(id || 'agent');
+  }
+
   function mount(body) {
-    let rows = [], loadSeq = 0;
+    let rows = [], projects = [], loadSeq = 0, project = '';
     const openState = { blobUrl: '', previewHost: null };
     const revoke = () => revokePreview(openState);
-    body.innerHTML = '<div class="cfg"><h3>DELIVERABLES / WORKSHOP LIBRARY</h3><p class="muted">Real run outputs and Workshop builds. Previews open safely inside StarNet in a browser; desktop OPEN uses your file app. Original files remain unchanged until you choose an action.</p>' +
-      '<div class="deliverables-toolbar"><input id="dl-query" aria-label="Search deliverables" placeholder="search title, run, source"><select id="dl-status" aria-label="Filter deliverables"><option value="">ALL STATUS</option><option>pending</option><option>kept</option><option>discarded</option><option>produced</option><option>failed</option></select><button class="bb sm" id="dl-refresh">REFRESH</button><button class="bb sm" id="dl-clean">CLEAN OLD RECORDS</button></div>' +
-      '<div id="dl-msg" class="msg" aria-live="polite"></div><div id="dl-cleanup"></div><div id="dl-list"></div></div>';
-    const q = body.querySelector('#dl-query'), status = body.querySelector('#dl-status'), list = body.querySelector('#dl-list'), msg = body.querySelector('#dl-msg'), cleanup = body.querySelector('#dl-cleanup');
+    body.innerHTML = '<div class="cfg dlv"><h3>DELIVERABLES / WORKSHOP LIBRARY</h3><p class="muted">Everything your agents actually made. Grouped by the project it was made for, then by when. Previews open safely inside StarNet in a browser; desktop OPEN uses your file app. Original files remain unchanged until you choose an action.</p>' +
+      '<div class="deliverables-toolbar"><input id="dl-query" aria-label="Search deliverables" placeholder="search title, agent, project"><select id="dl-status" aria-label="Filter deliverables"><option value="">ALL STATUS</option><option>pending</option><option>kept</option><option>discarded</option><option>produced</option><option>failed</option></select><button class="bb sm" id="dl-refresh">REFRESH</button><button class="bb sm" id="dl-clean">CLEAN OLD RECORDS</button></div>' +
+      '<div id="dl-msg" class="msg" aria-live="polite"></div><div id="dl-cleanup"></div>' +
+      '<div class="dlv-split"><nav id="dl-rail" class="dlv-rail" aria-label="Projects"></nav><div id="dl-list" class="dlv-main"></div></div></div>';
+    const q = body.querySelector('#dl-query'), status = body.querySelector('#dl-status'), list = body.querySelector('#dl-list'), rail = body.querySelector('#dl-rail'), msg = body.querySelector('#dl-msg'), cleanup = body.querySelector('#dl-cleanup');
     const say = (s, bad) => { msg.textContent = s || ''; msg.className = 'msg ' + (bad ? 'bad' : 'ok'); };
+
+    /* THE PROJECT RAIL. Counts come from the server's facet, which is computed BEFORE the project filter runs —
+       so selecting one project can never hide the others. A root whose path grant was revoked still appears,
+       marked: it names work that really happened, and hiding it would be the library lying by omission. */
+    function renderRail() {
+      const total = projects.reduce((n, p) => n + (Number(p.count) || 0), 0);
+      const row = (key, name, count, extra) =>
+        '<button class="dlv-proj' + (project === key ? ' on' : '') + '" data-project="' + esc(key) + '">' +
+        '<span class="dlv-proj-n">' + esc(name) + '</span><span class="dlv-proj-c">' + count + '</span>' + (extra || '') + '</button>';
+      rail.innerHTML = row('', 'ALL WORK', total) + projects.map(p =>
+        row(p.unfiled ? 'unfiled' : p.root, p.name, p.count, p.blessed ? '' : '<span class="dlv-proj-rev">folder access revoked</span>')
+      ).join('');
+    }
+
+    function crewHtml(r) {
+      const crew = Array.isArray(r.contributors) ? r.contributors : [];
+      if (!crew.length) return '';
+      // The LEAD carries the phosphor rail, workers are dim chips — the same "position identifies the speaker"
+      // idea COMMS uses, so a two-agent card reads as a hierarchy without anyone having to parse a legend.
+      // `identityFallback` is surfaced, never swallowed: that run was NOT the named specialist.
+      return '<span class="dlv-crew">' + crew.map(c =>
+        '<span class="dlv-who' + (c.role === 'lead' ? ' lead' : '') + '">' + esc(agentLabel(c.agentId)) +
+        (c.identityFallback ? '<i> stand-in</i>' : '') + '</span>').join('') + '</span>';
+    }
+
+    function cardHtml(r, i) {
+      const pill = pillOf(r.status);
+      const files = r.files || [];
+      const nFiles = files.length;
+      // THE SAY BAND — the agent's words, or an honest admission that there aren't any.
+      const say2 = r.authored
+        ? '<b class="dlv-title">' + esc(r.title || 'Untitled output') + '</b>' + (r.summary ? '<p class="dlv-sum">' + esc(r.summary) + '</p>' : '')
+        : '<b class="dlv-title plain">' + esc(r.title || 'Untitled output') + '</b>' + (r.summary ? '<p class="dlv-sum">' + esc(r.summary) + '</p>' : '<p class="dlv-sum none">the agent did not name this one</p>');
+      // THE FACTS BAND — every item here is provable from the run log.
+      const facts = '<span class="dlv-pill ' + pill.cls + '">' + esc(pill.label) + '</span>' + crewHtml(r) +
+        '<span class="dlv-meta">' + (nFiles ? nFiles + (nFiles === 1 ? ' file' : ' files') + ' · ' : '') + esc(fmtSize(r.size)) +
+        ' · ' + esc(r.createdAt ? new Date(r.createdAt).toLocaleString() : 'time unknown') + '</span>';
+      const ask = r.ask ? '<p class="dlv-ask"><span>ASKED</span> ' + esc(r.ask) + '</p>' : '';
+      return '<article class="dlv-card" data-i="' + i + '"><div class="dlv-say">' + say2 + '</div><div class="dlv-facts">' + facts + '</div>' + ask + '<div class="row dlv-acts">' +
+        ((r.actions && r.actions.open) ? (r.files || []).map((f, fi) => f.openUrl ? '<a class="bb sm' + (r.main && f.path === r.main ? ' dlv-hero' : '') + '" data-file="' + fi + '" href="' + esc(fileHref(f)) + '" target="_blank" rel="noopener">OPEN ' + esc(f.path) + '</a>' : '').join('') : '') + ((r.actions && r.actions.keep) ? '<button class="bb sm" data-act="keep">KEEP</button>' : '') + ((r.actions && r.actions.discard) ? '<button class="bb sm danger" data-act="discard">DISCARD</button>' : '') + '</div><div class="deliverable-preview" data-preview aria-live="polite"></div></article>';
+    }
+
     function render() {
-      list.innerHTML = rows.length ? rows.map((r, i) => '<article class="cfg-block deliverable-row" data-i="' + i + '"><div><b>' + esc(r.title || 'Untitled output') + '</b> <span class="tag">' + esc(r.status) + '</span></div><small>' + esc(r.source) + ' · ' + esc(r.agentId || 'station') + ' · ' + fmtSize(r.size) + ' · ' + esc(r.createdAt ? new Date(r.createdAt).toLocaleString() : 'time unknown') + '</small><p>' + esc(r.summary || '') + '</p><div class="row">' +
-        ((r.actions && r.actions.open) ? (r.files || []).map((f, fi) => f.openUrl ? '<a class="bb sm" data-file="' + fi + '" href="' + esc(fileHref(f)) + '" target="_blank" rel="noopener">OPEN ' + esc(f.path) + '</a>' : '').join('') : '') + ((r.actions && r.actions.keep) ? '<button class="bb sm" data-act="keep">KEEP</button>' : '') + ((r.actions && r.actions.discard) ? '<button class="bb sm danger" data-act="discard">DISCARD</button>' : '') + '</div><div class="deliverable-preview" data-preview aria-live="polite"></div></article>').join('') : '<p class="muted">No deliverables match this view.</p>';
+      renderRail();
+      if (!rows.length) {
+        // Say what MAKES a deliverable rather than just reporting absence — an empty library is the one moment
+        // the window has to teach what it is for.
+        list.innerHTML = '<div class="dlv-empty">NOTHING HERE YET.<br><span>' +
+          (project || q.value || status.value ? 'No deliverables match this view. Clear the filters to see everything.' : 'When a run creates or changes files, it lands here with the agent’s own name for it, the crew that worked on it, and the project it was for.') +
+          '</span></div>';
+        return;
+      }
+      const now = Date.now();
+      const groups = {};
+      rows.forEach((r, i) => { const b = bucketOf(Number(r.createdAt) || 0, now); (groups[b] = groups[b] || []).push(cardHtml(r, i)); });
+      list.innerHTML = BUCKETS.filter(b => groups[b] && groups[b].length)
+        .map(b => '<section class="dlv-bucket"><h4>' + b + '</h4>' + groups[b].join('') + '</section>').join('');
       wireDiscards();
     }
     // Re-wired after every render: innerHTML replaces the buttons, so the previous listeners die with the
@@ -154,8 +246,15 @@
     }
     async function load() {
       const seq = ++loadSeq; say('Loading…');
-      const url = '/api/deliverables?query=' + encodeURIComponent(q.value) + '&status=' + encodeURIComponent(status.value);
-      try { const j = await fetch(url, { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); }); if (seq !== loadSeq) return; rows = j.items || []; render(); say(rows.length + ' real record' + (rows.length === 1 ? '' : 's')); }
+      const url = '/api/deliverables?query=' + encodeURIComponent(q.value) + '&status=' + encodeURIComponent(status.value) + '&project=' + encodeURIComponent(project);
+      try {
+        const j = await fetch(url, { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
+        if (seq !== loadSeq) return;
+        rows = j.items || [];
+        projects = Array.isArray(j.projects) ? j.projects : [];   // an older sidecar simply sends none -> rail shows ALL WORK only
+        render();
+        say(rows.length + ' real record' + (rows.length === 1 ? '' : 's'));
+      }
       catch (e) { say('Could not load the library: ' + e.message, true); }
     }
     // DISCARD is irreversible (it deletes the Workshop files), so it asks — but with the station's own
@@ -175,6 +274,12 @@
       if (b.dataset.act === 'discard' && b.dataset.wired === '1') return;   // its own ArmConfirm listener owns it
       decide(r, b.dataset.act, b);
     });
+    rail.addEventListener('click', ev => {
+      const b = ev.target.closest('button[data-project]'); if (!b) return;
+      project = b.dataset.project || '';
+      renderRail();   // paint the selection immediately; the list follows when the fetch lands
+      load();
+    });
     let debounce = 0; q.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(load, 180); }); status.addEventListener('change', load); body.querySelector('#dl-refresh').addEventListener('click', load);
     body.querySelector('#dl-clean').addEventListener('click', async () => {
       try { const p = await post('/api/deliverables/cleanup-preview', { statuses: ['discarded', 'failed'] }); cleanup.innerHTML = '<div class="cfg-block"><b>CLEANUP PREVIEW</b><p>' + p.targets.length + ' discarded/failed lifecycle record(s) will be removed. ' + p.protected.length + ' pending, kept, or produced record(s) are protected. Files are not deleted.</p><ul>' + p.targets.map(r => '<li>' + esc(r.title) + ' · ' + esc(r.status) + ' · ' + esc(r.runId || r.id) + '</li>').join('') + '</ul><button class="bb sm danger" id="dl-clean-apply" ' + (p.targets.length ? '' : 'disabled') + '>REMOVE EXACTLY THESE ' + p.targets.length + ' RECORDS</button></div>'; const apply = cleanup.querySelector('#dl-clean-apply'); if (apply) apply.addEventListener('click', async () => { try { const c = await post('/api/deliverables/cleanup', { statuses: p.statuses, fingerprint: p.fingerprint }); cleanup.innerHTML = '<div class="msg ok">Removed ' + c.removed + ' record(s). <button class="bb sm" id="dl-undo">UNDO</button></div>'; cleanup.querySelector('#dl-undo').addEventListener('click', async () => { const u = await post('/api/deliverables/cleanup-undo', { undoToken: c.undoToken }); say('Restored ' + u.restored + ' record(s).'); cleanup.innerHTML = ''; await load(); }); await load(); } catch (e) { say(e.message, true); } }); }
@@ -183,5 +288,5 @@
     body._deliverablesCleanup = revoke;
     load();
   }
-  return { esc, safeMarkdown, safeCsv, openUrl, fileHref, artifactPath, handleOpenClick, mount };
+  return { esc, safeMarkdown, safeCsv, openUrl, fileHref, artifactPath, handleOpenClick, bucketOf, pillOf, agentLabel, mount, BUCKETS };
 });
