@@ -40,9 +40,17 @@ A.ok(/role === 'assistant'/.test(buildFn) && /\[SILENT\]/.test(buildFn), 'the de
 A.ok(/routine \? \(/.test(buildFn) || /rw\.routine \?/.test(buildFn), 'a routine-fired run is titled by the routine name');
 A.ok(/users\[0\]\.content, 64/.test(buildFn), "a non-routine title comes from the transcript's real first ask (never the stored prompt+reply title mush)");
 
-/* ---- expanded breakdown: the ask, the output, and exactly the relevant actions ---- */
-A.ok(/ob-sec">THE ASK</.test(buildFn), 'expanded body shows THE ASK');
-A.ok(/ob-sec">WHAT THE AGENT DID</.test(buildFn), 'expanded body shows WHAT THE AGENT DID (the full output)');
+/* ---- expanded breakdown: ONE GRAMMAR with the DELIVERABLES drawer (2026-08-13) ----
+   The drawer speaks the library's exact language — what you asked for, what came back, the files —
+   so OUTBOX reads as the "awaiting your verdict" door into the same system, not a second one. */
+A.ok(/ob-sec">WHAT YOU ASKED FOR</.test(buildFn), 'expanded body shows WHAT YOU ASKED FOR (the library grammar, not THE ASK)');
+A.ok(/ob-sec">WHAT CAME BACK</.test(buildFn), 'expanded body shows WHAT CAME BACK (the library grammar, not WHAT THE AGENT DID)');
+/* ---- FILES: the library's own index and seams, never a second bookkeeping ---- */
+A.ok(/api\/deliverables/.test(buildFn), 'files come from ONE fetch of the library index (/api/deliverables), folded by runId');
+A.ok(/class="dlv-files"/.test(buildFn), 'files render with the library’s own markup (dlv-files — the two drawers share one look)');
+A.ok(/DLV\.handleOpenClick\(ev, dlvRows, openState/.test(buildFn), 'OPEN rides Deliverables.handleOpenClick (the one desktop-confirm/safe-preview seam)');
+A.ok(/d && d\.files\.length/.test(buildFn), 'a run the index doesn’t know shows NO files section (never invented)');
+A.ok(/openTerm\('deliverables'\)/.test(buildFn), 'the window carries a door into the library (one index, the rest are doors)');
 A.ok(/class="consent-btn ob-open">↗ OPEN/.test(buildFn), 'action: ↗ OPEN (test it in the session)');
 A.ok(/class="consent-btn ob-fork">⊕ NEW SESSION/.test(buildFn), 'action: ⊕ NEW SESSION (expand on this)');
 A.ok(/closeOthers\(/.test(buildFn), 'accordion: opening a row closes the others');

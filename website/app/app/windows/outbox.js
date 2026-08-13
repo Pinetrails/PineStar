@@ -17,17 +17,25 @@
      session to test the output), ⊕ NEW SESSION (dedicate a fresh chat to expanding on it), and the
      rate control (collecting the crate). One row open at a time; no buttons on collapsed rows.
      TRUTHFUL: title/description derive from the run's durable transcript (routine name wins for the
-     title); a missing transcript says so; rows come only from ReturnStore's pending ledger. */
+     title); a missing transcript says so; rows come only from ReturnStore's pending ledger.
+     ONE GRAMMAR (2026-08-13): the drawer speaks the DELIVERABLES drawer's exact language — what you
+     asked for, what came back, the files — so the OUTBOX reads as the "awaiting your verdict" door
+     into the same library, not a second system. The files are the LIBRARY's rows for this runId
+     (the one backend index), rendered with the library's own markup and opened through its one
+     open/preview seam; a run the index doesn't know (a plain conversation) simply shows no FILES
+     section — we never invent one. */
   function buildOutbox(body) {
     const RS = (typeof ReturnStore !== 'undefined') ? ReturnStore : null;
     const rows = (RS && RS.pendingRows) ? RS.pendingRows() : [];
     body.innerHTML =
       '<div class="win-note" style="margin-bottom:8px">Work that finished while you were away. Click a task to see the full result.</div>' +
       '<div id="ob-list" class="ob-list"></div>' +
-      '<div style="margin-top:10px"><button class="bb sm" id="ob-logbook">▸ FULL RUN HISTORY — LOGBOOK</button></div>';
+      '<div class="row" style="margin-top:10px;gap:8px"><button class="bb sm" id="ob-library">▸ THE LIBRARY — everything your agents made</button><button class="bb sm" id="ob-logbook">▸ FULL RUN HISTORY — LOGBOOK</button></div>';
     const list = body.querySelector('#ob-list');
     const lb = body.querySelector('#ob-logbook');
     if (lb) lb.addEventListener('click', () => openTerm('logbook'));
+    const lib = body.querySelector('#ob-library');
+    if (lib) lib.addEventListener('click', () => openTerm('deliverables'));
     function renderEmpty() {
       list.innerHTML = '<div class="fb-empty">NO UNCOLLECTED WORK.<br><span>When a run finishes while you’re away, its crate stacks on the OUTBOX and the full result is readable here.</span></div>';
     }
@@ -47,6 +55,34 @@
         for (const rw of rows) if (!rw.streamId && by[rw.runId]) rw.streamId = by[rw.runId];
       } catch (_) {}
     })();
+    /* THE FILES JOIN — one fetch of the library's own index (/api/deliverables), folded to runId.
+       An unnamed run makes one library row per artifact, so files concatenate across rows (deduped
+       by path). This is a read of the ONE backend index the DELIVERABLES window renders — never a
+       second bookkeeping of what a run produced. */
+    const DLV = (typeof Deliverables !== 'undefined') ? Deliverables : null;
+    const dlvRows = [];                                   // card-shaped rows for Deliverables.handleOpenClick (indexed by data-i)
+    const openState = { blobUrl: '', previewHost: null }; // the library's own preview-blob lifecycle state
+    const dlvJoin = (async () => {
+      const byRun = new Map();
+      try {
+        const j = await Harness.api.get('/api/deliverables');
+        for (const it of ((j && j.items) || [])) {
+          if (!it || !it.runId) continue;
+          const cur = byRun.get(it.runId) || { agentId: it.agentId, runId: it.runId, files: [], main: '' };
+          for (const f of (it.files || [])) if (f && f.path && !cur.files.some(x => x.path === f.path)) cur.files.push(f);
+          if (it.main && !cur.main) cur.main = it.main;
+          byRun.set(it.runId, cur);
+        }
+      } catch (_) {}                                      // library unreachable → drawers simply omit FILES (never invented)
+      return byRun;
+    })();
+    // OPEN rides the library's one open/preview seam (desktop confirm + safe in-card preview parity).
+    list.addEventListener('click', ev => {
+      const a = ev.target.closest && ev.target.closest('a[data-file]');
+      if (!a || !DLV || !DLV.handleOpenClick) return;
+      ev.stopPropagation();
+      DLV.handleOpenClick(ev, dlvRows, openState, (s, bad) => notify(s, bad ? 'warn' : ''));
+    });
     let open = rows.length;
     const collected = (row) => { row.style.transition = 'opacity .25s ease'; row.style.opacity = '0'; setTimeout(() => { row.remove(); if (--open <= 0) renderEmpty(); }, 300); };
     const closeOthers = (except) => { list.querySelectorAll('.ob-row.open').forEach(r => { if (r !== except) { r.classList.remove('open'); const b = r.querySelector('.ob-body'); if (b) b.hidden = true; } }); };
@@ -64,13 +100,15 @@
           '<div class="ob-meta">' + esc(agentName(rw.agentId)) + ' · ' + when + usd + '</div>' +
         '</div>' +
         '<div class="ob-body" hidden>' +
-          '<div class="ob-sec">THE ASK</div><div class="ob-ask"><span class="loading">loading…</span></div>' +
-          '<div class="ob-sec">WHAT THE AGENT DID</div><div class="ob-out"><span class="loading">loading…</span></div>' +
+          '<div class="ob-sec">WHAT YOU ASKED FOR</div><div class="ob-ask"><span class="loading">loading…</span></div>' +
+          '<div class="ob-sec">WHAT CAME BACK</div><div class="ob-out"><span class="loading">loading…</span></div>' +
+          '<div class="ob-files"></div>' +
           '<div class="ob-acts">' +
             '<button type="button" class="consent-btn ob-open">↗ OPEN — test it in the session</button>' +
             '<button type="button" class="consent-btn ob-fork">⊕ NEW SESSION — expand on this</button>' +
             '<span class="ob-rate"></span>' +
           '</div>' +
+          '<div class="deliverable-preview" data-preview aria-live="polite"></div>' +
         '</div>';
       row.querySelector('.ob-title b').textContent = provisionalTitle;
       list.appendChild(row);
@@ -98,6 +136,20 @@
         out.textContent = lastReply ? (lastReply.length > 4000 ? lastReply.slice(0, 4000) + '\n\n… output truncated — ↗ OPEN shows the full run.' : lastReply)
           : (turns === null ? '⚠ couldn’t load the output — the run’s transcript wasn’t reachable.'
             : 'this run recorded no readable output.');
+        // FILES — the library's rows for this run, in the library's own markup (dlv-files), sized off
+        // disk by the backend. Only rendered when the index proves the run produced something; a plain
+        // conversation gets no section (an every-row "no files" line would be noise, not honesty).
+        try {
+          const d = (await dlvJoin).get(rw.runId);
+          if (d && d.files.length && DLV && DLV.fileHref) {
+            const idx = dlvRows.push(d) - 1;
+            row.dataset.i = String(idx);   // the join handleOpenClick reads: this row → its library files
+            row.querySelector('.ob-files').innerHTML =
+              '<div class="ob-sec">FILES</div><ul class="dlv-files">' + d.files.map((f, fi) => f.openUrl
+                ? '<li><a class="bb sm' + (d.main && f.path === d.main ? ' dlv-hero' : '') + '" data-file="' + fi + '" href="' + esc(DLV.fileHref(f)) + '" target="_blank" rel="noopener">OPEN</a><span class="dlv-fname">' + esc(f.path) + '</span><span class="dlv-fsize">' + esc(DLV.fmtSize(f.bytes)) + '</span>' + (d.main && f.path === d.main ? '<span class="dlv-fmain">the main one</span>' : '') + '</li>'
+                : '<li><span class="dlv-fname off">' + esc(f.path) + '</span><span class="dlv-fsize">no longer available</span></li>').join('') + '</ul>';
+          }
+        } catch (_) {}
       })();
       // the row IS the toggle (accordion: one open at a time; collapsed rows stay clean)
       const head = row.querySelector('.ob-head'), bodyEl = row.querySelector('.ob-body'), caret = row.querySelector('.ob-caret');

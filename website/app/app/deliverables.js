@@ -417,5 +417,5 @@
     body._deliverablesCleanup = revoke;
     load();
   }
-  return { esc, safeMarkdown, safeCsv, openUrl, fileHref, artifactPath, handleOpenClick, bucketOf, pillOf, agentLabel, agoOf, mount, BUCKETS };
+  return { esc, safeMarkdown, safeCsv, openUrl, fileHref, artifactPath, handleOpenClick, bucketOf, pillOf, agentLabel, agoOf, fmtSize, mount, BUCKETS };
 });
