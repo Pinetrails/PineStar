@@ -1287,7 +1287,12 @@ body.crt-dull #chat-log, body.crt-dull .term-body, body.crt-dull #left, body.crt
 .ch-head { display: flex; align-items: center; gap: 9px; }
 .ch-id { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .ch-title { margin: 0; letter-spacing: 2px; color: var(--ph); font-weight: normal; font-size: 15px; text-shadow: 0 1px 0 #000, 0 0 8px var(--ph-glow2); }
-.ch-adv { font-size: 10.5px; letter-spacing: 1px; color: var(--accent, var(--ph-dim)); border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 40%, transparent); border-radius: 3px; padding: 0 4px; vertical-align: middle; opacity: .9; }
+/* ADVANCED is the STATION's word about a platform, so it wears the station's phosphor — not that
+   platform's brand hue. Reading `--accent` here painted the badge in Signal's blue, which is the same
+   off-palette seal problem the recruitment bay had. The row's own left rail still carries the brand
+   accent, which is the honest place for it: that rail identifies Telegram/Discord/Signal, this chip
+   does not. */
+.ch-adv { font-size: 10.5px; letter-spacing: 1px; color: var(--ph-dim); border: 1px solid color-mix(in srgb, var(--ph) 40%, transparent); border-radius: 3px; padding: 0 4px; vertical-align: middle; opacity: .9; }
 .ch-answers { font-size: 11px; letter-spacing: .5px; color: var(--ph-dim); }
 .ch-state { margin-left: auto; font-size: 12px; letter-spacing: 0.5px; text-align: right; white-space: nowrap; }
 .ch-state.st-up { color: var(--ok); }
