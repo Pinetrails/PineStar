@@ -10,7 +10,7 @@ const A = require('./_assert.js');
   A.eq(args.output, 'report.json', 'later pair arguments are parsed');
 
   const coverage = new Set(R.PROBES.map(row => row.id));
-  for (const id of ['oauth-refresh', 'rate-limit-failover', 'scheduled-continuation', 'restart-persistence', 'duplicate-delivery', 'partial-platform-outage']) {
+  for (const id of ['completion-authority', 'interrupted-run-recovery', 'execution-context-continuity', 'failure-route-exhaustion', 'oauth-refresh', 'rate-limit-failover', 'scheduled-continuation', 'restart-persistence', 'duplicate-delivery', 'partial-platform-outage']) {
     A.ok(coverage.has(id), 'campaign declares ' + id + ' coverage');
   }
   A.ok(R.PROBES.every(row => row.files.length > 0 && row.files.every(file => /^test\/.+\.test\.js$/.test(file))), 'every probe runs explicit test files');
@@ -41,6 +41,21 @@ const A = require('./_assert.js');
 
   const once = { once: true, plannedEndAt: new Date(end + 999999).toISOString(), requiredCycles: 1, cycles: [{ probes: [{ runs: [{ file: 'test/a.test.js', ok: true, cycle: 1 }] }] }] };
   A.ok(R.summarize(once, end).pass, 'a one-cycle smoke can finish without waiting for a wall-clock deadline');
+
+  const coverageBound = {
+    once: true,
+    plannedEndAt: new Date(end).toISOString(),
+    requiredCycles: 1,
+    coverage: [{ id: 'recovery', files: ['test/a.test.js', 'test/b.test.js'] }],
+    cycles: [{ number: 1, probes: [{ id: 'recovery', runs: [{ file: 'test/a.test.js', ok: true, cycle: 1 }] }] }]
+  };
+  const incomplete = R.summarize(coverageBound, end + 1);
+  A.eq(incomplete.pass, false, 'a missing planned probe cannot produce a false-green campaign');
+  A.eq(incomplete.coverageViolations, 1, 'missing probe execution is explicit evidence');
+  coverageBound.cycles[0].probes[0].runs.push({ file: 'test/b.test.js', ok: true, cycle: 1 });
+  const coverageGreen = R.summarize(coverageBound, end + 1);
+  A.ok(coverageGreen.pass, 'complete planned coverage can pass');
+  A.eq(coverageGreen.expectedProbeRuns, 2, 'expected executions are counted independently');
 
   A.report('overnight-reliability-runner.test');
 })().catch(error => { console.error(error && error.stack || error); process.exit(1); });

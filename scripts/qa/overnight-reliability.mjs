@@ -14,6 +14,10 @@ const sleep = ms => new Promise(done => setTimeout(done, ms));
 const iso = ms => new Date(ms).toISOString();
 
 export const PROBES = Object.freeze([
+  { id: 'completion-authority', files: ['test/completion-evidence.test.js', 'test/task-postconditions.test.js', 'test/task-postconditions-ui.test.js', 'test/run-execution-state.test.js', 'test/runstore.test.js'] },
+  { id: 'interrupted-run-recovery', files: ['test/run-journal-disk-boundary.test.js', 'test/run-recovery.api.test.js', 'test/run-recovery-ui.test.js', 'test/recovery-policy.test.js', 'test/tool-recovery.test.js'] },
+  { id: 'execution-context-continuity', files: ['test/project-root.e2e.test.js', 'test/shell-session.test.js', 'test/acp.e2e.test.js'] },
+  { id: 'failure-route-exhaustion', files: ['test/loop.failure-recovery.test.js', 'test/loop.verify-on-stop.test.js', 'test/loop.replay.test.js', 'test/tool-model-fallback.e2e.test.js'] },
   { id: 'oauth-refresh', files: ['test/mcp.oauth.test.js', 'test/provider.oauth-device.test.js', 'test/spotify.store.test.js', 'test/oauth-status.e2e.test.js'] },
   { id: 'rate-limit-failover', files: ['test/ratelimits.test.js', 'test/provider-recovery.e2e.test.js'] },
   { id: 'scheduled-continuation', files: ['test/cron.session-transcript.e2e.test.js', 'test/run-recovery-continuation.test.js'] },
@@ -133,14 +137,38 @@ export function summarize(report, now = Date.now()) {
   const cycles = Array.isArray(report.cycles) ? report.cycles : [];
   const rows = cycles.flatMap(cycle => cycle.probes || []).flatMap(probe => probe.runs || []);
   const failed = rows.filter(row => !row.ok);
+  const coverage = Array.isArray(report.coverage) ? report.coverage : [];
+  const coverageViolations = [];
+  if (coverage.length > 0) {
+    for (const cycle of cycles) {
+      for (const expected of coverage) {
+        const probes = (cycle.probes || []).filter(probe => probe.id === expected.id);
+        if (probes.length !== 1) {
+          coverageViolations.push({ cycle: cycle.number, probe: expected.id, reason: probes.length === 0 ? 'missing-probe' : 'duplicate-probe' });
+          continue;
+        }
+        const actualFiles = (probes[0].runs || []).map(run => run.file);
+        for (const file of expected.files || []) {
+          const count = actualFiles.filter(actual => actual === file).length;
+          if (count !== 1) coverageViolations.push({ cycle: cycle.number, probe: expected.id, file, reason: count === 0 ? 'missing-run' : 'duplicate-run' });
+        }
+        for (const file of actualFiles) {
+          if (!(expected.files || []).includes(file)) coverageViolations.push({ cycle: cycle.number, probe: expected.id, file, reason: 'unexpected-run' });
+        }
+      }
+    }
+  }
   const plannedEnd = Date.parse(report.plannedEndAt);
   const completed = report.once === true ? cycles.length >= 1 : Number.isFinite(plannedEnd) && now >= plannedEnd;
   return {
     completed,
-    pass: completed && failed.length === 0 && cycles.length >= Number(report.requiredCycles || 1),
+    pass: completed && failed.length === 0 && coverageViolations.length === 0 && cycles.length >= Number(report.requiredCycles || 1),
     cycles: cycles.length,
     requiredCycles: Number(report.requiredCycles || 1),
     probeRuns: rows.length,
+    expectedProbeRuns: cycles.length * coverage.reduce((sum, probe) => sum + (probe.files || []).length, 0),
+    coverageViolations: coverageViolations.length,
+    coverageViolationDetails: coverageViolations,
     failures: failed.length,
     failed: failed.map(row => ({ file: row.file, cycle: row.cycle, exitCode: row.exitCode, timedOut: row.timedOut }))
   };
@@ -209,9 +237,13 @@ async function main() {
       source,
       runner: { pid: process.pid, node: process.execPath },
       safety: { externalProviders: false, providerSpend: false, thirdPartyMutation: false, inheritedSecretsRemoved: true },
+      qualityGates: {
+        requiredInvariants: ['no-silent-stop', 'no-false-completion', 'no-duplicate-effect', 'durable-restart', 'actionable-terminal-state'],
+        evidenceModel: 'deterministic-test-probes'
+      },
       coverage: PROBES.map(probe => ({ id: probe.id, files: probe.files.slice() })),
       cycles: [],
-      summary: { completed: false, pass: false, cycles: 0, requiredCycles: once ? 1 : Math.max(1, Math.ceil(durationHours * 60 / cycleMinutes)), probeRuns: 0, failures: 0, failed: [] }
+      summary: { completed: false, pass: false, cycles: 0, requiredCycles: once ? 1 : Math.max(1, Math.ceil(durationHours * 60 / cycleMinutes)), probeRuns: 0, expectedProbeRuns: 0, coverageViolations: 0, coverageViolationDetails: [], failures: 0, failed: [] }
     };
   }
 
