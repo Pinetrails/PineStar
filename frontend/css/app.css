@@ -4436,6 +4436,13 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .cc-card.cc-on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 0 1px var(--ok), 0 0 14px rgba(123,200,138,.16); }
 .cc-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cc-head b { color: var(--ph-bright); font-weight: normal; letter-spacing: .5px; }
+/* THE CATALOG SEAL — the emblem that makes a card scannable instead of readable (2026-08-14).
+   Borrows the bay's `.mkt-coin` / `.mkt-coin-ico` pair verbatim so it inherits the frameless,
+   one-phosphor seal treatment; all this rule sets is the size and its refusal to shrink when the
+   head wraps. `flex-shrink:0` matters: `.cc-head` wraps, and a flexible seal squashed to an ellipse
+   on any card whose name + chip filled the row. */
+.cc-seal { --coin: 22px; flex: 0 0 auto; }
+.cc-top .cc-seal { --coin: 20px; }
 .cc-badge { font-size: 10px; letter-spacing: .5px; border-radius: 3px; padding: 0 4px; text-transform: uppercase; }
 .cc-official { color: var(--ok); border: 1px solid var(--ok); }
 .cc-community { color: var(--ph-dim); border: 1px solid var(--ph-dim); }

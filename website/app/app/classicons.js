@@ -220,6 +220,108 @@
     return CATEGORY_ICONS[c] || null;
   }
 
+  /* ==== THE ABILITIES CATALOG: platform seals, hybrid (2026-08-14) ==========================
+     The catalog (37 vetted MCP servers + 11 keyed platforms) printed every entry as a name and a
+     paragraph, so browsing it was reading. Same treatment as the recipe library, same two-layer shape
+     `svg()` already uses: a BESPOKE mark for the entries people scan for by sight, and the entry's
+     CATEGORY seal for everything else — so no card is ever bare and the set can grow without an art
+     task blocking a catalog addition.
+
+     ⛔ THESE ARE NOT BRAND LOGOS AND MUST NEVER BECOME THEM. Vendor marks would drag ~48 trademarked
+     assets into the repo and, worse, put Notion black / Stripe purple / Slack multicolour back inside
+     an amber tube — the exact "they are all different colours" problem the bay pass just removed. Each
+     mark below says what the SERVICE DOES in the station's own engraved language (currentColor + the
+     deboss cut), the way the class seals name a class. Read as "the thing that does X", never "the
+     logo of X". Same rules as every seal here: 24x24, currentColor, no <text>. */
+  const PLATFORM_ICONS = {
+    // --- code hosting & shipping ---
+    // github: the branch — a commit line splitting off and merging back.
+    github: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.6 7.4 V16.6"/><path d="M6.6 12.4 h5.2 a3 3 0 0 0 3-3 V7.4"/></g><g fill="currentColor"><circle cx="6.6" cy="5" r="2.6"/><circle cx="6.6" cy="19" r="2.6"/><circle cx="14.8" cy="5" r="2.6"/></g></svg>',
+    // gitlab: the merge request — two lines converging into one accepted head.
+    gitlab: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.4 5.6 V18.4"/><path d="M17.6 8.6 v3.2 a3.4 3.4 0 0 1 -3.4 3.4 H9.2"/></g><g fill="currentColor"><circle cx="6.4" cy="3.6" r="2.4"/><circle cx="6.4" cy="20.4" r="2.4"/><circle cx="17.6" cy="6.2" r="2.4"/></g><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M11.4 12.6 L8.8 15.2 L11.4 17.8"/></svg>',
+    // vercel: the deploy triangle — the build going up.
+    vercel: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 3.2 L22.4 20.8 H1.6 Z"/></svg>',
+    // netlify: the folded edge — the site published from a build.
+    netlify: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.2 L21.8 12 L12 21.8 L2.2 12 Z"/><path fill="' + D + '" d="M12 6.4 L17.6 12 L12 17.6 L6.4 12 Z"/><path fill="currentColor" d="M12 8.8 L15.2 12 L12 15.2 L8.8 12 Z"/></svg>',
+    // sentry: the fault caught — a waveform breaking over a floor line.
+    sentry: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2.2 15.4 H6 L8.6 8.6 L12 19 L15 5.4 L17.6 15.4 H21.8"/></g><path fill="currentColor" d="M10.6 20.6 h2.8 v1.8 h-2.8 Z"/></svg>',
+    // --- data stores ---
+    // neon / prisma / supabase all sit on a database drum; the SECOND element is what separates them.
+    neon: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.4" rx="8.4" ry="3.2" fill="currentColor"/><path fill="currentColor" d="M3.6 8.4 v10 a8.4 3.2 0 0 0 16.8 0 v-10 a8.4 3.2 0 0 1 -16.8 0 Z"/><path fill="' + D + '" d="M3.6 12.6 a8.4 3.2 0 0 0 16.8 0 v1.8 a8.4 3.2 0 0 1 -16.8 0 Z"/></svg>',
+    // supabase: the drum with the live bolt — rows that push at you.
+    supabase: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8.2" ry="3" fill="currentColor"/><path fill="currentColor" d="M3.8 7.8 v9.4 a8.2 3 0 0 0 16.4 0 V7.8 a8.2 3 0 0 1 -16.4 0 Z"/><path fill="' + D + '" d="M13.6 8.6 L8.4 15.2 h3.2 l-1.2 4.6 l5.2 -6.6 h-3.2 Z"/></svg>',
+    // prisma: the schema — the drum's rows drawn as a typed table.
+    prisma: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 1.8 L21 18.2 L12.6 22.2 a1.4 1.4 0 0 1 -1.9 -.7 L4 8.4 Z"/><g fill="' + D + '"><rect x="9" y="8" width="6.4" height="1.7" rx=".5"/><rect x="10" y="11.4" width="5.4" height="1.7" rx=".5"/><rect x="11" y="14.8" width="4.4" height="1.7" rx=".5"/></g></svg>',
+    // airtable: the grid with a filled column — a base, not a spreadsheet.
+    airtable: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.4 L22.4 6.4 L12 10.4 L1.6 6.4 Z"/><path fill="currentColor" d="M1.6 8.6 L10.6 12.1 v8.4 L1.6 16.6 Z"/><path fill="currentColor" d="M22.4 8.6 v6.2 L13.4 20.8 v-8.4 Z"/></svg>',
+    // --- payments ---
+    // stripe: the offset bars — a rail money moves along.
+    stripe: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="3.4" y="5" width="17.2" height="3.4" rx="1.1"/><rect x="1.6" y="10.3" width="17.2" height="3.4" rx="1.1"/><rect x="5.2" y="15.6" width="17.2" height="3.4" rx="1.1"/></g></svg>',
+    // paypal: the wallet with the note showing — money you hold, then send.
+    paypal: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 6.4 a2 2 0 0 1 2 -2 H16 v2.6 H5.6 a.8 .8 0 0 0 0 1.6 H19.4 a2 2 0 0 1 2 2 v8.6 a2 2 0 0 1 -2 2 H4.6 a2 2 0 0 1 -2 -2 Z"/><circle cx="17" cy="14.6" r="1.9" fill="' + D + '"/></svg>',
+    // square: the terminal with the card slot — a payment taken in person.
+    square: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3.2" fill="currentColor"/><rect x="7.6" y="7.6" width="8.8" height="8.8" rx="1.4" fill="' + D + '"/><rect x="9.8" y="9.8" width="4.4" height="4.4" rx=".7" fill="currentColor"/></svg>',
+    // shopify: the shop bag — the storefront itself.
+    shopify: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M4.4 7.4 H19.6 L21.2 21.4 a1.4 1.4 0 0 1 -1.4 1.6 H4.2 a1.4 1.4 0 0 1 -1.4 -1.6 Z"/><path fill="none" stroke="currentColor" stroke-width="2" d="M8.2 9.6 V6.4 a3.8 3.8 0 0 1 7.6 0 V9.6"/><path fill="' + D + '" d="M7.6 11.6 h8.8 v1.8 h-8.8 Z"/></svg>',
+    // --- work surfaces ---
+    // notion: the nested blocks — a page built out of stacked blocks.
+    notion: '<svg viewBox="0 0 24 24"><rect x="2.6" y="2.6" width="18.8" height="18.8" rx="2" fill="currentColor"/><g fill="' + D + '"><rect x="5.4" y="6" width="13.2" height="2.6" rx=".6"/><rect x="8" y="10.2" width="10.6" height="2.6" rx=".6"/><rect x="8" y="14.4" width="10.6" height="2.6" rx=".6"/></g><g fill="currentColor"><rect x="5.4" y="10.6" width="1.8" height="1.8" rx=".5"/><rect x="5.4" y="14.8" width="1.8" height="1.8" rx=".5"/></g></svg>',
+    // linear: the cycle — issues moving in a closed loop.
+    linear: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 12 a8.4 8.4 0 1 1 -2.5 -6"/><path d="M20.6 3.2 V6.6 H17.2"/></g><circle cx="12" cy="12" r="2.6" fill="currentColor"/></svg>',
+    // google-workspace: the app grid — a suite, not one tool.
+    'google-workspace': '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="2.6" y="2.6" width="8.2" height="8.2" rx="1.6"/><rect x="13.2" y="2.6" width="8.2" height="8.2" rx="4.1"/><rect x="2.6" y="13.2" width="8.2" height="8.2" rx="4.1"/><rect x="13.2" y="13.2" width="8.2" height="8.2" rx="1.6"/></g></svg>',
+    // hubspot: the connected record — one contact wired to everything about them.
+    hubspot: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 12 L5.4 5.4"/><path d="M12 12 L18.6 5.4"/><path d="M12 12 L5.4 18.6"/><path d="M12 12 L18.6 18.6"/></g><g fill="currentColor"><circle cx="12" cy="12" r="3.4"/><circle cx="5" cy="5" r="2.4"/><circle cx="19" cy="5" r="2.4"/><circle cx="5" cy="19" r="2.4"/><circle cx="19" cy="19" r="2.4"/></g></svg>',
+    // intercom: the answered conversation — a thread someone is on the other end of.
+    intercom: '<svg viewBox="0 0 24 24"><rect x="2.4" y="3.4" width="19.2" height="15.2" rx="2.4" fill="currentColor"/><path fill="currentColor" d="M6.4 18 h5.2 L7.4 22.2 Z"/><g fill="' + D + '"><circle cx="8" cy="11" r="1.5"/><circle cx="12" cy="11" r="1.5"/><circle cx="16" cy="11" r="1.5"/></g></svg>',
+    // --- automation & compute ---
+    // zapier: the burst — the trigger firing outward.
+    zapier: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 2.6 V21.4"/><path d="M2.6 12 H21.4"/><path d="M5.4 5.4 L18.6 18.6"/><path d="M18.6 5.4 L5.4 18.6"/></g><circle cx="12" cy="12" r="3.4" fill="currentColor"/></svg>',
+    // wolfram: the spiked solid — computed, not looked up.
+    wolfram: '<svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 1.4 L14 8 L12 12 L10 8 Z"/><path d="M12 22.6 L10 16 L12 12 L14 16 Z"/><path d="M1.4 12 L8 10 L12 12 L8 14 Z"/><path d="M22.6 12 L16 14 L12 12 L16 10 Z"/><path d="M4.5 4.5 L10.6 7.2 L12 12 L7.2 10.6 Z"/><path d="M19.5 19.5 L13.4 16.8 L12 12 L16.8 13.4 Z"/><path d="M19.5 4.5 L16.8 10.6 L12 12 L13.4 7.2 Z"/><path d="M4.5 19.5 L7.2 13.4 L12 12 L10.6 16.8 Z"/></g></svg>',
+    // x-twitter: the post — a short broadcast.
+    'x-twitter': '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M4 4 L20 20"/><path d="M20 4 L4 20"/></svg>',
+    // --- email ---
+    // resend: the sent message — it has already left.
+    resend: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M22.2 2.4 L1.8 10.2 L8.6 13.2 L19 5.4 L11.4 15 L20.2 21.6 Z"/><path fill="' + D + '" d="M8.6 13.2 L11.4 15 L9.2 20 L7.6 14.4 Z"/></svg>',
+    // sendgrid: the batch — many envelopes going out at once.
+    sendgrid: '<svg viewBox="0 0 24 24"><rect x="1.6" y="6.4" width="14" height="10.4" rx="1.6" fill="currentColor"/><path fill="' + D + '" d="M3.4 8.4 L8.6 12.4 L13.8 8.4 v1.4 L8.6 13.8 L3.4 9.8 Z"/><g fill="currentColor" opacity=".85"><rect x="17.4" y="8.4" width="5" height="1.9" rx=".7"/><rect x="17.4" y="12.1" width="5" height="1.9" rx=".7"/><rect x="17.4" y="15.8" width="5" height="1.9" rx=".7"/></g></svg>'
+  };
+
+  /* The fallback layer: one seal per catalog CATEGORY, for every entry with no bespoke mark. Keys are
+     the exact `category` strings the two catalog routes serve (/api/connectors/catalog groups and
+     servicekeys-catalog.js), lowercased — matched loosely by `platformIcon` so a renamed group
+     degrades to no seal rather than to the WRONG seal. */
+  const CATALOG_CATEGORY_ICONS = {
+    // MCP catalog groups
+    'docs & knowledge': CATEGORY_ICONS.research,
+    'search & research': '<svg viewBox="0 0 24 24"><circle cx="10.4" cy="10.4" r="7.8" fill="none" stroke="currentColor" stroke-width="2.6"/><path fill="currentColor" d="M15.8 14.2 L22 20.4 L20.2 22.2 L14 16 Z"/><g fill="currentColor"><circle cx="10.4" cy="10.4" r="2.2"/></g></svg>',
+    'compute & data': CATEGORY_ICONS.data,
+    'developer tools': CATEGORY_ICONS.developer,
+    'automation': CATEGORY_ICONS.ops,
+    'social': '<svg viewBox="0 0 24 24"><g fill="currentColor"><circle cx="12" cy="6.4" r="3.4"/><path d="M5.6 20.6 a6.4 6.4 0 0 1 12.8 0 a1 1 0 0 1 -1 1 H6.6 a1 1 0 0 1 -1 -1 Z"/></g><g fill="currentColor" opacity=".8"><circle cx="4.4" cy="9.6" r="2.4"/><circle cx="19.6" cy="9.6" r="2.4"/></g></svg>',
+    'productivity': CATEGORY_ICONS.planning,
+    'design': CATEGORY_ICONS.creator,
+    'payments & finance': CATEGORY_ICONS.money,
+    'crm & sales': CATEGORY_ICONS.business,
+    // keyed-platform groups (sidecar/servicekeys-catalog.js)
+    'commerce & print-on-demand': CATEGORY_ICONS.business,
+    'email & messaging': '<svg viewBox="0 0 24 24"><rect x="2" y="4.6" width="20" height="14.8" rx="2" fill="currentColor"/><path fill="' + D + '" d="M4.4 7.4 L12 13.4 L19.6 7.4 v1.9 L12 15.3 L4.4 9.3 Z"/></svg>',
+    'data & content': CATEGORY_ICONS.data
+  };
+
+  /* The catalog resolver: bespoke mark, else the entry's category seal, else null (caller prints no
+     seal rather than an invented one). Accepts an id string or the catalog entry itself — an id alone
+     carries no category, so it can only ever hit the bespoke layer. */
+  function platformIcon(idOrEntry) {
+    const isObj = idOrEntry && typeof idOrEntry === 'object';
+    const id = isObj ? idOrEntry.id : idOrEntry;
+    if (PLATFORM_ICONS[id]) return PLATFORM_ICONS[id];
+    if (!isObj) return null;
+    const cat = String(idOrEntry.category || '').trim().toLowerCase();
+    return CATALOG_CATEGORY_ICONS[cat] || null;
+  }
+
   const LANE_LABEL = { code: 'CODE', research: 'RESEARCH', general: 'OPS' };
   const TIER_PIPS = { reasoning: 3, balanced: 2, fast: 1 };
   const TIER_LABEL = { reasoning: 'DEEP REASONING', balanced: 'BALANCED', fast: 'FAST & CHEAP' };
@@ -260,5 +362,6 @@
     return '<span class="mkt-pips">' + '<b>◆</b>'.repeat(n) + '◇'.repeat(3 - n) + '</span>';
   }
 
-  return { ICONS, CODE, CATEGORY_ICONS, LANE_LABEL, svg, code, categoryIcon, lane, laneLabel, clearance, pipsHTML };
+  return { ICONS, CODE, CATEGORY_ICONS, PLATFORM_ICONS, CATALOG_CATEGORY_ICONS, LANE_LABEL,
+    svg, code, categoryIcon, platformIcon, lane, laneLabel, clearance, pipsHTML };
 });
