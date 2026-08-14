@@ -51,27 +51,93 @@ function routeReply(text, explicit) {
   return { action: 'answer', text: raw };
 }
 
-function validateQuestion(candidate, brief) {
-  const c = candidate && typeof candidate === 'object' ? candidate : {};
+// Per-question field rules, shared by the single and batched paths. `call` carries call-level
+// attestations (discoverable) so a batch attests once, not per item.
+function validateQuestionFields(c, call) {
   const dimension = clean(c.dimension, 24).toLowerCase();
   const question = clean(c.question || c.text, 240);
   // Dedupe on the LOOSENED form: exact-string dedupe let "operators" / "operators." / "the operators" through
   // as three distinct chips, which is the same choice offered three times dressed as a real decision. Collapsing
   // them means such a question now fails the >=2 check below instead of rendering a fake trilemma.
-  const options = TaskIntent.dedupeOptions(c.options);
+  const multiSelect = c.multiSelect === true;
+  const options = TaskIntent.dedupeOptions(c.options, TaskIntent.maxOptionsFor(multiSelect));
   const recommended = clean(c.recommended || c.defaultOption, 72);
   const reason = clean(c.reason, 240);
-  const prior = brief && Array.isArray(brief.questions) ? brief.questions : [];
   if (!DIMENSIONS.has(dimension)) return { ok: false, error: 'dimension must be one of: ' + Array.from(DIMENSIONS).join(', ') };
   if (!question || VAGUE.test(question)) return { ok: false, error: 'ask one concrete, non-vague question' };
-  if (options.length < 2) return { ok: false, error: 'provide 2-3 genuinely different options' };
+  if (options.length < 2) return { ok: false, error: multiSelect ? 'provide 2-6 genuinely different options' : 'provide 2-3 genuinely different options' };
   const pick = matchOption(options, recommended);
   if (!pick) return { ok: false, error: 'recommended must match one option (copy it verbatim from options)' };
   if (!reason) return { ok: false, error: 'state why this decision materially changes the result' };
-  if (c.discoverable !== false) return { ok: false, error: 'inspect available context first; discoverable must be false' };
-  if (prior.length >= 2) return { ok: false, error: 'this task already used its two-question limit' };
-  if (prior.length === 1 && (c.newBlocker !== true || !prior[0].answer)) return { ok: false, error: 'a second question requires an answered first question and a newly exposed blocker' };
-  return { ok: true, question: { dimension, question, text: question, options, recommended: pick, reason, newBlocker: c.newBlocker === true } };
+  if ((call || c).discoverable !== false) return { ok: false, error: 'inspect available context first; discoverable must be false' };
+  return { ok: true, question: { dimension, question, text: question, options, recommended: pick, reason,
+    multiSelect, newBlocker: (call || c).newBlocker === true } };
+}
+// How many brief_ask calls this brief has spent. Legacy briefs persisted before batching carry no
+// askCalls field; for them every stored question WAS its own call, so the count is the honest backfill.
+function askCallsOf(brief) {
+  const n = brief && Number(brief.askCalls);
+  if (Number.isFinite(n) && n > 0) return n;
+  return brief && Array.isArray(brief.questions) ? brief.questions.length : 0;
+}
+// The budget is now counted in ASK CALLS (interruptions), not questions: one call may bundle up to
+// three questions on distinct dimensions, so related unknowns cost the Commander ONE moment, not three.
+function validateQuestions(candidate, brief) {
+  const c = candidate && typeof candidate === 'object' ? candidate : {};
+  const extra = Array.isArray(c.also) ? c.also : [];
+  const raw = [c].concat(extra).filter(x => x && typeof x === 'object');
+  if (raw.length > 3) return { ok: false, error: 'ask at most 3 questions in one call — keep only the material ones' };
+  const prior = brief && Array.isArray(brief.questions) ? brief.questions : [];
+  const calls = askCallsOf(brief);
+  if (calls >= 2) return { ok: false, error: 'this task already used its two-question limit' };
+  if (calls === 1 && (c.newBlocker !== true || prior.some(q => !q.answer))) return { ok: false, error: 'a second question requires an answered first question and a newly exposed blocker' };
+  const out = []; const dims = new Set();
+  for (const q of raw) {
+    const v = validateQuestionFields(q, c);
+    if (!v.ok) return v;
+    if (dims.has(v.question.dimension)) return { ok: false, error: 'each bundled question must cover a DIFFERENT dimension — merge same-dimension unknowns into one question' };
+    dims.add(v.question.dimension);
+    out.push(v.question);
+  }
+  return { ok: true, questions: out };
+}
+function validateQuestion(candidate, brief) {
+  const r = validateQuestions(candidate && typeof candidate === 'object' ? Object.assign({}, candidate, { also: [] }) : candidate, brief);
+  return r.ok ? { ok: true, question: r.questions[0] } : r;
+}
+
+/* TASTE-FILLER CEILING (2026-08-14, live-caught by Andrew). The doctrine used to order a STYLE + TONE +
+   AESTHETIC read on EVERY task, so "can you see my PC specs?" — a lookup with no authored artifact and no
+   look to choose — produced three invented chips ("Style: brief, direct, and practical", "Tone: friendly
+   with a small spark", "Aesthetic: plain readable summary") and buried the one real assumption (omitting
+   serial numbers) at the bottom. The directive now makes taste CONDITIONAL, but a prompt is a hope; this is
+   the boundary. Two conservative rules, both fail-open — an assumption is never destroyed on a guess:
+     1. a labelled taste line whose every word is generic filler is a restatement of our own defaults, not
+        a decision the Commander can overturn — drop it;
+     2. taste is at most ONE line of a read, never its body — keep the first, drop the rest.
+   An unlabelled assumption, or one carrying task-specific words, is left completely alone. */
+const TASTE_LABEL = /^(?:style|tone|aesthetic|voice|register|presentation|formatting)\s*[:—-]\s*(.+)$/i;
+const GENERIC_WORD = new Set(('a an the and or but not no with without very quite fairly rather somewhat small light subtle extra much more less over under any all its is are be stay keep remain use using it i will its'
+  + ' brief short concise direct practical clear plain readable legible scannable simple straightforward'
+  + ' friendly warm approachable polite respectful natural human calm neutral professional helpful honest'
+  + ' accurate factual technical informative organized structured clean minimal tidy easy accessible'
+  + ' conversational casual summary report answer prose text spark ceremony fluff jargon decoration'
+  + ' unnecessary elaborate decorative flowery verbose formal informal nonsense point matter fact tone style').split(/\s+/));
+function tasteFiller(s) {
+  const m = TASTE_LABEL.exec(String(s == null ? '' : s).trim());
+  if (!m) return false;                                   // unlabelled -> never touched
+  const words = m[1].toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  return words.length > 0 && words.every(w => GENERIC_WORD.has(w));
+}
+function isTaste(s) { return TASTE_LABEL.test(String(s == null ? '' : s).trim()); }
+function trimAssumptions(list) {
+  const kept = []; let taste = 0;
+  for (const a of list) {
+    if (tasteFiller(a)) continue;                         // rule 1: our own defaults, restated
+    if (isTaste(a)) { if (taste >= 1) continue; taste++; }  // rule 2: taste is a line, not the body
+    kept.push(a);
+  }
+  return kept;
 }
 
 function validateProceed(candidate) {
@@ -80,7 +146,7 @@ function validateProceed(candidate) {
   if (objective.length < 4) return { ok: false, error: 'objective is required before consequential work' };
   const out = { objective };
   for (const k of ['deliverable', 'audience', 'success']) { const v = clean(c[k], 500); if (v) out[k] = v; }
-  out.assumptions = Array.isArray(c.assumptions) ? c.assumptions.map(x => clean(x, 300)).filter(Boolean).slice(0, 8) : [];
+  out.assumptions = Array.isArray(c.assumptions) ? trimAssumptions(c.assumptions.map(x => clean(x, 300)).filter(Boolean)).slice(0, 8) : [];
   out.sources = Array.isArray(c.sources) ? c.sources.map(x => clean(x, 300)).filter(Boolean).slice(0, 8) : [];
   return { ok: true, brief: out };
 }
@@ -95,4 +161,4 @@ function canMutate(brief, tool) {
     : { ok: false, reason: 'settle the Task Brief with brief_proceed, or ask the one material question with brief_ask, before consequential work' };
 }
 
-module.exports = { DIMENSIONS, routeReply, validateQuestion, validateProceed, canMutate, clean, matchOption };
+module.exports = { DIMENSIONS, routeReply, validateQuestion, validateQuestions, askCallsOf, validateProceed, canMutate, clean, matchOption, tasteFiller, trimAssumptions, maxOptionsFor: TaskIntent.maxOptionsFor };

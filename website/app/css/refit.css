@@ -124,13 +124,66 @@
 .trg-list { margin: 2px 0 4px; }
 .trg-row { font-family: 'VT323', monospace; font-size: 14px; letter-spacing: .4px; color: var(--text); margin: 2px 0; line-height: 1.25; }
 .trg-row b { color: var(--ph-bright); }
+/* the meta sits UNDER the name, indented past the state dot — the schedule is a sentence now ("every
+   Tuesday at 9:00 AM"), and run inline after the name it wrapped mid-phrase. */
+.trg-row-meta { color: var(--ph-dim); padding-left: 1.15em; }
 .trg-state { color: var(--ph-dim); }
 .trg-state.on { color: var(--gold); }
 .trg-warn { color: var(--warn); }
 .trg-preview { min-height: 1em; font-family: 'VT323', monospace; font-size: 13px; letter-spacing: .4px; color: var(--ph-dim); margin: 0 0 2px; }
-.trg-presets { margin: 2px 0; }
 .trg-doors { margin-top: 6px; }
 .trg-msg { margin: 6px 0 0; }
+/* the trigger RULE is an explanation, not a warning — .refit-note is the amber voice, and an amber
+   paragraph on every INBOX card teaches the Commander to stop reading amber. */
+.trg-explain { font-family: 'VT323', monospace; font-size: 14px; letter-spacing: .4px; line-height: 1.3; color: var(--ph-dim); margin: 6px 0; }
+
+/* ---------- NEW ROUTINE — the create form as ONE object (2026-08-14) ----------
+   Same vocabulary as AUTOMATION's inline RESCHEDULE editor (.rt-resched): a hairline box with a lit
+   left edge. The fields used to float loose on a card that is already six zones tall, so nothing said
+   where the form began or ended. */
+.trg-form {
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 4px 0 2px; padding: 7px 9px 9px;
+  border: 1px solid var(--ph-dim); border-left: 2px solid var(--ph); border-radius: var(--r-sm, 4px);
+  background: rgba(0, 0, 0, .28);
+}
+.trg-form-k { font-size: 10.5px; letter-spacing: 2px; color: var(--ph-dim); text-transform: uppercase; margin-top: 3px; }
+.trg-form .refit-input { margin: 3px 0 2px; }
+.trg-form .refit-sec { margin-top: 7px; }
+.trg-when { gap: 5px; margin: 2px 0 4px; }
+
+/* ---------- the WHEN picker (.sp) INSIDE a refit card ----------
+   Same instrument as the AUTOMATION window mounts — restated at the card's readout scale (its facts run
+   14.5px VT323, against which the console's 12px keys read like fine print) and with the card's own field
+   skin on the CUSTOM input, so the graduation path doesn't arrive dressed as a console control. */
+.refit-guide-card .sp { gap: 5px; }
+.refit-guide-card .sp-mode { font-size: 14px; letter-spacing: .5px; padding: 3px 8px; }
+.refit-guide-card .sp-day { width: 30px; height: 27px; font-size: 15px; }
+.refit-guide-card .sp-lbl { font-size: 13.5px; }
+.refit-guide-card .sp-tz { font-size: 13px; }
+.refit-guide-card .sp-hint, .refit-guide-card .sp-note { font-size: 13px; letter-spacing: .4px; }
+.refit-guide-card .sp select { padding: 3px 6px; }
+.refit-guide-card .sp .sp-num { width: 58px; padding: 3px 6px; font-size: 15px; }
+.refit-guide-card .sp [data-sp-input] {
+  width: 100%; box-sizing: border-box; flex: 0 0 auto;
+  font-family: 'VT323', monospace; font-size: 15px; letter-spacing: .5px; padding: 6px 8px;
+}
+
+/* A CARD THAT OUTGROWS THE GLASS MUST SCROLL, NOT SPILL. The INBOX card is the tallest in REFIT — flow
+   strip, line name, trigger truth, routine list AND the create form — and `.refit-guide` centres it in a
+   fixed inset:0 layer with no scroll of its own. Measured on an 820px-tall window with this rule lifted:
+   978px tall, top −79, bottom 899, ✓ GOT IT past the bottom edge and unreachable. Scoped to the flow
+   card; the thumb is skinned (the station paints its own scrollbars). */
+.refit-flow-card .refit-guide-card {
+  max-height: calc(100% - 28px); overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--ph-dim) transparent;
+}
+.refit-flow-card .refit-guide-card::-webkit-scrollbar { width: 8px; }
+.refit-flow-card .refit-guide-card::-webkit-scrollbar-thumb { background: var(--ph-dim); border-radius: 4px; }
+.refit-flow-card .refit-guide-card::-webkit-scrollbar-track { background: transparent; }
+/* the INTAKE card carries a whole form; the other flow cards are a paragraph. A little more glass keeps
+   the six cadence keys on two rows instead of three. */
+.refit-flow-intake .refit-guide-card { width: min(468px, 92vw); }
 
 /* ---------- FINISH THE LINE — the per-line checklist card (guided workflows Phase 2) ----------
    A floating side card in the station's matte panel vocabulary: theme vars only, VT323, and every

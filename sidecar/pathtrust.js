@@ -119,9 +119,20 @@
       const surface = o.surface === 'interactive' ? 'interactive' : 'autonomous';
       const prompt = typeof o.prompt === 'function' ? o.prompt : null;
       const fullAccess = o.fullAccess === true;
+      const unrestrictedHost = o.unrestrictedHost === true;
 
       const raw = String(absPath == null ? '' : absPath);
       const norm = P.resolve(raw);
+      // NUL and UNC are not local filesystem targets StarNet can pass to Node safely. Full Power removes
+      // policy restrictions, not path syntax validity or the distinction between this computer and a share.
+      if (raw.indexOf('\0') >= 0) throw new Error('illegal path (NUL): ' + raw);
+      if (/^[\\/]{2}/.test(raw)) throw new Error('network paths (UNC) are not local computer paths: ' + raw);
+      // Host-wide Full Power intentionally bypasses project blessings, protected-file policy, cross-agent
+      // workspace ownership and symlink containment. The OS remains the authority on whether the path exists
+      // and whether this user can read or write it.
+      if (unrestrictedHost) {
+        return { base: (P.parse(norm).root || P.dirname(norm)), abs: norm, unrestrictedHost: true };
+      }
       const hr = hardlineReason(raw, norm);
       if (hr) throw new Error(hr);
 

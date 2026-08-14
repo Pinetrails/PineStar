@@ -114,6 +114,21 @@ async function driveShell(fixture, decision) {
     A.eq(later.filter(e => e.name === 'permission.prompt').length, 0, 'a later shell task emits ZERO permission prompts');
     A.ok(later.some(e => e.name === 'agent.tool_result' && e.payload && e.payload.callId === 'shell_1' && e.payload.ok === true), 'the later shell call executes successfully');
 
+    const narrowedProfile = await fixture.json('POST', '/api/roster', {
+      updatedAt: Date.now() + 10000,
+      agents: [{ agentId: 'david', system: 'You are DAVID.', name: 'DAVID', provider: 'openrouter', model: 'test/model', approvalMode: 'full', executionProfile: 'station-gear' }]
+    });
+    A.ok(narrowedProfile.body && narrowedProfile.body.ok === true, 'the stored execution profile can remain narrow while Full Power is explicit');
+    const broad = await driveShell(fixture);
+    A.eq(broad.filter(e => e.name === 'permission.prompt').length, 0, 'Full Power still emits zero prompts under a formerly capability-limited profile');
+    A.ok(broad.some(e => e.name === 'agent.tool_result' && e.payload && e.payload.callId === 'shell_1' && e.payload.ok === true),
+      'Full Power projects and executes the general host shell without a placed workbench');
+    const latestRequests = provider.requests.slice(-3);
+    const projected = new Set(latestRequests.flatMap(req => (req.tools || []).map(t => t && t.function && t.function.name).filter(Boolean)));
+    for (const name of ['shell_exec', 'fs_read', 'web_search', 'image_generate', 'spotify_search', 'team_dispatch']) {
+      A.ok(projected.has(name), 'Full Power projects available capability family tool ' + name);
+    }
+
     await fixture.restart();
     const afterRestart = await driveShell(fixture);
     A.eq(afterRestart.filter(e => e.name === 'permission.prompt').length, 0, 'after a real sidecar restart, shell still emits ZERO permission prompts');

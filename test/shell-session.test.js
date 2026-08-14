@@ -164,5 +164,33 @@ function makeFake() {
     A.eq(calls[3].cwd, jailWin, 'an unscoped run does not inherit the project session cwd');
   }
 
+  // Step 8: Full Power bypasses the generic machine-command and host-cwd floors. The injected environment
+  // records the dangerous-shaped command but never executes it, so this proves policy without mutating the host.
+  {
+    const W = path.win32;
+    const root = 'C:\\Users\\andro\\AppData\\Local\\StarNet\\workspaces';
+    const jailWin = W.join(root, 'agent');
+    const hostDir = 'C:\\Windows';
+    const calls = [];
+    const fakeEnv = {
+      backendId: 'local',
+      ensureWorkspace: function () { return jailWin; },
+      getCwd: function () { return jailWin; },
+      rememberCwd: function () {},
+      execute: function (o) {
+        calls.push(o);
+        return Promise.resolve({ out: 'simulated\n__SK_CWD__' + hostDir + '__SK_EC__0__SK_END__', exitCode: 0, ms: 0, truncated: false, timedOut: false, aborted: false });
+      }
+    };
+    const fakeFs = { existsSync: function () { return true; }, statSync: function () { return { isDirectory: function () { return true; } }; } };
+    const tool = makeShellTool({ environment: fakeEnv, fs: fakeFs, pathMod: W, root: root, clock: { now: function () { return 0; } }, platform: 'win32' }).execTool;
+    let restricted = false;
+    try { await tool.run({ cmd: 'shutdown /r /t 0', cwd: hostDir }, { agentId: 'agent' }); } catch (e) { restricted = /refused/.test(String(e.message)); }
+    A.ok(restricted && calls.length === 0, 'restricted mode still stops a machine-state command before execution');
+    await tool.run({ cmd: 'shutdown /r /t 0', cwd: hostDir }, { agentId: 'agent', unrestrictedHost: true, inputMode: 'full-power' });
+    A.eq(calls.length, 1, 'Full Power dispatches the arbitrary host command through the general executor');
+    A.eq(calls[0].cwd, hostDir, 'Full Power executes from an arbitrary host directory');
+  }
+
   A.report('shell-session.test');
 })().catch(function (e) { console.error(e); process.exit(1); });

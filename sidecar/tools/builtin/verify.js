@@ -66,9 +66,10 @@
           if (fs && fs.existsSync && fs.existsSync(P.join(hostCwd, 'package.json'))) cmd = 'npm test';
           else throw new Error('no check command given and no package.json found — pass { "cmd": "<your check>" }');
         }
-        const deny = escapesWorkspace(cmd);
+        const hostWide = shell.unrestrictedHost(ctx);
+        const deny = hostWide ? null : escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
-        const safetyDeny = commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P,
+        const safetyDeny = hostWide ? null : commandSafetyRisk(cmd, { cwd: hostCwd, fs: fs, pathMod: P,
           dialect: environment && environmentBackendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix'), isWin: isWin });
         if (safetyDeny) throw new Error('refused [' + safetyDeny.kind + ']: this check ' + safetyDeny.reason + '. verify.run cannot change the user\'s screen, session, processes, input, or network exposure; use browser.test_* for local UI/game verification.');
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
