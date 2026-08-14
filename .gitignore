@@ -32,6 +32,8 @@ dev/.scratch-calm-errors/
 dev/.scratch-adversarial/
 dev/.scratch-deliverables/
 dev/.shots-deliverables/
+dev/.shots-wallcorner/
+dev/.shots-walljoin/
 
 # rust / tauri desktop shell build output
 src-tauri/target/
@@ -166,3 +168,4 @@ dev/.shots-crew-fit/
 # SHELL-CORNER lane proof shots — corner attribution + multi-room sweep (same pattern)
 dev/.shots-shellcorner*/
 dev/.shots-shellsweep/
+dev/.shots-wcmat/
