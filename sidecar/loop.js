@@ -763,6 +763,15 @@
     }
 
     emit('agent.run.start', { agentId, runId, trigger, model });
+    // Admission may have promoted a Commander-configured fallback because the selected primary is definitively
+    // tool-less. Emit it after run.start so the UI receives a truthful, ordered lifecycle receipt even though no
+    // failed provider request was needed to discover the incompatibility.
+    if (o.initialFallback && o.initialFallback.fromModel && o.initialFallback.toModel) {
+      emit('provider.fallback', {
+        agentId, runId, fromModel: String(o.initialFallback.fromModel), toModel: String(o.initialFallback.toModel),
+        reason: String(o.initialFallback.reason || 'tool_support'), rotate: !!o.initialFallback.rotate
+      });
+    }
 
     while (true) {
       // (1) GUARDS — before any paid call

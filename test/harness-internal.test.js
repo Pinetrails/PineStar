@@ -89,7 +89,10 @@ A.ok(/Final reports must name changed files, verification commands\/results/.tes
 A.ok(/const\s+taskDoctrineNote\s*=/.test(sidecar), 'sidecar builds a dedicated task-doctrine prompt block');
 A.ok(/QUIETEST path that achieves the goal/.test(sidecar), 'task doctrine ranks tools quietest-first');
 A.ok(/ONLY when the Commander explicitly asked to see it on their screen or every quieter path failed/.test(sidecar), 'task doctrine demotes the visible screen to last resort');
-A.ok(/tell the Commander how to connect it \(Settings\) and ask before using a louder path/.test(sidecar), 'task doctrine surfaces connect-asks instead of silent escalation');
+A.ok(/immediately continue down this ladder with the next safe, already-authorized route/.test(sidecar), 'task doctrine automatically continues after a dedicated integration is unavailable');
+A.ok(/Do not ask merely because the fallback is louder/.test(sidecar), 'task doctrine does not hand safe fallback selection back to the Commander');
+A.ok(/Ask only when that next route itself needs Commander authentication, exact consent, or a genuinely material choice/.test(sidecar), 'task doctrine preserves only irreducible human boundaries');
+A.ok(!/ask before using a louder path/.test(sidecar), 'the old cross-domain hand-back instruction is gone');
 A.ok(/VERIFY it took effect with a read-back tool/.test(sidecar), 'task doctrine requires outcome verification for world-changing actions');
 A.ok(/never a description, a plan, or a promise of future action/.test(sidecar), 'task doctrine defines the deliverable as a proven outcome');
 A.ok(/\+ taskDoctrineNote/.test(sidecar), 'the task doctrine is actually wired into the composed [HARNESS] prompt');

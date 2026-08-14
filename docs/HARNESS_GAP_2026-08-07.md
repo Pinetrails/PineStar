@@ -20,6 +20,39 @@ Parity here means that a normal user can complete the same class of work, surviv
 diagnose a failure without reading source, and recover without duplicate side effects or lost evidence. It
 does not mean copying every provider, chat adapter, research mode, or cloud sandbox Hermes exposes.
 
+### Cross-domain completion/refusal audit (2026-08-14)
+
+The attended-login defect exposed a broader prompt conflict, not a LinkedIn-specific integration problem.
+The main operating doctrine told an agent whose dedicated integration answered `not connected` to explain
+Settings and ask before trying a “louder” route. That instruction could hand work back on any platform even
+when a safe, already-authorized browser, request, shell, or other tool route was live. The repair candidate now
+requires automatic escalation through safe authorized alternatives; a question is permitted only when the next
+route itself needs Commander authentication, exact consent, or a genuinely material decision. Connection setup
+is reported only when it remains the final blocker after those alternatives are exhausted.
+
+Task admission had a second cross-domain brake: a selected model that the live catalog definitively marked as
+tool-less caused an immediate refusal before the configured fallback-model chain could run. Task runs now promote
+the first same-provider configured fallback that is not definitively tool-less, emit a `provider.fallback` receipt
+with reason `tool_support`, and proceed. A cold catalog remains fail-open. Admission refuses only when the primary
+and every configured fallback are definitively incapable of tool calling.
+
+The audit found no other default artificial completion ceiling on an ordinary capability-equipped task:
+per-run iteration, spend, delegated-worker, and concurrent-agent caps default to unlimited; long output is parked
+durably and can be read in focused ranges; context compacts and re-injects the active plan; transient model calls
+retry with backoff and configured failover; truncated answers continue; empty/announcement-only turns are nudged;
+failed tools receive bounded alternate-path recovery; and task classification defaults ambiguous user requests to
+tool-enabled work rather than tool-less chat.
+
+This is not a promise that every call executes. The remaining refusals are authority or reality boundaries, not
+fallback policy: an explicit denial/cancel/E-STOP; absent or disabled capability; missing authentication/MFA or no
+configured credential/provider; user-configured spend/turn/concurrency/hook limits; protected paths, secret access,
+SSRF or prompt-injection/taint floors; an external outage after retries/fallbacks; and an unattended run attempting
+an effect that requires a watched confirmation without a recorded per-routine grant. Ordinary local agent runs also
+do not receive arbitrary physical mouse/keyboard or general visible-desktop control. `browser.login` is the narrow
+attended visible-window exception for account authentication, and its dedicated profile can then be reused by
+headless work. Do not market “will never refuse”; the correct claim is “will exhaust safe, authorized alternatives
+and stop only at a specific, truthful human/authority/capability/external boundary.”
+
 ### P0 attended browser-login release blocker (2026-08-13)
 
 **Status: RED for the soaked 0.10.0 candidate and every later candidate without an installed receipt.** The

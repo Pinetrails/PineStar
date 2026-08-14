@@ -30,6 +30,22 @@ const fc = require('../sidecar/fallbackchain.js');
   A.eq(fc.resolveChain(['a/x', 'a/x', ' '], null), ['a/x'], 'array env input is cleaned the same way');
 }
 
+// ---------- 1c. task admission promotes a configured tool-capable route instead of refusing ----------
+{
+  const support = id => ({ 'plain/chat': false, 'tools/known': true, 'catalog/cold': null, 'also/plain': false })[id];
+  let r = fc.promoteToolCapable('plain/chat', ['also/plain', 'tools/known', 'catalog/cold'], support);
+  A.eq(r.model, 'tools/known', 'first definitively tool-capable fallback is promoted');
+  A.eq(r.fallbacks, ['also/plain', 'catalog/cold'], 'promoted model is removed and remaining order is preserved');
+  A.eq(r.promoted, true, 'promotion is explicit for truthful telemetry');
+  A.eq(r.fromModel, 'plain/chat', 'receipt retains the selected incapable model');
+  r = fc.promoteToolCapable('plain/chat', ['also/plain', 'catalog/cold'], support);
+  A.eq(r.model, 'catalog/cold', 'unknown catalog support is eligible instead of being false-refused');
+  r = fc.promoteToolCapable('tools/known', ['plain/chat'], support);
+  A.eq(r.promoted, false, 'a capable primary remains selected');
+  r = fc.promoteToolCapable('plain/chat', ['also/plain'], support);
+  A.eq(r.promoted, false, 'all definitively incapable routes preserve the honest admission refusal');
+}
+
 // ---------- 1b. cleanChain drops junk (a corrupt persisted blob can't inject entries) ----------
 {
   A.eq(fc.cleanChain(['a/x', 42, null, {}, ' b/y ', 'a/x', '']), ['a/x', 'b/y'], 'only trimmed non-empty strings survive; first dup wins');
@@ -104,6 +120,8 @@ const fc = require('../sidecar/fallbackchain.js');
   A.ok(/const fallbackStore = makeDomainStore/.test(idx) && /fallbackStore\.load\(\)\.value/.test(idx) && /fallbackStore\.save\(fallbackSaved\)/.test(idx), 'chain persists via the normalized domain store (durable + .bak + read-back proof)');
   // the RUN HOST actually consumes the persisted chain: request list > saved-or-env (live, per-run read — no restart)
   A.ok(/Array\.isArray\(o\.fallbackModels\) \? o\.fallbackModels : effectiveFallbackChain\(\)/.test(idx), 'runOnce resolves: explicit per-run list, else the persisted-or-env chain');
+  A.ok(/fallbackChain\.promoteToolCapable\(model, fallbackModels/.test(idx), 'task admission consumes the configured chain before refusing a tool-less primary');
+  A.ok(/initialFallback/.test(idx), 'preflight promotion is passed to the loop for truthful telemetry');
   A.ok(/fallbackChain\.resolveChain\(ENV_FALLBACK, fallbackSaved\)/.test(idx), 'effective chain = pure resolve(env, saved)');
   A.ok(/parseEnvChain\(ENV\('FALLBACK_MODELS'\)/.test(idx), 'env SKYNET/STARNET_FALLBACK_MODELS remains the default baseline');
   // honest validation posture: catalog lookups warn, never refuse
