@@ -2656,15 +2656,28 @@ const StationBake = (() => {
       const ey = outY < 0 ? Math.round(cy - s) : Math.round(cy + s) - 1;       // -1: see the half-open note above
       const w = crownEase(s / HR, capW, capFar);
       const dy = deckYAt(ix), inner = dy == null ? (outY < 0 ? Y + T : Y - 1) : dy;
+      /* A STANDING FACE IS ADDRESSED LIKE A STANDING FACE (2026-08-13).
+         On a TOP corner the arc's centre is LIFTED clear of the tile (cornerArcCy), so walking down
+         this column moves AWAY from that centre: the polar radius grows, and faceMap's depth —
+         (HR-2-w) - r — therefore SHRINKS the further down the wall you go, peaking at the centre row
+         and clamping to 0 below it. The face is 22px tall and the ring's profile only 13px deep, so
+         most of every column came out as one repeated strip row: the big flat triangle.
+         Depth down a standing face is not a radius, it is a ROW COUNT — the same thing
+         bakeTallNorthFace shows on the wall right beside it. Addressing it that way (along = world x,
+         depth = rows under the crown) is what makes the corner and the wall one continuous surface.
+         Bottom corners keep the polar measure: cy === ay there, the face is short, and the concentric
+         bands are the whole point of the curve. */
+      const fsY = outY < 0 ? ey + 2 + w : ey - 2 - w;
+      const cMap = cy === ay ? faceMap : ((px, py) => ({ a: px, d: Math.abs(py - fsY) }));
       if (outY < 0) {
         put(ix, ey, 1, 1, shellEdge);
         put(ix, ey + 1, 1, w, pal.cap); put(ix, ey + 1, 1, 1, lit);
-        cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ix, ey), false, ix, ey + 2 + w, Math.max(0, inner - (ey + 2 + w)), 1, sOf(ix, ey));
+        cornerFaceSlice(put, pal, ed, strip, cMap, alongOf(ix, ey), false, ix, ey + 2 + w, Math.max(0, inner - (ey + 2 + w)), 1, sOf(ix, ey));
         put(ix, ey + 1 + w, 1, 1, seam);
       } else {
         put(ix, ey, 1, 1, shellEdge);
         put(ix, ey - w, 1, w, pal.cap); put(ix, ey - 1, 1, 1, lit);   // outermost crown row, not the shell edge
-        cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ix, ey), false, ix, ey - 2 - w, Math.max(0, (ey - 1 - w) - inner), -1, sOf(ix, ey));
+        cornerFaceSlice(put, pal, ed, strip, cMap, alongOf(ix, ey), false, ix, ey - 2 - w, Math.max(0, (ey - 1 - w) - inner), -1, sOf(ix, ey));
         put(ix, ey - 1 - w, 1, 1, seam);
       }
     }
