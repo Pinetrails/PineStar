@@ -135,6 +135,7 @@ export function runFile(file, options = {}) {
 
 export function summarize(report, now = Date.now()) {
   const cycles = Array.isArray(report.cycles) ? report.cycles : [];
+  const completedCycles = cycles.filter(cycle => Boolean(cycle.endedAt));
   const rows = cycles.flatMap(cycle => cycle.probes || []).flatMap(probe => probe.runs || []);
   const failed = rows.filter(row => !row.ok);
   const coverage = Array.isArray(report.coverage) ? report.coverage : [];
@@ -159,11 +160,12 @@ export function summarize(report, now = Date.now()) {
     }
   }
   const plannedEnd = Date.parse(report.plannedEndAt);
-  const completed = report.once === true ? cycles.length >= 1 : Number.isFinite(plannedEnd) && now >= plannedEnd;
+  const completed = report.once === true ? completedCycles.length >= 1 : Number.isFinite(plannedEnd) && now >= plannedEnd;
   return {
     completed,
-    pass: completed && failed.length === 0 && coverageViolations.length === 0 && cycles.length >= Number(report.requiredCycles || 1),
-    cycles: cycles.length,
+    pass: completed && failed.length === 0 && coverageViolations.length === 0 && completedCycles.length >= Number(report.requiredCycles || 1),
+    cycles: completedCycles.length,
+    attemptedCycles: cycles.length,
     requiredCycles: Number(report.requiredCycles || 1),
     probeRuns: rows.length,
     expectedProbeRuns: cycles.length * coverage.reduce((sum, probe) => sum + (probe.files || []).length, 0),
@@ -175,16 +177,27 @@ export function summarize(report, now = Date.now()) {
 }
 
 async function runCycle(report, output, evidenceDir, timeoutMs) {
-  const cycleNumber = report.cycles.length + 1;
-  const cycle = { number: cycleNumber, startedAt: iso(Date.now()), probes: [], ok: false };
-  report.cycles.push(cycle); writeAtomic(output, report);
+  let cycle = report.cycles[report.cycles.length - 1];
+  if (!cycle || cycle.endedAt) {
+    cycle = { number: report.cycles.length + 1, startedAt: iso(Date.now()), probes: [], ok: false };
+    report.cycles.push(cycle);
+  } else {
+    cycle.resumedAt = [...(cycle.resumedAt || []), iso(Date.now())];
+  }
+  const cycleNumber = cycle.number;
+  writeAtomic(output, report);
   const cycleDir = join(evidenceDir, 'cycle-' + String(cycleNumber).padStart(4, '0'));
   mkdirSync(cycleDir, { recursive: true });
   console.log(`[overnight] cycle ${cycleNumber} started`);
   for (const probe of PROBES) {
-    const row = { id: probe.id, startedAt: iso(Date.now()), runs: [], ok: false };
-    cycle.probes.push(row); writeAtomic(output, report);
+    let row = cycle.probes.find(candidate => candidate.id === probe.id);
+    if (!row) {
+      row = { id: probe.id, startedAt: iso(Date.now()), runs: [], ok: false };
+      cycle.probes.push(row);
+    }
+    writeAtomic(output, report);
     for (const file of probe.files) {
+      if (row.runs.some(run => run.file === file)) continue;
       const result = await runFile(file, { timeoutMs, cycle: cycleNumber, probeId: probe.id });
       result.cycle = cycleNumber;
       row.runs.push(result);
@@ -252,10 +265,12 @@ async function main() {
   const stop = () => { interrupted = true; };
   process.on('SIGINT', stop); process.on('SIGTERM', stop);
   const plannedEnd = Date.parse(report.plannedEndAt), cycleMs = report.cycleMinutes * 60000;
-  while (!interrupted && (report.once ? report.cycles.length === 0 : Date.now() < plannedEnd)) {
+  const hasIncompleteCycle = () => Boolean(report.cycles.length && !report.cycles[report.cycles.length - 1].endedAt);
+  while (!interrupted && (report.once ? report.cycles.length === 0 || hasIncompleteCycle() : Date.now() < plannedEnd || hasIncompleteCycle())) {
     await runCycle(report, output, evidenceDir, timeoutMs);
     if (report.once) break;
-    const nextDue = Date.parse(report.startedAt) + report.cycles.length * cycleMs;
+    const completedCycles = report.cycles.filter(cycle => cycle.endedAt).length;
+    const nextDue = Date.parse(report.startedAt) + completedCycles * cycleMs;
     report.nextCycleAt = iso(Math.min(nextDue, plannedEnd));
     let nextHeartbeat = Date.now();
     while (!interrupted && Date.now() < Math.min(nextDue, plannedEnd)) {

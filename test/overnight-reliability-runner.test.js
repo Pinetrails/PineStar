@@ -19,8 +19,8 @@ const A = require('./_assert.js');
   const green = {
     once: false, plannedEndAt: new Date(end).toISOString(), requiredCycles: 2,
     cycles: [
-      { probes: [{ runs: [{ file: 'test/a.test.js', ok: true, cycle: 1 }] }] },
-      { probes: [{ runs: [{ file: 'test/a.test.js', ok: true, cycle: 2 }] }] }
+      { endedAt: new Date(end).toISOString(), probes: [{ runs: [{ file: 'test/a.test.js', ok: true, cycle: 1 }] }] },
+      { endedAt: new Date(end).toISOString(), probes: [{ runs: [{ file: 'test/a.test.js', ok: true, cycle: 2 }] }] }
     ]
   };
   const greenSummary = R.summarize(green, end + 1);
@@ -39,7 +39,7 @@ const A = require('./_assert.js');
   short.requiredCycles = 3;
   A.eq(R.summarize(short, end + 1).pass, false, 'insufficient cycle coverage cannot pass');
 
-  const once = { once: true, plannedEndAt: new Date(end + 999999).toISOString(), requiredCycles: 1, cycles: [{ probes: [{ runs: [{ file: 'test/a.test.js', ok: true, cycle: 1 }] }] }] };
+  const once = { once: true, plannedEndAt: new Date(end + 999999).toISOString(), requiredCycles: 1, cycles: [{ endedAt: new Date(end).toISOString(), probes: [{ runs: [{ file: 'test/a.test.js', ok: true, cycle: 1 }] }] }] };
   A.ok(R.summarize(once, end).pass, 'a one-cycle smoke can finish without waiting for a wall-clock deadline');
 
   const coverageBound = {
@@ -47,7 +47,7 @@ const A = require('./_assert.js');
     plannedEndAt: new Date(end).toISOString(),
     requiredCycles: 1,
     coverage: [{ id: 'recovery', files: ['test/a.test.js', 'test/b.test.js'] }],
-    cycles: [{ number: 1, probes: [{ id: 'recovery', runs: [{ file: 'test/a.test.js', ok: true, cycle: 1 }] }] }]
+    cycles: [{ number: 1, endedAt: new Date(end).toISOString(), probes: [{ id: 'recovery', runs: [{ file: 'test/a.test.js', ok: true, cycle: 1 }] }] }]
   };
   const incomplete = R.summarize(coverageBound, end + 1);
   A.eq(incomplete.pass, false, 'a missing planned probe cannot produce a false-green campaign');
@@ -56,6 +56,12 @@ const A = require('./_assert.js');
   const coverageGreen = R.summarize(coverageBound, end + 1);
   A.ok(coverageGreen.pass, 'complete planned coverage can pass');
   A.eq(coverageGreen.expectedProbeRuns, 2, 'expected executions are counted independently');
+
+  delete coverageBound.cycles[0].endedAt;
+  const interrupted = R.summarize(coverageBound, end + 1);
+  A.eq(interrupted.pass, false, 'an interrupted cycle cannot count as completed');
+  A.eq(interrupted.cycles, 0, 'only finalized cycles satisfy the campaign requirement');
+  A.eq(interrupted.attemptedCycles, 1, 'an interrupted attempt remains visible for recovery');
 
   A.report('overnight-reliability-runner.test');
 })().catch(error => { console.error(error && error.stack || error); process.exit(1); });
