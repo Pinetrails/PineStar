@@ -8,8 +8,8 @@ work and thousands of newer Hermes commits changed both sides of the comparison.
 ## Executive verdict
 
 StarNet is no longer missing a Hermes-class core agent loop. Its tool surface, compaction and provider
-recovery, approvals, durable schedules, background delegation, local/Docker/SSH execution, browser login,
-skills authoring, checkpoints, and station recovery are credible peer capabilities. The remaining risk is
+recovery, approvals, durable schedules, background delegation, local/Docker/SSH execution, skills authoring,
+checkpoints, and station recovery are credible peer capabilities. The remaining risk is
 concentrated in **failure recovery, operability, extension lifecycle, and cross-surface continuity**.
 
 Do not claim “100% Hermes parity” for 0.10 until gates G0-G4 below are proven in the shipped application.
@@ -19,6 +19,26 @@ The later breadth list is not a reason to hold the release if StarNet says plain
 Parity here means that a normal user can complete the same class of work, survive the common failure modes,
 diagnose a failure without reading source, and recover without duplicate side effects or lost evidence. It
 does not mean copying every provider, chat adapter, research mode, or cloud sandbox Hermes exposes.
+
+### P0 attended browser-login release blocker (2026-08-13)
+
+**Status: RED for the soaked 0.10.0 candidate and every later candidate without an installed receipt.** The
+soaked Windows build globally set `STARNET_BROWSER_HEADLESS=1` on its sidecar. That made the advertised
+`browser.login` path refuse before it could open the visible sign-in window, then pushed the user toward a
+manually launched remote-debugging Chrome. Source-level browser-login mechanics and mock tests do not make that
+shipped behavior a peer capability.
+
+The repair candidate removes only the desktop-wide environment pin. Ordinary agent browsing remains explicitly
+headless and synthetic-input-only, arbitrary shell commands remain unable to open visible windows or inject input,
+and `browser.login` remains the narrow, two-consent attended exception on the persistent station profile.
+
+This row turns GREEN only when the exact installed Windows candidate passes the natural-language journey: ask
+StarNet to open LinkedIn for sign-in; approve the attended window; observe a normal visible browser at the requested
+LinkedIn URL without launching Chrome or supplying a debug port; sign in; click Done; prove headless agent work
+continues on that profile; restart the sidecar/desktop; and prove the authenticated profile is reused. The receipt
+must name the candidate SHA/version, installer digest, OS, profile path identity, consent events, headed-to-headless
+transition, restart, and observed authenticated result. Until that receipt exists, do not claim browser-login or
+LinkedIn account-session parity for 0.10.
 
 ## 0.10 release-confidence gates
 
@@ -128,7 +148,7 @@ shipped-app claim before merge.
 - Session search, rename, pin, archive, delete, Markdown/JSON export, durable transcript, checkpoint/rewind,
   authorized project roots, and complete-station recovery bundles.
 - Persistent per-agent Docker environments, local/SSH routing, project discovery/grants, idle cleanup,
-  interactive PTY, browser-login mode, and non-deleting sync.
+  interactive PTY, and non-deleting sync. Attended browser-login is excluded pending the P0 installed receipt.
 - Skills creation/editing/curation, progressive loading, multi-file local packages, exact-byte risk gates, and
   staged single-document community install/update.
 - Major provider coverage through native Anthropic/Gemini/OpenAI/Codex and a broad OpenAI-compatible registry.
