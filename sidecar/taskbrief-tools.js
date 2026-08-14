@@ -1,6 +1,11 @@
 'use strict';
 const Policy = require('./taskbrief-policy.js');
 
+// The batch-wide escape hatch the card sends for "use your judgment for the rest". Anchored and exact:
+// a deferral that carries a real constraint ("use your judgment for the rest, but keep it short") must
+// NOT silently swallow the remaining questions — it falls through as an ordinary answer to this one.
+const REST_SKIP = /^\s*use your judgment for the rest\s*[.!]?\s*$/i;
+
 function registerTaskBriefTools(registry, store, state, deps) {
   const now = () => deps && deps.now ? deps.now() : 0;
   // IN-TURN CLARIFY (2026-07-31, Hermes-parity): on a WATCHED run the host wires a blocking asker —
@@ -79,16 +84,37 @@ function registerTaskBriefTools(registry, store, state, deps) {
         const answers = [];
         for (let i = 0; i < asked.length; i++) {
           const q = asked[i];
+          // The PROVABLE suggestion (the Commander's own answered history, with a count) reached only the
+          // end-run fallback card. The live card — now the primary path — showed the model's guess alone.
+          let grounded = null;
+          try { grounded = typeof store.groundedFor === 'function' ? store.groundedFor(q) : null; } catch (_) { grounded = null; }
           let res = null;
           try {
             res = await askCommander({ question: q.text, options: q.options.slice(), recommended: q.recommended || '', reason: q.reason || '',
-              multiSelect: q.multiSelect === true, ordinal: i + 1, total: asked.length });
+              multiSelect: q.multiSelect === true, ordinal: i + 1, total: asked.length,
+              grounded: grounded ? { options: (grounded.options || []).slice(0, 6), count: Number(grounded.count) || 0 } : null });
           } catch (_) { res = null; }
           if (!(res && res.answered && res.text && typeof store.answerInTurn === 'function')) break;   // walk-away: stop asking, fall back below
-          const updated = await store.answerInTurn(state.brief.id, res.text, now(), q.id);
+          // "use your judgment for the rest" — one tap hands back EVERY remaining decision. Opting out of a
+          // 3-question batch used to cost 3 taps, which is the wrong ratio for the person the batch exists
+          // to spare. Stored as the plain deferral string so the skip/deferral bookkeeping still sees it.
+          const restSkip = REST_SKIP.test(res.text);
+          const text = restSkip ? 'use your judgment' : res.text;
+          const updated = await store.answerInTurn(state.brief.id, text, now(), q.id);
           if (!updated) break;
           state.brief = updated;
-          answers.push({ q, text: res.text });
+          answers.push({ q, text });
+          if (restSkip) {
+            let bailed = false;
+            for (const rest of asked.slice(i + 1)) {
+              const u = await store.answerInTurn(state.brief.id, 'use your judgment', now(), rest.id);
+              if (!u) { bailed = true; break; }
+              state.brief = u;
+              answers.push({ q: rest, text: 'use your judgment' });
+            }
+            if (bailed) break;
+            break;
+          }
         }
         if (answers.length === asked.length) {
           const lines = answers.map(a => 'The Commander answered "' + a.text + '" to: ' + a.q.text);

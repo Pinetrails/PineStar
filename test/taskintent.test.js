@@ -439,7 +439,41 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(/j\.grounded \|\| null/.test(chatSrc), 'COMMS reads the grounded field the response already carried');
   A.ok(/you chose this ' \+ g\.count \+ ' times before/.test(chatSrc), 'the grounded why-line states a real observed count, never a vague confidence');
   A.ok(/tq-reason' \+ \(useGrounded \? ' grounded' : ''\)/.test(chatSrc), 'a grounded suggestion is marked so it cannot be mistaken for the model guess');
-  A.ok(/has\(g && g\.option\) \? g\.option : tq\.recommended/.test(chatSrc), 'a grounded option that is not among the choices falls back to the model recommendation instead of losing both');
+  A.ok(/const gSet = .*\.filter\(has\)/.test(chatSrc) && /useGrounded \? gSet\.map/.test(chatSrc) && /has\(tq\.recommended\) \? \[String\(tq\.recommended\)/.test(chatSrc),
+    'a grounded option that is not among the choices falls back to the model recommendation instead of losing both');
+  /* MULTI-SELECT GROUNDING (2026-08-14). A set answer ("billing exports, the run ledger") can never satisfy
+     whole-string equality, so the one PROVABLE suggestion was permanently dead for the question kind
+     multi-select exists for. Split-and-tally per option — and ONLY for multiSelect, so an exclusive
+     question's free-text answer is still never mined for a word that happens to name an option. */
+  {
+    const store = makeStore(memFs());
+    const toolsSrc2 = fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8');
+    const q = { text: 'which data should it pull from?', options: ['billing exports', 'the run ledger', 'support tickets'], multiSelect: true };
+    const pool = [{ question: q.text, answer: 'billing exports, the run ledger', count: 3, updatedAt: 9 }];
+    const g = store.groundedFor(q, pool);
+    A.eq(g && g.options, ['billing exports', 'the run ledger'], 'both halves of a set answer are credited, in the question\'s own option order');
+    A.eq(g && g.multi, true, 'the set result is marked as a set');
+    // a DEAD HEAT is fine for a set (options are independent) but still fatal for an exclusive question
+    const excl = { text: 'who is this for?', options: ['operators', 'executives'] };
+    A.eq(store.groundedFor(excl, [{ question: excl.text, answer: 'operators, executives', count: 4, updatedAt: 9 }]), null,
+      'an exclusive question NEVER splits — a comma answer stays unmatched rather than crediting both');
+    A.eq(store.groundedFor(Object.assign({}, q, { multiSelect: true }), [{ question: q.text, answer: 'support tickets', count: 1, updatedAt: 9 }]), null,
+      'one sighting is not a habit');
+    A.ok(/you usually pick these/.test(chatSrc), 'a set suggestion says so in its own words rather than pretending to be one favourite');
+    A.ok(/grounded: grounded \? \{ options:/.test(toolsSrc2) && /grounded:/.test(indexSrc), 'the LIVE clarify card receives the grounded suggestion, not just the end-run fallback');
+    // BATCH-WIDE ESCAPE: one tap hands back every remaining decision (3 taps was the wrong ratio).
+    A.ok(/use your judgment for the rest/.test(chatSrc), 'the card offers the batch-wide escape');
+    A.ok(/REST_SKIP = \/\^\\s\*use your judgment for the rest/.test(toolsSrc2), 'the host recognises it exactly — a deferral carrying a real constraint is NOT swallowed');
+    A.ok(/answerInTurn\(state\.brief\.id, 'use your judgment', now\(\), rest\.id\)/.test(toolsSrc2), 'the remaining questions are recorded as real deferrals so the skip bookkeeping still sees them');
+  }
+  // PER-KIND OPTION CAP: the store used to slice EVERY question to 3, silently eating options 4-6 of a
+  // validated multi-select on the way to disk.
+  {
+    const norm = require('../sidecar/taskbrief-store.js').normalizeQuestion;
+    A.eq(norm({ text: 'q', options: ['a', 'b', 'c', 'd', 'e', 'f'], multiSelect: true }).options.length, 6, 'a multi-select keeps up to six options on disk');
+    A.eq(norm({ text: 'q', options: ['a', 'b', 'c', 'd', 'e', 'f'] }).options.length, 3, 'an exclusive question is still capped at three');
+    A.ok(/q\.options\.length > \(tq\.options \|\| \[\]\)\.length/.test(chatSrc), 'the end-run card prefers the STORED options over the 3-capped marker line');
+  }
   A.ok(/\.tq-reason\.grounded/.test(cssSrc), 'the grounded why-line has its own provable-source styling');
   A.ok(/groundedFor: \(q\) => taskBriefStore\.groundedFor\(q\)/.test(indexSrc) && /groundedFor \? groundedFor\(q\)/.test(hubSrc), 'messaging channels carry the same grounded suggestion as COMMS');
   A.ok(/console\.warn\('\[taskbrief\] brief_ask rejected/.test(fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8')), 'a hidden-tool rejection is logged instead of silently downgrading the surface');

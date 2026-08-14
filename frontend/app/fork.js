@@ -95,7 +95,10 @@
   // preference forks so the browser and Node host share one already-shipped decision-protocol module without
   // adding another release-surface path. Unlike FORK, its answers stay in the Task Brief, never the dossier.
   const TASK_LINE = /^\s*TASK_QUESTION:\s*(.+?)\s*\|\|\s*(.+?)\s*$/mi;
-  const TASK_Q_CHARS = 240, TASK_OPT_CHARS = 72, TASK_MAX_OPTS = 3;
+  // An EXCLUSIVE question is a fork: 2-3 options or it is a menu, not a decision. A MULTI-SELECT question
+  // is a checklist ("which sources?", "which constraints?") and legitimately runs longer — 3 was starving
+  // exactly the question type multi-select exists for, while the clarify card already rendered up to 6.
+  const TASK_Q_CHARS = 240, TASK_OPT_CHARS = 72, TASK_MAX_OPTS = 3, TASK_MAX_OPTS_MULTI = 6;
   function taskClean(s, max) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, max); }
   // Normalizers shared by this browser-side parse and the host policy (taskbrief-policy), so the two option
   // producers can never drift on what counts as "the same option". There are deliberately TWO strengths:
@@ -122,13 +125,14 @@
   }
   function taskDedupeKey(v) { return taskTrim(v).replace(/^the\s+/, '').trim(); }
   function taskSameOption(a, b) { const k = taskDedupeKey(a); return !!k && k === taskDedupeKey(b); }
-  function taskDedupeOptions(list) {
+  function taskDedupeOptions(list, max) {
     // Cap BEFORE the O(n^2) pairwise compare: `options` is model-controlled and the wire schema declares no
     // maxItems, so a 4000-entry array used to block the single-process sidecar for seconds. Only the first
     // few can ever be offered anyway, so scan a small bounded window and stop.
+    const cap = Math.max(2, Math.min(Number(max) || TASK_MAX_OPTS, TASK_MAX_OPTS_MULTI));
     const seen = [];
     const src = Array.isArray(list) ? list.slice(0, 32) : [];
-    for (let i = 0; i < src.length && seen.length < TASK_MAX_OPTS; i++) {
+    for (let i = 0; i < src.length && seen.length < cap; i++) {
       const x = taskClean(src[i], TASK_OPT_CHARS);
       if (!taskTrim(x)) continue;                                  // a punctuation-only "option" is not a choice
       let dup = false;
@@ -163,7 +167,7 @@
       'Research before asking: inspect the granted project, conversation, task brief, and available sources when they can answer the gap.',
       'Ask only when different plausible answers would materially change the outcome, audience, deliverable, source of truth, safety, or acceptance boundary.',
       'Each question is concrete, with 2-3 short, genuinely different options. Never ask vague prompts such as "what does good look like?".',
-      'BUNDLE related material questions into ONE brief_ask call (the extra ones in `also`, up to three total, each on a different dimension) — the Commander answers them in one moment instead of being interrupted repeatedly. Mark a question multiSelect:true when its options are not mutually exclusive.',
+      'BUNDLE related material questions into ONE brief_ask call (the extra ones in `also`, up to three total, each on a different dimension) — the Commander answers them in one moment instead of being interrupted repeatedly. An exclusive question carries 2-3 options; a multiSelect:true question (options NOT mutually exclusive, e.g. which sources, which constraints) may carry up to 6.',
       'A task gets at most two brief_ask calls total; a second is allowed only when the first answers exposed another genuinely blocking decision.',
       'If the Commander said "use your judgment", "just do it", or equivalent, choose the most sensible reversible default and act.',
       'When brief_ask and brief_proceed are available, use them as the authoritative protocol. Call brief_proceed immediately before the first consequential tool; the host blocks writes/executes until you do.',
@@ -193,7 +197,9 @@
   const TaskIntent = {
     parse: taskParse, strip: taskStrip, directive: taskDirective, answerMessage: taskAnswerMessage, routeReply: taskRouteReply,
     loosen: taskLoosen, dedupeOptions: taskDedupeOptions, sameOption: taskSameOption,
-    MAX_QUESTION: TASK_Q_CHARS, MAX_OPTION: TASK_OPT_CHARS, MAX_OPTIONS: TASK_MAX_OPTS
+    MAX_QUESTION: TASK_Q_CHARS, MAX_OPTION: TASK_OPT_CHARS, MAX_OPTIONS: TASK_MAX_OPTS, MAX_OPTIONS_MULTI: TASK_MAX_OPTS_MULTI,
+    // one place decides how many options a question may carry, so policy / store / card can never drift
+    maxOptionsFor: (multiSelect) => (multiSelect === true ? TASK_MAX_OPTS_MULTI : TASK_MAX_OPTS)
   };
 
   return { shouldOffer, directive, parse, strip, beliefText, CONF_FLOOR, MAX_OPTS, TaskIntent };

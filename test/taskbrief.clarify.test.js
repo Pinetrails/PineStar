@@ -207,5 +207,68 @@ const material = () => ({
     A.eq(done.questions[0].answer, 'executives', 'the un-addressed answer went to the first open question');
   }
 
+  // ---- L. "use your judgment for the rest": ONE tap settles the whole remaining batch ----
+  {
+    const store = makeStore();
+    const brief = await store.prepare({ id: 'tb_l', key: 'stream:l', text: 'Build it' }, 100);
+    const state = { brief };
+    const registry = makeRegistry();
+    const askedWith = [];
+    registerTaskBriefTools(registry, store, state, {
+      now: () => 110,
+      askCommander: async (f) => { askedWith.push(f); return { answered: true, text: 'use your judgment for the rest' }; }
+    });
+    const args = Object.assign(material(), { also: [
+      { dimension: 'scope', question: 'wide or narrow?', options: ['wide', 'narrow'], recommended: 'narrow', reason: 'Scope halves or doubles it.' },
+      { dimension: 'sources', question: 'which data?', options: ['ledger', 'exports'], recommended: 'ledger', reason: 'Sources decide the panels.' }
+    ] });
+    const r = await registry.dispatch({ name: 'brief.ask', args, argsRaw: '{}' }, {});
+    A.ok(r.ok && !r.control, 'the run continues in the same turn — nothing is left hanging');
+    A.eq(askedWith.length, 1, 'the Commander was asked ONCE, not three times');
+    A.eq(state.brief.status, 'ready', 'the whole batch is settled');
+    A.eq(state.brief.questions.map(q => q.answer), ['use your judgment', 'use your judgment', 'use your judgment'],
+      'every question is recorded as a REAL deferral, so the skip/ask-worthiness bookkeeping still sees them');
+    A.ok(/use your judgment/.test(r.content), 'the model is told the decisions came back to it');
+  }
+
+  // ---- M. a deferral that carries a real constraint is NOT the batch escape ----
+  {
+    const store = makeStore();
+    const brief = await store.prepare({ id: 'tb_m', key: 'stream:m', text: 'Build it' }, 100);
+    const state = { brief };
+    const registry = makeRegistry();
+    let n = 0;
+    registerTaskBriefTools(registry, store, state, {
+      now: () => 110,
+      askCommander: async () => (++n === 1 ? { answered: true, text: 'use your judgment for the rest, but keep it under 3 pages' } : { answered: true, text: 'narrow' })
+    });
+    const args = Object.assign(material(), { also: [
+      { dimension: 'scope', question: 'wide or narrow?', options: ['wide', 'narrow'], recommended: 'narrow', reason: 'Scope halves or doubles it.' }
+    ] });
+    const r = await registry.dispatch({ name: 'brief.ask', args, argsRaw: '{}' }, {});
+    A.eq(n, 2, 'the qualified answer is an ordinary answer — the second question is still asked');
+    A.eq(state.brief.questions[0].answer, 'use your judgment for the rest, but keep it under 3 pages', 'and their actual words are kept verbatim');
+    A.ok(r.ok && !r.control, 'the run still resumes in the same turn');
+  }
+
+  // ---- N. a 6-option multi-select survives validation, persistence AND the live card payload ----
+  {
+    const store = makeStore();
+    const b = await store.prepare({ id: 'tb_n', key: 'stream:n', text: 'Build it' }, 100);
+    const state = { brief: b };
+    const registry = makeRegistry();
+    const seen = [];
+    registerTaskBriefTools(registry, store, state, { now: () => 110, askCommander: async f => { seen.push(f); return { answered: true, text: 'a, c, e' }; } });
+    const six = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const r = await registry.dispatch({ name: 'brief.ask', args: {
+      dimension: 'sources', question: 'which data should it pull from?', options: six.slice(),
+      recommended: 'a', reason: 'Sources decide what the panels can show.', discoverable: false, multiSelect: true
+    }, argsRaw: '{}' }, {});
+    A.ok(r.ok, 'a six-option multi-select is accepted: ' + JSON.stringify(r.content || r.error));
+    A.eq(seen[0].options, six, 'all six reach the card');
+    A.eq(store.active('stream:n').questions[0].options, six, 'and all six survive the round-trip to disk');
+    A.eq(store.active('stream:n').questions[0].answer, 'a, c, e', 'the set answer is stored as the Commander gave it');
+  }
+
   A.report('taskbrief.clarify.test');
 })();

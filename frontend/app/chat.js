@@ -2403,10 +2403,24 @@ const Chat = (() => {
     // three unannounced sequential cards would read as an interrogation with no visible bottom.
     const seq = (Number(q.total) > 1 && Number(q.ordinal) > 0) ? ' (' + q.ordinal + ' of ' + q.total + ')' : '';
     r.body.appendChild(document.createTextNode('▣ ' + name + ' asks' + seq + ': ' + (q.question || 'which way should this go?') + ' '));
-    if (q.reason) {
+    // TWO KINDS of suggestion, and the same law the end-run card obeys: GROUNDED comes from the
+    // Commander's own answered history (>=2 times) and is PROVABLE, so it outranks the model's guess and
+    // states its count; `recommended` is a guess with a rationale and stands only when nothing was observed.
+    const gOpts = (q.grounded && Array.isArray(q.grounded.options)) ? q.grounded.options.filter(o => (q.options || []).indexOf(o) >= 0) : [];
+    const gCount = Number(q.grounded && q.grounded.count) || 0;
+    const useGrounded = gOpts.length > 0 && gCount >= 2;
+    const starred = useGrounded ? gOpts : ((q.recommended && (q.options || []).indexOf(q.recommended) >= 0) ? [q.recommended] : []);
+    if (useGrounded) {
+      const g = document.createElement('div'); g.className = 'tq-reason grounded';
+      g.textContent = gOpts.length > 1
+        ? '★ you usually pick these — ' + gOpts.join(', ') + ' (chosen ' + gCount + '+ times before)'
+        : '★ suggested: ' + gOpts[0] + ' — you chose this ' + gCount + ' times before';
+      r.body.appendChild(g);
+    } else if (q.reason) {
       const why = document.createElement('div'); why.className = 'dim'; why.textContent = q.reason;
       r.body.appendChild(why);
     }
+    const isStar = (opt) => starred.indexOf(opt) >= 0;
     const btns = document.createElement('span'); btns.className = 'consent-btns';
     let decided = false;
     function answer(text, doneLabel) {
@@ -2434,11 +2448,11 @@ const Chat = (() => {
       for (const opt of opts) {
         const b = document.createElement('button');
         b.className = 'consent-btn';
-        b.textContent = (q.recommended && opt === q.recommended ? '★ ' : '') + opt;
+        b.textContent = (isStar(opt) ? '★ ' : '') + opt;
         b.setAttribute('aria-pressed', 'false');
         // The fill alone did not read as ON against this card's own gradient (caught in the shot review) —
         // a toggle must be legible as state, not as a hover. The ✓ carries it in every theme.
-        const face = (on) => { b.textContent = (on ? '✓ ' : '') + (q.recommended && opt === q.recommended ? '★ ' : '') + opt; };
+        const face = (on) => { b.textContent = (on ? '✓ ' : '') + (isStar(opt) ? '★ ' : '') + opt; };
         b.onclick = () => {
           const on = !picked.has(opt);
           if (on) picked.add(opt); else picked.delete(opt);
@@ -2455,7 +2469,7 @@ const Chat = (() => {
       for (const opt of opts) {
         const b = document.createElement('button');
         b.className = 'consent-btn';
-        b.textContent = (q.recommended && opt === q.recommended ? '★ ' : '') + opt;
+        b.textContent = (isStar(opt) ? '★ ' : '') + opt;
         b.onclick = () => answer(opt, '✓ ' + opt);
         btns.appendChild(b);
       }
@@ -2465,6 +2479,18 @@ const Chat = (() => {
     skip.textContent = 'use your judgment';
     skip.onclick = () => answer('use your judgment', '✓ your call');
     btns.appendChild(skip);
+    // BATCH-WIDE ESCAPE: opting out of a 3-question batch cost 3 taps, which is the wrong ratio for the
+    // person the batch exists to spare. One tap hands back every remaining decision. Only offered while
+    // questions actually remain — on the last one it would be a second button meaning the same thing.
+    if (Number(q.total) > 1 && Number(q.ordinal) > 0 && Number(q.ordinal) < Number(q.total)) {
+      const rest = document.createElement('button');
+      rest.className = 'consent-btn quiet';
+      const left = Number(q.total) - Number(q.ordinal) + 1;
+      rest.textContent = 'use your judgment for the rest (' + left + ')';
+      rest.title = 'decide this and the remaining ' + (left - 1) + ' yourself — the run keeps going';
+      rest.onclick = () => answer('use your judgment for the rest', '✓ your call on all ' + left);
+      btns.appendChild(rest);
+    }
     r.body.appendChild(btns);
     // Esc = "use your judgment": the reflexive dismiss defers the decision rather than silently denying a
     // question (a deny makes no sense here), matching the end-run card's skip chip semantics.
@@ -3758,12 +3784,16 @@ const Chat = (() => {
     // Only the model's own guess is gated on the validated path.
     const g = (tq.grounded && tq.grounded.option && Number(tq.grounded.count) >= 2) ? tq.grounded : null;
     const has = v => !!v && tq.options.some(o => o.toLowerCase() === String(v).trim().toLowerCase());
+    // A multi-select question's grounded suggestion is a SET, so several options can be starred at once;
+    // an exclusive one still stars exactly the single observed favourite.
+    const gSet = (g && Array.isArray(g.options) ? g.options : (g ? [g.option] : [])).filter(has);
+    const useGrounded = gSet.length > 0;
     // Fall back to the model's guess if the grounded option is not among the rendered choices (stale history,
     // edited options) — otherwise a mismatch would silently cost BOTH the chip and the model's rationale.
-    const rec = String((has(g && g.option) ? g.option : tq.recommended) || '').trim().toLowerCase();
-    const useGrounded = !!(g && has(g.option));
+    const starSet = useGrounded ? gSet.map(o => o.toLowerCase())
+      : (has(tq.recommended) ? [String(tq.recommended).trim().toLowerCase()] : []);
     const items = tq.options.map(o => {
-      const suggested = !!(rec && o.toLowerCase() === rec);
+      const suggested = starSet.indexOf(o.toLowerCase()) >= 0;
       return { label: suggested ? '★ ' + o : o, value: o, suggested };
     });
     const isMulti = tq.multiSelect === true;
@@ -3772,8 +3802,10 @@ const Chat = (() => {
     const q = row('agent'); q.d.classList.add('nudge');
     q.body.textContent = '⌖ ' + tq.question;
     const marked = items.some(it => it.suggested);
-    const why = (rec && marked) ? (useGrounded
-      ? '★ suggested: ' + g.option + ' — you chose this ' + g.count + ' times before'
+    const why = marked ? (useGrounded
+      ? (gSet.length > 1
+        ? '★ you usually pick these — ' + gSet.join(', ') + ' (chosen ' + g.count + '+ times before)'
+        : '★ suggested: ' + gSet[0] + ' — you chose this ' + g.count + ' times before')
       : (String(tq.reason || '').trim() ? '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim() : '')) : '';
     if (why) {
       const el = document.createElement('div'); el.className = 'tq-reason' + (useGrounded ? ' grounded' : '');
@@ -3956,7 +3988,7 @@ const Chat = (() => {
   // chips — though a marker question may still carry a grounded suggestion, which comes from the Commander's
   // own answered history rather than from the unvalidated question.
   async function presentTaskQuestion(ws, tq) {
-    let recommended = '', reason = '', grounded = null, multiSelect = false;
+    let recommended = '', reason = '', grounded = null, multiSelect = false, options = null;
     try {
       const r = await fetch('/api/task-briefs?key=' + encodeURIComponent('stream:' + ws.id) + '&status=clarifying&limit=1', { cache: 'no-store' });
       if (r.ok) {
@@ -3970,11 +4002,14 @@ const Chat = (() => {
           recommended = q.recommended || ''; reason = q.reason || '';
           multiSelect = q.multiSelect === true;
           grounded = j.grounded || null;   // this response always carried it; the client used to drop it
+          // The MARKER line is capped at 3 options (it is the unvalidated last-resort format), so a
+          // 6-option multi-select arrived here already truncated. The stored question is authoritative.
+          if (Array.isArray(q.options) && q.options.length > (tq.options || []).length) options = q.options.slice();
         }
       }
     } catch (_) { /* enrichment only — the question itself never depends on this fetch */ }
     if (!isActiveWs(ws)) return;   // the Commander switched away mid-fetch; restoreTaskQuestion re-presents on return
-    offerTaskQuestion(Object.assign({}, tq, { recommended, reason, grounded, multiSelect }));
+    offerTaskQuestion(Object.assign({}, tq, { recommended, reason, grounded, multiSelect }, options ? { options } : {}));
   }
 
   // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so
@@ -8062,7 +8097,12 @@ const Chat = (() => {
     const multi = !!(opts && opts.multi);
     const picked = new Set();
     let confirmBtn = null;
-    const syncConfirm = () => { if (confirmBtn) confirmBtn.disabled = !picked.size; };
+    // same face as the live clarify card's confirm chip — the count is the receipt for what a tap will send
+    const syncConfirm = () => {
+      if (!confirmBtn) return;
+      confirmBtn.disabled = !picked.size;
+      confirmBtn.textContent = picked.size ? ('✔ confirm ' + picked.size + ' pick' + (picked.size > 1 ? 's' : '')) : '✔ confirm picks';
+    };
     (items || []).forEach(it => {
       const b = document.createElement('button'); b.className = 'choice' + (it.quiet ? ' quiet' : '') + (it.suggested ? ' suggested' : ''); b.textContent = it.label;   // .quiet = subdued secondary chip; .suggested = the task brief's host-validated recommended default (gold)
       const pick = () => {
@@ -8086,10 +8126,16 @@ const Chat = (() => {
       // path is fixed at dispatch start, so this listener still runs on the detached button — whereas the later
       // `click` (press+release) never fires on a removed element and the answer was silently eaten.
       // In multi mode a toggle does NOT flip `done`, so the click that follows the same press would
-      // immediately un-toggle it — swallow exactly one click after each pointerdown.
-      let sawPointer = false;
-      b.addEventListener('pointerdown', e => { if (e.button === 0) { sawPointer = true; pick(); } });
-      b.onclick = () => { if (sawPointer) { sawPointer = false; return; } pick(); };   // keyboard activation (Enter/Space synthesizes click, no pointerdown)
+      // immediately un-toggle it — swallow the click that belongs to that press. Bounded by TIME, not by a
+      // sticky flag: a press that never produces a click (drag off the button, pointercancel) would
+      // otherwise leave the flag armed and silently eat the NEXT keyboard activation.
+      let pressedAt = 0;
+      b.addEventListener('pointerdown', e => { if (e.button === 0) { pressedAt = (typeof performance !== 'undefined' ? performance.now() : 0); pick(); } });
+      b.onclick = () => {   // keyboard activation (Enter/Space synthesizes click, no pointerdown)
+        const now = (typeof performance !== 'undefined' ? performance.now() : 0);
+        if (pressedAt && now - pressedAt < 700) { pressedAt = 0; return; }
+        pressedAt = 0; pick();
+      };
       rowEl.appendChild(b);
     });
     log.appendChild(rowEl); autoscroll();

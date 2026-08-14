@@ -59,18 +59,19 @@ function validateQuestionFields(c, call) {
   // Dedupe on the LOOSENED form: exact-string dedupe let "operators" / "operators." / "the operators" through
   // as three distinct chips, which is the same choice offered three times dressed as a real decision. Collapsing
   // them means such a question now fails the >=2 check below instead of rendering a fake trilemma.
-  const options = TaskIntent.dedupeOptions(c.options);
+  const multiSelect = c.multiSelect === true;
+  const options = TaskIntent.dedupeOptions(c.options, TaskIntent.maxOptionsFor(multiSelect));
   const recommended = clean(c.recommended || c.defaultOption, 72);
   const reason = clean(c.reason, 240);
   if (!DIMENSIONS.has(dimension)) return { ok: false, error: 'dimension must be one of: ' + Array.from(DIMENSIONS).join(', ') };
   if (!question || VAGUE.test(question)) return { ok: false, error: 'ask one concrete, non-vague question' };
-  if (options.length < 2) return { ok: false, error: 'provide 2-3 genuinely different options' };
+  if (options.length < 2) return { ok: false, error: multiSelect ? 'provide 2-6 genuinely different options' : 'provide 2-3 genuinely different options' };
   const pick = matchOption(options, recommended);
   if (!pick) return { ok: false, error: 'recommended must match one option (copy it verbatim from options)' };
   if (!reason) return { ok: false, error: 'state why this decision materially changes the result' };
   if ((call || c).discoverable !== false) return { ok: false, error: 'inspect available context first; discoverable must be false' };
   return { ok: true, question: { dimension, question, text: question, options, recommended: pick, reason,
-    multiSelect: c.multiSelect === true, newBlocker: (call || c).newBlocker === true } };
+    multiSelect, newBlocker: (call || c).newBlocker === true } };
 }
 // How many brief_ask calls this brief has spent. Legacy briefs persisted before batching carry no
 // askCalls field; for them every stored question WAS its own call, so the count is the honest backfill.
@@ -160,4 +161,4 @@ function canMutate(brief, tool) {
     : { ok: false, reason: 'settle the Task Brief with brief_proceed, or ask the one material question with brief_ask, before consequential work' };
 }
 
-module.exports = { DIMENSIONS, routeReply, validateQuestion, validateQuestions, askCallsOf, validateProceed, canMutate, clean, matchOption, tasteFiller, trimAssumptions };
+module.exports = { DIMENSIONS, routeReply, validateQuestion, validateQuestions, askCallsOf, validateProceed, canMutate, clean, matchOption, tasteFiller, trimAssumptions, maxOptionsFor: TaskIntent.maxOptionsFor };

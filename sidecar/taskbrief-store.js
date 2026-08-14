@@ -18,12 +18,17 @@ function bounded(s, n) { return String(s == null ? '' : s).trim().slice(0, n); }
 function normalizeQuestion(q) {
   if (!q || typeof q !== 'object') return null;
   const text = bounded(q.text || q.question, 240);
-  const options = Array.isArray(q.options) ? q.options.map(x => bounded(x, 72)).filter(Boolean).slice(0, 3) : [];
+  // The cap is PER QUESTION KIND. A flat slice(0,3) here silently ate options 4-6 of a validated
+  // multi-select on the way to disk — the policy accepted six, the card offered six, and the durable
+  // record (which the end-run fallback re-reads) kept three.
+  const multiSelect = q.multiSelect === true;
+  const cap = Policy.maxOptionsFor ? Policy.maxOptionsFor(multiSelect) : (multiSelect ? 6 : 3);
+  const options = Array.isArray(q.options) ? q.options.map(x => bounded(x, 72)).filter(Boolean).slice(0, cap) : [];
   if (!text) return null;
   return {
     id: bounded(q.id, 80), text, options, dimension: bounded(q.dimension, 24),
     recommended: bounded(q.recommended, 72), reason: bounded(q.reason, 240), newBlocker: q.newBlocker === true,
-    multiSelect: q.multiSelect === true,
+    multiSelect,
     answer: bounded(q.answer, 500), askedAt: Number(q.askedAt) || 0, answeredAt: Number(q.answeredAt) || 0
   };
 }
@@ -248,6 +253,12 @@ function makeTaskBriefStore(deps) {
     if (!q || q.answer || !Array.isArray(q.options) || q.options.length < 2) return null;
     const fpText = fingerprintQuestion(q.text);
     if (!fpText) return null;
+    // A MULTI-SELECT answer is a SET ("billing exports, the run ledger"), and whole-string equality can
+    // never resolve it — so the one PROVABLE suggestion on this surface was permanently dead for exactly
+    // the question kind multi-select exists for. Split into parts and tally each independently.
+    // Splitting stays OFF for exclusive questions: there, today's strict equality is what keeps a free-text
+    // answer from being mined for a word that happens to name an option.
+    const multi = q.multiSelect === true;
     const tally = {};
     for (const p of (Array.isArray(pool) ? pool : patterns(50))) {
       if (fingerprintQuestion(p.question) !== fpText) continue;
@@ -258,21 +269,35 @@ function makeTaskBriefStore(deps) {
       // match does not merely mis-suggest, it misquotes them: substring matching turned "not operators" into
       // a gold "you chose operators" claim. If their words are not one of these options, there is nothing
       // provable to say.
-      const option = Policy.matchOption(q.options, p.answer);
-      if (!option) continue;
-      // Fold counts across spellings of the SAME option, so history split over "operators"/"operators." is
-      // not understated (patterns() bins on the raw answer string; the canonical option is the real key).
-      const t = tally[option] || (tally[option] = { option, count: 0, lastAt: 0 });
-      t.count += Number(p.count) || 0;
-      t.lastAt = Math.max(t.lastAt, Number(p.updatedAt) || 0);
+      const parts = multi ? String(p.answer).split(',') : [p.answer];
+      const hits = [];
+      for (const part of parts) {
+        const option = Policy.matchOption(q.options, part);
+        if (option && hits.indexOf(option) < 0) hits.push(option);   // one answer counts an option ONCE
+      }
+      if (!hits.length) continue;
+      for (const option of hits) {
+        // Fold counts across spellings of the SAME option, so history split over "operators"/"operators." is
+        // not understated (patterns() bins on the raw answer string; the canonical option is the real key).
+        const t = tally[option] || (tally[option] = { option, count: 0, lastAt: 0 });
+        t.count += Number(p.count) || 0;
+        t.lastAt = Math.max(t.lastAt, Number(p.updatedAt) || 0);
+      }
     }
     const ranked = Object.values(tally).sort((a, b) => b.count - a.count || b.lastAt - a.lastAt);
     const top = ranked[0];
     if (!top || top.count < 2) return null;
+    if (multi) {
+      // A SET has no dead heat to break: options are independent, so "you usually pick these two" is the
+      // literal truth. Keep every option they chose at least twice, in the question's own option order.
+      const strong = ranked.filter(t => t.count >= 2).map(t => t.option);
+      const options = q.options.filter(o => strong.indexOf(o) >= 0);
+      return options.length ? { option: top.option, options, count: top.count, multi: true } : null;
+    }
     // A DEAD HEAT IS NOT A PREFERENCE. 2x "operators" against 2x "executives" is the Commander having no
     // settled habit; presenting either as "you chose this 2 times before" would dress a coin flip as proof.
     if (ranked[1] && ranked[1].count === top.count) return null;
-    return top;
+    return { option: top.option, options: [top.option], count: top.count, lastAt: top.lastAt };
   }
 
   // ASK-WORTHINESS (2026-07-24). Every "use your judgment" tap is ALREADY persisted as a real answer string

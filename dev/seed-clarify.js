@@ -53,7 +53,7 @@ function startMock() {
                   reason: 'Audience changes information density and navigation.',
                   discoverable: false,
                   also: [
-                    { dimension: 'sources', question: 'which data should it pull from?', options: ['billing exports', 'the run ledger', 'support tickets'], recommended: 'the run ledger', reason: 'The sources decide what the panels can even show.', multiSelect: true },
+                    { dimension: 'sources', question: 'which data should it pull from?', options: ['billing exports', 'the run ledger', 'support tickets', 'agent transcripts', 'quest history', 'channel traffic'], recommended: 'the run ledger', reason: 'The sources decide what the panels can even show.', multiSelect: true },
                     { dimension: 'scope', question: 'read-only, or interactive filters?', options: ['read-only', 'interactive filters'], recommended: 'read-only', reason: 'Interactivity roughly doubles the build.' }
                   ]
                 }) } }
