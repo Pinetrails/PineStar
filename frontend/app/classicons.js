@@ -176,14 +176,60 @@
     'ship-feature': 'BLD', 'draft-reply': 'RPL', 'tighten-writing': 'CUT', 'plan-project': 'PLN', 'summarize': 'TLD'
   };
 
+  /* ---- CATEGORY SEALS (2026-08-13) — the recipe library's fallback, in the same engraved style ----
+     MISSION_ICONS covers ten hero recipes. The other NINETY-ONE had no vector art at all, so the coin
+     rendered `item.emoji` instead — and those emoji are geometric symbol characters (⌦ ⊟ ⊡ ⊘ ⊞ ⌘ ◱ ⊛ ◭).
+     VT323 carries no glyph for any of them, so every one fell through to a system FALLBACK FONT: wrong
+     weight, wrong metrics, wrong colour discipline, and on several rows a plain tofu box. They also
+     collided badly — 43 distinct marks across 91 recipes, ◐ on five different recipes, ⚠ / ◈ / ◉ on
+     four each — so the mark told you nothing about the row anyway.
+     Authoring 91 bespoke emblems is not the answer; a recipe's CATEGORY is the honest grouping the
+     browse rail already sorts by, so one engraved seal per category gives every row real vector art
+     that says something true about it. Same rules as the class seals above: 24x24, currentColor so it
+     rides the station phosphor, cut detail in the deboss colour, no <text> (that was the one seal that
+     ever picked up a system font). A CUSTOM recipe still falls back to the emoji its author chose. */
+  const CATEGORY_ICONS = {
+    // developer: the terminal pane with a live prompt caret — the machine you actually type at.
+    developer: '<svg viewBox="0 0 24 24"><rect x="2.2" y="3.6" width="19.6" height="16.8" rx="1.8" fill="currentColor"/><rect x="2.2" y="3.6" width="19.6" height="3.4" rx="1.8" fill="' + D + '"/><g fill="none" stroke="' + D + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 11 L8.4 13.6 L5.6 16.2"/><path d="M10.8 16.8 H17"/></g></svg>',
+    // code: the two angle brackets around a slash — the oldest mark for "this is source".
+    code: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6.4 L2.6 12 L8 17.6"/><path d="M16 6.4 L21.4 12 L16 17.6"/><path d="M13.6 4.2 L10.4 19.8"/></svg>',
+    // research: the lens laid over ruled evidence — reading something, with the sources kept.
+    research: '<svg viewBox="0 0 24 24"><rect x="3" y="2.6" width="14.4" height="18.8" rx="1.6" fill="currentColor"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M5.8 6.4 H14.6"/><path d="M5.8 9.4 H14.6"/><path d="M5.8 12.4 H10.2"/></g><circle cx="15.6" cy="14.6" r="4.6" fill="currentColor" stroke="' + D + '" stroke-width="1.6"/><path d="M18.8 17.8 L22 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>',
+    // writing: the nib, cut and inked — the draft itself.
+    writing: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3.4 20.6 L5.2 14.8 L15.4 4.6 L19.4 8.6 L9.2 18.8 Z"/><path fill="' + D + '" d="M13.8 7 L17 10.2 L9.6 17.6 L6.4 14.4 Z"/><path fill="currentColor" d="M16.6 3.4 L18 2 a1.6 1.6 0 0 1 2.3 0 l1.7 1.7 a1.6 1.6 0 0 1 0 2.3 l-1.4 1.4 Z"/><path fill="currentColor" d="M2.6 22.4 L4 18.6 L6.4 21 Z"/></svg>',
+    // creator: the frame with the play mark struck into it — something made to be watched or read.
+    creator: '<svg viewBox="0 0 24 24"><rect x="2.4" y="3.6" width="19.2" height="16.8" rx="2" fill="currentColor"/><path fill="' + D + '" d="M9.6 8.2 L16.4 12 L9.6 15.8 Z"/><g fill="' + D + '"><rect x="4.4" y="5.6" width="2.2" height="2.2" rx=".5"/><rect x="4.4" y="16.2" width="2.2" height="2.2" rx=".5"/><rect x="17.4" y="5.6" width="2.2" height="2.2" rx=".5"/><rect x="17.4" y="16.2" width="2.2" height="2.2" rx=".5"/></g></svg>',
+    // planning: the board with the route stepped across it — a goal broken into moves.
+    planning: '<svg viewBox="0 0 24 24"><rect x="2.6" y="3.4" width="18.8" height="17.2" rx="1.8" fill="currentColor"/><g fill="none" stroke="' + D + '" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 16.6 L10 16.6 L10 12 L14 12 L14 7.4 L18 7.4"/></g><g fill="' + D + '"><circle cx="6" cy="16.6" r="1.7"/><circle cx="14" cy="12" r="1.7"/><circle cx="18" cy="7.4" r="1.7"/></g></svg>',
+    // ops: the gear — the thing that runs on its own schedule.
+    ops: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="10.8" y="1.4" width="2.4" height="4.6" rx=".5"/><rect x="10.8" y="18" width="2.4" height="4.6" rx=".5"/><rect x="1.4" y="10.8" width="4.6" height="2.4" rx=".5"/><rect x="18" y="10.8" width="4.6" height="2.4" rx=".5"/><rect x="10.8" y="1.4" width="2.4" height="4.6" rx=".5" transform="rotate(45 12 12)"/><rect x="10.8" y="18" width="2.4" height="4.6" rx=".5" transform="rotate(45 12 12)"/><rect x="1.4" y="10.8" width="4.6" height="2.4" rx=".5" transform="rotate(45 12 12)"/><rect x="18" y="10.8" width="4.6" height="2.4" rx=".5" transform="rotate(45 12 12)"/><circle cx="12" cy="12" r="7"/></g><circle cx="12" cy="12" r="3.2" fill="' + D + '"/></svg>',
+    // business: the case with its clasp cut out — the client-facing job.
+    business: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9 2.6 h6 a2 2 0 0 1 2 2 V7 h-2.4 V5 H9.4 V7 H7 V4.6 A2 2 0 0 1 9 2.6 Z"/><rect x="2" y="7" width="20" height="14.4" rx="1.8" fill="currentColor"/><path fill="' + D + '" d="M2 12.4 H10 V14.2 H2 Z"/><path fill="' + D + '" d="M14 12.4 H22 V14.2 H14 Z"/><rect x="10.2" y="11.4" width="3.6" height="4" rx=".6" fill="' + D + '"/></svg>',
+    // money: the stacked coins — what it is worth, counted.
+    money: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.4" rx="8.6" ry="3.4" fill="currentColor"/><path fill="currentColor" d="M3.4 8.4 v3 a8.6 3.4 0 0 0 17.2 0 v-3 a8.6 3.4 0 0 1 -17.2 0 Z"/><path fill="currentColor" d="M3.4 14.2 v3 a8.6 3.4 0 0 0 17.2 0 v-3 a8.6 3.4 0 0 1 -17.2 0 Z"/><path fill="' + D + '" d="M11.2 3.2 h1.6 v4.4 h-1.6 Z"/><path fill="' + D + '" d="M9.6 4.2 a3.4 1.4 0 0 1 4.8 0 a3.4 1.4 0 0 1 -4.8 0 Z"/></svg>',
+    // data: the drum with the bars read off it — rows turned into an answer.
+    data: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="4.6" rx="8.2" ry="3" fill="currentColor"/><path fill="currentColor" d="M3.8 7.4 v3.2 a8.2 3 0 0 0 16.4 0 V7.4 a8.2 3 0 0 1 -16.4 0 Z"/><g fill="currentColor"><rect x="4.4" y="17" width="3.4" height="4.6" rx=".5"/><rect x="10.3" y="14" width="3.4" height="7.6" rx=".5"/><rect x="16.2" y="11" width="3.4" height="10.6" rx=".5"/></g></svg>',
+    // general: the station rosette — no claim about the kind of work, just the station's own mark.
+    general: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.6" fill="currentColor"/><path fill="' + D + '" d="M12 4.4 L14 10 L19.6 12 L14 14 L12 19.6 L10 14 L4.4 12 L10 10 Z"/></svg>'
+  };
+  // the 3-letter stamp for a category-sealed recipe still derives from its NAME (see `code()`), so two
+  // recipes sharing a category seal are never mistaken for each other.
+  function categoryIcon(item) {
+    if (!item || typeof item !== 'object' || item.custom) return null;   // a custom author's own emoji wins
+    const c = String(item.category || '').toLowerCase();
+    return CATEGORY_ICONS[c] || null;
+  }
+
   const LANE_LABEL = { code: 'CODE', research: 'RESEARCH', general: 'OPS' };
   const TIER_PIPS = { reasoning: 3, balanced: 2, fast: 1 };
   const TIER_LABEL = { reasoning: 'DEEP REASONING', balanced: 'BALANCED', fast: 'FAST & CHEAP' };
 
-  // the bespoke emblem for a spec id, or null when there's no built-in art (a custom → caller draws its emoji).
+  // The emblem for a spec/recipe: its bespoke art first, then — for a built-in recipe with none — the
+  // seal for its CATEGORY. Only a CUSTOM item (or a bare id string, which carries no category) returns
+  // null, and only then does the caller draw the author's chosen emoji.
   function svg(idOrSpec) {
     const id = typeof idOrSpec === 'string' ? idOrSpec : (idOrSpec && idOrSpec.id);
-    return ICONS[id] || MISSION_ICONS[id] || null;
+    return ICONS[id] || MISSION_ICONS[id] || categoryIcon(idOrSpec) || null;
   }
   // a stamped 3-letter class code: the canon code for built-ins, else derived from the spec name.
   function code(idOrSpec) {
@@ -214,5 +260,5 @@
     return '<span class="mkt-pips">' + '<b>◆</b>'.repeat(n) + '◇'.repeat(3 - n) + '</span>';
   }
 
-  return { ICONS, CODE, LANE_LABEL, svg, code, lane, laneLabel, clearance, pipsHTML };
+  return { ICONS, CODE, CATEGORY_ICONS, LANE_LABEL, svg, code, categoryIcon, lane, laneLabel, clearance, pipsHTML };
 });

@@ -393,6 +393,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // P2: hydrate the persisted window layout so a panel re-opens where the Commander left it, and consoles land
   // on the last section they were on — across a full reload, not just this session. Saved back on drag-end / retab.
   try { Object.assign(termPos, store.termPos || {}); Object.assign(termSize, store.termSize || {}); Object.assign(consoleSection, store.consoleSection || {}); } catch (_) {}
+  /* ONE-SHOT: retire the window sizes persisted under the old per-window widths (2026-08-13).
+     A remembered size is an INLINE width that outranks the shell's CSS, and every existing station has
+     a pile of them — recorded against the nine hand-picked widths the two-size pass replaced, and often
+     not chosen by anyone: fitTermInViewport bakes-and-persists a size whenever a window opens taller
+     than the band. Left in place they pin the old geometry forever, and the Commander would open the
+     app to exactly the mixed-size dock this pass exists to remove. Sizes only — remembered POSITIONS
+     are untouched, because where you parked a window is still true after it changes width. Flagged so
+     it runs once and never eats a size the Commander drags from here on. */
+  try {
+    if (!store.termSizeReset2) { store.termSizeReset2 = 1; Object.keys(termSize).forEach(k => delete termSize[k]); store.termSize = termSize; save(); }
+  } catch (_) {}
   function saveWindowState() { try { store.termPos = termPos; store.termSize = termSize; store.consoleSection = consoleSection; save(); } catch (_) {} }
   // TEXT SIZE zoom: element coordinates (style.left / offsetLeft) live in the body-zoomed space while
   // mouse clientX/innerWidth are visual px — they disagree by the zoom factor. uiZoom() is the one
@@ -448,8 +459,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function terminalViewport() { return termBandCache || syncTermBand(); }
   const DEFAULT_TERM_LIMITS = { minWidth: 320, minHeight: 220, maxWidth: 960, maxHeight: 760 };
   const CONSOLE_TERM_LIMITS = { minWidth: 560, minHeight: 360, maxWidth: 1200, maxHeight: 840 };
+  /* The limits follow the SHELL, so `wide` reads the console tier too. Keying this on `opts.console`
+     alone silently produced a THIRD window width: fitTermInViewport shrinks any window taller than the
+     band and BAKES the result inline, and that bake is clamped to these limits — so a 1060px `wide`
+     window (TASK BOARD, QUEST LOG, COMMANDER DOSSIER) hit the panel tier's 960 maxWidth the first time
+     it opened tall and stuck there, 100px narrower than the consoles it is supposed to match. Measured
+     live at 1440x900 before this line existed: 736 / 1104 / 1219 — three sizes, not two. */
   function terminalLimits(opts) {
-    const base = opts && opts.console ? CONSOLE_TERM_LIMITS : DEFAULT_TERM_LIMITS;
+    const base = (opts && (opts.console || opts.wide)) ? CONSOLE_TERM_LIMITS : DEFAULT_TERM_LIMITS;
     return {
       minWidth: Number(opts && opts.minWidth) || base.minWidth,
       minHeight: Number(opts && opts.minHeight) || base.minHeight,
