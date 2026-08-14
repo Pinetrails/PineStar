@@ -5099,10 +5099,43 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .pc-rh { font-size: 9px; letter-spacing: 1px; opacity: 0.55; font-style: normal; }
 /* the merged crew row: a header line, then one labelled block per axis. Stacked, not columnar — each
    axis owns a chip strip AND a plain sentence, which cannot share a row honestly at this width. */
+/* THE ROW IS A <details> (2026-08-14). Collapsed it is ONE line that still answers the question — who,
+   what mode, what it can reach — and the axis controls only exist once you ask for them. Measured: the
+   pane was 4454px at ten agents (7.4 screens, 90% of it this block); collapsed rows put it back near one
+   screen. Opening is for CHANGING; the list READS without opening anything. */
 .perm-crew-row { display: block; padding: 9px 12px 10px; }
-.perm-crew-row .pc-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.perm-crew-row .pc-head .pa-name { min-width: 0; }
-.perm-crew-row .pc-head .pa-state { flex: 1 1 180px; }
+.perm-crew-row .pc-head {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  cursor: pointer; list-style: none; user-select: none;
+}
+/* both marker syntaxes — WebKit needs the pseudo-element, the modern one needs `display` */
+.perm-crew-row .pc-head::-webkit-details-marker { display: none; }
+.perm-crew-row .pc-head::marker { content: ''; }
+.perm-crew-row .pc-head:hover .pa-name,
+.perm-crew-row[open] .pc-head .pa-name { color: var(--ph-bright); }
+/* A FIXED NAME COLUMN. Once the rows are one line each they are a LIST, and a list whose second column
+   starts at a different x on every row is not one — with `min-width` alone every name longer than the
+   floor pushed its own mode chip right, so NOVA / ATLAS / ORACLE / VESPER staggered their chips across
+   ~20px. Fixed basis + ellipsis: long names truncate rather than shove the row out of alignment, and the
+   full name is still the first thing in the opened row. */
+.perm-crew-row .pc-head .pa-name {
+  flex: 0 0 96px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+/* the summary line must not WRAP at a readable roster width, or "compact" is a lie — the state clause
+   ellipses instead, and the whole sentence is still there the moment the row opens. */
+.perm-crew-row .pc-head .pa-state {
+  flex: 1 1 120px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.perm-crew-row .pc-caret {
+  flex: 0 0 auto; margin-left: auto; color: var(--ph-dim); font-size: 12px;
+  transition: transform .12s ease, color .12s ease;
+}
+.perm-crew-row[open] .pc-caret { transform: rotate(90deg); color: var(--ph); }
+.perm-crew-row .pc-head:hover .pc-caret { color: var(--ph); }
+/* a collapsed list is a LIST — tighten the rows so ten of them read as one block, not ten cards */
+.perm-crew-row:not([open]) { padding: 7px 12px; }
+/* the first axis inside an OPEN row already carries the divider; kill the doubled gap under the summary */
+.perm-crew-row[open] .pc-head { margin-bottom: 1px; }
 .perm-crew-row .pc-axis { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--ph-faint); }
 /* the question in front of the control — the pane's whole teaching move is that every control is
    preceded by the question it answers, in the label voice the rest of settings uses. */

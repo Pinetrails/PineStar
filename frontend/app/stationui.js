@@ -74,6 +74,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // the live roster, so a SUMMON or a DELETE while the panel is open must repaint it — otherwise it keeps
   // offering a flip for an agent that no longer exists (and hides one that does). null when closed.
   let repaintPermAgents = null;
+  /* Which PERMISSIONS crew rows the Commander has expanded, by agent id. MODULE scope, deliberately:
+     the rows are <details> that paintCrew replaces wholesale, and the settings builder itself re-runs on
+     every `rerender('settings')` (a tab swap, a live refresh) — so a Set declared inside that builder is
+     a NEW Set each time and the row you just opened slams shut. Measured exactly that before moving it
+     here. Ids only: an agent that is deleted simply stops being asked about. */
+  const permCrewOpen = new Set();
   let lastStageSummary = '';         // #8: last screen-reader summary text, so we only update the live region on change
   let access = {};           // { totals(), activity() } injected by app.js
   let sel = 0;               // selected agent index (dossier / crew)
@@ -6620,6 +6626,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           });
         });
       };
+      /* (`permCrewOpen` is module-scope — see its declaration up top. paintCrew replaces every row
+         wholesale, which is deliberate ("nothing survives to leak"), and it is also driven by the 1s
+         truth poll and by repaintPermAgents on a roster change; the open intent therefore has to live
+         OUTSIDE the DOM being rebuilt. Same standdown the task board learned with `kbRenaming`.) */
       const paintCrew = () => {
         if (!crewList) return;
         paintGlance();
@@ -6671,12 +6681,29 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             '<button class="ov-vchip' + (full ? ' sel' : '') + '" data-ap-flip="' + esc(String(a.id)) + '" data-ap-to="full" data-name="NO — JUST DO IT" aria-pressed="' + (full ? 'true' : 'false') + '">NO — JUST DO IT</button>';
           // the EFFECTIVE posture — what this agent will actually do on its next risky call
           const effFull = full || overridden;
-          return '<div class="perm-agent perm-crew-row' + (effFull ? ' full' : '') + (overridden ? ' overridden' : '') + '" data-profile-agent="' + esc(String(a.id)) + '" data-ssh-configured="' + (sshConfigured ? '1' : '0') + '">' +
-            '<div class="pc-head">' +
+          /* THE ROW COLLAPSES (2026-08-14, Andrew: "it will be annoying for people who have 10+ agents").
+             MEASURED on trunk before changing anything: one expanded row is 394px, so the pane runs 1322px
+             at ONE agent and 4454px at ten — 7.4 screens, with the crew block alone 3996px of it, i.e. 90%
+             of the pane. That buries SKIP EVERY PROMPT, WHILE YOU'RE AWAY and STANDING APPROVALS, and the
+             pane's own law is that a revocation you cannot find is not revocable. So at scale the layout
+             defeated its own rule.
+             The fix is the ROW, not the SECTION. Andrew's first instinct was to move the whole crew list
+             into ADVANCED — which is exactly what ROUND 2 did on 2026-08-07 and round 3 reversed as an
+             over-correction, because per-agent reach is this pane's most useful control and a posture can
+             only set every agent the SAME way. Collapsing each row keeps tier 2 where round 3 put it,
+             visible directly under the buttons that sweep it, while making ten agents cost ~400px instead
+             of ~4000. The summary still carries the whole answer — name, effective mode, and what it can
+             reach — so the list READS without opening anything; opening is for CHANGING.
+             <details> rather than a hand-rolled toggle: free keyboard + screen-reader semantics, and it is
+             the same idiom `.mc-adv` / `.exec-ssh` already use in this file. */
+          return '<details class="perm-agent perm-crew-row' + (effFull ? ' full' : '') + (overridden ? ' overridden' : '') + '" data-profile-agent="' + esc(String(a.id)) + '" data-ssh-configured="' + (sshConfigured ? '1' : '0') + '"' +
+              (permCrewOpen.has(String(a.id)) ? ' open' : '') + '>' +
+            '<summary class="pc-head">' +
               '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
               '<span class="pa-mode">' + (effFull ? 'NO PROMPTS' : 'ASKS') + '</span>' +
               '<span class="pa-state">' + esc(p.short) + ' · ' + (effFull ? 'never stops to ask you' : 'stops before it writes, runs, or reaches out') + '</span>' +
-            '</div>' +
+              '<span class="pc-caret" aria-hidden="true">▸</span>' +
+            '</summary>' +
             '<div class="pc-axis">' +
               '<span class="pc-q">CAN REACH</span>' +
               // `pc-reach-chips` lays the five rungs out as an EVEN grid rather than a flex-wrap. Wrapping
@@ -6699,7 +6726,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
                   : 'Before it writes a file, runs a command, or reaches outside, it stops and waits for your yes.') + '</p>' +
             '</div>' +
             (cell || ssh ? '<div class="pc-more">' + cell + ssh + '</div>' : '') +
-            '</div>';
+            '</details>';
         }).join('');
         wireCrew();
       };
@@ -6707,6 +6734,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // paint's DOM (the rows are replaced wholesale on every repaint, so nothing survives to leak).
       const wireCrew = () => {
         if (!crewList) return;
+        // record the open/closed intent as the Commander expresses it, so the next repaint restores it
+        crewList.querySelectorAll('.perm-crew-row[data-profile-agent]').forEach(row => {
+          row.addEventListener('toggle', () => {
+            const id = String(row.dataset.profileAgent || '');
+            if (!id) return;
+            if (row.open) permCrewOpen.add(id); else permCrewOpen.delete(id);
+          });
+        });
         crewList.querySelectorAll('[data-ssh-save]').forEach(button => button.addEventListener('click', () => {
           const box = button.closest('[data-exec-agent]'); if (!box) return;
           button.disabled = true;
