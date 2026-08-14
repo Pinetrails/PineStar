@@ -825,7 +825,16 @@ const Marketplace = (() => {
     const sel = (focusAgent === s.id);
     // settings-console row shape: [typed mark socket] [name + tagline] ……… [lane · pips · tier / code]
     // — the right cluster is its own column so it right-aligns like the provider rows' status column.
-    return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + ';--ci:' + (i || 0) + '">' +
+    /* NO `--accent` (2026-08-13). Every row used to inject its spec's raw accent hex here, so the class
+       roster rendered its seals in cold blue / steel / green / pink INSIDE an amber phosphor tube —
+       thirty-five rows, no two the same, and none of them the station's colour. A CRT emits ONE
+       phosphor: the SEAL is engraved station hardware seen through that tube, so it rides `--ph` and
+       recolours with the theme. The accent is not lost and not decoration — it is the SUIT the summoned
+       agent wears on the floor, which is a painted object and may be any colour. Dropping the inline
+       var is the whole fix: every rule in marketplace.css already reads `var(--accent, var(--ph))`.
+       Class identity is carried where classicons.js always intended it — the emblem SHAPE and the
+       3-letter code stamp, never the colour. */
+    return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(s.id) + '" style="--ci:' + (i || 0) + '">' +
       sealHTML(s, false) +
       '<div class="mkt-card-id">' +
         '<div class="mkt-name">' + esc(s.name) +
@@ -861,7 +870,9 @@ const Marketplace = (() => {
     const sel = (focusRecipe === r.id);
     const n = (r.params || []).length;
     const setup = n ? ('▤ ' + n + ' input' + (n === 1 ? '' : 's')) : '◷ no setup';
-    return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + ';--ci:' + (i || 0) + '">' +
+    // no `--accent` — same one-phosphor rule as the class rows above (see the note on mkt-card there).
+    // The recipe library was the worse offender: not ONE of its seals was the station's colour.
+    return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(r.id) + '" style="--ci:' + (i || 0) + '">' +
       sealHTML(r, false) +
       '<div class="mkt-card-id">' +
         '<div class="mkt-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
@@ -880,10 +891,14 @@ const Marketplace = (() => {
     if (tab === 'recipes' && hasRecipes()) return (focusRecipe && Recipes.get(focusRecipe)) || Recipes.builtins()[0];
     return (focusAgent && Specialties.get(focusAgent)) || Specialties.builtins()[0];
   }
-  // the dossier re-themes to the focused class: set its --accent so coin / bars / CTA take on the class colour.
+  /* The dossier used to re-theme to the focused class's raw accent, so clicking down the roster
+     strobed the whole right-hand panel — coin, focus bars, and the SUMMON call-to-action — through
+     blue / green / pink. One phosphor (see the note on mkt-card): the dossier stays the station's
+     colour and the class is named by its emblem, code stamp, and lane chip. Kept as a no-op rather
+     than deleted so the render path's call site, and the reason, stay visible. */
   function paintDossierAccent() {
-    const d = root && root.querySelector('#mkt-dossier'); const it = focusedItem();
-    if (d && it && it.accent) d.style.setProperty('--accent', it.accent);
+    const d = root && root.querySelector('#mkt-dossier');
+    if (d) d.style.removeProperty('--accent');
   }
   // the DECODE beat: focusing a NEW class resolves its hero (emblem + name) out of glyph static — the
   // station's own AsciiFX register (eerie signal-lock, never confetti). Once per focused id, instant
@@ -1734,7 +1749,7 @@ const Marketplace = (() => {
     const cad = r.cadence ? ' <span class="mkt-badge mkt-ready-cad">↻ ' + esc(cadenceLabelOf(r.cadence)) + '</span>' : '';
     const fill = (o.bound || []).length
       ? '<div class="mkt-ready-fill">↳ fills in ' + esc((o.bound || []).map(b => b.key + ': ' + b.label).join(' · ')) + '</div>' : '';
-    return '<button class="mkt-rec mkt-foryou mkt-ready-card" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
+    return '<button class="mkt-rec mkt-foryou mkt-ready-card" type="button" data-id="' + esc(r.id) + '">' +
       declineGlyphHTML('recipe', r.id, r.name) +
       '<div class="mkt-rec-top">' + sealHTML(r, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
@@ -1770,7 +1785,7 @@ const Marketplace = (() => {
   // is dropped rather than kept as a second, quietly-diverging explanation of the same row.
   function forYouCardHTML(r, why) {
     const cat = CAT_LABEL[railBucket(r)] || 'GENERAL';
-    return '<button class="mkt-rec mkt-foryou" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
+    return '<button class="mkt-rec mkt-foryou" type="button" data-id="' + esc(r.id) + '">' +
       declineGlyphHTML('recipe', r.id, r.name) +
       '<div class="mkt-rec-top">' + sealHTML(r, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
@@ -1779,7 +1794,9 @@ const Marketplace = (() => {
   }
   function recCardHTML(s, why) {
     // `why` comes from rankSpecs: the profile-affinity reason, a goal-match note, or the cold-start lane label
-    return '<button class="mkt-rec" type="button" data-id="' + esc(s.id) + '" style="--accent:' + esc(s.accent) + '">' +
+    // no `--accent` — the shelf cards ride the station phosphor like every other seal in the bay
+    // (see the note on mkt-card). STARTING LINEUP sat three different colours side by side.
+    return '<button class="mkt-rec" type="button" data-id="' + esc(s.id) + '">' +
       declineGlyphHTML('recruit', s.id, s.name) +
       '<div class="mkt-rec-top">' + sealHTML(s, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(s.name) + '</div><div class="mkt-rec-tag">' + esc(s.tagline) + '</div></div></div>' +
@@ -3332,11 +3349,18 @@ const Marketplace = (() => {
       '<p class="mkt-hint">' + (editing
         ? 'retune this class — its job, standing orders, look, and loadout. changes apply to agents <b>summoned from here on</b>; already-summoned agents keep the loadout they were given.'
         : 'define your own class — its job, its standing orders, its look. it joins <b>YOUR SPECIALISTS</b>, ready to deploy or summon.') + '</p>' +
-      '<div class="mkt-build-preview"><div class="mkt-coin" id="mkt-build-coin" style="--accent:' + esc(buildAccent) + '">' +
+      /* The preview coin no longer takes the picked accent. It is a PREVIEW, so it must show what the
+         roster will actually show — and every seal in the bay is engraved in the station's one phosphor
+         (see the note on mkt-card). Painting this one coin blue while its row renders amber is the
+         precise kind of claim the app is not allowed to make. The accent is still picked and still
+         saved: it is the SUIT the agent wears on the floor, which the swatches themselves preview. */
+      '<div class="mkt-build-preview"><div class="mkt-coin" id="mkt-build-coin">' +
         '<span class="mkt-coin-emoji" id="mkt-build-emoji">' + esc(previewEmoji) + '</span></div><span class="mkt-hint">live preview — your class seal</span></div>' +
       '<div class="mkt-save-row"><label class="mkt-lbl">ICON<input class="mkt-in mkt-emoji-in" id="mkt-b-emoji" maxlength="2" value="' + esc(previewEmoji) + '"></label>' +
         '<label class="mkt-lbl mkt-grow">NAME<input class="mkt-in" id="mkt-b-name" maxlength="28" value="' + esc(d.name || '') + '" placeholder="e.g. Growth Hacker"></label></div>' +
-      '<label class="mkt-lbl">ACCENT</label><div class="mkt-swatches" id="mkt-b-acc">' + sw + '</div>' +
+      // relabelled from the bare "ACCENT": now that the seal is always station phosphor, this swatch's
+      // one real job is the agent's SUIT on the floor — say so rather than leave it pointing at nothing.
+      '<label class="mkt-lbl">SUIT COLOUR <span class="mkt-lbl-hint">— what your agent wears on the floor</span></label><div class="mkt-swatches" id="mkt-b-acc">' + sw + '</div>' +
       '<label class="mkt-lbl">TAGLINE<input class="mkt-in" id="mkt-b-tag" maxlength="48" value="' + esc(d.tagline || '') + '" placeholder="one line — what it’s for"></label>' +
       '<label class="mkt-lbl">CLEARANCE</label><div class="mkt-segs" id="mkt-b-model">' +
         seg('reasoning', '◆◆◆ DEEP') + seg('balanced', '◆◆ BALANCED') + seg('fast', '◆ FAST') + '</div>' +
@@ -3372,13 +3396,14 @@ const Marketplace = (() => {
   function wireBuildForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
     if (back) back.addEventListener('click', () => { sfx('click'); editingId = null; buildDraft = null; acceptingProspectId = null; view = 'grid'; renderStage(); });
-    // live seal preview: icon + accent
-    const emojiIn = stage.querySelector('#mkt-b-emoji'), coinEmoji = stage.querySelector('#mkt-build-emoji'), coin = stage.querySelector('#mkt-build-coin');
+    // live seal preview: the ICON only. The suit swatch no longer repaints the coin — the seal is
+    // station phosphor in the roster, so previewing it in the picked colour would preview a lie.
+    const emojiIn = stage.querySelector('#mkt-b-emoji'), coinEmoji = stage.querySelector('#mkt-build-emoji');
     if (emojiIn) emojiIn.addEventListener('input', () => { if (coinEmoji) coinEmoji.textContent = (emojiIn.value || '✦').trim() || '✦'; });
     stage.querySelectorAll('#mkt-b-acc .mkt-sw').forEach(b => b.addEventListener('click', () => {
       buildAccent = b.dataset.acc;
       stage.querySelectorAll('#mkt-b-acc .mkt-sw').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
-      if (coin) coin.style.setProperty('--accent', buildAccent); sfx('click');
+      sfx('click');
     }));
     stage.querySelectorAll('#mkt-b-model .mkt-seg').forEach(b => b.addEventListener('click', () => {
       buildModel = b.dataset.model;

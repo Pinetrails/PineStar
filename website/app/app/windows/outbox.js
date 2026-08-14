@@ -195,5 +195,5 @@
     }
   }
 
-  StationUI.registerWindow('outbox', 'OUTBOX — FINISHED WORK', buildOutbox, { w: '620px' });   // the OUTBOX prop's click-through: all uncollected finished runs, readable + rateable in place
+  StationUI.registerWindow('outbox', 'OUTBOX — FINISHED WORK', buildOutbox, {});   // the OUTBOX prop's click-through: all uncollected finished runs, readable + rateable in place. PANEL shell (one reading column) — see the two-sizes note in style.css
 })();

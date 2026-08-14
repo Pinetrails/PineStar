@@ -381,7 +381,9 @@ const Updates = (() => {
     if (auto) auto.addEventListener('change', ev => setAutoCheck(ev.target.checked));
     const open = body.querySelector('#set-updates-open');
     if (open && typeof StationUI !== 'undefined' && StationUI.toggleTerm) {
-      open.addEventListener('click', () => StationUI.toggleTerm('updates', 'UPDATE CENTER', render, { w: '540px' }));
+      // no per-window width: UPDATE CENTER is the default PANEL shell, same as its BUILDERS entry
+      // (two window sizes only — see the note in frontend/css/style.css).
+      open.addEventListener('click', () => StationUI.toggleTerm('updates', 'UPDATE CENTER', render, {}));
     }
   }
 

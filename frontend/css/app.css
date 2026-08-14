@@ -4643,11 +4643,16 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    NO height transition here: the window already animates open via term-power (scaleY 0.012->1), and adding a
    height tween on top left the box measurable at ~4px mid-animation. The entrance covers the open; the async
    loading… -> rows growth snaps, which is the safe trade. */
+/* WIDE — the second (and last) window size. `.term.wide` is WIDTH ONLY: it gives a non-console window
+   (TASK BOARD's three lanes, QUEST LOG's card grid, the COMMANDER DOSSIER's two columns) the same
+   shell as the consoles without mounting the console rail markup. --term-w-wide is declared on `.term`
+   in style.css so both selectors read ONE token. See the two-sizes note there. */
+.term.wide { width: var(--term-w-wide); max-width: var(--term-w-wide); }
 .term.console {
   /* The width and height limits are expressed in the counter-zoomed window coordinate space and
      bound to the measured strip between the chrome bars. This retains content-fit consoles while
      preventing large TEXT SIZE from placing their titlebar underneath fixed chrome. */
-  --con-w: min(1060px, calc(88vw * var(--sn-unzoom, 1)));
+  --con-w: var(--term-w-wide);
   --con-h: min(var(--term-band, calc(78vh * var(--sn-unzoom, 1))), 720px);
   width: var(--con-w);
   height: auto;
@@ -4803,18 +4808,76 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    directly beneath it ran the full pane width. Two prose blocks stacked against the same left margin
    disagreeing about their measure is what read as broken layout — not the measure itself. Both are
    capped together below so the column edge is consistent down the pane. */
+/* THE MEASURE IS PX, NOT `ch` (2026-08-13). `ch` is the width of "0" IN THE ELEMENT'S OWN FONT SIZE, so
+   one shared `86ch` resolved to a DIFFERENT column per block: ~510px on this 14px description and ~452px
+   on the 12px `.set-about` paragraphs directly beneath it. That is the exact failure the note above says
+   it fixed — two prose blocks against the same left margin disagreeing about where they end — and it also
+   left both stranded in roughly half of a ~960px pane. The PERMISSIONS block below already learned this
+   (see --perm-measure and its VT323 arithmetic); this hoists the same fix to every console section so
+   they finally agree. One token, one column edge down the whole pane. */
+:root { --con-measure: 760px; }
 .con-sec-desc {
   color: var(--ph-dim); font-size: var(--fs-1); letter-spacing: var(--ls-1);
-  margin: -4px 0 12px; line-height: 1.4; max-width: 86ch;
+  margin: -4px 0 12px; line-height: 1.4; max-width: var(--con-measure);
 }
 /* Keep every console prose block on the same readable measure as its section description. */
 .con-sec-body .set-about,
 .term.console .sk-note,
 .term.console .ch-note,
-.term.console .ch-headless { max-width: 86ch; }
+.term.console .ch-headless { max-width: var(--con-measure); }
 /* the section head is a click target only while searching (jump-to-section) */
 .con-searching .con-sec-head { cursor: pointer; }
 .con-searching .con-sec-head:hover .sec-l { color: var(--ph-bright); }
+
+/* ---------- SETTINGS ▸ the shared CONTROL-GROUP SUB-LABEL ----------
+   The line that names a dial and glosses it ("REACH — how far an unattended action may go"). Every
+   settings pane wrote this as a `.set-row` holding one `.dim` span, i.e. the exact treatment its own
+   body prose gets, so a dial's label sat at the same visual weight as the paragraph explaining it and
+   the panes read as undifferentiated text. Splitting name from gloss costs one class and gives every
+   section the same hierarchy. Additive: `.set-row` itself is untouched. */
+.set-sub {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px;
+  margin: 14px 0 6px; font-size: var(--fs-1);
+}
+.set-sub-k { color: var(--ph); letter-spacing: var(--ls-2); flex: 0 0 auto; }
+.set-sub-d { color: var(--ph-dim); letter-spacing: var(--ls-1); min-width: 0; }
+
+/* ---------- SETTINGS ▸ NIGHT SHIFT — the live status GRID ----------
+   Five readouts about ONE machine (state · mode · daily limit · last job · next job). They used to be
+   five bare `.set-row` blocks, which is `display:block` + a 5px margin — so a label and its value ran
+   together as a sentence, five of them stacked with the explanation paragraphs interleaved, and the
+   whole pane read as prose instead of a status board. Same treatment the PERMISSIONS block below got:
+   scoped to the .ns-* classes only, so the shared .set-row / .key-list vocabulary is untouched.
+   auto-fit keeps it honest at any window width — one column in a dragged-narrow console, three in a
+   wide one — and never invents a row that isn't there. */
+/* Cells carry their OWN border and the grid has none. A hairline-gap grid painted over a shared
+   background looks tidy right up until the row is short: five cells in a three-wide grid leaves a sixth
+   track empty, and that empty track renders the grid's own background as a solid block that reads like a
+   missing readout. Separate cells simply aren't there when there is nothing to show. */
+.ns-grid {
+  display: grid; gap: 8px; margin: 10px 0 12px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+.ns-cell {
+  display: flex; flex-direction: column; gap: 4px; padding: 9px 12px;
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0, 0, 0, 0.28); border-radius: var(--r-sm); box-shadow: var(--raise);
+}
+.ns-k { font-size: 11px; letter-spacing: var(--ls-2); color: var(--ph-dim); }
+/* the VALUE is the thing being read — it carries the phosphor, the label recedes. (`.dim` used to be on
+   the value span, which inverted that: the fact was fainter than its own label.) */
+.ns-v { font-size: 14px; color: var(--ph-bright); line-height: 1.3; word-break: break-word; }
+/* the away rule leads the pane; the two explanation lines trail the grid they explain */
+.set-about.ns-away { margin: 0 0 2px; }
+.set-about.ns-note { margin: 0 0 6px; }
+.set-about.ns-note:empty { display: none; }
+/* FOCUS: the readout is a line of its own above the steer field, so the input never sits mid-sentence.
+   The row is capped at the pane measure — left to fill a wide console the input stretched the full ~960px
+   and stranded its own STEER button alone against the far edge, a metre from the text it acts on. */
+.ns-focus-row { margin: 2px 0 8px; cursor: default; }
+.ns-steer { display: flex; align-items: center; gap: 8px; cursor: default; max-width: var(--con-measure); }
+.ns-steer .key-input { flex: 1 1 auto; min-width: 0; }
+.ns-steer .bb { flex: 0 0 auto; }
 /* ---------- SETTINGS ▸ PERMISSIONS ----------
    The pane answers three questions in order (who asks first · how far it may go unattended · what is
    already blessed), topped by the FULL BYPASS master switch. Before this block it was one undifferentiated
@@ -4927,7 +4990,9 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    is the only thing that lights, because a card may never claim a state it does not hold. */
 .pp-state { font-size: 10px; letter-spacing: 1px; color: var(--ph-dim); opacity: 0.8; }
 .pp-state.matched { color: var(--ph); opacity: 1; }
-.pp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+/* gap 12, not 8: these are three MUTUALLY EXCLUSIVE choices whose borders are deliberately faint, and at
+   an 8px gutter across a ~960px pane they read as one banded strip rather than three things to pick between. */
+.pp-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
 .pp-card {
   display: flex; flex-direction: column; gap: 5px; text-align: left; cursor: pointer;
   font-family: inherit; padding: 10px 12px 11px;
@@ -4983,6 +5048,15 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .perm-crew-row.overridden .pc-ask-axis .pc-chips:hover { opacity: 1; }
 .perm-crew-row .pc-chips { margin: 0; gap: 5px; flex-wrap: wrap; }
 .perm-crew-row .pc-chips .ov-vchip { display: inline-flex; align-items: center; gap: 6px; }
+/* THE REACH LADDER IS A GRID, not a wrap. Five rungs of very different label lengths ("NOTHING OF MINE"
+   … "MY WHOLE COMPUTER") flex-wrapped into 4 + 1, so the widest chip set the break and the fifth rung
+   sat alone beside a hole. Equal tracks give the ladder one left edge, align every reach meter into a
+   readable column, and break 3 + 2 instead of stranding a rung. */
+.perm-crew-row .pc-reach-chips {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+  gap: 6px; align-items: stretch;
+}
+.perm-crew-row .pc-reach-chips .ov-vchip { width: 100%; justify-content: flex-start; text-align: left; }
 /* the reach meter: filled rungs in phosphor, hollow ones faded, so the ladder reads left-to-right
    without parsing the labels. Fixed advance (VT323 is monospace) keeps the chips' text aligned. */
 .pc-dots { font-size: 11px; letter-spacing: 1px; opacity: 0.5; }
@@ -5009,6 +5083,9 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 
 /* responsive: on a narrow viewport the rail sits on top as a horizontal strip */
 @media (max-width: 720px) {
+  /* both WIDE shells collapse to the same near-full-bleed width here — a `.wide` window left at
+     88vw beside a console at 94vw would reintroduce the size drift this pass removed. */
+  .term { --term-w-wide: calc(94vw * var(--sn-unzoom, 1)); }
   .term.console { --con-w: calc(94vw * var(--sn-unzoom, 1)); --con-h: var(--term-band, calc(84vh * var(--sn-unzoom, 1))); }
   .term.console .term-body.term-console-body { flex-direction: column; }
   .con-rail { flex: 0 0 auto; border-right: none; border-bottom: 1px solid var(--ph-dim); }

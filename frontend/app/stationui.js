@@ -868,10 +868,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const opener = (typeof document !== 'undefined' && document.activeElement) || null;
     const w = mkEl('div', 'term');
     w.style.zIndex = U.zTop();
-    // CONSOLE MODE: a large two-pane window (section rail + content pane). Its size is owned by CSS
-    // (.term.console), so a per-panel opts.w must NOT be applied — an inline 500px would starve the rail.
+    // TWO SIZES, AND ONLY TWO (2026-08-13). Every window is either the default PANEL shell or the WIDE
+    // one; both widths are CSS tokens on `.term` (see the two-sizes note in style.css). CONSOLE MODE is
+    // the wide shell PLUS the section-rail markup, so its size is owned by CSS (.term.console) — a
+    // per-panel inline width must NOT be applied there, an inline 500px would starve the rail.
+    // `opts.wide` is the same width with no rail, for the grid/multi-column windows.
     if (opts && opts.console) w.classList.add('console');
-    else if (opts && opts.w) w.style.width = opts.w;
+    else if (opts && opts.wide) w.classList.add('wide');
     if (opts && opts.className) w.classList.add(opts.className);
     w._sizeLimits = terminalLimits(opts);
     const savedSize = termSize[key];
@@ -5385,22 +5388,29 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const secAutonomy =
       // AUTONOMY — the "alive between sessions" dial: two independent axes (autonomy.js). Reuses the theme-picker
       // button idiom (.set-themes/.set-theme) so it needs no new CSS. The live describe() line keeps it honest.
-      '<h4 class="ms-h">AUTONOMY <span class="dim">— how much it runs on its own while you’re away</span></h4>' +
+      // NO inner "AUTONOMY" h4 — the console section head already prints the title AND its desc line directly
+      // above this pane, so the h4 was a second copy of both (the PROVIDERS rule; ONE label per anchor).
       '<p class="set-about" id="auto-desc">' + esc((typeof AutonomyStore !== 'undefined' && AutonomyStore.describe) ? AutonomyStore.describe() : '') + '</p>' +
-      '<div class="set-row"><span class="dim">INITIATIVE — does it start work on its own</span></div>' +
+      /* CONTROL-GROUP SUB-LABELS (2026-08-13). Each of these used to be
+         `<div class="set-row"><span class="dim">INITIATIVE — does it start work on its own</span></div>`:
+         one dim span at body size, which is the SAME treatment the pane's ordinary prose gets, so the
+         labels of the dials did not read as labels at all. `.set-sub` splits the name from its gloss —
+         the name carries the phosphor, the gloss stays dim — and is shared with NIGHT SHIFT / the other
+         panes so every settings sub-label looks the same. Pure presentation; no ids or handlers move. */
+      '<div class="set-sub"><span class="set-sub-k">INITIATIVE</span><span class="set-sub-d">does it start work on its own</span></div>' +
       '<div class="set-themes" id="auto-init">' +
         '<button class="set-theme" data-init="wait" title="nothing runs unless you ask">WAIT</button>' +
         '<button class="set-theme" data-init="propose" title="lines up suggestions you approve — never acts on its own">SUGGEST</button>' +
         '<button class="set-theme" data-init="leash" title="does a few small grounded jobs a day on its own">BUILD</button>' +
         '<button class="set-theme" data-init="free" title="picks &amp; does work toward your goals while you’re away">FREE</button>' +
       '</div>' +
-      '<div class="set-row"><span class="dim">REACH — how far an unattended action may go</span></div>' +
+      '<div class="set-sub"><span class="set-sub-k">REACH</span><span class="set-sub-d">how far an unattended action may go</span></div>' +
       '<div class="set-themes" id="auto-reach">' +
         '<button class="set-theme" data-reach="observe" title="read / research only — writes nothing">OBSERVE</button>' +
         '<button class="set-theme" data-reach="sandbox" title="build &amp; write locally — nothing leaves the machine">SANDBOX</button>' +
         '<button class="set-theme" data-reach="reach" title="the highest rung: unattended actions may leave the machine — send, publish, or contact external services">SEND &amp; PUBLISH</button>' +
       '</div>' +
-      '<div class="set-row"><span class="dim">PACE — how many unattended jobs per day</span></div>' +
+      '<div class="set-sub"><span class="set-sub-k">PACE</span><span class="set-sub-d">how many unattended jobs per day</span></div>' +
       '<div class="set-themes" id="auto-pace">' +
         '<button class="set-theme" data-pace="1" title="one small job a day">LIGHT</button>' +
         '<button class="set-theme" data-pace="3" title="a few small jobs a day — the default">STANDARD</button>' +
@@ -5412,47 +5422,58 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // /api/nightshift/focus + POST/DELETE /api/nightshift/avoid) — one directive, surfaced where the user tunes
       // autonomy, so "tune it" and "aim it" live together. Every line maps to a route field; the cold states are
       // honest, never an invented priority or a fake learned profile.
-      '<div class="set-row"><span class="dim">DIRECTION — where its unattended work should go</span></div>' +
-      '<div class="set-row"><span class="dim">FOCUS</span> <span id="auto-focus" class="dim">…</span></div>' +
-      '<div class="set-row"><input id="auto-steer" class="key-input" type="text" autocomplete="off" placeholder="point it at a project folder, thread:&lt;id&gt;, or goal"><button class="bb xs" id="auto-steer-set">STEER</button><button class="bb xs" id="auto-steer-clear" style="display:none">CLEAR</button></div>' +
+      '<h4 class="ms-h">DIRECTION <span class="dim">— where its unattended work should go</span></h4>' +
+      '<div class="set-sub"><span class="set-sub-k">FOCUS</span><span class="set-sub-d" id="auto-focus">…</span></div>' +
+      '<div class="set-row ns-steer"><input id="auto-steer" class="key-input" type="text" autocomplete="off" placeholder="point it at a project folder, thread:&lt;id&gt;, or goal"><button class="bb xs" id="auto-steer-set">STEER</button><button class="bb xs" id="auto-steer-clear" style="display:none">CLEAR</button></div>' +
       '<div class="mc-hint">a steer outranks learned evidence (~7 days, or until cleared). It only redirects the unattended priority — no new access.</div>' +
-      '<div class="set-row"><span class="dim">OFF-LIMITS — it will never pick these on its own</span></div>' +
+      '<div class="set-sub"><span class="set-sub-k">OFF-LIMITS</span><span class="set-sub-d">it will never pick these on its own</span></div>' +
       '<div class="key-list" id="auto-avoid"><p class="set-about">reading directives…</p></div>' +
-      '<div class="set-row"><input id="auto-avoid-ref" class="key-input" type="text" autocomplete="off" placeholder="a project folder, thread:&lt;id&gt;, or goal to rule out"><button class="bb xs" id="auto-avoid-add">RULE OUT</button></div>' +
+      '<div class="set-row ns-steer"><input id="auto-avoid-ref" class="key-input" type="text" autocomplete="off" placeholder="a project folder, thread:&lt;id&gt;, or goal to rule out"><button class="bb xs" id="auto-avoid-add">RULE OUT</button></div>' +
       '<div class="mc-hint">off-limits holds until you remove it. You can still work there yourself — it only stops the station choosing it unattended.</div>' +
-      '<div class="set-row"><span class="dim">LEARNED INTERESTS — what it thinks you keep coming back to</span></div>' +
+      '<div class="set-sub"><span class="set-sub-k">LEARNED INTERESTS</span><span class="set-sub-d">what it thinks you keep coming back to</span></div>' +
       '<div class="key-list" id="auto-interests"><p class="set-about">reading interests…</p></div>' +
       // LIVE HELPERS — the real background sub-agents (team.spawn) running RIGHT NOW, from GET /api/subagents
       // (server truth; the floor's ghost sprites are the same ledger). STOP rides POST /api/subagents/interrupt —
       // before this row a runaway helper could not be stopped from anywhere in the UI.
-      '<div class="set-row"><span class="dim">LIVE HELPERS — background sub-agents running now</span></div>' +
+      '<div class="set-sub"><span class="set-sub-k">LIVE HELPERS</span><span class="set-sub-d">background sub-agents running now</span></div>' +
       '<div class="key-list" id="auto-helpers"><p class="set-about">reading helpers…</p></div>';
     const secNightShift =
       // NIGHT SHIFT — the honest live status of the server-owned night shift (NS-4). Every line maps to a field of
       // GET /api/nightshift/status + /api/autonomy/ledger; painted live from the routes (never invented). The
       // decision trail is the scrollable recent act/decline log. Loading/error states are honest, never fake-zero.
-      '<h4 class="ms-h">NIGHT SHIFT <span class="dim">— works on its own whenever you stop using the station</span></h4>' +
+      /* NO inner "NIGHT SHIFT" h4 — the console section head already prints the title AND its desc line
+         (the PROVIDERS rule; ONE label per anchor).
+         LAYOUT (2026-08-13): the six live readouts used to be six bare `.set-row` blocks — `display:block`
+         with a 5px margin — so STATE / MODE / FOCUS / DAILY LIMIT / LAST JOB / NEXT JOB rendered as one
+         undifferentiated run of prose interleaved with their own explanation paragraphs, and the pane read
+         as a wall of text. They are FACTS about one machine, so they are now a real key/value STATUS GRID
+         (.ns-grid), and the two explanation paragraphs sit under the fact they explain instead of splitting
+         the run. Every id is unchanged — paintPanel still writes textContent + toggles .ns-halt exactly as
+         before, so the honesty wiring (unreachable → em-dashes, never a fake zero) is untouched. */
       // THE AWAY RULE, up front (clarity fix 2026-07-15): "away" read as "app closed" and the panel made no sense.
       // Painted from panelModel.awayRuleText (the sidecar's REAL idle threshold — never a hardcoded number).
-      '<p class="set-about" id="ns-awayrule"></p>' +
-      '<div class="set-row"><span class="dim">STATE</span> <span id="ns-state" class="dim">…</span></div>' +
-      '<p class="set-about" id="ns-why"></p>' +
-      // MODE — build-vs-draft honesty (status.buildMode/draftReason) + the cold-start readiness bars, so a station
-      // that is running but degraded (drafts only / still learning) SAYS so instead of silently doing less.
-      '<div class="set-row"><span class="dim">MODE</span> <span id="ns-mode" class="dim">…</span></div>' +
-      '<p class="set-about" id="ns-readiness"></p>' +
+      '<p class="set-about ns-away" id="ns-awayrule"></p>' +
+      '<div class="ns-grid">' +
+        '<div class="ns-cell"><span class="ns-k">STATE</span><span id="ns-state" class="ns-v">…</span></div>' +
+        // MODE — build-vs-draft honesty (status.buildMode/draftReason) + the cold-start readiness bars, so a station
+        // that is running but degraded (drafts only / still learning) SAYS so instead of silently doing less.
+        '<div class="ns-cell"><span class="ns-k">MODE</span><span id="ns-mode" class="ns-v">…</span></div>' +
+        // row labels de-jargoned (UX sweep 2026-07-15): LEASH/LAST BEAT/NEXT ELIGIBLE assumed the internal
+        // vocabulary; a "beat" is just one small unattended job (glossary carries the term for the value text).
+        '<div class="ns-cell"><span class="ns-k" data-hint="beat">DAILY LIMIT</span><span id="ns-leash" class="ns-v">…</span></div>' +
+        '<div class="ns-cell"><span class="ns-k" data-hint="beat">LAST JOB</span><span id="ns-last" class="ns-v">…</span></div>' +
+        '<div class="ns-cell"><span class="ns-k">NEXT JOB EARLIEST</span><span id="ns-next" class="ns-v">…</span></div>' +
+      '</div>' +
+      '<p class="set-about ns-note" id="ns-why"></p>' +
+      '<p class="set-about ns-note" id="ns-readiness"></p>' +
       // FOCUS (NS-5b) — what the night will chase, and the STEER that lets the Commander redirect it. The readout
       // maps to status.focus (server truth); the steer rides GET/POST/DELETE /api/nightshift/focus. A steer only
       // re-ranks the night's ONE priority — it grants nothing and reaches nothing new (route-enforced).
-      '<div class="set-row"><span class="dim">FOCUS</span> <span id="ns-focus" class="dim">…</span></div>' +
-      '<div class="set-row"><input id="ns-steer" class="key-input" type="text" autocomplete="off" placeholder="point it at a project folder, or type what to focus on"><button class="bb xs" id="ns-steer-set">STEER</button><button class="bb xs" id="ns-steer-clear" style="display:none">CLEAR</button></div>' +
+      '<h4 class="ms-h">FOCUS</h4>' +
+      '<div class="set-row ns-focus-row"><span id="ns-focus" class="dim">…</span></div>' +
+      '<div class="set-row ns-steer"><input id="ns-steer" class="key-input" type="text" autocomplete="off" placeholder="point it at a project folder, or type what to focus on"><button class="bb xs" id="ns-steer-set">STEER</button><button class="bb xs" id="ns-steer-clear" style="display:none">CLEAR</button></div>' +
       '<div class="mc-hint">a steer outranks learned evidence (~7 days, or until cleared). It only redirects the night’s one priority — no new access.</div>' +
-      // row labels de-jargoned (UX sweep 2026-07-15): LEASH/LAST BEAT/NEXT ELIGIBLE assumed the internal
-      // vocabulary; a "beat" is just one small unattended job (glossary carries the term for the value text).
-      '<div class="set-row"><span class="dim" data-hint="beat">DAILY LIMIT</span> <span id="ns-leash" class="dim">…</span></div>' +
-      '<div class="set-row"><span class="dim" data-hint="beat">LAST JOB</span> <span id="ns-last" class="dim">…</span></div>' +
-      '<div class="set-row"><span class="dim">NEXT JOB EARLIEST</span> <span id="ns-next" class="dim">…</span></div>' +
-      '<div class="set-row"><span class="dim">RECENT DECISIONS</span></div>' +
+      '<h4 class="ms-h">RECENT DECISIONS</h4>' +
       '<div class="key-list" id="ns-trail"><p class="set-about">reading the decision trail…</p></div>' +
       // LAST REPORT (NS visibility 2026-07-13) — the morning-report beat is one-shot (fired=true spends it even on
       // dismiss, and vanish() loses the digest). This re-composes the most recent night's digest ON DEMAND from the
@@ -6641,7 +6662,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             '</div>' +
             '<div class="pc-axis">' +
               '<span class="pc-q">CAN REACH</span>' +
-              (can ? '<div class="ov-vchips pc-chips">' + reachChips + '</div>' : '<span class="pc-plain">' + esc(p.label) + '</span>') +
+              // `pc-reach-chips` lays the five rungs out as an EVEN grid rather than a flex-wrap. Wrapping
+              // by content width made a ladder of five different-width lozenges break 4 + 1, with the
+              // orphan under a wide hole — the one thing on the pane that is an ORDERED SCALE was also
+              // the only thing you could not read as one. (CSS-only; the chips themselves are unchanged.)
+              (can ? '<div class="ov-vchips pc-chips pc-reach-chips">' + reachChips + '</div>' : '<span class="pc-plain">' + esc(p.label) + '</span>') +
               '<p class="pc-plain">' + esc(p.plain) + '</p>' +
               '<p class="mc-hint pc-truth">routes next command to <b>' + esc(routed) + '</b> · availability <b>' + esc(availability) + '</b> · files: ' + esc(p.files) + ' · tools: ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</p>' +
             '</div>' +
@@ -8108,24 +8133,28 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   /* ============== lifecycle ============== */
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { console: true, feature: true }],
-    commander:['COMMANDER DOSSIER',      buildCommander, { w: '760px' }],
+    // WINDOW SIZE = one of two shells (2026-08-13): default PANEL, or WIDE (`console` = wide + rail,
+    // `wide` = wide width only). The old per-window pixel widths (460/540/560/620/640/760/1000) are
+    // gone — they made eight windows read as eight unrelated apps. A window earns WIDE only by having
+    // a rail, a card grid, or side-by-side columns; everything single-column is a PANEL.
+    commander:['COMMANDER DOSSIER',      buildCommander, { wide: true }],   // two-column IDENTITY / STACK & TOOLS
     // NAV CONDENSE 2 (2026-08-04): 'skills' is no longer a window key — the skill library/agent-
     // skills sections live in the ABILITIES (connectors) console via AbilityLanes, and per-agent
     // capabilities live in the dossier's SKILLS tab. openTerm keeps the old keys alive as aliases
     // (TERM_ALIAS). UPDATES stays its own SYSTEM-dock window (Andrew's call — an update is a
     // check-it-now surface, not a setting).
-    updates:  ['UPDATE CENTER',          buildUpdates,   { w: '540px' }],
-    tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
+    updates:  ['UPDATE CENTER',          buildUpdates,   {}],
+    tasks:    ['TASK BOARD',             buildTasks,     { wide: true }],   // three kanban lanes side by side
     // DELIVERABLES is console-WIDE (a project rail beside the cards needs the room) and holds a STEADY height for
     // the same reason the dossier does: a never-moved window is CSS-centred, so a content-fit box would re-centre
     // itself every time a card's details drawer opens — the row you just clicked would slide out from under you.
     // The `dlv` class owns that height; the card list scrolls inside it.
     deliverables:['DELIVERABLES',         body => { if (typeof Deliverables !== 'undefined') Deliverables.mount(body); }, { console: true, className: 'dlv-win' }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
-    notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
+    notifs:   ['NOTIFICATIONS',          buildNotifs,    {}],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder
-    manual:   ['FIELD MANUAL',           body => { if (typeof Tutorial !== 'undefined' && Tutorial.fillFieldManual) Tutorial.fillFieldManual(body); }, { w: '640px' }],
-    quests:   ['QUEST LOG',              buildQuests,    { w: '1000px', className: 'quests-win' }],   // a card grid, not a column (560px forced 4 cards into ~130px); quests-win = STEADY height so a data poke can never re-centre the window mid-read
+    manual:   ['FIELD MANUAL',           body => { if (typeof Tutorial !== 'undefined' && Tutorial.fillFieldManual) Tutorial.fillFieldManual(body); }, {}],
+    quests:   ['QUEST LOG',              buildQuests,    { wide: true, className: 'quests-win' }],   // a card grid, not a column; quests-win = STEADY height so a data poke can never re-centre the window mid-read
   };
 
   /* ============== EXTRACTED-WINDOW SEAM (frontend/app/windows/*.js) ==============

@@ -706,11 +706,24 @@ body.crt-dull #chat-log, body.crt-dull .term-body, body.crt-dull #left, body.crt
    vw/vh inside the TEXT SIZE body zoom resolve against the REAL viewport and are THEN multiplied
    by the zoom (86vh renders as 129vh at 150%) — --sn-unzoom is the exact reciprocal, so a
    viewport-relative cap keeps meaning what it says. Same law as the cabinet block in app.css. */
+/* TWO WINDOW SIZES, AND ONLY TWO (2026-08-13, Andrew's call). Every window used to carry its own
+   hand-picked width — 460 / 480 / 540 / 560 / 620 / 640 / 760 / 1000 / console — so opening two of
+   them side by side read as eight unrelated apps. There are now exactly two shells:
+     PANEL  (--term-w-panel)  — a single reading column: UPDATES, NOTIFICATIONS, FIELD MANUAL,
+                                OUTBOX, TROPHY CASE. The default; no class needed.
+     WIDE   (--term-w-wide)   — anything with a rail, a grid, or side-by-side columns: every
+                                `.console` window plus TASK BOARD / QUEST LOG / COMMANDER DOSSIER
+                                (`.term.wide`, which is width-only — it does NOT imply the console
+                                rail markup that `.console` mounts).
+   Both are declared HERE so `.term.console` in app.css and `.term.wide` resolve the same token and
+   can never drift apart again. A user drag still writes inline width (.term-sized) and wins over both. */
 .term {
+  --term-w-panel: min(640px, calc(94vw * var(--sn-unzoom, 1)));
+  --term-w-wide: min(1060px, calc(88vw * var(--sn-unzoom, 1)));
   position: fixed; left: 50%;
   top: calc(var(--term-top, 0px) + var(--term-band, calc(100vh * var(--sn-unzoom, 1))) / 2);
   transform: translate(-50%, -50%);
-  width: 480px;
+  width: var(--term-w-panel);
   max-width: calc(94vw * var(--sn-unzoom, 1));
   max-height: var(--term-band, calc(86vh * var(--sn-unzoom, 1)));
   border-radius: var(--r-lg);

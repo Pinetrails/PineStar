@@ -59,5 +59,5 @@
       + '</div>';
   }
 
-  StationUI.registerWindow('trophies', 'TROPHY CASE', buildTrophies, { w: '560px' });   // G3b: the TROPHY CASE prop opens this station-wide surface
+  StationUI.registerWindow('trophies', 'TROPHY CASE', buildTrophies, {});   // G3b: the TROPHY CASE prop opens this station-wide surface. PANEL shell — see the two-sizes note in style.css
 })();
