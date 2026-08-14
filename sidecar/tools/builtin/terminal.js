@@ -16,7 +16,7 @@ function makeTerminalTools(deps) {
   if (!manager || !environment || !fs || !P || !ROOT) throw new Error('terminal tools require manager, environment, fs, pathMod, and root');
 
   function aid(ctx) { return Shell.safeAgentId((ctx && ctx.agentId) || 'agent'); }
-  function remoteOwner(ctx) { return !!(ctx && ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner'); }
+  function remoteOwner(ctx) { return Shell.unrestrictedHost(ctx); }
   function resolveCwd(args, ctx, agentId) {
     const jailRoot = environment.ensureWorkspace(agentId);
     let cwd = environment.getCwd(agentId);

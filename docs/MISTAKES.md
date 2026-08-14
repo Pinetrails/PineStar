@@ -117,8 +117,11 @@ debugging or claiming anything done. Companions: [BRAIN.md](BRAIN.md) · [DECISI
   before navigation, block unshimmed new targets, dispatch CDP/page input only, and await browser exit.
   Boot/shutdown/E-STOP releases are recovery, not protection during a live run. Verify continuously
   with `GetClipCursor` + `GetCursorPos`, use `GetLastInputInfo` to reject user-contaminated receipts,
-  and refuse to start if the cursor is already confined. Ordinary runs now expose no real-screen or
-  physical-input tool; a future attended channel must be separate and host-minted.
+  and refuse to start if the cursor is already confined. Restricted runs expose no real-screen or
+  physical-input tool. **Superseded for explicit Full Power (2026-08-14):** the persisted host-minted
+  Full Power posture is now that separate authority and may project real screen/input control. Do not
+  recreate the old contradiction where “Full Power” still hit this floor; preserve the floor only for
+  ASK/narrower modes and keep telemetry honest when the native driver itself is unavailable.
 
 - **Cleanup is still interference when it mutates unowned global state.** Calling
   `ClipCursor(NULL)` at boot, shutdown, or E-STOP can release confinement owned by the user's game,

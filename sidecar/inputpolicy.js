@@ -106,6 +106,9 @@ function makeRunAuthority(opts) {
     if (!fullAccessFn) return fullAccess;
     try { return fullAccessFn() === true; } catch (_) { return false; }
   };
+  // Master bypass and per-agent Full Access are the two scopes of the same host-minted Full Power
+  // authority. It is never derived from model-controlled text or tool output.
+  const unrestrictedHostNow = () => masterBypass || fullAccessNow();
   const trustedNow = () => ownerTrusted || masterBypass || fullAccessNow();
   // This bit is minted by the desktop host only when a locally paired Telegram owner reaches this run. It is
   // deliberately separate from ownerTrusted: a bare sidecar or ordinary web session cannot turn an identity
@@ -136,7 +139,7 @@ function makeRunAuthority(opts) {
   function project(tool) {
     const impact = impactOfTool(tool);
     const trusted = trustedNow();
-    if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) return remoteDesktopAuthorized;
+    if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) return remoteDesktopAuthorized || unrestrictedHostNow();
     if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
       if (trusted) return true;
       if (surface === 'interactive') return !!confirm;
@@ -150,11 +153,13 @@ function makeRunAuthority(opts) {
   function authorize(call, tool) {
     const impact = impactOfTool(tool);
     const agentFullAccess = fullAccessNow();
+    const unrestrictedHost = masterBypass || agentFullAccess;
     const trusted = ownerTrusted || masterBypass || agentFullAccess;
     if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) {
+      if (unrestrictedHost) return { ok: true, impact, surface, isTask, isolated, masterBypass: masterBypass || undefined, fullAccess: agentFullAccess || undefined, unrestrictedHost: true };
       return remoteDesktopAuthorized
         ? { ok: true, impact, surface: 'interactive', isTask, isolated, ownerTrusted: true, remoteDesktopAuthorized: true }
-        : { ok: false, impact, reason: impact + ' is unavailable without an authenticated remote-owner desktop lease' };
+        : { ok: false, impact, reason: impact + ' requires Full Power or an authenticated remote-owner desktop lease' };
     }
     if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
       if (trusted) return { ok: true, impact, surface, isTask, isolated, ownerTrusted: ownerTrusted || undefined, masterBypass: masterBypass || undefined, fullAccess: agentFullAccess || undefined };
@@ -203,8 +208,9 @@ function makeRunAuthority(opts) {
     return { ok: true, impact, surface, isTask, isolated, ownerTrusted: ownerTrusted || undefined, masterBypass: masterBypass || undefined, fullAccess: agentFullAccess || undefined, granted: (!trusted && impact === IMPACTS.WORKSPACE_PROCESS && surface !== 'interactive') || undefined };
   }
   return Object.freeze({
-    mode: remoteDesktopAuthorized ? 'remote-owner-desktop' : 'preserve-user-control', surface, isTask, isolated, ownerTrusted, masterBypass, remoteDesktopAuthorized, project, authorize,
+    mode: unrestrictedHostNow() ? 'full-power' : (remoteDesktopAuthorized ? 'remote-owner-desktop' : 'preserve-user-control'), surface, isTask, isolated, ownerTrusted, masterBypass, remoteDesktopAuthorized, project, authorize,
     fullAccess: fullAccessNow,
+    unrestrictedHost: unrestrictedHostNow,
     unattendedGrants: Object.freeze(Array.from(unattendedGrants).sort())   // diagnostics/telemetry: what this run was actually granted
   });
 }
@@ -278,14 +284,16 @@ function enforceEnabledToolsets(resolved, registry, enabledToolsets) {
   });
 }
 
-function runInputContext(surface, isTask, remoteDesktopAuthorized) {
+function runInputContext(surface, isTask, remoteDesktopAuthorized, unrestrictedHost) {
   const remote = remoteDesktopAuthorized === true;
+  const fullPower = unrestrictedHost === true;
   return {
     surface: remote ? 'interactive' : (surface || 'autonomous'),
     isTask: !!isTask,
-    physicalInputAuthorized: remote,
+    unrestrictedHost: fullPower,
+    physicalInputAuthorized: remote || fullPower,
     remoteDesktopAuthorized: remote,
-    inputMode: remote ? 'remote-owner' : 'synthetic'
+    inputMode: fullPower ? 'full-power' : (remote ? 'remote-owner' : 'synthetic')
   };
 }
 

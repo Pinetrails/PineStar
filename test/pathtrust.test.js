@@ -125,6 +125,19 @@ function scriptPrompt(decision) {
       'the protected-file floor still denies under Full Access');
   }
 
+  // ---- Full Power: the whole local computer, including protected paths, with no project card ----
+  {
+    const h = harness();
+    const never = scriptPrompt('deny');
+    const protectedFile = await h.pt.guard(path.join(proj, '.env'), {
+      scope: 'write', surface: 'autonomous', prompt: never, unrestrictedHost: true
+    });
+    A.ok(protectedFile && protectedFile.unrestrictedHost === true, 'Full Power reaches protected host paths');
+    A.eq(never.calls.length, 0, 'Full Power never asks for a project-root exception');
+    A.ok(path.resolve(protectedFile.abs).toLowerCase() === path.resolve(path.join(proj, '.env')).toLowerCase(),
+      'Full Power preserves the exact host target for the fs tool');
+  }
+
   // ---- 4. "once" allows THIS access but does NOT persist a root (next reference re-prompts) ----
   {
     const h = harness();

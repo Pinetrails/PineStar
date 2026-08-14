@@ -124,12 +124,19 @@ const { SidecarFixture } = require('./helpers/sidecar-fixture.js');
     A.eq(saved2.executionProfile, 'safe-cell', 'profile changes without changing approval posture');
     const routed = await jj('GET', '/api/execution-profiles');
     const routedAgent = ((routed.body && routed.body.agents) || []).find(a => a.agentId === 'agent') || {};
-    A.eq(routedAgent.profile && routedAgent.profile.effectiveBackend, 'docker', 'Safe Cell routes this agent to Docker immediately');
-    A.eq(routedAgent.environment && routedAgent.environment.effectiveBackend, 'docker', 'runtime truth agrees with the profile authority');
+    A.eq(routedAgent.profile && routedAgent.profile.effectiveBackend, 'local', 'Full Power routes this agent to the local host even while Safe Cell remains the stored post-revocation profile');
+    A.eq(routedAgent.environment && routedAgent.environment.effectiveBackend, 'local', 'runtime truth agrees with active Full Power host authority');
     A.eq(routed.body && routed.body.backend && routed.body.backend.routing && routed.body.backend.routing.perAgent, true, 'station status exposes per-agent backend routing');
     A.eq(routed.body && routed.body.policy && routed.body.policy.idleCleanupMinutes, 17, 'idle cleanup policy survives a sidecar restart');
     A.eq(routedAgent.sshTarget && routedAgent.sshTarget.host, 'buildbox', 'nonsecret SSH destination survives the same restart');
     A.eq(routedAgent.sshTarget && routedAgent.sshTarget.password, undefined, 'profile status never exposes an SSH password');
+
+    const revoked = await jj('POST', '/api/roster', { agents: [{ agentId: 'agent', system: 'v5', name: 'Ultron', provider: 'openrouter', approvalMode: 'ask', executionProfile: 'safe-cell' }], updatedAt: 400 });
+    A.eq(revoked.body.ok, true, 'the owner can revoke Full Power without changing the stored Safe Cell profile');
+    const restricted = await jj('GET', '/api/execution-profiles');
+    const restrictedAgent = ((restricted.body && restricted.body.agents) || []).find(a => a.agentId === 'agent') || {};
+    A.eq(restrictedAgent.profile && restrictedAgent.profile.effectiveBackend, 'docker', 'revoking Full Power immediately restores the stored Safe Cell Docker route');
+    A.eq(restrictedAgent.environment && restrictedAgent.environment.effectiveBackend, 'docker', 'runtime truth returns to the restricted profile after revocation');
   } finally {
     await fixture.dispose();
   }
