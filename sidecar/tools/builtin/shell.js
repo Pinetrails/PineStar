@@ -466,21 +466,25 @@
 
   // --- machine-state floor --- head-anchored rules (verb at the start of a command head) + a few whole-string
   // rules for signatures that are distinctive enough to match anywhere (registry hive refs, PS cmdlet names).
+  // Command names end at whitespace/EOS, not at a regex word boundary. PowerShell's harmless `Format-List`
+  // has a word boundary after "Format" (the hyphen is non-word), so `format\b` used to reject read-only hardware
+  // inventory. Exact command-token boundaries also prevent future Verb-Noun cmdlets from colliding with shorter
+  // executable names in this table.
   const MACHINE_HEAD_RULES = [
-    { re: /^(?:shutdown|logoff|reboot|halt|poweroff|tsdiscon|rwinsta)(?:\.exe)?\b/i, why: 'shuts down, reboots, disconnects, or logs the user out of their machine' },
-    { re: /^(?:taskkill|tskill|pskill|kill|pkill|killall)(?:\.exe)?\b/i, why: 'kills processes the agent does not own — stop your OWN background processes with shell.bg.kill' },
-    { re: /^schtasks(?:\.exe)?\b[\s\S]*?\s\/(?:create|change|delete|run)\b/i, why: 'creates or changes a Windows scheduled task (machine persistence that outlives StarNet)' },
+    { re: /^(?:shutdown|logoff|reboot|halt|poweroff|tsdiscon|rwinsta)(?:\.(?:exe|com))?(?=\s|$)/i, why: 'shuts down, reboots, disconnects, or logs the user out of their machine' },
+    { re: /^(?:taskkill|tskill|pskill|kill|pkill|killall)(?:\.(?:exe|com))?(?=\s|$)/i, why: 'kills processes the agent does not own — stop your OWN background processes with shell.bg.kill' },
+    { re: /^schtasks(?:\.(?:exe|com))?(?=\s|$)[\s\S]*?\s\/(?:create|change|delete|run)\b/i, why: 'creates or changes a Windows scheduled task (machine persistence that outlives StarNet)' },
     { re: /^reg(?:\.exe)?\s+(?:add|delete|import|load|unload|copy)\b/i, why: 'writes the Windows registry' },
-    { re: /^regedit(?:\.exe)?\b/i, why: 'opens or imports into the Windows registry' },
+    { re: /^regedit(?:\.(?:exe|com))?(?=\s|$)/i, why: 'opens or imports into the Windows registry' },
     { re: /^sc(?:\.exe)?\s+(?:create|config|delete|start|stop|failure|sdset)\b/i, why: 'creates or changes Windows services' },
-    { re: /^netsh(?:\.exe)?\b/i, why: 'changes network / firewall configuration' },
+    { re: /^netsh(?:\.(?:exe|com))?(?=\s|$)/i, why: 'changes network / firewall configuration' },
     { re: /^net(?:\.exe)?\s+(?:user|localgroup|accounts|share|start|stop)\b/i, why: 'changes accounts, shares, or services' },
-    { re: /^(?:setx|assoc|ftype)(?:\.exe)?\b/i, why: 'permanently changes environment variables or file associations' },
-    { re: /^(?:bcdedit|diskpart|format|chkdsk|cipher|vssadmin|wevtutil|powercfg|tzutil|w32tm|msg|mshta|wmic|displayswitch|xrandr|xinput|xset|chvt|ddcutil|pactl|amixer)(?:\.exe)?\b/i, why: 'system/display/input/audio tool that alters or disrupts the machine' },
-    { re: /^(?:sudo|su|systemctl|loginctl|launchctl|crontab|nvram|csrutil|diskutil|pmset|osascript)\b/i, why: 'system administration or interactive-session command' },
+    { re: /^(?:setx|assoc|ftype)(?:\.(?:exe|com))?(?=\s|$)/i, why: 'permanently changes environment variables or file associations' },
+    { re: /^(?:bcdedit|diskpart|format|chkdsk|cipher|vssadmin|wevtutil|powercfg|tzutil|w32tm|msg|mshta|wmic|displayswitch|xrandr|xinput|xset|chvt|ddcutil|pactl|amixer)(?:\.(?:exe|com))?(?=\s|$)/i, why: 'system/display/input/audio tool that alters or disrupts the machine' },
+    { re: /^(?:sudo|su|systemctl|loginctl|launchctl|crontab|nvram|csrutil|diskutil|pmset|osascript)(?=\s|$)/i, why: 'system administration or interactive-session command' },
     // machine-altering PowerShell cmdlets — head-anchored so `echo restart-computer` (the word as an arg) is not a
     // trip, but `Restart-Computer`, `foo | Stop-Computer`, and `powershell -Command "Stop-Computer"` all are.
-    { re: /^(?:Stop-Computer|Restart-Computer|Suspend-Computer|Register-ScheduledTask|New-ScheduledTask\w*|Stop-Process|Stop-Service|New-Service|Set-Service|Set-Date|Add-Computer|Set-ExecutionPolicy|Set-NetFirewall\w+|Disable-NetAdapter|Set-DisplayResolution|Set-Clipboard)\b/i, why: 'PowerShell cmdlet that alters machine or interactive-session state' }
+    { re: /^(?:Stop-Computer|Restart-Computer|Suspend-Computer|Register-ScheduledTask|New-ScheduledTask\w*|Stop-Process|Stop-Service|New-Service|Set-Service|Set-Date|Add-Computer|Set-ExecutionPolicy|Set-NetFirewall\w+|Disable-NetAdapter|Set-DisplayResolution|Set-Clipboard)(?=\s|$)/i, why: 'PowerShell cmdlet that alters machine or interactive-session state' }
   ];
   const MACHINE_GLOBAL_RULES = [
     { re: /\bHKEY_|(?:^|[\s"'`=(\\])HK(?:LM|CU|CR|U|CC)[:\\]/i, why: 'references a Windows registry hive' },
@@ -728,7 +732,7 @@
          remembered list — so it is stated once as a rule instead of itemised. Same for the Windows path
          normalization note: it altered no choice the model makes. */
       description: 'Run a shell command in the current project folder when this session is project-scoped, otherwise in your private workspace; returns combined stdout/stderr + exit code. '
-        + 'Tests, builds, git, scripts — anything you would type in a terminal. cmd.exe syntax. '
+        + 'Tests, builds, git, scripts — anything you would type in a terminal. On Windows this uses cmd.exe; wrap PowerShell cmdlets with `powershell -NoProfile -NonInteractive -Command "..."`. '
         + 'Your working directory PERSISTS across calls (a `cd` carries over). Absolute and `..` paths are '
         + 'refused in cmd — pass cwd to run from a specific existing folder. Commands that would change the '
         + 'user\'s machine or screen are refused with a reason; if a visible app is genuinely needed, ask the '
