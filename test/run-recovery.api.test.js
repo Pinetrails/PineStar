@@ -59,7 +59,7 @@ function fakeProvider(argsRaw, browserFixture) {
         const messages = JSON.stringify(body.messages || []);
         if (/automatic_recovery|read-only call had no durable result/.test(messages)) {
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Automatic continuation completed from the safe durable checkpoint.' }, finish_reason: 'stop' }] }) + '\n\n');
-        } else if (!/recovery-replay-blocked/.test(messages)) {
+        } else if (!/this mutating call exactly matches an operator-reviewed call/.test(messages)) {
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'replay-call', function: { name: 'shell_exec', arguments: argsRaw } }] }, finish_reason: 'tool_calls' }] }) + '\n\n');
         } else {
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Reviewed continuation completed; the uncertain action was not replayed.' }, finish_reason: 'stop' }] }) + '\n\n');
