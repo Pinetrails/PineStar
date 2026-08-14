@@ -198,7 +198,7 @@ assert.match(chatSource, /\(!liveVoiceCall\(\) \|\| liveVoiceOwns\(ws\)\)[\s\S]{
    speaks is an APPROVAL, which is a real blocking permission with a durable card. */
 assert.match(chatSource, /function liveVoiceCall\(\)/, 'chat.js knows whether a call is live');
 {
-  const choicesBody = /(  function choices\(items, onPick\) \{[\s\S]*?\n  \})/.exec(chatSource);
+  const choicesBody = /(  function choices\(items, onPick, opts\) \{[\s\S]*?\n  \})/.exec(chatSource);
   assert.ok(choicesBody, 'chat.js still defines choices()');
   assert.match(choicesBody[1], /if \(liveVoiceCall\(\)\) return;/, 'chip rows NEVER render during a live call');
   const briefBody = /(  function briefReadCard\(ws, p\) \{[\s\S]{0,400})/.exec(chatSource);

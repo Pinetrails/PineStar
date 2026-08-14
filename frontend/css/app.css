@@ -738,6 +738,17 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .consent-btn.danger:hover { color: var(--ph-bright); background: rgba(var(--gold-rgb), 0.12); }
 .consent-btn.deny { color: var(--bad); border-color: var(--bad); }
 .consent-btn.deny:hover { color: var(--ph-bright); background: rgba(255, 90, 90, 0.12); }
+/* MULTI-SELECT clarify (2026-08-14): a toggled pick reads as a matte FILL, never an outer glow —
+   the same vocabulary as the primary action, so "chosen" and "the yes" share one voice. */
+.consent-btn.sel {
+  color: var(--ph-bright); border-color: var(--ph-bright);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb),.34), rgba(var(--ph-rgb),.24));
+  box-shadow: inset 0 0 0 1px rgba(var(--ph-bright-rgb),.22), 0 1px 0 rgba(0,0,0,.35);
+}
+.consent-btn.consent-confirm { color: var(--ph-bright); border-color: var(--gold);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.20), rgba(var(--gold-rgb),.12)); }
+.consent-btn.consent-confirm:disabled { color: var(--ph-dim); border-color: rgba(var(--ph-rgb), .28);
+  background: none; cursor: default; box-shadow: none; text-shadow: none; }
 .consent-result { font-size: 13px; letter-spacing: 0.5px; color: var(--ph); }
 .consent-result.err { color: var(--bad); }
 
@@ -1156,6 +1167,17 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   color: var(--gold); border-color: var(--gold); background: rgba(var(--gold-rgb), .08);
   box-shadow: inset 0 1px 0 rgba(var(--gold-rgb),.15), 0 0 9px rgba(var(--gold-rgb), .35), 0 1px 0 rgba(0,0,0,.35);
 }
+/* MULTI-SELECT task-question chips: toggled = matte fill (never a glow); the confirm chip speaks gold
+   like every other primary, and stays quiet until at least one pick exists. */
+.choice.sel {
+  color: var(--ph-bright); border-color: var(--ph-bright);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb),.34), rgba(var(--ph-rgb),.24));
+  box-shadow: inset 0 0 0 1px rgba(var(--ph-bright-rgb),.22), 0 1px 0 rgba(0,0,0,.35);
+}
+.choice.confirm { color: var(--ph-bright); border-color: var(--gold);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb),.20), rgba(var(--gold-rgb),.12)); }
+.choice.confirm:disabled { color: var(--ph-dim); border-color: rgba(var(--ph-rgb), .28);
+  background: none; cursor: default; box-shadow: none; text-shadow: none; }
 .tq-reason { font-size: 13px; color: var(--ph-dim); letter-spacing: 0.3px; margin-top: 3px; }
 /* a GROUNDED suggestion is provable (the Commander's own answered history, with a count), so it earns the
    gold voice the ★ chip wears; the model's unprovable guess stays in the dim register above. */

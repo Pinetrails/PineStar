@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "a1851838cb00e321b4efc44a0acc89133ca3e2f1",
+    "sourceCommit": "dc212747b4dd237e61d65d51012a00dbf996186f",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 314321,
-        "sha256": "21b3eac0b83083f25e386ec0e8391e8720effc4f255fdf0f76d11abce3571a10"
+        "bytes": 317973,
+        "sha256": "16ba87144a9c256766a333b7333fd15ba2fbf61ce8829e055c7ea5548564d64d"
       },
       {
         "path": "frontend/app/channels.js",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 585766,
-        "sha256": "e1538c82f141c9e4fda62aaf8f14e568fdaaeab6f095fa66e1c86e7bdbb25e24"
+        "bytes": 594336,
+        "sha256": "96c4d21b2a04ea9a8e3a31894db64846a00147b502f551aaa15df5602879c730"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -248,8 +248,8 @@
       },
       {
         "path": "frontend/app/fork.js",
-        "bytes": 13916,
-        "sha256": "1f86de983cb4b89736a0878e547d63725a90ae6565e293901c89e4b04d3ee359"
+        "bytes": 15622,
+        "sha256": "2b32c8fe2da8046352981d7856d0d7ef5843bffe889fdabe8b386334ffdbe5a8"
       },
       {
         "path": "frontend/app/friendlyerror.js",
@@ -953,8 +953,8 @@
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 112423,
-        "sha256": "f972711473eb67a654df1fbde9eb81ba3c34f0402e65714a8ba8ce471bd49416"
+        "bytes": 111426,
+        "sha256": "2d9ad1b1b2b20f2cbba542559571058e4c45d56236b8df163fd8351af1b4b18f"
       },
       {
         "path": "frontend/app/xp.js",
@@ -973,8 +973,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 373029,
-        "sha256": "30483a8e142a42f3355ce1f2b55d5c5a0fbe6f577f22c9fba6d1fd899e4883fc"
+        "bytes": 374597,
+        "sha256": "e9e75b67249b83893102106c1228faced00e702b9c5214ef84ba6026896285cb"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -1003,8 +1003,8 @@
       },
       {
         "path": "frontend/css/refit.css",
-        "bytes": 11145,
-        "sha256": "9db7c1eed43db8b3510a77225556103c91a65b31b47654ec1464db02635d8f03"
+        "bytes": 14763,
+        "sha256": "7d5c39b99c5941cf40c91fee7eec436c8d59807ebeafa94ddb28a0d62433df7a"
       },
       {
         "path": "frontend/css/safety.css",
