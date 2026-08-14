@@ -79,7 +79,19 @@
     return unescape(encodeURIComponent(text)).length;
   }
   const okResult = (content, summary, control, parkedPath, images, outputChars, outputBytes, mutationReceipt) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null, parkedPath: parkedPath || null, outputChars: Number.isFinite(Number(outputChars)) ? Number(outputChars) : (typeof content === 'string' ? content.length : null), outputBytes: Number.isFinite(Number(outputBytes)) ? Number(outputBytes) : (typeof content === 'string' ? utf8Bytes(content) : null), mutationReceipt: mutationReceipt || null, receipt: mutationReceipt || null });
-  const errResult = (content, summary, parkedPath, outputChars, outputBytes, mutationReceipt) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error', parkedPath: parkedPath || null, outputChars: Number.isFinite(Number(outputChars)) ? Number(outputChars) : (typeof content === 'string' ? content.length : null), outputBytes: Number.isFinite(Number(outputBytes)) ? Number(outputBytes) : (typeof content === 'string' ? utf8Bytes(content) : null), mutationReceipt: mutationReceipt || null, receipt: mutationReceipt || null });
+  function preconditionFrame(content, precondition) {
+    if (!precondition) return String(content == null ? '' : content);
+    return String(content == null ? '' : content)
+      + '\n\n<tool_precondition>' + JSON.stringify(precondition) + '</tool_precondition>'
+      + '\nHost recovery rule: do not repeat the identical call. Satisfy the named requirement or choose a different route, then make one revised attempt. If that revised route cannot work, report the proven blocker.';
+  }
+  const errResult = (content, summary, parkedPath, outputChars, outputBytes, mutationReceipt, preconditionValue) => {
+    const precondition = toolMod.normalizePrecondition ? toolMod.normalizePrecondition(preconditionValue) : null;
+    const framed = preconditionFrame(content, precondition);
+    const result = { ok: false, isError: true, content: clampOutput(framed, parkedPath), summary: summary || (precondition ? 'precondition' : 'error'), parkedPath: parkedPath || null, outputChars: Number.isFinite(Number(outputChars)) ? Number(outputChars) : (typeof framed === 'string' ? framed.length : null), outputBytes: Number.isFinite(Number(outputBytes)) ? Number(outputBytes) : (typeof framed === 'string' ? utf8Bytes(framed) : null), mutationReceipt: mutationReceipt || null, receipt: mutationReceipt || null };
+    if (precondition) result.precondition = precondition;
+    return result;
+  };
 
   // Ask the host to keep the full output. Never throws and never blocks a result: a parker that fails just
   // means we fall back to the plain clamp — losing the tail must never also lose the answer.
@@ -162,7 +174,12 @@
 
     function wireFormat(toolList) {
       const src = toolList || list();
-      return src.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.schema } }));
+      return src.map(t => {
+        const declared = Array.isArray(t.preconditions) && t.preconditions.length
+          ? String(t.description || '') + '\n<tool_preconditions>' + JSON.stringify(t.preconditions) + '</tool_preconditions>'
+          : t.description;
+        return { type: 'function', function: { name: t.name, description: declared, parameters: t.schema } };
+      });
     }
 
     async function dispatch(call, ctx) {
@@ -290,7 +307,7 @@
         }
         const fullErrorBytes = utf8Bytes(fullError);
         const visibleError = fullError !== errorText ? intrinsicReceipt(errorText, fullError.length, fullErrorBytes, parked) : errorText;
-        return await notifyPost(errResult(visibleError, 'error', parked, fullError.length, fullErrorBytes, e && e.mutationReceipt), elapsed());
+        return await notifyPost(errResult(visibleError, e && e.precondition ? 'precondition' : 'error', parked, fullError.length, fullErrorBytes, e && e.mutationReceipt, e && e.precondition), elapsed());
       } finally {
         // A long run may execute hundreds of tools against one parent signal. Once this call settles, its child
         // controller no longer needs cancellation propagation; retaining every listener until run end leaks the

@@ -717,7 +717,7 @@
     const MAX_BYTES = L.maxBytes || 64000;
     const DEFAULT_MS = L.defaultTimeoutMs || 30000;
     const MAX_MS = L.maxTimeoutMs || 120000;
-    const sessions = new Map();   // H2.1: aid -> { cwd } — a persistent working dir that survives across calls (jail-clamped)
+    const sessions = new Map();   // H2.1: unscoped aid or run-scoped project key -> { cwd }
 
     const execTool = {
       name: 'shell.exec', capability: 'workbench', impact: 'workspace-process', scope: 'execute', requiresConsent: true,
@@ -727,7 +727,7 @@
          already answers that at call time with the specific reason, and far more accurately than a
          remembered list — so it is stated once as a rule instead of itemised. Same for the Windows path
          normalization note: it altered no choice the model makes. */
-      description: 'Run a shell command in your workspace directory; returns combined stdout/stderr + exit code. '
+      description: 'Run a shell command in the current project folder when this session is project-scoped, otherwise in your private workspace; returns combined stdout/stderr + exit code. '
         + 'Tests, builds, git, scripts — anything you would type in a terminal. cmd.exe syntax. '
         + 'Your working directory PERSISTS across calls (a `cd` carries over). Absolute and `..` paths are '
         + 'refused in cmd — pass cwd to run from a specific existing folder. Commands that would change the '
@@ -750,13 +750,15 @@
         const deny = remoteOwner ? null : escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
         const jailRoot = environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid);
-        // H2.1: start in this agent's PERSISTED cwd (default = jail root). Defensive: only honor a stored cwd
-        // that is still in-jail and still exists; otherwise fall back to the jail root.
-        const sess = sessions.get(aid);
+        // A project root is host-minted from the session's still-live blessing. Keep its shell cwd run-scoped:
+        // two concurrent projects owned by the same agent must never inherit one another's `cd` state.
+        const runProjectCwd = String(ctx.projectCwd || ctx.projectRoot || '').trim();
+        const sessionKey = runProjectCwd ? (aid + '\0project:' + String(ctx.runId || runProjectCwd)) : aid;
+        // H2.1: start in this scope's persisted cwd (default = project root or jail root). Defensive: only
+        // honor a stored cwd that still resolves under the allowed local envelope and still exists.
+        const sess = sessions.get(sessionKey);
         let cwd = environment ? environment.getCwd(aid) : jailRoot;
-        // Scheduled project work is run-scoped. Prefer the host-validated project cwd without writing it to
-        // the agent-wide persistent cwd session (concurrent routines of one agent must not cross-contaminate).
-        if (ctx.projectCwd) cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: ctx.projectCwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environmentBackendId === 'local' });
+        if (runProjectCwd) cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: runProjectCwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: environmentBackendId === 'local' });
         if (sess && sess.cwd) {
           try { cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: sess.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: remoteOwner || environmentBackendId === 'local', allowProtected: remoteOwner }); }
           catch (_) {}
@@ -765,7 +767,7 @@
         if (args && args.cwd != null) {
           if (environment && environmentBackendId !== 'local' && !remoteOwner) throw new Error('cwd is only supported on the local execution backend; use cd inside the container workspace instead');
           cwd = resolveShellCwd({ pathMod: P, fs: fs, requested: args.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: remoteOwner || environmentBackendId === 'local', allowProtected: remoteOwner });
-          sessions.set(aid, { cwd: cwd });
+          sessions.set(sessionKey, { cwd: cwd });
         }
         const hostCwd = environment && typeof environment.workspaceRoot === 'function' && environmentBackendId !== 'local'
           ? environment.workspaceRoot(aid) : cwd;
@@ -806,9 +808,9 @@
           if (environment && pm.cwd && environmentBackendId !== 'local') environment.rememberCwd(aid, pm.cwd);
           else if (environment && pm.cwd && withinJail(P, pm.cwd, jailRoot)) environment.rememberCwd(aid, pm.cwd);
           else if (environment && pm.cwd && environmentBackendId === 'local') {
-            try { sessions.set(aid, { cwd: resolveShellCwd({ pathMod: P, fs: fs, requested: pm.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: true, allowProtected: remoteOwner }) }); } catch (_) {}
+            try { sessions.set(sessionKey, { cwd: resolveShellCwd({ pathMod: P, fs: fs, requested: pm.cwd, current: cwd, jailRoot: jailRoot, root: ROOT, isWin: isWin, allowExternal: true, allowProtected: remoteOwner }) }); } catch (_) {}
           }
-          else if (pm.cwd && (remoteOwner || withinJail(P, pm.cwd, jailRoot))) sessions.set(aid, { cwd: pm.cwd });
+          else if (pm.cwd && (remoteOwner || withinJail(P, pm.cwd, jailRoot))) sessions.set(sessionKey, { cwd: pm.cwd });
           const exitCode = (pm.ec != null && !res.timedOut && !res.aborted) ? pm.ec : res.exitCode;
           const note = res.timedOut ? ' — KILLED (timed out after ' + timeoutMs + 'ms)' : res.aborted ? ' — KILLED (aborted)' : '';
           const body = redact((res.truncated ? preview.cleanOut : pm.cleanOut) || '(no output)');

@@ -88,6 +88,30 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
   // ---- one agent cannot read another agent's workspace via the path ----
   await rejects(readTool.run({ path: '../other/note.md' }, { agentId: 'ag' }), 'cannot escape to a sibling agent workspace');
 
+  // ---- a blessed project session makes relative paths project-native without weakening the jail ----
+  {
+    const project = path.join(os.tmpdir(), 'starnet-fs-project-' + process.pid);
+    await fsp.mkdir(project, { recursive: true });
+    await fsp.writeFile(path.join(project, 'incident.log'), 'PROJECT_LOG', 'utf8');
+    const guarded = [];
+    const guard = async (abs, o) => {
+      guarded.push({ abs, scope: o.scope });
+      if (!_internals.pathInside(abs, project)) throw new Error('not blessed');
+      return { base: project, abs };
+    };
+    const PT = makeFsTools({ fsp, pathMod: path, root: ROOT, pathTrust: guard, limits: { writeBytes: 64, readReturn: 1000 } });
+    const ctx = { agentId: 'project-agent', projectRoot: project };
+    A.eq((await PT.readTool.run({ path: 'incident.log' }, ctx)).content, 'PROJECT_LOG', 'project-scoped fs.read resolves a relative path at projectRoot');
+    await PT.writeTool.run({ path: 'fix.txt', content: 'PROJECT_FIX' }, ctx);
+    A.eq(await fsp.readFile(path.join(project, 'fix.txt'), 'utf8'), 'PROJECT_FIX', 'project-scoped fs.write lands in projectRoot');
+    A.ok(!fs.existsSync(path.join(ROOT, 'project-agent', 'fix.txt')), 'project write does not silently land in the private workspace');
+    A.ok(guarded.some(x => x.scope === 'read') && guarded.some(x => x.scope === 'write'), 'project-relative reads and writes still pass through path trust');
+    await rejects(PT.readTool.run({ path: '../outside.txt' }, ctx), 'project-relative traversal remains illegal');
+    const unscoped = await PT._internals.resolveInside('project-agent', 'plain.txt', { scope: 'read', ctx: { agentId: 'project-agent' } });
+    A.ok(unscoped.abs.indexOf(path.join(ROOT, 'project-agent')) === 0, 'an unscoped session keeps the historic private-workspace root');
+    try { fs.rmSync(project, { recursive: true, force: true }); } catch (_) {}
+  }
+
   // ---- fs.append: creates then adds without clobbering; respects the combined-size cap ----
   {
     const ctx = { agentId: 'ag2' };

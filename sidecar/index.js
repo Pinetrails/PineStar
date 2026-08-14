@@ -13623,6 +13623,10 @@ async function runOnce(o) {
     hooks: hookSpine,
     cwd: WORKSPACES,
     projectCwd: o.workdir || null,
+    // A normal project-scoped session carries its still-blessed root separately from scheduled workdir. Native
+    // fs.* uses it as the relative base (while re-running path trust per target), and shell.* uses it as the
+    // run-scoped default cwd. Unblessed roots were erased by handleRun before runOnce, so this is host-minted.
+    projectRoot: o.projectRoot || null,
     // PRECISE CHECKPOINT ROOT. fs.* invokes this after path-trust has resolved the actual base but before bytes
     // change; shell/verify invoke it after their real cwd is resolved but before spawning. This closes the gap
     // where the generic host hook always snapshotted WORKSPACES/<agentId> even while the tool mutated a blessed
