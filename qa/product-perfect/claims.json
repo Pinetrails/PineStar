@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "6c34063931e554cd5b91edfe28bdf0a3f479d6f8",
+    "sourceCommit": "e1b6e0d7caf8ba9c0747de3c5e09a935cb3222bb",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -148,8 +148,8 @@
       },
       {
         "path": "frontend/app/classicons.js",
-        "bytes": 54770,
-        "sha256": "31c0d64e9b366b7ebc514b543bee94b70301363114cf522042358950b0db7058"
+        "bytes": 57021,
+        "sha256": "a3235c85f893f2fa2d89db7368ec9b5ceff70ecf492ce3ade37a251d2b5775a5"
       },
       {
         "path": "frontend/app/classify.js",
@@ -973,8 +973,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 367922,
-        "sha256": "a8116339512eb12fc952fab13fc7be5d901e24b654f0c78a121c39955c2df883"
+        "bytes": 368238,
+        "sha256": "0a537a0176d37e72d00cfcfd240ce544e4a516be42e2ddeba6b97d4d4d52989c"
       },
       {
         "path": "frontend/css/asciifx.css",
