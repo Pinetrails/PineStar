@@ -1527,22 +1527,34 @@ const WorldModel = (() => {
       emit([]);
       return { ok: true, count: next.length };
     }
-    function agentRoomId(agentId) {   // the room the agent's BAY sits in — the capability-isolation seam
+    /* The agent's CAPABILITY room — the capability-isolation seam. REMOTE-BAY RULING (2026-08-14, Andrew):
+       a bay is a REMOTE TRIGGER, placeable anywhere on the station — it fires the run and the crate physics,
+       but the agent's toolbox lives where its DESK is. So: still gated on OWNING a bay (a bayless agent keeps
+       its legacy scope — hero station-wide, summoned worker lead-conferred), but the room resolved is the
+       agent's own SEAT_WORKSTATIONS desk room first, falling back to the bay's room only when the agent has
+       no desk (a desk-less bay behaves byte-for-byte as before). */
+    function agentRoomId(agentId) {
       const bay = doc.props.find(p => p.t === 'bay' && p.agentId === agentId);
-      return bay ? roomAt(bay.x, bay.y) : null;
+      if (!bay) return null;
+      const desk = doc.props.find(p => SEAT_WORKSTATIONS[p.t] && p.agentId === agentId);
+      if (desk) { const r = roomAt(desk.x, desk.y); if (r) return r; }
+      return roomAt(bay.x, bay.y);
     }
-    // Phase B5: the capability objectTypes (CAP_REGISTRY) granted by the cap-props sharing the agent's BAY room —
-    // exactly what the sidecar feeds resolveTools, so each bay's tools are what you placed in its room. Deduped.
+    // Phase B5: the capability objectTypes (CAP_REGISTRY) granted by the cap-props sharing the agent's
+    // CAPABILITY room (agentRoomId — desk room first, bay room as fallback; see the remote-bay ruling above) —
+    // exactly what the sidecar feeds resolveTools, so each agent's tools are what you placed in its room. Deduped.
     // PER-AGENT PC (the true rule): COMPUTE is granted by a computer prop DEDICATED to this agent — one BOUND to
-    // it (agentId match), or (back-compat) an UNBOUND computer when the room holds a single bound bay. So a SHARED
+    // it (agentId match), or (back-compat) an UNBOUND computer when the room holds a single agent. So a SHARED
     // room (3-4 agents passing work) demands a distinct PC per agent, while a solo room still runs unbound. Every
     // OTHER cap (cabinet/dish/notebook/connector) stays room-based — a shared room's files/web/memory are shared.
     function bayObjects(agentId) {
-      const bay = doc.props.find(p => p.t === 'bay' && p.agentId === agentId);
-      const room = bay ? roomAt(bay.x, bay.y) : null;
+      const room = agentRoomId(agentId);
       if (!room) return [];
-      const boundBays = doc.props.filter(p => p.t === 'bay' && p.agentId && roomAt(p.x, p.y) === room).length;
-      const soloRoom = boundBays <= 1;   // one bay in the room -> an unbound PC is unambiguously this agent's
+      // solo = ONE agent resolves its capability room here (remote bays mean the occupant census must count
+      // agents by their CAPABILITY room, not by which room their bay prop happens to stand in)
+      const owners = {};
+      for (const p of doc.props) if (p.t === 'bay' && p.agentId && agentRoomId(p.agentId) === room) owners[p.agentId] = true;
+      const soloRoom = Object.keys(owners).length <= 1;   // one agent in the room -> an unbound PC is unambiguously this agent's
       const seen = {}, out = [];
       for (const p of doc.props) {
         const cap = CAP_PROP_MAP[p.t];
