@@ -2382,6 +2382,46 @@ const StationBake = (() => {
      "lets perfect the corners on the bottom"). A constant-width band is what reads as a turn. */
   const cornerCapFar = (kind, capW, capH) => (kind === 'tl' || kind === 'tr') ? capH : capW;
 
+  /* ---------- THE NEARER WALL OWNS THE VOID IT STANDS IN (2026-08-13) ----------
+     Where two footprints sit a tile or two apart, BOTH of them extrude into the sliver between: a
+     corner's shell hangs `pad` past its own tile, and the room to the SOUTH stands its tall north
+     face up into the very same pixels. Every straight wall is painted before every chamfer, so the
+     corner — which is the FARTHER of the two — was flattening the nearer wall's face under a bright
+     crown bar that then stopped dead at the deck. Andrew circled exactly that: "the wall texture as
+     it curves doesnt connect to the next wall ... it just continues on and gets cut off", and
+     circled it a second time one room over, because that room has the shape on BOTH sides.
+
+     This is the depth law the chamfer/chamfer paint order already follows (2026-08-11: "south paints
+     last, same as prop y-sort"), extended to the case it never covered — a corner against a STRAIGHT
+     wall. Nothing is left unpainted by the clip: the nearer wall has already drawn those rows in
+     full, which is precisely why it may keep them.
+
+     `nearerNorthTop` answers, for a tile column, the first bake row owned by a tall north face SOUTH
+     of row `ccy` — Infinity when there is none, which is the overwhelmingly common case and costs
+     one Map miss. */
+  let extNByCol = null;
+  const northClaimTop = (tx, ty) => {
+    const z = G.zoneGrid[G.idx(tx, ty)];
+    const up = Math.max(0, Math.round(G.isCorridor(z) ? WALL.corUp : WALL.up));
+    // up === 0 is the legacy short-wall branch: it stands nothing up, it only caps the seam.
+    if (up <= 0) return ty * T - (G.isCorridor(z) ? 2 : 4);
+    return ty * T - up - Math.max(2, Math.round(WALL.capH)) - 2;   // the dark hull lip above the crown
+  };
+  function nearerNorthTop(tx, ccy) {
+    if (!extNByCol) {
+      extNByCol = new Map();
+      for (const k of extN) {
+        const i = k.indexOf(','), x = +k.slice(0, i), y = +k.slice(i + 1);
+        const a = extNByCol.get(x); if (a) a.push(y); else extNByCol.set(x, [y]);
+      }
+      for (const a of extNByCol.values()) a.sort((p, q) => p - q);
+    }
+    const a = extNByCol.get(tx);
+    if (!a) return Infinity;
+    for (const ty of a) if (ty > ccy) return northClaimTop(tx, ty);
+    return Infinity;
+  }
+
   /* THE CORNER'S SHARE OF THE CROWN RING. On the straights the wall's lit top surface is a rect;
      around a chamfer it is the band just inside the station's own outline, and without it the ring
      broke at all four corners — which is exactly the "cuts off as if there's only a back wall"
@@ -2486,16 +2526,29 @@ const StationBake = (() => {
     const xLo = outX < 0 ? Math.round(ax - HR) : X, xHi = outX < 0 ? X + T : Math.round(ax + HR);
     const yLo = outY < 0 ? Math.round(cy - HR) : Y, yHi = outY < 0 ? Y + T : Math.round(cy + HR);
     const lit = U.shade(pal.cap, 0.30), seam = U.shade(pal.cap, -0.45);
+    const ccy = Math.round(Y / T);
     const put = (x, y, w, h, c) => {
       const x0 = Math.max(xLo, x), x1 = Math.min(xHi, x + w);
       const y0 = Math.max(yLo, y), y1 = Math.min(yHi, y + h);
       if (x1 <= x0 || y1 <= y0) return;
-      b.fillStyle = c; b.fillRect(x0, y0, x1 - x0, y1 - y0);
-      // the ring's crown tones join the straights' in the ambient cut — a corner that stayed
-      // under full ambient beside a lifted straight would be the same inversion, just localised.
-      if (c === pal.cap || c === lit) crownRects.push([x0, y0, x1 - x0, y1 - y0]);
-      if (!record) return;
-      for (let ix = x0; ix < x1; ix++) { const p = record.get(ix); if (p === undefined || y0 < p) record.set(ix, y0); }
+      /* A NEARER WALL OWNS THE VOID IT STANDS IN — see nearerNorthTop. Columns sharing a limit are
+         filled as one rect, so the common case (nothing standing south of this corner) is the single
+         fillRect it always was, and crownRects/record only ever record pixels actually painted —
+         a mask that disagrees with the painter is the leaked-ambient class of bug. */
+      for (let cx0 = x0; cx0 < x1; ) {
+        const lim = nearerNorthTop(Math.floor(cx0 / T), ccy);
+        let cx1 = cx0 + 1;
+        while (cx1 < x1 && nearerNorthTop(Math.floor(cx1 / T), ccy) === lim) cx1++;
+        const yEnd = Math.min(y1, lim);
+        if (yEnd > y0) {
+          b.fillStyle = c; b.fillRect(cx0, y0, cx1 - cx0, yEnd - y0);
+          // the ring's crown tones join the straights' in the ambient cut — a corner that stayed
+          // under full ambient beside a lifted straight would be the same inversion, just localised.
+          if (c === pal.cap || c === lit) crownRects.push([cx0, y0, cx1 - cx0, yEnd - y0]);
+          if (record) for (let ix = cx0; ix < cx1; ix++) { const p = record.get(ix); if (p === undefined || y0 < p) record.set(ix, y0); }
+        }
+        cx0 = cx1;
+      }
     };
     /* the 45° split between the two duals — where the profile's own reach equals the distance along
        it, i.e. rad·2^(-1/n). At n = 2 that is the circle's HR/√2, written verbatim; at n = 1 (the
@@ -3803,6 +3856,7 @@ const StationBake = (() => {
     VX = viewport ? viewport.x : 0; VY = viewport ? viewport.y : 0;
     CW = viewport ? viewport.w : W; CH = viewport ? viewport.h : H;
     lampPos = []; chamferAt = {}; extN = new Set();
+    extNByCol = null;   // ...and the tall-north-face column index the corner ring's depth clip reads
     for (const [cx, cy, k] of geo.chamfers) chamferAt[cx + ',' + cy] = k;
     buildEdges();
     return true;
