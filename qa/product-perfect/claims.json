@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "1baccfe86f3605f3e936242a37e4b78815ab8b54",
+    "sourceCommit": "3688b156d94dd8ce780e66810d259dd484c163ca",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 344997,
-        "sha256": "239ff1ca0170474204415160418d4c3f93200d1a4f07abc1ba917502e1b46927"
+        "bytes": 345169,
+        "sha256": "21f5959d67fc0529652c84755d494c6f89271059d4bdead1970447f3dab1e8dd"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -743,8 +743,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 619025,
-        "sha256": "5c10f03da1b04eecb18e5f3655490794775b3d3dec2bdba7d7406aecee4e7c7d"
+        "bytes": 618875,
+        "sha256": "67a2eb5bcfea72185b479383dd0dd915c5cb3768d07b737c93f3600e89ac7db8"
       },
       {
         "path": "frontend/app/study.js",
@@ -1043,8 +1043,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 76309,
-        "sha256": "02dc348d0cc9cd522e338ae1595d41316f2e661db2947b9529455af4bb613222"
+        "bytes": 76258,
+        "sha256": "76fa2cfa7d3e5527e09b33f4e153cf42f109ba17bb0f6fd6eca22f889b913f02"
       },
       {
         "path": "frontend/js/arcade.js",
