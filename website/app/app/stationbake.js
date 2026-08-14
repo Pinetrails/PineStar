@@ -3702,7 +3702,24 @@ const StationBake = (() => {
          into whichever straight wall it meets instead of stepping. */
       const Rc = T;                                  // THE chamfer radius — every layer uses this one
       const sgnX = A.cx ? -1 : 1, sgnY = A.cy ? -1 : 1;
-      const fill = (x, y, w, h, c) => { if (w > 0 && h > 0) { b.fillStyle = c; b.fillRect(x, y, w, h); } };
+      /* A NEARER WALL OWNS THE VOID IT STANDS IN — the same law bakeCornerCrown's `put` follows, and
+         the corner ART needs it too. A room's tall north face rises `up + capH + 2` = 28px, MORE than
+         the 24px a two-tile alley gives it, so it reaches up into the tile of the room behind. When
+         that tile is a chamfer, this pass painted its deck cut, face band and foot straight over the
+         nearer wall's crown — a dark diagonal bite out of the one bright line that says the wall has
+         height. Measured: dropping the chamfer restored the crown ladder exactly. South is nearer, so
+         south keeps those rows. `clamp` routes through here, so this covers the whole pass. */
+      const fill = (x, y, w, h, c) => {
+        if (w <= 0 || h <= 0) return;
+        for (let cx0 = x; cx0 < x + w; ) {
+          const lim = nearerNorthTop(Math.floor(cx0 / T), ccy);
+          let cx1 = cx0 + 1;
+          while (cx1 < x + w && nearerNorthTop(Math.floor(cx1 / T), ccy) === lim) cx1++;
+          const yEnd = Math.min(y + h, lim);
+          if (yEnd > y) { b.fillStyle = c; b.fillRect(cx0, y, cx1 - cx0, yEnd - y); }
+          cx0 = cx1;
+        }
+      };
       const outerBand = U.shade(cPal.base, -0.62);   // the same contact-seam tone the straight walls use
       /* THE CORNER CARRIES THE MATERIAL ROUND THE CURVE (2026-08-05, Andrew on a zoomed room corner:
          "notice how it cuts off ... we fixed this for the outer shell now lets do it for the walls").

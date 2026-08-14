@@ -131,7 +131,15 @@ const PROBE = `(() => {
         const sameRoom = !voidAt(nx, ny) && geo.zoneGrid[geo.idx(nx, ny)] === own;
         return { side, at: nx + ',' + ny, sameRoom, exterior: sameRoom && voidAt(nx + vx, ny + vy) };
       });
-      return { kind, at: cx + ',' + cy, zone: own, arms, orphan: arms.filter(a => a.sameRoom && !a.exterior).map(a => a.side) };
+      /* An interior arm is only HALF the condition. The orphan tail is the row dual's t <= 0 branch,
+         and that branch only exists when the arc's centre is LIFTED above the corner point — which
+         cornerArcCy does for tl/tr ONLY. On a bottom corner cy === ay, so t = py + 0.5 - ay is never
+         <= 0 and there is no straight tail to leave hanging. Reporting bl/br as orphans sent me
+         hunting a defect that cannot occur there.
+         (No backticks in this comment: it lives inside the PROBE template literal.) */
+      const lifted = kind === 'tl' || kind === 'tr';
+      const interior = arms.filter(a => a.sameRoom && !a.exterior).map(a => a.side);
+      return { kind, at: cx + ',' + cy, zone: own, arms, interiorArms: interior, orphan: lifted ? interior : [] };
     });
   }
   out.whole = lit.c.toDataURL('image/png').split(',')[1];
