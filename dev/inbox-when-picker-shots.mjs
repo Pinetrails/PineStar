@@ -251,6 +251,34 @@ async function main() {
     if (report.row.title !== 'cron 0 9 * * 2') fails.push('the raw expression is not preserved on hover (title: ' + JSON.stringify(report.row.title) + ')');
     report.shotRow = (await capture(cdp, OUT, 'inbox-routine-row')).path;
 
+    /* ---- 4c. DIAGNOSTIC (report-only): does the TRIGGERS list distinguish a routine that runs the whole
+       LINE from one that only answers at its dock? `runsLine` is the durable opt-in only this card sets
+       (index.js:4356 — absent ⇒ lineId null ⇒ the chain never advances), so a routine made in AUTOMATION
+       against the same agent is TERMINAL. Post one and read the list back. ---- */
+    await evalJS(cdp, `fetch('/api/cron', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'MADE IN AUTOMATION — terminal', prompt: 'check the feeds', schedule: 'every 1h', agentId: ${JSON.stringify(built.entry)} }) }).then(r => r.text())`);
+    await evalJS(cdp, `(() => {
+      document.querySelectorAll('.refit-flow-card').forEach(n => n.remove());
+      Build.openAssign(${JSON.stringify(built.inbox)});
+      document.querySelector('.refit-flow-card #trg-new').click();   // re-open the form for the FIT checks below
+      return true;
+    })()`);
+    await sleep(1400);
+    report.mixedList = JSON.parse(await evalJS(cdp, `JSON.stringify({
+      rows: [...document.querySelectorAll('#trg-routines .trg-row')].map(r => r.textContent.replace(/\\s+/g, ' ').trim()),
+      server: null })`));
+    report.mixedList.server = JSON.parse(await evalJS(cdp, `fetch('/api/cron').then(r => r.json()).then(j => JSON.stringify(
+      (j.jobs || []).map(x => ({ name: x.name, runsLine: x.runsLine === true }))))`));
+    console.log('MIXED TRIGGER LIST:', JSON.stringify(report.mixedList, null, 2));
+    /* REPORT-ONLY FINDING (2026-08-14, proven here): the server hands us `runsLine` per job, and the two
+       rows render IDENTICALLY under a heading that reads "TRIGGERS — WHY THIS LINE RUNS". A routine made
+       in AUTOMATION against the same dock is TERMINAL (index.js:4356 — no runsLine ⇒ lineId null ⇒
+       chainNext refuses to advance), so the card presents a dock-only job as a line trigger. Left as a
+       measurement, not an assertion, until Andrew rules on how to say it. */
+    report.runsLineTruth = report.mixedList.server.map(j => j.name + ' → runsLine ' + j.runsLine);
+    console.log('SERVER TRUTH PER JOB:', JSON.stringify(report.runsLineTruth));
+    console.log('ROWS AS RENDERED  :', JSON.stringify(report.mixedList.rows));
+
     /* ---- 5. the old preset vocabulary is still reachable (ON A TIMER) ---- */
     const timer = await evalJS(cdp, `(() => {
       const g = document.querySelector('.refit-flow-card');
