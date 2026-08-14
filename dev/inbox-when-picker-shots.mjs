@@ -1,0 +1,290 @@
+#!/usr/bin/env node
+/* dev/inbox-when-picker-shots.mjs — LIVE proof that the INBOX card's trigger zone speaks the SAME
+ * schedule vocabulary as the AUTOMATION window (frontend/app/schedpicker.js).
+ *
+ * Before this lane the INBOX card asked for the schedule as three preset buttons + a free-text cron
+ * field, so "every Tuesday at 9am" — which sidecar/cron.js has always parsed — was unreachable from
+ * the place a beginner actually wires a line.
+ *
+ * Boots a seeded sidecar from THIS worktree against a LOCAL MOCK OpenRouter (zero spend), drives the
+ * REAL app over CDP, stamps + crews a RESEARCH LINE, opens the INBOX flow card and proves, by
+ * click only (never by typing a schedule):
+ *   1. the picker is mounted and seeds a real schedule with a SERVER-computed next-fire preview;
+ *   2. CERTAIN DAYS · Tue · 9:00 AM types `0 9 * * 2` into the same #trg-sched the form always posted;
+ *   3. CUSTOM reveals that exact string (the graduation path, not a fallback);
+ *   4. CREATE ROUTINE persists it — GET /api/cron carries `cron 0 9 * * 2`, this line's dock, runsLine;
+ *   5. ON A TIMER still writes an interval (the old preset vocabulary is not lost).
+ *
+ *   node dev/inbox-when-picker-shots.mjs      (ports: SKYNET_SHOT_PORT / SKYNET_CDP_PORT)
+ */
+import { mkdtempSync, mkdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import http from 'node:http';
+import { launchChrome, connectCDP, evalJS, capture, sleep, collectDiagnostics } from '../scripts/lib/cdp.mjs';
+import { materializeSeedWorkspace, bootSeededSidecar, waitUp, waitDevReady } from '../scripts/lib/seed.mjs';
+
+const PORT = process.env.SKYNET_SHOT_PORT || '9486';
+const CDP_PORT = Number(process.env.SKYNET_CDP_PORT || 9487);
+const URL = `http://127.0.0.1:${PORT}/`;
+const OUT = process.env.SKYNET_SHOT_OUT || join(process.cwd(), 'dev', '.shots-inbox-when');
+const MODEL = 'test/model';
+
+function startMock() {
+  return new Promise(resolve => {
+    const server = http.createServer((req, res) => {
+      if (req.url.indexOf('/models') >= 0) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ data: [{ id: MODEL, context_length: 32000, pricing: { prompt: '0', completion: '0' }, supported_parameters: ['tools'] }] }));
+        return;
+      }
+      res.writeHead(404); res.end('{}');
+    });
+    server.listen(0, '127.0.0.1', () => resolve({ server, base: 'http://127.0.0.1:' + server.address().port + '/api/v1' }));
+  });
+}
+
+async function main() {
+  const mock = await startMock();
+  const scratch = mkdtempSync(join(tmpdir(), 'inboxwhen-'));
+  materializeSeedWorkspace(join(scratch, 'ws'), MODEL);
+  const side = bootSeededSidecar({
+    port: PORT, model: MODEL, key: 'sk-or-v1-inbox-when-mock', scratchDir: join(scratch, 'ws'),
+    env: { SKYNET_OPENROUTER_BASE: mock.base, STARNET_OPENROUTER_BASE: mock.base }
+  });
+  let chrome = null, cdp = null;
+  const report = {};
+  const fails = [];
+  try {
+    if (!(await waitUp(URL))) throw new Error('sidecar never came up on ' + URL);
+    chrome = launchChrome({ cdpPort: CDP_PORT, win: '1560,1060', profileDir: join(scratch, 'chrome') });
+    await sleep(1200);
+    cdp = await connectCDP(CDP_PORT);
+    await cdp.send('Runtime.enable');
+    const diag = collectDiagnostics(cdp);
+    await evalJS(cdp, `location.href = ${JSON.stringify(URL)}`);
+    if (!(await waitDevReady(cdp, evalJS, { url: URL }))) throw new Error('app never reached the game screen');
+    await sleep(1800);
+    mkdirSync(OUT, { recursive: true });
+
+    /* ---- 1. stamp a RESEARCH LINE and crew its entry dock ---- */
+    const built = await evalJS(cdp, `(() => {
+      if (!Build.isOpen()) Build.open();
+      const card = document.querySelector('.refit-firstrun');
+      if (card) { const go = card.querySelector('#refit-guide-go'); if (go) go.click(); }
+      const st = Build.__test__.station();
+      for (const b of st.belts()) st.removeBelt(b.x, b.y);
+      const WF = { intake:1, bay:1, outbox:1, filter:1, splitter:1, merger:1 };
+      for (const p of st.props().slice()) if (WF[p.t]) st.removeProp(p.id);
+      const bnd = st.bounds();
+      let spot = null;
+      for (let ty = bnd.minTy - 2; ty <= bnd.maxTy + 2 && !spot; ty++)
+        for (let tx = bnd.minTx - 2; tx <= bnd.maxTx + 2 && !spot; tx++)
+          if (st.canPlaceBlueprint('research_line', tx, ty).ok) spot = { tx, ty };
+      if (!spot) return { err: 'no-spot' };
+      const res = st.stampBlueprint('research_line', spot.tx, spot.ty);
+      if (!res || !res.ok) return { err: 'stamp-failed' };
+      const ok = document.querySelector('.tut-coach-ok'); if (ok) ok.click();
+      const bays = st.props().filter(p => p.t === 'bay').sort((a, b) => a.x - b.x);
+      const r1 = st.assignPropAgent(bays[0].id, 'agent');
+      return { spot, entry: r1 && r1.agentId, inbox: (st.props().find(p => p.t === 'intake') || {}).id };
+    })()`);
+    console.log('STAMP+CREW:', JSON.stringify(built));
+    if (!built || built.err || !built.inbox || !built.entry) throw new Error('setup failed: ' + JSON.stringify(built));
+    report.setup = built;
+
+    /* ---- 2. open the INBOX card and the create form ---- */
+    const opened = await evalJS(cdp, `(() => {
+      document.querySelectorAll('.refit-flow-card,.refit-step-card').forEach(n => n.remove());
+      Build.openAssign(${JSON.stringify(built.inbox)});
+      const g = document.querySelector('.refit-flow-card');
+      if (!g) return { err: 'no flow card' };
+      const newBtn = g.querySelector('#trg-new');
+      newBtn.click();
+      const form = g.querySelector('#trg-form');
+      return {
+        intakeClass: g.className,
+        formOpen: form.style.display !== 'none',
+        newBtnHidden: newBtn.style.display === 'none',
+        ariaExpanded: newBtn.getAttribute('aria-expanded'),
+        modes: [...g.querySelectorAll('.sp-mode')].map(b => b.textContent.trim()),
+        seeded: (g.querySelector('#trg-sched') || {}).value
+      };
+    })()`);
+    console.log('CARD OPEN:', JSON.stringify(opened));
+    report.open = opened;
+    if (opened.err) throw new Error(opened.err);
+    if (opened.modes.length !== 6) fails.push('the WHEN picker did not mount on the INBOX card (cadence keys: ' + JSON.stringify(opened.modes) + ')');
+    if (opened.seeded !== '0 9 * * *') fails.push('the picker did not seed a default schedule into #trg-sched (got ' + JSON.stringify(opened.seeded) + ')');
+    if (!opened.formOpen || !opened.newBtnHidden) fails.push('the ⊕ button did not hand off to the form (open=' + opened.formOpen + ' btnHidden=' + opened.newBtnHidden + ')');
+
+    // the preview is the SERVER's answer to "when" (debounced 300ms + a round trip) — poll for it
+    const waitPreview = async () => {
+      let t = '';
+      for (let i = 0; i < 25; i++) {
+        t = (await evalJS(cdp, `document.querySelector('#trg-preview').textContent.trim()`)) || '';
+        if (t) return t;
+        await sleep(200);
+      }
+      return t;
+    };
+    report.seedPreview = await waitPreview();
+    console.log('SEED PREVIEW:', report.seedPreview);
+    if (!/next:/.test(report.seedPreview || '')) fails.push('no server-computed next-fire for the seeded default (preview: ' + JSON.stringify(report.seedPreview) + ')');
+
+    /* ---- 3. CLICK-ONLY: certain days · Tuesday · 9:00 AM ---- */
+    const weekly = await evalJS(cdp, `(() => {
+      const g = document.querySelector('.refit-flow-card');
+      const modeBtn = [...g.querySelectorAll('.sp-mode')].find(b => b.dataset.mode === 'weekly');
+      modeBtn.click();
+      // clear whatever weekday the picker seeded (today), then pick Tuesday only
+      [...g.querySelectorAll('.sp-day')].forEach(b => { if (b.classList.contains('on')) b.click(); });
+      g.querySelector('.sp-day[data-day="2"]').click();
+      const set = (f, v) => { const el = g.querySelector('[data-f="' + f + '"]'); el.value = v; el.dispatchEvent(new Event('change', { bubbles: true })); };
+      set('hour', '9'); set('minute', '0'); set('ampm', 'AM');
+      return { sched: g.querySelector('#trg-sched').value, note: (g.querySelector('[data-sp-note]') || {}).textContent };
+    })()`);
+    console.log('WEEKLY:', JSON.stringify(weekly));
+    report.weekly = weekly;
+    if (weekly.sched !== '0 9 * * 2') fails.push('CERTAIN DAYS · Tue · 9:00 AM wrote ' + JSON.stringify(weekly.sched) + ', expected "0 9 * * 2"');
+
+    report.weeklyPreview = await waitPreview();
+    console.log('WEEKLY PREVIEW:', report.weeklyPreview);
+    if (!/next:/.test(report.weeklyPreview || '')) fails.push('no server-computed next-fire for the weekly pick');
+
+    // CUSTOM must REVEAL the same string (graduation, not fallback)
+    const custom = await evalJS(cdp, `(() => {
+      const g = document.querySelector('.refit-flow-card');
+      [...g.querySelectorAll('.sp-mode')].find(b => b.dataset.mode === 'advanced').click();
+      const inp = g.querySelector('#trg-sched');
+      return { visible: inp.offsetHeight > 0, value: inp.value };
+    })()`);
+    console.log('CUSTOM:', JSON.stringify(custom));
+    report.custom = custom;
+    if (!custom.visible || custom.value !== '0 9 * * 2') fails.push('CUSTOM did not reveal the built expression (' + JSON.stringify(custom) + ')');
+
+    report.shotPicker = (await capture(cdp, OUT, 'inbox-when-picker')).path;
+
+    /* ---- 4. create it, then read the SERVER back ---- */
+    const created = await evalJS(cdp, `(() => {
+      const g = document.querySelector('.refit-flow-card');
+      [...g.querySelectorAll('.sp-mode')].find(b => b.dataset.mode === 'weekly').click();
+      const p = g.querySelector('#trg-prompt');
+      p.value = 'summarize the week\\u2019s AI-policy news';
+      p.dispatchEvent(new Event('input', { bubbles: true }));
+      g.querySelector('#trg-create').click();
+      return { sched: g.querySelector('#trg-sched').value };
+    })()`);
+    console.log('CREATE CLICKED:', JSON.stringify(created));
+    await sleep(1600);
+    report.createMsg = await evalJS(cdp, `document.querySelector('#trg-msg').textContent.trim()`);
+    console.log('CREATE MSG:', report.createMsg);
+    report.shotCreated = (await capture(cdp, OUT, 'inbox-routine-created')).path;
+
+    const server = JSON.parse(await evalJS(cdp, `fetch('/api/cron').then(r => r.json()).then(j => JSON.stringify({
+      jobs: (j.jobs || []).map(x => ({ id: x.id, name: x.name, agentId: x.agentId, display: x.scheduleDisplay, enabled: x.enabled, runsLine: x.runsLine, next: x.nextRunAt })) }))`));
+    console.log('SERVER JOBS:', JSON.stringify(server, null, 2));
+    report.serverJobs = server.jobs;
+    const mine = (server.jobs || []).filter(j => /AI-policy/.test(j.name || ''));
+    if (mine.length !== 1) fails.push('expected exactly 1 persisted routine from this card, got ' + mine.length);
+    else {
+      const j = mine[0];
+      if (!/0 9 \* \* 2/.test(j.display || '')) fails.push('the persisted schedule is ' + JSON.stringify(j.display) + ', not the picked "0 9 * * 2"');
+      if (j.agentId !== built.entry) fails.push('the routine fires at ' + j.agentId + ', not this line\'s crewed dock ' + built.entry);
+      if (!j.runsLine) fails.push('the routine created on the INBOX card is not marked as this LINE\'s trigger (runsLine falsy)');
+      if (!j.next) fails.push('the server computed no next fire for the created routine');
+      report.persisted = j;
+    }
+
+    /* ---- 4b. the row states the cadence as a SENTENCE, with the raw expression one hover away ---- */
+    report.row = JSON.parse(await evalJS(cdp, `JSON.stringify((() => {
+      const r = document.querySelector('#trg-routines .trg-row');
+      if (!r) return { err: 'no routine row' };
+      const meta = r.querySelector('.trg-row-meta');
+      return { text: r.textContent.replace(/\\s+/g, ' ').trim(), title: (meta && meta.querySelector('[title]') || {}).title || '' };
+    })())`));
+    console.log('ROW:', JSON.stringify(report.row));
+    // the WHEN preview must still describe the schedule the picker still holds (a create clears the brief,
+    // not the cadence) — blanking it left the form looking unset while it was armed on the same cadence
+    report.previewAfterCreate = await evalJS(cdp, `document.querySelector('#trg-preview').textContent.trim()`);
+    console.log('PREVIEW AFTER CREATE:', report.previewAfterCreate);
+    if (!/next:/.test(report.previewAfterCreate || '')) fails.push('the WHEN preview went blank after CREATE while the picker still held that schedule');
+    if (!/every Tuesday at 9:00 AM/.test(report.row.text || '')) fails.push('the routine row does not state the cadence in words (' + JSON.stringify(report.row.text) + ')');
+    if (report.row.title !== 'cron 0 9 * * 2') fails.push('the raw expression is not preserved on hover (title: ' + JSON.stringify(report.row.title) + ')');
+    report.shotRow = (await capture(cdp, OUT, 'inbox-routine-row')).path;
+
+    /* ---- 5. the old preset vocabulary is still reachable (ON A TIMER) ---- */
+    const timer = await evalJS(cdp, `(() => {
+      const g = document.querySelector('.refit-flow-card');
+      [...g.querySelectorAll('.sp-mode')].find(b => b.dataset.mode === 'interval').click();
+      const el = g.querySelector('[data-f="every"]'); el.value = '30';
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      const u = g.querySelector('[data-f="unit"]'); u.value = 'm';
+      u.dispatchEvent(new Event('change', { bubbles: true }));
+      return g.querySelector('#trg-sched').value;
+    })()`);
+    console.log('TIMER:', JSON.stringify(timer));
+    report.timer = timer;
+    if (timer !== 'every 30m') fails.push('ON A TIMER · 30 minutes wrote ' + JSON.stringify(timer) + ', expected "every 30m"');
+
+    // the card must not spill out of the glass now that it carries a form
+    report.fit = JSON.parse(await evalJS(cdp, `JSON.stringify((() => {
+      const g = document.querySelector('.refit-flow-card'), c = g.querySelector('.refit-guide-card');
+      const gr = g.getBoundingClientRect(), cr = c.getBoundingClientRect();
+      return { cardH: Math.round(cr.height), glassH: Math.round(gr.height), top: Math.round(cr.top), bottom: Math.round(cr.bottom),
+               scrolls: c.scrollHeight > c.clientHeight + 1, width: Math.round(cr.width) };
+    })())`));
+    console.log('FIT:', JSON.stringify(report.fit));
+    if (report.fit.top < 0 || report.fit.bottom > report.fit.glassH + 1) fails.push('the INBOX card spills outside the REFIT glass (' + JSON.stringify(report.fit) + ')');
+
+    /* ---- 6. A SHORT WINDOW MUST SCROLL, NOT SWALLOW THE BUTTON. The card is the tallest in REFIT and
+       `.refit-guide` centres it in a fixed inset:0 layer, so before the max-height rule the CREATE ROUTINE
+       button fell off-screen on a laptop-height window with no way to reach it. */
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 900, height: 820, deviceScaleFactor: 1, mobile: false });
+    await sleep(900);
+    report.fitShort = JSON.parse(await evalJS(cdp, `JSON.stringify((() => {
+      const g = document.querySelector('.refit-flow-card'), c = g.querySelector('.refit-guide-card');
+      const gr = g.getBoundingClientRect(), cr = c.getBoundingClientRect();
+      const btn = c.querySelector('#trg-create').getBoundingClientRect();
+      c.scrollTop = c.scrollHeight;
+      const btnAfter = c.querySelector ? c.querySelector('#trg-create').getBoundingClientRect() : btn;
+      return { cardH: Math.round(cr.height), glassH: Math.round(gr.height), top: Math.round(cr.top), bottom: Math.round(cr.bottom),
+               scrolls: c.scrollHeight > c.clientHeight + 1,
+               createReachable: btnAfter.top >= gr.top - 1 && btnAfter.bottom <= gr.bottom + 1 };
+    })())`));
+    console.log('FIT (short window):', JSON.stringify(report.fitShort));
+    if (report.fitShort.bottom > report.fitShort.glassH + 1 || report.fitShort.top < -1) fails.push('on a short window the card still spills outside the glass (' + JSON.stringify(report.fitShort) + ')');
+    if (!report.fitShort.scrolls) fails.push('the card did not become scrollable on a short window — the max-height rule is not engaging');
+    if (!report.fitShort.createReachable) fails.push('CREATE ROUTINE cannot be scrolled into view on a short window');
+    report.shotShort = (await capture(cdp, OUT, 'inbox-card-short-window')).path;
+    // NEGATIVE CONTROL: lift the max-height on the SAME card at the SAME size — if the spill doesn't come
+    // back, the rule wasn't what fixed it and this proof is decoration.
+    report.fitShortNoRule = JSON.parse(await evalJS(cdp, `JSON.stringify((() => {
+      const g = document.querySelector('.refit-flow-card'), c = g.querySelector('.refit-guide-card');
+      c.style.maxHeight = 'none'; c.style.overflowY = 'visible';
+      const gr = g.getBoundingClientRect(), cr = c.getBoundingClientRect();
+      const ok = c.querySelector('#flow-ok').getBoundingClientRect();
+      const out = { cardH: Math.round(cr.height), top: Math.round(cr.top), bottom: Math.round(cr.bottom),
+                    glassH: Math.round(gr.height), gotItOffScreen: ok.bottom > gr.bottom + 1 };
+      c.style.maxHeight = ''; c.style.overflowY = '';
+      return out;
+    })())`));
+    console.log('FIT (short window, rule lifted):', JSON.stringify(report.fitShortNoRule));
+    if (report.fitShortNoRule.bottom <= report.fitShortNoRule.glassH + 1) fails.push('negative control failed: the card fits even without the max-height rule, so that rule is not carrying this fix');
+    await cdp.send('Emulation.clearDeviceMetricsOverride', {});
+
+    report.consoleErrors = diag.consoleMsgs.filter(m => m.level === 'error').slice(0, 10);
+    report.exceptions = diag.exceptions.slice(0, 10);
+    if (report.exceptions.length) fails.push('page exceptions: ' + JSON.stringify(report.exceptions));
+    console.log('\n===== REPORT =====\n' + JSON.stringify(report, null, 2));
+    if (fails.length) throw new Error('LIVE PROOF FAILED:\n  - ' + fails.join('\n  - '));
+    console.log('\nLIVE PROOF: PASS');
+  } finally {
+    try { if (cdp) cdp.close(); } catch {}
+    try { if (chrome) chrome.proc ? chrome.proc.kill() : chrome.kill(); } catch {}
+    try { side.kill(); } catch {}
+    try { mock.server.close(); } catch {}
+  }
+}
+
+main().then(() => process.exit(0), e => { console.error(String(e && e.stack || e)); process.exit(1); });
