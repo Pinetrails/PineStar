@@ -226,7 +226,7 @@
         return { c, r, ms: Math.max(0, (meta.clock ? meta.clock.now() : 0) - t0) };
       }));
       for (const s of settled) {
-        results.push({ callId: s.c.id, isError: !!s.r.isError, ok: !!s.r.ok, content: s.r.content, control: s.r.control || null, images: s.r.images || null, parkedPath: s.r.parkedPath || null });
+        results.push({ callId: s.c.id, isError: !!s.r.isError, ok: !!s.r.ok, content: s.r.content, summary: s.r.summary || (s.r.isError ? 'error' : 'ok'), control: s.r.control || null, images: s.r.images || null, parkedPath: s.r.parkedPath || null });
         if (meta.hiddenTools && meta.hiddenTools.has(s.c.name)) continue;
         emit('agent.tool_result', {
           agentId: meta.agentId, runId: meta.runId, callId: s.c.id, ok: !!s.r.ok,
@@ -238,7 +238,7 @@
 
     for (const c of calls) {
       if (finalControl) {
-        results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: the Task Brief paused for the Commander', control: null });
+        results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: the Task Brief paused for the Commander', summary: 'skipped', control: null });
         continue;
       }
       const hidden = meta.hiddenTools && meta.hiddenTools.has(c.name);
@@ -248,7 +248,7 @@
       // its paired result and telemetry, but no second network request executes after the proof landed.
       if (stopToolsControl) {
         const why = stopToolsControl.reason || 'terminal evidence already resolved this request';
-        results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: ' + why, control: null });
+        results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: ' + why, summary: 'skipped - terminal evidence', control: null });
         if (!hidden) emit('agent.tool_result', {
           agentId: meta.agentId, runId: meta.runId, callId: c.id, ok: false,
           ms: 0, summary: 'skipped — terminal evidence', isError: true
@@ -264,7 +264,7 @@
       }
       r = r || { ok: false, isError: true, content: 'tool returned nothing', summary: 'error' };
       const t1 = meta.clock ? meta.clock.now() : 0;
-      results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, control: r.control || null, images: r.images || null, parkedPath: r.parkedPath || null });
+      results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, summary: r.summary || (r.isError ? 'error' : 'ok'), control: r.control || null, images: r.images || null, parkedPath: r.parkedPath || null });
       if (r.control && r.control.final) finalControl = r.control;
       if (r.control && r.control.stopTools) stopToolsControl = r.control;
       if (!hidden) emit('agent.tool_result', {
@@ -442,7 +442,7 @@
   function terminalHumanDecision(result) {
     const text = String((result && result.content) || '');
     const summary = String((result && result.summary) || '');
-    return /Commander (?:explicitly )?(?:declined|denied|cancelled)|user-control denied|user denied|Do NOT retry|approval denied/i.test(text + '\n' + summary);
+    return /Commander (?:explicitly )?(?:declined|denied|cancelled)|user-control denied|user denied|Do NOT retry|approval denied|\bcapdenied\b/i.test(text + '\n' + summary);
   }
 
   async function runAgentLoop(o) {

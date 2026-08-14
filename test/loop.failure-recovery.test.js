@@ -87,6 +87,17 @@ async function run(turns, dispatch, limits) {
     A.eq(nudges.length, 0, 'explicit user denial is an irreducible terminal decision, not a recovery target');
   }
 
+  // A harness capability denial is also terminal: recovery may find another granted tool, but it may not
+  // pressure the model to route around the capability boundary that just refused the call.
+  {
+    const out = await run([
+      toolTurn('primary_tool', 'c1'), textTurn('That capability is not granted, so I stopped.')
+    ], async () => ({ ok: false, isError: true, content: 'Capability is not granted for this station.', summary: 'capdenied' }));
+    const nudges = out.messages.filter(m => m.role === 'system' && /<failure_recovery>/.test(String(m.content)));
+    A.eq(nudges.length, 0, 'capability denial stays a terminal safety boundary');
+    A.eq(out.res.reason, 'done', 'capability denial can be reported without a forced bypass attempt');
+  }
+
   // Operators/tests can disable this guard explicitly, matching the existing continuation-guard posture.
   {
     const out = await run([
