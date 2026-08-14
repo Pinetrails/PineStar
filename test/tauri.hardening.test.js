@@ -8,6 +8,8 @@ const root = path.resolve(__dirname, '..');
 const conf = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri', 'tauri.conf.json'), 'utf8'));
 const caps = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri', 'capabilities', 'default.json'), 'utf8'));
 const mainRs = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'main.rs'), 'utf8');
+const indexJs = fs.readFileSync(path.join(root, 'sidecar', 'index.js'), 'utf8');
+const browserJs = fs.readFileSync(path.join(root, 'sidecar', 'tools', 'builtin', 'browser.js'), 'utf8');
 
 const csp = String(conf.app && conf.app.security && conf.app.security.csp || '');
 A.ok(csp.length > 0 && csp !== 'null', 'Tauri CSP is configured');
@@ -24,7 +26,9 @@ A.ok(remoteUrls.length === 0 || (remoteUrls.length === 1 && remoteUrls[0] === 'h
 A.ok(remoteUrls.every(u => u.indexOf('localhost') < 0), 'remote capability does not trust localhost aliases');
 A.ok(remoteUrls.every(u => /\/api\/\*\*$/.test(u)), 'remote capability does not expose all loopback paths');
 A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_COMPUTER_DRIVER", "1"\)/.test(mainRs), 'desktop host enables the native driver; paired remote-owner authority still gates every call in the sidecar');
-A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_BROWSER_HEADLESS", "1"\)/.test(mainRs), 'every desktop sidecar launch pins controlled browsing headless');
+A.ok(!/fn sidecar_command[\s\S]*?\.env\("STARNET_BROWSER_HEADLESS", "1"\)/.test(mainRs), 'desktop sidecar does not globally disable the attended browser-login exception');
+A.ok(/runBrowser = makeBrowserTools\([\s\S]*?forceHeadless:\s*true[\s\S]*?syntheticInputOnly:\s*true[\s\S]*?attendedLogin:/.test(indexJs), 'ordinary desktop research stays headless and input-isolated while the watched login channel is wired separately');
+A.ok(/relaunch\(\{ headed: true, forceHeadless: false, headless: false, syntheticInputOnly: false \}\)/.test(browserJs), 'browser.login is the narrow human-consented exception that may open a real visible Chrome window');
 A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_USER_CONTROL_MODE", "preserve"\)/.test(mainRs), 'every desktop sidecar launch pins user-control preservation');
 A.ok(/fn sidecar_command[\s\S]*?\.env\("STARNET_MCP_STDIO", "0"\)/.test(mainRs), 'installed desktop refuses unsandboxed local MCP children');
 A.ok(/fn set_sidecar_branded_env[\s\S]*?strip_prefix\("SKYNET_"\)[\s\S]*?STARNET_\{suffix\}/.test(mainRs), 'desktop-owned sidecar values replace both brand aliases');

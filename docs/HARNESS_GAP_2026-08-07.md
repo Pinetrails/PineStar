@@ -8,8 +8,8 @@ work and thousands of newer Hermes commits changed both sides of the comparison.
 ## Executive verdict
 
 StarNet is no longer missing a Hermes-class core agent loop. Its tool surface, compaction and provider
-recovery, approvals, durable schedules, background delegation, local/Docker/SSH execution, browser login,
-skills authoring, checkpoints, and station recovery are credible peer capabilities. The remaining risk is
+recovery, approvals, durable schedules, background delegation, local/Docker/SSH execution, skills authoring,
+checkpoints, and station recovery are credible peer capabilities. The remaining risk is
 concentrated in **failure recovery, operability, extension lifecycle, and cross-surface continuity**.
 
 Do not claim “100% Hermes parity” for 0.10 until gates G0-G4 below are proven in the shipped application.
@@ -19,6 +19,71 @@ The later breadth list is not a reason to hold the release if StarNet says plain
 Parity here means that a normal user can complete the same class of work, survive the common failure modes,
 diagnose a failure without reading source, and recover without duplicate side effects or lost evidence. It
 does not mean copying every provider, chat adapter, research mode, or cloud sandbox Hermes exposes.
+
+### Cross-domain completion/refusal audit (2026-08-14)
+
+The attended-login defect exposed a broader prompt conflict, not a LinkedIn-specific integration problem.
+The main operating doctrine told an agent whose dedicated integration answered `not connected` to explain
+Settings and ask before trying a “louder” route. That instruction could hand work back on any platform even
+when a safe, already-authorized browser, request, shell, or other tool route was live. The repair candidate now
+requires automatic escalation through safe authorized alternatives; a question is permitted only when the next
+route itself needs Commander authentication, exact consent, or a genuinely material decision. Connection setup
+is reported only when it remains the final blocker after those alternatives are exhausted.
+
+Task admission had a second cross-domain brake: a selected model that the live catalog definitively marked as
+tool-less caused an immediate refusal before the configured fallback-model chain could run. Task runs now promote
+the first same-provider configured fallback that is not definitively tool-less, emit a `provider.fallback` receipt
+with reason `tool_support`, and proceed. A cold catalog remains fail-open. Admission refuses only when the primary
+and every configured fallback are definitively incapable of tool calling.
+
+The audit found no other default artificial completion ceiling on an ordinary capability-equipped task:
+per-run iteration, spend, delegated-worker, and concurrent-agent caps default to unlimited; long output is parked
+durably and can be read in focused ranges; context compacts and re-injects the active plan; transient model calls
+retry with backoff and configured failover; truncated answers continue; empty/announcement-only turns are nudged;
+failed tools receive bounded alternate-path recovery; and task classification defaults ambiguous user requests to
+tool-enabled work rather than tool-less chat.
+
+This is not a promise that every call executes. The remaining refusals are authority or reality boundaries, not
+fallback policy: an explicit denial/cancel/E-STOP; absent or disabled capability; missing authentication/MFA or no
+configured credential/provider; user-configured spend/turn/concurrency/hook limits; protected paths, secret access,
+SSRF or prompt-injection/taint floors; an external outage after retries/fallbacks; and an unattended run attempting
+an effect that requires a watched confirmation without a recorded per-routine grant. Ordinary local agent runs also
+do not receive arbitrary physical mouse/keyboard or general visible-desktop control. `browser.login` is the narrow
+attended visible-window exception for account authentication, and its dedicated profile can then be reused by
+headless work. Do not market “will never refuse”; the correct claim is “will exhaust safe, authorized alternatives
+and stop only at a specific, truthful human/authority/capability/external boundary.”
+
+### P0 attended browser-login release blocker (2026-08-13)
+
+**Status: RED for the soaked 0.10.0 candidate and every later candidate without an installed receipt.** The
+soaked Windows build globally set `STARNET_BROWSER_HEADLESS=1` on its sidecar. That made the advertised
+`browser.login` path refuse before it could open the visible sign-in window, then pushed the user toward a
+manually launched remote-debugging Chrome. Source-level browser-login mechanics and mock tests do not make that
+shipped behavior a peer capability.
+
+The repair candidate removes only the desktop-wide environment pin. Ordinary agent browsing remains explicitly
+headless and synthetic-input-only, arbitrary shell commands remain unable to open visible windows or inject input,
+and `browser.login` remains the narrow, two-consent attended exception on the persistent station profile.
+
+This row turns GREEN only when the exact installed Windows candidate passes the natural-language journey: ask
+StarNet to open LinkedIn for sign-in; approve the attended window; observe a normal visible browser at the requested
+LinkedIn URL without launching Chrome or supplying a debug port; sign in; click Done; prove headless agent work
+continues on that profile; restart the sidecar/desktop; and prove the authenticated profile is reused. The receipt
+must name the candidate SHA/version, installer digest, OS, profile path identity, consent events, headed-to-headless
+transition, restart, and observed authenticated result. Until that receipt exists, do not claim browser-login or
+LinkedIn account-session parity for 0.10.
+
+**Partial repair receipt (`agent/finish-line-browser` at `9868c9661`, 2026-08-13; remains RED):** the watched
+StarNet UI accepted the natural-language LinkedIn request, displayed the two-phase attended consent, and opened a
+responsive visible Chromium window titled `LinkedIn Login, Sign in | LinkedIn` at
+`https://www.linkedin.com/login/` on the dedicated `.browser-profile`; the user was never asked to launch Chrome
+or provide a debugging port. With no Done confirmation, the wait failed closed after 618.2 seconds, closed the
+headed browser, retained any cookies, and reported the login as unconfirmed. Therefore authenticated navigation
+and restart reuse were not claimed. Source evidence is `test:fast` 621/621, `test:http` 74/74 (including the real
+Chromium gauntlet 88 assertions), and `cargo check` green. A local Windows 0.10.1 NSIS bundle was produced with
+SHA-256 `3CBD5A39C740AD19ABA56E97BF69D1B6D2DBCB6336D78C9FA62EB5418F35F684`, but it is not an installed release
+receipt: release signing correctly stopped because the private updater/signing key was absent, and Authenticode
+reported `NotSigned`.
 
 ## 0.10 release-confidence gates
 
@@ -128,7 +193,7 @@ shipped-app claim before merge.
 - Session search, rename, pin, archive, delete, Markdown/JSON export, durable transcript, checkpoint/rewind,
   authorized project roots, and complete-station recovery bundles.
 - Persistent per-agent Docker environments, local/SSH routing, project discovery/grants, idle cleanup,
-  interactive PTY, browser-login mode, and non-deleting sync.
+  interactive PTY, and non-deleting sync. Attended browser-login is excluded pending the P0 installed receipt.
 - Skills creation/editing/curation, progressive loading, multi-file local packages, exact-byte risk gates, and
   staged single-document community install/update.
 - Major provider coverage through native Anthropic/Gemini/OpenAI/Codex and a broad OpenAI-compatible registry.

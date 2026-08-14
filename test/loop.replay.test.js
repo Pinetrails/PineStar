@@ -68,6 +68,23 @@ function chatFixture() {
     A.eq(provider.callCount(), 1, 'exactly one model call');
   }
 
+  // ---- preflight tool-support promotion: ordered lifecycle + effective model truth ----
+  {
+    const { seq, emit } = setup();
+    const provider = makeReplayProvider(chatFixture());
+    const res = await runAgentLoop({
+      messages: [{ role: 'user', content: 'do the task' }], provider, emit,
+      cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'tools/model', agentId: 'a', runId: 'promoted',
+      initialFallback: { fromModel: 'plain/chat', toModel: 'tools/model', reason: 'tool_support', rotate: false }
+    });
+    A.eq(names(seq).slice(0, 2), ['agent.run.start', 'provider.fallback'], 'preflight promotion is reported after run start');
+    const fb = seq[1].payload;
+    A.eq(fb.fromModel, 'plain/chat', 'promotion receipt names the incapable selected model');
+    A.eq(fb.toModel, 'tools/model', 'promotion receipt names the effective task model');
+    A.eq(fb.reason, 'tool_support', 'promotion receipt distinguishes capability routing from provider failure');
+    A.eq(res.model, 'tools/model', 'the loop and final receipt use the promoted model');
+  }
+
   // ---- determinism: byte-identical event stream across runs ----
   {
     const r1 = setup(); const p1 = makeReplayProvider(chatFixture());

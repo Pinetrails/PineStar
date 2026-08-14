@@ -1671,7 +1671,11 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         // agent runs remain synthetic/headless by policy in the sidecar.
         .env("STARNET_DESKTOP_SHELL", "1")
         .env("STARNET_COMPUTER_DRIVER", "1")
-        .env("STARNET_BROWSER_HEADLESS", "1")
+        // Do NOT pin STARNET_BROWSER_HEADLESS on the whole sidecar. runOnce gives ordinary
+        // model-driven browsing forceHeadless + syntheticInputOnly directly, while the watched
+        // browser.login tool is a separately consented, human-driven headed exception. A process-
+        // wide env pin disables that exception before its consent flow can run and leaves users
+        // with the unsafe/hostile "start Chrome with a debugging port" workaround.
         .env("STARNET_USER_CONTROL_MODE", "preserve")
         .env("STARNET_MCP_STDIO", "0")
         // The packaged build's true version — computeVersionSurface() reads this first, so

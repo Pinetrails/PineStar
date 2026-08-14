@@ -98,6 +98,7 @@ test/loop.parallel-tools.test.js
 test/loop.tool-images.test.js
 test/loop.turn-budget.test.js
 test/loop.provider-recovery.test.js
+test/loop.failure-recovery.test.js
 test/output-continuation.test.js
 test/compaction.test.js
 test/loopguard.test.js
@@ -158,6 +159,7 @@ test/boot-security.test.js
 test/sidecar-fixture.test.js
 test/sidecar.security.test.js
 test/tauri.hardening.test.js
+test/finish-line-doctrine.test.js
 test/manual.test.js
 test/permissions.test.js
 test/workshop-permissions.test.js
@@ -266,6 +268,8 @@ test/web.fetch-jina.test.js
 test/web.calm.test.js
 test/web.reach.test.js
 test/browser.test.js
+test/browser.desktop-login-journey.test.js
+test/browser.login-seed.test.js
 test/browser.reach-measure.test.js
 test/browser.tool-parity.test.js
 test/browser.wait-recovery.test.js

@@ -62,6 +62,29 @@
     return cleanChain(savedChain);                   // saved (incl. empty) is an explicit choice that wins
   }
 
+  // A task cannot make progress on a model the provider catalog definitively says has no tool calling.
+  // If the Commander already configured an ordered fallback chain, promote the first model that is not
+  // definitively tool-less instead of refusing the whole task at admission. `null`/unknown support remains
+  // eligible: a cold or stale catalog must never false-refuse a capable model. The original incapable model
+  // is deliberately not appended to the remaining chain—it cannot become more capable after a failover.
+  function promoteToolCapable(primary, chain, supportsTools) {
+    const current = String(primary == null ? '' : primary).trim();
+    const remaining = cleanChain(chain).filter(id => id !== current);
+    if (typeof supportsTools !== 'function') return { model: current, fallbacks: remaining, promoted: false };
+    let primarySupport = null;
+    try { primarySupport = supportsTools(current); } catch (_) { primarySupport = null; }
+    if (primarySupport !== false) return { model: current, fallbacks: remaining, promoted: false };
+    let pick = -1;
+    for (let i = 0; i < remaining.length; i++) {
+      let support = null;
+      try { support = supportsTools(remaining[i]); } catch (_) { support = null; }
+      if (support !== false) { pick = i; break; }
+    }
+    if (pick < 0) return { model: current, fallbacks: remaining, promoted: false };
+    const model = remaining.splice(pick, 1)[0];
+    return { model, fallbacks: remaining, promoted: true, fromModel: current };
+  }
+
   // strict parse of a POST /api/models/fallback body into the next persisted chain. Shapes:
   //   { models: ["a","b"] } -> SET that ordered chain (cleaned; present:true)
   //   { models: null } or { clear:true } or {} -> CLEAR the saved chain (present:false -> fall back to env)
@@ -86,5 +109,5 @@
     return { ok: true, present: true, chain: chain, warnings: warnings };
   }
 
-  return { MAX_ENTRIES, MAX_SLUG_LEN, cleanChain, parseEnvChain, resolveChain, validateChainPatch };
+  return { MAX_ENTRIES, MAX_SLUG_LEN, cleanChain, parseEnvChain, resolveChain, promoteToolCapable, validateChainPatch };
 });

@@ -226,7 +226,7 @@
         return { c, r, ms: Math.max(0, (meta.clock ? meta.clock.now() : 0) - t0) };
       }));
       for (const s of settled) {
-        results.push({ callId: s.c.id, isError: !!s.r.isError, ok: !!s.r.ok, content: s.r.content, control: s.r.control || null, images: s.r.images || null, parkedPath: s.r.parkedPath || null });
+        results.push({ callId: s.c.id, isError: !!s.r.isError, ok: !!s.r.ok, content: s.r.content, summary: s.r.summary || (s.r.isError ? 'error' : 'ok'), control: s.r.control || null, images: s.r.images || null, parkedPath: s.r.parkedPath || null });
         if (meta.hiddenTools && meta.hiddenTools.has(s.c.name)) continue;
         emit('agent.tool_result', {
           agentId: meta.agentId, runId: meta.runId, callId: s.c.id, ok: !!s.r.ok,
@@ -238,7 +238,7 @@
 
     for (const c of calls) {
       if (finalControl) {
-        results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: the Task Brief paused for the Commander', control: null });
+        results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: the Task Brief paused for the Commander', summary: 'skipped', control: null });
         continue;
       }
       const hidden = meta.hiddenTools && meta.hiddenTools.has(c.name);
@@ -248,7 +248,7 @@
       // its paired result and telemetry, but no second network request executes after the proof landed.
       if (stopToolsControl) {
         const why = stopToolsControl.reason || 'terminal evidence already resolved this request';
-        results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: ' + why, control: null });
+        results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: ' + why, summary: 'skipped - terminal evidence', control: null });
         if (!hidden) emit('agent.tool_result', {
           agentId: meta.agentId, runId: meta.runId, callId: c.id, ok: false,
           ms: 0, summary: 'skipped — terminal evidence', isError: true
@@ -264,7 +264,7 @@
       }
       r = r || { ok: false, isError: true, content: 'tool returned nothing', summary: 'error' };
       const t1 = meta.clock ? meta.clock.now() : 0;
-      results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, control: r.control || null, images: r.images || null, parkedPath: r.parkedPath || null });
+      results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, summary: r.summary || (r.isError ? 'error' : 'ok'), control: r.control || null, images: r.images || null, parkedPath: r.parkedPath || null });
       if (r.control && r.control.final) finalControl = r.control;
       if (r.control && r.control.stopTools) stopToolsControl = r.control;
       if (!hidden) emit('agent.tool_result', {
@@ -435,6 +435,17 @@
     return false;
   }
 
+  // A recovery ladder must never turn into a consent-bypass ladder. These are terminal human/host
+  // decisions, not technical failures the model should route around. Keep the classifier narrow and
+  // grounded in host-authored result wording; an ordinary "access denied" from a service is still a
+  // technical path failure and remains eligible for an alternate authorized approach.
+  function terminalHumanDecision(result) {
+    const text = String((result && result.content) || '');
+    const summary = String((result && result.summary) || '').trim();
+    if (/^(?:capdenied|denied|declined|cancelled)$/i.test(summary)) return true;
+    return /Commander (?:explicitly )?(?:declined|denied|cancelled)|user-control denied|user denied|Do NOT retry|approval denied/i.test(text);
+  }
+
   async function runAgentLoop(o) {
     const messages = o.messages;
     let provider = o.provider;
@@ -541,6 +552,14 @@
     //    instead of ending the run 'empty' on the first silence.
     let mkUsed = 0;
     let emptyNudgeUsed = false;
+    // FAILURE RECOVERY GUARD: the first failed tool must not become an immediate "you do the setup"
+    // final. A compact host-enforced ladder buys up to two materially-different attempts. The bound is
+    // deliberate: persistence must crawl toward completion without turning a real outage into infinite spend.
+    // Explicit Commander denial is excluded by terminalHumanDecision() above.
+    const _fr = limits.failureRecovery;
+    const FR_MAX = (_fr === false) ? 0 : (_fr && _fr.max != null ? Math.max(0, Math.floor(_fr.max)) : 2);
+    let frUsed = 0;
+    let failureRecoveryPending = null;
     // VERIFY-ON-STOP ledger: code paths this run has CHANGED but not since proven. Any successful verification
     // empties it. limits.verifyOnStop === false disables; { max } raises the nudge budget (default 1).
     /* OPTIONAL HOOK SPINE (sidecar/hooks.js). The Commander's own code, on the model-call boundary. Absent =
@@ -744,6 +763,15 @@
     }
 
     emit('agent.run.start', { agentId, runId, trigger, model });
+    // Admission may have promoted a Commander-configured fallback because the selected primary is definitively
+    // tool-less. Emit it after run.start so the UI receives a truthful, ordered lifecycle receipt even though no
+    // failed provider request was needed to discover the incompatibility.
+    if (o.initialFallback && o.initialFallback.fromModel && o.initialFallback.toModel) {
+      emit('provider.fallback', {
+        agentId, runId, fromModel: String(o.initialFallback.fromModel), toModel: String(o.initialFallback.toModel),
+        reason: String(o.initialFallback.reason || 'tool_support'), rotate: !!o.initialFallback.rotate
+      });
+    }
 
     while (true) {
       // (1) GUARDS — before any paid call
@@ -1052,6 +1080,20 @@
           messages.push({ role: 'system', content: '<continuation>Your last message only ANNOUNCED an action but you called no tools — ending your reply without tool calls ends the run with the work not done. Do not narrate intentions. If work remains, make the actual tool call(s) NOW in this same turn. If you promised future or multi-day work, create the appropriate durable routine/task now when that tool is available; otherwise say plainly that no background work was started. If the task is truly complete, give your final answer without announcing further actions.</continuation>' });
           continue;
         }
+        // FAILURE RECOVERY: a model saw a real tool error and is trying to end before attempting another
+        // authorized path. Reject that premature stop at the engine seam, not just in prompt prose. A later
+        // successful call clears the pending failure; a model that still cannot recover gets two chances and
+        // may then report the exact blocker honestly.
+        if (!empty && !graceUsed && failureRecoveryPending && frUsed < FR_MAX && tools.length > 0) {
+          frUsed++;
+          const failed = failureRecoveryPending.names.join(', ') || 'the previous tool';
+          const hasSearch = tools.some(t => wireKey(t && t.function && t.function.name) === 'tool_search');
+          const search = hasSearch
+            ? ' Use tool_search when a deferred capability or alternate tool may exist; do not claim a tool is absent before searching.'
+            : '';
+          messages.push({ role: 'system', content: '<failure_recovery>The previous path failed (' + failed + '), but one failed tool is not proof that the Commander\'s task is impossible. Do not end by handing avoidable setup work to the Commander. Inspect the exact error, then make an ACTUAL alternate call now using a different query, arguments, strategy, or tool.' + search + ' Retry only when the failure is plausibly transient; never repeat identical failing arguments blindly. Stay inside the current safety, consent, credential, and scope boundaries. Ask only for irreducible human input. If no authorized route remains after you have genuinely exhausted alternatives, report the exact blocker and the paths you tried.</failure_recovery>' });
+          continue;
+        }
         // VERIFY-ON-STOP: the run CHANGED code and is now trying to finish without having run anything against
         // it. Spend one bounded turn asking for evidence instead of shipping an unproven claim of done. Gated
         // on a verification tool actually being wired — demanding proof the run has no way to produce would
@@ -1259,6 +1301,16 @@
         return end(finalControl.reason || 'done');
       }
 
+      // Arm recovery only for non-terminal technical failures. One successful alternate call disarms it;
+      // a mixed batch retains only the names that failed so the next turn knows what still needs another route.
+      const recoverableFailures = [];
+      for (const c of calls) {
+        const r = results.find(x => x.callId === c.id);
+        if (r && r.isError && !terminalHumanDecision(r)) recoverableFailures.push(String(c.name || 'tool'));
+      }
+      if (recoverableFailures.length) failureRecoveryPending = { names: Array.from(new Set(recoverableFailures)) };
+      else if (results.some(r => r && r.ok && !r.isError)) failureRecoveryPending = null;
+
       // (8) LOOP GUARD — break out of a run that keeps making the SAME failing tool call. Warn once, then stop.
       if (LG_WARN || LG_STOP) {
         const sigOf = {};
@@ -1282,5 +1334,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, vosExternalArtifactMutation, vosExternalSourceRole, sourceGroundingRequested, explicitNonzeroExit, failedCheckRepairNote, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, terminalHumanDecision, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, vosExternalRole, vosExternalArtifactMutation, vosExternalSourceRole, sourceGroundingRequested, explicitNonzeroExit, failedCheckRepairNote, deterministicCheckSignature, parallelizable, applyTurnBudget, squeeze } };
 });

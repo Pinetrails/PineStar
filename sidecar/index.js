@@ -91,6 +91,7 @@ const { makeCapCtx } = require('./capability/capGate.js');
 const { composeOffice, stationWithObject, stationWithConnectors } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
 const { summarizeCapabilities } = require('./capability/capsummary.js');   // truthful "what you can/can't do" so the agent stops over-promising
 const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
+const FinishLine = require('./finish-line.js');     // immutable "crawl to the finish line" task doctrine at the final prompt seam
 const { makeHarnessSnapshot } = require('./harness-snapshot.js');   // bounded secret-free build/scheduler/connectors/diagnostics truth for station.inspect
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const edgetts = require('./edgetts.js');   // V-EDGE: free keyless neural TTS floor (decoupled from the LLM provider)
@@ -13694,6 +13695,19 @@ async function runOnce(o) {
   // next model instead of dying (errorClass shouldFallback/shouldRotateCredential). Empty = off.
   const fallbackModels = (Array.isArray(o.fallbackModels) ? o.fallbackModels : effectiveFallbackChain())
     .map(s => String(s || '').trim()).filter(s => s && s !== model);
+  // COMPETENCE PREFLIGHT: an explicitly configured fallback chain is already the Commander's authority to use
+  // another model when the primary cannot serve the run. A definitively tool-less primary used to hard-refuse
+  // every task before that chain got a chance to help. Promote the first same-provider, tool-capable (or catalog-
+  // unknown) fallback now; the loop starts on the effective model and emits an honest fallback receipt.
+  const toolModelRoute = isTask
+    ? fallbackChain.promoteToolCapable(model, fallbackModels, m => provider.supportsTools(m))
+    : { model, fallbacks: fallbackModels.slice(), promoted: false };
+  let initialFallback = null;
+  if (toolModelRoute.promoted) {
+    initialFallback = { fromModel: toolModelRoute.fromModel, toModel: toolModelRoute.model, reason: 'tool_support', rotate: false };
+    model = toolModelRoute.model;
+    fallbackModels.splice(0, fallbackModels.length, ...toolModelRoute.fallbacks);
+  }
   // CREDENTIAL ROTATION (P0.2): on a rate-limit/auth/billing failure the loop rotates to an alternate KEY for the
   // SAME model BEFORE trying alternate models. Pools are provider-scoped: an explicit per-run list or
   // SKYNET_KEY_POOL_<PROVIDER>. A global pool is intentionally not accepted because keys are not portable.
@@ -14189,9 +14203,9 @@ async function runOnce(o) {
     + (hasScreenTools
       ? '(3) the VISIBLE screen (desktop_open, computer_use) ONLY when the Commander explicitly asked to see it on their screen or every quieter path failed — and tell them why you escalated. '
       : '')
-    + 'If a dedicated tool answers "not connected", tell the Commander how to connect it (Settings) and ask before using a louder path. '
+    + 'If a dedicated tool answers "not connected", immediately continue down this ladder with the next safe, already-authorized route. Do not ask merely because the fallback is louder. Ask only when that next route itself needs Commander authentication, exact consent, or a genuinely material choice. Mention connection setup only if it remains the final blocker after the alternatives are exhausted. '
     + 'After any action that changes the world, VERIFY it took effect with a read-back tool (e.g. now-playing after play, a listing after a write, a probe after a start) before reporting done. '
-    + 'A tool error is information: read it and change strategy — never repeat the identical failing call, and never silently switch to a louder tool. '
+    + 'A tool error is information: read it and change strategy — never repeat the identical failing call. Escalate automatically through safe authorized routes, and disclose a more visible or consequential route when its own consent boundary requires it. '
     + 'Blocked sites, dead links and throttled engines are ordinary web weather: route around them, and mention an obstacle in your reply only if it changed the outcome — never narrate routine obstacles as failures, and never apologize for them. ';
   const workDisciplineNote = ''
     + (hasShellExec ? 'When the Commander names a local project folder, first anchor shell_exec.cwd to that exact folder, then keep later shell paths relative to it. After a path or cwd failure, run one small working-directory diagnostic plus a listing, and change strategy instead of retrying the same bad path. ' : '')
@@ -14461,9 +14475,13 @@ async function runOnce(o) {
      A byte-stable constant, so it never shifts the cached system prefix. */
   const canName = !!(resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('deliverable_note') >= 0);
   const deliverableNote = canName ? DELIVERABLE_NOTE_CLAUSE : '';
+  const taskSystem = FinishLine.append((system || '') + runtimeBlock + toolNote + teamNote + manualBlock
+    + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock
+    + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock
+    + deliverableNote, { isTask, internal, tools: resolved.tools });
   const sys = internal
     ? (String(system || '') + evidenceBlock)
-    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock + deliverableNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+    : withQuests(taskSystem, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
@@ -14588,8 +14606,11 @@ async function runOnce(o) {
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
-      limits: { maxIters: runMaxIters, maxCostUsd: runCapUsd },   // both computed once at admission (runCapUsd is also the managed reservation)
-      budget: runBudget, context: ctxMgr, summarize, fallbacks,
+      // An operator-reviewed recovery continuation already has a durable, one-shot resolution plan. Its job is
+      // to synthesize that checkpoint and settle once; starting fresh alternate-path attempts would exceed the
+      // operator's narrowly authorized continuation and make the recovery non-idempotent.
+      limits: { maxIters: runMaxIters, maxCostUsd: runCapUsd, failureRecovery: o.recovery ? false : undefined },
+      budget: runBudget, context: ctxMgr, summarize, fallbacks, initialFallback,
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
       // activePrimaryKey, NOT runKey: when the run's own key was still cooling we STARTED on a warm pool key,
