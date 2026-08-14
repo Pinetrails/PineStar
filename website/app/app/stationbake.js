@@ -2493,7 +2493,20 @@ const StationBake = (() => {
         const px0 = d0 + step * i;
         const m = map(horiz ? px0 : fixed, horiz ? fixed : px0);
         c = stripAt(strip, m.a, m.d);
-        if (c === null) continue;                                 // VIEWPORT glass: leave the hole open
+        if (c === null) {
+          /* A WINDOW DOES NOT TURN A CORNER (2026-08-13).
+             A null sample means the strip is transparent there, and on a VIEWPORT wall that is the
+             glass itself. Sampling it round the bend punched the window through the corner and the
+             starfield showed where the structure should be — Andrew's "fill in the textures". A
+             corner is where the hull turns; it is solid by construction, and the flat run is the
+             only place a window belongs. So the corner never leaves a hole: it falls back to the
+             wall's OWN face ladder — pal.face, not the glass tone `base` carries — which is what the
+             headless path paints, so the strip's marks now sit ON a wall rather than instead of one.
+             This is also what the old code accidentally did: its depth clamped to 0, i.e. the solid
+             row above the glass. Same intent, minus the flat slab. */
+          const tt = len <= 1 ? 0 : i / (len - 1);
+          c = U.shade(pal.face, 0.14 - 0.34 * tt);
+        }
       } else {
         // headless fallback (no getImageData): the authored approximation, kept so both bake paths
         // still agree with each other and the mock renders something deterministic.
