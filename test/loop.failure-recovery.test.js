@@ -82,9 +82,9 @@ async function run(turns, dispatch, limits) {
   {
     const out = await run([
       toolTurn('primary_tool', 'c1'), textTurn('The Commander declined that action, so I stopped.')
-    ], async () => ({ ok: false, isError: true, content: 'Commander declined this action. Do NOT retry.', summary: 'declined' }));
+    ], async () => ({ ok: false, isError: true, content: 'The action was not performed.', summary: 'denied' }));
     const nudges = out.messages.filter(m => m.role === 'system' && /<failure_recovery>/.test(String(m.content)));
-    A.eq(nudges.length, 0, 'explicit user denial is an irreducible terminal decision, not a recovery target');
+    A.eq(nudges.length, 0, 'the consent broker\'s denied summary is an irreducible terminal decision, not a recovery target');
   }
 
   // A harness capability denial is also terminal: recovery may find another granted tool, but it may not
