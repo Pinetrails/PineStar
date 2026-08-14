@@ -14593,7 +14593,10 @@ async function runOnce(o) {
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
-      limits: { maxIters: runMaxIters, maxCostUsd: runCapUsd },   // both computed once at admission (runCapUsd is also the managed reservation)
+      // An operator-reviewed recovery continuation already has a durable, one-shot resolution plan. Its job is
+      // to synthesize that checkpoint and settle once; starting fresh alternate-path attempts would exceed the
+      // operator's narrowly authorized continuation and make the recovery non-idempotent.
+      limits: { maxIters: runMaxIters, maxCostUsd: runCapUsd, failureRecovery: o.recovery ? false : undefined },
       budget: runBudget, context: ctxMgr, summarize, fallbacks,
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
