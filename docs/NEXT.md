@@ -1,5 +1,19 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-14 — QUICKER LOCAL LIVE TURN HANDOFF (`agent/latency-hotpath`)
+
+READY TO MERGE. New/default Local Live sessions now use the already-exposed QUICK 1.2-second
+turn boundary instead of NORMAL 1.8 seconds, removing a deterministic 600 ms from complete
+spoken turns. The existing transcript-aware continuation rule still gives an unfinished partial
+another 600 ms, and NORMAL/PATIENT remain explicit persisted choices. The generated website app
+mirror and release-surface lock are current.
+
+Live seeded UI proof rendered QUICK 1.2S selected alongside NORMAL 1.8S and PATIENT 2.6S; no
+microphone permission or provider spend was used. Focused Voice button (86 assertions), Local Live
+UI, syntax, and website-mirror checks are green, as is `npm run test:fast` **630/630** on the
+committed release-surface tree. `test:http` is not owed: no sidecar, route, provider, or shared
+contract changed.
+
 ## 2026-08-09 — WEBSITE PREVIEW STATE CORRECTION (`agent/station-preview-state`)
 
 READY TO MERGE. The first preview repair updated the renderer mirror and stage crop but left the
