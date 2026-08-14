@@ -129,5 +129,40 @@ function makeFake() {
     A.eq(calls[1].cwd, ext, 'external cwd persists across later local shell calls');
   }
 
+  // Step 7: a project-scoped session starts relative shell work at its blessed root, with cwd state isolated
+  // from the same agent's ordinary private-workspace shell session.
+  {
+    const W = path.win32;
+    const root = 'C:\\Users\\andro\\AppData\\Local\\StarNet\\workspaces';
+    const jailWin = W.join(root, 'agent');
+    const project = 'C:\\Users\\andro\\Desktop\\PROJECT';
+    const projectSub = W.join(project, 'sub');
+    const calls = [];
+    let reported = project;
+    const fakeEnv = {
+      backendId: 'local',
+      ensureWorkspace: function () { return jailWin; },
+      getCwd: function () { return jailWin; },
+      rememberCwd: function () {},
+      execute: function (o) {
+        calls.push(o);
+        return Promise.resolve({ out: 'ok\n__SK_CWD__' + reported + '__SK_EC__0__SK_END__', exitCode: 0, ms: 0, truncated: false, timedOut: false, aborted: false });
+      }
+    };
+    const fakeFs = { existsSync: function () { return true; }, statSync: function () { return { isDirectory: function () { return true; } }; } };
+    const tool = makeShellTool({ environment: fakeEnv, fs: fakeFs, pathMod: W, root: root, clock: { now: function () { return 0; } }, platform: 'win32' }).execTool;
+    const projectCtx = { agentId: 'agent', runId: 'project-run', projectRoot: project };
+    await tool.run({ cmd: 'dir' }, projectCtx);
+    A.eq(calls[0].cwd, project, 'project-scoped shell.exec defaults to projectRoot');
+    reported = projectSub;
+    await tool.run({ cmd: 'dir', cwd: 'sub' }, projectCtx);
+    A.eq(calls[1].cwd, projectSub, 'relative structured cwd resolves from projectRoot');
+    await tool.run({ cmd: 'dir' }, projectCtx);
+    A.eq(calls[2].cwd, projectSub, 'project cwd persists within the same run scope');
+    reported = jailWin;
+    await tool.run({ cmd: 'dir' }, { agentId: 'agent', runId: 'ordinary-run' });
+    A.eq(calls[3].cwd, jailWin, 'an unscoped run does not inherit the project session cwd');
+  }
+
   A.report('shell-session.test');
 })().catch(function (e) { console.error(e); process.exit(1); });

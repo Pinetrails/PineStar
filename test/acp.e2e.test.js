@@ -37,7 +37,11 @@ function startMockOpenRouter(script) {
   const held = [];   // completions parked open by a `hold` rule, so a run stays genuinely in flight
   function decide(body) {
     const msgs = (body && body.messages) || [];
-    if (msgs.some(m => m && m.role === 'tool')) return { text: 'done' };
+    const toolResults = msgs.filter(m => m && m.role === 'tool');
+    if (toolResults.length) {
+      const last = String(toolResults[toolResults.length - 1].content || '');
+      return { text: last.indexOf('PROJECT_RELATIVE_ACP') >= 0 ? 'Observed PROJECT_RELATIVE_ACP through the native file tool.' : 'done' };
+    }
     const lastUser = [...msgs].reverse().find(m => m && m.role === 'user');
     const text = String((lastUser && lastUser.content) || '').toLowerCase();
     return script.find(r => text.indexOf(r.when) >= 0) || { text: 'nothing to do' };
@@ -187,9 +191,14 @@ function makeAcpClient(port, onPermission) {
     { when: 'write the notes file', tool: { name: 'fs.write', args: { path: 'acp-notes.md', content: 'written through ACP' } } },
     { when: 'write the secret file', tool: { name: 'fs.write', args: { path: 'acp-denied.md', content: 'must never exist' } } },
     { when: 'read the notes file', tool: { name: 'fs.read', args: { path: 'acp-notes.md' } } },
+    { when: 'read the project incident', tool: { name: 'fs.read', args: { path: 'incident.log' } } },
     { when: 'work slowly', hold: true }
   ]);
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-acp-'));
+  const project = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-acp-project-'));
+  fs.writeFileSync(path.join(project, 'incident.log'), 'PROJECT_RELATIVE_ACP\n', 'utf8');
+  const projectGrant = 'path:' + path.resolve(project);
+  fs.writeFileSync(path.join(ws, 'permissions.allow.json'), JSON.stringify({ version: 1, allow: [projectGrant], meta: { [projectGrant]: { grantedAt: 1 } } }), 'utf8');
   const env = {
     SKYNET_WORKSPACES: ws,
     SKYNET_OPENROUTER_BASE: mock.base,
@@ -285,6 +294,22 @@ function makeAcpClient(port, onPermission) {
         'the REJECTED write never happened — the editor answer really is the gate');
     }
 
+    /* ---- 4c. ACP cwd is a blessed project root for native RELATIVE file calls ------------------ */
+    {
+      client.clear();
+      const scoped = await client.send('session/new', { cwd: path.resolve(project), mcpServers: [] });
+      const scopedId = scoped.result && scoped.result.sessionId;
+      A.ok(scopedId, 'ACP opens a project-scoped session at the editor cwd');
+      const r = await client.send('session/prompt', {
+        sessionId: scopedId, prompt: [{ type: 'text', text: 'read the project incident' }]
+      }, 90000);
+      A.ok(r.result, 'the project-relative ACP read turn answered');
+      A.ok(client.textFor(scopedId).indexOf('PROJECT_RELATIVE_ACP') >= 0,
+        'ACP → /api/run → native fs.read resolves incident.log at the blessed editor cwd');
+      A.ok(!fs.existsSync(path.join(ws, 'agent', 'incident.log')),
+        'the ACP project read did not silently fall back to the private workspace');
+    }
+
     /* ---- 5. cancel: the turn stops, resolves, and is reported as a CANCEL — not a failure -------
        The first cut accepted either 'cancelled' or 'end_turn' here, and that looseness hid a real bug: the
        cancel destroyed the socket immediately, racing ahead of the station's own settle, so the turn came back
@@ -375,5 +400,6 @@ function makeAcpClient(port, onPermission) {
   }
 
   try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+  try { fs.rmSync(project, { recursive: true, force: true }); } catch (_) {}
   A.report('acp.e2e.test');
 })().catch(e => { console.log('FAIL: acp.e2e.test threw - ' + (e && e.stack || e)); process.exit(1); });

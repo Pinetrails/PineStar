@@ -276,6 +276,10 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     const ro = fakeRunOnce(async () => ({ reason: 'done', messages: [{ role: 'assistant', content: 'resumed' }], usd: 0 }));
     const roster = new Map([['researcher', { system: 'R' }]]);
     const { resumeTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), subagents, workerMaxIters: 7 });
+    A.eq(resumeTool.preconditions[0].requiredTool, 'team.subagents', 'team.resume declares inspection as a machine-readable precondition');
+    let missing = null;
+    try { await resumeTool.run({ id: 'missing' }, { agentId: 'lead', emit: () => {} }); } catch (e) { missing = e; }
+    A.eq(missing && missing.precondition && missing.precondition.code, 'inspect_before_resume', 'an invalid resume id returns inspect-before-resume state instead of a successful-looking result');
     const out = await resumeTool.run({ id: first.id }, { agentId: 'lead', emit: () => {} });
     A.eq(out.summary, 'resumed', 'team.resume restarts the interrupted worker');
     await tick(); await tick();

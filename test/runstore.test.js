@@ -159,6 +159,46 @@ const clock = { now: () => clk };
   A.eq(cappedTrace.toolTrace[0].ms, 0, 'negative tool durations clamp to zero');
   A.ok(cappedTrace.toolTrace[0].summary.length <= 240, 'tool summaries are bounded');
 
+  // ---- recovery telemetry: bounded failure classification + only dispatched mutations ----
+  const recovery = s.record({
+    runId: 'recovery-trace', failureStage: 'tool_result_persist', failureCode: 'recovery-journal-failed',
+    uncertainMutations: [
+      { callId: 'c-write', name: 'fs.write', mutating: true, state: 'dispatched' },
+      { callId: 'c-read', name: 'fs.read', mutating: false, state: 'dispatched' },
+      { callId: '', name: 'bad', mutating: true }
+    ]
+  });
+  A.eq(recovery.failureStage, 'tool_result_persist', 'failure lifecycle stage persists');
+  A.eq(recovery.failureCode, 'recovery-journal-failed', 'stable failure code persists');
+  A.eq(recovery.uncertainMutations, [{ callId: 'c-write', name: 'fs.write', mutating: true, state: 'dispatched' }], 'only valid dispatched mutations persist as uncertainty');
+  A.eq(s.record({ runId: 'recovery-defaults' }).uncertainMutations, [], 'legacy and ordinary rows default to no asserted uncertainty');
+
+  const completion = s.record({ runId: 'completion-evidence', completionEvidence: {
+    completionVerdict: 'completed_verified', effectVerdict: 'judgment_required',
+    effects: [{ callId: 'b1', tool: 'browser.click', domain: 'browser', target: '#save', state: 'judgment_required', evidence: ['ev-1'] }]
+  } }).completionEvidence;
+  A.eq(completion.completionVerdict, 'not_assessed', 'run store cannot persist a caller-invented completion claim');
+  A.eq(completion.effectVerdict, 'judgment_required', 'bounded effect verdict persists');
+  A.eq(completion.effects[0].state, 'judgment_required', 'effect-level judgment requirement persists');
+  const authority = Symbol('host');
+  const trustedStore = makeRunStore({ io: memIo(), clock, completionAuthority: authority });
+  const trustedCompletion = trustedStore.record({ runId: 'host-verified', completionEvidence: {
+    _completionAuthority: authority,
+    completionVerdict: 'completed_verified', effectVerdict: 'mechanically_verified', effects: [],
+    contract: { schemaVersion: 'starnet.task-postconditions.v1', authority: 'commander', requirements: [{ id: 'file', type: 'artifact_exists', path: 'out.txt' }] },
+    checks: [{ id: 'file', type: 'artifact_exists', status: 'passed', code: 'artifact_exists' }]
+  } }).completionEvidence;
+  A.eq(trustedCompletion.completionVerdict, 'completed_verified', 'matching in-process authority plus complete mechanical checks may persist verification');
+  A.eq(trustedCompletion.checks[0].status, 'passed', 'durable completion row retains its bounded check result');
+  A.ok(!Object.prototype.hasOwnProperty.call(trustedCompletion, '_completionAuthority'), 'in-process authority is never serialized into run history');
+  const forged = trustedStore.record({ runId: 'forged', completionEvidence: Object.assign({}, trustedCompletion, { _completionAuthority: Symbol('host') }) }).completionEvidence;
+  A.eq(forged.completionVerdict, 'not_assessed', 'lookalike authority object cannot replay a verified verdict');
+  const recoveryAttempts = s.record({ runId: 'recovery-attempts', recoveryAttempts: [
+    { sequence: 1, stage: 'provider_stream', action: 'retry', reason: 'timeout', attempt: 1, model: 'm', delayMs: 400 }
+  ] }).recoveryAttempts;
+  A.eq(recoveryAttempts[0].action, 'retry', 'recovery action persists in run history');
+  A.eq(recoveryAttempts[0].delayMs, 400, 'recovery delay persists as observed policy telemetry');
+
   // ---- (P1.2 identity-honesty) identityFallback rides the row: honest marker when the agentId missed the roster ----
   A.eq(s.record({ runId: 'w9', agentId: 'a', reason: 'done', identityFallback: true }).identityFallback, true, 'identityFallback:true recorded on a fallback run (was not the named specialist)');
   A.eq(s.record({ runId: 'w10', agentId: 'a', reason: 'done' }).identityFallback, false, 'missing identityFallback defaults to false (old rows / normal runs are not falsely flagged)');

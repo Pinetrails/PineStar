@@ -677,7 +677,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onTerminalReset, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, evidence, projectRoot, taskAction, recovery }) {
+  async function chat({ system, messages, onToken, onTerminalReset, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, evidence, projectRoot, taskAction, postconditions, recovery }) {
     const model = getModel(), provider = getProv(), key = getKey(provider), reasoningEffort = getReasoningEffort(provider);
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -706,6 +706,7 @@ const Harness = (() => {
          the internal path changes (no manual, no skills, no memory fence, no recall-stat writes). */
       if (evidence) reqBody.evidence = true;
       if (/^(answer|cancel|replace)$/.test(String(taskAction || ''))) reqBody.taskAction = String(taskAction);
+      if (postconditions != null) reqBody.postconditions = postconditions;
       if (recipeId) reqBody.recipeId = String(recipeId).slice(0, 60);   // provenance spine: which recipe launched this run (rides to the durable run row)
       // project-anchored session (ref-parity working folder): the sidecar injects the folder context line
       // ONLY when this root is still a standing blessed path grant — an un-blessed root injects nothing.
@@ -745,7 +746,7 @@ const Harness = (() => {
 
     const reader = res.body.getReader();
     const dec = new TextDecoder();
-    let buf = '', full = '', lastUsage = null, runId = null, errMsg = null, endReason = null, finishReason = null;
+    let buf = '', full = '', lastUsage = null, runId = null, errMsg = null, endReason = null, finishReason = null, completionVerdict = 'not_assessed', effectVerdict = 'no_observed_effects';
     let budgetScope = null, budgetCapUsd = null;   // additive: WHICH spend cap ended a 'budget' run (+ its $ cap)
 
     for (;;) {
@@ -813,6 +814,8 @@ const Harness = (() => {
             // filtered it — the caller renders a "cut short" recap instead of a delivered crate for those.
             if (!payload.runId || payload.runId === runId) {
               endReason = payload.reason; finishReason = payload.finishReason || null;
+              completionVerdict = payload.completionVerdict || 'not_assessed';
+              effectVerdict = payload.effectVerdict || 'no_observed_effects';
               // additive budget-stop detail: which cap fired + the effective $ cap (absent on non-budget stops)
               budgetScope = payload.budgetScope || null;
               budgetCapUsd = (typeof payload.budgetCapUsd === 'number' && isFinite(payload.budgetCapUsd)) ? payload.budgetCapUsd : null;
@@ -824,8 +827,8 @@ const Harness = (() => {
     totals.calls++;
     // surface the error to the caller (do NOT swallow it just because some text streamed first) —
     // a network/fetch failure still throws below; this is for in-band run errors / capdenied.
-    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason, finishReason, budgetScope, budgetCapUsd };
-    return { text: full, usage: lastUsage, runId, endReason, finishReason, budgetScope, budgetCapUsd };
+    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason, finishReason, completionVerdict, effectVerdict, budgetScope, budgetCapUsd };
+    return { text: full, usage: lastUsage, runId, endReason, finishReason, completionVerdict, effectVerdict, budgetScope, budgetCapUsd };
   }
 
   /* Read-only fetch of an agent's notebook (its memory.md) from the sidecar. The agent writes these notes
@@ -1145,11 +1148,73 @@ const Harness = (() => {
       .catch(() => done(timedOut ? null : false));
   }
 
+  // Durable interrupted-run recovery. Listing is read-only; preparation is accepted only when the sidecar's
+  // journal proves there is no uncertain dispatched mutation. The returned token is one-shot and consumed by
+  // the ordinary /api/run path, so recovery does not create a privileged second execution route.
+  async function runRecoveries() {
+    const r = await fetch('/api/run-recoveries?limit=100', { cache: 'no-store' });
+    if (!r.ok) throw new Error('recovery list unavailable');
+    const j = await r.json();
+    return Array.isArray(j && j.recoveries) ? j.recoveries : [];
+  }
+  async function prepareAutomaticRecovery(row) {
+    row = row || {};
+    const continuationId = row.continuation && row.continuation.state === 'ready'
+      ? String(row.continuation.continuationId || '')
+      : ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('auto-' + Date.now()));
+    const r = await fetch('/api/run-recoveries/continue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        runId: String(row.runId || ''), agentId: String(row.agentId || ''),
+        recoveryToken: String(row.recoveryToken || ''), continuationId, mode: 'automatic'
+      })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.continuationToken) throw new Error(String(j.error || 'automatic recovery could not be prepared'));
+    return {
+      sourceRunId: String(row.runId || ''), continuationId,
+      continuationToken: String(j.continuationToken)
+    };
+  }
+  async function resolveRunRecovery(row, outcomes) {
+    row = row || {};
+    const resolutionId = 'review-ui-' + String(row.runId || '').replace(/[^A-Za-z0-9._:-]/g, '').slice(0, 80);
+    const r = await fetch('/api/run-recoveries/resolve', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        runId: String(row.runId || ''), agentId: String(row.agentId || ''),
+        recoveryToken: String(row.recoveryToken || ''), resolutionId,
+        confirmedNoReplay: true, outcomes: Array.isArray(outcomes) ? outcomes : []
+      })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.recovery) throw new Error(String(j.error || 'recovery decision could not be saved'));
+    return j.recovery;
+  }
+  async function prepareReviewedRecovery(row) {
+    row = row || {};
+    const continuationId = row.continuation && row.continuation.state === 'ready'
+      ? String(row.continuation.continuationId || '')
+      : ('review-continue-' + String(row.runId || '').replace(/[^A-Za-z0-9._:-]/g, '').slice(0, 70));
+    const r = await fetch('/api/run-recoveries/continue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        runId: String(row.runId || ''), agentId: String(row.agentId || ''),
+        recoveryToken: String(row.recoveryToken || ''), continuationId,
+        confirmedSafeContinuation: true, mode: 'reviewed'
+      })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.continuationToken) throw new Error(String(j.error || 'reviewed recovery could not be prepared'));
+    return { sourceRunId: String(row.runId || ''), continuationId, continuationToken: String(j.continuationToken) };
+  }
+
   return {
     pingEngine,
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
     getKey, setKey, setKeyPool, validateAndSetKeyPool, keyPoolSize, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, refreshCreditsConfigured, hasStoredCredential, setDesktopConfigured,
     listModels, probeProvider, validateAndSetKey, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, consentAnswer, summonAck, notebook,
+    runRecoveries, prepareAutomaticRecovery, resolveRunRecovery, prepareReviewedRecovery,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPending, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,

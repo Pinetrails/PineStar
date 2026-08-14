@@ -32,6 +32,8 @@ A.eq(state.status, 'resumable', 'a paired result is safe to resume');
 A.eq(state.checkpoint.phase, 'tool_results', 'latest provider-valid checkpoint wins');
 A.eq(state.completed.length, 1, 'paired intent/result evidence survives recovery analysis');
 A.eq(state.meta.agentId, 'a', 'run metadata remains available to the restart reconciler');
+j.recoveryAttempt('r1', { sequence: 1, stage: 'provider_stream', action: 'retry', reason: 'timeout' });
+A.eq(j.inspect('r1').recoveryAttempts.map(x => x.action), ['retry'], 'recovery attempt survives journal inspection');
 
 j.finish('r1', { reason: 'done', transcriptAck: true });
 state = j.inspect('r1');
@@ -95,6 +97,37 @@ const readState = read.inspect('read');
 A.eq(readState.status, 'resumable', 'an unmatched explicitly read-only intent is safe to replay from its checkpoint');
 A.eq(readState.uncertain.length, 0, 'a read-only intent is not misreported as an unknown side effect');
 A.eq(readState.replayableReads.map(x => x.callId), ['read-1'], 'recovery retains the exact read call to replay once');
+
+// The v1 prepared/dispatched protocol narrows mutation uncertainty without weakening legacy recovery. A newly
+// prepared call is known not to have reached tool.run; once the durable dispatch record exists, a missing result
+// is again review-required. Legacy unmatched mutations above remain conservative because they lack the marker.
+const phasedIo = memoryIo();
+const phased = J.makeRunJournal({ io: phasedIo, clock: { now: () => 3 } });
+phased.begin({ runId: 'phased', messages: [] });
+phased.toolIntent('phased', {
+  callId: 'write-1', name: 'fs.write', mutating: true,
+  boundaryModel: J.DISPATCH_BOUNDARY_MODEL
+});
+let phasedState = phased.inspect('phased');
+A.eq(phasedState.status, 'resumable', 'a newly prepared mutation is safe to resume because tool.run was not reached');
+A.eq(phasedState.replayablePrepared.map(x => x.callId), ['write-1'], 'prepared mutation is visible as a distinct recovery class');
+A.eq(phasedState.uncertain.length, 0, 'prepared-only mutation is not falsely reported as having possibly happened');
+phased.toolDispatch('phased', { callId: 'write-1', name: 'fs.write', mutating: true });
+phasedState = phased.inspect('phased');
+A.eq(phasedState.status, 'needs_review', 'a dispatched mutation with no durable result requires review');
+A.eq(phasedState.uncertain.map(x => x.callId), ['write-1'], 'dispatch boundary identifies the exact uncertain mutation');
+
+const dispatchedReadIo = memoryIo();
+const dispatchedRead = J.makeRunJournal({ io: dispatchedReadIo, clock: { now: () => 3 } });
+dispatchedRead.begin({ runId: 'dispatched-read', messages: [] });
+dispatchedRead.toolIntent('dispatched-read', {
+  callId: 'read-2', name: 'fs.read', mutating: false,
+  boundaryModel: J.DISPATCH_BOUNDARY_MODEL
+});
+dispatchedRead.toolDispatch('dispatched-read', { callId: 'read-2', name: 'fs.read', mutating: false });
+const dispatchedReadState = dispatchedRead.inspect('dispatched-read');
+A.eq(dispatchedReadState.status, 'resumable', 'a dispatched read remains safe to replay after a lost result');
+A.eq(dispatchedReadState.replayableReads.map(x => x.callId), ['read-2'], 'dispatched read recovery remains explicit');
 
 const pendingIo = memoryIo();
 const pending = J.makeRunJournal({ io: pendingIo, clock: { now: () => 3 } });

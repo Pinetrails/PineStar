@@ -169,3 +169,6 @@ dev/.shots-crew-fit/
 dev/.shots-shellcorner*/
 dev/.shots-shellsweep/
 dev/.shots-wcmat/
+
+# INBOX WHEN-PICKER lane visual-proof screenshots (headless capture output; never committed)
+dev/.shots-inbox-when/

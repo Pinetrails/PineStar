@@ -55,6 +55,10 @@
   const DELIVERY_TEXT_MAX = 24000;
   const TOOL_TRACE_MAX = 200;
   const TOOL_SUMMARY_MAX = 240;
+  const FAILURE_FIELD_MAX = 80;
+  const UNCERTAIN_MUTATIONS_MAX = 200;
+  const COMPLETION_ROWS_MAX = 100;
+  const RECOVERY_ATTEMPTS_MAX = 100;
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
   function nonnegative(v) { return Math.max(0, num(v)); }
   function str(v) { return v == null ? '' : String(v); }
@@ -112,6 +116,78 @@
     return out;
   }
 
+  function uncertainMutationList(v) {
+    if (!Array.isArray(v)) return [];
+    const out = [];
+    for (const item of v) {
+      if (out.length >= UNCERTAIN_MUTATIONS_MAX) break;
+      if (!item || typeof item !== 'object') continue;
+      const callId = str(item.callId).slice(0, 100);
+      const name = str(item.name).slice(0, 80);
+      if (!callId || item.mutating !== true) continue;
+      out.push({ callId, name, mutating: true, state: 'dispatched' });
+    }
+    return out;
+  }
+
+  function completionEvidence(v, authority) {
+    const allowedEffects = new Set(['no_observed_effects', 'unverified_effects', 'judgment_required', 'mechanically_verified']);
+    const allowedStates = new Set(['unverified', 'judgment_required', 'mechanically_verified']);
+    const allowedVerdicts = new Set(['not_assessed', 'verification_required', 'incomplete', 'completed_verified']);
+    const src = v && typeof v === 'object' ? v : {};
+    const effects = [];
+    for (const item of (Array.isArray(src.effects) ? src.effects : [])) {
+      if (effects.length >= COMPLETION_ROWS_MAX) break;
+      if (!item || typeof item !== 'object') continue;
+      const callId = str(item.callId).slice(0, 100), tool = str(item.tool).slice(0, 80);
+      if (!callId || !tool || !allowedStates.has(item.state)) continue;
+      effects.push({
+        callId, tool, domain: str(item.domain).slice(0, 20), target: str(item.target).slice(0, ARTIFACT_STR_MAX),
+        state: item.state, evidence: (Array.isArray(item.evidence) ? item.evidence : []).slice(0, 20).map(x => str(x).slice(0, 40))
+      });
+    }
+    const contract = src.contract && src.contract.schemaVersion === 'starnet.task-postconditions.v1'
+      && src.contract.authority === 'commander' && Array.isArray(src.contract.requirements)
+      ? {
+          schemaVersion: src.contract.schemaVersion, authority: 'commander',
+          requirements: src.contract.requirements.slice(0, 20).filter(x => x && typeof x === 'object').map(x => ({
+            id: str(x.id).slice(0, 80), type: str(x.type).slice(0, 40), path: str(x.path).slice(0, ARTIFACT_STR_MAX),
+            text: str(x.text).slice(0, 500), command: str(x.command).slice(0, 1000), sha256: str(x.sha256).slice(0, 64)
+          }))
+        } : null;
+    const checks = (Array.isArray(src.checks) ? src.checks : []).slice(0, 20).filter(x => x && typeof x === 'object').map(x => ({
+      id: str(x.id).slice(0, 80), type: str(x.type).slice(0, 40),
+      status: x.status === 'passed' ? 'passed' : 'failed', code: str(x.code).slice(0, 80)
+    }));
+    let completionVerdict = allowedVerdicts.has(src.completionVerdict) ? src.completionVerdict : 'not_assessed';
+    const hostAssessed = !!authority && src._completionAuthority === authority;
+    const structurallyVerified = !!contract && checks.length === contract.requirements.length && checks.length > 0
+      && checks.every(x => x.status === 'passed') && src.effectVerdict !== 'unverified_effects' && src.effectVerdict !== 'judgment_required';
+    if (!hostAssessed) completionVerdict = 'not_assessed';
+    else if (completionVerdict === 'completed_verified' && !structurallyVerified) completionVerdict = 'verification_required';
+    const out = {
+      schemaVersion: 'starnet.completion-evidence.v1',
+      completionVerdict,
+      effectVerdict: allowedEffects.has(src.effectVerdict) ? src.effectVerdict : 'no_observed_effects',
+      effects
+    };
+    if (hostAssessed) {
+      out.contract = contract;
+      out.contractErrors = (Array.isArray(src.contractErrors) ? src.contractErrors : []).slice(0, 20).map(x => str(x).slice(0, 200));
+      out.checks = checks;
+    }
+    return out;
+  }
+
+  function recoveryAttemptList(v) {
+    if (!Array.isArray(v)) return [];
+    return v.slice(0, RECOVERY_ATTEMPTS_MAX).filter(x => x && typeof x === 'object').map((x, index) => ({
+      sequence: nonnegative(x.sequence) || index + 1,
+      stage: str(x.stage).slice(0, 80), action: str(x.action).slice(0, 40), reason: str(x.reason).slice(0, 80),
+      attempt: nonnegative(x.attempt), model: str(x.model).slice(0, 80), delayMs: nonnegative(x.delayMs)
+    }));
+  }
+
   // RAM mirror ceiling: the largest served query is list({ limit: 1000 }) (insights) / 500 (run list), so keep
   // generous headroom (~3x) and splice the oldest off when the in-process mirror grows past it. On-disk history
   // stays complete (the append-only log + its rotated segment); only the RAM mirror is bounded so a 24/7 process
@@ -157,6 +233,11 @@
         internal: !!e.internal,                 // progression catch-up excludes harness self-talk from agent work
         clarifying: !!e.clarifying,             // additive outcome truth; `reason` remains the execution terminal
         toolTrace: toolTraceList(e.toolTrace),
+        failureStage: str(e.failureStage).trim().slice(0, FAILURE_FIELD_MAX),
+        failureCode: str(e.failureCode).trim().slice(0, FAILURE_FIELD_MAX),
+        uncertainMutations: uncertainMutationList(e.uncertainMutations),
+        completionEvidence: completionEvidence(e.completionEvidence, opts.completionAuthority),
+        recoveryAttempts: recoveryAttemptList(e.recoveryAttempts),
         startedAt: nonnegative(e.startedAt), endedAt: nonnegative(e.endedAt), durationMs: nonnegative(e.durationMs),
         ts: num(e.ts) || clock.now()
       };

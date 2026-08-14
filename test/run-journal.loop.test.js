@@ -37,7 +37,8 @@ function provider() {
     messages, provider: provider(), emit() {}, model: 'm', agentId: 'a', runId: 'r',
     onCheckpoint({ phase, messages: current, turn }) { journal.checkpoint('r', { phase, turn, messages: current }); },
     async dispatch(call) {
-      journal.toolIntent('r', { callId: call.id, name: call.name, argsRaw: call.argsRaw, mutating: true });
+      journal.toolIntent('r', { callId: call.id, name: call.name, argsRaw: call.argsRaw, mutating: true, boundaryModel: 'prepared-dispatch-v1' });
+      journal.toolDispatch('r', { callId: call.id, name: call.name, mutating: true });
       const out = { ok: true, content: 'wrote a.txt', summary: 'saved' };
       journal.toolResult('r', { callId: call.id, ok: true, content: out.content, summary: out.summary });
       return out;
@@ -46,9 +47,9 @@ function provider() {
   });
   journal.finish('r', { reason: result.reason, transcriptAck: true });
   const rows = _internals.parseRecords(io.read('r')).records;
-  A.eq(rows.map(r => r.type), ['begin', 'checkpoint', 'tool_intent', 'tool_result', 'checkpoint', 'checkpoint', 'finish'], 'assistant is durable before intent and result before the next model turn');
+  A.eq(rows.map(r => r.type), ['begin', 'checkpoint', 'tool_intent', 'tool_dispatch', 'tool_result', 'checkpoint', 'checkpoint', 'finish'], 'assistant, prepared intent, dispatch, and result are durable in execution order');
   A.eq(rows[1].payload.phase, 'assistant', 'provider-valid tool-call assistant checkpoint is first');
-  A.eq(rows[4].payload.phase, 'tool_results', 'paired tool results receive their own checkpoint');
+  A.eq(rows[5].payload.phase, 'tool_results', 'paired tool results receive their own checkpoint');
   A.eq(journal.inspect('r').status, 'finished', 'fully paired terminal run is settled');
 
   const io2 = memoryIo();
@@ -58,7 +59,8 @@ function provider() {
     messages: [{ role: 'user', content: 'mutate then fail' }], provider: provider(), emit() {}, model: 'm', agentId: 'a', runId: 'u',
     onCheckpoint({ phase, messages: current }) { uncertain.checkpoint('u', { phase, messages: current }); },
     async dispatch(call) {
-      uncertain.toolIntent('u', { callId: call.id, name: call.name, mutating: true });
+      uncertain.toolIntent('u', { callId: call.id, name: call.name, mutating: true, boundaryModel: 'prepared-dispatch-v1' });
+      uncertain.toolDispatch('u', { callId: call.id, name: call.name, mutating: true });
       const boundary = new Error('process lost result boundary');
       boundary.fatalToRun = true;
       throw boundary;
@@ -89,6 +91,19 @@ function provider() {
   A.eq(boundaryRetirement.retired, false, 'the unmatched intent remains after terminal error');
   A.eq(boundaryRetirement.state.status, 'needs_review', 'the retained outcome is explicitly review-required');
   A.ok(io3.files.has('boundary'), 'the recovery evidence remains on disk');
+
+  // If the dispatch append itself fails, the registry boundary returns a terminal error before tool.run. The
+  // prepared marker is therefore replayable rather than an unknown side effect.
+  const io4 = memoryIo();
+  const prepared = makeRunJournal({ io: io4, clock: { now: () => 1 } });
+  const preparedExecution = makeRunExecutionState();
+  prepared.begin({ runId: 'prepared', agentId: 'a' });
+  prepared.toolIntent('prepared', { callId: 'c1', name: 'fs_write', mutating: true, boundaryModel: 'prepared-dispatch-v1' });
+  const stoppedBeforeRun = preparedExecution.failJournal(new Error('dispatch fsync failed'), { beforeDispatch: true });
+  A.ok(stoppedBeforeRun.control.final, 'dispatch persistence failure is terminal');
+  A.ok(/not started/i.test(stoppedBeforeRun.content), 'the result truthfully says the tool did not start');
+  A.eq(prepared.inspect('prepared').status, 'resumable', 'prepared-only mutation is recoverable without operator review');
+  A.eq(prepared.inspect('prepared').replayablePrepared.map(x => x.callId), ['c1'], 'prepared recovery retains the exact call');
 
   A.report('run-journal.loop.test');
 })().catch(e => { console.error(e && e.stack || e); process.exit(1); });

@@ -148,10 +148,12 @@
       if (!ctx || typeof ctx.checkpointMutation !== 'function' || (opts && opts.scope) !== 'write') return;
       try { await ctx.checkpointMutation(base, 'fs mutation', { resolvedRoot: true }); } catch (_) {}
     }
-    // Resolve a path and PROVE it is reachable: a RELATIVE path must stay inside the agent's workspace
-    // jail (the historic invariant); an ABSOLUTE path is illegal UNLESS a pathTrust guard is wired, in
-    // which case it is mediated against the station's blessed project roots (NS-5). opts.scope ('read' |
-    // 'write') is threaded to the guard so writes can stay consent-gated; opts.ctx is passed through.
+    // Resolve a path and PROVE it is reachable. A relative path in a host-validated project session is rooted
+    // at that exact project, not at the agent's private deliverables workspace. It still passes through the
+    // same path-trust guard as an absolute project path and gets a second symlink-containment proof, so a
+    // model cannot manufacture ctx.projectRoot or escape it through a link. Unscoped relative paths retain the
+    // historic per-agent jail. Absolute paths always use pathTrust. opts.scope ('read' | 'write') is threaded
+    // to the guard so writes can stay consent-gated; opts.ctx is passed through.
     async function resolveInside(agentId, rel, opts) {
       opts = opts || {};
       rel = String(rel == null ? '' : rel);
@@ -166,6 +168,23 @@
         return resolved;
       }
       if (/(^|[\\/])\.\.([\\/]|$)/.test(rel)) throw new Error('illegal path: ' + rel);
+      const projectRoot = opts.ctx && typeof opts.ctx.projectRoot === 'string'
+        ? String(opts.ctx.projectRoot).trim() : '';
+      if (projectRoot) {
+        if (!pathTrust) throw new Error('project-relative path requires the project trust guard');
+        const base = P.resolve(projectRoot);
+        const abs = P.resolve(base, rel || '.');
+        if (!pathInside(abs, base)) throw new Error('path escapes project root');
+        // Selecting a relative base is not authority: re-run the station grant and protected-file floor for
+        // every resolved target, just as an explicit absolute path would.
+        await pathTrust(abs, { scope: opts.scope === 'write' ? 'write' : 'read', agentId: agentId, ctx: opts.ctx });
+        const baseReal = await realpathOrSelf(base);
+        const existing = await deepestExisting(abs, base);
+        const existingReal = await realpathOrSelf(existing);
+        if (!pathInside(existingReal, baseReal)) throw new Error('path escapes project root via symlink');
+        await checkpointResolvedRoot(base, opts);
+        return { base, abs };
+      }
       const base = await workspaceRoot(agentId);
       const abs = P.resolve(base, rel || '.');
       if (!pathInside(abs, base)) throw new Error('path escapes workspace');
@@ -256,12 +275,14 @@
       const now = await mtimeOf(abs);
       if (!now || now <= seen) return;            // deleted since, or untouched since we looked
       readStamps.delete(key);                     // one refusal per drift; the re-read below re-arms it
-      throw new Error('stale write refused: ' + rel + ' changed on disk after you read it — someone else (another agent, or the Commander) edited it. Read it again and re-apply your change on top of the current content, or use fs.edit/fs.patch so your change merges instead of replacing the file.');
+      const error = new Error('stale write refused: ' + rel + ' changed on disk after you read it — someone else (another agent, or the Commander) edited it. Read it again and re-apply your change on top of the current content, or use fs.edit/fs.patch so your change merges instead of replacing the file.');
+      error.precondition = { code: 'fresh_read_required', requiredTool: 'fs.read', requiredState: 'current_file_observed' };
+      throw error;
     }
 
     const writeTool = {
       name: 'fs.write', capability: 'cabinet', scope: 'write', requiresConsent: true, timeoutMs: 10000,
-      description: 'Write a UTF-8 text file into your workspace. This is where your deliverables (reports, notes, code) are saved.',
+      description: 'Write a UTF-8 text file into the current project folder when this session is project-scoped, otherwise into your private workspace. This is where your deliverables (reports, notes, code) are saved.',
       schema: { type: 'object', required: ['path', 'content'], properties: { path: { type: 'string' }, content: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
@@ -283,7 +304,7 @@
 
     const readTool = {
       name: 'fs.read', capability: 'cabinet', scope: 'read', requiresConsent: false, timeoutMs: 10000,
-      description: 'Read a file from your workspace. Text files come back as text; for large text use offset and limit to page character ranges without rerunning the command that produced the file. Word (.docx), Excel (.xlsx) and Jupyter (.ipynb) files are extracted to readable text automatically; PNG/JPEG/GIF/WEBP images are shown to you as actual pixels so you can look at them directly.',
+      description: 'Read a file from the current project folder when this session is project-scoped, otherwise from your private workspace. Text files come back as text; for large text use offset and limit to page character ranges without rerunning the command that produced the file. Word (.docx), Excel (.xlsx) and Jupyter (.ipynb) files are extracted to readable text automatically; PNG/JPEG/GIF/WEBP images are shown to you as actual pixels so you can look at them directly.',
       schema: { type: 'object', required: ['path'], properties: { path: { type: 'string' }, offset: { type: 'number' }, limit: { type: 'number' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';

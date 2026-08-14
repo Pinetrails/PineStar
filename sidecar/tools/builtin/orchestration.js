@@ -948,14 +948,24 @@
     const resumeTool = {
       name: 'team.resume', capability: 'orchestrator', scope: 'execute', requiresConsent: false,
       description: 'Resume a stale/interrupted/failed background subagent by id. The worker restarts with the same prompt and appends to the same durable record.',
+      preconditions: [{ code: 'inspect_before_resume', requiredTool: 'team.subagents', requiredState: 'stale_or_interrupted_or_failed' }],
       schema: { type: 'object', required: ['id'], properties: { id: { type: 'string' } } },
       run: async (args, ctx) => {
         if (!subagents) return { content: 'background subagents unavailable', summary: 'unavailable' };
         const leadId = (ctx && ctx.agentId) || 'agent';
         const rec = subagents.get(String(args.id || ''));
-        if (!rec || rec.leadId !== leadId) return { content: 'No such background subagent for this lead.', summary: 'not found' };
+        if (!rec || rec.leadId !== leadId) {
+          const error = new Error('No such background subagent for this lead. Inspect the current subagent list before choosing an id.');
+          error.precondition = { code: 'inspect_before_resume', requiredTool: 'team.subagents', requiredState: 'owned_subagent_identified' };
+          throw error;
+        }
         const r = subagents.resume(rec.id, resumeRunnerFor(ctx));
-        return { content: JSON.stringify(r), summary: r.ok ? 'resumed' : 'not resumed' };
+        if (!r.ok) {
+          const error = new Error(String(r.error || 'background subagent is not resumable'));
+          error.precondition = { code: 'subagent_not_resumable', requiredTool: 'team.subagents', requiredState: 'stale_or_interrupted_or_failed' };
+          throw error;
+        }
+        return { content: JSON.stringify(r), summary: 'resumed' };
       }
     };
 

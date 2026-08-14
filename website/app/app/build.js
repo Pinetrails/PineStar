@@ -1821,20 +1821,34 @@ const Build = (() => {
     let trgDock = (entryDocks[0] || docks[0] || {}).agentId || null;
     const dockChip = b => '<button type="button" class="bb sm trg-dock' + (b.agentId === trgDock ? ' active' : '') + '" data-aid="' + esc(b.agentId) + '">'
       + esc((b.role ? b.role + ' · ' : '') + agentLabelFor(b.agentId)) + '</button>';
-    const TRG_PRESETS = [['EVERY 30M', 'every 30m'], ['EVERY 1H', 'every 1h'], ['DAILY 9:00', '0 9 * * *']];
     const trgHtml = isIntake
       ? '<div class="refit-sec">TRIGGERS — WHY THIS LINE RUNS</div>'
         // WORK BELONGS TO A LINE (2026-08-07): the trigger zone is where the Commander decides WHY this line
         // runs, so it is where the rule belongs — only work that comes in through one of these triggers runs
         // the whole line. Plain language; the same fact the STEP card states from the dock's side.
-        + '<div class="refit-note">Only work that comes in one of these ways runs this whole line. A job you hand an agent yourself is answered at its own dock and stops there.</div>'
+        // It is an EXPLANATION, not a warning, so it reads in the dim voice (.trg-explain) — .refit-note is
+        // amber, and an amber paragraph on every INBOX card teaches the Commander to ignore amber.
+        + '<div class="trg-explain">Only work that comes in one of these ways runs this whole line. A job you hand an agent yourself is answered at its own dock and stops there.</div>'
         + '<div class="step-fact" id="trg-feed">checking the wires…</div>'
         + '<div id="trg-routines" class="trg-list"></div>'
-        + '<button type="button" class="bb sm refit-primary refit-summon" id="trg-new">⊕ NEW ROUTINE FOR THIS LINE</button>'
-        + '<div id="trg-form" style="display:none">'
+        + '<button type="button" class="bb sm refit-primary refit-summon" id="trg-new" aria-expanded="false">⊕ NEW ROUTINE FOR THIS LINE</button>'
+        // the create form is ONE bordered object (same vocabulary as AUTOMATION's inline RESCHEDULE editor):
+        // opened from the ⊕ button, it used to be a stack of loose fields with no edge, so on a card that is
+        // already six zones tall there was nothing saying where the form began or ended.
+        + '<div id="trg-form" class="trg-form" style="display:none">'
+          + '<div class="trg-form-k">WHAT SHOULD IT DO?</div>'
           + '<textarea id="trg-prompt" class="refit-input refit-brief" maxlength="2000" rows="2" placeholder="what should each run do? e.g. search for new AI-policy news and summarize the top 3"></textarea>'
-          + '<div class="refit-agents trg-presets">' + TRG_PRESETS.map(pp => '<button type="button" class="bb sm trg-preset" data-sched="' + esc(pp[1]) + '">' + esc(pp[0]) + '</button>').join('') + '</div>'
-          + '<input id="trg-sched" class="refit-input" type="text" maxlength="80" placeholder="schedule — every 30m · 0 9 * * * · in 2h" />'
+          /* WHEN — the SAME schedule picker the AUTOMATION window mounts (frontend/app/schedpicker.js), not a
+             second dialect of "when". It owns the `#trg-sched` text input and TYPES into it, so the server
+             preview, the create POST and every selector below are byte-identical to what they always were;
+             without the module we fall back to that same bare input, never to a dead form. Before this the
+             only cadences reachable here were three preset buttons + hand-typed cron — "every Tuesday at
+             9am" was expressible by the backend and unreachable from this card. */
+          + '<div class="rt-when trg-when" id="trg-when"><div class="trg-form-k">WHEN SHOULD IT RUN?</div>'
+          + (typeof SchedPicker !== 'undefined'
+              ? SchedPicker.html({ inputId: 'trg-sched' })
+              : '<input id="trg-sched" class="refit-input" type="text" maxlength="80" placeholder="schedule — every 30m · 0 9 * * * · in 2h" />')
+          + '</div>'
           + '<div class="trg-preview" id="trg-preview"></div>'
           + (docks.length > 1
               ? '<div class="refit-sec">FIRES AT</div><div class="refit-agents" id="trg-docks">' + docks.map(dockChip).join('') + '</div>'
@@ -1847,7 +1861,8 @@ const Build = (() => {
         + '<div class="refit-actions trg-doors"><button type="button" class="btn-sm" id="trg-chan">⌁ CONNECT A CHANNEL</button><button type="button" class="btn-sm" id="trg-auto">▸ MANAGE IN AUTOMATION</button></div>'
       : '';
     const g = document.createElement('div');
-    g.className = 'refit-guide refit-flow-card';
+    // the INTAKE card is the only flow card carrying a form (the trigger zone) — it gets a little more glass
+    g.className = 'refit-guide refit-flow-card' + (isIntake ? ' refit-flow-intake' : '');
     g.innerHTML = '<div class="refit-guide-card"><h3>▮ ' + (TITLE[p.t] || TITLE.outbox) + '</h3>'
       + flowStripHTML(hot)
       + '<ul><li>' + line + '</li></ul>'
@@ -1885,6 +1900,15 @@ const Build = (() => {
       for (const b of docks) dockAgents[b.agentId] = true;
       let schedulerArmed = false;   // mirrors GET /api/cron enabled && !halted — the honest create-confirm
       const say = (t, bad) => { msgEl.style.display = ''; msgEl.style.color = bad ? 'var(--bad)' : ''; msgEl.textContent = t; };
+      /* cron.js's display string -> the sentence this card shows ("cron 0 9 * * 2" -> "every Tuesday at
+         9:00 AM") — the SAME translator the AUTOMATION rows speak through. CronHuman returns the RAW
+         display for any shape it cannot state exactly (multi-time, month-restricted, the dom-OR-dow case),
+         and so do we when the module is absent: a cadence label never guesses. The raw expression stays
+         one hover away wherever the two differ. */
+      const devTz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; } })();
+      const human = d => ((typeof CronHuman !== 'undefined' && CronHuman.describeDisplay)
+        ? CronHuman.describeDisplay(d, { tz: devTz })
+        : String(d == null ? '' : d));
       // the channel/routine FEED TRUTH — the same World.feedState the NO FEED nag keys on. Floor-global by
       // construction (that is what the server proves), said in floor-global words.
       const feed = (opts && opts.world && opts.world.feedState) ? opts.world.feedState() : { known: false, fed: false };
@@ -1900,10 +1924,16 @@ const Build = (() => {
           schedulerArmed = !!(j.enabled && !j.halted);
           const mine = (Array.isArray(j.jobs) ? j.jobs : []).filter(jb => jb && dockAgents[jb.agentId]);
           if (!mine.length) { listEl.innerHTML = '<div class="trg-row dim">no routines target this line’s docks yet</div>'; return; }
-          listEl.innerHTML = mine.map(jb =>
-            '<div class="trg-row"><span class="trg-state' + (jb.enabled && schedulerArmed ? ' on' : '') + '">' + (jb.enabled ? (schedulerArmed ? '●' : '◍') : '○') + '</span> '
-            + '<b>' + esc(jb.name || '(unnamed)') + '</b> <span class="dim">' + esc(jb.scheduleDisplay || '') + ' · fires at ' + esc(agentLabelFor(jb.agentId)) + '</span>'
-            + (jb.enabled ? (schedulerArmed ? '' : ' <span class="trg-warn">saved — scheduler OFF</span>') : ' <span class="dim">paused</span>') + '</div>').join('');
+          // name on its own line, the schedule sentence + dock beneath it: a routine's meta is a SENTENCE
+          // now ("every Tuesday at 9:00 AM"), and run inline after the name it wrapped mid-phrase.
+          listEl.innerHTML = mine.map(jb => {
+            const raw = jb.scheduleDisplay || '', said = human(raw);
+            return '<div class="trg-row"><span class="trg-state' + (jb.enabled && schedulerArmed ? ' on' : '') + '">' + (jb.enabled ? (schedulerArmed ? '●' : '◍') : '○') + '</span> '
+              + '<b>' + esc(jb.name || '(unnamed)') + '</b>'
+              + '<div class="trg-row-meta"><span' + (said !== raw ? ' title="' + esc(raw) + '"' : '') + '>' + esc(said) + '</span>'
+              + ' · fires at ' + esc(agentLabelFor(jb.agentId))
+              + (jb.enabled ? (schedulerArmed ? '' : ' · <span class="trg-warn">saved — scheduler OFF</span>') : ' · paused') + '</div></div>';
+          }).join('');
         }).catch(() => { if (listEl.isConnected) listEl.innerHTML = '<div class="refit-note">sidecar unreachable — routines unknown</div>'; });
       }
       trgRefresh();
@@ -1920,19 +1950,32 @@ const Build = (() => {
               if (!pvEl.isConnected || schedEl.value.trim() !== v) return;
               if (r && r.ok) {
                 const nx = (Array.isArray(r.localNext) && r.localNext[0]) ? r.localNext[0] : (Array.isArray(r.next) && r.next[0] ? relFmt(r.next[0]) : '');
-                pvEl.innerHTML = '✓ ' + esc(r.display) + (nx ? ' → next: ' + esc(nx) : '');
+                const said = human(r.display);
+                pvEl.innerHTML = '✓ <span' + (said !== r.display ? ' title="' + esc(r.display) + '"' : '') + '>' + esc(said) + '</span>' + (nx ? ' → next: ' + esc(nx) : '');
               } else pvEl.innerHTML = '<span class="trg-warn">' + esc((r && r.error) || 'unrecognized schedule') + '</span>';
             }).catch(() => {});
         }, 300);
       };
       schedEl.addEventListener('input', preview);
-      g.querySelectorAll('.trg-preset').forEach(b => b.onclick = () => { schedEl.value = b.dataset.sched; sfx('click'); preview(); });
+      /* Mount the WHEN picker AFTER that listener exists — the same ordering the AUTOMATION form documents.
+         The picker types its default schedule into `#trg-sched` the moment it mounts, and that seed has to
+         land on a live listener or the form opens with a blank "next fires" line. It is a TYPEWRITER: it
+         only ever writes a string into the input the create path already read, so nothing below changes. */
+      if (typeof SchedPicker !== 'undefined') SchedPicker.mount(g.querySelector('#trg-when'), { onChange: () => sfx('click') });
       g.querySelectorAll('.trg-dock').forEach(b => b.onclick = () => {
         trgDock = b.dataset.aid; sfx('click');
         g.querySelectorAll('.trg-dock').forEach(x => x.classList.toggle('active', x.dataset.aid === trgDock));
       });
-      newBtn.onclick = () => { sfx('click'); formEl.style.display = formEl.style.display === 'none' ? '' : 'none'; if (formEl.style.display !== 'none') promptEl.focus(); };
-      g.querySelector('#trg-cancel').onclick = () => { sfx('click'); formEl.style.display = 'none'; };
+      // ONE opener, one closer: while the form is up the ⊕ button steps aside (the form's own CANCEL closes
+      // it), so a card that is already tall never shows two controls for the same door.
+      const showForm = on => {
+        formEl.style.display = on ? '' : 'none';
+        newBtn.style.display = on ? 'none' : '';
+        newBtn.setAttribute('aria-expanded', on ? 'true' : 'false');
+        if (on) promptEl.focus();
+      };
+      newBtn.onclick = () => { sfx('click'); showForm(formEl.style.display === 'none'); };
+      g.querySelector('#trg-cancel').onclick = () => { sfx('click'); showForm(false); };
       g.querySelector('#trg-create').onclick = () => {
         const prompt = promptEl.value.trim(), schedule = schedEl.value.trim();
         if (!prompt || !schedule) { sfx('bad'); say('a task and a schedule are required', true); return; }
@@ -1958,7 +2001,10 @@ const Build = (() => {
             sfx('chime');
             // honest confirm: never claim "scheduled" over a disarmed scheduler (same law as AUTOMATION)
             say(schedulerArmed ? '✓ routine scheduled — fires at ' + agentLabelFor(trgDock) : '✓ saved — but the scheduler is OFF; enable it in AUTOMATION', !schedulerArmed);
-            promptEl.value = ''; pvEl.textContent = '';
+            // clear the BRIEF (the next routine is a different job) but keep the WHEN preview: the picker
+            // still holds that schedule, so blanking its "next fires" line left the form looking unset
+            // while it was in fact still armed on the same cadence.
+            promptEl.value = '';
             trgRefresh();
           }).catch(() => { btn.disabled = false; sfx('bad'); say('✕ could not reach the sidecar — nothing was created', true); });
       };

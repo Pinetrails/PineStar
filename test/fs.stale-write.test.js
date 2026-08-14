@@ -40,7 +40,10 @@ async function rejects(p, re, msg) {
     await writeTool.run({ path: 'a.js', content: 'v1' }, CTX);
     await readTool.run({ path: 'a.js' }, CTX);
     await externalChange('a.js', 'THEIR WORK');
-    await rejects(writeTool.run({ path: 'a.js', content: 'v2-from-stale-read' }, CTX), /stale write refused/, 'an overwrite based on a stale read is refused');
+    let staleError = null;
+    try { await writeTool.run({ path: 'a.js', content: 'v2-from-stale-read' }, CTX); } catch (e) { staleError = e; }
+    A.ok(staleError && /stale write refused/.test(staleError.message), 'an overwrite based on a stale read is refused');
+    A.eq(staleError && staleError.precondition, { code: 'fresh_read_required', requiredTool: 'fs.read', requiredState: 'current_file_observed' }, 'stale-write refusal declares the exact read-before-retry precondition');
     A.eq(await fsp.readFile(absOf('a.js'), 'utf8'), 'THEIR WORK', "the other writer's content survived");
   }
 

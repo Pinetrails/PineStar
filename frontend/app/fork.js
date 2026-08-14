@@ -95,7 +95,10 @@
   // preference forks so the browser and Node host share one already-shipped decision-protocol module without
   // adding another release-surface path. Unlike FORK, its answers stay in the Task Brief, never the dossier.
   const TASK_LINE = /^\s*TASK_QUESTION:\s*(.+?)\s*\|\|\s*(.+?)\s*$/mi;
-  const TASK_Q_CHARS = 240, TASK_OPT_CHARS = 72, TASK_MAX_OPTS = 3;
+  // An EXCLUSIVE question is a fork: 2-3 options or it is a menu, not a decision. A MULTI-SELECT question
+  // is a checklist ("which sources?", "which constraints?") and legitimately runs longer — 3 was starving
+  // exactly the question type multi-select exists for, while the clarify card already rendered up to 6.
+  const TASK_Q_CHARS = 240, TASK_OPT_CHARS = 72, TASK_MAX_OPTS = 3, TASK_MAX_OPTS_MULTI = 6;
   function taskClean(s, max) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, max); }
   // Normalizers shared by this browser-side parse and the host policy (taskbrief-policy), so the two option
   // producers can never drift on what counts as "the same option". There are deliberately TWO strengths:
@@ -122,13 +125,14 @@
   }
   function taskDedupeKey(v) { return taskTrim(v).replace(/^the\s+/, '').trim(); }
   function taskSameOption(a, b) { const k = taskDedupeKey(a); return !!k && k === taskDedupeKey(b); }
-  function taskDedupeOptions(list) {
+  function taskDedupeOptions(list, max) {
     // Cap BEFORE the O(n^2) pairwise compare: `options` is model-controlled and the wire schema declares no
     // maxItems, so a 4000-entry array used to block the single-process sidecar for seconds. Only the first
     // few can ever be offered anyway, so scan a small bounded window and stop.
+    const cap = Math.max(2, Math.min(Number(max) || TASK_MAX_OPTS, TASK_MAX_OPTS_MULTI));
     const seen = [];
     const src = Array.isArray(list) ? list.slice(0, 32) : [];
-    for (let i = 0; i < src.length && seen.length < TASK_MAX_OPTS; i++) {
+    for (let i = 0; i < src.length && seen.length < cap; i++) {
       const x = taskClean(src[i], TASK_OPT_CHARS);
       if (!taskTrim(x)) continue;                                  // a punctuation-only "option" is not a choice
       let dup = false;
@@ -162,11 +166,14 @@
       'Proceed immediately when the task is clear. Infer low-impact details with reversible defaults; do not turn a good request into an interview.',
       'Research before asking: inspect the granted project, conversation, task brief, and available sources when they can answer the gap.',
       'Ask only when different plausible answers would materially change the outcome, audience, deliverable, source of truth, safety, or acceptance boundary.',
-      'Ask ONE concrete question at a time, with 2-3 short, genuinely different options. Never ask vague prompts such as "what does good look like?".',
-      'A task may ask at most two questions total; a second is allowed only when the first answer exposed another genuinely blocking decision.',
+      'Each question is concrete, with 2-3 short, genuinely different options. Never ask vague prompts such as "what does good look like?".',
+      'BUNDLE related material questions into ONE brief_ask call (the extra ones in `also`, up to three total, each on a different dimension) — the Commander answers them in one moment instead of being interrupted repeatedly. An exclusive question carries 2-3 options; a multiSelect:true question (options NOT mutually exclusive, e.g. which sources, which constraints) may carry up to 6.',
+      'A task gets at most two brief_ask calls total; a second is allowed only when the first answers exposed another genuinely blocking decision.',
       'If the Commander said "use your judgment", "just do it", or equivalent, choose the most sensible reversible default and act.',
       'When brief_ask and brief_proceed are available, use them as the authoritative protocol. Call brief_proceed immediately before the first consequential tool; the host blocks writes/executes until you do.',
-      'In brief_proceed, state your READ of the desired STYLE, TONE, and AESTHETIC as explicit assumptions (e.g. "gritty and readable, not decorative") — the Commander sees them and corrects what is wrong, which is the fastest way to learn their taste. Guess boldly; a corrected guess teaches more than a hedge.',
+      'In brief_proceed, every assumption must be a DECISION a reasonable person could have made differently — what you are including, excluding, or treating as the source of truth — and something the Commander could actually overturn.',
+      'State a STYLE, TONE, or AESTHETIC assumption ONLY when the task produces an authored artifact whose look or voice you had to choose (a document, deck, page, image, UI, anything another person will read), and then name what you picked AND what you rejected ("gritty and readable, not decorative"). There, guess boldly — a corrected guess teaches more than a hedge. At most ONE such assumption per brief.',
+      'NEVER restate your normal defaults as assumptions. "Style: brief and direct", "Tone: friendly", "Aesthetic: plain and readable" are how you always work — they are noise, not decisions, and they bury the one assumption that mattered. A question answered in chat needs no taste assumption at all.',
       'Use brief_ask to pause on a material unknown. It validates the decision dimension, distinct options, recommended default, research status, and whole-task question budget.',
       'To ask, do no consequential mutation first and END your reply with exactly:',
       'TASK_QUESTION: <one concrete question> || <option A> | <option B> | <option C, optional>',
@@ -190,7 +197,9 @@
   const TaskIntent = {
     parse: taskParse, strip: taskStrip, directive: taskDirective, answerMessage: taskAnswerMessage, routeReply: taskRouteReply,
     loosen: taskLoosen, dedupeOptions: taskDedupeOptions, sameOption: taskSameOption,
-    MAX_QUESTION: TASK_Q_CHARS, MAX_OPTION: TASK_OPT_CHARS, MAX_OPTIONS: TASK_MAX_OPTS
+    MAX_QUESTION: TASK_Q_CHARS, MAX_OPTION: TASK_OPT_CHARS, MAX_OPTIONS: TASK_MAX_OPTS, MAX_OPTIONS_MULTI: TASK_MAX_OPTS_MULTI,
+    // one place decides how many options a question may carry, so policy / store / card can never drift
+    maxOptionsFor: (multiSelect) => (multiSelect === true ? TASK_MAX_OPTS_MULTI : TASK_MAX_OPTS)
   };
 
   return { shouldOffer, directive, parse, strip, beliefText, CONF_FLOOR, MAX_OPTS, TaskIntent };
