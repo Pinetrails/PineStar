@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b3bb8c7d123a8c23125c5a5f71c33b37eeb9f42b",
+    "sourceCommit": "6c34063931e554cd5b91edfe28bdf0a3f479d6f8",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -148,8 +148,8 @@
       },
       {
         "path": "frontend/app/classicons.js",
-        "bytes": 42372,
-        "sha256": "59c1ad1f9074f02fec5e785c9b70e805f64758760480220847fefff1771928af"
+        "bytes": 54770,
+        "sha256": "31c0d64e9b366b7ebc514b543bee94b70301363114cf522042358950b0db7058"
       },
       {
         "path": "frontend/app/classify.js",
@@ -878,8 +878,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 102699,
-        "sha256": "060b4e2858987dd2df0c3e6d83f96cd572c51f215464c4558958d1d6ec335015"
+        "bytes": 103709,
+        "sha256": "19e7b25df29635f19739049635024407b9ec7cf167061eeee022b64989f1e785"
       },
       {
         "path": "frontend/app/windows/logbook.js",
@@ -973,8 +973,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 367401,
-        "sha256": "de4614044bcceaddc99181b4a437af39063eee2f9f1113a81aaf554083da5ff4"
+        "bytes": 367922,
+        "sha256": "a8116339512eb12fc952fab13fc7be5d901e24b654f0c78a121c39955c2df883"
       },
       {
         "path": "frontend/css/asciifx.css",
