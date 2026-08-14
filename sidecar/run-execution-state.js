@@ -103,6 +103,12 @@ function makeRunExecutionState(options) {
       : { schemaVersion: 'starnet.completion-evidence.v1', completionVerdict: 'not_assessed', effectVerdict: 'no_observed_effects', effects: [], evidence: [] };
   }
 
+  async function assessCompletion(input) {
+    return completion && typeof completion.assess === 'function'
+      ? completion.assess(input || {})
+      : completionEvidence();
+  }
+
   function consumeToolCall(maxCalls) {
     const cap = Math.floor(Number(maxCalls) || 0);
     if (cap > 0 && toolCallsStarted >= cap) return false;
@@ -226,6 +232,7 @@ function makeRunExecutionState(options) {
     recoveryAttempts: () => recoveryAttempts.map(row => Object.assign({}, row)),
     failJournal,
     observeCompletion,
+    assessCompletion,
     completionEvidence,
     observeArtifact,
     artifactList

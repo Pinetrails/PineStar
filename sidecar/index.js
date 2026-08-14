@@ -955,7 +955,11 @@ const runsIo = {
     rotateJsonl(RUNS_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
 };
-const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
+// In-process capability proving that a completion verdict was produced by the host evaluator in this process.
+// It is never serialized or exposed to a model/API caller; runstore requires object identity before persisting
+// anything stronger than not_assessed.
+const completionAuthority = Symbol('host completion assessment');
+const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() }, completionAuthority });
 
 // Explicit Commander work verdicts are durable facts, separate from the mutable browser save projection.
 // Append+fsync must fail closed: the UI may only say "rated" after this ledger acknowledges the row.
@@ -2191,6 +2195,7 @@ async function runReflection(o) {
     usd += c.usd || 0; tokens += (c.tokensIn || 0) + (c.tokensOut || 0);
     return out;
   };
+  let finalCompletionEvidence = execution.completionEvidence();
   try {
     const stored = notebookStore.get('notebook:' + agentId);
     const existing = Array.isArray(stored) ? stored : [];
@@ -12602,6 +12607,9 @@ async function handleRun(req, res) {
       taskKey: streamId ? ('stream:' + streamId) : null,
       taskSource: 'interactive',
       taskAction: body && body.taskAction,
+      // Optional Commander-authored typed success contract. The host validates and evaluates it after the run;
+      // it is never injected as model authority and cannot widen tools/permissions.
+      postconditions: body && body.postconditions,
       recipeId,        // provenance spine (lane A): rides to the durable run row so a rating can be attributed
       // DELIVERABLE ORGANIZATION: the project this run is scoped to rides to the durable run row, so the FILES the
       // run produces can be filed under the thing the Commander was working ON (not just under a runId). Recorded
@@ -12758,7 +12766,7 @@ async function runOnce(o) {
   const execution = makeRunExecutionState({
     initialTaint: o.initialTaint ? String(o.initialTaint === true ? 'scheduled upstream context' : o.initialTaint) : null,
     artifacts: makeArtifactCollector(),
-    completion: makeCompletionEvidence(),
+    completion: makeCompletionEvidence({ authority: completionAuthority }),
     now: () => Date.now()
   });
   // One sequence across provider and tool recovery. Adapter-local counters restart at one, but the durable run
@@ -14623,7 +14631,7 @@ async function runOnce(o) {
     // right direction, since the alternative is a run that can still call tools but can no longer SEE any.
     if (name === 'agent.compact') execution.resetToolBytes();
     execution.observeToolEvent(name, payload);
-    if ((taskBrief || imageTask) && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
+    if ((taskBrief || imageTask || o.postconditions != null) && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
       bufferedTaskEnd = payload; return;
     }
     emit(name, payload);
@@ -14707,6 +14715,38 @@ async function runOnce(o) {
       const completionError = ImageTask.enforceCompletion(result, execution.artifactList(), { clarifying });
       if (completionError) emit('agent.run.error', { agentId, runId, transient: false, message: completionError });
     }
+    // TYPED POSTCONDITIONS. The contract comes from the run caller/Commander, never from model output. Every
+    // artifact predicate is evaluated through the workspace jail after the loop settles, and only an artifact
+    // actually touched by this run is eligible. A missing/invalid/unprovable contract fails closed.
+    finalCompletionEvidence = execution.completionEvidence();
+    try {
+      finalCompletionEvidence = await execution.assessCompletion({
+        contract: o.postconditions,
+        reason: (result && result.reason) || 'error',
+        artifacts: execution.artifactList(),
+        uncertainMutations: execution.uncertainMutations(),
+        readArtifact: async requirement => {
+          const resolved = await fsJail.resolveInside(agentId, requirement.path, { scope: 'read' });
+          const stat = await fsp.stat(resolved.abs);
+          if (!stat.isFile()) return { exists: true, isFile: false };
+          const observed = { exists: true, isFile: true, bytes: stat.size };
+          if (requirement.type === 'artifact_contains') {
+            if (stat.size > (8 << 20)) return observed; // bounded read; absence of proof is not failure of the run host
+            observed.contains = (await fsp.readFile(resolved.abs, 'utf8')).includes(requirement.text);
+          } else if (requirement.type === 'artifact_sha256') {
+            const hash = crypto.createHash('sha256');
+            await new Promise((resolve, reject) => {
+              const stream = fs.createReadStream(resolved.abs);
+              stream.on('data', chunk => hash.update(chunk)); stream.once('error', reject); stream.once('end', resolve);
+            });
+            observed.sha256 = hash.digest('hex');
+          }
+          return observed;
+        }
+      });
+    } catch (_) {
+      finalCompletionEvidence = execution.completionEvidence();
+    }
     // HOOKS — on_session_end. The run's real outcome, not an optimistic one: `reason` is whatever the loop
     // actually ended on ('done' | 'empty' | 'max_iters' | 'budget' | 'cancelled' | 'error'), so a hook that
     // pages on failure pages on the truth. This is the seam for "when a run finishes, notify me / run the
@@ -14717,7 +14757,8 @@ async function runOnce(o) {
         extra: {
           agent_id: agentId, model, platform: surface,
           reason: (result && result.reason) || 'unknown',
-          completed: !!(result && result.reason === 'done'),
+          completed: finalCompletionEvidence.completionVerdict === 'completed_verified',
+          completion_verdict: finalCompletionEvidence.completionVerdict,
           interrupted: !!(result && result.reason === 'cancelled'),
           turns: (result && result.turns) || 0, usd: (result && result.usd) || 0
         }
@@ -14746,12 +14787,19 @@ async function runOnce(o) {
       } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }
     }
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason) }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, {
+        reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason),
+        completionVerdict: taskQuestionAsked ? 'not_assessed' : finalCompletionEvidence.completionVerdict,
+        effectVerdict: finalCompletionEvidence.effectVerdict
+      }));
       bufferedTaskEnd = null;
     }
   } finally {
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason) }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, {
+        reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason),
+        completionVerdict: 'not_assessed', effectVerdict: finalCompletionEvidence.effectVerdict
+      }));
       bufferedTaskEnd = null;
     }
     // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
@@ -14779,7 +14827,7 @@ async function runOnce(o) {
         }
       }
       const runEndedAt = Date.now();
-      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), failureStage: execution.failureStage(), failureCode: execution.failureCode(), uncertainMutations: execution.uncertainMutations(), completionEvidence: execution.completionEvidence(), recoveryAttempts: execution.recoveryAttempts(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), failureStage: execution.failureStage(), failureCode: execution.failureCode(), uncertainMutations: execution.uncertainMutations(), completionEvidence: finalCompletionEvidence, recoveryAttempts: execution.recoveryAttempts(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new

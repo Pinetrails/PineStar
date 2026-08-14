@@ -677,7 +677,7 @@ const Harness = (() => {
      stream of newline-delimited JSON events — the FROZEN agent.* U.bus events the harness emits.
      Each event is re-emitted on U.bus (for telemetry) and mapped to the caller's callbacks.
      onToken(delta) per text delta · onToolCall/onToolResult per tool step · onUsage per turn. */
-  async function chat({ system, messages, onToken, onTerminalReset, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, evidence, projectRoot, taskAction, recovery }) {
+  async function chat({ system, messages, onToken, onTerminalReset, onUsage, onToolCall, onToolResult, onRunId, onDeliverable, onPermission, onSummon, agentId, isTask, recurring, signal, streamId, recipeId, workbench, placed, stationPlaced, internal, evidence, projectRoot, taskAction, postconditions, recovery }) {
     const model = getModel(), provider = getProv(), key = getKey(provider), reasoningEffort = getReasoningEffort(provider);
     // Codex authenticates by an OAuth token (server-side); the desktop build keeps the key in the
     // sidecar's env (keychain). Neither needs a key sent from here.
@@ -706,6 +706,7 @@ const Harness = (() => {
          the internal path changes (no manual, no skills, no memory fence, no recall-stat writes). */
       if (evidence) reqBody.evidence = true;
       if (/^(answer|cancel|replace)$/.test(String(taskAction || ''))) reqBody.taskAction = String(taskAction);
+      if (postconditions != null) reqBody.postconditions = postconditions;
       if (recipeId) reqBody.recipeId = String(recipeId).slice(0, 60);   // provenance spine: which recipe launched this run (rides to the durable run row)
       // project-anchored session (ref-parity working folder): the sidecar injects the folder context line
       // ONLY when this root is still a standing blessed path grant — an un-blessed root injects nothing.
@@ -745,7 +746,7 @@ const Harness = (() => {
 
     const reader = res.body.getReader();
     const dec = new TextDecoder();
-    let buf = '', full = '', lastUsage = null, runId = null, errMsg = null, endReason = null, finishReason = null;
+    let buf = '', full = '', lastUsage = null, runId = null, errMsg = null, endReason = null, finishReason = null, completionVerdict = 'not_assessed', effectVerdict = 'no_observed_effects';
     let budgetScope = null, budgetCapUsd = null;   // additive: WHICH spend cap ended a 'budget' run (+ its $ cap)
 
     for (;;) {
@@ -813,6 +814,8 @@ const Harness = (() => {
             // filtered it — the caller renders a "cut short" recap instead of a delivered crate for those.
             if (!payload.runId || payload.runId === runId) {
               endReason = payload.reason; finishReason = payload.finishReason || null;
+              completionVerdict = payload.completionVerdict || 'not_assessed';
+              effectVerdict = payload.effectVerdict || 'no_observed_effects';
               // additive budget-stop detail: which cap fired + the effective $ cap (absent on non-budget stops)
               budgetScope = payload.budgetScope || null;
               budgetCapUsd = (typeof payload.budgetCapUsd === 'number' && isFinite(payload.budgetCapUsd)) ? payload.budgetCapUsd : null;
@@ -824,8 +827,8 @@ const Harness = (() => {
     totals.calls++;
     // surface the error to the caller (do NOT swallow it just because some text streamed first) —
     // a network/fetch failure still throws below; this is for in-band run errors / capdenied.
-    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason, finishReason, budgetScope, budgetCapUsd };
-    return { text: full, usage: lastUsage, runId, endReason, finishReason, budgetScope, budgetCapUsd };
+    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason, finishReason, completionVerdict, effectVerdict, budgetScope, budgetCapUsd };
+    return { text: full, usage: lastUsage, runId, endReason, finishReason, completionVerdict, effectVerdict, budgetScope, budgetCapUsd };
   }
 
   /* Read-only fetch of an agent's notebook (its memory.md) from the sidecar. The agent writes these notes

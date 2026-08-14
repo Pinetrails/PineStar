@@ -10,6 +10,8 @@
  * observed. False completion is worse than an explicit unverified outcome. */
 'use strict';
 
+const { assessPostconditions } = require('./task-postconditions.js');
+
 const MAX_ROWS = 100;
 const MAX_TEXT = 160;
 
@@ -32,7 +34,7 @@ function connectorOf(name) {
 
 function targetOf(args) {
   if (!args || typeof args !== 'object' || Array.isArray(args)) return '';
-  for (const k of ['path', 'file', 'filename', 'target', 'url', 'id', 'documentId', 'pageId', 'sheetId']) {
+  for (const k of ['path', 'file', 'filename', 'target', 'url', 'cmd', 'command', 'id', 'documentId', 'pageId', 'sheetId']) {
     if (typeof args[k] === 'string' && args[k]) return text(args[k], MAX_TEXT);
   }
   return '';
@@ -44,10 +46,12 @@ function isObservation(name, scope) {
   return /(^|_)(?:read|get|list|fetch|status|inspect|snapshot|screenshot|check|verify|confirm|query|lookup)(_|$)/.test(key(name));
 }
 
-function makeCompletionEvidence() {
+function makeCompletionEvidence(options) {
+  const opts = options || {};
   const effects = [];
   const evidence = [];
   let seq = 0;
+  let assessment = null;
 
   function addEvidence(row) {
     if (evidence.length >= MAX_ROWS) return '';
@@ -73,7 +77,7 @@ function makeCompletionEvidence() {
       const passed = /^verify passed\b/i.test(String(result.summary || ''));
       const evidenceId = addEvidence({
         callId, tool: name, kind: 'deterministic_check', strength: passed ? 'mechanical' : 'failed',
-        summary: text(result.summary, 120)
+        summary: text(result.summary, 120), target: targetOf(args)
       });
       if (passed) {
         for (const effect of effects) {
@@ -125,6 +129,16 @@ function makeCompletionEvidence() {
     }
   }
 
+  async function assess(input) {
+    input = input || {};
+    const current = snapshot();
+    assessment = await assessPostconditions(Object.assign({}, input, {
+      evidence: evidence.map(e => Object.assign({}, e)),
+      effectVerdict: current.effectVerdict
+    }));
+    return snapshot();
+  }
+
   function snapshot() {
     let effectVerdict = 'no_observed_effects';
     if (effects.length) {
@@ -132,18 +146,27 @@ function makeCompletionEvidence() {
       else if (effects.some(e => e.state === 'judgment_required')) effectVerdict = 'judgment_required';
       else effectVerdict = 'mechanically_verified';
     }
-    return {
+    const out = {
       schemaVersion: 'starnet.completion-evidence.v1',
       // Load-bearing: evidence about effects is not automatically evidence that the user's requested outcome
       // was correct, complete, or observed. Only a typed task/postcondition contract may change this later.
-      completionVerdict: 'not_assessed',
+      completionVerdict: assessment ? assessment.completionVerdict : 'not_assessed',
       effectVerdict,
       effects: effects.map(e => Object.assign({}, e, { evidence: e.evidence.slice() })),
       evidence: evidence.map(e => Object.assign({}, e))
     };
+    if (assessment) {
+      out.contract = assessment.contract;
+      out.contractErrors = assessment.contractErrors;
+      out.checks = assessment.checks;
+      // Non-serializable in-process authority. The durable run store strips it after an identity check, so an
+      // API body/model/tool result cannot forge a completed_verified row.
+      out._completionAuthority = opts.authority || null;
+    }
+    return out;
   }
 
-  return { observe, snapshot };
+  return { observe, assess, snapshot };
 }
 
 module.exports = { makeCompletionEvidence, _internals: { domainOf, connectorOf, targetOf, isVerifier, isObservation } };

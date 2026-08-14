@@ -312,9 +312,9 @@ const Chat = (() => {
     if (presenceRunId) card.dataset.runId = presenceRunId;
     card.classList.remove('cp-live');
     presenceCurTool = null;
-    const isErr = !!opts.error, isStop = !!opts.stopped || (opts.endReason && opts.endReason !== 'done') || !!opts.cutShort;
+    const isErr = !!opts.error, needsVerify = !!opts.verificationRequired, isStop = needsVerify || !!opts.stopped || (opts.endReason && opts.endReason !== 'done') || !!opts.cutShort;
     card.classList.add('resolved'); if (isErr) card.classList.add('err'); else if (isStop) card.classList.add('stopped');
-    let label = isErr ? '■ RUN FAILED' : opts.cutShort ? '■ CUT SHORT' : isStop ? '■ RUN STOPPED' : '■ RUN COMPLETE';
+    let label = isErr ? '■ RUN FAILED' : needsVerify ? '■ VERIFICATION REQUIRED' : opts.cutShort ? '■ CUT SHORT' : isStop ? '■ RUN STOPPED' : '■ RUN COMPLETE';
     const bits = [];
     if (dur) bits.push(dur);
     if (typeof opts.steps === 'number' && opts.steps > 0) bits.push(opts.steps + (opts.steps === 1 ? ' step' : ' steps'));
@@ -7543,9 +7543,10 @@ const Chat = (() => {
       if (chunk.trim()) { Voice.speakChunk(chunk, name); spokenIdx += cut; }
     };
     try {
-      const { text: reply, error, endReason, finishReason, budgetScope, budgetCapUsd } = await Harness.chat({
+      const { text: reply, error, endReason, finishReason, completionVerdict, effectVerdict, budgetScope, budgetCapUsd } = await Harness.chat({
         system: sys, messages: historyWindow(ws), agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
         taskAction: taskAction || undefined,
+        postconditions: opts && opts.postconditions != null ? opts.postconditions : undefined,
         recovery: recoveryResume ? opts.recovery : undefined,
         recipeId: recipeId || undefined,   // provenance spine: the launching recipe rides to the durable run row (undefined for non-recipe runs)
         projectRoot: ws.projectRoot || undefined,   // project-anchored session: the sidecar injects the folder context ONLY if the root is still a standing blessed grant (truthful)
@@ -7668,10 +7669,11 @@ const Chat = (() => {
         // It must NOT ship a "◈ delivered" crate / XP / workitem.delivered as if it were complete. Treat it like a
         // non-clean stop for the delivery decision (but keep the partial text above — it's real, just incomplete).
         const cutShort = finishReason === 'length' || finishReason === 'content_filter';
+        const postconditionUnmet = !!(opts && opts.postconditions != null && completionVerdict !== 'completed_verified');
         // GOAL LOOP: a clean turn (done / no endReason) with a real reply is judgeable. A max_iters/budget/refusal
         // stop — or a provider-truncated reply — is NOT — the agent didn't get to finish its thought, so re-judging
         // would be premature. The judge runs in the finally (after teardown) so it never delays this turn's unwind.
-        if (!taskQuestion && (!endReason || endReason === 'done') && !cutShort && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
+        if (!taskQuestion && (!endReason || endReason === 'done') && !cutShort && !postconditionUnmet && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done' && endReason !== 'clarifying' && !taskQuestion) {
           // NO ECHO OF THE HEADLINE (2026-07-27): resolvePresence already prints "■ RUN STOPPED" for every one
@@ -7694,6 +7696,9 @@ const Chat = (() => {
             ? 'reply cut short — the model\'s output was filtered'
             : 'reply cut short — hit the response length limit; say "continue" for the rest'));
           if (typeof StationUI !== 'undefined') StationUI.notify('reply cut short: ' + finishReason, 'warn');
+        } else if (postconditionUnmet) {
+          if (isActiveWs(ws)) breakLive(), toolLine('⚠ completion was not proven — typed postconditions returned ' + (completionVerdict || 'not_assessed') + ' (' + (effectVerdict || 'no effect evidence') + ')');
+          if (typeof StationUI !== 'undefined') StationUI.notify('completion needs verification', 'warn');
         }
         if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
         if (isActiveWs(ws) && taskQuestion) presentTaskQuestion(ws, taskQuestion);   // enriches with the stored recommendation, then renders
@@ -7726,7 +7731,7 @@ const Chat = (() => {
            runs its line INSIDE the sidecar, where the origin is provable. The sidecar applies the identical
            gate on the compiled plan, so this surface cannot disagree with that one. */
         const wsLineOrigin = (opts && opts.lineId) ? String(opts.lineId) : null;
-        if (wsLineOrigin && isTask && !taskQuestion && !cutShort && (!endReason || endReason === 'done') && replyText.trim()) {
+        if (wsLineOrigin && isTask && !taskQuestion && !cutShort && !postconditionUnmet && (!endReason || endReason === 'done') && replyText.trim()) {
           const line = await runWorkLine(ws, { fromAgentId: turnAgentId, text: replyText, originalText: text, signal: ac.signal, lineId: wsLineOrigin });
           if (line.hops) { finalReply = line.text; replyText = line.text; titleOk = !!line.text.trim(); }
         }
@@ -7737,20 +7742,20 @@ const Chat = (() => {
         // profile/XP ship-signal + the "tasks shipped" milestone. Only on done/undefined — a max_iters/budget/
         // error/refusal stop is an unproductive run (the agent.run.end SLAG path owns that); abort/hard-error never
         // reach this branch. (Not gated on isActiveWs: a background stream's work still ships.)
-        if (wiPlaced && !taskQuestion && (!endReason || endReason === 'done') && !cutShort) wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
+        if (wiPlaced && !taskQuestion && (!endReason || endReason === 'done') && !cutShort && !postconditionUnmet) wiEmit('workitem.delivered', { workitemId: wiId, finalQueueId: 'outbox', agentId: wiAid, box: '', ms: Date.now() - wiPlacedTs, ts: Date.now() });
         // stash this run's REAL work so the post-run "rate the work" beat can size the XP honestly + gate on real work.
         // Lane 5: a cut-short run (provider truncated/filtered) is NOT rateable work — leaving no runWork stash makes
         // maybeStandaloneRate return 'never', so no XP is ever minted for an amputated reply. runCost is still computed
         // for the honest presence/recap readout.
         let runCost = 0;
-        if (thisRunId) { runCost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); if (!cutShort && !taskQuestion) { runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: runCost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); } }
+        if (thisRunId) { runCost = Math.max(0, (Harness.totals().cost || 0) - (before.cost || 0)); if (!cutShort && !taskQuestion && !postconditionUnmet) { runWork.set(thisRunId, { toolsOk: runToolsOk, delivered: runDeliv, cost: runCost, agentId: ws.agentId || 'agent' }); if (runWork.size > 60) runWork.delete(runWork.keys().next().value); } }
         // P3.2 — CLAIM this lead run's dispatched crew (workers whose forwarded run.end fell inside its live window)
         // so a 👍 verdict can split its XP mint honestly. A run that dispatched no crew records nothing (empty list),
         // and the split falls back to lead-only — no fabricated attribution. Only a HERO lead run has crew to claim.
         if (thisRunId && (ws.agentId || 'agent') === 'agent') { const crew = claimCrew(runStartedAt); if (crew.length) { runCrew.set(thisRunId, crew); if (runCrew.size > 60) runCrew.delete(runCrew.keys().next().value); } }
         // COMMS-PREMIUM: resolve the presence card into a compact summary. steps = real successful tool rounds,
         // cost = this run's REAL usd delta — both truthful (shown only when > 0), never fabricated.
-        if (isActiveWs(ws)) resolvePresence(ws, { endReason: taskQuestion ? 'done' : endReason, cutShort: cutShort, steps: runToolsOk, cost: runCost });
+        if (isActiveWs(ws)) resolvePresence(ws, { endReason: taskQuestion ? 'done' : endReason, cutShort: cutShort, verificationRequired: postconditionUnmet, steps: runToolsOk, cost: runCost });
         // WORK VISIBILITY: a passive recap of what this run PRODUCED, fetched from the run's recorded
         // artifacts ledger. A report, not an ask — it never claims the post-run beat slot. Fire-and-forget.
         // DURATION HONESTY (2026-07-19): the recap's "RUN COMPLETE · M:SS" reads Channels.elapsedOf — the

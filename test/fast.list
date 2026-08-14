@@ -39,6 +39,8 @@ test/provider-runtime.test.js
 test/run-execution-state.test.js
 test/tool-dispatch-boundary.test.js
 test/completion-evidence.test.js
+test/task-postconditions.test.js
+test/task-postconditions-ui.test.js
 test/recovery-policy.test.js
 test/tool-recovery.test.js
 test/run-journal-disk-boundary.test.js
