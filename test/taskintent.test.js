@@ -36,7 +36,8 @@ A.eq(TaskIntent.answerMessage('who is this for?', 'operators'), 'operators', 'ch
 const doctrine = TaskIntent.directive('KNOWN: existing React admin shell');
 A.ok(/Research before asking/.test(doctrine) && /what does good look like/.test(doctrine), 'doctrine says discover first and bans vague questions');
 A.ok(/use your judgment/i.test(doctrine) && /Proceed immediately/.test(doctrine), 'doctrine preserves autonomy for clear/defaultable tasks');
-A.ok(/at most two questions total/.test(doctrine) && /second is allowed only/.test(doctrine), 'doctrine caps the whole task and permits a second question only when blocking');
+A.ok(/at most two brief_ask calls total/.test(doctrine) && /second is allowed only/.test(doctrine), 'doctrine caps the whole task in ASK CALLS and permits a second only when blocking');
+A.ok(/BUNDLE related material questions into ONE brief_ask call/.test(doctrine) && /multiSelect:true/.test(doctrine), 'doctrine tells the model to batch related questions and mark non-exclusive options');
 A.ok(/brief_proceed/.test(doctrine) && /brief_ask/.test(doctrine), 'doctrine names the structured host controls');
 
 const replyCases = [
@@ -393,7 +394,26 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(/wireBriefRead/.test(chatSrc) && /taskbrief\.settled/.test(chatSrc), 'COMMS renders the READ card from the settled event');
   A.ok(/\/api\/run\/steer/.test(chatSrc) && /folded into the run/.test(chatSrc), 'READ-card corrections fold into the live run via steer');
   A.ok(/run already ended|run already finished/.test(chatSrc), 'a correction after run end is refused honestly, never faked');
-  A.ok(/STYLE, TONE, and AESTHETIC as explicit assumptions/.test(TaskIntent.directive('')), 'the doctrine demands bold, correctable taste assumptions in brief_proceed');
+  /* TASTE-FILLER CEILING (2026-08-14, live-caught): the doctrine used to demand a STYLE+TONE+AESTHETIC read on
+     EVERY task, so a "what are my PC specs?" lookup produced three invented taste chips and buried the one real
+     assumption. Taste is now CONDITIONAL on an authored artifact, and the host caps what a prompt cannot. */
+  {
+    const doc = TaskIntent.directive('');
+    A.ok(/ONLY when the task produces an authored artifact/.test(doc), 'taste assumptions are conditional on there being a look to choose');
+    A.ok(/NEVER restate your normal defaults as assumptions/.test(doc) && /needs no taste assumption at all/.test(doc), 'restating our own defaults is banned outright');
+    A.ok(/what you picked AND what you rejected/.test(doc), 'an earned taste assumption must name the alternative it rejected');
+    // the EXACT chips from the live card Andrew caught
+    const caught = ['Style: brief, direct, and practical.', 'Tone: friendly with a small spark, no unnecessary ceremony.',
+      'Aesthetic: plain readable summary, not an elaborate report.', 'I will omit serial numbers, product keys, usernames, and other sensitive identifiers.'];
+    A.eq(Policy.trimAssumptions(caught), ['I will omit serial numbers, product keys, usernames, and other sensitive identifiers.'],
+      'every taste-filler chip is dropped and the one real assumption survives');
+    A.eq(Policy.validateProceed({ objective: 'Report the host PC specs', assumptions: caught }).brief.assumptions.length, 1, 'the ceiling applies at the policy boundary, not just in the prompt');
+    // fail-open: an EARNED taste call (names its rejected alternative, task-specific words) is never destroyed
+    const earned = ['Aesthetic: gritty and readable, not decorative — this is a recruiting poster', 'Treating the Q3 export as the source of truth, not the dashboard'];
+    A.eq(Policy.trimAssumptions(earned), earned, 'a specific, contestable taste assumption is left completely alone');
+    A.eq(Policy.trimAssumptions(['Style: terse', 'Tone: gritty and profane, not corporate']).length, 1, 'taste is at most ONE line of a read, never its body');
+    A.eq(Policy.tasteFiller('I will omit serial numbers'), false, 'an unlabelled assumption is never touched');
+  }
   A.ok(/endReason !== 'clarifying'/.test(chatSrc), 'COMMS never renders a clarifying end as a stopped run');
   A.ok(/offerTaskQuestion/.test(chatSrc) && /TaskIntent\.strip/.test(chatSrc), 'COMMS strips the marker and renders the natural decision');
   A.ok(/clarificationRuns\.has\(runId\)/.test(chatSrc) && /clarificationRuns\.add\(thisRunId\)/.test(chatSrc), 'clarification turns do not count as completed-work beats');
@@ -419,7 +439,41 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(/j\.grounded \|\| null/.test(chatSrc), 'COMMS reads the grounded field the response already carried');
   A.ok(/you chose this ' \+ g\.count \+ ' times before/.test(chatSrc), 'the grounded why-line states a real observed count, never a vague confidence');
   A.ok(/tq-reason' \+ \(useGrounded \? ' grounded' : ''\)/.test(chatSrc), 'a grounded suggestion is marked so it cannot be mistaken for the model guess');
-  A.ok(/has\(g && g\.option\) \? g\.option : tq\.recommended/.test(chatSrc), 'a grounded option that is not among the choices falls back to the model recommendation instead of losing both');
+  A.ok(/const gSet = .*\.filter\(has\)/.test(chatSrc) && /useGrounded \? gSet\.map/.test(chatSrc) && /has\(tq\.recommended\) \? \[String\(tq\.recommended\)/.test(chatSrc),
+    'a grounded option that is not among the choices falls back to the model recommendation instead of losing both');
+  /* MULTI-SELECT GROUNDING (2026-08-14). A set answer ("billing exports, the run ledger") can never satisfy
+     whole-string equality, so the one PROVABLE suggestion was permanently dead for the question kind
+     multi-select exists for. Split-and-tally per option — and ONLY for multiSelect, so an exclusive
+     question's free-text answer is still never mined for a word that happens to name an option. */
+  {
+    const store = makeStore(memFs());
+    const toolsSrc2 = fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8');
+    const q = { text: 'which data should it pull from?', options: ['billing exports', 'the run ledger', 'support tickets'], multiSelect: true };
+    const pool = [{ question: q.text, answer: 'billing exports, the run ledger', count: 3, updatedAt: 9 }];
+    const g = store.groundedFor(q, pool);
+    A.eq(g && g.options, ['billing exports', 'the run ledger'], 'both halves of a set answer are credited, in the question\'s own option order');
+    A.eq(g && g.multi, true, 'the set result is marked as a set');
+    // a DEAD HEAT is fine for a set (options are independent) but still fatal for an exclusive question
+    const excl = { text: 'who is this for?', options: ['operators', 'executives'] };
+    A.eq(store.groundedFor(excl, [{ question: excl.text, answer: 'operators, executives', count: 4, updatedAt: 9 }]), null,
+      'an exclusive question NEVER splits — a comma answer stays unmatched rather than crediting both');
+    A.eq(store.groundedFor(Object.assign({}, q, { multiSelect: true }), [{ question: q.text, answer: 'support tickets', count: 1, updatedAt: 9 }]), null,
+      'one sighting is not a habit');
+    A.ok(/you usually pick these/.test(chatSrc), 'a set suggestion says so in its own words rather than pretending to be one favourite');
+    A.ok(/grounded: grounded \? \{ options:/.test(toolsSrc2) && /grounded:/.test(indexSrc), 'the LIVE clarify card receives the grounded suggestion, not just the end-run fallback');
+    // BATCH-WIDE ESCAPE: one tap hands back every remaining decision (3 taps was the wrong ratio).
+    A.ok(/use your judgment for the rest/.test(chatSrc), 'the card offers the batch-wide escape');
+    A.ok(/REST_SKIP = \/\^\\s\*use your judgment for the rest/.test(toolsSrc2), 'the host recognises it exactly — a deferral carrying a real constraint is NOT swallowed');
+    A.ok(/answerInTurn\(state\.brief\.id, 'use your judgment', now\(\), rest\.id\)/.test(toolsSrc2), 'the remaining questions are recorded as real deferrals so the skip bookkeeping still sees them');
+  }
+  // PER-KIND OPTION CAP: the store used to slice EVERY question to 3, silently eating options 4-6 of a
+  // validated multi-select on the way to disk.
+  {
+    const norm = require('../sidecar/taskbrief-store.js').normalizeQuestion;
+    A.eq(norm({ text: 'q', options: ['a', 'b', 'c', 'd', 'e', 'f'], multiSelect: true }).options.length, 6, 'a multi-select keeps up to six options on disk');
+    A.eq(norm({ text: 'q', options: ['a', 'b', 'c', 'd', 'e', 'f'] }).options.length, 3, 'an exclusive question is still capped at three');
+    A.ok(/q\.options\.length > \(tq\.options \|\| \[\]\)\.length/.test(chatSrc), 'the end-run card prefers the STORED options over the 3-capped marker line');
+  }
   A.ok(/\.tq-reason\.grounded/.test(cssSrc), 'the grounded why-line has its own provable-source styling');
   A.ok(/groundedFor: \(q\) => taskBriefStore\.groundedFor\(q\)/.test(indexSrc) && /groundedFor \? groundedFor\(q\)/.test(hubSrc), 'messaging channels carry the same grounded suggestion as COMMS');
   A.ok(/console\.warn\('\[taskbrief\] brief_ask rejected/.test(fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8')), 'a hidden-tool rejection is logged instead of silently downgrading the surface');
@@ -430,7 +484,7 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
     const toolsSrc = fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8');
     const cxSrc = fs.readFileSync(path.join(__dirname, '../sidecar/commander-context.js'), 'utf8');
     A.ok(/typeof store\.deferredDimensions === 'function'/.test(toolsSrc), 'the ask-worthiness gate degrades safely when the store cannot answer');
-    A.ok(/deferred\.indexOf\(checked\.question\.dimension\) >= 0/.test(toolsSrc), 'a habitually deferred dimension is refused at the tool boundary');
+    A.ok(/deferred\.indexOf\(q\.dimension\)/.test(toolsSrc) && /!kept\.length/.test(toolsSrc), 'a habitually deferred dimension is trimmed (and an all-deferred ask refused) at the tool boundary');
     A.ok(/<deferred_decisions provenance="commander-observed">/.test(cxSrc), 'the deferred dimensions are declared to the model with honest provenance');
     A.ok(/deferredDimensions = taskBriefStore\.deferredDimensions\(\)/.test(indexSrc) && /goal, patterns, deferredDimensions/.test(indexSrc), 'runOnce feeds the observed deferrals into the composed context');
     A.eq(CommanderContext.compose({ deferredDimensions: [] }), '', 'no observed deferrals -> no block');

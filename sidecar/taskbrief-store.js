@@ -18,11 +18,17 @@ function bounded(s, n) { return String(s == null ? '' : s).trim().slice(0, n); }
 function normalizeQuestion(q) {
   if (!q || typeof q !== 'object') return null;
   const text = bounded(q.text || q.question, 240);
-  const options = Array.isArray(q.options) ? q.options.map(x => bounded(x, 72)).filter(Boolean).slice(0, 3) : [];
+  // The cap is PER QUESTION KIND. A flat slice(0,3) here silently ate options 4-6 of a validated
+  // multi-select on the way to disk — the policy accepted six, the card offered six, and the durable
+  // record (which the end-run fallback re-reads) kept three.
+  const multiSelect = q.multiSelect === true;
+  const cap = Policy.maxOptionsFor ? Policy.maxOptionsFor(multiSelect) : (multiSelect ? 6 : 3);
+  const options = Array.isArray(q.options) ? q.options.map(x => bounded(x, 72)).filter(Boolean).slice(0, cap) : [];
   if (!text) return null;
   return {
     id: bounded(q.id, 80), text, options, dimension: bounded(q.dimension, 24),
     recommended: bounded(q.recommended, 72), reason: bounded(q.reason, 240), newBlocker: q.newBlocker === true,
+    multiSelect,
     answer: bounded(q.answer, 500), askedAt: Number(q.askedAt) || 0, answeredAt: Number(q.answeredAt) || 0
   };
 }
@@ -34,6 +40,9 @@ function normalizeBrief(b) {
     originalDirective: bounded(x.originalDirective, 4000), currentInput: bounded(x.currentInput, 4000),
     status: STATES.has(x.status) ? x.status : 'ready',
     questions: Array.isArray(x.questions) ? x.questions.map(normalizeQuestion).filter(Boolean).slice(-8) : [],
+    // Ask-call budget (batching, 2026-08-14): pre-batching briefs stored one question per call, so for
+    // them the question count IS the call count — the fallback keeps their budget honest after upgrade.
+    askCalls: Number(x.askCalls) > 0 ? Number(x.askCalls) : (Array.isArray(x.questions) ? x.questions.filter(q => q && (q.text || q.question)).length : 0),
     assumptions: Array.isArray(x.assumptions) ? x.assumptions.map(v => bounded(v, 300)).filter(Boolean).slice(-12) : [],
     settled: x.settled && typeof x.settled === 'object' ? {
       objective: bounded(x.settled.objective, 500), deliverable: bounded(x.settled.deliverable, 500),
@@ -106,8 +115,11 @@ function makeTaskBriefStore(deps) {
           rec.briefs.push(out); while (rec.briefs.length > CAP) rec.briefs.shift();
           out = Object.assign({}, out, { inputAction: 'replace' }); return rec;
         }
-        const q = prior.questions[prior.questions.length - 1];
-        if (q && !q.answer) { q.answer = routed.text; q.answeredAt = ts; }
+        // FIRST unanswered, not last: a batched ask can leave several open questions when the Commander
+        // walks away mid-batch; the durable fallback re-asks them in order, so the reply belongs to the
+        // earliest open one. For legacy single-question briefs the two are the same question.
+        const q = prior.questions.find(x => !x.answer);
+        if (q) { q.answer = routed.text; q.answeredAt = ts; }
         prior.currentInput = text; prior.status = 'ready'; prior.updatedAt = ts; out = prior;
       } else {
         out = normalizeBrief({
@@ -126,6 +138,9 @@ function makeTaskBriefStore(deps) {
     const key = String(id || ''); const fromMarker = !!(opts && opts.source === 'marker'); let out = null;
     return durable.update(STORE_KEY, cur => {
       const rec = normalize(cur); const b = rec.briefs.find(x => x.id === key); if (!b) return undefined;
+      // Snapshot the call count BEFORE pushing: askCallsOf's legacy fallback counts questions, so reading
+      // it after the push would double-count the question just added.
+      const spentCalls = Policy.askCallsOf(b);
       let fields;
       if (fromMarker) {
         // Marker path: the model asked via the plain TASK_QUESTION reply line, so only the question and
@@ -133,15 +148,33 @@ function makeTaskBriefStore(deps) {
         // stamping placeholder values would let an unvalidated question masquerade as a host-validated one
         // (and a fabricated recommendation would surface in the UI). The whole-task question budget still holds.
         const base = normalizeQuestion(question); if (!base || base.options.length < 2) return undefined;
-        if (b.questions.length >= 2) return undefined;
-        if (b.questions.length === 1 && !b.questions[0].answer) return undefined;
+        if (Policy.askCallsOf(b) >= 2) return undefined;
+        if (b.questions.some(x => !x.answer)) return undefined;
         fields = { text: base.text, options: base.options };
       } else {
         const checked = Policy.validateQuestion(question, b); if (!checked.ok) return undefined;
         fields = checked.question;
       }
       const q = normalizeQuestion(Object.assign({ id: key + '_q' + (b.questions.length + 1), askedAt: now }, fields));
-      b.questions.push(q); b.status = 'clarifying'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
+      b.questions.push(q); b.askCalls = spentCalls + 1;
+      b.status = 'clarifying'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
+    }).then(() => out);
+  }
+
+  /* askMany(id, candidate, now) — the batched sibling of ask() (2026-08-14). One brief_ask call may bundle
+     up to three host-validated questions on distinct dimensions; the whole batch is validated and stored
+     atomically and spends ONE ask call of the two-call budget. Returns the advanced brief or null. */
+  function askMany(id, candidate, now) {
+    const key = String(id || ''); let out = null;
+    return durable.update(STORE_KEY, cur => {
+      const rec = normalize(cur); const b = rec.briefs.find(x => x.id === key); if (!b) return undefined;
+      const spentCalls = Policy.askCallsOf(b);   // before the pushes — the legacy fallback counts questions
+      const checked = Policy.validateQuestions(candidate, b); if (!checked.ok) return undefined;
+      for (const fields of checked.questions) {
+        b.questions.push(normalizeQuestion(Object.assign({ id: key + '_q' + (b.questions.length + 1), askedAt: now }, fields)));
+      }
+      b.askCalls = spentCalls + 1;
+      b.status = 'clarifying'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
     }).then(() => out);
   }
 
@@ -151,15 +184,23 @@ function makeTaskBriefStore(deps) {
      the directive didn't change, only the open question got its answer — so every restart/reconnect
      fallback that reads the durable 'clarifying' record keeps working untouched. Refuses anything but
      the open-question state (a second answer, a settled brief) so a stale POST can't rewrite history. */
-  function answerInTurn(id, text, now) {
+  function answerInTurn(id, text, now, questionId) {
     const key = String(id || ''); const ans = bounded(text, 4000); let out = null;
     if (!key || !ans) return Promise.resolve(null);
     return durable.update(STORE_KEY, cur => {
       const rec = normalize(cur); const b = rec.briefs.find(x => x.id === key); if (!b) return undefined;
       if (b.status !== 'clarifying') return undefined;
-      const q = b.questions[b.questions.length - 1]; if (!q || q.answer) return undefined;
+      // Batched asks answer one SPECIFIC question per round-trip; without an id, the first unanswered
+      // question is the target (identical to the old last-question behavior for single-question briefs).
+      const q = questionId
+        ? b.questions.find(x => x.id === String(questionId))
+        : b.questions.find(x => !x.answer);
+      if (!q || q.answer) return undefined;
       q.answer = ans; q.answeredAt = Number(now) || 0;
-      b.status = 'ready'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
+      // 'ready' only when the whole batch is settled — a half-answered batch must keep its durable
+      // 'clarifying' state so a walk-away mid-batch still resumes on the remaining question.
+      if (!b.questions.some(x => !x.answer)) b.status = 'ready';
+      b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
     }).then(() => out);
   }
 
@@ -212,6 +253,12 @@ function makeTaskBriefStore(deps) {
     if (!q || q.answer || !Array.isArray(q.options) || q.options.length < 2) return null;
     const fpText = fingerprintQuestion(q.text);
     if (!fpText) return null;
+    // A MULTI-SELECT answer is a SET ("billing exports, the run ledger"), and whole-string equality can
+    // never resolve it — so the one PROVABLE suggestion on this surface was permanently dead for exactly
+    // the question kind multi-select exists for. Split into parts and tally each independently.
+    // Splitting stays OFF for exclusive questions: there, today's strict equality is what keeps a free-text
+    // answer from being mined for a word that happens to name an option.
+    const multi = q.multiSelect === true;
     const tally = {};
     for (const p of (Array.isArray(pool) ? pool : patterns(50))) {
       if (fingerprintQuestion(p.question) !== fpText) continue;
@@ -222,21 +269,35 @@ function makeTaskBriefStore(deps) {
       // match does not merely mis-suggest, it misquotes them: substring matching turned "not operators" into
       // a gold "you chose operators" claim. If their words are not one of these options, there is nothing
       // provable to say.
-      const option = Policy.matchOption(q.options, p.answer);
-      if (!option) continue;
-      // Fold counts across spellings of the SAME option, so history split over "operators"/"operators." is
-      // not understated (patterns() bins on the raw answer string; the canonical option is the real key).
-      const t = tally[option] || (tally[option] = { option, count: 0, lastAt: 0 });
-      t.count += Number(p.count) || 0;
-      t.lastAt = Math.max(t.lastAt, Number(p.updatedAt) || 0);
+      const parts = multi ? String(p.answer).split(',') : [p.answer];
+      const hits = [];
+      for (const part of parts) {
+        const option = Policy.matchOption(q.options, part);
+        if (option && hits.indexOf(option) < 0) hits.push(option);   // one answer counts an option ONCE
+      }
+      if (!hits.length) continue;
+      for (const option of hits) {
+        // Fold counts across spellings of the SAME option, so history split over "operators"/"operators." is
+        // not understated (patterns() bins on the raw answer string; the canonical option is the real key).
+        const t = tally[option] || (tally[option] = { option, count: 0, lastAt: 0 });
+        t.count += Number(p.count) || 0;
+        t.lastAt = Math.max(t.lastAt, Number(p.updatedAt) || 0);
+      }
     }
     const ranked = Object.values(tally).sort((a, b) => b.count - a.count || b.lastAt - a.lastAt);
     const top = ranked[0];
     if (!top || top.count < 2) return null;
+    if (multi) {
+      // A SET has no dead heat to break: options are independent, so "you usually pick these two" is the
+      // literal truth. Keep every option they chose at least twice, in the question's own option order.
+      const strong = ranked.filter(t => t.count >= 2).map(t => t.option);
+      const options = q.options.filter(o => strong.indexOf(o) >= 0);
+      return options.length ? { option: top.option, options, count: top.count, multi: true } : null;
+    }
     // A DEAD HEAT IS NOT A PREFERENCE. 2x "operators" against 2x "executives" is the Commander having no
     // settled habit; presenting either as "you chose this 2 times before" would dress a coin flip as proof.
     if (ranked[1] && ranked[1].count === top.count) return null;
-    return top;
+    return { option: top.option, options: [top.option], count: top.count, lastAt: top.lastAt };
   }
 
   // ASK-WORTHINESS (2026-07-24). Every "use your judgment" tap is ALREADY persisted as a real answer string
@@ -282,7 +343,7 @@ function makeTaskBriefStore(deps) {
       .map(t => t.dimension);
   }
 
-  return { read, list, active, prepare, ask, answerInTurn, proceed, complete, patterns, groundedFor, dimensionDeferrals, deferredDimensions, fingerprintQuestion, _durable: durable };
+  return { read, list, active, prepare, ask, askMany, answerInTurn, proceed, complete, patterns, groundedFor, dimensionDeferrals, deferredDimensions, fingerprintQuestion, _durable: durable };
 }
 
 module.exports = { makeTaskBriefStore, normalize, normalizeBrief, normalizeQuestion, fingerprintQuestion };
