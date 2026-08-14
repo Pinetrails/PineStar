@@ -13933,14 +13933,26 @@ async function runOnce(o) {
 
   // Per-run latches/counters/artifacts live in `execution`; policy and side effects remain in this host.
   const dispatch = async (c, ctx) => {
-    if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
+    const realName = fromWire.get(c.name) || allWire.get(c.name) || c.name;
+    const liveTool = registry.get(realName);
+    // Recovery authority is independent of the station layout that happens to exist after restart. Evaluate it
+    // against the canonical tool name before ordinary capability withholding; otherwise a removed prop turns an
+    // exact reviewed replay into a generic WITHHELD loop and the safe continuation never finishes.
+    const replayCheck = recoveryReplayBarrier.check(realName, c.argsRaw || '{}', !!(liveTool && liveTool.scope !== 'read'));
+    if (!replayCheck.ok) {
+      return {
+        ok: false, isError: true, summary: 'recovery-replay-blocked',
+        content: 'BLOCKED: this mutating call exactly matches an operator-reviewed call from the interrupted run. '
+          + 'The host will not execute or retry it. Continue without repeating that effect, or stop and report what remains.'
+      };
+    }
+    if (fromWire.has(c.name)) c = Object.assign({}, c, { name: realName });   // wire -> real (dotted) name
     else if (!grantedSet.has(c.name) && registry.get(allWire.get(c.name) || c.name)) {
       // The tool is real but was not granted to THIS run. Name the gate that withheld it, decided by that
       // gate's OWN predicate (userControlAuthority.project) rather than a second copy of the policy here, and
       // tell the model what to do instead — a withheld power must never read as a broken one, and must never
       // be reported to the Commander as done. Missing-capability is the other case: that one IS placement-fixable.
       // A name that matches no registered tool still falls through to dispatch's honest "unknown tool".
-      const realName = allWire.get(c.name) || c.name;
       const t = registry.get(realName);
       const impact = impactOfTool(t);
       const why = (impact === 'physical-input' || impact === 'visible-desktop')
@@ -13962,18 +13974,6 @@ async function runOnce(o) {
         content: 'WITHHELD: "' + realName + '" exists but is not available to you on this run, because ' + why + '. '
           + 'Do NOT retry it and do NOT report its work as done. Do everything you genuinely can with the tools you were given, '
           + 'then state plainly which step you could not do and why.'
-      };
-    }
-    const liveTool = registry.get(c.name);
-    // This no-replay authority runs before taint, budgets, consent, workspace leases, checkpoints, journaling,
-    // and registry dispatch. A model cannot repeat an operator-reviewed mutation by ignoring the prompt or by
-    // merely changing JSON property order.
-    const replayCheck = recoveryReplayBarrier.check(c.name, c.argsRaw || '{}', !!(liveTool && liveTool.scope !== 'read'));
-    if (!replayCheck.ok) {
-      return {
-        ok: false, isError: true, summary: 'recovery-replay-blocked',
-        content: 'BLOCKED: this mutating call exactly matches an operator-reviewed call from the interrupted run. '
-          + 'The host will not execute or retry it. Continue without repeating that effect, or stop and report what remains.'
       };
     }
     if (directDomainTask && directDomainWithheld(c.name)) {

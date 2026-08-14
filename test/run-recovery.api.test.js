@@ -238,7 +238,7 @@ function fakeProvider(argsRaw, browserFixture) {
 
     const runBody = {
       model: 'fixture-model', provider: 'custom', baseUrl: 'http://' + HOST + ':' + provider.port + '/v1',
-      system: '', messages: [], agentId, isTask: true, streamId: recoveryStream, placed: ['workbench'],
+      system: '', messages: [], agentId, isTask: true, streamId: recoveryStream,
       recovery: { sourceRunId: 'crashed-run', continuationId: 'continuation-fixture', continuationToken: prepared.body.continuationToken }
     };
     const continued = await streamRun(runBody);
