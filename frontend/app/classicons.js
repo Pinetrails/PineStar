@@ -227,47 +227,64 @@
      CATEGORY seal for everything else — so no card is ever bare and the set can grow without an art
      task blocking a catalog addition.
 
-     ⛔ THESE ARE NOT BRAND LOGOS AND MUST NEVER BECOME THEM. Vendor marks would drag ~48 trademarked
-     assets into the repo and, worse, put Notion black / Stripe purple / Slack multicolour back inside
-     an amber tube — the exact "they are all different colours" problem the bay pass just removed. Each
-     mark below says what the SERVICE DOES in the station's own engraved language (currentColor + the
-     deboss cut), the way the class seals name a class. Read as "the thing that does X", never "the
-     logo of X". Same rules as every seal here: 24x24, currentColor, no <text>. */
+     LOGO-FORWARD, ONE PHOSPHOR (2026-08-14, Andrew's explicit call after I flagged the trademark side:
+     recolouring a mark is the part many brand guidelines forbid, so "their shape in our amber" carries
+     MORE exposure than either a full-colour logo or a generic glyph — he took that call, it is his
+     product). So the marks below now trace the SILHOUETTE where the silhouette is simple enough to
+     survive at seal size, drawn as a currentColor path with the deboss cut, and the station's phosphor
+     and engrave ride on top. NO colour ever comes from the vendor: one tube, one hue.
+
+     WHICH ONES GET THE SILHOUETTE IS A LEGIBILITY DECISION, NOT A COMPLETENESS ONE. A seal renders at
+     ~26px. A mark that is bold and geometric (a triangle, an X, a burst, an N in a square) is still
+     itself at that size; an ILLUSTRATIVE mark is not — an octocat, a sprocket, a face, a fox-with-fur
+     becomes a smudge, and a smudge that is trying to be a specific logo reads worse than an honest
+     glyph that is trying to be nothing else. So the illustrative vendors deliberately KEEP their
+     what-it-does glyph (github = a branch, hubspot = a wired record, intercom = a conversation,
+     huggingface/canva/wix = their category seal). Do not "finish the set" by tracing those; that is
+     the failure mode this note exists to prevent.
+     Same rules as every seal here: 24x24, currentColor, no <text>. */
   const PLATFORM_ICONS = {
     // --- code hosting & shipping ---
     // github: the branch — a commit line splitting off and merging back.
     github: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.6 7.4 V16.6"/><path d="M6.6 12.4 h5.2 a3 3 0 0 0 3-3 V7.4"/></g><g fill="currentColor"><circle cx="6.6" cy="5" r="2.6"/><circle cx="6.6" cy="19" r="2.6"/><circle cx="14.8" cy="5" r="2.6"/></g></svg>',
-    // gitlab: the merge request — two lines converging into one accepted head.
-    gitlab: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6.4 5.6 V18.4"/><path d="M17.6 8.6 v3.2 a3.4 3.4 0 0 1 -3.4 3.4 H9.2"/></g><g fill="currentColor"><circle cx="6.4" cy="3.6" r="2.4"/><circle cx="6.4" cy="20.4" r="2.4"/><circle cx="17.6" cy="6.2" r="2.4"/></g><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M11.4 12.6 L8.8 15.2 L11.4 17.8"/></svg>',
+    // gitlab: SILHOUETTE — the five-facet mark, two peaks folding down to a single point. Bold flat
+    // triangles, so it survives at seal size where anything fur-like would not.
+    gitlab: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 22.4 L15.7 11.2 H8.3 Z"/><path d="M12 22.4 L8.3 11.2 H3.1 Z"/><path d="M3.1 11.2 L1.7 15.7 a1 1 0 0 0 .37 1.12 Z"/><path d="M3.1 11.2 L2.07 16.82 L12 22.4 Z"/><path d="M12 22.4 L15.7 11.2 H20.9 Z"/><path d="M20.9 11.2 L21.93 16.82 L12 22.4 Z"/><path d="M3.1 11.2 L5.25 4.6 a.6 .6 0 0 1 1.14 0 L8.3 11.2 Z"/><path d="M20.9 11.2 L18.75 4.6 a.6 .6 0 0 0 -1.14 0 L15.7 11.2 Z"/></svg>',
     // vercel: the deploy triangle — the build going up.
     vercel: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 3.2 L22.4 20.8 H1.6 Z"/></svg>',
-    // netlify: the folded edge — the site published from a build.
-    netlify: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.2 L21.8 12 L12 21.8 L2.2 12 Z"/><path fill="' + D + '" d="M12 6.4 L17.6 12 L12 17.6 L6.4 12 Z"/><path fill="currentColor" d="M12 8.8 L15.2 12 L12 15.2 L8.8 12 Z"/></svg>',
-    // sentry: the fault caught — a waveform breaking over a floor line.
+    // netlify: SILHOUETTE — the mark's rotated square with its four circuit stubs running out to the edge.
+    netlify: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 3.4 L20.6 12 L12 20.6 L3.4 12 Z"/><path fill="' + D + '" d="M12 7.6 L16.4 12 L12 16.4 L7.6 12 Z"/><g fill="currentColor"><rect x="11.1" y="0.4" width="1.8" height="4.4" rx=".6"/><rect x="11.1" y="19.2" width="1.8" height="4.4" rx=".6"/><rect x="0.4" y="11.1" width="4.4" height="1.8" rx=".6"/><rect x="19.2" y="11.1" width="4.4" height="1.8" rx=".6"/></g></svg>',
+    // sentry: GLYPH, not silhouette — TRIED the arc mark and it failed its own test: rendered at 80px it
+    // read as a scribble and at 26px as a smear, because the shape is only legible when you already know
+    // it. The waveform breaking over a floor line says "the fault, caught" at any size. This is the rule
+    // in the block note, applied to itself.
     sentry: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M2.2 15.4 H6 L8.6 8.6 L12 19 L15 5.4 L17.6 15.4 H21.8"/></g><path fill="currentColor" d="M10.6 20.6 h2.8 v1.8 h-2.8 Z"/></svg>',
     // --- data stores ---
     // neon / prisma / supabase all sit on a database drum; the SECOND element is what separates them.
     neon: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5.4" rx="8.4" ry="3.2" fill="currentColor"/><path fill="currentColor" d="M3.6 8.4 v10 a8.4 3.2 0 0 0 16.8 0 v-10 a8.4 3.2 0 0 1 -16.8 0 Z"/><path fill="' + D + '" d="M3.6 12.6 a8.4 3.2 0 0 0 16.8 0 v1.8 a8.4 3.2 0 0 1 -16.8 0 Z"/></svg>',
     // supabase: the drum with the live bolt — rows that push at you.
     supabase: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="8.2" ry="3" fill="currentColor"/><path fill="currentColor" d="M3.8 7.8 v9.4 a8.2 3 0 0 0 16.4 0 V7.8 a8.2 3 0 0 1 -16.4 0 Z"/><path fill="' + D + '" d="M13.6 8.6 L8.4 15.2 h3.2 l-1.2 4.6 l5.2 -6.6 h-3.2 Z"/></svg>',
-    // prisma: the schema — the drum's rows drawn as a typed table.
-    prisma: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 1.8 L21 18.2 L12.6 22.2 a1.4 1.4 0 0 1 -1.9 -.7 L4 8.4 Z"/><g fill="' + D + '"><rect x="9" y="8" width="6.4" height="1.7" rx=".5"/><rect x="10" y="11.4" width="5.4" height="1.7" rx=".5"/><rect x="11" y="14.8" width="4.4" height="1.7" rx=".5"/></g></svg>',
-    // airtable: the grid with a filled column — a base, not a spreadsheet.
-    airtable: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.4 L22.4 6.4 L12 10.4 L1.6 6.4 Z"/><path fill="currentColor" d="M1.6 8.6 L10.6 12.1 v8.4 L1.6 16.6 Z"/><path fill="currentColor" d="M22.4 8.6 v6.2 L13.4 20.8 v-8.4 Z"/></svg>',
+    // prisma: SILHOUETTE, widened — the first cut leaned so far it read as a sliver. Squarer footprint,
+    // and the facet fold is now a full-height cut rather than a thin wedge, so the solid stays a solid.
+    prisma: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M9.9 1.8 a1.6 1.6 0 0 1 2.7 .35 L21.4 18.4 a1.6 1.6 0 0 1 -1 2.25 L9.1 22.3 a1.6 1.6 0 0 1 -1.95 -1.55 L6.1 5.2 a1.6 1.6 0 0 1 .55 -1.35 Z"/><path fill="' + D + '" d="M11.05 6.1 L18.15 18.6 L10.15 19.9 Z"/></svg>',
+    // airtable: SILHOUETTE — the mark's four facets: the top plane, the two lower blocks, and the bar.
+    airtable: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M10.9 1.9 L1.7 5.7 a.8 .8 0 0 0 0 1.48 l9.25 3.67 a2.9 2.9 0 0 0 2.1 0 L22.3 7.18 a.8 .8 0 0 0 0 -1.48 L13.1 1.9 a2.9 2.9 0 0 0 -2.2 0 Z"/><path d="M12.9 13.5 v8.1 a.8 .8 0 0 0 1.1 .74 l8.5 -3.3 a.8 .8 0 0 0 .5 -.74 v-8.1 a.8 .8 0 0 0 -1.1 -.74 l-8.5 3.3 a.8 .8 0 0 0 -.5 .74 Z"/><path d="M9.6 14.15 L1.9 10.45 a.72 .72 0 0 0 -1.04 .64 v7.36 a1.4 1.4 0 0 0 .8 1.26 l7.7 3.7 a.72 .72 0 0 0 1.04 -.64 v-7.36 a1.4 1.4 0 0 0 -.8 -1.26 Z"/></svg>',
     // --- payments ---
-    // stripe: the offset bars — a rail money moves along.
-    stripe: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="3.4" y="5" width="17.2" height="3.4" rx="1.1"/><rect x="1.6" y="10.3" width="17.2" height="3.4" rx="1.1"/><rect x="5.2" y="15.6" width="17.2" height="3.4" rx="1.1"/></g></svg>',
-    // paypal: the wallet with the note showing — money you hold, then send.
+    // stripe: SILHOUETTE — the rounded tile with the S cut into it.
+    stripe: '<svg viewBox="0 0 24 24"><rect x="2.4" y="2.4" width="19.2" height="19.2" rx="4.6" fill="currentColor"/><path fill="' + D + '" d="M11.35 9.55 c0 -.72 .6 -1 1.55 -1 a8.9 8.9 0 0 1 3.6 .93 V6.06 A9.6 9.6 0 0 0 12.9 5.4 c-2.95 0 -4.92 1.54 -4.92 4.12 0 4.02 5.53 3.37 5.53 5.1 0 .85 -.74 1.13 -1.75 1.13 a10 10 0 0 1 -3.96 -1.16 v3.5 a10 10 0 0 0 3.96 .83 c3.03 0 5.12 -1.5 5.12 -4.11 0 -4.34 -5.53 -3.57 -5.53 -5.25 Z"/></svg>',
+    // paypal: GLYPH, not silhouette — TRIED the double-P and it lost. Two overlapping bowls need the
+    // counters INSIDE each P to stay open to read as letters at all, and at 26px those counters close
+    // up: the mark became one blob with a flag on it. The wallet reads instantly at both sizes.
     paypal: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 6.4 a2 2 0 0 1 2 -2 H16 v2.6 H5.6 a.8 .8 0 0 0 0 1.6 H19.4 a2 2 0 0 1 2 2 v8.6 a2 2 0 0 1 -2 2 H4.6 a2 2 0 0 1 -2 -2 Z"/><circle cx="17" cy="14.6" r="1.9" fill="' + D + '"/></svg>',
     // square: the terminal with the card slot — a payment taken in person.
     square: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3.2" fill="currentColor"/><rect x="7.6" y="7.6" width="8.8" height="8.8" rx="1.4" fill="' + D + '"/><rect x="9.8" y="9.8" width="4.4" height="4.4" rx=".7" fill="currentColor"/></svg>',
     // shopify: the shop bag — the storefront itself.
     shopify: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M4.4 7.4 H19.6 L21.2 21.4 a1.4 1.4 0 0 1 -1.4 1.6 H4.2 a1.4 1.4 0 0 1 -1.4 -1.6 Z"/><path fill="none" stroke="currentColor" stroke-width="2" d="M8.2 9.6 V6.4 a3.8 3.8 0 0 1 7.6 0 V9.6"/><path fill="' + D + '" d="M7.6 11.6 h8.8 v1.8 h-8.8 Z"/></svg>',
     // --- work surfaces ---
-    // notion: the nested blocks — a page built out of stacked blocks.
-    notion: '<svg viewBox="0 0 24 24"><rect x="2.6" y="2.6" width="18.8" height="18.8" rx="2" fill="currentColor"/><g fill="' + D + '"><rect x="5.4" y="6" width="13.2" height="2.6" rx=".6"/><rect x="8" y="10.2" width="10.6" height="2.6" rx=".6"/><rect x="8" y="14.4" width="10.6" height="2.6" rx=".6"/></g><g fill="currentColor"><rect x="5.4" y="10.6" width="1.8" height="1.8" rx=".5"/><rect x="5.4" y="14.8" width="1.8" height="1.8" rx=".5"/></g></svg>',
-    // linear: the cycle — issues moving in a closed loop.
-    linear: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.4 12 a8.4 8.4 0 1 1 -2.5 -6"/><path d="M20.6 3.2 V6.6 H17.2"/></g><circle cx="12" cy="12" r="2.6" fill="currentColor"/></svg>',
+    // notion: SILHOUETTE — the bordered page with the N cut out of it (left post, diagonal, right post).
+    notion: '<svg viewBox="0 0 24 24"><rect x="2.2" y="2.2" width="19.6" height="19.6" rx="2.4" fill="currentColor"/><g fill="' + D + '"><rect x="6.5" y="6.3" width="2.5" height="11.4" rx=".4"/><rect x="15" y="6.3" width="2.5" height="11.4" rx=".4"/><path d="M9.15 6.3 h2.55 l5.8 11.4 h-2.55 Z"/></g></svg>',
+    // linear: SILHOUETTE — the rounded tile with the mark's parallel diagonal cuts.
+    linear: '<svg viewBox="0 0 24 24"><rect x="2.2" y="2.2" width="19.6" height="19.6" rx="4.8" fill="currentColor"/><g fill="none" stroke="' + D + '" stroke-width="2.1" stroke-linecap="round"><path d="M5.6 13.9 L13.9 5.6"/><path d="M5.6 18.9 L18.9 5.6"/><path d="M10.6 19.2 L19.2 10.6"/></g></svg>',
     // google-workspace: the app grid — a suite, not one tool.
     'google-workspace': '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="2.6" y="2.6" width="8.2" height="8.2" rx="1.6"/><rect x="13.2" y="2.6" width="8.2" height="8.2" rx="4.1"/><rect x="2.6" y="13.2" width="8.2" height="8.2" rx="4.1"/><rect x="13.2" y="13.2" width="8.2" height="8.2" rx="1.6"/></g></svg>',
     // hubspot: the connected record — one contact wired to everything about them.
@@ -275,8 +292,8 @@
     // intercom: the answered conversation — a thread someone is on the other end of.
     intercom: '<svg viewBox="0 0 24 24"><rect x="2.4" y="3.4" width="19.2" height="15.2" rx="2.4" fill="currentColor"/><path fill="currentColor" d="M6.4 18 h5.2 L7.4 22.2 Z"/><g fill="' + D + '"><circle cx="8" cy="11" r="1.5"/><circle cx="12" cy="11" r="1.5"/><circle cx="16" cy="11" r="1.5"/></g></svg>',
     // --- automation & compute ---
-    // zapier: the burst — the trigger firing outward.
-    zapier: '<svg viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 2.6 V21.4"/><path d="M2.6 12 H21.4"/><path d="M5.4 5.4 L18.6 18.6"/><path d="M18.6 5.4 L5.4 18.6"/></g><circle cx="12" cy="12" r="3.4" fill="currentColor"/></svg>',
+    // zapier: SILHOUETTE — the six-point burst, hexagon centre cut.
+    zapier: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="10.3" y="1.4" width="3.4" height="21.2" rx="1.3"/><rect x="10.3" y="1.4" width="3.4" height="21.2" rx="1.3" transform="rotate(60 12 12)"/><rect x="10.3" y="1.4" width="3.4" height="21.2" rx="1.3" transform="rotate(120 12 12)"/></g><circle cx="12" cy="12" r="3.1" fill="' + D + '"/></svg>',
     // wolfram: the spiked solid — computed, not looked up.
     wolfram: '<svg viewBox="0 0 24 24"><g fill="currentColor"><path d="M12 1.4 L14 8 L12 12 L10 8 Z"/><path d="M12 22.6 L10 16 L12 12 L14 16 Z"/><path d="M1.4 12 L8 10 L12 12 L8 14 Z"/><path d="M22.6 12 L16 14 L12 12 L16 10 Z"/><path d="M4.5 4.5 L10.6 7.2 L12 12 L7.2 10.6 Z"/><path d="M19.5 19.5 L13.4 16.8 L12 12 L16.8 13.4 Z"/><path d="M19.5 4.5 L16.8 10.6 L12 12 L13.4 7.2 Z"/><path d="M4.5 19.5 L7.2 13.4 L12 12 L10.6 16.8 Z"/></g></svg>',
     // x-twitter: the post — a short broadcast.

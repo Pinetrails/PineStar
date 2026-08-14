@@ -4441,8 +4441,11 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    one-phosphor seal treatment; all this rule sets is the size and its refusal to shrink when the
    head wraps. `flex-shrink:0` matters: `.cc-head` wraps, and a flexible seal squashed to an ellipse
    on any card whose name + chip filled the row. */
-.cc-seal { --coin: 22px; flex: 0 0 auto; }
-.cc-top .cc-seal { --coin: 20px; }
+/* 26px, not 22: a what-it-does GLYPH is a single idea and survives small, but a logo SILHOUETTE carries
+   internal structure (the N cut out of Notion's page, Airtable's three facets, GitLab's five) and needs
+   the pixels to stay itself instead of becoming a smudge. This is the size the seal set is drawn for. */
+.cc-seal { --coin: 26px; flex: 0 0 auto; }
+.cc-top .cc-seal { --coin: 24px; }
 .cc-badge { font-size: 10px; letter-spacing: .5px; border-radius: 3px; padding: 0 4px; text-transform: uppercase; }
 .cc-official { color: var(--ok); border: 1px solid var(--ok); }
 .cc-community { color: var(--ph-dim); border: 1px solid var(--ph-dim); }
