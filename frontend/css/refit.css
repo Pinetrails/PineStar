@@ -171,8 +171,9 @@
 
 /* A CARD THAT OUTGROWS THE GLASS MUST SCROLL, NOT SPILL. The INBOX card is the tallest in REFIT — flow
    strip, line name, trigger truth, routine list AND the create form — and `.refit-guide` centres it in a
-   fixed inset:0 layer, so on a short window the CREATE ROUTINE button used to sit off-screen with no way
-   to reach it. Scoped to the flow card; the thumb is skinned (the station paints its own scrollbars). */
+   fixed inset:0 layer with no scroll of its own. Measured on an 820px-tall window with this rule lifted:
+   978px tall, top −79, bottom 899, ✓ GOT IT past the bottom edge and unreachable. Scoped to the flow
+   card; the thumb is skinned (the station paints its own scrollbars). */
 .refit-flow-card .refit-guide-card {
   max-height: calc(100% - 28px); overflow-y: auto;
   scrollbar-width: thin; scrollbar-color: var(--ph-dim) transparent;
