@@ -3500,6 +3500,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function archiveCard(id) { const w = WS(); if (!w) return; w.archive(id, true); persistWS(); sync(); }
   // deliberate human re-queue (ACTIVE -> TO DO). Hybrid-honest lanes are untouched: the next real run
   // auto-advances it right back, and an active card never claimed backend state a demote could falsify.
+  // NOTE the demote may land on a card whose run is STILL IN FLIGHT — that card keeps its RUNNING chip in
+  // TO DO (stateChip is lane-agnostic for live runs), because this run's end can no longer move the lane.
   function demoteTask(id) { const w = WS(); if (!w) return; w.setLane(id, 'todo'); persistWS(); sync(); }
   // pin = prioritize: list() sorts pinned first, and the per-lane filter preserves that order, so a
   // pinned card rises to the top of its column (and of the COMMS rail — same record, same flag).
@@ -3570,14 +3572,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<span class="es-glyph">✓</span><b>NOTHING SHIPPED YET</b>' +
       '<span>Tasks you mark shipped land here as proof of work.</span></div></div>';
   }
-  // TRUTHFUL RUN-STATE (IN PROGRESS cards only): the chip maps to a PROVABLE backend state — RUNNING when a run
-  // is actually in flight on this stream (Channels.isBusy), else DONE — REVIEW & SHIP once at least one run has
-  // landed (the human's SHIP click is the only exit to SHIPPED — never auto-ship). A brand-new active card with
-  // no run yet shows nothing. Reuses the rail's live-pulse vocabulary (.kb-live mirrors .ws-dot.running).
+  // TRUTHFUL RUN-STATE: the chip maps to a PROVABLE backend state — RUNNING when a run is actually in flight
+  // on this stream (Channels.isBusy), else DONE — REVIEW & SHIP once at least one run has landed (the human's
+  // SHIP click is the only exit to SHIPPED — never auto-ship). A brand-new active card with no run yet shows
+  // nothing. Reuses the rail's live-pulse vocabulary (.kb-live mirrors .ws-dot.running).
+  // A LIVE RUN OUTRANKS THE LANE (2026-08-14): ↩ QUEUE, ✓ SHIP and a drag can all move a card out of ACTIVE
+  // while its run is still in flight, and the old lane gate then rendered NO chip — a card read "queued, not
+  // started" while Channels could prove the agent was working on it (truthful-telemetry violation; the run's
+  // own end could never repair it either, because the lane auto-advance lives in appendRun, i.e. run START).
+  // So the RUNNING chip is lane-agnostic; only the settled-outcome chips below stay ACTIVE-lane grammar —
+  // "DONE — REVIEW & SHIP" is a call to action you can only answer from ACTIVE, and a re-queued or shipped
+  // card's history stays legible in its run count.
   function stateChip(s) {
-    if (s.lane !== 'active') return '';
     const running = (typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(s.id));
     if (running) return '<div class="kb-state running"><span class="kb-live"></span>RUNNING</div>';
+    if (s.lane !== 'active') return '';
     if (s.runIds && s.runIds.length) {
       // a run that DIED must never read as DONE (truthful telemetry): lastRunOk=false is settled by
       // chat.js's in-band error branch. null (no outcome recorded — legacy save / delegated run) keeps
