@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "cb254e8b0daaf2ae7c661e42c773f551bd5ab57a",
+    "sourceCommit": "4d90eb978c62d1bea8707e097e88bf16c1a8d525",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -148,8 +148,8 @@
       },
       {
         "path": "frontend/app/classicons.js",
-        "bytes": 35079,
-        "sha256": "910938a43109f769b7cd094a6cd455f2da290c814b65711441ea6c8a98b098ed"
+        "bytes": 42372,
+        "sha256": "59c1ad1f9074f02fec5e785c9b70e805f64758760480220847fefff1771928af"
       },
       {
         "path": "frontend/app/classify.js",
@@ -373,8 +373,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 250202,
-        "sha256": "2aa5acbe29122dba32cf928aa8e5bc6fccb676334db98faad7b2df0891f0142b"
+        "bytes": 252417,
+        "sha256": "bc38b27e33680a4a81f14f0e8bd40af959309a3e6739675fa4d8d1bb1b2d02a0"
       },
       {
         "path": "frontend/app/mint.js",
@@ -743,8 +743,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 606408,
-        "sha256": "948a3b77b4d5e25140da1a249cb3db07f009133466377ac515a0fba143705fd4"
+        "bytes": 610942,
+        "sha256": "26c847457c7293eaff03f2fb92bb73a6e957aa1708e3f21be22d3310b267b2f8"
       },
       {
         "path": "frontend/app/study.js",
@@ -838,8 +838,8 @@
       },
       {
         "path": "frontend/app/updates.js",
-        "bytes": 21379,
-        "sha256": "8c9fe1281f057f1766cb24f932c99f4c84a92a1afd08f0ec898e90d89e81a383"
+        "bytes": 21543,
+        "sha256": "23aafa786148895ec5d92174ef83cf86ba8910529f2a387be3ba3720d1e96e41"
       },
       {
         "path": "frontend/app/voice-live.js",
@@ -898,8 +898,8 @@
       },
       {
         "path": "frontend/app/windows/outbox.js",
-        "bytes": 15050,
-        "sha256": "7284c9c746ff2c97e0ca0141c039a44449d0bdfdb6c2aadde334418e1e6c6567"
+        "bytes": 15112,
+        "sha256": "c6e2766825f2843f1cd9e97544de1bfddc623ad0782abb0af09ab535103c22fb"
       },
       {
         "path": "frontend/app/windows/rewind.js",
@@ -913,8 +913,8 @@
       },
       {
         "path": "frontend/app/windows/trophies.js",
-        "bytes": 4462,
-        "sha256": "4cacf2a0d12a89d445823f579122d244344ddc07357c1c11a95ce42c06ff6ce7"
+        "bytes": 4503,
+        "sha256": "cbcea1cb78abcecfd912691d8eb9b3de58e450d1d2d61c3f0a4b471899bff655"
       },
       {
         "path": "frontend/app/workquests.js",
@@ -973,8 +973,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 361583,
-        "sha256": "352f6336e1e1231d5d79b7cbe9d18a54981c50d451772b1702ccb295eb89e612"
+        "bytes": 367401,
+        "sha256": "de4614044bcceaddc99181b4a437af39063eee2f9f1113a81aaf554083da5ff4"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -1013,8 +1013,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 101312,
-        "sha256": "09b19d6f2122d2c5f9beda1a7073987772c2d75945484363aa5419d50c83614d"
+        "bytes": 102491,
+        "sha256": "1d37c6fa456b9f7cecd514794993d7bf86531f1bb076a84e3d9e604677c90293"
       },
       {
         "path": "frontend/css/titlebar.css",
