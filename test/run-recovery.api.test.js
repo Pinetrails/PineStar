@@ -42,7 +42,7 @@ function bootSidecar(port, workspaces, attempts) {
   });
 }
 
-function fakeProvider(argsRaw) {
+function fakeProvider(argsRaw, browserFixture) {
   const requests = [];
   const server = http.createServer((req, res) => {
     let raw = '';
@@ -55,6 +55,17 @@ function fakeProvider(argsRaw) {
       let body = {}; try { body = JSON.parse(raw || '{}'); } catch (_) {}
       requests.push(body);
       res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      if (browserFixture) {
+        const messages = JSON.stringify(body.messages || []);
+        if (/automatic_recovery|read-only call had no durable result/.test(messages)) {
+          res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Automatic continuation completed from the safe durable checkpoint.' }, finish_reason: 'stop' }] }) + '\n\n');
+        } else if (!/recovery-replay-blocked/.test(messages)) {
+          res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'replay-call', function: { name: 'shell_exec', arguments: argsRaw } }] }, finish_reason: 'tool_calls' }] }) + '\n\n');
+        } else {
+          res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Reviewed continuation completed; the uncertain action was not replayed.' }, finish_reason: 'stop' }] }) + '\n\n');
+        }
+        return res.end('data: [DONE]\n\n');
+      }
       if (requests.length === 1) {
         res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'replay-call', function: { name: 'shell_exec', arguments: argsRaw } }] }, finish_reason: 'tool_calls' }] }) + '\n\n');
       } else {
@@ -68,7 +79,10 @@ function fakeProvider(argsRaw) {
 
 (async () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-run-recovery-'));
-  const agentId = 'recovery_agent';
+  const browserFixture = process.env.RUN_RECOVERY_BROWSER_FIXTURE === '1';
+  const agentId = browserFixture ? 'agent' : 'recovery_agent';
+  const recoveryStream = browserFixture ? 'ws_general' : 'recovery-stream';
+  const autoStream = browserFixture ? 'ws_general' : 'auto-stream';
   const agentWs = path.join(ws, agentId);
   fs.mkdirSync(agentWs, { recursive: true });
   const counterPath = path.join(agentWs, 'counter.log');
@@ -78,7 +92,7 @@ function fakeProvider(argsRaw) {
   const argsRaw = JSON.stringify({ command });
   const fingerprint = Recovery.replayFingerprint('shell.exec', argsRaw);
   const journal = makeRunJournal({ dir: path.join(ws, '.run-journal') });
-  journal.begin({ runId: 'crashed-run', agentId, streamId: 'recovery-stream', trigger: 'directive', model: 'fixture-model' });
+  journal.begin({ runId: 'crashed-run', agentId, streamId: recoveryStream, trigger: 'directive', model: 'fixture-model' });
   journal.checkpoint('crashed-run', { phase: 'initial', turn: 0, messages: [
     { role: 'system', content: 'Fixture system' }, { role: 'user', content: 'Increment the counter exactly once, then finish.' }
   ] });
@@ -96,7 +110,7 @@ function fakeProvider(argsRaw) {
     role: 'assistant', content: '', tool_calls: [{ id: 'corrupt-call', type: 'function', function: { name: 'shell_exec', arguments: argsRaw } }]
   }] });
   journal.toolIntent('corrupt-run', { callId: 'corrupt-call', name: 'shell.exec', argsRaw, replayFingerprint: fingerprint, mutating: true });
-  journal.begin({ runId: 'auto-run', agentId, streamId: 'auto-stream', trigger: 'directive', model: 'fixture-model' });
+  journal.begin({ runId: 'auto-run', agentId, streamId: autoStream, trigger: 'directive', model: 'fixture-model' });
   journal.checkpoint('auto-run', { phase: 'initial', turn: 0, messages: [
     { role: 'system', content: 'Fixture system' }, { role: 'user', content: 'Safely continue after restart.' }
   ] });
@@ -108,13 +122,13 @@ function fakeProvider(argsRaw) {
   const corruptFile = path.join(ws, '.run-journal', crypto.createHash('sha256').update('corrupt-run').digest('hex') + '.jsonl');
   fs.appendFileSync(corruptFile, '{torn-tail\n', 'utf8');
 
-  const provider = await fakeProvider(argsRaw);
-  if (process.env.RUN_RECOVERY_BROWSER_FIXTURE === '1') {
+  const provider = await fakeProvider(argsRaw, browserFixture);
+  if (browserFixture) {
     process.env.STARNET_DEFAULT_MODEL = 'fixture-model';
     process.env.STARNET_OPENROUTER_KEY = 'fixture-key';
     process.env.STARNET_OPENROUTER_BASE = 'http://' + HOST + ':' + provider.port + '/v1';
   }
-  let booted = await bootSidecar(9000 + (process.pid % 200), ws, 30);
+  let booted = await bootSidecar(browserFixture ? 8733 : (9000 + (process.pid % 200)), ws, browserFixture ? 0 : 30);
   let child = booted.child, port = booted.port, apiToken = '';
   const base = () => 'http://' + HOST + ':' + port;
   async function refreshToken() { apiToken = await bootToken(base(), base()); }
@@ -146,7 +160,7 @@ function fakeProvider(argsRaw) {
   }
 
   try {
-    if (process.env.RUN_RECOVERY_BROWSER_FIXTURE === '1') {
+    if (browserFixture) {
       console.log('BROWSER_FIXTURE_URL=' + base() + '/');
       await sleep(Math.max(60000, Number(process.env.RUN_RECOVERY_BROWSER_HOLD_MS) || 300000));
       return;
@@ -221,7 +235,7 @@ function fakeProvider(argsRaw) {
 
     const runBody = {
       model: 'fixture-model', provider: 'custom', baseUrl: 'http://' + HOST + ':' + provider.port + '/v1',
-      system: '', messages: [], agentId, isTask: true, streamId: 'recovery-stream', placed: ['workbench'],
+      system: '', messages: [], agentId, isTask: true, streamId: recoveryStream, placed: ['workbench'],
       recovery: { sourceRunId: 'crashed-run', continuationId: 'continuation-fixture', continuationToken: prepared.body.continuationToken }
     };
     const continued = await streamRun(runBody);
@@ -240,7 +254,7 @@ function fakeProvider(argsRaw) {
 
     const autoContinued = await streamRun({
       model: 'fixture-model', provider: 'custom', baseUrl: 'http://' + HOST + ':' + provider.port + '/v1',
-      system: '', messages: [], agentId, isTask: true, streamId: 'auto-stream',
+      system: '', messages: [], agentId, isTask: true, streamId: autoStream,
       recovery: {
         sourceRunId: 'auto-run', continuationId: 'automatic-fixture',
         continuationToken: autoPrepared.body.continuationToken
