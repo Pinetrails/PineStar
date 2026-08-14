@@ -41,10 +41,21 @@ function tierFor(count) {
   return hit ? hit[1] : 'unproven';
 }
 
+// the stage NAME for a given count of distinct goals reached — one formula, so `name` and `next` can never
+// drift apart (they were the same expression written twice the moment `next` was added).
+function evolutionName(n) {
+  const i = Math.max(0, Number(n) | 0);
+  return i > 4 ? ('DEEP FIELD ' + (i - 3)) : EVOLUTION_NAMES[Math.min(EVOLUTION_NAMES.length - 1, i)];
+}
+
+/* `next` is ADDITIVE (2026-08-14) and exists so a surface can name what finishing the current goal
+   advances the station TO, without duplicating EVOLUTION_NAMES in the frontend — the names stay owned
+   here, and the UI only ever renders what it is told. Reaching one more DISTINCT goal is exactly what
+   moves the stage (see addGoalReached), so `next` is the honest answer to "what does this path lead to".
+   Station evolution remains EXPRESSIVE ONLY: naming the next stage is not an unlock claim. */
 function evolutionFor(goalsReached) {
   const n = Array.isArray(goalsReached) ? goalsReached.length : 0;
-  const base = EVOLUTION_NAMES[Math.min(EVOLUTION_NAMES.length - 1, n)];
-  return { stage: n, name: n > 4 ? ('DEEP FIELD ' + (n - 3)) : base, goalsReached: n };
+  return { stage: n, name: evolutionName(n), next: evolutionName(n + 1), goalsReached: n };
 }
 
 function normMetric(m) {

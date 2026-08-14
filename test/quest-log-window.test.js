@@ -76,9 +76,20 @@ A.ok(/isDone \? 'done' : \(s\.isNext \? 'now' : 'ahead'\)/.test(trackFn), 'three
 A.ok(/YOU ARE HERE/.test(trackFn) && /RUNNING/.test(trackFn), 'the live front is named in words; a bound build in flight says RUNNING');
 A.ok(/next && !next\.inFlight/.test(trackFn), 'ACCEPT is withheld while the step’s bound build is running (a second accept would double-mint it)');
 A.ok(/goal\.pct/.test(trackFn) && /goal\.done/.test(trackFn) && /goal\.total/.test(trackFn), 'the meter reads the engine’s real done/total/pct — never an invented number');
-A.ok(!/locked|unlock|LOCKED|TIER \d/.test(trackFn), 'NOTHING on the track claims to be locked — the log reveals order, it never gates (standing law)');
+/* Check the EMITTED markup, not the prose around it: the comments legitimately discuss the no-unlock rule,
+   and grepping them made the guard fire on its own rationale. Strip comments, then assert on what ships. */
+const trackEmitted = trackFn.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+A.ok(!/locked|unlock|LOCKED|TIER \d/i.test(trackEmitted), 'NOTHING the track RENDERS claims to be locked — the log reveals order, it never gates (standing law)');
 A.ok(/q-track-empty/.test(trackFn) && /SET A GOAL/.test(trackFn), 'with no goal the track teaches what it is and offers the real door, never an empty frame');
 A.ok(/\.q-track \{/.test(css) && /\.q-node-now \.q-node-dot/.test(css), 'the track ships its CSS layer');
+/* the payoff: what the path cashes out in. The stage NAME must come from the engine, never a copy of the
+   ladder in the frontend — and it must not read as an unlock, because evolution grants nothing. */
+A.ok(/evo\.next/.test(trackFn) && !/DRIFT|VECTOR|ORBIT|CONSTELLATION|DEEP FIELD/.test(trackFn),
+  'the payoff names the SIDECAR’s next stage (evolution.next) and never hardcodes the ladder in the UI');
+A.ok(/never your tools/.test(trackEmitted), 'the payoff states the expressive-only boundary in the same breath');
+const jstore = read('sidecar/journey-store.js');
+A.ok(/function evolutionName/.test(jstore) && /next: evolutionName\(n \+ 1\)/.test(jstore),
+  'evolutionFor exposes `next` from ONE naming formula (name and next cannot drift apart)');
 
 /* ---- the pure engine: per-dimension WHY (executed, not grepped) ---- */
 const Quests = require('../frontend/app/quests.js');

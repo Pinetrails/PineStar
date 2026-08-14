@@ -7742,6 +7742,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       ? '<button class="consent-btn q-arc-accept q-track-accept" data-gid="' + esc(next.arcGoalId) + '" data-mid="' + esc(next.milestoneId) + '">▶ ACCEPT THIS STEP</button>'
       : (next && next.inFlight ? '<span class="sub q-track-running">the build for this step is running — finishing it completes the step.</span>' : '');
     const complete = total > 0 && doneN >= total;
+    /* WHAT THE PATH CASHES OUT IN. The station's stage is the count of DISTINCT GOALS REACHED, and a goal
+       is counted when its last milestone folds done (goalstore -> journey `goalDone` -> addGoalReached), so
+       finishing this path really does advance the station by exactly one stage. The next stage's NAME comes
+       from the sidecar (`evolution.next`) rather than a copy of the ladder here — the UI renders what it is
+       told and cannot drift from the engine's own names.
+       HONESTY: station evolution is EXPRESSIVE ONLY — it grants no tool, model, or permission — so this
+       line names the stage and never promises an unlock. And it is not the only route: milestones fold
+       from real run evidence on run-end (GoalStore.reconcile), so doing the work directly advances the
+       same path without touching a quest card. Absent/already-known evolution → the line is simply omitted,
+       never guessed. */
+    let payoff = '';
+    try {
+      const j = (typeof JourneyStore !== 'undefined' && JourneyStore.status) ? JourneyStore.status() : null;
+      const evo = j && j.evolution;
+      if (evo && evo.next) {
+        payoff = '<div class="sub q-track-payoff">&#9670; finishing this path advances the station to <b>' + esc(evo.next) + '</b>'
+          + '<span class="dim"> — the station’s expression, never your tools</span></div>';
+      }
+    } catch (_) { /* no evolution read → no claim */ }
     return '<div class="gx-sec q-track-sec"><span class="gx-title">YOUR GOAL</span>'
       + '<span class="gx-tag">' + doneN + ' / ' + total + '</span></div>'
       + '<div class="q-track' + (complete ? ' q-track-done' : '') + '">'
@@ -7749,6 +7768,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       + '<span class="q-track-pct">' + pct + '%</span></div>'
       + '<div class="q-bar q-track-bar"><div class="q-bar-fill" style="width:' + pct + '%"></div></div>'
       + '<ol class="q-nodes">' + nodes + '</ol>'
+      + payoff
       + (accept ? '<div class="q-track-acts">' + accept + '</div>' : '')
       + '</div>';
   }

@@ -3352,6 +3352,12 @@ body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
   border: 1px solid rgba(var(--gold-rgb), .45); border-radius: 2px; padding: 0 4px; white-space: nowrap; }
 /* AHEAD — visible and numbered, never locked: the order is information, not a gate. */
 .q-node-ahead .q-node-dot { border-style: dashed; }
+/* the payoff line — what finishing the path advances the station to. Sits under the nodes, above the
+   action, so the path reads: here is the route, here is where it leads, here is the next step. */
+.q-track-payoff { margin-top: 13px; padding-top: 10px; border-top: 1px solid var(--ph-glow2);
+  font-size: 11px; opacity: .9; }
+.q-track-payoff b { color: var(--gold); letter-spacing: .06em; }
+.q-track-payoff .dim { opacity: .55; }
 .q-track-acts { display: flex; margin-top: 12px; }
 .q-track-acts .q-arc-accept { flex: 1 1 auto; text-align: center; }
 .q-track-running { display: block; margin-top: 10px; color: var(--gold); opacity: .8; }

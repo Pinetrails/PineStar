@@ -77,7 +77,11 @@ const READ_TRACK = `(() => {
     arcCardsInGrid: [...document.querySelectorAll('.q-grid .q-card')]
       .filter(c => /Launch StarNet to my first 100 users|Record a 60-second demo/.test(c.textContent)).length,
     // standing law: the log gates nothing — no lock language anywhere on the track
-    lockLanguage: /locked|unlock|tier \\d|🔒/i.test(track.textContent)
+    lockLanguage: /locked|unlock|tier \\d|🔒/i.test(track.textContent),
+    // the payoff line must name the SIDECAR's next stage — never a name invented in the frontend
+    payoff: (track.querySelector('.q-track-payoff') || {}).textContent || null,
+    engineStageNow: (() => { const j = JourneyStore.status(); return j && j.evolution ? j.evolution.name : null; })(),
+    engineNextStage: (() => { const j = JourneyStore.status(); return j && j.evolution ? j.evolution.next : null; })()
   });
 })()`;
 
