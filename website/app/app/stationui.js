@@ -2133,7 +2133,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     { id: 'remote-ssh', label: 'REMOTE SSH', plainLabel: 'ANOTHER MACHINE', reach: 1, plain: 'None of your files. Commands run on a different machine you point it at below.', short: 'works on another machine', backend: 'ssh', files: 'synced agent workspace', tools: 'remote terminal + files + connectors', desktop: 'never', desc: 'strict-known-host SSH; pushes the workspace before each command and pulls it back afterward' },
     { id: 'station-gear', label: 'STATION GEAR', plainLabel: 'WHAT I PLACED', reach: 2, plain: 'Only what you placed on the station floor, plus project folders you approved. The default.', short: 'uses only the gear you placed', backend: 'current', files: 'placed gear + approved project folders', tools: 'only tools granted by floor objects', desktop: 'live lease required', desc: 'compatibility profile; the station floor remains the capability authority' },
     { id: 'trusted-project', label: 'TRUSTED PROJECT', plainLabel: 'MY PROJECT FOLDERS', reach: 3, plain: 'Its own workspace plus the project folders you approved — nothing else on this computer.', short: 'reaches your approved project folders', backend: 'local', files: 'workspace + approved project folders', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'local project work with the folders you approve' },
-    { id: 'this-computer', label: 'THIS COMPUTER', plainLabel: 'MY WHOLE COMPUTER', reach: 4, plain: 'Almost any file on this computer. Protected files (.env, .git) stay blocked no matter what.', short: 'reaches almost everything on this computer', backend: 'local', files: 'host paths except protected files', tools: 'terminal + files + connectors', desktop: 'live lease required', desc: 'broad local path reach; protected files and real input stay fenced' }
+    { id: 'this-computer', label: 'THIS COMPUTER', plainLabel: 'MY WHOLE COMPUTER', reach: 4, plain: 'The whole local computer. In Full Power this includes protected files, arbitrary host commands, visible apps, and screen/input control.', short: 'reaches the whole local computer', backend: 'local', files: 'all host paths in Full Power', tools: 'all available tools + host terminal', desktop: 'Full Power or live lease', desc: 'host-wide authority when paired with Full Power; ASK mode retains approval boundaries' }
   ];
   const EXECUTION_PROFILE_MAX_REACH = 4;
   /* ── STATION POSTURES — the beginner's front door (2026-08-07 round 2) ────────────────────────────
@@ -2157,7 +2157,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       blurb: 'It still asks before risky steps, but it can work in your project folders and leave drafts while you are away.',
       who: 'The everyday setting.' },
     { id: 'open', label: 'FULL POWER', approval: 'full', profile: 'this-computer', level: 'full',
-      blurb: 'It never asks, reaches almost any file on this computer, and starts work on its own.',
+      blurb: 'It never asks and may use the whole local computer to complete your requests.',
       who: 'Only when you trust it completely.' }
   ];
   // the fallback is the DEFAULT profile by id, never EXECUTION_PROFILES[0] — the array is ordered by reach,
@@ -2191,10 +2191,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<button type="button" class="ov-vchip' + (sel ? ' sel' : '') + '" data-approval="' + id + '" data-name="' + esc(label) + '" title="' + esc(desc) + '" aria-pressed="' + (sel ? 'true' : 'false') + '">' + esc(label) + '</button>';
     return '<div class="cf-card" id="ag-approval-card">' +
       '<div class="cf-head"><span class="cf-file">✋ approval prompts</span></div>' +
-      '<div class="cf-desc">Whether risky calls pause for your answer. This does not add tools, widen filesystem scope, choose a runtime, or grant real desktop control. <code>/yolo</code> remains the shortcut for the zero-prompt posture.</div>' +
+      '<div class="cf-desc">ASK respects the selected reach profile and pauses before risky calls. FULL POWER authorizes the whole local computer: all available tools, host paths, arbitrary commands, visible apps, and screen/input control. <code>/yolo</code> is the Full Power shortcut.</div>' +
       '<div class="ov-vchips" id="ag-approval-chips">' +
         chip('ask', 'ASK FOR APPROVAL', 'stops to check with you before it writes, runs, or reaches out', !full) +
-        chip('full', 'RUN WITHOUT PROMPTS', 'uses its current execution profile without approval prompts', full) +
+        chip('full', 'FULL POWER', 'uses the whole local computer without approval prompts', full) +
       '</div>' +
       '<div id="ag-approval-msg" class="msg"></div>' +
     '</div>';
@@ -2399,7 +2399,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (id === 'full' && apArmed !== chip) {
           apDisarm(); apArmed = chip;
           chip.classList.add('arm');
-          chip.textContent = 'RUN WITHOUT PROMPTS — SURE?';
+          chip.textContent = 'FULL POWER — SURE?';
           sfx('click');
           return;
         }
@@ -2407,7 +2407,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (!(access.config && access.config.setApproval)) { setApMsg('approval change unavailable', false); sfx('bad'); return; }
         const ok = access.config.setApproval(a && a.id, id);
         if (ok === false) { setApMsg('could not change approval', false); sfx('bad'); return; }
-        notify(id === 'full' ? '⚡ ' + ((a && a.name) || 'agent') + ' will run its current execution profile without approval prompts' : '✋ ' + ((a && a.name) || 'agent') + ' will ask before risky moves again', id === 'full' ? 'warn' : 'good');
+        notify(id === 'full' ? '⚡ ' + ((a && a.name) || 'agent') + ' now has Full Power over the local computer' : '✋ ' + ((a && a.name) || 'agent') + ' will ask before risky moves again', id === 'full' ? 'warn' : 'good');
         sfx('click'); rerender('agents');
       }));
     }
@@ -5533,15 +5533,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="perm-list" id="perm-crew"></div>' +
       '<div class="mc-acts perm-allacts">' +
         '<button class="bb sm" id="perm-ask-all">EVERYONE ASKS FIRST</button>' +
-        '<button class="bb sm danger" id="perm-full-all">NO PROMPTS — WHOLE STATION</button>' +
+        '<button class="bb sm danger" id="perm-full-all">FULL POWER — WHOLE STATION</button>' +
       '</div>' +
-      // NOTE: "zero-prompt posture applies watched or unattended" and the "does not add tools…" clause are
-      // LOCKED honesty claims from the full-access lane — condense around them, never through them.
-      '<div class="mc-hint">These two change whether it asks — nobody’s reach changes. Each crew member either <b>ASKS</b> or <b>RUNS WITHOUT PROMPTS</b>; that posture does not add tools, widen filesystem scope, choose a runtime, or grant desktop control. The zero-prompt posture applies watched or unattended, within each agent’s execution profile. <code>/yolo</code> is the shortcut. Protected host actions remain blocked automatically.</div>' +
+      '<div class="mc-hint">Each crew member either <b>ASKS</b> within the selected reach profile or has <b>FULL POWER</b> over the whole local computer. Full Power applies watched or unattended and includes available tools, host files, arbitrary commands, visible apps, and screen/input control. <code>/yolo</code> is the shortcut.</div>' +
       // The master switch — it overrides the ASKS FIRST setting on every row above, so it sits directly
       // under them. Visible: it is a permission, and a switch that silently outranks the rows above it
       // is the last thing that should be hidden behind a disclosure.
-      '<h4 class="ms-h">SKIP EVERY PROMPT <span class="dim">— one switch that overrides all of the above</span></h4>' +
+      '<h4 class="ms-h">FULL POWER — WHOLE STATION <span class="dim">— one switch grants host-wide authority to every agent</span></h4>' +
       '<div id="perm-bypass" class="perm-master"><p class="perm-m-desc">checking the bypass switch…</p></div>' +
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
       // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the
@@ -6535,7 +6533,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           : 'All ' + n + ' of your crew ' + verbPlural;
         let head;
         if (!n) head = 'No crew on the station yet. Nothing can run until you summon someone.';
-        else if (bypassOn) head = everyone('runs', 'run') + ' without stopping to ask you — the SKIP EVERY PROMPT switch is ON.';
+        else if (bypassOn) head = everyone('has', 'have') + ' Full Power over the local computer — the whole-station switch is ON.';
         else if (!noPrompt) head = everyone('stops and asks', 'stop and ask') + ' you before anything risky.';
         else if (!asks) head = everyone('runs', 'run') + ' without stopping to ask you.';
         else head = asks + ' of your ' + n + ' crew ask before anything risky; ' + noPrompt + ' run' + (noPrompt === 1 ? 's' : '') + ' without asking.';
@@ -6548,7 +6546,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         glanceWrap.innerHTML =
           '<p class="pg-line">' + esc(head) + '</p>' +
           (reachLine ? '<p class="pg-reach">' + reachLine + '</p>' : '') +
-          '<p class="pg-floor">No setting on this page can change these: protected files (<code>.env</code>, <code>.git</code>) are never writable, and nothing can move your mouse or see your screen unless you switch that on yourself, separately.</p>';
+          '<p class="pg-floor">FULL POWER is host-wide: it may use protected files, arbitrary commands, visible apps, and screen/input control. ASK and narrower reach modes retain their listed restrictions.</p>';
       };
       /* ── THE POSTURE FRONT DOOR ────────────────────────────────────────────────────────────────────
          A posture is a SHORTCUT FOR SETTING VALUES, never a badge. It highlights only when every one of
@@ -6614,7 +6612,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             if (P.id !== 'open') { disarm(); sfx('click'); run(btn, P); return; }
             if (armed && armed.el === btn) { disarm(); sfx('bad'); run(btn, P); return; }
             disarm(); armed = { el: btn, P: P }; btn.classList.add('armed'); btn.dataset.armed = '1';
-            btn.querySelector('.pp-name').textContent = 'SURE? NO PROMPTS, ANY FILE';
+            btn.querySelector('.pp-name').textContent = 'SURE? WHOLE COMPUTER';
             sfx('bad');
             setTimeout(() => { if (armed && armed.el === btn) disarm(); }, 4000);
           });
@@ -6674,8 +6672,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           return '<div class="perm-agent perm-crew-row' + (effFull ? ' full' : '') + (overridden ? ' overridden' : '') + '" data-profile-agent="' + esc(String(a.id)) + '" data-ssh-configured="' + (sshConfigured ? '1' : '0') + '">' +
             '<div class="pc-head">' +
               '<span class="pa-name">' + esc(a.name || a.id) + '</span>' +
-              '<span class="pa-mode">' + (effFull ? 'NO PROMPTS' : 'ASKS') + '</span>' +
-              '<span class="pa-state">' + esc(p.short) + ' · ' + (effFull ? 'never stops to ask you' : 'stops before it writes, runs, or reaches out') + '</span>' +
+              '<span class="pa-mode">' + (effFull ? 'FULL POWER' : 'ASKS') + '</span>' +
+              '<span class="pa-state">' + (effFull ? 'whole local computer · never stops to ask you' : (esc(p.short) + ' · stops before it writes, runs, or reaches out')) + '</span>' +
             '</div>' +
             '<div class="pc-axis">' +
               '<span class="pc-q">CAN REACH</span>' +
@@ -6684,18 +6682,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               // orphan under a wide hole — the one thing on the pane that is an ORDERED SCALE was also
               // the only thing you could not read as one. (CSS-only; the chips themselves are unchanged.)
               (can ? '<div class="ov-vchips pc-chips pc-reach-chips">' + reachChips + '</div>' : '<span class="pc-plain">' + esc(p.label) + '</span>') +
-              '<p class="pc-plain">' + esc(p.plain) + '</p>' +
+              '<p class="pc-plain">' + (effFull ? 'Full Power currently overrides this stored reach profile; the profile applies again when Full Power is turned off.' : esc(p.plain)) + '</p>' +
               '<p class="mc-hint pc-truth">routes next command to <b>' + esc(routed) + '</b> · availability <b>' + esc(availability) + '</b> · files: ' + esc(p.files) + ' · tools: ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</p>' +
             '</div>' +
             '<div class="pc-axis pc-ask-axis">' +
-              '<span class="pc-q">ASKS FIRST' + (overridden ? ' <span class="pc-ovr">— OVERRIDDEN BY SKIP EVERY PROMPT</span>' : '') + '</span>' +
+              '<span class="pc-q">AUTHORITY' + (overridden ? ' <span class="pc-ovr">— OVERRIDDEN BY WHOLE-STATION FULL POWER</span>' : '') + '</span>' +
               (canAsk ? '<div class="ov-vchips pc-chips">' + askChips + '</div>' : '') +
               '<p class="pc-plain">' + (overridden
-                ? 'The SKIP EVERY PROMPT switch is ON, so this agent is not asking about anything right now. ' + (full
-                  ? 'It is also set to run without prompts on its own.'
+                ? 'The whole-station Full Power switch is ON, so this agent has host-wide authority right now. ' + (full
+                  ? 'It is also set to retain Full Power on its own.'
                   : 'Turn that switch off and it goes back to stopping for your yes, as selected here.')
                 : full
-                  ? 'It writes files, runs commands and reaches out on its own, without pausing — inside the reach above, and nowhere wider.'
+                  ? 'It may use the whole local computer without pausing: available tools, host files, arbitrary commands, visible apps, and screen/input control.'
                   : 'Before it writes a file, runs a command, or reaches outside, it stops and waits for your yes.') + '</p>' +
             '</div>' +
             (cell || ssh ? '<div class="pc-more">' + cell + ssh + '</div>' : '') +
@@ -6781,7 +6779,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             paintCrew();
             if (!ok) notify('that agent is no longer on the roster — the list has been refreshed', 'warn');
           };
-          if (to === 'full') ArmConfirm.wire(b, { armedLabel: 'SURE? IT WILL NEVER ASK', restLabel: 'NO — JUST DO IT', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
+          if (to === 'full') ArmConfirm.wire(b, { armedLabel: 'SURE? GRANT FULL POWER', restLabel: 'NO — JUST DO IT', timeoutMs: 4000, onArm: () => sfx('bad'), onConfirm: () => { sfx('bad'); apply(); } });
           else b.addEventListener('click', () => { sfx('click'); apply(); });
         });
       };
@@ -6803,14 +6801,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       };
       const fullAll = host.querySelector('#perm-full-all'), askAll = host.querySelector('#perm-ask-all');
       if (fullAll) ArmConfirm.wire(fullAll, {
-        armedLabel: 'SURE? EVERY AGENT, NO PROMPTS', restLabel: 'NO PROMPTS — WHOLE STATION', timeoutMs: 4000,
+        armedLabel: 'SURE? EVERY AGENT, FULL POWER', restLabel: 'FULL POWER — WHOLE STATION', timeoutMs: 4000,
         onArm: () => sfx('bad'),
         onConfirm: () => {
           const r = sweepApproval('full');
           if (!r) return;
           sfx('bad');
           notify(r.done
-            ? r.done + ' agent' + (r.done === 1 ? '' : 's') + ' now run their current execution profiles without approval prompts (the hard safety floor still applies)'
+            ? r.done + ' agent' + (r.done === 1 ? '' : 's') + ' now have FULL POWER over the local computer without approval prompts'
             : 'no crew to change — summon an agent first', r.done ? 'warn' : 'bad');
         }
       });
@@ -6854,8 +6852,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // the card: title + live state chip · one description paragraph · the control on its OWN line ·
         // a hairline-separated floor note. The button never sits inside the prose (it read as part of
         // the sentence), and the state is a chip so ON/OFF is legible without reading the paragraph.
-        const floorNote = 'Still standing either way: the protected-file floor (.env / .git) and real mouse &amp; screen control (desktop pairing only).';
-        const head = (chip, chipCls) => '<div class="perm-m-head"><span class="perm-m-title">NO-PROMPT OVERRIDE</span>' +
+        const floorNote = 'When ON, this is host-wide authority: protected files, arbitrary commands, visible apps, and real mouse &amp; screen control are in scope.';
+        const head = (chip, chipCls) => '<div class="perm-m-head"><span class="perm-m-title">FULL POWER OVERRIDE</span>' +
           '<span class="perm-m-chip' + (chipCls ? ' ' + chipCls : '') + '">' + chip + '</span></div>';
         const errLine = bypassErr ? '<p class="perm-m-err">⚠ ' + esc(bypassErr) + ' — the switch is unchanged.</p>' : '';
         if (snap.envFullAccess) {
@@ -6866,12 +6864,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
         bypassWrap.innerHTML = snap.masterBypass
           ? (head('ON', 'on') +
-             '<p class="perm-m-desc">Every agent and surface skips approval prompts within its execution profile. This does not change runtime, filesystem scope, projected tools, or desktop leases. Survives restarts until you turn it off.</p>' +
+             '<p class="perm-m-desc">Every agent and surface receives Full Power over this local computer: all available tools, host paths, arbitrary commands, visible apps, and real screen/input control. Survives restarts until you turn it off.</p>' +
              errLine +
              '<div class="perm-m-act"><button class="bb sm" id="perm-bypass-off">✕ TURN OFF</button></div>' +
              '<p class="perm-m-floor">' + floorNote + '</p>')
           : (head('OFF', '') +
-             '<p class="perm-m-desc">One switch removes approval prompts station-wide within each agent’s execution profile. It does not change runtime, filesystem scope, projected tools, or desktop leases.</p>' +
+             '<p class="perm-m-desc">One switch grants every agent Full Power over this local computer. Turn it on only when you want host-wide action without prompts.</p>' +
              errLine +
              '<div class="perm-m-act"><button class="bb sm danger" id="perm-bypass-on">TURN ON</button></div>' +
              '<p class="perm-m-floor">' + floorNote + '</p>');
@@ -6893,9 +6891,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (onBtn) ArmConfirm.wire(onBtn, {
           armedLabel: 'SURE? EVERYTHING, EVERYWHERE, NO PROMPTS', restLabel: 'TURN ON', timeoutMs: 4000,
           onArm: () => sfx('bad'),
-          onConfirm: () => { sfx('bad'); flip(onBtn, true, 'FULL BYPASS ON — nothing asks for approval anywhere until you turn it off', 'warn'); }
+          onConfirm: () => { sfx('bad'); flip(onBtn, true, 'FULL POWER ON — every agent has host-wide authority until you turn it off', 'warn'); }
         });
-        if (offBtn) offBtn.addEventListener('click', () => { sfx('click'); flip(offBtn, false, 'FULL BYPASS off — approvals apply again', 'good'); });
+        if (offBtn) offBtn.addEventListener('click', () => { sfx('click'); flip(offBtn, false, 'FULL POWER off — approvals and reach profiles apply again', 'good'); });
       };
       const repaintPerm = () => {
         const snap = PermissionsStore.snapshot();

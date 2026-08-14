@@ -12,8 +12,17 @@ many of these — they win on any wording conflict.
 
 - **StarNet is for beginners and power users.** It is easier for beginners to use, never
   beginner-limited: sandbox freedom, full power from minute one, and no grind/unlock/usage
-  walls. User-work quotas default off; users or deployers may opt into limits. Safety,
-  consent, sandbox, and truthful-telemetry boundaries remain enforced. (Locked; see also skills.)
+  walls. User-work quotas default off; users or deployers may opt into limits. Restricted
+  postures enforce their advertised consent/sandbox boundaries. (Locked; see also skills.)
+- **FULL POWER MEANS THE WHOLE LOCAL COMPUTER** (2026-08-14, Andrew; supersedes every older
+  Full-Access/hard-floor/desktop-lease limitation). Per-agent Full Access and the station-wide
+  master bypass are host-minted scopes of one general authority: StarNet must project every
+  available capability and must not block host paths (including `.env`/`.git`), arbitrary host
+  commands, visible apps, or physical screen/input control. Do not build niche request allowlists;
+  the unrestricted host executor is the general route. Schema/input validity, timeouts, output
+  caps, checkpoints, truthful telemetry, OS account privileges, elevation prompts, credentials,
+  unavailable hardware, and disconnected external services remain real engineering/runtime facts,
+  not StarNet permission denials. ASK and narrower execution modes remain restricted as labeled.
 - **Truthful telemetry is THE core law.** The app must never assert state the harness can't
   prove. Object = capability: a prop in the world is a real grant, not decoration. Tool
   surface must never exceed wired reality.

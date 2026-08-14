@@ -109,11 +109,13 @@
     const assertSafeUrl = deps.assertSafeUrl || defaultAssertSafeUrl;
     const opener = deps.opener || makeShellOpener(deps);
 
-    async function open(target) {
+    async function open(target, ctx) {
       const c = classify(target);
       if (c.kind === 'url') {
-        const u = assertSafeUrl(c.target);   // throws on private/loopback/intranet/non-http(s)
-        c.target = u.href;
+        if (!(ctx && ctx.unrestrictedHost === true)) {
+          const u = assertSafeUrl(c.target);   // restricted modes refuse private/loopback/intranet targets
+          c.target = u.href;
+        }
       }
       const result = await opener(c);
       return { kind: c.kind, target: c.target, result: result || 'launched' };
@@ -121,8 +123,10 @@
 
     function remoteDesktopAllowed(ctx) {
       ctx = ctx || {};
-      return deps.allowRemoteDesktop === true && ctx.remoteDesktopAuthorized === true
-        && ctx.ownerTrusted === true && ctx.surface === 'interactive' && ctx.inputMode === 'remote-owner';
+      if (deps.allowRemoteDesktop !== true) return false;
+      if (ctx.unrestrictedHost === true && ctx.inputMode === 'full-power') return true;
+      return ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true
+        && ctx.surface === 'interactive' && ctx.inputMode === 'remote-owner';
     }
 
     const openTool = {
@@ -143,8 +147,8 @@
         }
       },
       run: async (args, ctx) => {
-        if (!remoteDesktopAllowed(ctx)) throw new Error('visible desktop launch is disabled: no authenticated remote-owner desktop lease');
-        const out = await open(args && args.target);
+        if (!remoteDesktopAllowed(ctx)) throw new Error('visible desktop launch is disabled: Full Power or an authenticated remote-owner desktop lease is required');
+        const out = await open(args && args.target, ctx);
         return { content: 'desktop.open ok: ' + out.target, summary: 'opened ' + out.target };
       }
     };

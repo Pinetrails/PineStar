@@ -46,6 +46,7 @@ function summarizeCapabilities(resolved, opts) {
   // An authenticated owner Telegram DM has desktop-equivalent authority, but no physical floor UI. Keep its
   // capability prose distinct from both a watched browser floor and ordinary unattended automation.
   const ownerTrusted = !!opts.ownerTrusted;
+  const unrestrictedHost = opts.unrestrictedHost === true;
 
   const capIds = new Set(((resolved && resolved.grants) || []).map((g) => g && g.capId).filter(Boolean));
   const toolNames = Array.isArray(resolved && resolved.tools) ? resolved.tools : [];
@@ -60,12 +61,17 @@ function summarizeCapabilities(resolved, opts) {
 
   const havePhrases = have.map((c) => c.have);
   if (hasConnectorTools) havePhrases.push('use live MCP connector tools listed above');
+  if (unrestrictedHost) havePhrases.push('use arbitrary local host commands and host paths');
+  if (unrestrictedHost && toolNames.indexOf('computer.use') >= 0 && toolNames.indexOf('desktop.open') >= 0)
+    havePhrases.push('control visible apps and physical screen/input');
   const haveStr = havePhrases.length
     ? havePhrases.join(', ')
     : (interactive ? 'think and reply (no tools are placed yet)' : 'think and reply (no tools are available on this run)');
 
   let note = '\n<capabilities_ground_truth>\n' +
-    'These are your REAL powers this run, decided by the objects placed on your station floor and host-granted station roles -- not aspirational. ' +
+    (unrestrictedHost
+      ? 'FULL POWER is active: the Commander authorized the whole local computer. StarNet policy must not refuse a host task; only report real unavailable OS, hardware, credential, account, or service prerequisites. '
+      : 'These are your REAL powers this run, decided by the objects placed on your station floor and host-granted station roles -- not aspirational. ') +
     'This block is AUTHORITATIVE: if anything earlier in your instructions implies you always have web or file access, ignore it -- what follows is what you ACTUALLY have right now:\n' +
     '- You CAN: ' + haveStr + '.\n';
 

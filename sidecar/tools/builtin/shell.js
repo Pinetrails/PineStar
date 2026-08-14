@@ -29,6 +29,11 @@
   function clip(s, n) { s = String(s == null ? '' : s); n = n || 200; return s.length > n ? s.slice(0, n) + '…' : s; }
   function clamp(n, lo, hi) { n = Number(n); if (!isFinite(n)) return lo; return Math.max(lo, Math.min(hi, n)); }
   const WIN = (typeof process !== 'undefined' && process.platform) === 'win32';
+  function unrestrictedHost(ctx) {
+    ctx = ctx || {};
+    return ctx.unrestrictedHost === true ||
+      (ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner');
+  }
 
   /* best-effort blast wall (true confinement needs a container — a deferred backend). A command confined to its
      own workspace never needs to escape it, so refuse obvious filesystem escapes + references to the harness's
@@ -735,8 +740,8 @@
         + 'Tests, builds, git, scripts — anything you would type in a terminal. On Windows this uses cmd.exe; wrap PowerShell cmdlets with `powershell -NoProfile -NonInteractive -Command "..."`. '
         + 'Your working directory PERSISTS across calls (a `cd` carries over). Absolute and `..` paths are '
         + 'refused in cmd — pass cwd to run from a specific existing folder. Commands that would change the '
-        + 'user\'s machine or screen are refused with a reason; if a visible app is genuinely needed, ask the '
-        + 'Commander to open it. Optional timeoutMs (default 30s, max 120s). background:true returns a handle '
+        + 'user\'s machine or screen are refused in restricted modes; Full Power may run any host command the '
+        + 'current OS user can run. Optional timeoutMs (default 30s, max 120s). background:true returns a handle '
         + 'immediately for long-running processes (dev servers) — check shell.bg.status, read its log with '
         + 'shell.bg.read, answer its prompts with shell.bg.write, stop it with shell.bg.kill.',
       schema: { type: 'object', required: ['cmd'], properties: { cmd: { type: 'string' }, cwd: { type: 'string' }, timeoutMs: { type: 'number' }, background: { type: 'boolean' } } },
@@ -744,7 +749,7 @@
         ctx = ctx || {};
         // Host-minted at Telegram ingress: this is the paired Commander at the physical desktop, not a prompt
         // claim or a cached capability. It is the one path allowed to leave the agent workspace and use host tools.
-        const remoteOwner = ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner';
+        const remoteOwner = unrestrictedHost(ctx);
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
         const environmentBackendId = environment
           ? (typeof environment.backendIdFor === 'function' ? environment.backendIdFor(aid) : environment.backendId)
@@ -929,7 +934,7 @@
           ? (typeof environment.backendIdFor === 'function' ? environment.backendIdFor(aid) : environment.backendId)
           : null;
         const dialect = environment && environmentBackendId !== 'local' ? 'posix' : (isWin ? 'cmd' : 'posix');
-        const remoteOwner = !!(ctx && ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true && ctx.inputMode === 'remote-owner');
+        const remoteOwner = unrestrictedHost(ctx);
         const risk = remoteOwner ? null : commandSafetyRisk(input, { cwd: jailRoot, fs: fs, pathMod: P, dialect: dialect, isWin: isWin });
         if (risk) throw new Error('refused [' + risk.kind + ']: this input ' + risk.reason + '. A line sent to a shell or REPL runs like a command, so it is screened the same way.');
         const r = await Promise.resolve(source ? source.writeBackground(aid, id, { input: input, submit: args && args.submit }) : bg.write(aid, id, { input: input, submit: args && args.submit }));
@@ -956,10 +961,10 @@
 
     return {
       execTool: execTool, bgStatusTool: bgStatusTool, bgReadTool: bgReadTool, bgWriteTool: bgWriteTool, bgKillTool: bgKillTool,
-      _internals: { escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, commandSafetyRisk: commandSafetyRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd },
+      _internals: { escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, commandSafetyRisk: commandSafetyRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, killTree: killTree, safeAgentId: safeAgentId, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd, unrestrictedHost: unrestrictedHost },
       register: function (reg) { reg.register(execTool); reg.register(bgStatusTool); reg.register(bgReadTool); reg.register(bgWriteTool); reg.register(bgKillTool); return reg; }
     };
   }
 
-  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, commandSafetyRisk: commandSafetyRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd };
+  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, commandSafetyRisk: commandSafetyRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd, unrestrictedHost: unrestrictedHost };
 });

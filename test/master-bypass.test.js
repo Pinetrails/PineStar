@@ -37,6 +37,13 @@ const hardline = (call) => (call && call.args && /(^|\/)\.env$/.test(call.args.p
   A.ok(!r.allow && r.hardline === true, 'FULL BYPASS never reaches past the hardline floor');
 }
 
+// ---- 2b. explicit Full Power outranks the restricted-mode hardline ----
+{
+  const consent = makeConsentBroker({ bypass: () => true, unrestrictedHost: () => true, hardline: hardline, surface: 'autonomous' });
+  const r = consent({ name: 'fs.write', args: { path: '.env' } }, WRITE);
+  A.ok(r.allow && r.reason === 'full-power', 'Full Power reaches protected host files without a niche exception');
+}
+
 // ---- 3. a throwing bypass predicate fails CLOSED ----
 {
   const consent = makeConsentBroker({ bypass: () => { throw new Error('store torn'); }, surface: 'autonomous' });
@@ -66,12 +73,13 @@ const hardline = (call) => (call && call.args && /(^|\/)\.env$/.test(call.args.p
   A.ok(auth.project({ name: 'shell.exec', capability: 'workbench' }) === true, 'masterBypass: workbench projected into the tool list unattended');
 }
 
-// ---- 6. inputpolicy: masterBypass does NOT mint the physical-desktop lease ----
+// ---- 6. inputpolicy: masterBypass is host-wide Full Power ----
 {
   const auth = makeRunAuthority({ surface: 'autonomous', masterBypass: true });
   const phys = auth.authorize({ name: 'computer.use' }, { name: 'computer.use', capability: 'physical-input', scope: 'execute' });
-  A.ok(phys.ok === false && phys.impact === IMPACTS.PHYSICAL_INPUT, 'physical input still requires the host-minted desktop lease');
-  A.ok(auth.project({ name: 'desktop.open', capability: 'visible-desktop' }) === false, 'real-screen desktop never projected by masterBypass alone');
+  A.ok(phys.ok === true && phys.impact === IMPACTS.PHYSICAL_INPUT && phys.unrestrictedHost === true, 'Full Power authorizes physical input');
+  A.ok(auth.project({ name: 'desktop.open', capability: 'visible-desktop' }) === true, 'Full Power projects real-screen desktop control');
+  A.ok(auth.unrestrictedHost() === true && auth.mode === 'full-power', 'authority diagnostics state the effective host-wide mode');
 }
 
 // ---- 7. inputpolicy: switch OFF leaves the unattended denials byte-identical ----
@@ -96,6 +104,8 @@ const hardline = (call) => (call && call.args && /(^|\/)\.env$/.test(call.args.p
   A.ok(after.ok === true && prompts === 0, 'Full Access emits no exact permission prompt');
   A.ok(after.fullAccess === true, 'the allow is stamped as per-agent Full Access, not owner identity or master bypass');
   A.ok(auth.project({ name: 'shell.exec', capability: 'workbench' }) === true, 'Full Access projects unattended workbench authority too');
+  A.ok(auth.project({ name: 'computer.use', capability: 'physical-input' }) === true,
+    'per-agent Full Access projects physical input without a separate niche permission');
   full = false;
   A.ok(auth.project({ name: 'shell.exec', capability: 'workbench' }) === false,
     'revoking Full Access bites the same authority object on the next call');
