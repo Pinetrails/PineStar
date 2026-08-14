@@ -81,8 +81,9 @@ function fakeProvider(argsRaw, browserFixture) {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-run-recovery-'));
   const browserFixture = process.env.RUN_RECOVERY_BROWSER_FIXTURE === '1';
   const agentId = browserFixture ? 'agent' : 'recovery_agent';
-  const recoveryStream = browserFixture ? 'ws_general' : 'recovery-stream';
-  const autoStream = browserFixture ? 'ws_general' : 'auto-stream';
+  const browserStream = String(process.env.RUN_RECOVERY_BROWSER_STREAM || 'ws_general');
+  const recoveryStream = browserFixture ? browserStream : 'recovery-stream';
+  const autoStream = browserFixture ? browserStream : 'auto-stream';
   const agentWs = path.join(ws, agentId);
   fs.mkdirSync(agentWs, { recursive: true });
   const counterPath = path.join(agentWs, 'counter.log');
