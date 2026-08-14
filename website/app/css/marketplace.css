@@ -131,29 +131,28 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-roster::-webkit-scrollbar, .mkt-dossier::-webkit-scrollbar { width: 9px; }
 .mkt-roster::-webkit-scrollbar-thumb, .mkt-dossier::-webkit-scrollbar-thumb { background: var(--ph-dim); border-radius: 9px; }
 
-/* ---- the engraved class SEAL (challenge-coin) — emblem only, never a skin ----
-   Premium pass: a real struck coin — machined accent rim ring, recessed floor, engraved inner groove,
-   and the emblem lit with a soft accent bloom so each class's colour actually registers. */
-.mkt-coin { position: relative; width: var(--coin, 64px); height: var(--coin, 64px); border-radius: var(--r-sm, 3px); flex: 0 0 auto;
-  background:
-    radial-gradient(circle at 50% 108%, color-mix(in srgb, var(--accent, var(--ph)) 12%, transparent), transparent 58%),
-    radial-gradient(circle at 50% 30%, #1f1710, #090503 80%);
-  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 52%, #241a0d);
-  box-shadow:
-    inset 0 1px 0 rgba(var(--ph-bright-rgb),.1), inset 0 -4px 9px rgba(0,0,0,.78),
-    0 0 0 2px rgba(0,0,0,.7), 0 0 9px color-mix(in srgb, var(--accent, var(--ph)) 14%, transparent), 0 1px 2px rgba(0,0,0,.6);
+/* ---- the class / recipe SEAL — THE EMBLEM, AND NOTHING ELSE (2026-08-13, Andrew's call) ----
+   This used to be a struck coin: a bordered square holding a two-stop radial floor, a milled inner
+   groove ring (::before), a specular sheen (::after) and a triple box-shadow. Nine chrome elements
+   around a 36px glyph, repeated down a 35-row roster and a 101-row recipe library — the frame read
+   louder than the mark it framed, and every row carried the same frame, so the frames became the
+   texture of the list instead of the icons being it. The emblem is now drawn straight onto the
+   panel: no box, no fill, no rim, no groove. The geometry stays (same --coin footprint, same flex
+   centring) so nothing around it reflows, and the glyph grows into the space the frame gave up. */
+.mkt-coin { position: relative; width: var(--coin, 64px); height: var(--coin, 64px); flex: 0 0 auto;
+  background: none; border: 0; box-shadow: none; border-radius: 0;
   display: flex; align-items: center; justify-content: center; }
-/* engraved inner groove ring — the coin's milled channel */
-.mkt-coin::before { content: ""; position: absolute; inset: 4px; border-radius: inherit; z-index: 1;
-  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 30%, transparent); opacity: .7;
-  box-shadow: inset 0 1px 2px rgba(0,0,0,.7), 0 1px 0 rgba(var(--ph-bright-rgb),.05); }
-.mkt-coin::after { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: 1; pointer-events: none;
-  background: radial-gradient(ellipse 54% 40% at 33% 24%, rgba(255,242,222,.09), transparent 62%); }
-.mkt-coin-ico { position: relative; z-index: 2; width: 56%; height: 56%; color: var(--accent, var(--ph));
-  filter: drop-shadow(0 1px 0 rgba(0,0,0,.6)) drop-shadow(0 0 5px color-mix(in srgb, var(--accent, var(--ph)) 38%, transparent));
+/* the groove ring and the sheen were the coin's two decorative layers — both belong to the frame */
+.mkt-coin::before, .mkt-coin::after { content: none; }
+/* 78%, not 56%: the emblem sized itself to sit INSIDE a rim that no longer exists. The soft bloom
+   stays — that is the phosphor the glyph is emitting, not part of the frame — but the hard 1px
+   drop-shadow went with the engraving it was faking depth against. */
+.mkt-coin-ico { position: relative; z-index: 2; width: 78%; height: 78%; color: var(--accent, var(--ph));
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--accent, var(--ph)) 34%, transparent));
   display: flex; align-items: center; justify-content: center; }
 .mkt-coin-ico svg { width: 100%; height: 100%; display: block; }
-.mkt-coin-emoji { position: relative; z-index: 2; font-size: calc(var(--coin, 64px) * .42); line-height: 1; color: var(--accent, var(--ph-bright)); }
+/* the custom-item emoji fallback grows with the frame's removal too, same reason as .mkt-coin-ico */
+.mkt-coin-emoji { position: relative; z-index: 2; font-size: calc(var(--coin, 64px) * .58); line-height: 1; color: var(--accent, var(--ph-bright)); }
 /* (the typed-ASCII mark layer was removed 2026-07-16 — the engraved SVG coin above is the one emblem) */
 .mkt-seal { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 0 0 auto; }
 .mkt-seal-code { font-size: 10px; letter-spacing: 2.5px; color: var(--ph-dim); }
@@ -201,9 +200,10 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-card.sel::before { opacity: 1; box-shadow: 1px 0 9px color-mix(in srgb, var(--accent, var(--ph)) 45%, transparent); }
 /* every card's code stamp lives in the right-side cluster (.mkt-card-code) — no in-card watermark */
 .mkt-card .mkt-seal { gap: 0; }
-.mkt-card.sel .mkt-coin { border-color: color-mix(in srgb, var(--accent, var(--ph)) 68%, #241a0d);
-  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.1), inset 0 -3px 8px rgba(0,0,0,.72), 0 0 0 1px color-mix(in srgb, var(--accent, var(--ph)) 32%, transparent); }
-.mkt-card.sel .mkt-coin-ico { filter: drop-shadow(0 1px 0 rgba(0,0,0,.55)) brightness(1.12); }
+/* SELECTED: the emblem simply burns brighter. The old selected state re-lit the coin's rim and
+   floor, which is nothing to re-light now — a frameless seal shows selection the way the rest of
+   the phosphor UI does, by emitting more. (The row already carries the lit plate + accent rail.) */
+.mkt-card.sel .mkt-coin-ico { filter: drop-shadow(0 0 9px color-mix(in srgb, var(--accent, var(--ph)) 55%, transparent)) brightness(1.15); }
 
 /* ===== SETTINGS-CONSOLE ROWS (AGENTS tab): the class list reads like the SETTINGS provider list =====
    The premium reference (Andrew, 2026-07-14) is the SETTINGS window: uniform amber rows, one per item,
