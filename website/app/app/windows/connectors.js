@@ -133,21 +133,37 @@
     //      currently connected (truth from /api/connectors — managed on their own tab, read-only here). Bottom =
     //      custom keys for UNLISTED platforms (POST /api/servicekeys): the sidecar exposes each as an env var in
     //      the agents' shell, so an agent can call ANY service's API with it. Values render masked, never whole. ----
+    /* SHAPE (2026-08-13, Andrew's call): "keys should just be the list of keys available and connected,
+       and underneath should allow users to add custom keys." The pane was FIVE stacked top-level sections
+       — two lists, then a whole platform DIRECTORY, then the form — measured at 1560px of scroll in a
+       599px pane, so the add form (the pane's only verb) sat a full screen below the fold with a catalog
+       wedged between it and the list it belongs to.
+       Now: ONE list block, then the form. The two lists stay SEPARATE rows inside that block because they
+       are not the same thing — a keyed CATALOG/MCP platform is read-only here and managed where it was
+       added, a custom key is editable and deletable — but they are demoted from full section rules to the
+       shared `.set-sub` label, which is what they always were: two groups of one list. Their counts stay
+       SPLIT for the same reason the code already refuses to fake one: if the /api/connectors read fails
+       we say so rather than assert a zero, and a single summed total could not stay honest through that.
+       The platform directory keeps its job — most services ship no MCP server at all (probed 2026-07-24:
+       printify/printful/etsy/woocommerce/shopify all 404), so this generic key path IS their route, and
+       picking one prefills the exact name whose env var the agent references — but it folds into the ADD
+       block it feeds, instead of separating the list from the form. */
     const secKeys =
-      '<div class="sec"><span class="sec-l">CONNECTED PLATFORMS</span><span class="sec-tag" id="ky-plat-n">0</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<div class="sec"><span class="sec-l">YOUR KEYS</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<div class="set-sub"><span class="set-sub-k">CONNECTED PLATFORMS</span><span class="set-sub-d" id="ky-plat-n">0</span></div>' +
       '<div id="ky-platforms" class="mc-list"><span class="loading pulse">loading…</span></div>' +
-      '<div class="sec"><span class="sec-l">UNLISTED PLATFORM KEYS</span><span class="sec-tag" id="ky-mine-n">0</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<div class="set-sub"><span class="set-sub-k">UNLISTED PLATFORM KEYS</span><span class="set-sub-d" id="ky-mine-n">0</span></div>' +
       '<div id="ky-list" class="mc-list"></div>' +
-      // PICK A PLATFORM: most services people want to connect ship no MCP server at all (probed 2026-07-24:
-      // printify/printful/etsy/woocommerce/shopify all 404), so the generic KEYS + web_request path IS the
-      // route for them. This directory makes that route findable — it turns "paste a key for… something?"
-      // into "pick your platform", and prefills the exact name whose env var the agent will reference.
-      '<div class="sec"><span class="sec-l">PICK A PLATFORM</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
-      '<p class="set-about dim">Common platforms and where their API docs live. Picking one just fills the form below — ' +
-        'you still paste your own key. Anything not listed works too: type its name.</p>' +
-      '<div id="ky-catalog" class="cc-list"><span class="loading pulse">loading platforms…</span></div>' +
-      '<div class="sec"><span class="sec-l">ADD A PLATFORM</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<div class="sec"><span class="sec-l">ADD A KEY</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div class="mc-form">' +
+        // the directory sits INSIDE the add block and above its first field, because its only job is to
+        // fill that field. Folded shut: it is a browse affordance for the minority who don't know the
+        // platform's exact name, never a step between the list and the form.
+        '<details class="mc-adv ky-pick"><summary>pick from common platforms — fills the name &amp; docs below</summary>' +
+          '<p class="mc-hint">Picking one just fills the form — you still paste your own key. ' +
+            'Anything not listed works too: type its name.</p>' +
+          '<div id="ky-catalog" class="cc-list"><span class="loading pulse">loading platforms…</span></div>' +
+        '</details>' +
         '<input id="ky-name" class="key-input" placeholder="platform name — e.g. Resend" autocomplete="off" spellcheck="false" maxlength="64">' +
         '<input id="ky-key" type="password" class="key-input" placeholder="API key" autocomplete="off" spellcheck="false">' +
         '<input id="ky-docs" class="key-input" placeholder="API docs URL (optional — helps agents use the service)" autocomplete="off" spellcheck="false">' +
@@ -1275,6 +1291,9 @@
           : (p.authHint
             ? 'paste your ' + p.name + ' key — the agent will send it as  ' + p.authHint
             : 'paste your ' + p.name + ' key — the agent reads ' + (p.docsUrl || 'the docs') + ' for the right header');
+        // the directory is a fold ABOVE the fields it fills, so leaving it open after a pick pushes the
+        // now-prefilled form back off screen — exactly the separation folding it was meant to remove.
+        const pick = kyCatEl.closest('details.ky-pick'); if (pick) pick.open = false;
         kyKeyEl.focus();
         sfx('click');
       } catch (_) { sfx('bad'); }
