@@ -23,7 +23,7 @@ assert.match(source, /seq\s*!==\s*sessionSeq/, 'late microphone permission canno
 assert.match(source, /requestPartial\(utterance,\s*utteranceSeq\)/, 'long turns surface local partial transcription');
 assert.match(source, /id="lv-endpoint"[^>]*aria-label="Pause before sending your turn"/, 'Local Live exposes an explicit turn-end pause control');
 assert.match(source, /TURN_END_KEY\s*=\s*'starnet\.liveVoice\.turnEndMs\.v1'/, 'the turn-end choice persists across calls');
-assert.match(source, /DEFAULT_TURN_END_MS\s*=\s*1800/, 'the default allows a natural pause instead of the former sub-second cutoff');
+assert.match(source, /DEFAULT_TURN_END_MS\s*=\s*1200/, 'the default uses the proven quick boundary without returning to a sub-second cutoff');
 assert.match(source, /function endpointSilenceMs\(text,\s*baseMs\)/, 'turn endpointing has a dedicated user-adjustable policy');
 assert.match(source, /Math\.min\(3600,\s*wait\s*\+\s*600\)/, 'incomplete partial transcripts receive an additional hesitation grace period');
 assert.match(source, /partialText\s*=\s*text/, 'semantic pause handling is grounded in the real partial transcript');
@@ -62,6 +62,8 @@ assert.match(css, /@media \(hover: none\), \(pointer: coarse\)[\s\S]*?\.lv-x\s*\
   assert.ok(m, 'voice-live.js still defines the endpoint policy as an extractable pure function');
   // eslint-disable-next-line no-new-func
   const endpointSilenceMs = new Function(m[1] + '\nreturn endpointSilenceMs;')();
+  assert.equal(endpointSilenceMs('finished thought.', 1200), 1200, 'the quick default closes a complete turn after 1.2 seconds');
+  assert.equal(endpointSilenceMs('Acme and', 1200), 1800, 'the quick default preserves normal-length grace for an unfinished thought');
   assert.equal(endpointSilenceMs('finished thought.', 1800), 1800, 'a complete thought honors the selected pause exactly');
   assert.equal(endpointSilenceMs('Acme and', 1800), 2400, 'a trailing continuation word gets another 600ms');
   assert.equal(endpointSilenceMs('still thinking and', 3200), 3600, 'hesitation grace remains bounded at 3.6 seconds');
