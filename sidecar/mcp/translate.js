@@ -155,6 +155,10 @@
           const body = text || ('MCP tool ' + mcpTool.name + ' reported an error');
           const e = new Error(fence.fenceExternal(body, 'ERROR from the ' + label + ' connector'));
           if (clamped.truncated) e.fullContent = fence.fenceExternal(rendered, 'ERROR from the ' + label + ' connector');
+          // MCP's structuredContent is the protocol-safe place for a server to state an order-sensitive
+          // recovery requirement. The registry normalizes this to strict identifiers before it becomes a host
+          // frame; free-form server text stays inside the external-content fence above.
+          if (res.structuredContent && res.structuredContent.precondition) e.precondition = res.structuredContent.precondition;
           e.__mcpToolError = true; throw e;
         }
         // UNTRUSTED-CONTENT FENCE (2026-07-25): a connector result is authored by a THIRD-PARTY SERVER, not by

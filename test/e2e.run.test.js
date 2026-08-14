@@ -165,6 +165,29 @@ function boot(port, env, attemptsLeft) {
     A.ok(firstSystem.indexOf('Requested model at run start: test/model') >= 0, 'runtime block names the requested model');
     A.ok(firstSystem.indexOf('If the Commander asks what StarNet build, model, provider') >= 0, 'runtime block tells the agent to answer build/model/provider questions from host state');
 
+    // TYPED COMPLETION CONTRACT: a clean provider stop without the requested mechanical proof must remain
+    // incomplete on both the live event and the durable run row. Model prose cannot promote it.
+    {
+      const r = await fetch(B + '/api/run', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
+        body: JSON.stringify({
+          key: 'sk-or-v1-e2e-fake', model: 'test/model', agentId: 'postcondition-e2e', isTask: true,
+          messages: [{ role: 'user', content: 'Say hello, but this workflow requires an exact check.' }],
+          postconditions: { requirements: [{ id: 'check', type: 'verification_passed', command: 'npm test' }] }
+        })
+      });
+      const raw = await r.text();
+      const evs = raw.split('\n').map(l => l.trim()).filter(Boolean).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+      const end = evs.find(e => e.name === 'agent.run.end');
+      A.eq(end && end.payload.completionVerdict, 'incomplete', 'live run end refuses completion without the contracted check');
+      A.eq(end && end.payload.effectVerdict, 'no_observed_effects', 'live run end carries the bounded effect verdict');
+      const runId = ((evs.find(e => e.name === 'agent.run.start') || {}).payload || {}).runId;
+      const rows = await (await fetch(B + '/api/runs?agent=postcondition-e2e&runId=' + encodeURIComponent(runId), { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+      const saved = (rows.runs || [])[0];
+      A.eq(saved && saved.completionEvidence.completionVerdict, 'incomplete', 'durable run history preserves the host assessment');
+      A.eq(saved && saved.completionEvidence.checks[0].code, 'matching_verification_missing', 'durable history explains exactly which proof was missing');
+    }
+
     // WAVE 3 LIVE PROOF: real sidecar -> provider tool call -> isolated worker -> parent-dispatched read.
     {
       const before = mock.requests.length;

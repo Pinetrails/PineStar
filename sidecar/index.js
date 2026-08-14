@@ -75,11 +75,13 @@ const { makeRunStore } = require('./runstore.js');
 const { makeGrowthRatings, deriveRating: deriveGrowthRating } = require('./growthratings.js');
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
+const { makeCompletionEvidence } = require('./completion-evidence.js'); // structured effect proof; never guesses task completion
 const { makeRunExecutionState } = require('./run-execution-state.js'); // one lifecycle for per-run latches/counters/artifacts
+const { recoverToolResult } = require('./tool-recovery.js'); // bounded retry for host-trusted transient reads only
 const transcriptStoreModule = require('./transcriptstore.js');
 const { makeTranscriptStore } = transcriptStoreModule;
 const TRANSCRIPT_PERSISTED = transcriptStoreModule._internals && transcriptStoreModule._internals.PERSISTED;
-const { makeRunJournal } = require('./run-journal.js');
+const { makeRunJournal, DISPATCH_BOUNDARY_MODEL } = require('./run-journal.js');
 const RunRecovery = require('./run-recovery.js');
 const { makeSegmentedTranscriptIo } = require('./transcript-history.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
@@ -953,7 +955,11 @@ const runsIo = {
     rotateJsonl(RUNS_FILE);   // P3: roll to <file>.1 once the live segment passes the cap (bounds disk)
   }
 };
-const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() } });
+// In-process capability proving that a completion verdict was produced by the host evaluator in this process.
+// It is never serialized or exposed to a model/API caller; runstore requires object identity before persisting
+// anything stronger than not_assessed.
+const completionAuthority = Symbol('host completion assessment');
+const runStore = makeRunStore({ io: runsIo, clock: { now: () => Date.now() }, completionAuthority });
 
 // Explicit Commander work verdicts are durable facts, separate from the mutable browser save projection.
 // Append+fsync must fail closed: the UI may only say "rated" after this ledger acknowledges the row.
@@ -2189,6 +2195,7 @@ async function runReflection(o) {
     usd += c.usd || 0; tokens += (c.tokensIn || 0) + (c.tokensOut || 0);
     return out;
   };
+  let finalCompletionEvidence = execution.completionEvidence();
   try {
     const stored = notebookStore.get('notebook:' + agentId);
     const existing = Array.isArray(stored) ? stored : [];
@@ -8156,7 +8163,9 @@ const ROUTES = [
   { m: 'GET', prefix: '/api/save', h: serveSaveLoad },
   { m: 'POST', qsplit: '/api/save', h: handleSaveWrite },   // qsplit, not exact: the unload beacon carries ?token= (apiauth.queryTokenRoute)
   { m: 'GET', prefix: '/api/insights', h: serveInsights },
-  { m: 'GET', exact: '/api/run-recoveries', h: serveRunRecoveries },
+  // The recovery reader owns bounded pagination (?limit=&offset=). Match the query-stripped path so COMMS can
+  // request its explicit ceiling instead of receiving a misleading static 404 before the handler is reached.
+  { m: 'GET', qsplit: '/api/run-recoveries', h: serveRunRecoveries },
   { m: ['GET', 'POST'], qsplit: '/api/growth/ratings', h: handleGrowthRatings },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
@@ -12600,6 +12609,9 @@ async function handleRun(req, res) {
       taskKey: streamId ? ('stream:' + streamId) : null,
       taskSource: 'interactive',
       taskAction: body && body.taskAction,
+      // Optional Commander-authored typed success contract. The host validates and evaluates it after the run;
+      // it is never injected as model authority and cannot widen tools/permissions.
+      postconditions: body && body.postconditions,
       recipeId,        // provenance spine (lane A): rides to the durable run row so a rating can be attributed
       // DELIVERABLE ORGANIZATION: the project this run is scoped to rides to the durable run row, so the FILES the
       // run produces can be filed under the thing the Commander was working ON (not just under a runId). Recorded
@@ -12756,8 +12768,19 @@ async function runOnce(o) {
   const execution = makeRunExecutionState({
     initialTaint: o.initialTaint ? String(o.initialTaint === true ? 'scheduled upstream context' : o.initialTaint) : null,
     artifacts: makeArtifactCollector(),
+    completion: makeCompletionEvidence({ authority: completionAuthority }),
     now: () => Date.now()
   });
+  // One sequence across provider and tool recovery. Adapter-local counters restart at one, but the durable run
+  // record must preserve the actual cross-stage order in which recovery actions happened.
+  const recordRunRecoveryAttempt = (attempt) => {
+    const row = Object.assign({}, attempt, { sequence: execution.recoveryAttempts().length + 1 });
+    execution.recordRecoveryAttempt(row);
+    if (execution.journalStarted()) {
+      try { runJournal.recoveryAttempt(runId, row); }
+      catch (e) { execution.recordFailure('recovery_attempt_persist', 'recovery-journal-failed'); }
+    }
+  };
   // The desktop shell is the native host boundary. Only an adapter-minted, locally paired owner DM gets its
   // remote desktop lease; no prompt text, task flag, stored approval, or generic API caller can manufacture it.
   const remoteDesktopAuthorized = ownerTrusted && DESKTOP_SHELL
@@ -13475,7 +13498,7 @@ async function runOnce(o) {
   try {
     const room = station.rooms && station.agents && station.agents[agentId] && station.rooms[station.agents[agentId].room];
     for (const def of connectors.toolDefsForObjects((room && room.objects) || [])) {
-      registry.register(def);
+      registry.register(def, { provenance: 'connector' });
       if (resolved.tools.indexOf(def.name) < 0) resolved.tools.push(def.name);
       resolved.networkCaps[def.name] = true;
       resolved.approvalRules[def.name] = { requiresConsent: !!def.requiresConsent, scope: def.scope, network: true };
@@ -13600,6 +13623,10 @@ async function runOnce(o) {
     hooks: hookSpine,
     cwd: WORKSPACES,
     projectCwd: o.workdir || null,
+    // A normal project-scoped session carries its still-blessed root separately from scheduled workdir. Native
+    // fs.* uses it as the relative base (while re-running path trust per target), and shell.* uses it as the
+    // run-scoped default cwd. Unblessed roots were erased by handleRun before runOnce, so this is host-minted.
+    projectRoot: o.projectRoot || null,
     // PRECISE CHECKPOINT ROOT. fs.* invokes this after path-trust has resolved the actual base but before bytes
     // change; shell/verify invoke it after their real cwd is resolved but before spawning. This closes the gap
     // where the generic host hook always snapshotted WORKSPACES/<agentId> even while the tool mutated a blessed
@@ -13910,14 +13937,26 @@ async function runOnce(o) {
 
   // Per-run latches/counters/artifacts live in `execution`; policy and side effects remain in this host.
   const dispatch = async (c, ctx) => {
-    if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
+    const realName = fromWire.get(c.name) || allWire.get(c.name) || c.name;
+    const liveTool = registry.get(realName);
+    // Recovery authority is independent of the station layout that happens to exist after restart. Evaluate it
+    // against the canonical tool name before ordinary capability withholding; otherwise a removed prop turns an
+    // exact reviewed replay into a generic WITHHELD loop and the safe continuation never finishes.
+    const replayCheck = recoveryReplayBarrier.check(realName, c.argsRaw || '{}', !!(liveTool && liveTool.scope !== 'read'));
+    if (!replayCheck.ok) {
+      return {
+        ok: false, isError: true, summary: 'recovery-replay-blocked',
+        content: 'BLOCKED: this mutating call exactly matches an operator-reviewed call from the interrupted run. '
+          + 'The host will not execute or retry it. Continue without repeating that effect, or stop and report what remains.'
+      };
+    }
+    if (fromWire.has(c.name)) c = Object.assign({}, c, { name: realName });   // wire -> real (dotted) name
     else if (!grantedSet.has(c.name) && registry.get(allWire.get(c.name) || c.name)) {
       // The tool is real but was not granted to THIS run. Name the gate that withheld it, decided by that
       // gate's OWN predicate (userControlAuthority.project) rather than a second copy of the policy here, and
       // tell the model what to do instead — a withheld power must never read as a broken one, and must never
       // be reported to the Commander as done. Missing-capability is the other case: that one IS placement-fixable.
       // A name that matches no registered tool still falls through to dispatch's honest "unknown tool".
-      const realName = allWire.get(c.name) || c.name;
       const t = registry.get(realName);
       const impact = impactOfTool(t);
       const why = (impact === 'physical-input' || impact === 'visible-desktop')
@@ -13939,18 +13978,6 @@ async function runOnce(o) {
         content: 'WITHHELD: "' + realName + '" exists but is not available to you on this run, because ' + why + '. '
           + 'Do NOT retry it and do NOT report its work as done. Do everything you genuinely can with the tools you were given, '
           + 'then state plainly which step you could not do and why.'
-      };
-    }
-    const liveTool = registry.get(c.name);
-    // This no-replay authority runs before taint, budgets, consent, workspace leases, checkpoints, journaling,
-    // and registry dispatch. A model cannot repeat an operator-reviewed mutation by ignoring the prompt or by
-    // merely changing JSON property order.
-    const replayCheck = recoveryReplayBarrier.check(c.name, c.argsRaw || '{}', !!(liveTool && liveTool.scope !== 'read'));
-    if (!replayCheck.ok) {
-      return {
-        ok: false, isError: true, summary: 'recovery-replay-blocked',
-        content: 'BLOCKED: this mutating call exactly matches an operator-reviewed call from the interrupted run. '
-          + 'The host will not execute or retry it. Continue without repeating that effect, or stop and report what remains.'
       };
     }
     if (directDomainTask && directDomainWithheld(c.name)) {
@@ -14048,38 +14075,70 @@ async function runOnce(o) {
         }
       });
     }
-    // Persist the exact call before it can have side effects. If the process dies after this barrier but before a
-    // durable result, restart classifies the outcome as unknown and never replays it automatically.
+    // Persist the exact prepared call before registry gates run. The separate last-moment toolDispatch record
+    // below is what means "the effect may already have happened"; prepared-only calls are safe to retry.
     const fatalToolBoundary = (stage, cause) => {
       const detail = String((cause && cause.message) || cause || 'unknown failure');
+      execution.recordFailure('tool_' + stage + '_persist', 'recovery-journal-failed');
       const e = new Error('tool outcome could not be durably established (' + stage + '): ' + detail);
       e.fatalToRun = true;
       return e;
     };
     if (execution.journalStarted()) {
       try {
+        const mutating = !!(liveTool && liveTool.scope !== 'read');
         runJournal.toolIntent(runId, {
           callId: c.id, name: c.name, argsRaw: c.argsRaw || '{}',
           replayFingerprint: RunRecovery.replayFingerprint(c.name, c.argsRaw || '{}'),
-          mutating: !!(liveTool && liveTool.scope !== 'read')
+          mutating, boundaryModel: DISPATCH_BOUNDARY_MODEL
         });
+        execution.markToolPrepared({ callId: c.id, name: c.name, mutating });
       } catch (e) {
         // No tool may execute after the recovery barrier itself failed.
         throw fatalToolBoundary('intent', e);
       }
     }
+    if (execution.journalStarted()) {
+      dctx = Object.assign({}, dctx, {
+        beforeToolExecute: async (call, tool) => {
+          const mutating = !!(tool && tool.scope !== 'read');
+          try {
+            runJournal.toolDispatch(runId, {
+              callId: call.id, name: call.name,
+              replayFingerprint: RunRecovery.replayFingerprint(call.name, call.argsRaw || '{}'),
+              mutating
+            });
+            execution.markToolDispatched(call.id);
+            return null;
+          } catch (e) {
+            // Registry consumes this terminal result and, critically, never invokes tool.run.
+            return execution.failJournal(e, { beforeDispatch: true, stage: 'tool_dispatch_persist' });
+          }
+        }
+      });
+    }
     let r;
     try {
+      // Keep the first dispatch explicit at this security boundary: the taint gate above is visibly and
+      // mechanically before execution. Recovery can only repeat this call after the pure policy proves it is a
+      // host-defined read with a transient failure; registry.dispatch re-runs every authority/gate/hook on retry.
       r = await registry.dispatch(c, dctx);
+      r = await recoverToolResult({
+        result: r,
+        dispatch: (call, dispatchCtx) => registry.dispatch(call, dispatchCtx),
+        call: c, ctx: dctx, tool: liveTool, signal: dctx && dctx.signal,
+        onRecovery: recordRunRecoveryAttempt
+      });
       if (DomainTask.isTargetFetch(c, directDomainTask) && DomainTask.isDomainMissing(r)) {
         r = Object.assign({}, r, { control: Object.assign({}, r && r.control, DomainTask.stopControl(directDomainTask)) });
       }
-      // Persist the full model-visible result before the loop advances to another call/turn. Once intent is
+      // Persist the full model-visible result before the loop advances to another call/turn. Once dispatch is
       // durable, any exception before this result boundary means the side effect is unknown and must end the run.
-      if (execution.journalStarted()) runJournal.toolResult(runId, {
+      if (execution.journalStarted() && !execution.journalFailed()) runJournal.toolResult(runId, {
         callId: c.id, ok: !!(r && r.ok), isError: !!(r && r.isError),
         content: r && r.content != null ? r.content : '', summary: r && r.summary ? r.summary : ''
       });
+      if (execution.journalStarted() && !execution.journalFailed()) execution.markToolSettled(c.id);
     } catch (e) {
       if (execution.journalStarted()) throw fatalToolBoundary('result', e);
       throw e;
@@ -14111,7 +14170,10 @@ async function runOnce(o) {
       execution.latchTaint(c.name);
     }
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.
-    if (!internalBriefControl) try { execution.observeArtifact({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
+    if (!internalBriefControl) {
+      try { execution.observeCompletion({ callId: c.id, name: c.name, args: c.args, tool: liveTool, scope: liveTool && liveTool.scope, result: r }); } catch (_) { /* evidence telemetry never breaks work */ }
+      try { execution.observeArtifact({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
+    }
     // The registry parks a result only when that ONE result crosses its cap. The run-wide cap can still clip a
     // perfectly ordinary later command after earlier calls used the allowance, so preserve that result here too.
     // This happens before clipping and the parker returns a path only after byte-identical read-back.
@@ -14575,7 +14637,7 @@ async function runOnce(o) {
     // right direction, since the alternative is a run that can still call tools but can no longer SEE any.
     if (name === 'agent.compact') execution.resetToolBytes();
     execution.observeToolEvent(name, payload);
-    if ((taskBrief || imageTask) && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
+    if (((taskBrief || imageTask) || o.postconditions != null) && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
       bufferedTaskEnd = payload; return;
     }
     emit(name, payload);
@@ -14603,6 +14665,7 @@ async function runOnce(o) {
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
       // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
       sleep: (ms) => new Promise(r => setTimeout(r, ms)),
+      onRecovery: recordRunRecoveryAttempt,
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
@@ -14643,6 +14706,7 @@ async function runOnce(o) {
       // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
       approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
     });
+    if (result && result.failureStage) execution.recordFailure(result.failureStage, result.failureCode || 'run_failure');
     if (imageTask && result && result.reason === 'done') {
       let clarifying = false;
       if (taskBrief && Array.isArray(result.messages)) {
@@ -14657,6 +14721,38 @@ async function runOnce(o) {
       const completionError = ImageTask.enforceCompletion(result, execution.artifactList(), { clarifying });
       if (completionError) emit('agent.run.error', { agentId, runId, transient: false, message: completionError });
     }
+    // TYPED POSTCONDITIONS. The contract comes from the run caller/Commander, never from model output. Every
+    // artifact predicate is evaluated through the workspace jail after the loop settles, and only an artifact
+    // actually touched by this run is eligible. A missing/invalid/unprovable contract fails closed.
+    finalCompletionEvidence = execution.completionEvidence();
+    try {
+      finalCompletionEvidence = await execution.assessCompletion({
+        contract: o.postconditions,
+        reason: (result && result.reason) || 'error',
+        artifacts: execution.artifactList(),
+        uncertainMutations: execution.uncertainMutations(),
+        readArtifact: async requirement => {
+          const resolved = await fsJail.resolveInside(agentId, requirement.path, { scope: 'read' });
+          const stat = await fsp.stat(resolved.abs);
+          if (!stat.isFile()) return { exists: true, isFile: false };
+          const observed = { exists: true, isFile: true, bytes: stat.size };
+          if (requirement.type === 'artifact_contains') {
+            if (stat.size > (8 << 20)) return observed; // bounded read; absence of proof is not failure of the run host
+            observed.contains = (await fsp.readFile(resolved.abs, 'utf8')).includes(requirement.text);
+          } else if (requirement.type === 'artifact_sha256') {
+            const hash = crypto.createHash('sha256');
+            await new Promise((resolve, reject) => {
+              const stream = fs.createReadStream(resolved.abs);
+              stream.on('data', chunk => hash.update(chunk)); stream.once('error', reject); stream.once('end', resolve);
+            });
+            observed.sha256 = hash.digest('hex');
+          }
+          return observed;
+        }
+      });
+    } catch (_) {
+      finalCompletionEvidence = execution.completionEvidence();
+    }
     // HOOKS — on_session_end. The run's real outcome, not an optimistic one: `reason` is whatever the loop
     // actually ended on ('done' | 'empty' | 'max_iters' | 'budget' | 'cancelled' | 'error'), so a hook that
     // pages on failure pages on the truth. This is the seam for "when a run finishes, notify me / run the
@@ -14667,7 +14763,8 @@ async function runOnce(o) {
         extra: {
           agent_id: agentId, model, platform: surface,
           reason: (result && result.reason) || 'unknown',
-          completed: !!(result && result.reason === 'done'),
+          completed: finalCompletionEvidence.completionVerdict === 'completed_verified',
+          completion_verdict: finalCompletionEvidence.completionVerdict,
           interrupted: !!(result && result.reason === 'cancelled'),
           turns: (result && result.turns) || 0, usd: (result && result.usd) || 0
         }
@@ -14696,12 +14793,19 @@ async function runOnce(o) {
       } catch (e) { console.warn('[taskbrief] settle failed:', (e && e.message) || e); }
     }
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason) }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, {
+        reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason),
+        completionVerdict: taskQuestionAsked ? 'not_assessed' : finalCompletionEvidence.completionVerdict,
+        effectVerdict: finalCompletionEvidence.effectVerdict
+      }));
       bufferedTaskEnd = null;
     }
   } finally {
     if (bufferedTaskEnd) {
-      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, { reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason) }));
+      emit('agent.run.end', Object.assign({}, bufferedTaskEnd, {
+        reason: taskQuestionAsked ? 'clarifying' : ((result && result.reason) || bufferedTaskEnd.reason),
+        completionVerdict: 'not_assessed', effectVerdict: finalCompletionEvidence.effectVerdict
+      }));
       bufferedTaskEnd = null;
     }
     // book this run's spend into the append-only ledger (so day/global pools persist across runs), THEN drop its
@@ -14729,7 +14833,7 @@ async function runOnce(o) {
         }
       }
       const runEndedAt = Date.now();
-      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), failureStage: execution.failureStage(), failureCode: execution.failureCode(), uncertainMutations: execution.uncertainMutations(), completionEvidence: finalCompletionEvidence, recoveryAttempts: execution.recoveryAttempts(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
@@ -17105,6 +17209,20 @@ function canContinueRunRecovery(r) {
   if (!r || r.status !== 'resolved' || (r.continuation && r.continuation.state !== 'ready')) return false;
   try { RunRecovery.continuationPlan(r); return true; } catch (_) { return false; }
 }
+function canAutoContinueRunRecovery(r) {
+  if (!r || r.status !== 'resumable' || (r.continuation && r.continuation.state !== 'ready')) return false;
+  try { RunRecovery.automaticContinuationPlan(r); return true; } catch (_) { return false; }
+}
+function runRecoveryOperationalState(r) {
+  if (!r) return 'failed_actionable';
+  const c = r.continuation;
+  if (c && c.state === 'started') return 'recovering';
+  if (c && c.state === 'finished') return c.reason === 'done' ? 'completed' : 'failed_actionable';
+  if (r.status === 'needs_review' || r.status === 'resolved') return 'needs_review';
+  if (r.status === 'resumable') return 'recoverable';
+  if (r.status === 'awaiting_commit') return 'recovering';
+  return 'failed_actionable';
+}
 function runRecoveryDto(r) {
   const safeMessage = m => {
     const out = { role: String((m && m.role) || ''), content: m && m.content != null ? m.content : '' };
@@ -17132,6 +17250,8 @@ function runRecoveryDto(r) {
     forensicOnly: !!r.forensicOnly,
     canResolve: r.status === 'needs_review' && !r.corrupt && !r.repairError && !r.forensicOnly,
     canContinue: canContinueRunRecovery(r),
+    canAutoContinue: canAutoContinueRunRecovery(r),
+    operationalState: runRecoveryOperationalState(r),
     resolution: r.resolution ? {
       resolutionId: String(r.resolution.resolutionId || ''),
       operator: String(r.resolution.operator || ''),
@@ -17141,6 +17261,7 @@ function runRecoveryDto(r) {
     } : null,
     continuation: r.continuation ? {
       continuationId: String(r.continuation.continuationId || ''),
+      mode: String(r.continuation.mode || 'reviewed'),
       state: String(r.continuation.state || ''),
       preparedAt: Number(r.continuation.preparedAt || 0),
       startedAt: Number(r.continuation.startedAt || 0),
@@ -17242,7 +17363,8 @@ async function handleRunRecoveryContinue(req, res) {
     || !/^[A-Za-z0-9._:-]{8,100}$/.test(continuationId)) {
     return json(400, { error: 'runId, owned agentId, and continuationId are required' });
   }
-  if (body.confirmedSafeContinuation !== true) {
+  const automatic = body.mode === 'automatic';
+  if (!automatic && body.confirmedSafeContinuation !== true) {
     return json(400, { error: 'explicit safe-continuation confirmation is required' });
   }
   let current;
@@ -17251,6 +17373,9 @@ async function handleRunRecoveryContinue(req, res) {
   if (String((current.meta && current.meta.agentId) || '') !== agentId) return json(403, { error: 'forbidden' });
   if (current.continuation) {
     if (current.continuation.continuationId !== continuationId) return json(409, { error: 'a different continuation already exists' });
+    if (String(current.continuation.mode || 'reviewed') !== (automatic ? 'automatic' : 'reviewed')) {
+      return json(409, { error: 'continuation mode does not match the durable preparation' });
+    }
     return json(200, {
       ok: true, idempotent: true, canStart: current.continuation.state === 'ready',
       continuationToken: current.continuation.state === 'ready' ? runContinuationToken(current) : '',
@@ -17261,11 +17386,12 @@ async function handleRunRecoveryContinue(req, res) {
     return json(409, { error: 'recovery changed; reload before continuing' });
   }
   let plan;
-  try { plan = RunRecovery.continuationPlan(current); }
+  try { plan = automatic ? RunRecovery.automaticContinuationPlan(current) : RunRecovery.continuationPlan(current); }
   catch (e) { return json(409, { error: String((e && e.message) || e) }); }
   try {
     const next = markRunRecoveryForensic(runJournal.prepareContinuation(runId, {
       continuationId, operator: 'local', preparedAt: Date.now(),
+      mode: automatic ? 'automatic' : 'reviewed',
       blockedFingerprints: plan.blockedFingerprints, context: plan.context
     }));
     return json(200, {
@@ -17292,7 +17418,11 @@ function consumeRunRecoveryContinuation(request, agentId, continuedRunId) {
   if (!c || c.state !== 'ready' || c.continuationId !== continuationId) return { ok: false, code: 409, error: 'continuation is not ready or was already consumed' };
   if (!constantTimeTextEqual(body.continuationToken, runContinuationToken(current))) return { ok: false, code: 409, error: 'continuation token is stale' };
   let plan;
-  try { plan = RunRecovery.continuationPlan(current); }
+  try {
+    plan = c.mode === 'automatic'
+      ? RunRecovery.automaticContinuationPlan(current)
+      : RunRecovery.continuationPlan(current);
+  }
   catch (e) { return { ok: false, code: 409, error: String((e && e.message) || e) }; }
   if (JSON.stringify(plan.blockedFingerprints) !== JSON.stringify(c.blockedFingerprints || [])
     || String(plan.context || '') !== String(c.context || '')) {

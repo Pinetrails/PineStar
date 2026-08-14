@@ -12,6 +12,11 @@ const crypto = require('crypto');
 
 const VERSION = 1;
 const MAX_STRING = 200000;
+// New callers stamp prepared intents with this marker. Its presence proves the caller also owns the separate
+// durable `tool_dispatch` boundary. Legacy intents have no such proof and must remain fail-closed: before this
+// protocol existed, an intent was written immediately before registry.dispatch and could already represent an
+// attempted side effect.
+const DISPATCH_BOUNDARY_MODEL = 'prepared-dispatch-v1';
 
 function stable(value) {
   if (value == null || typeof value !== 'object') return JSON.stringify(value);
@@ -159,7 +164,9 @@ function analyze(records, corrupt) {
   const first = records[0] || null;
   const last = records[records.length - 1] || null;
   const intents = new Map();
+  const dispatched = new Map();
   const completed = [];
+  const recoveryAttempts = [];
   let baseCheckpoint = null;
   let latestCheckpoint = null;
   let resolution = null;
@@ -171,24 +178,46 @@ function analyze(records, corrupt) {
       else latestCheckpoint = r.payload;
     }
     if (r.type === 'tool_intent' && r.payload && r.payload.callId) intents.set(String(r.payload.callId), r.payload);
+    if (r.type === 'tool_dispatch' && r.payload && r.payload.callId) dispatched.set(String(r.payload.callId), r.payload);
     if (r.type === 'tool_result' && r.payload && r.payload.callId) {
       const callId = String(r.payload.callId);
-      if (intents.has(callId)) completed.push({ intent: intents.get(callId), result: r.payload });
+      if (intents.has(callId)) completed.push({ intent: intents.get(callId), dispatch: dispatched.get(callId) || null, result: r.payload });
       intents.delete(callId);
+      dispatched.delete(callId);
     }
+    if (r.type === 'recovery_attempt' && r.payload) recoveryAttempts.push(r.payload);
     if (r.type === 'resolution' && r.payload) resolution = r.payload;
     if (r.type === 'finish') finishPayload = r.payload || {};
     if (r.type === 'continuation_ready' && r.payload) continuation = Object.assign({ state: 'ready' }, r.payload);
     if (r.type === 'continuation_start' && r.payload && continuation) continuation = Object.assign({}, continuation, r.payload, { state: 'started' });
     if (r.type === 'continuation_finish' && r.payload && continuation) continuation = Object.assign({}, continuation, r.payload, { state: 'finished' });
   }
-  // An explicit read intent is safe to replay from the provider-valid checkpoint: it cannot have changed host
-  // state before the missing result boundary. Legacy/unknown intents remain conservative (review-required), as
-  // do all declared mutations. Keep the reads visible separately so recovery UIs and receipts can prove exactly
-  // what will be re-dispatched instead of silently treating them as completed.
-  const pending = Array.from(intents.values());
-  const replayableReads = pending.filter(intent => intent && intent.mutating === false);
-  const uncertain = pending.filter(intent => !intent || intent.mutating !== false);
+  // There are now two durable pre-result boundaries:
+  //   prepared (`tool_intent`)   — registry gates still run; the tool definitely has not started
+  //   dispatched (`tool_dispatch`) — written at the registry's last pre-run seam; the tool may have started
+  // Only prepared intents carrying DISPATCH_BOUNDARY_MODEL receive the new safe classification. Old journals
+  // remain conservative because their unmatched intent may already have crossed into tool.run. Dispatched reads
+  // are replayable; dispatched mutations are review-required. A dispatch record with no intent is malformed
+  // evidence, so it is treated as uncertain unless it explicitly proves the tool was read-only.
+  const pendingIds = new Set(Array.from(intents.keys()).concat(Array.from(dispatched.keys())));
+  const replayableReads = [];
+  const replayablePrepared = [];
+  const uncertain = [];
+  for (const callId of pendingIds) {
+    const intent = intents.get(callId) || null;
+    const dispatch = dispatched.get(callId) || null;
+    const pending = Object.assign({}, intent || {}, dispatch || {}, { callId });
+    if (dispatch) {
+      if (pending.mutating === false) replayableReads.push(pending);
+      else uncertain.push(pending);
+    } else if (intent && intent.boundaryModel === DISPATCH_BOUNDARY_MODEL) {
+      replayablePrepared.push(pending);
+    } else if (pending.mutating === false) {
+      replayableReads.push(pending);
+    } else {
+      uncertain.push(pending);
+    }
+  }
   const terminal = finishPayload !== null;
   const transcriptAck = !!(terminal && finishPayload.transcriptAck === true);
   let checkpoint = latestCheckpoint || baseCheckpoint || (first && first.type === 'begin' ? first.payload : {});
@@ -209,10 +238,13 @@ function analyze(records, corrupt) {
     // remains review-required even if the loop caught an exception and cleanly emitted run.end afterward.
     status: resolutionValid ? 'resolved' : (uncertain.length ? 'needs_review' : (terminal ? (transcriptAck ? 'finished' : 'awaiting_commit') : 'resumable')),
     meta: first && first.type === 'begin' ? first.payload : {},
-    uncertain, replayableReads, completed, baseCheckpoint: baseCheckpoint || {}, deltaCheckpoint: latestCheckpoint || {},
+    uncertain, replayableReads, replayablePrepared, completed, recoveryAttempts,
+    baseCheckpoint: baseCheckpoint || {}, deltaCheckpoint: latestCheckpoint || {},
     checkpoint: checkpoint || {}, finish: finishPayload,
     resolution: resolutionValid ? resolution : null,
-    continuation: resolutionValid ? continuation : null
+    // Automatic continuation exists only on uncertainty-free journals. Reviewed continuation remains bound to
+    // a valid operator resolution. Never expose a continuation record alongside unresolved uncertainty.
+    continuation: (resolutionValid || !uncertain.length) ? continuation : null
   };
 }
 
@@ -268,7 +300,9 @@ function makeRunJournal(opts) {
   return {
     begin(meta) { return record(meta && meta.runId, 'begin', meta, true); },
     checkpoint(runId, payload) { return record(runId, 'checkpoint', payload); },
+    recoveryAttempt(runId, payload) { return record(runId, 'recovery_attempt', payload); },
     toolIntent(runId, payload) { return record(runId, 'tool_intent', payload); },
+    toolDispatch(runId, payload) { return record(runId, 'tool_dispatch', payload); },
     toolResult(runId, payload) { return record(runId, 'tool_result', payload); },
     finish(runId, payload) { return record(runId, 'finish', payload); },
     resolve(runId, payload) {
@@ -312,9 +346,13 @@ function makeRunJournal(opts) {
         if (state.continuation.continuationId === continuationId) return state;
         throw resolutionError('run already has a different durable continuation');
       }
-      if (state.status !== 'resolved' || !state.resolution || state.corrupt) throw resolutionError('run is not safely continuable');
+      const mode = payload.mode === 'automatic' ? 'automatic' : 'reviewed';
+      const reviewed = state.status === 'resolved' && !!state.resolution;
+      const automatic = mode === 'automatic' && state.status === 'resumable' && !state.uncertain.length;
+      if ((!reviewed && !automatic) || state.corrupt) throw resolutionError('run is not safely continuable');
       record(runId, 'continuation_ready', {
         continuationId,
+        mode,
         operator: String(payload.operator || 'local'),
         preparedAt: Number(payload.preparedAt || now()),
         blockedFingerprints: (Array.isArray(payload.blockedFingerprints) ? payload.blockedFingerprints : []).map(String).sort(),
@@ -387,4 +425,4 @@ function makeRunJournal(opts) {
   };
 }
 
-module.exports = { makeRunJournal, makeFsIo, _internals: { parseRecords, analyze, hashRecord, runFileName, cloneSafe, writeAll } };
+module.exports = { makeRunJournal, makeFsIo, DISPATCH_BOUNDARY_MODEL, _internals: { parseRecords, analyze, hashRecord, runFileName, cloneSafe, writeAll } };

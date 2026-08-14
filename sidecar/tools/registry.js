@@ -11,7 +11,8 @@
 
    dispatch order (each step short-circuits to an isError result; run() is reached only if all pass):
      parseError -> unknown-tool -> capability gate (ctx.canUse) -> schema-validate ->
-     consent gate (tool.requiresConsent && ctx.consent) -> per-tool timeout -> run() once. */
+     consent gate (tool.requiresConsent && ctx.consent) -> pre-tool hook -> durable dispatch callback ->
+     per-tool timeout -> run() once. */
 'use strict';
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) {
@@ -78,7 +79,19 @@
     return unescape(encodeURIComponent(text)).length;
   }
   const okResult = (content, summary, control, parkedPath, images, outputChars, outputBytes, mutationReceipt) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null, parkedPath: parkedPath || null, outputChars: Number.isFinite(Number(outputChars)) ? Number(outputChars) : (typeof content === 'string' ? content.length : null), outputBytes: Number.isFinite(Number(outputBytes)) ? Number(outputBytes) : (typeof content === 'string' ? utf8Bytes(content) : null), mutationReceipt: mutationReceipt || null, receipt: mutationReceipt || null });
-  const errResult = (content, summary, parkedPath, outputChars, outputBytes, mutationReceipt) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error', parkedPath: parkedPath || null, outputChars: Number.isFinite(Number(outputChars)) ? Number(outputChars) : (typeof content === 'string' ? content.length : null), outputBytes: Number.isFinite(Number(outputBytes)) ? Number(outputBytes) : (typeof content === 'string' ? utf8Bytes(content) : null), mutationReceipt: mutationReceipt || null, receipt: mutationReceipt || null });
+  function preconditionFrame(content, precondition) {
+    if (!precondition) return String(content == null ? '' : content);
+    return String(content == null ? '' : content)
+      + '\n\n<tool_precondition>' + JSON.stringify(precondition) + '</tool_precondition>'
+      + '\nHost recovery rule: do not repeat the identical call. Satisfy the named requirement or choose a different route, then make one revised attempt. If that revised route cannot work, report the proven blocker.';
+  }
+  const errResult = (content, summary, parkedPath, outputChars, outputBytes, mutationReceipt, preconditionValue) => {
+    const precondition = toolMod.normalizePrecondition ? toolMod.normalizePrecondition(preconditionValue) : null;
+    const framed = preconditionFrame(content, precondition);
+    const result = { ok: false, isError: true, content: clampOutput(framed, parkedPath), summary: summary || (precondition ? 'precondition' : 'error'), parkedPath: parkedPath || null, outputChars: Number.isFinite(Number(outputChars)) ? Number(outputChars) : (typeof framed === 'string' ? framed.length : null), outputBytes: Number.isFinite(Number(outputBytes)) ? Number(outputBytes) : (typeof framed === 'string' ? utf8Bytes(framed) : null), mutationReceipt: mutationReceipt || null, receipt: mutationReceipt || null };
+    if (precondition) result.precondition = precondition;
+    return result;
+  };
 
   // Ask the host to keep the full output. Never throws and never blocks a result: a parker that fails just
   // means we fall back to the plain clamp — losing the tail must never also lose the answer.
@@ -144,7 +157,12 @@
   function makeRegistry() {
     const tools = {};
 
-    function register(def) { const t = toolMod.makeTool(def); tools[t.name] = t; return t; }
+    function register(def, registration) {
+      const provenance = registration && registration.provenance === 'connector' ? 'connector' : 'host';
+      const t = toolMod.makeTool(Object.assign({}, def, { provenance }));
+      tools[t.name] = t;
+      return t;
+    }
     function get(name) { return tools[name]; }
 
     function list(capSet) {
@@ -156,7 +174,12 @@
 
     function wireFormat(toolList) {
       const src = toolList || list();
-      return src.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.schema } }));
+      return src.map(t => {
+        const declared = Array.isArray(t.preconditions) && t.preconditions.length
+          ? String(t.description || '') + '\n<tool_preconditions>' + JSON.stringify(t.preconditions) + '</tool_preconditions>'
+          : t.description;
+        return { type: 'function', function: { name: t.name, description: declared, parameters: t.schema } };
+      });
     }
 
     async function dispatch(call, ctx) {
@@ -244,6 +267,20 @@
       const startedAt = (ctx.clock && typeof ctx.clock.now === 'function') ? ctx.clock.now() : 0;
       const elapsed = () => ((ctx.clock && typeof ctx.clock.now === 'function') ? ctx.clock.now() - startedAt : 0);
       try {
+        // This is the final host-owned seam before tool.run can begin. The run journal uses it to distinguish a
+        // merely prepared mutation (safe to retry) from a dispatched mutation (outcome uncertain after a crash).
+        // A failed callback returns a terminal error and the tool is NOT invoked; registry.dispatch still honors
+        // its never-throw contract.
+        if (typeof ctx.beforeToolExecute === 'function') {
+          let boundary;
+          try { boundary = await ctx.beforeToolExecute(call, tool); }
+          catch (e) {
+            boundary = Object.assign(errResult('tool dispatch boundary failed: ' + ((e && e.message) || String(e)), 'dispatch-boundary-failed'), {
+              control: { final: true, reason: 'error', text: 'I stopped before the tool ran because its dispatch boundary failed.' }
+            });
+          }
+          if (boundary && boundary.ok === false) return boundary;
+        }
         const out = await withTimeout(tool.run(call.args, runCtx), timeoutMs, () => { try { ac.abort(new Error('tool timeout')); } catch (_) { try { ac.abort(); } catch (_) {} } });
         const shaped = (out && typeof out === 'object' && 'content' in out);
         const raw = shaped ? out.content : (out == null ? '' : out);
@@ -270,7 +307,7 @@
         }
         const fullErrorBytes = utf8Bytes(fullError);
         const visibleError = fullError !== errorText ? intrinsicReceipt(errorText, fullError.length, fullErrorBytes, parked) : errorText;
-        return await notifyPost(errResult(visibleError, 'error', parked, fullError.length, fullErrorBytes, e && e.mutationReceipt), elapsed());
+        return await notifyPost(errResult(visibleError, e && e.precondition ? 'precondition' : 'error', parked, fullError.length, fullErrorBytes, e && e.mutationReceipt, e && e.precondition), elapsed());
       } finally {
         // A long run may execute hundreds of tools against one parent signal. Once this call settles, its child
         // controller no longer needs cancellation propagation; retaining every listener until run end leaks the

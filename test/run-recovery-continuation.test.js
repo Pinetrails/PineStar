@@ -72,4 +72,39 @@ unknown.toolIntent('unknown-run', { callId: 'u1', name: 'fixture.increment', arg
 unknown.resolve('unknown-run', { resolutionId: 'resolution-unknown', outcomes: [{ callId: 'u1', outcome: 'unknown' }] });
 A.throws(() => Recovery.continuationPlan(unknown.inspect('unknown-run')), 'an unknown operator outcome cannot continue');
 
+const autoIo = memoryIo();
+const auto = makeRunJournal({ io: autoIo, clock: { now: () => ++now } });
+auto.begin({ runId: 'auto-read', agentId: 'agent' });
+auto.checkpoint('auto-read', { phase: 'initial', messages: [{ role: 'system', content: 's' }, { role: 'user', content: 'read then finish' }] });
+auto.checkpoint('auto-read', { phase: 'assistant', messages: [{ role: 'assistant', content: '', tool_calls: [{ id: 'read-1', type: 'function', function: { name: 'fs_read', arguments: '{"path":"a.txt"}' } }] }] });
+auto.toolIntent('auto-read', { callId: 'read-1', name: 'fs.read', argsRaw: '{"path":"a.txt"}', mutating: false, boundaryModel: 'prepared-dispatch-v1' });
+auto.toolDispatch('auto-read', { callId: 'read-1', name: 'fs.read', mutating: false });
+const autoState = auto.inspect('auto-read');
+const autoPlan = Recovery.automaticContinuationPlan(autoState);
+A.eq(autoPlan.mode, 'automatic', 'a dispatched read with no result receives the automatic continuation mode');
+A.eq(autoPlan.messages.map(m => m.role), ['system', 'user', 'assistant', 'tool', 'system'], 'automatic continuation pairs the interrupted read before asking the provider to retry');
+A.ok(/read-only call had no durable result/.test(autoPlan.messages[3].content), 'paired read result reports only the recovery fact');
+A.ok(/no uncertain dispatched mutations/i.test(autoPlan.context), 'automatic context states the exact safety proof');
+const autoReady = auto.prepareContinuation('auto-read', {
+  continuationId: 'auto-continue', mode: 'automatic', operator: 'host',
+  blockedFingerprints: autoPlan.blockedFingerprints, context: autoPlan.context
+});
+A.eq([autoReady.continuation.state, autoReady.continuation.mode], ['ready', 'automatic'], 'automatic continuation preparation is durable and typed');
+
+const preparedIo = memoryIo();
+const prepared = makeRunJournal({ io: preparedIo, clock: { now: () => ++now } });
+prepared.begin({ runId: 'auto-prepared', agentId: 'agent' });
+prepared.checkpoint('auto-prepared', { phase: 'assistant', messages: [{ role: 'assistant', content: '', tool_calls: [{ id: 'write-safe', type: 'function', function: { name: 'fs_write', arguments: '{"path":"a.txt","content":"x"}' } }] }] });
+prepared.toolIntent('auto-prepared', { callId: 'write-safe', name: 'fs.write', argsRaw: '{"path":"a.txt","content":"x"}', mutating: true, boundaryModel: 'prepared-dispatch-v1' });
+A.eq(Recovery.automaticContinuationPlan(prepared.inspect('auto-prepared')).mode, 'automatic', 'prepared but never dispatched mutation is automatically continuable');
+
+const unsafeIo = memoryIo();
+const unsafe = makeRunJournal({ io: unsafeIo, clock: { now: () => ++now } });
+unsafe.begin({ runId: 'unsafe', agentId: 'agent' });
+unsafe.checkpoint('unsafe', { phase: 'assistant', messages: [{ role: 'assistant', content: '', tool_calls: [{ id: 'write-uncertain', type: 'function', function: { name: 'fs_write', arguments: '{}' } }] }] });
+unsafe.toolIntent('unsafe', { callId: 'write-uncertain', name: 'fs.write', argsRaw: '{}', mutating: true, boundaryModel: 'prepared-dispatch-v1' });
+unsafe.toolDispatch('unsafe', { callId: 'write-uncertain', name: 'fs.write', mutating: true });
+A.throws(() => Recovery.automaticContinuationPlan(unsafe.inspect('unsafe')), 'a dispatched mutation can never enter automatic continuation');
+A.throws(() => unsafe.prepareContinuation('unsafe', { continuationId: 'unsafe-auto', mode: 'automatic' }), 'journal refuses automatic preparation when mutation outcome is uncertain');
+
 A.report('run-recovery-continuation.test');

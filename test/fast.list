@@ -37,6 +37,13 @@ test/durable-store.test.js
 test/domain-store.test.js
 test/provider-runtime.test.js
 test/run-execution-state.test.js
+test/tool-dispatch-boundary.test.js
+test/completion-evidence.test.js
+test/task-postconditions.test.js
+test/task-postconditions-ui.test.js
+test/recovery-policy.test.js
+test/tool-recovery.test.js
+test/run-journal-disk-boundary.test.js
 test/todo.durability.test.js
 test/halt.test.js
 test/readbody.test.js
@@ -56,6 +63,7 @@ test/eval-acp-client.test.js
 test/eval-fixture-host.test.js
 test/eval-installed-performance.test.js
 test/eval-installed-provider-soak.test.js
+test/overnight-reliability-runner.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js
 test/realtime-voice.test.js
@@ -221,6 +229,7 @@ test/runstore.test.js
 test/run-journal.test.js
 test/runrecoveries-ui.test.js
 test/run-recovery-continuation.test.js
+test/run-recovery-ui.test.js
 test/run-journal.loop.test.js
 test/longhaul-retention.test.js
 test/autonomy-ledger.test.js

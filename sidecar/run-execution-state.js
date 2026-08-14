@@ -8,6 +8,7 @@
 function makeRunExecutionState(options) {
   const opts = options || {};
   const artifacts = opts.artifacts;
+  const completion = opts.completion;
   const injectedNow = typeof opts.now === 'function' ? opts.now : () => 0;
   const failures = new Map();
   let taintedBy = opts.initialTaint ? String(opts.initialTaint) : null;
@@ -19,6 +20,10 @@ function makeRunExecutionState(options) {
   let checkpointTurn = 0;
   let journalStarted = false;
   let journalFailure = null;
+  let failureStage = '';
+  let failureCode = '';
+  const toolBoundaries = new Map();
+  const recoveryAttempts = [];
 
   function latchTaint(source) {
     if (!taintedBy && source) taintedBy = String(source);
@@ -88,6 +93,22 @@ function makeRunExecutionState(options) {
     return artifacts && typeof artifacts.list === 'function' ? artifacts.list() : [];
   }
 
+  function observeCompletion(event) {
+    if (completion && typeof completion.observe === 'function') completion.observe(event);
+  }
+
+  function completionEvidence() {
+    return completion && typeof completion.snapshot === 'function'
+      ? completion.snapshot()
+      : { schemaVersion: 'starnet.completion-evidence.v1', completionVerdict: 'not_assessed', effectVerdict: 'no_observed_effects', effects: [], evidence: [] };
+  }
+
+  async function assessCompletion(input) {
+    return completion && typeof completion.assess === 'function'
+      ? completion.assess(input || {})
+      : completionEvidence();
+  }
+
   function consumeToolCall(maxCalls) {
     const cap = Math.floor(Number(maxCalls) || 0);
     if (cap > 0 && toolCallsStarted >= cap) return false;
@@ -116,17 +137,66 @@ function makeRunExecutionState(options) {
     return toolTrace.map(rec => Object.assign({}, rec));
   }
 
-  function failJournal(error) {
+  function recordFailure(stage, code) {
+    if (!failureStage && stage) failureStage = String(stage).slice(0, 80);
+    if (!failureCode && code) failureCode = String(code).slice(0, 80);
+  }
+
+  function markToolPrepared(info) {
+    info = info || {};
+    const callId = String(info.callId || '');
+    if (!callId) return;
+    toolBoundaries.set(callId, {
+      callId, name: String(info.name || '').slice(0, 80), mutating: info.mutating !== false,
+      state: 'prepared'
+    });
+  }
+
+  function markToolDispatched(callId) {
+    const rec = toolBoundaries.get(String(callId || ''));
+    if (rec) rec.state = 'dispatched';
+  }
+
+  function markToolSettled(callId) {
+    const rec = toolBoundaries.get(String(callId || ''));
+    if (rec) rec.state = 'settled';
+  }
+
+  function uncertainMutations() {
+    return Array.from(toolBoundaries.values())
+      .filter(rec => rec.state === 'dispatched' && rec.mutating)
+      .slice(0, 200)
+      .map(rec => Object.assign({}, rec));
+  }
+
+  function recordRecoveryAttempt(row) {
+    if (recoveryAttempts.length >= 100 || !row || typeof row !== 'object') return;
+    recoveryAttempts.push({
+      sequence: Math.max(0, Number(row.sequence) || recoveryAttempts.length + 1),
+      stage: String(row.stage || '').slice(0, 80), action: String(row.action || '').slice(0, 40),
+      reason: String(row.reason || '').slice(0, 80), attempt: Math.max(0, Number(row.attempt) || 0),
+      model: String(row.model || '').slice(0, 80), delayMs: Math.max(0, Number(row.delayMs) || 0)
+    });
+  }
+
+  function failJournal(error, meta) {
+    meta = meta || {};
     if (!journalFailure) journalFailure = String((error && error.message) || error || 'unknown journal failure').slice(0, 500);
+    const beforeDispatch = meta.beforeDispatch === true;
+    recordFailure(meta.stage || (beforeDispatch ? 'tool_dispatch_persist' : 'tool_result_persist'), 'recovery-journal-failed');
     return {
       ok: false,
       isError: true,
       summary: 'recovery-journal-failed',
-      content: 'The tool returned, but its durable recovery result could not be recorded. The outcome requires review; do not repeat the action or claim completion.',
+      content: beforeDispatch
+        ? 'The tool was not started because its durable dispatch boundary could not be recorded. I stopped before the action rather than risk an untracked side effect.'
+        : 'The tool returned, but its durable recovery result could not be recorded. The outcome requires review; do not repeat the action or claim completion.',
       control: {
         final: true,
         reason: 'error',
-        text: 'I stopped because the durable recovery boundary failed after a tool call. That tool outcome requires review, so I cannot safely claim the task completed.'
+        text: beforeDispatch
+          ? 'I stopped before the tool ran because I could not durably record its dispatch boundary.'
+          : 'I stopped because the durable recovery boundary failed after a tool call. That tool outcome requires review, so I cannot safely claim the task completed.'
       }
     };
   }
@@ -151,7 +221,19 @@ function makeRunExecutionState(options) {
     startJournal: () => { journalStarted = true; },
     journalFailed: () => !!journalFailure,
     journalFailure: () => journalFailure,
+    failureStage: () => failureStage,
+    failureCode: () => failureCode,
+    recordFailure,
+    markToolPrepared,
+    markToolDispatched,
+    markToolSettled,
+    uncertainMutations,
+    recordRecoveryAttempt,
+    recoveryAttempts: () => recoveryAttempts.map(row => Object.assign({}, row)),
     failJournal,
+    observeCompletion,
+    assessCompletion,
+    completionEvidence,
     observeArtifact,
     artifactList
   };

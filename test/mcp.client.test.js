@@ -152,6 +152,15 @@ function makeFakeTransport(handle) {
     let rThrew = false;
     try { await errDef.run({}, {}); } catch (e) { rThrew = true; A.ok(e.message.indexOf('bad input') >= 0, 'isError text surfaced in the thrown error'); }
     A.ok(rThrew, 'an MCP isError result makes run() throw (-> clean isError downstream)');
+
+    const orderedDef = makeMcpToolDef({ connectorId: 'x', mcpTool: { name: 'resume', inputSchema: { type: 'object' } }, call: () => Promise.resolve({
+      isError: true,
+      content: [{ type: 'text', text: 'resume requires a prior read' }],
+      structuredContent: { precondition: { code: 'read_before_resume', requiredTool: 'mcp__x__read', requiredState: 'partial_observed' } }
+    }) });
+    let orderedError = null;
+    try { await orderedDef.run({}, {}); } catch (e) { orderedError = e; }
+    A.eq(orderedError && orderedError.precondition && orderedError.precondition.code, 'read_before_resume', 'MCP structuredContent precondition survives translation for registry normalization');
   }
 
   // ===== E2. RESULT CAP — the one door into context that used to be unclamped ===================

@@ -16,9 +16,9 @@
    typed error rather than a crash. */
 'use strict';
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./providers/sanitize.js'), require('./providers/errorClass.js'), require('./output-continuation.js'));
-  else { root.SK = root.SK || {}; root.SK.loop = factory(root.SK.providers && root.SK.providers.sanitize, root.SK.providers && root.SK.providers.errorClass, root.SK.outputContinuation); }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (sanitize, errorClass, outputContinuation) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./providers/sanitize.js'), require('./providers/errorClass.js'), require('./output-continuation.js'), require('./recovery-policy.js'));
+  else { root.SK = root.SK || {}; root.SK.loop = factory(root.SK.providers && root.SK.providers.sanitize, root.SK.providers && root.SK.providers.errorClass, root.SK.outputContinuation, root.SK.recoveryPolicy); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (sanitize, errorClass, outputContinuation, recoveryPolicy) {
   'use strict';
 
   // tool-call argument repair (L2): recover mechanically-broken JSON from non-Anthropic models. Degrades to
@@ -31,6 +31,9 @@
     novelText: (_before, after) => ({ text: String(after == null ? '' : after), removed: 0 }),
     novelChunks: chunks => (chunks || []).slice()
   };
+  const providerRecovery = recoveryPolicy && typeof recoveryPolicy.providerFailure === 'function'
+    ? recoveryPolicy.providerFailure
+    : (() => ({ action: 'fail', reason: 'recovery-policy-unavailable', retryable: false, delayMs: 0 }));
 
   function summarize(s, n) { s = String(s == null ? '' : s); n = n || 80; return s.length > n ? s.slice(0, n) : s; }
   function clip(s, n) { s = String(s == null ? '' : s); n = n || 80; return s.length > n ? s.slice(0, n) + '…' : s; }
@@ -652,6 +655,12 @@
     // OPTIONAL injected sleep for bounded mid-stream retry backoff (o.sleep(ms) -> Promise). Absent = retry with
     // NO wait (keeps the loop deterministic + test-fast); when present it honors the classifier's retryAfterMs.
     const sleep = (typeof o.sleep === 'function') ? o.sleep : null;
+    const onRecovery = (typeof o.onRecovery === 'function') ? o.onRecovery : null;
+    let recoveryAttemptSequence = 0;
+    function noteRecovery(row) {
+      if (!onRecovery) return;
+      try { onRecovery(Object.assign({ sequence: ++recoveryAttemptSequence }, row || {})); } catch (_) {}
+    }
     // mid-stream retry backoff schedule (same shape as the adapters' pre-stream RETRY_DELAYS).
     // Widened 2026-08-11 after the installed Hermes parity run: ~16.6s still lost all three StarNet
     // attempts inside one real Codex overload window while valid Hermes turns took up to ~102s. The
@@ -687,6 +696,8 @@
       const out = { reason, messages, text: terminalText, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
       if (cut) out.finishReason = cut;
       if (endPayload.budgetScope) { out.budgetScope = endPayload.budgetScope; if (endPayload.budgetCapUsd != null) out.budgetCapUsd = endPayload.budgetCapUsd; }
+      if (extra && extra.failureStage) out.failureStage = String(extra.failureStage).slice(0, 80);
+      if (extra && extra.failureCode) out.failureCode = String(extra.failureCode).slice(0, 80);
       return out;
     }
 
@@ -792,7 +803,7 @@
       // COMPUTE GATE: a model turn needs a compute capability (a computer in the room).
       if (capCtx && typeof capCtx.canRun === 'function' && !capCtx.canRun()) {
         emit('capdenied', { agentId, need: 'compute', reason: capCtx.computeReason || 'no compute capability in room' });
-        return end('error');
+        return end('error', { failureStage: 'compute_gate', failureCode: 'capability_denied' });
       }
       // CONTEXT COMPACTION: fold older turns into a summary if the last prompt crossed the threshold (no-op
       // until a context manager + summarizer are injected). Runs before turns++ so it cannot inflate the count.
@@ -884,6 +895,7 @@
           if (!sawTruncation) break;                 // clean, properly-terminated stream
           if (truncRetries < MAX_TRUNC_RETRIES && !signal.aborted) {
             truncRetries++;                          // a truncation is transient — re-run the turn once
+            noteRecovery({ stage: 'provider_stream', action: 'retry', reason: 'truncated', attempt: truncRetries, model, delayMs: STREAM_RETRY_DELAYS[0] });
             if (sleep) { try { await sleep(STREAM_RETRY_DELAYS[0]); } catch (_) {} }
             if (signal.aborted) break;
             continue;
@@ -897,11 +909,25 @@
         // classify so `transient` is honest, and so the shouldCompress / shouldFallback / shouldRotateCredential
         // hints drive recovery instead of being discarded.
         const cls = classifyApiError(streamErr, { model: model, approxTokens: approxTokens, contextLimit: contextLimit });
-        if (recoveries < maxRecoveries && cls.shouldCompress && context && summarize) {
+        let decision = providerRecovery({
+          classification: cls, canCompress: !!(context && summarize), hasFallback: fbIndex < fallbacks.length,
+          recoveriesUsed: recoveries, maxRecoveries, retriesUsed, maxRetries: MAX_STREAM_RETRIES,
+          preStreamRetriesExhausted: !!streamErr.preStreamRetriesExhausted, cancelled: !!signal.aborted
+        });
+        if (decision.action === 'compress') {
           // context_overflow: fold older turns away, then retry the turn. Only counts as recovery if it shrank.
-          if (await maybeCompact(true)) { recoveries++; continue; }
+          if (await maybeCompact(true)) {
+            recoveries++;
+            noteRecovery({ stage: 'provider_stream', action: 'compress', reason: decision.reason, attempt: recoveries, model, delayMs: 0 });
+            continue;
+          }
+          decision = providerRecovery({
+            classification: cls, canCompress: false, hasFallback: fbIndex < fallbacks.length,
+            recoveriesUsed: recoveries, maxRecoveries, retriesUsed, maxRetries: MAX_STREAM_RETRIES,
+            preStreamRetriesExhausted: !!streamErr.preStreamRetriesExhausted, cancelled: !!signal.aborted
+          });
         }
-        if (recoveries < maxRecoveries && (cls.shouldFallback || cls.shouldRotateCredential) && fbIndex < fallbacks.length) {
+        if (decision.action === 'fallback') {
           const fb = fallbacks[fbIndex++];
           if (fb && fb.provider) {
             // notify BEFORE switching: activeCredKey is still the OUTGOING key that just failed (cool it if rotate).
@@ -913,8 +939,14 @@
             provider = fb.provider;
             if (fb.model) model = fb.model;   // the next agent.cost carries the switched model — the visible failover signal
             recoveries++;
+            noteRecovery({ stage: 'provider_stream', action: 'fallback', reason: decision.reason, attempt: recoveries, model, delayMs: 0, rotate: decision.rotate });
             continue;
           }
+          decision = providerRecovery({
+            classification: cls, canCompress: false, hasFallback: false,
+            recoveriesUsed: recoveries, maxRecoveries, retriesUsed, maxRetries: MAX_STREAM_RETRIES,
+            preStreamRetriesExhausted: !!streamErr.preStreamRetriesExhausted, cancelled: !!signal.aborted
+          });
         }
         // A2: bounded SAME-provider retry for a retryable class that has no failover to take (e.g. `timeout`,
         // transient `unknown`) — or a fallback class whose chain is already exhausted. Without this a hung/idle
@@ -926,14 +958,14 @@
         // case the comment always promised is now real.
         // Adapters mark a fully exhausted pre-stream ladder. Re-running that ladder here multiplied one outage
         // into 15 requests; only errors from a stream that actually started belong to this recovery budget.
-        if (!signal.aborted && !streamErr.preStreamRetriesExhausted && cls.retryable
-            && (!cls.shouldFallback || fbIndex >= fallbacks.length) && retriesUsed < MAX_STREAM_RETRIES) {
+        if (decision.action === 'retry') {
           retriesUsed++;
           // NOTE: no provider.fallback emit here — a same-provider retry is NOT a failover; emitting it would
           // inflate the floor's failover counter and lie about a model/credential switch that didn't happen
           // (truthful-telemetry law). The retry is bounded and its outcome (success or the final error) is what
           // surfaces observably.
-          if (sleep) { try { await sleep(Math.min(60000, Math.max(STREAM_RETRY_DELAYS[Math.min(retriesUsed - 1, STREAM_RETRY_DELAYS.length - 1)], cls.retryAfterMs || 0))); } catch (_) {} }
+          noteRecovery({ stage: 'provider_stream', action: 'retry', reason: decision.reason, attempt: retriesUsed, model, delayMs: decision.delayMs });
+          if (sleep) { try { await sleep(decision.delayMs); } catch (_) {} }
           if (signal.aborted) break;   // a cancel during the backoff ends cleanly below
           continue;
         }
@@ -954,7 +986,7 @@
           });
         }
         emit('agent.run.error', { agentId, runId, message: fatal.message || 'model call failed', transient: !!fatal.retryable });
-        return end('error');
+        return end('error', { failureStage: 'provider_stream', failureCode: fatal.reason || 'provider_failure' });
       }
 
       // cancellation mid-stream: keep partial text, then stop. A continuation call buffered its opening bytes for
@@ -1178,7 +1210,7 @@
         assertPaired(calls, results); // (7) HARD INVARIANT
       } catch (e) {
         emit('agent.run.error', { agentId, runId, message: String((e && e.message) || e), transient: false });
-        return end('error');
+        return end('error', { failureStage: 'tool_boundary', failureCode: (e && e.fatalToRun) ? 'durability_boundary' : 'tool_dispatch_failure' });
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
       const repairNote = failedCheckRepairNote(calls, results);
