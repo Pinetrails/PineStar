@@ -8163,7 +8163,9 @@ const ROUTES = [
   { m: 'GET', prefix: '/api/save', h: serveSaveLoad },
   { m: 'POST', qsplit: '/api/save', h: handleSaveWrite },   // qsplit, not exact: the unload beacon carries ?token= (apiauth.queryTokenRoute)
   { m: 'GET', prefix: '/api/insights', h: serveInsights },
-  { m: 'GET', exact: '/api/run-recoveries', h: serveRunRecoveries },
+  // The recovery reader owns bounded pagination (?limit=&offset=). Match the query-stripped path so COMMS can
+  // request its explicit ceiling instead of receiving a misleading static 404 before the handler is reached.
+  { m: 'GET', qsplit: '/api/run-recoveries', h: serveRunRecoveries },
   { m: ['GET', 'POST'], qsplit: '/api/growth/ratings', h: handleGrowthRatings },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions

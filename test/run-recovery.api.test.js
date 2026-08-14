@@ -167,6 +167,8 @@ function fakeProvider(argsRaw, browserFixture) {
       return;
     }
     const listed = await request('GET', '/api/run-recoveries');
+    const bounded = await request('GET', '/api/run-recoveries?limit=100');
+    A.ok(bounded.status === 200 && bounded.body.recoveries.some(x => x.runId === 'auto-run'), 'bounded COMMS recovery listing reaches the recovery handler');
     const row = listed.body.recoveries.find(x => x.runId === 'crashed-run');
     A.eq(row.status, 'needs_review', 'reboot exposes the crash between mutating intent and durable result');
     const corruptRow = listed.body.recoveries.find(x => x.runId === 'corrupt-run');
