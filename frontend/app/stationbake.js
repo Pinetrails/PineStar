@@ -2615,18 +2615,36 @@ const StationBake = (() => {
       const ex = outX < 0 ? Math.round(ax - off) : Math.round(ax + off) - 1;   // -1: see the half-open note above
       const w = crownEase(Math.max(0, t) / HR, capW, capFar);
       const dx = deckXAt(py), inner = dx == null ? (outX < 0 ? X + T : X - 1) : dx;
+      /* THE ARC'S DEPTH MEASURE ENDS WITH THE ARC (2026-08-13).
+         Past the centre line the outline is the constant straight-run `off`, but faceMap kept
+         measuring depth RADIALLY from the lifted centre `cy` — so outline and measure disagree by
+         exactly |dy|, and the first |dy| pixels of every such row fall outside the profile and clamp
+         to depth 0. Clamped pixels all sample the SAME top row of the strip, so the run came out as
+         flat fill widening as |dy| grows: a solid wedge hanging under the curve. That is the
+         "triangle flap" Andrew circled — not a surface, but the depth measure running off the end of
+         its own profile.
+         Dropping the face outright is wrong too (it punches a hole: nothing else paints these rows,
+         which are the lifted ramp ABOVE the wall's own tiles). What they actually are is the e/w
+         STRAIGHT wall, so they take that wall's addressing — along = world y, depth = rows under the
+         crown, capped at FACEW — which is exactly what bakeSideFace samples. The ring's tail is then
+         the same material, at the same depth, as the wall it runs into. */
+      const onArc = t > 0;
+      const fs = outX < 0 ? ex + 2 + w : ex - 2 - w;                       // depth 0: the row just inside the crown
+      const room = outX < 0 ? inner - fs : (ex - 1 - w) - inner;
+      const len = Math.max(0, onArc ? room : Math.min(room, FACEW));
+      const map = onArc ? faceMap : ((px) => ({ a: py, d: Math.abs(px - fs) }));
       if (outX < 0) {
         put(ex, py, 1, 1, shellEdge);                                             // the shell's own edge
         put(ex + 1, py, w, 1, pal.cap); put(ex + 1, py, 1, 1, lit);            // the lit top surface
         // face, down to the deck — depth 0 sits just inside the crown, so the material curves with it
-        cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ex, py), true, py, ex + 2 + w, Math.max(0, inner - (ex + 2 + w)), 1, sOf(ex, py));
+        cornerFaceSlice(put, pal, ed, strip, map, alongOf(ex, py), true, py, fs, len, 1, sOf(ex, py));
         put(ex + 1 + w, py, 1, 1, seam);
       } else {
         // the lit edge is the crown's OUTERMOST row, i.e. ex - 1 here — putting it on `ex` paints
         // over the shell edge and rules a near-white line along the station's own silhouette.
         put(ex, py, 1, 1, shellEdge);
         put(ex - w, py, w, 1, pal.cap); put(ex - 1, py, 1, 1, lit);
-        cornerFaceSlice(put, pal, ed, strip, faceMap, alongOf(ex, py), true, py, ex - 2 - w, Math.max(0, (ex - 1 - w) - inner), -1, sOf(ex, py));
+        cornerFaceSlice(put, pal, ed, strip, map, alongOf(ex, py), true, py, fs, len, -1, sOf(ex, py));
         put(ex - 1 - w, py, 1, 1, seam);
       }
     }

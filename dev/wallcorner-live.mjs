@@ -113,11 +113,16 @@ const PROBE = `(() => {
       return i == null || i < 0 || i >= geo.zoneGrid.length ? true : geo.zoneGrid[i] == null;
     };
     // for each corner: the two straight walls it hands off to, and whether each is exterior there
+    /* (armDx, armDy) steps from the corner to the tile the straight wall continues on; (vx, vy)
+       steps from THAT tile to the one that must be void for it to be an exterior wall — i.e. the
+       direction the wall faces, which is a property of the SIDE, not of the corner. Getting that
+       second pair from the corner's own diagonal instead read a tile one row off and mis-scored
+       every arm; the numbers it produced were wrong and are not to be trusted anywhere. */
     const NEIGH = {
-      tl: [['w', 0, 1, -1, 1], ['n', 1, 0, 1, -1]],
-      tr: [['e', 0, 1, 1, 1], ['n', -1, 0, -1, -1]],
-      bl: [['w', 0, -1, -1, -1], ['s', 1, 0, 1, 1]],
-      br: [['e', 0, -1, 1, -1], ['s', -1, 0, -1, 1]],
+      tl: [['w', 0, 1, -1, 0], ['n', 1, 0, 0, -1]],
+      tr: [['e', 0, 1, 1, 0], ['n', -1, 0, 0, -1]],
+      bl: [['w', 0, -1, -1, 0], ['s', 1, 0, 0, 1]],
+      br: [['e', 0, -1, 1, 0], ['s', -1, 0, 0, 1]],
     };
     out.corners = (geo.chamfers || []).map(([cx, cy, kind]) => {
       const own = geo.zoneGrid[geo.idx(cx, cy)];
