@@ -412,6 +412,34 @@ pcm.assignPropAgent(pcWr.id, 'writer');
 A.ok(pcm.bayObjects('writer').indexOf('computer') >= 0, 'writer gets compute once it has its OWN bound PC');
 A.ok(pcm.bayObjects('coder').indexOf('computer') >= 0, 'coder still has compute — each agent now has a dedicated PC');
 
+/* ---- REMOTE BAY (2026-08-14 ruling): a bay is a TRIGGER, placeable anywhere on the station —
+        capabilities resolve from the agent's own DESK room, falling back to the bay's room only
+        when the agent owns no seat workstation ---- */
+const rb = WM.deserialize({
+  rooms: {
+    rOff: { id: 'rOff', kind: 'hab', name: 'OFFICE', rects: [{ x1: 0, y1: 0, x2: 8, y2: 8 }] },
+    rMach: { id: 'rMach', kind: 'hab', name: 'MACHINES', rects: [{ x1: 12, y1: 0, x2: 20, y2: 8 }] } },
+  order: ['rOff', 'rMach'],
+  props: [
+    { id: 'rbBay', t: 'bay', x: 14, y: 2, w: 2, h: 2, agentId: 'coder' },       // the remote dock
+    { id: 'rbDesk', t: 'desk', x: 2, y: 2, w: 2, h: 1, agentId: 'coder' },      // the agent's real desk
+    { id: 'rbCabO', t: 'war_intelcab', x: 6, y: 6, w: 1, h: 2 },                // office cabinet -> files
+    { id: 'rbCabM', t: 'war_intelcab', x: 18, y: 6, w: 1, h: 2 }] });           // machine-room cabinet (must NOT grant)
+A.eq(rb.agentRoomId('coder'), 'rOff', "remote bay: the capability room is the DESK's room, not the bay's");
+A.eq(rb.bayObjects('coder').slice().sort().join(','), 'cabinet,computer', 'remote bay: tools come from the desk room (own desk = dedicated PC + the office cabinet; the machine-room cabinet does not grant)');
+rb.assignPropAgent('rbDesk', '');
+A.eq(rb.agentRoomId('coder'), 'rMach', 'a DESKLESS bay falls back to the bay room (legacy behavior, byte-for-byte)');
+A.eq(rb.bayObjects('coder').slice().sort().join(','), 'cabinet', 'deskless fallback grants the bay room objects');
+rb.assignPropAgent('rbDesk', 'coder');
+// the solo-room census counts agents by their CAPABILITY room: writer's bay parks in coder's office,
+// so the office hosts TWO agents and an unbound console there is ambiguous — grants compute to neither
+const rbBayW = rb.addProp({ t: 'bay', x: 2, y: 6, w: 2, h: 2, block: false });
+rb.assignPropAgent(rbBayW.id, 'writer');
+const rbPc = rb.addProp({ t: 'console', x: 6, y: 2, w: 2, h: 1, block: true });
+A.eq(rb.bayObjects('writer').indexOf('computer'), -1, 'shared capability room + unbound PC -> ambiguous, no compute (census counts capability rooms, not bay props)');
+A.ok(rb.bayObjects('coder').indexOf('computer') >= 0, 'coder keeps compute — its own BOUND desk is its dedicated PC');
+A.eq(rbPc.ok, true, 'the unbound console placed (census assertion above is real)');
+
 /* ---- connector portal: a per-instance, BOUND capability — bayObjects emits its {objectType,connectorId} only when bound ---- */
 const cc = WM.create();
 const ccr = cc.roomById(cc.spawnRoomId()).rects[0];
