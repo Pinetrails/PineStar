@@ -40,6 +40,18 @@ must name the candidate SHA/version, installer digest, OS, profile path identity
 transition, restart, and observed authenticated result. Until that receipt exists, do not claim browser-login or
 LinkedIn account-session parity for 0.10.
 
+**Partial repair receipt (`agent/finish-line-browser` at `9868c9661`, 2026-08-13; remains RED):** the watched
+StarNet UI accepted the natural-language LinkedIn request, displayed the two-phase attended consent, and opened a
+responsive visible Chromium window titled `LinkedIn Login, Sign in | LinkedIn` at
+`https://www.linkedin.com/login/` on the dedicated `.browser-profile`; the user was never asked to launch Chrome
+or provide a debugging port. With no Done confirmation, the wait failed closed after 618.2 seconds, closed the
+headed browser, retained any cookies, and reported the login as unconfirmed. Therefore authenticated navigation
+and restart reuse were not claimed. Source evidence is `test:fast` 621/621, `test:http` 74/74 (including the real
+Chromium gauntlet 88 assertions), and `cargo check` green. A local Windows 0.10.1 NSIS bundle was produced with
+SHA-256 `3CBD5A39C740AD19ABA56E97BF69D1B6D2DBCB6336D78C9FA62EB5418F35F684`, but it is not an installed release
+receipt: release signing correctly stopped because the private updater/signing key was absent, and Authenticode
+reported `NotSigned`.
+
 ## 0.10 release-confidence gates
 
 | ID | Priority | Confirmed delta at the audit baseline | Observable exit test |
