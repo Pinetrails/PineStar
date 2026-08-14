@@ -73,8 +73,9 @@ const MANUAL =
   'platform; that is a dead end and it wastes their time.\n' +
   '\n' +
   'APPROVAL MODE — each agent has a consent posture. In APPROVAL (“ask”) mode the Commander gets a ' +
-  'one-click prompt the first time the agent tries a write / shell / network action; in FULL ACCESS the ' +
-  'agent acts without asking. So if an action is “stuck,” look at the APPROVALS hotspot — it may be ' +
+  'one-click prompt the first time the agent tries a write / shell / network action; FULL POWER authorizes ' +
+  'the whole local computer without asking, including host files, arbitrary commands, visible apps, and ' +
+  'screen/input control when the native desktop driver is available. So if an ASK-mode action is “stuck,” look at the APPROVALS hotspot — it may be ' +
   'waiting on a decision. Just CALL your tools when ready; the prompt is automatic. Do not refuse in chat ' +
   'or claim you cannot act because of permissions.\n' +
   '\n' +

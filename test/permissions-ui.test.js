@@ -14,7 +14,7 @@ let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 // Each block header is a real .ms-h (the shared divider-rule idiom), not body-weight .set-row prose —
 // that flatness is exactly what made the pane unreadable before the 08-05 spacing pass.
 ok(/<h4 class="ms-h">EACH CREW MEMBER/.test(src), 'the crew list is a real section header');
-ok(/<h4 class="ms-h">SKIP EVERY PROMPT/.test(src), 'the master override is a real section header');
+ok(/<h4 class="ms-h">FULL POWER — WHOLE STATION/.test(src), 'the master override is a real section header');
 ok(/<h4 class="ms-h">WHILE YOU’RE AWAY/.test(src), 'unattended-level header is a real section header');
 ok(/<h4 class="ms-h">STANDING APPROVALS/.test(src), 'standing-approvals header is a real section header');
 // Block NUMBERS are gone. They forced the reader to hold a cross-reference ("overridden by block 2")
@@ -38,7 +38,7 @@ ok(/const done = res\.filter\(r => r\.ok\)\.length;/.test(src) && /r\.done \+ ' 
   'applying a posture reports the number that ACTUALLY changed');
 ok(/STATION_POSTURES[\s\S]{0,900}profile: 'station-gear'[\s\S]{0,900}profile: 'trusted-project'[\s\S]{0,900}profile: 'this-computer'/.test(src),
   'postures only ever name LOCAL-runtime profiles (Docker/SSH need a probe and a saved target)');
-ok(/btn\.querySelector\('\.pp-name'\)\.textContent = 'SURE\? NO PROMPTS, ANY FILE'/.test(src),
+ok(/btn\.querySelector\('\.pp-name'\)\.textContent = 'SURE\? WHOLE COMPUTER'/.test(src),
   'FULL POWER keeps a two-press confirm, arming the NAME span so the card is not flattened');
 // everything that is not needed for a working, safe station is closed by default
 ok(/<details class="perm-fold" id="perm-advanced">/.test(src) && /<summary>Advanced — idle Safe Cell cleanup<\/summary>/.test(src),
@@ -48,12 +48,12 @@ ok(/<details class="perm-fold" id="perm-advanced">/.test(src) && /<summary>Advan
 // really revocable. Locking this stops a future "tidy-up" from burying them again.
 {
   const fold = src.slice(src.indexOf('id="perm-advanced"'), src.indexOf('const secBudget'));
-  for (const h of ['SKIP EVERY PROMPT', 'WHILE YOU’RE AWAY', 'STANDING APPROVALS'])
+  for (const h of ['FULL POWER — WHOLE STATION', 'WHILE YOU’RE AWAY', 'STANDING APPROVALS'])
     ok(!fold.includes(h), 'NOT hidden in ADVANCED: ' + h);
   ok(fold.includes('perm-exec-policy'), 'the idle-cell policy IS in ADVANCED');
   ok(!/<details/.test(fold.slice(fold.indexOf('perm-advanced') + 5)), 'no nested disclosure inside ADVANCED');
 }
-ok(/id="perm-crew"[\s\S]{0,1600}<h4 class="ms-h">SKIP EVERY PROMPT[\s\S]{0,900}<h4 class="ms-h">WHILE YOU’RE AWAY[\s\S]{0,1600}<h4 class="ms-h">STANDING APPROVALS/.test(src),
+ok(/id="perm-crew"[\s\S]{0,1600}<h4 class="ms-h">FULL POWER — WHOLE STATION[\s\S]{0,900}<h4 class="ms-h">WHILE YOU’RE AWAY[\s\S]{0,1600}<h4 class="ms-h">STANDING APPROVALS/.test(src),
   'the pane runs crew → override → while-away → standing approvals, in that order');
 // TIER 2 MUST STAY VISIBLE. Folding the per-agent rows away over-corrected: a posture can only set
 // every agent the SAME way, so the "except this one" control may never hide behind a disclosure.
@@ -74,8 +74,8 @@ ok(/const paintGlance = \(\) =>/.test(src) && /present\.filter\(a => a && a\.app
 // bypass card — so ONE flip moves the card, every row, and the summary together.
 ok(/const paintCrew = \(\) => \{\s*if \(!crewList\) return;\s*paintGlance\(\);/.test(src),
   'the glance repaints with the crew (summary and rows can never disagree)');
-ok(/protected files \(<code>\.env<\/code>, <code>\.git<\/code>\) are never writable/.test(src),
-  'the glance states the standing floor in plain words');
+ok(/FULL POWER is host-wide: it may use protected files, arbitrary commands, visible apps, and screen\/input control/.test(src),
+  'the glance states the host-wide Full Power meaning in plain words');
 // ONE crew row per agent carrying BOTH axes — the two-tables-forty-rows-apart layout is the defect this
 // lane closed, so a future split has to break this lock deliberately.
 ok(/id="perm-crew"/.test(src), '#perm-crew is the single merged crew list');
@@ -83,7 +83,7 @@ ok(!/id="perm-execution"/.test(src) && !/id="perm-approval"/.test(src),
   'reach and approval are NOT two separate crew lists any more');
 ok(/data-perm-profile=/.test(src) && /data-ap-flip=/.test(src) && /class="perm-agent perm-crew-row/.test(src),
   'one row carries both the reach chips and the asks-first chips');
-ok(/<span class="pc-q">CAN REACH<\/span>/.test(src) && /<span class="pc-q">ASKS FIRST'/.test(src),
+ok(/<span class="pc-q">CAN REACH<\/span>/.test(src) && /<span class="pc-q">AUTHORITY'/.test(src),
   'each control is preceded by the plain question it answers');
 // the reach ladder must stay ORDERED and self-describing: a meter plus one ordinary sentence per rung.
 ok(/const reachMeter = \(n\) =>/.test(src) && /class="pc-dots"/.test(src), 'each reach chip wears a reach meter');
@@ -93,7 +93,7 @@ ok(/reach: 1,[\s\S]{0,900}reach: 1,[\s\S]{0,900}reach: 2,[\s\S]{0,900}reach: 3,[
   'the reach meter never decreases down the ladder');
 ok(/EXECUTION_PROFILE_DEFAULT = 'station-gear'/.test(src) && !/\|\| EXECUTION_PROFILES\[0\]/.test(src),
   'the profile fallback is the DEFAULT by id, never an index into the reach-ordered array');
-ok(/plain: 'None of your files\./.test(src) && /plain: 'Almost any file on this computer/.test(src),
+ok(/plain: 'None of your files\./.test(src) && /plain: 'The whole local computer/.test(src),
   'every rung carries a plain-English sentence about what it can touch');
 // The block-2 override outranks the per-agent ASKS FIRST axis. A row that still printed "ASKS" under an
 // ON override was the app asserting a posture the harness will not honour — the row must report the
@@ -101,7 +101,7 @@ ok(/plain: 'None of your files\./.test(src) && /plain: 'Almost any file on this 
 ok(/const effFull = full \|\| overridden;/.test(src), 'the row reports the EFFECTIVE approval posture, not the stored one alone');
 ok(/const overridden = !!\(snap\.loaded && \(snap\.masterBypass \|\| snap\.envFullAccess\)\);/.test(src),
   'the override state is read from SERVER truth, never guessed locally');
-ok(/OVERRIDDEN BY SKIP EVERY PROMPT/.test(src) && /The SKIP EVERY PROMPT switch is ON, so this agent is not asking/.test(src),
+ok(/OVERRIDDEN BY WHOLE-STATION FULL POWER/.test(src) && /The whole-station Full Power switch is ON, so this agent has host-wide authority/.test(src),
   'an overridden row says so in plain words instead of contradicting the glance');
 ok(/Turn that switch off and it goes back to stopping for your yes/.test(src),
   'the stored setting stays visible as what it returns to (never hidden)');
@@ -122,14 +122,14 @@ ok(/PermissionsStore\.setBypass\(want\)/.test(src), 'the bypass flip drives Perm
 ok(/flip\(onBtn, true,/.test(src) && /flip\(offBtn, false,/.test(src), 'the switch flips both ways');
 ok(/btn\.disabled = true;/.test(src), 'a flip in flight disables its button (no double POST)');
 ok(/class="perm-m-err"/.test(src) && /bypassErr/.test(src), 'a refused flip reports AT the switch, not in another block');
-ok(/ArmConfirm\.wire\(onBtn/.test(src), 'turning FULL BYPASS ON keeps the two-press confirm (destructive-action guard)');
+ok(/ArmConfirm\.wire\(onBtn/.test(src), 'turning station-wide Full Power ON keeps the two-press confirm');
 ok(/snap\.envFullAccess/.test(src), 'an env-forced bypass is explained (pinned switch), never a dead toggle');
-ok(/protected-file floor/.test(src), 'the bypass copy names the floors that still stand (truthful telemetry)');
+ok(/host-wide authority: protected files, arbitrary commands, visible apps/.test(src), 'the bypass copy names the authority it actually grants');
 
 // ── 1 · per-agent APPROVAL chips ──
 ok(/setApproval/.test(src), 'rows apply through access.config.setApproval (the dossier/-yolo path)');
-ok(/ArmConfirm\.wire\(b, \{ armedLabel: 'SURE\? IT WILL NEVER ASK'/.test(src),
-  'escalating one agent to no-prompts keeps the two-press confirm');
+ok(/ArmConfirm\.wire\(b, \{ armedLabel: 'SURE\? GRANT FULL POWER'/.test(src),
+  'escalating one agent to Full Power keeps the two-press confirm');
 ok(/id="perm-full-all"/.test(src) && /id="perm-ask-all"/.test(src), 'whole-station FULL ACCESS + everyone-asks switches present');
 ok(/ArmConfirm\.wire\(fullAll/.test(src), 'whole-station FULL ACCESS keeps the two-press confirm');
 
@@ -159,16 +159,16 @@ ok(/emptyApprovals|No standing approvals yet/.test(src), 'teaching empty state (
 ok(/\[data-perm-revoke\]'\)\.forEach\(b => ArmConfirm\.wire\(b/.test(src), 'REVOKE uses the two-step arm/confirm idiom (destructive-action guard)');
 ok(/held\.filter\(k => curated\.indexOf\(k\) < 0\)/.test(src), 'NON-curated standing grants are listed too (nothing hidden/irrevocable)');
 ok(/pre-approve a capability|pre-bless/i.test(src), 'the curated GRANT offer is kept separate from the active-approvals ledger');
-ok(/<b>RUNS WITHOUT PROMPTS<\/b>/.test(src),
-  'the per-agent approval copy states the canonical no-prompts meaning without claiming machine access');
-ok(/zero-prompt posture applies watched or unattended/.test(src),
-  'the permissions panel explicitly applies the posture to unattended tasks too');
+ok(/<b>FULL POWER<\/b> over the whole local computer/.test(src),
+  'the per-agent approval copy states the canonical host-wide meaning');
+ok(/Full Power applies watched or unattended/.test(src),
+  'the permissions panel explicitly applies Full Power to unattended tasks too');
 ok(!/unattended runs[^.]*never inherit it/.test(src),
   'the panel never contradicts the persisted Full Access contract');
 ok(/Full Access is represented only by the canonical per-agent APPROVAL rows/.test(src),
   'Full Access is not duplicated as an ephemeral standing-grant wildcard');
-ok(/without approval prompts \(the hard safety floor still applies\)/.test(src),
-  'the whole-station copy preserves the automatic hard safety floor');
+ok(/now have FULL POWER over the local computer without approval prompts/.test(src),
+  'the whole-station copy states the host-wide authority');
 
 // the store hooks
 ok(/PermissionsStore\.setLevel\(/.test(src), 'level click drives PermissionsStore.setLevel');

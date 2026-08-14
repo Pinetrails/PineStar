@@ -39,6 +39,14 @@ const resolvedTools = (capIds, tools) => ({
   A.ok(!/control the desktop computer/.test(full),
     'workbench never claims desktop control (computer.use/desktop.open carry no grant and are always stripped)');
 
+  const fullPower = summarizeCapabilities(
+    resolvedTools(['web', 'cabinet', 'workbench'], ['web_search', 'fs.read', 'shell.exec', 'computer.use', 'desktop.open']),
+    { surface: 'autonomous', unrestrictedHost: true });
+  A.ok(/FULL POWER is active: the Commander authorized the whole local computer/.test(fullPower),
+    'Full Power is stated at the final authoritative prompt seam');
+  A.ok(/arbitrary local host commands and host paths/.test(fullPower) && /physical screen\/input/.test(fullPower),
+    'Full Power names general host execution and the actually projected native desktop tools');
+
   // 4) autonomous surface -> still emits, but with the unattended limit instead of placement advice
   const auto = summarizeCapabilities(resolvedWith(), { surface: 'autonomous' });
   A.ok(auto.length > 0, 'autonomous: emits a ground-truth note (silence let it over-promise)');

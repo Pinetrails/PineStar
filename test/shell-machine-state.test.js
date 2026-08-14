@@ -62,6 +62,11 @@ A.eq(opensVisibleWindow('msedge --headless=new --mute-audio --remote-debugging-p
 A.eq(breaksMachineState('npm run format'), null, 'npm run format not blocked');
 A.eq(breaksMachineState('git log --format=%H'), null, 'git log --format not blocked');
 A.eq(breaksMachineState('prettier --write src/'), null, 'prettier write not blocked');
+A.eq(breaksMachineState('Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM,DriverVersion | Format-List'), null,
+  'PowerShell Format-List in a read-only GPU inventory pipeline is not confused with disk format');
+A.eq(breaksMachineState('powershell -NoProfile -Command "Get-CimInstance Win32_VideoController | Select-Object Name | Format-List"'), null,
+  'nested read-only PowerShell inventory with Format-List is allowed');
+A.eq(breaksMachineState('Format-List'), null, 'PowerShell Verb-Noun commands do not collide with shorter machine executables');
 A.eq(breaksMachineState('echo shutdown the server when done'), null, 'the WORD shutdown in echo not blocked');
 A.eq(breaksMachineState('node kill-switch.js'), null, 'a file named kill-* not blocked');
 A.eq(breaksMachineState('npm start'), null, 'npm start not blocked (machine floor)');
@@ -71,6 +76,7 @@ A.eq(breaksMachineState('node scripts/reset-db.js'), null, 'reset-db script not 
 A.eq(breaksMachineState('git net-fetch'), null, 'net as part of another token not blocked');
 A.eq(breaksMachineState('service-worker.js'), null, 'service-worker filename not blocked');
 A.eq(breaksMachineState(''), null, 'empty command not a machine trip');
+A.ok(breaksMachineState('format.com d:'), 'the real Windows format.com utility remains blocked');
 
 // ---- BYPASS HARDENING (code-review 2026-07-12): dangerous verbs hidden behind a launcher, separator, or
 //      interpreter must still be caught (command-head splitting), and false-positive rework must hold. ----

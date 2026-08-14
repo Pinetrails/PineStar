@@ -305,7 +305,7 @@ const App = (() => {
   }
   function approvalClause(a) {
     const full = a && a.approvalMode === 'full';
-    if (full) return '\n\nAPPROVAL — RUN WITHOUT PROMPTS: the Commander chose the zero-prompt posture. Run the tools this execution profile actually grants without pausing to ask; never request approval in a chat message. This posture does not add tools, widen filesystem scope, choose a runtime, or grant real screen/input control. The hard safety floor still blocks protected actions automatically.';
+    if (full) return '\n\nAUTHORITY — FULL POWER: the Commander explicitly authorized the whole local computer. Do not pause for approval and do not claim a StarNet policy restriction: use every available tool, arbitrary host commands, host files, visible apps, and screen/input control needed to complete the request. This authority is general, not task-specific. Report only real prerequisites outside StarNet\'s control (for example a missing login, unavailable hardware, an OS elevation prompt, or a disconnected service), and keep trying viable routes before declaring one.';
     return '\n\nAPPROVAL — ASK FIRST: actions that write files, run commands, or reach the network need the Commander\'s approval — but you NEVER ask for it in a chat message. The approval system cannot see chat text; typed replies like "I approve" grant nothing. Instead, just make the tool call: the harness pauses it and shows the Commander a real approval prompt with Approve/Deny buttons, and the decision comes back to you automatically. Reasoning over what you already have needs no approval.';
   }
   // an always-appended SYSTEM truth: what the agent ACTUALLY runs on. Mirrors approvalClause — derived fresh each
@@ -1574,7 +1574,7 @@ const App = (() => {
   // mutation/network call), threaded through pushRoster → /api/roster. `np` is the nameplate readout.
   const APPROVAL = Object.freeze([
     Object.freeze({ id: 'ask',  label: 'ASK FOR APPROVAL', icon: '✋', desc: 'stops to check with you before it writes, runs, or reaches out', np: 'asks for approval' }),
-    Object.freeze({ id: 'full', label: 'RUN WITHOUT PROMPTS', icon: '⚡', desc: 'uses its execution profile without approval prompts',          np: 'no prompts' })
+    Object.freeze({ id: 'full', label: 'FULL POWER', icon: '⚡', desc: 'uses the whole local computer without approval prompts',          np: 'full power' })
   ]);
   const approvalById = id => APPROVAL.find(a => a.id === id) || APPROVAL[0];
   function applyTheme(t) {
