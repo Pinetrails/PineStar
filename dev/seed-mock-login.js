@@ -19,6 +19,35 @@ const SIDECAR = path.join(REPO, 'sidecar', 'index.js');
 const PORT = String(process.env.SKYNET_PORT || '8933');
 const LOGIN_URL = process.env.SKYNET_MOCK_LOGIN_URL || 'https://example.com/';
 
+// The golden seed intentionally has no station document; the UI builds its bare starter station on first boot.
+// This proof needs the real object=capability grant BEFORE that boot so the first run can actually reach
+// browser.login. Seed the exact persisted starter shape plus a real comms_dish (never a fake `t:'dish'` prop,
+// which worldmodel rejects). Kept pure/exported so the fast suite locks the proof fixture against going stale.
+function ensureLoginStation(save) {
+  if (!save || !save.doc) return save;
+  const st = save.doc.station;
+  if (st && Array.isArray(st.props)) {
+    if (!st.props.some(p => p && p.t === 'comms_dish')) {
+      const next = Math.max(1, Number(st._nid) || 1);
+      st.props.push({ id: 'p' + next, t: 'comms_dish', x: 3, y: 3, w: 2, h: 2 });
+      st._nid = next + 1;
+    }
+    return save;
+  }
+  save.doc.station = {
+    schema: 'starnet.station', version: 1, _nid: 4,
+    meta: { name: 'STARNET STATION', createdAt: 1, tier: 0, spawnRoomId: 'r1', trunkRoomId: 'r1' },
+    rooms: { r1: { id: 'r1', kind: 'hab', name: 'HAB-01', rects: [{ x1: 0, y1: 0, x2: 17, y2: 10 }], floorStyle: 'hull', floorMat: null, wallStyle: null, wallMat: null, hullStyle: null, hullMat: null, tier: 0, floorPaint: {} } },
+    order: ['r1'],
+    props: [
+      { id: 'p2', t: 'desk', x: 8, y: 1, w: 2, h: 1, agentId: 'agent' },
+      { id: 'p3', t: 'comms_dish', x: 3, y: 3, w: 2, h: 2 }
+    ],
+    belts: {}, edges: []
+  };
+  return save;
+}
+
 function sse(res, events) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
   for (const e of events) res.write('data: ' + JSON.stringify(e) + '\n\n');
@@ -80,7 +109,7 @@ function startMock() {
   });
 }
 
-(async () => {
+async function main() {
   fs.rmSync(SCRATCH, { recursive: true, force: true });
   fs.mkdirSync(SCRATCH, { recursive: true });
   fs.cpSync(FIXTURE, SCRATCH, { recursive: true });
@@ -92,9 +121,7 @@ function startMock() {
     if (w.doc) { w.doc.updatedAt = now; if (w.doc.agent) w.doc.agent.model = 'test/model'; }
     // THE MOAT: interactive runs grant only what is ON THE FLOOR. Seed a comms dish (-> web capability) so
     // the takeover proof can reach browser.login without hand-placing a prop each launch.
-    if (w.doc && w.doc.station && Array.isArray(w.doc.station.props) && !w.doc.station.props.some(p => p && p.t === 'comms_dish')) {
-      w.doc.station.props.push({ id: 'p_dish_dev', t: 'comms_dish', x: 11, y: 1, w: 1, h: 1, agentId: 'agent' });
-    }
+    ensureLoginStation(w);
     fs.writeFileSync(sp, JSON.stringify(w, null, 2));
   } catch (_) {}
   const base = await startMock();
@@ -107,4 +134,7 @@ function startMock() {
   const child = spawn(process.execPath, [SIDECAR], { cwd: REPO, env, stdio: 'inherit' });
   process.on('SIGINT', () => { try { child.kill(); } catch (_) {} });
   child.on('exit', c => process.exit(c == null ? 0 : c));
-})();
+}
+
+module.exports = { ensureLoginStation };
+if (require.main === module) main().catch(error => { console.error(error); process.exit(1); });
