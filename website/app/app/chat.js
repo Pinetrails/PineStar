@@ -234,7 +234,10 @@ const Chat = (() => {
   // derive the presence VERB from the same real state syncStatus() reads (pending approval > working > thinking)
   function presenceVerb() {
     const p = (activeWs && typeof Channels !== 'undefined') ? Channels.pendingOf(activeWs.id) : null;
-    if (p) return 'AWAITING APPROVAL';
+    // A clarify question rides the SAME consent transport as a permission grant, but it is not one:
+    // "AWAITING APPROVAL / approve brief.ask" told the Commander to approve an internal tool name when
+    // the run is simply waiting for them to answer a question (caught in shot review, 2026-08-14).
+    if (p) return p.tool === 'brief.ask' ? 'AWAITING YOUR ANSWER' : 'AWAITING APPROVAL';
     const cs = (activeWs && typeof Channels !== 'undefined' && Channels.statusOf) ? Channels.statusOf(activeWs.id) : '';
     // TRUTHFUL TELEMETRY: until the sidecar's agent.run.start lands the card says CONNECTING — it never
     // claims the agent is thinking/working on the strength of a click alone (a downed sidecar would
@@ -257,8 +260,10 @@ const Chat = (() => {
     const tool = card.querySelector('.cp-tool');
     if (tool) {
       if (paused) {
-        // e.g. "paused — waiting for you to approve fs.write"
-        const t = 'paused — waiting for you to approve ' + shortName(pend.tool);
+        // e.g. "paused — waiting for you to approve fs.write"; a clarify question is an ANSWER, not a grant
+        const t = pend.tool === 'brief.ask'
+          ? 'paused — waiting for your answer to the question above'
+          : 'paused — waiting for you to approve ' + shortName(pend.tool);
         if (tool.textContent !== t) tool.textContent = t;
         tool.classList.add('has'); tool.classList.add('paused-note');
       } else {
@@ -2431,10 +2436,14 @@ const Chat = (() => {
         b.className = 'consent-btn';
         b.textContent = (q.recommended && opt === q.recommended ? '★ ' : '') + opt;
         b.setAttribute('aria-pressed', 'false');
+        // The fill alone did not read as ON against this card's own gradient (caught in the shot review) —
+        // a toggle must be legible as state, not as a hover. The ✓ carries it in every theme.
+        const face = (on) => { b.textContent = (on ? '✓ ' : '') + (q.recommended && opt === q.recommended ? '★ ' : '') + opt; };
         b.onclick = () => {
-          if (picked.has(opt)) { picked.delete(opt); b.classList.remove('sel'); b.setAttribute('aria-pressed', 'false'); }
-          else { picked.add(opt); b.classList.add('sel'); b.setAttribute('aria-pressed', 'true'); }
-          syncDone();
+          const on = !picked.has(opt);
+          if (on) picked.add(opt); else picked.delete(opt);
+          b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+          face(on); syncDone();
         };
         btns.appendChild(b);
       }
@@ -8059,8 +8068,10 @@ const Chat = (() => {
       const pick = () => {
         if (done) return;
         if (multi && !it.skip && !it.confirm) {   // a toggle, not an answer — the confirm chip fires
-          if (picked.has(it.value)) { picked.delete(it.value); b.classList.remove('sel'); b.setAttribute('aria-pressed', 'false'); }
-          else { picked.add(it.value); b.classList.add('sel'); b.setAttribute('aria-pressed', 'true'); }
+          const on = !picked.has(it.value);
+          if (on) picked.add(it.value); else picked.delete(it.value);
+          b.classList.toggle('sel', on); b.setAttribute('aria-pressed', on ? 'true' : 'false');
+          b.textContent = (on ? '✓ ' : '') + it.label;   // the fill alone does not read as ON
           if (typeof SFX !== 'undefined') SFX.click();
           syncConfirm();
           return;

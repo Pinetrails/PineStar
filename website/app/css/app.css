@@ -741,9 +741,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* MULTI-SELECT clarify (2026-08-14): a toggled pick reads as a matte FILL, never an outer glow —
    the same vocabulary as the primary action, so "chosen" and "the yes" share one voice. */
 .consent-btn.sel {
-  color: var(--ph-bright); border-color: var(--ph);
-  background: linear-gradient(180deg, rgba(var(--ph-rgb),.22), rgba(var(--ph-rgb),.13));
-  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35);
+  color: var(--ph-bright); border-color: var(--ph-bright);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb),.34), rgba(var(--ph-rgb),.24));
+  box-shadow: inset 0 0 0 1px rgba(var(--ph-bright-rgb),.22), 0 1px 0 rgba(0,0,0,.35);
 }
 .consent-btn.consent-confirm { color: var(--ph-bright); border-color: var(--gold);
   background: linear-gradient(180deg, rgba(var(--gold-rgb),.20), rgba(var(--gold-rgb),.12)); }
@@ -1170,9 +1170,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* MULTI-SELECT task-question chips: toggled = matte fill (never a glow); the confirm chip speaks gold
    like every other primary, and stays quiet until at least one pick exists. */
 .choice.sel {
-  color: var(--ph-bright); border-color: var(--ph);
-  background: linear-gradient(180deg, rgba(var(--ph-rgb),.22), rgba(var(--ph-rgb),.13));
-  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.14), 0 1px 0 rgba(0,0,0,.35);
+  color: var(--ph-bright); border-color: var(--ph-bright);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb),.34), rgba(var(--ph-rgb),.24));
+  box-shadow: inset 0 0 0 1px rgba(var(--ph-bright-rgb),.22), 0 1px 0 rgba(0,0,0,.35);
 }
 .choice.confirm { color: var(--ph-bright); border-color: var(--gold);
   background: linear-gradient(180deg, rgba(var(--gold-rgb),.20), rgba(var(--gold-rgb),.12)); }

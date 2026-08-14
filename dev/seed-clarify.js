@@ -37,11 +37,12 @@ function startMock() {
           try {
             const msgs = (JSON.parse(b).messages) || [];
             const t = msgs.filter(m => m && m.role === 'tool').map(m => String(m.content || '')).join(' ');
-            const m = t.match(/The Commander answered: "([^"]+)"/);
-            if (m) answered = m[1];
+            const all = Array.from(t.matchAll(/The Commander answered "([^"]+)"/g)).map(x => x[1]);
+            if (all.length) answered = all.join(' / ');
           } catch (_) {}
           if (!answered) {
-            // turn 1: one host-validated material question
+            // turn 1: a BATCHED ask — three material questions on distinct dimensions, one of them
+            // multi-select — asked in ONE interruption.
             sse(res, [
               { choices: [{ delta: { tool_calls: [
                 { index: 0, id: 'call_ask_1', type: 'function', function: { name: 'brief_ask', arguments: JSON.stringify({
@@ -50,15 +51,38 @@ function startMock() {
                   options: ['operators', 'executives', 'customers'],
                   recommended: 'operators',
                   reason: 'Audience changes information density and navigation.',
-                  discoverable: false
+                  discoverable: false,
+                  also: [
+                    { dimension: 'sources', question: 'which data should it pull from?', options: ['billing exports', 'the run ledger', 'support tickets'], recommended: 'the run ledger', reason: 'The sources decide what the panels can even show.', multiSelect: true },
+                    { dimension: 'scope', question: 'read-only, or interactive filters?', options: ['read-only', 'interactive filters'], recommended: 'read-only', reason: 'Interactivity roughly doubles the build.' }
+                  ]
+                }) } }
+              ] } }] },
+              { choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 5, completion_tokens: 6, total_tokens: 11 } }
+            ]);
+          } else if (b.indexOf('Task Brief settled') < 0) {
+            // turn 2: the SAME run continues — settle the read. The assumptions are DELIBERATELY the exact
+            // taste filler Andrew caught live (2026-08-14): the card must show only the real one.
+            sse(res, [
+              { choices: [{ delta: { tool_calls: [
+                { index: 0, id: 'call_go_1', type: 'function', function: { name: 'brief_proceed', arguments: JSON.stringify({
+                  objective: 'Build the ops dashboard for ' + answered.split(' / ')[0] + '.',
+                  deliverable: 'A single-page dashboard in the app.',
+                  audience: 'Commander',
+                  success: 'The panels render live run data and the Commander can read it at a glance.',
+                  assumptions: [
+                    'Style: brief, direct, and practical.',
+                    'Tone: friendly with a small spark, no unnecessary ceremony.',
+                    'Aesthetic: plain readable summary, not an elaborate report.',
+                    'I will omit serial numbers, product keys, usernames, and other sensitive identifiers.'
+                  ]
                 }) } }
               ] } }] },
               { choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 5, completion_tokens: 6, total_tokens: 11 } }
             ]);
           } else {
-            // turn 2: the SAME run continues with the live answer
             sse(res, [
-              { choices: [{ delta: { content: 'CLARIFY PROOF: same run resumed — building for ' + answered + '.' } }] },
+              { choices: [{ delta: { content: 'CLARIFY PROOF: one interruption, three answers — building for ' + answered + '.' } }] },
               { choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 6, total_tokens: 11 } }
             ]);
           }

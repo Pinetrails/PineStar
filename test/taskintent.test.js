@@ -394,7 +394,26 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(/wireBriefRead/.test(chatSrc) && /taskbrief\.settled/.test(chatSrc), 'COMMS renders the READ card from the settled event');
   A.ok(/\/api\/run\/steer/.test(chatSrc) && /folded into the run/.test(chatSrc), 'READ-card corrections fold into the live run via steer');
   A.ok(/run already ended|run already finished/.test(chatSrc), 'a correction after run end is refused honestly, never faked');
-  A.ok(/STYLE, TONE, and AESTHETIC as explicit assumptions/.test(TaskIntent.directive('')), 'the doctrine demands bold, correctable taste assumptions in brief_proceed');
+  /* TASTE-FILLER CEILING (2026-08-14, live-caught): the doctrine used to demand a STYLE+TONE+AESTHETIC read on
+     EVERY task, so a "what are my PC specs?" lookup produced three invented taste chips and buried the one real
+     assumption. Taste is now CONDITIONAL on an authored artifact, and the host caps what a prompt cannot. */
+  {
+    const doc = TaskIntent.directive('');
+    A.ok(/ONLY when the task produces an authored artifact/.test(doc), 'taste assumptions are conditional on there being a look to choose');
+    A.ok(/NEVER restate your normal defaults as assumptions/.test(doc) && /needs no taste assumption at all/.test(doc), 'restating our own defaults is banned outright');
+    A.ok(/what you picked AND what you rejected/.test(doc), 'an earned taste assumption must name the alternative it rejected');
+    // the EXACT chips from the live card Andrew caught
+    const caught = ['Style: brief, direct, and practical.', 'Tone: friendly with a small spark, no unnecessary ceremony.',
+      'Aesthetic: plain readable summary, not an elaborate report.', 'I will omit serial numbers, product keys, usernames, and other sensitive identifiers.'];
+    A.eq(Policy.trimAssumptions(caught), ['I will omit serial numbers, product keys, usernames, and other sensitive identifiers.'],
+      'every taste-filler chip is dropped and the one real assumption survives');
+    A.eq(Policy.validateProceed({ objective: 'Report the host PC specs', assumptions: caught }).brief.assumptions.length, 1, 'the ceiling applies at the policy boundary, not just in the prompt');
+    // fail-open: an EARNED taste call (names its rejected alternative, task-specific words) is never destroyed
+    const earned = ['Aesthetic: gritty and readable, not decorative — this is a recruiting poster', 'Treating the Q3 export as the source of truth, not the dashboard'];
+    A.eq(Policy.trimAssumptions(earned), earned, 'a specific, contestable taste assumption is left completely alone');
+    A.eq(Policy.trimAssumptions(['Style: terse', 'Tone: gritty and profane, not corporate']).length, 1, 'taste is at most ONE line of a read, never its body');
+    A.eq(Policy.tasteFiller('I will omit serial numbers'), false, 'an unlabelled assumption is never touched');
+  }
   A.ok(/endReason !== 'clarifying'/.test(chatSrc), 'COMMS never renders a clarifying end as a stopped run');
   A.ok(/offerTaskQuestion/.test(chatSrc) && /TaskIntent\.strip/.test(chatSrc), 'COMMS strips the marker and renders the natural decision');
   A.ok(/clarificationRuns\.has\(runId\)/.test(chatSrc) && /clarificationRuns\.add\(thisRunId\)/.test(chatSrc), 'clarification turns do not count as completed-work beats');

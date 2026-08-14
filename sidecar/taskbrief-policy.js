@@ -105,13 +105,47 @@ function validateQuestion(candidate, brief) {
   return r.ok ? { ok: true, question: r.questions[0] } : r;
 }
 
+/* TASTE-FILLER CEILING (2026-08-14, live-caught by Andrew). The doctrine used to order a STYLE + TONE +
+   AESTHETIC read on EVERY task, so "can you see my PC specs?" — a lookup with no authored artifact and no
+   look to choose — produced three invented chips ("Style: brief, direct, and practical", "Tone: friendly
+   with a small spark", "Aesthetic: plain readable summary") and buried the one real assumption (omitting
+   serial numbers) at the bottom. The directive now makes taste CONDITIONAL, but a prompt is a hope; this is
+   the boundary. Two conservative rules, both fail-open — an assumption is never destroyed on a guess:
+     1. a labelled taste line whose every word is generic filler is a restatement of our own defaults, not
+        a decision the Commander can overturn — drop it;
+     2. taste is at most ONE line of a read, never its body — keep the first, drop the rest.
+   An unlabelled assumption, or one carrying task-specific words, is left completely alone. */
+const TASTE_LABEL = /^(?:style|tone|aesthetic|voice|register|presentation|formatting)\s*[:—-]\s*(.+)$/i;
+const GENERIC_WORD = new Set(('a an the and or but not no with without very quite fairly rather somewhat small light subtle extra much more less over under any all its is are be stay keep remain use using it i will its'
+  + ' brief short concise direct practical clear plain readable legible scannable simple straightforward'
+  + ' friendly warm approachable polite respectful natural human calm neutral professional helpful honest'
+  + ' accurate factual technical informative organized structured clean minimal tidy easy accessible'
+  + ' conversational casual summary report answer prose text spark ceremony fluff jargon decoration'
+  + ' unnecessary elaborate decorative flowery verbose formal informal nonsense point matter fact tone style').split(/\s+/));
+function tasteFiller(s) {
+  const m = TASTE_LABEL.exec(String(s == null ? '' : s).trim());
+  if (!m) return false;                                   // unlabelled -> never touched
+  const words = m[1].toLowerCase().split(/[^a-z]+/).filter(Boolean);
+  return words.length > 0 && words.every(w => GENERIC_WORD.has(w));
+}
+function isTaste(s) { return TASTE_LABEL.test(String(s == null ? '' : s).trim()); }
+function trimAssumptions(list) {
+  const kept = []; let taste = 0;
+  for (const a of list) {
+    if (tasteFiller(a)) continue;                         // rule 1: our own defaults, restated
+    if (isTaste(a)) { if (taste >= 1) continue; taste++; }  // rule 2: taste is a line, not the body
+    kept.push(a);
+  }
+  return kept;
+}
+
 function validateProceed(candidate) {
   const c = candidate && typeof candidate === 'object' ? candidate : {};
   const objective = clean(c.objective, 500);
   if (objective.length < 4) return { ok: false, error: 'objective is required before consequential work' };
   const out = { objective };
   for (const k of ['deliverable', 'audience', 'success']) { const v = clean(c[k], 500); if (v) out[k] = v; }
-  out.assumptions = Array.isArray(c.assumptions) ? c.assumptions.map(x => clean(x, 300)).filter(Boolean).slice(0, 8) : [];
+  out.assumptions = Array.isArray(c.assumptions) ? trimAssumptions(c.assumptions.map(x => clean(x, 300)).filter(Boolean)).slice(0, 8) : [];
   out.sources = Array.isArray(c.sources) ? c.sources.map(x => clean(x, 300)).filter(Boolean).slice(0, 8) : [];
   return { ok: true, brief: out };
 }
@@ -126,4 +160,4 @@ function canMutate(brief, tool) {
     : { ok: false, reason: 'settle the Task Brief with brief_proceed, or ask the one material question with brief_ask, before consequential work' };
 }
 
-module.exports = { DIMENSIONS, routeReply, validateQuestion, validateQuestions, askCallsOf, validateProceed, canMutate, clean, matchOption };
+module.exports = { DIMENSIONS, routeReply, validateQuestion, validateQuestions, askCallsOf, validateProceed, canMutate, clean, matchOption, tasteFiller, trimAssumptions };
