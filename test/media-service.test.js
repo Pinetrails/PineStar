@@ -6,7 +6,7 @@ const fsp = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 const {
-  makeMediaService, pcmToWav, wavToMono16kFloat32, oggOpusToMono16kFloat32, sttMultipartBody
+  makeMediaService, pcmToWav, float32PcmToWav, wavToMono16kFloat32, oggOpusToMono16kFloat32, sttMultipartBody
 } = require('../sidecar/media-service.js');
 
 // 80 ms mono Opus tone in a real Ogg container. Generated once with libopus; checked in as text so the
@@ -84,6 +84,13 @@ async function invokeTts(overrides, body) {
   assert.equal(decoded[1], -1);
   assert.equal(wavToMono16kFloat32(Buffer.from('not wav')), null);
 
+  const captured = new Float32Array([1, -1, 0.5, -0.5]);
+  const nativeWav = float32PcmToWav(Buffer.from(captured.buffer), 16000);
+  const nativeDecoded = wavToMono16kFloat32(nativeWav);
+  assert.equal(nativeDecoded.length, captured.length, 'a click-bounded Float32 take becomes a complete mono WAV');
+  assert.ok(nativeDecoded[0] > 0.99 && nativeDecoded[1] === -1, 'native WAV conversion preserves sample polarity and bounds');
+  assert.equal(float32PcmToWav(Buffer.from([1, 2, 3]), 16000), null, 'a partial Float32 sample is rejected');
+
   const decodedOgg = await oggOpusToMono16kFloat32(OGG_OPUS);
   assert.ok(decodedOgg.length >= 1200 && decodedOgg.length <= 1500, 'real Ogg/Opus is decoded and resampled to 16 kHz');
   assert.ok(decodedOgg.some(sample => Math.abs(sample) > 0.01), 'decoded Ogg/Opus contains audible PCM');
@@ -109,6 +116,26 @@ async function invokeTts(overrides, body) {
   assert.deepEqual(nativeOnly.sttStatus(), {
     available: true, preferred: 'native', cloud: false, local: false, native: true
   });
+
+  let nativeParams = null;
+  const capturedPcm = Buffer.from(new Float32Array([0.2, -0.2]).buffer);
+  const capturedNative = await make({
+    readBodyBuffer: async () => capturedPcm,
+    nativeStt: {
+      status: () => ({ available: true }),
+      recognize: async params => { nativeParams = params; return { ok: true, text: 'two clicks' }; }
+    }
+  });
+  const nativeResponse = { status: 0, body: '' };
+  await capturedNative.handleNativeStt({}, {
+    destroyed: false, writableEnded: false, headersSent: false,
+    on() {},
+    writeHead(status) { nativeResponse.status = status; this.headersSent = true; },
+    end(value) { nativeResponse.body = String(value || ''); this.writableEnded = true; }
+  });
+  assert.equal(nativeResponse.status, 200, 'captured native STT keeps the media 200-always contract');
+  assert.equal(JSON.parse(nativeResponse.body).text, 'two clicks');
+  assert.equal(nativeParams.audioWav.toString('ascii', 0, 4), 'RIFF', 'the native recognizer receives the captured take as WAV');
 
   // A keyed TTS failure falls through to the free Edge floor instead of committing a hard failure.
   let ttsFetches = 0;
