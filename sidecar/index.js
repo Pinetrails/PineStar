@@ -14631,7 +14631,7 @@ async function runOnce(o) {
     // right direction, since the alternative is a run that can still call tools but can no longer SEE any.
     if (name === 'agent.compact') execution.resetToolBytes();
     execution.observeToolEvent(name, payload);
-    if ((taskBrief || imageTask || o.postconditions != null) && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
+    if (((taskBrief || imageTask) || o.postconditions != null) && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
       bufferedTaskEnd = payload; return;
     }
     emit(name, payload);
