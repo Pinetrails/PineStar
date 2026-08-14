@@ -32,6 +32,12 @@ const router = makeExecutionRouter({
   environments: { local, docker, ssh }, defaultBackendId: 'local',
   profileForAgent: agentId => profiles[agentId] || 'station-gear'
 });
+let fullPower = false;
+const fullPowerRouter = makeExecutionRouter({
+  environments: { local, docker, ssh }, defaultBackendId: 'local',
+  profileForAgent: agentId => profiles[agentId] || 'station-gear',
+  forceLocalForAgent: () => fullPower
+});
 
 A.eq(router.backendId, 'local', 'legacy backendId remains the station default for old callers');
 A.eq(router.backendIdFor('legacy'), 'local', 'compatibility profile follows the station default');
@@ -39,6 +45,12 @@ A.eq(router.backendIdFor('safe'), 'docker', 'Safe Cell routes to Docker immediat
 A.eq(router.backendIdFor('remote'), 'ssh', 'Remote SSH routes to SSH immediately');
 A.eq(router.backendIdFor('trusted'), 'local', 'Trusted Project routes local');
 A.eq(router.backendIdFor('host'), 'local', 'This Computer routes local');
+A.eq(fullPowerRouter.backendIdFor('safe'), 'docker', 'restricted Safe Cell begins in Docker');
+fullPower = true;
+A.eq(fullPowerRouter.backendIdFor('safe'), 'local', 'Full Power immediately routes a Safe Cell agent onto this computer');
+A.eq(fullPowerRouter.ensureWorkspace('remote'), 'local:workspace:remote', 'Full Power routes host work locally even when the stored profile is SSH');
+fullPower = false;
+A.eq(fullPowerRouter.backendIdFor('safe'), 'docker', 'revoking Full Power restores the stored profile immediately');
 A.eq(router.forAgent('safe').supports.hostileCodeSandbox, true, 'authority can inspect the selected isolated environment');
 A.eq(router.ensureWorkspace('safe'), 'docker:workspace:safe', 'workspace calls route by agent');
 A.eq(router.getCwd('trusted'), 'local:cwd:trusted', 'cwd calls route by agent');

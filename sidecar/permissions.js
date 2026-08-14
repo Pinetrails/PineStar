@@ -63,6 +63,12 @@
     const bypassFn = typeof opts.bypass === 'function' ? opts.bypass : null;
     const bypass = bypassFn ? false : !!opts.bypass;
     const bypassNow = () => { if (bypassFn) { try { return bypassFn() === true; } catch (_) { return false; } } return bypass; };
+    // FULL POWER is stronger than the ordinary no-prompt bypass: the host explicitly authorizes the
+    // whole local computer, including paths that restricted postures reserve for the human. This predicate
+    // is injected from host-owned state and re-read for every call so revocation is immediate.
+    const unrestrictedFn = typeof opts.unrestrictedHost === 'function' ? opts.unrestrictedHost : null;
+    const unrestricted = unrestrictedFn ? false : opts.unrestrictedHost === true;
+    const unrestrictedNow = () => { if (unrestrictedFn) { try { return unrestrictedFn() === true; } catch (_) { return false; } } return unrestricted; };
     const hardline = typeof opts.hardline === 'function' ? opts.hardline : null;
     const sessionKey = opts.sessionKey || 'default';
     const grantsSession = opts.grantsSession instanceof Map ? opts.grantsSession : new Map();
@@ -174,6 +180,9 @@
 
     function consent(call, tool) {
       const scope = scopeOf(tool);
+      // FULL POWER: the Commander's explicit host-wide authority outranks StarNet policy floors.
+      // Input/schema validity, OS permissions and downstream service prerequisites still report normally.
+      if (unrestrictedNow()) return { allow: true, scope: scope, reason: 'full-power' };
       // 1. HARDLINE — unreachable past any flag.
       const hr = hardline ? hardline(call, tool) : null;
       if (hr) return { allow: false, scope: scope, hardline: true, reason: String(hr) + ANTI_RETRY };

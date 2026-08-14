@@ -7,7 +7,7 @@ const Profiles = require('../sidecar/execution-profiles.js');
 A.eq(Profiles.IDS.join(','), 'safe-cell,remote-ssh,trusted-project,this-computer', 'the four selectable execution profiles are stable');
 A.eq(Profiles.normalizeId(null, { backendId: 'docker', approvalMode: 'ask' }), 'station-gear', 'legacy Docker roster preserves its placed-gear capability envelope');
 A.eq(Profiles.normalizeId(null, { backendId: 'local', approvalMode: 'ask' }), 'station-gear', 'legacy local ASK preserves its placed-gear capability envelope');
-A.eq(Profiles.normalizeId(null, { backendId: 'local', approvalMode: 'full' }), 'station-gear', 'legacy Full Access does not silently acquire new tools');
+A.eq(Profiles.normalizeId(null, { backendId: 'local', approvalMode: 'full' }), 'station-gear', 'legacy Full Access preserves its stored profile id while central authority widens the run');
 A.eq(Profiles.normalizeId('garbage', { backendId: 'local', approvalMode: 'ask' }), 'station-gear', 'unknown profile fails to the compatibility envelope');
 const legacy = Profiles.resolve('station-gear', { backendId: 'docker', approvalMode: 'full' });
 A.eq(legacy.requestedBackend, 'docker', 'legacy profile follows the backend already in use');
@@ -38,14 +38,15 @@ A.eq(trusted.physicalDesktopGranted, false, 'a trusted profile does not manufact
 const host = Profiles.resolve('this-computer', { backendId: 'local', approvalMode: 'ask', physicalDesktopLease: false });
 A.eq(host.filesystemScope, 'host-paths-except-hard-floor', 'This Computer widens host paths explicitly');
 A.eq(host.approvalMode, 'ask', 'This Computer can still ask before risky calls');
-A.eq(host.physicalDesktop, 'lease-required', 'This Computer keeps physical desktop on a separate lease');
+A.eq(host.physicalDesktop, 'full-power-or-lease', 'This Computer reports the Full Power or paired-owner desktop routes');
 A.eq(host.physicalDesktopGranted, false, 'profile choice alone does not grant that lease');
 
 const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
 A.ok(/executionProfile\.capabilityObjects[\s\S]{0,180}stationWithObject/.test(src), 'run projection materializes profile capability objects');
 A.ok(/executionProfile\.connectors[\s\S]{0,120}stationWithConnectors/.test(src), 'trusted profiles materialize connector projection');
 A.ok(/executionProfile\.filesystemScope === 'host-paths-except-hard-floor'/.test(src), 'This Computer reaches the path-trust authority seam');
-A.ok(/remoteDesktopAuthorized, masterBypass:[^\n]+fullAccess: agentFullAccessNow/.test(src), 'desktop authority still reads its separate host lease and approval predicate');
+A.ok(/const unrestrictedHostNow = \(\) => FULL_ACCESS \|\| masterBypassOn\(\) \|\| agentFullAccessNow\(\)/.test(src), 'one central predicate composes every Full Power scope');
+A.ok(/Object\.keys\(CAP_REGISTRY\)[\s\S]{0,120}stationWithObject/.test(src), 'Full Power materializes every available built-in capability family');
 A.ok(/exact: '\/api\/execution-profiles'/.test(src), 'backend exposes the authoritative profile/runtime catalog');
 A.ok(!/executionProfile\.physicalDesktopGranted[^\n]+remoteDesktopAuthorized\s*=/.test(src), 'profile data never mints the desktop lease');
 

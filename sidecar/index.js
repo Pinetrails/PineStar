@@ -3353,7 +3353,11 @@ const executionEnvironments = {
 const executionEnvironment = makeExecutionRouter({
   environments: executionEnvironments,
   defaultBackendId: configuredExecutionBackend,
-  profileForAgent: (agentId) => ((agentRoster.get(String(agentId || '')) || {}).executionProfile || 'station-gear')
+  profileForAgent: (agentId) => ((agentRoster.get(String(agentId || '')) || {}).executionProfile || 'station-gear'),
+  // Full Power means this computer, not "all permissions inside a container/SSH profile". Keep the stored
+  // profile intact for revocation, but route every host-authorized command to the local backend while active.
+  forceLocalForAgent: (agentId) => FULL_ACCESS || masterBypassOn()
+    || ((agentRoster.get(String(agentId || '')) || {}).approvalMode === 'full')
 });
 let executionCleanupTimer = null;
 async function sweepIdleExecutionEnvironments() {
@@ -12798,6 +12802,10 @@ async function runOnce(o) {
   // run, every later run/surface, and every run after restart. None of these switches mints the separate
   // physical-desktop lease above.
   const agentFullAccessNow = () => ((agentRoster.get(String(agentId || '')) || {}).approvalMode === 'full');
+  // One central, host-minted meaning for "Full Power": station-wide env/master bypass or this agent's
+  // persisted Full Access posture. Every downstream policy seam reads this source instead of inventing a
+  // niche exception. It is live so a flip or revocation affects the next tool call.
+  const unrestrictedHostNow = () => FULL_ACCESS || masterBypassOn() || agentFullAccessNow();
   // The execution profile is snapshotted for this run's tool projection. Approval remains live and revocable
   // through agentFullAccessNow(); the profile never mints the separate physical-desktop lease.
   const agentExecutionProfileNow = () => {
@@ -13133,7 +13141,8 @@ async function runOnce(o) {
     agentId: (o2 && o2.agentId) || agentId,
     // This Computer widens the path envelope without changing approval posture: ASK still prompts before
     // mutations, while reads of non-protected host paths no longer need a second project-root card.
-    fullAccess: FULL_ACCESS || masterBypassOn() || agentFullAccessNow() || executionProfile.filesystemScope === 'host-paths-except-hard-floor'
+    fullAccess: unrestrictedHostNow() || executionProfile.filesystemScope === 'host-paths-except-hard-floor',
+    unrestrictedHost: unrestrictedHostNow()
   });
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire, editDiagnostics: lspManager }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6); baseline-before-edit LSP feedback
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
@@ -13478,6 +13487,17 @@ async function runOnce(o) {
   if (ownerTrusted || unattendedGrants.indexOf('workbench') >= 0) station = stationWithObject(station, agentId, 'workbench');
   if (ownerTrusted || unattendedGrants.indexOf('connectors') >= 0) station = stationWithConnectors(station, agentId, connectors.ids());
   if (ownerTrusted) station = stationWithObject(station, agentId, 'orchestrator');
+  // FULL POWER is capability authority, not merely a prompt preference. Materialize every execution object
+  // family and every configured connector; unavailable external services still report their real prerequisite.
+  // Keep the pre-existing LEAD-ONLY orchestration invariant: a delegated worker gets the whole computer but not
+  // another team.dispatch tool, preventing recursive worker trees while leaving the Commander-facing lead able
+  // to accept every user task (including delegation).
+  if (unrestrictedHostNow()) {
+    for (const objectType of Object.keys(CAP_REGISTRY)) {
+      if (objectType !== 'orchestrator' || o.lead || ownerTrusted) station = stationWithObject(station, agentId, objectType);
+    }
+    station = stationWithConnectors(station, agentId, connectors.ids());
+  }
   // EXECUTION PROFILE — actual capability projection, not approval theater. Every named profile carries the
   // file cabinet and workbench it advertises; trusted host profiles also carry every enabled connector.
   // Toolset kill-switches, consent, taint, hardlines and the desktop lease are still enforced below.
@@ -13486,10 +13506,13 @@ async function runOnce(o) {
   // TOOLSET kill-switch: a family the Commander switched OFF in the TOOLSETS console is dropped here, so the
   // next model turn reflects it live (no restart). compute is never in this set; MCP connectors are projected
   // below and keep their own per-connector enabled flag, so they are unaffected.
-  let resolved = enforceSyntheticOnly(resolveTools(agentId, station, undefined, { disabledCaps: disabledCapsSet() }), remoteDesktopAuthorized);
+  const nativeDesktopAvailable = DESKTOP_SHELL
+    && /^(1|true|yes|on|win32|windows)$/i.test(String(ENV('COMPUTER_DRIVER') || '').trim());
+  const realDesktopAuthority = remoteDesktopAuthorized || (unrestrictedHostNow() && nativeDesktopAvailable);
+  let resolved = enforceSyntheticOnly(resolveTools(agentId, station, undefined, { disabledCaps: unrestrictedHostNow() ? new Set() : disabledCapsSet() }), realDesktopAuthority);
   // This is a host authority injection, not a room prop: a paired owner asks to control the machine they own,
   // regardless of which agent bay receives the message. It stays invisible to every other run.
-  if (remoteDesktopAuthorized) {
+  if (realDesktopAuthority) {
     for (const g of [
       { capId: 'remote-desktop', tool: 'computer.use', scope: 'execute', requiresConsent: true, network: false },
       { capId: 'remote-desktop', tool: 'desktop.open', scope: 'execute', requiresConsent: true, network: false }
@@ -13514,9 +13537,9 @@ async function runOnce(o) {
   } catch (e) { console.warn('[mcp] connector tool projection failed:', (e && e.message) || e); }
   // Connector projection happens after the base office is resolved. Re-apply the host floor so
   // no dynamic server or future registration order can restore a real-screen tool by name.
-  resolved = enforceSyntheticOnly(resolved, remoteDesktopAuthorized);
+  resolved = enforceSyntheticOnly(resolved, realDesktopAuthority);
   resolved = enforceRunAuthority(resolved, registry, userControlAuthority);
-  resolved = enforceEnabledToolsets(resolved, registry, o.enabledToolsets);
+  resolved = enforceEnabledToolsets(resolved, registry, unrestrictedHostNow() ? null : o.enabledToolsets);
   if (imageTask) {
     const imageRoomId = station.agents && station.agents[agentId] && station.agents[agentId].room;
     const imageRoom = imageRoomId && station.rooms && station.rooms[imageRoomId];
@@ -13580,7 +13603,7 @@ async function runOnce(o) {
     // channel. If that chat explicitly enables approvals, preserve the chosen in-chat prompt behavior instead.
     // a FUNCTION, re-read every call: the master FULL BYPASS switch must take effect — and revoke — on the
     // very next tool call without a restart. The frozen env flag and the per-agent posture ride inside it.
-    bypass: () => FULL_ACCESS || masterBypassOn() || agentFullAccessNow() || (ownerTrusted && !prompt), hardline: hardlineFloor, sessionKey: runId,
+    bypass: () => unrestrictedHostNow() || (ownerTrusted && !prompt), unrestrictedHost: unrestrictedHostNow, hardline: hardlineFloor, sessionKey: runId,
     grantsSession, grantsPermanent, persist: persistAllowlist,
     // Full Access is the persisted per-agent posture, so it applies on every surface and every later task.
     // The hardline floor remains above this broker and still denies protected physical/desktop effects.
@@ -13686,7 +13709,7 @@ async function runOnce(o) {
     },
     // The context carries the host-minted remote-owner lease only for a locally paired Telegram owner.
     // All other run flows remain synthetic-only at the tool boundary.
-  }, runInputContext(accessSurface, isTask, remoteDesktopAuthorized)));
+  }, runInputContext(accessSurface, isTask, remoteDesktopAuthorized, unrestrictedHostNow())));
 
   // ---- provider + cost ----
   // Codex (personal ChatGPT subscription) authenticates with a freshly-refreshed OAuth access_token instead of
@@ -14546,7 +14569,7 @@ async function runOnce(o) {
   const canName = !!(resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('deliverable_note') >= 0);
   const deliverableNote = canName ? DELIVERABLE_NOTE_CLAUSE : '';
   const taskSystem = FinishLine.append((system || '') + runtimeBlock + toolNote + teamNote + manualBlock
-    + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock
+    + summarizeCapabilities(resolved, { surface, ownerTrusted, unrestrictedHost: unrestrictedHostNow() }) + skillBlock + runtimeSkillBlock
     + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock
     + deliverableNote, { isTask, internal, tools: resolved.tools });
   const sys = internal

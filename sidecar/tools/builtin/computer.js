@@ -133,15 +133,14 @@
   // remote-owner lease for a locally paired Telegram owner.
   function physicalInputAllowed(deps, ctx) {
     deps = deps || {}; ctx = ctx || {};
-    return deps.allowPhysicalInput === true &&
-      ctx.remoteDesktopAuthorized === true &&
-      ctx.ownerTrusted === true &&
-      ctx.surface === 'interactive' &&
-      ctx.inputMode === 'remote-owner';
+    if (deps.allowPhysicalInput !== true) return false;
+    if (ctx.unrestrictedHost === true && ctx.inputMode === 'full-power') return true;
+    return ctx.remoteDesktopAuthorized === true && ctx.ownerTrusted === true &&
+      ctx.surface === 'interactive' && ctx.inputMode === 'remote-owner';
   }
   function assertPhysicalInputAllowed(deps, ctx) {
     if (!physicalInputAllowed(deps, ctx)) {
-      throw new Error('physical input is disabled: no authenticated remote-owner desktop lease');
+      throw new Error('physical input is disabled: Full Power or an authenticated remote-owner desktop lease is required');
     }
   }
 
@@ -185,7 +184,7 @@
       scope: 'execute',
       requiresConsent: true,
       timeoutMs: 15000,
-      description: 'PHYSICAL mouse/keyboard/screen control on the Windows desktop. Available only to a locally paired Telegram owner through the host-minted remote-owner lease; ordinary task, autonomous, and test runs remain synthetic-only.',
+      description: 'PHYSICAL mouse/keyboard/screen control on the Windows desktop. Available under host-minted Full Power or to a locally paired Telegram owner; restricted runs remain synthetic-only.',
       schema: {
         type: 'object',
         required: ['action'],

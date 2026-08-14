@@ -3,7 +3,8 @@
    1) DERIVATION — toolsetRows() is derived straight from CAP_REGISTRY: every toggleable family present, tool
       lists match the registry, `compute` is never a row, consent summary is truthful, granting object correct.
    2) FILTER — resolveTools drops a disabled family's grants (and ONLY that family), compute is NEVER filtered,
-      and MCP-style projected tools (not in CAP_REGISTRY) are untouched by the toolset filter.
+      and MCP-style projected tools (not in CAP_REGISTRY) are untouched by the toolset filter. The run path
+      supplies those disabled families only outside explicit Full Power; Full Power projects every family.
    3) SOURCE GUARD — the sidecar store idiom (durable persist, sparse OFF-only) + endpoints exist and refuse
       compute; the frontend surfaces a TOOLSETS section while keeping every guarded connectors/Spotify string. */
 'use strict';
@@ -88,7 +89,8 @@ function stationWith(types) {
   A.ok(/handleToolsetsList/.test(idx) && /\/api\/toolsets/.test(idx), 'GET /api/toolsets wired');
   A.ok(/handleToolsetToggle/.test(idx) && /\/api\/toolsets\//.test(idx), 'POST /api/toolsets/:id wired');
   A.ok(/compute.*cannot be toggled|cannot be toggled/.test(idx), 'the toggle route refuses compute');
-  A.ok(/disabledCaps:\s*disabledCapsSet\(\)/.test(idx), 'the run path feeds disabledCaps into resolveTools (live-apply)');
+  A.ok(/disabledCaps:\s*unrestrictedHostNow\(\)\s*\?\s*new Set\(\)\s*:\s*disabledCapsSet\(\)/.test(idx),
+    'the run path live-applies disabled toolsets in restricted modes and ignores them in Full Power');
 
   // ---------- 4. SOURCE GUARD: frontend surface + every guarded connectors/Spotify string kept ----------
   const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'windows', 'connectors.js'), 'utf8');   // CONNECTORS window extracted from stationui.js (BUILDERS split)

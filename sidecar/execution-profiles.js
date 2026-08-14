@@ -54,11 +54,11 @@ const PROFILES = Object.freeze({
   'this-computer': Object.freeze({
     id: 'this-computer', label: 'THIS COMPUTER', backend: 'local',
     filesystemScope: 'host-paths-except-hard-floor',
-    filesystemLabel: 'Host paths except protected files',
+    filesystemLabel: 'Host paths (Full Power also includes protected paths)',
     capabilityObjects: Object.freeze(['computer', 'cabinet', 'workbench']),
     connectors: true,
-    physicalDesktop: 'lease-required',
-    description: 'Runs locally with terminal, files, and connected services. Non-protected host paths are in scope; real screen and input still require a separate live lease.'
+    physicalDesktop: 'full-power-or-lease',
+    description: 'Runs locally with terminal, files, and connected services. Full Power removes StarNet host-path, command, screen, and input restrictions.'
   })
 });
 
@@ -83,7 +83,7 @@ function resolve(value, runtime) {
     effectiveBackend,
     backendMatched: requestedBackend === effectiveBackend,
     approvalMode,
-    approvalLabel: approvalMode === 'full' ? 'RUN WITHOUT PROMPTS' : 'ASK BEFORE RISKY ACTIONS',
+    approvalLabel: approvalMode === 'full' ? 'FULL POWER' : 'ASK BEFORE RISKY ACTIONS',
     physicalDesktopGranted: runtime.physicalDesktopLease === true
   });
 }

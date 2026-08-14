@@ -115,6 +115,9 @@ A.ok(remoteOwnerAuthority.authorize({}, { name: 'desktop.open', capability: 'vis
 const remoteCtx = runInputContext('autonomous', true, true);
 A.eq(remoteCtx.inputMode, 'remote-owner', 'remote owner context is explicitly distinct from synthetic input');
 A.ok(remoteCtx.remoteDesktopAuthorized, 'remote owner context carries the host lease bit');
+const fullPowerCtx = runInputContext('autonomous', true, false, true);
+A.eq(fullPowerCtx.inputMode, 'full-power', 'Full Power context is explicitly host-wide');
+A.ok(fullPowerCtx.physicalInputAuthorized && fullPowerCtx.unrestrictedHost, 'Full Power context carries physical and unrestricted host authority');
 
 /* UNATTENDED CONNECTOR GRANT — the Commander's own MCP servers, callable by a granted routine. The critical
    property: external-unknown is ALSO the fail-closed default for anything the host cannot classify, so the
@@ -265,7 +268,7 @@ A.eq(backgroundOwnsLoopbackUrl({ running: true, tail: 'Local: https://[::1]:4443
   let driverCalls = 0, openerCalls = 0;
   const registry = makeRegistry();
   makeComputerTools({ allowPhysicalInput: true, driver: { perform: async () => { driverCalls++; return {}; } } }).register(registry);
-  makeDesktopTools({ opener: async () => { openerCalls++; return 'opened'; } }).register(registry);
+  makeDesktopTools({ allowRemoteDesktop: true, opener: async () => { openerCalls++; return 'opened'; } }).register(registry);
   const exposed = registry.wireFormat(registry.list(safe.tools)).map(x => x.function.name);
   A.ok(!exposed.includes('computer.use') && !exposed.includes('desktop.open'), 'provider wire format contains no real-input/real-screen tool');
   const ctx = Object.assign(makeCapCtx(safe), {
@@ -289,5 +292,17 @@ A.eq(backgroundOwnsLoopbackUrl({ running: true, tail: 'Local: https://[::1]:4443
   const hardDesktop = await registry.dispatch({ id: 'c4', name: 'desktop.open', args: { target: 'notepad' } }, hardCtx);
   A.eq(hardComputer.summary, 'user-control-denied', 'central authority denies forged physical input before Full Access');
   A.eq(hardDesktop.summary, 'user-control-denied', 'central authority denies forged visible desktop before Full Access');
+
+  const fullAuthority = makeRunAuthority({ surface: 'autonomous', isTask: true, fullAccess: true });
+  const fullResolved = enforceRunAuthority(enforceSyntheticOnly(legacyRaw, true), registry, fullAuthority);
+  const fullCtx = Object.assign(makeCapCtx(fullResolved), runInputContext('autonomous', true, false, true), {
+    authorize: fullAuthority.authorize,
+    consent: async () => ({ allow: true, reason: 'full-power' })
+  });
+  const fullComputer = await registry.dispatch({ id: 'c5', name: 'computer.use', args: { action: 'wait', durationMs: 1 } }, fullCtx);
+  const fullDesktop = await registry.dispatch({ id: 'c6', name: 'desktop.open', args: { target: 'notepad' } }, fullCtx);
+  A.ok(fullComputer.ok === true && fullDesktop.ok === true, 'Full Power reaches physical input and visible desktop through every dispatch gate');
+  A.eq(driverCalls, 1, 'Full Power reaches the native input driver exactly once');
+  A.eq(openerCalls, 1, 'Full Power reaches the visible desktop opener exactly once');
   A.report('inputpolicy.test');
 })().catch(e => { console.error(e); process.exit(1); });

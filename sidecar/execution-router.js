@@ -11,6 +11,7 @@ function makeExecutionRouter(deps) {
   const environments = deps.environments || {};
   const defaultBackendId = String(deps.defaultBackendId || 'local');
   const profileForAgent = typeof deps.profileForAgent === 'function' ? deps.profileForAgent : (() => 'station-gear');
+  const forceLocalForAgent = typeof deps.forceLocalForAgent === 'function' ? deps.forceLocalForAgent : (() => false);
   if (!environments[defaultBackendId]) throw new Error('execution router missing default backend "' + defaultBackendId + '"');
 
   function backendForProfile(profileId) {
@@ -20,7 +21,11 @@ function makeExecutionRouter(deps) {
     if (profileId === 'trusted-project' || profileId === 'this-computer') return environments.local ? 'local' : defaultBackendId;
     return defaultBackendId;
   }
-  function backendIdFor(agentId) { return backendForProfile(profileForAgent(String(agentId || 'agent'))); }
+  function backendIdFor(agentId) {
+    const id = String(agentId || 'agent');
+    try { if (environments.local && forceLocalForAgent(id) === true) return 'local'; } catch (_) {}
+    return backendForProfile(profileForAgent(id));
+  }
   function forAgent(agentId) {
     const id = backendIdFor(agentId);
     return environments[id] || environments[defaultBackendId];
