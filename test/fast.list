@@ -226,6 +226,7 @@ test/runstore.test.js
 test/run-journal.test.js
 test/runrecoveries-ui.test.js
 test/run-recovery-continuation.test.js
+test/run-recovery-ui.test.js
 test/run-journal.loop.test.js
 test/longhaul-retention.test.js
 test/autonomy-ledger.test.js

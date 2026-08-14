@@ -44,8 +44,10 @@ const Chat = (() => {
   const aborters = new Map();   // workstreamId -> AbortController for that stream's in-flight run
   const interrupted = new Set();   // wsIds the Commander deliberately STOPPED this turn — send()'s catch reads this as a
                                    // graceful stop (keep the partial reply, log no error) rather than a disconnect. Consumed in finally.
-  const interruptedStreams = new Set();   // CRASH HONESTY: wsIds whose in-flight run died on a NETWORK drop (sidecar
-                                   // crash / lost connection). On a proven reconnect we tell the Commander the run can't resume.
+  const interruptedStreams = new Set();   // wsIds whose in-flight run lost its stream; durable recovery decides
+                                   // whether work resumes automatically or stops for explicit review.
+  const recoveryClaims = new Set();       // source run ids already being recovered by this page
+  const recoveryNotices = new Set();      // review-required run ids already explained on this page
   let reconnectTimer = 0;          // the single reconnect health-probe poll (armed only while interruptedStreams is non-empty)
   const queued = new Map();        // TYPE-AHEAD: wsId -> [text,…] follow-ups typed while the stream was busy; auto-sent in order as it frees
   let activeLiveRow = null;     // streaming text controller for the DISPLAYED stream's in-flight run; rebound by replayChannel on switch
@@ -360,6 +362,74 @@ const Chat = (() => {
   // PROVABLY back, then tell the Commander their interrupted run can't resume. Truthful telemetry: the
   // "connection restored" line renders ONLY after a real 200 from the respawned sidecar, never on hope. The
   // probe self-arms on the drop and self-clears once every interrupted stream has been reported.
+  async function offerRecoveryReview(row, ws) {
+    if (!row || !ws || !isActiveWs(ws) || Channels.isBusy(ws.id)
+      || !Harness.resolveRunRecovery || !Harness.prepareReviewedRecovery) return;
+    const continueResolved = async resolved => {
+      if (!resolved || !resolved.canContinue) {
+        toolLine('recovery remains paused — the outcome is still unknown. Check it directly, then start a new turn with what you found.', true);
+        return;
+      }
+      try {
+        const recovery = await Harness.prepareReviewedRecovery(resolved);
+        if (!isActiveWs(ws) || Channels.isBusy(ws.id)) return;
+        toolLine('outcome recorded — continuing without replaying the reviewed action.');
+        await send(String(row.userTitle || 'Continue the interrupted task.'), { retry: true, recoveryResume: true, recovery });
+      } catch (_) { toolLine('the recovery decision was saved, but continuation could not start yet. Reopen this session to retry safely.', true); }
+    };
+    if (row.canContinue) { await continueResolved(row); return; }
+    const calls = Array.isArray(row.uncertain) ? row.uncertain.slice() : [];
+    const outcomes = [];
+    const ask = index => {
+      if (!isActiveWs(ws) || index >= calls.length) return;
+      const call = calls[index];
+      toolLine('before the restart, did ' + String(call.name || 'this action') + ' actually happen? StarNet will not run it again while the answer is uncertain.', true);
+      choices([
+        { label: 'It happened', value: 'happened' },
+        { label: 'It did not happen', value: 'did_not_happen' },
+        { label: 'I am not sure', value: 'unknown', quiet: true }
+      ], async picked => {
+        outcomes.push({ callId: String(call.callId || ''), outcome: String((picked && picked.value) || 'unknown') });
+        if (index + 1 < calls.length) { ask(index + 1); return; }
+        try { await continueResolved(await Harness.resolveRunRecovery(row, outcomes)); }
+        catch (_) { toolLine('the recovery answer could not be saved. No action was replayed; reopen this session and try again.', true); }
+      });
+    };
+    if (calls.length) ask(0);
+  }
+
+  async function recoverSafeRun(ws, announce) {
+    if (!ws || !ws.id || Channels.isBusy(ws.id) || typeof Harness === 'undefined'
+      || !Harness.runRecoveries || !Harness.prepareAutomaticRecovery) return 'deferred';
+    let rows;
+    try { rows = await Harness.runRecoveries(); } catch (_) { return 'unavailable'; }
+    const owned = rows.filter(r => r && r.streamId === ws.id && r.agentId === (ws.agentId || 'agent'))
+      .sort((a, b) => (+b.startedAt || 0) - (+a.startedAt || 0));
+    const safe = owned.find(r => r.canAutoContinue && !recoveryClaims.has(r.runId));
+    if (!safe) {
+      const review = owned.find(r => r.operationalState === 'needs_review');
+      if (review && announce && isActiveWs(ws) && !recoveryNotices.has(review.runId)) {
+        recoveryNotices.add(review.runId);
+        const names = (review.uncertain || []).map(x => x.name || 'action').join(', ');
+        toolLine('recovery paused — ' + (names || 'an action') + ' may already have happened. StarNet will not repeat it; verify the outcome before continuing.', true);
+        offerRecoveryReview(review, ws);
+      }
+      return review ? 'review' : 'none';
+    }
+    recoveryClaims.add(safe.runId);
+    if (announce && isActiveWs(ws)) toolLine('connection restored — safely continuing from the last durable step.');
+    let recovery;
+    try { recovery = await Harness.prepareAutomaticRecovery(safe); }
+    catch (_) { recoveryClaims.delete(safe.runId); return 'unavailable'; }
+    // Preparation is durable and idempotent. If focus changed while it was in flight, leave it ready for the
+    // next load instead of crossing conversations.
+    if (!isActiveWs(ws) || Channels.isBusy(ws.id)) { recoveryClaims.delete(safe.runId); return 'deferred'; }
+    await send(String(safe.userTitle || 'Continue the interrupted task.'), {
+      retry: true, recoveryResume: true, recovery
+    });
+    return 'started';
+  }
+
   async function probeReconnect() {
     if (!interruptedStreams.size) { reconnectTimer = 0; return; }
     let alive = false;
@@ -368,9 +438,13 @@ const Chat = (() => {
       // report each interrupted stream once. Only the DISPLAYED stream draws a line (same rule as tool/error
       // lines); a background stream's flag is cleared quietly — its error row already recorded the failure.
       const wasActive = activeWs && interruptedStreams.has(activeWs.id);
+      const active = wasActive ? activeWs : null;
       interruptedStreams.clear();
       reconnectTimer = 0;
-      if (wasActive) toolLine('⏹ connection restored — your last run was interrupted and can\'t resume; start it again.', true);
+      if (active) {
+        const outcome = await recoverSafeRun(active, true);
+        if (outcome === 'none' || outcome === 'unavailable') toolLine('connection restored — no safe automatic continuation was available; use Try again.', true);
+      }
     } else {
       reconnectTimer = setTimeout(probeReconnect, 3000);   // still down — keep watching
     }
@@ -1114,6 +1188,9 @@ const Chat = (() => {
     }
     pinLoadedHistoryAfterLayout(historyPin);
     reconcileServerHistory(activeWs, historyPin);
+    // Reconcile a run that died while this page was closed or the sidecar restarted. Only the server's durable
+    // safe verdict can start work; uncertain mutations remain paused and visible.
+    if (activeWs) { const w = activeWs; setTimeout(() => { if (isActiveWs(w)) recoverSafeRun(w, true); }, 0); }
   }
 
   async function restoreTaskQuestion(ws) {
@@ -7279,7 +7356,8 @@ const Chat = (() => {
   }
 
   async function send(text, opts) {
-    const retry = !!(opts && opts.retry);   // RETRY re-runs the last user message (already in the thread) — don't echo it again
+    const retry = !!(opts && opts.retry);   // retry/recovery reuses a durable user turn — don't echo it again
+    const recoveryResume = !!(opts && opts.recoveryResume && opts.recovery);
     // ATTACHMENTS: photos/files staged in the composer, snapshotted by the Enter handler into opts.attachments as
     // lightweight refs { id,name,path,mediaType,kind }. They ride the user turn (history + /api/run) and the
     // sidecar expands them into image/text content blocks at run time. Empty on a plain text turn / a RETRY.
@@ -7329,7 +7407,7 @@ const Chat = (() => {
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
     }
 
-    const isTask = !!pending || Classify.isTaskDirective(text);
+    const isTask = recoveryResume || !!pending || Classify.isTaskDirective(text);
     // INTENT OFFER: a real, fresh directive is the one moment the Commander has stated what they want in their
     // own words — the only honest place to say "there is a class built for exactly this". Gated to genuine new
     // work: never a retry (already offered on the original), never a recipe launch (they came FROM the library),
@@ -7468,6 +7546,7 @@ const Chat = (() => {
       const { text: reply, error, endReason, finishReason, budgetScope, budgetCapUsd } = await Harness.chat({
         system: sys, messages: historyWindow(ws), agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
         taskAction: taskAction || undefined,
+        recovery: recoveryResume ? opts.recovery : undefined,
         recipeId: recipeId || undefined,   // provenance spine: the launching recipe rides to the durable run row (undefined for non-recipe runs)
         projectRoot: ws.projectRoot || undefined,   // project-anchored session: the sidecar injects the folder context ONLY if the root is still a standing blessed grant (truthful)
         placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(ws.agentId || 'agent') : [],   // THE MOAT: this run's TOOL reach = the agent's REAL placed props (dish→web · cabinet→files · workbench→terminal · …); compute is the freebie
@@ -7553,10 +7632,8 @@ const Chat = (() => {
             if (isActiveWs(ws) && input) { input.value = text; autoGrowInput(); }
           }
         } else {
-        // CRASH HONESTY: a network-kind failure on an in-flight run = the stream to the sidecar dropped (the
-        // sidecar crashed / the app lost the connection). The run can't be resumed — the sidecar respawns fresh.
-        // Flag this stream so that WHEN the sidecar is provably back (health probe on reconnect) we tell the
-        // Commander their run was interrupted and must be restarted, instead of leaving a silent dead run.
+        // A network-kind failure means this response stream died. The durable journal—not this transport error—
+        // decides whether the task resumes safely or pauses for mutation review after the sidecar reconnects.
         if (v.kind === 'network' && thisRunId) { interruptedStreams.add(ws.id); armReconnectWatch(); }
         persistPartial(ws, acc);
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); }

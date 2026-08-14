@@ -96,6 +96,15 @@ function fakeProvider(argsRaw) {
     role: 'assistant', content: '', tool_calls: [{ id: 'corrupt-call', type: 'function', function: { name: 'shell_exec', arguments: argsRaw } }]
   }] });
   journal.toolIntent('corrupt-run', { callId: 'corrupt-call', name: 'shell.exec', argsRaw, replayFingerprint: fingerprint, mutating: true });
+  journal.begin({ runId: 'auto-run', agentId, streamId: 'auto-stream', trigger: 'directive', model: 'fixture-model' });
+  journal.checkpoint('auto-run', { phase: 'initial', turn: 0, messages: [
+    { role: 'system', content: 'Fixture system' }, { role: 'user', content: 'Safely continue after restart.' }
+  ] });
+  journal.checkpoint('auto-run', { phase: 'assistant', turn: 1, messages: [{
+    role: 'assistant', content: '', tool_calls: [{ id: 'auto-read-call', type: 'function', function: { name: 'fs_read', arguments: '{"path":"counter.log"}' } }]
+  }] });
+  journal.toolIntent('auto-run', { callId: 'auto-read-call', name: 'fs.read', argsRaw: '{"path":"counter.log"}', mutating: false, boundaryModel: 'prepared-dispatch-v1' });
+  journal.toolDispatch('auto-run', { callId: 'auto-read-call', name: 'fs.read', mutating: false });
   const corruptFile = path.join(ws, '.run-journal', crypto.createHash('sha256').update('corrupt-run').digest('hex') + '.jsonl');
   fs.appendFileSync(corruptFile, '{torn-tail\n', 'utf8');
 
@@ -147,6 +156,19 @@ function fakeProvider(argsRaw) {
     A.eq(row.status, 'needs_review', 'reboot exposes the crash between mutating intent and durable result');
     const corruptRow = listed.body.recoveries.find(x => x.runId === 'corrupt-run');
     A.ok(corruptRow.forensicOnly && !corruptRow.canResolve && !corruptRow.canContinue, 'corrupt journal is visible but remains forensic-only after prefix repair');
+    const autoRow = listed.body.recoveries.find(x => x.runId === 'auto-run');
+    A.ok(autoRow.canAutoContinue && autoRow.operationalState === 'recoverable', 'uncertainty-free interrupted run advertises automatic recovery');
+    const autoPrepared = await request('POST', '/api/run-recoveries/continue', {
+      runId: 'auto-run', agentId, recoveryToken: autoRow.recoveryToken,
+      continuationId: 'automatic-fixture', mode: 'automatic'
+    });
+    A.eq(autoPrepared.status, 200, 'automatic-safe continuation needs no human no-replay judgment');
+    A.eq(autoPrepared.body.recovery.continuation.mode, 'automatic', 'API preserves the durable automatic recovery mode');
+    const unsafeAuto = await request('POST', '/api/run-recoveries/continue', {
+      runId: 'crashed-run', agentId, recoveryToken: row.recoveryToken,
+      continuationId: 'automatic-unsafe', mode: 'automatic'
+    });
+    A.eq(unsafeAuto.status, 409, 'uncertain mutation cannot enter the automatic recovery API');
     const resolution = await request('POST', '/api/run-recoveries/resolve', {
       runId: 'crashed-run', agentId, recoveryToken: row.recoveryToken, resolutionId: 'resolution-fixture', confirmedNoReplay: true,
       outcomes: [{ callId: 'original-call', outcome: 'happened' }]
@@ -216,6 +238,22 @@ function fakeProvider(argsRaw) {
     A.eq(retry.status, 409, 'retrying a consumed continuation is refused before another run starts');
     A.eq(provider.requests.length, 2, 'a retry makes no additional provider call or side effect');
 
+    const autoContinued = await streamRun({
+      model: 'fixture-model', provider: 'custom', baseUrl: 'http://' + HOST + ':' + provider.port + '/v1',
+      system: '', messages: [], agentId, isTask: true, streamId: 'auto-stream',
+      recovery: {
+        sourceRunId: 'auto-run', continuationId: 'automatic-fixture',
+        continuationToken: autoPrepared.body.continuationToken
+      }
+    });
+    A.eq(autoContinued.status, 200, 'ordinary run host consumes an automatically prepared safe continuation');
+    A.ok(autoContinued.events.some(e => e.name === 'agent.token' && /Continuation complete/.test(String(e.payload && e.payload.delta))), 'automatic continuation reaches a real provider completion');
+    A.eq(provider.requests.length, 3, 'automatic continuation performs exactly one new provider request');
+    const autoMessages = provider.requests[2].messages || [];
+    A.ok(autoMessages.some(m => m.role === 'tool' && m.tool_call_id === 'auto-read-call' && /read-only call had no durable result/.test(String(m.content || ''))), 'automatic provider history pairs the interrupted read with host recovery truth');
+    const autoFinished = (await request('GET', '/api/run-recoveries')).body.recoveries.find(x => x.runId === 'auto-run');
+    A.eq([autoFinished.continuation.mode, autoFinished.continuation.state], ['automatic', 'finished'], 'automatic continuation settles durably as finished');
+
     try { child.kill(); } catch (_) {} await sleep(250);
     booted = await bootSidecar(port + 300, ws, 30); child = booted.child; port = booted.port; await refreshToken();
     const rebooted = await request('GET', '/api/run-recoveries');
@@ -225,6 +263,8 @@ function fakeProvider(argsRaw) {
     A.eq(fs.readFileSync(counterPath, 'utf8'), 'x', 'second reboot still proves exactly one effect');
     const durableCorrupt = rebooted.body.recoveries.find(x => x.runId === 'corrupt-run');
     A.ok(durableCorrupt.forensicOnly && !durableCorrupt.canResolve && !durableCorrupt.canContinue, 'second reboot cannot promote a repaired corrupt prefix into an in-app action');
+    const durableAuto = rebooted.body.recoveries.find(x => x.runId === 'auto-run');
+    A.eq([durableAuto.continuation.mode, durableAuto.continuation.state], ['automatic', 'finished'], 'second reboot preserves completed automatic recovery');
   } finally {
     try { child.kill(); } catch (_) {} try { provider.server.close(); } catch (_) {}
     await sleep(150); try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}

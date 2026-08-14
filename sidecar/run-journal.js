@@ -242,7 +242,9 @@ function analyze(records, corrupt) {
     baseCheckpoint: baseCheckpoint || {}, deltaCheckpoint: latestCheckpoint || {},
     checkpoint: checkpoint || {}, finish: finishPayload,
     resolution: resolutionValid ? resolution : null,
-    continuation: resolutionValid ? continuation : null
+    // Automatic continuation exists only on uncertainty-free journals. Reviewed continuation remains bound to
+    // a valid operator resolution. Never expose a continuation record alongside unresolved uncertainty.
+    continuation: (resolutionValid || !uncertain.length) ? continuation : null
   };
 }
 
@@ -344,9 +346,13 @@ function makeRunJournal(opts) {
         if (state.continuation.continuationId === continuationId) return state;
         throw resolutionError('run already has a different durable continuation');
       }
-      if (state.status !== 'resolved' || !state.resolution || state.corrupt) throw resolutionError('run is not safely continuable');
+      const mode = payload.mode === 'automatic' ? 'automatic' : 'reviewed';
+      const reviewed = state.status === 'resolved' && !!state.resolution;
+      const automatic = mode === 'automatic' && state.status === 'resumable' && !state.uncertain.length;
+      if ((!reviewed && !automatic) || state.corrupt) throw resolutionError('run is not safely continuable');
       record(runId, 'continuation_ready', {
         continuationId,
+        mode,
         operator: String(payload.operator || 'local'),
         preparedAt: Number(payload.preparedAt || now()),
         blockedFingerprints: (Array.isArray(payload.blockedFingerprints) ? payload.blockedFingerprints : []).map(String).sort(),

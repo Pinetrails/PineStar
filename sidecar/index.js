@@ -17155,6 +17155,20 @@ function canContinueRunRecovery(r) {
   if (!r || r.status !== 'resolved' || (r.continuation && r.continuation.state !== 'ready')) return false;
   try { RunRecovery.continuationPlan(r); return true; } catch (_) { return false; }
 }
+function canAutoContinueRunRecovery(r) {
+  if (!r || r.status !== 'resumable' || (r.continuation && r.continuation.state !== 'ready')) return false;
+  try { RunRecovery.automaticContinuationPlan(r); return true; } catch (_) { return false; }
+}
+function runRecoveryOperationalState(r) {
+  if (!r) return 'failed_actionable';
+  const c = r.continuation;
+  if (c && c.state === 'started') return 'recovering';
+  if (c && c.state === 'finished') return c.reason === 'done' ? 'completed' : 'failed_actionable';
+  if (r.status === 'needs_review' || r.status === 'resolved') return 'needs_review';
+  if (r.status === 'resumable') return 'recoverable';
+  if (r.status === 'awaiting_commit') return 'recovering';
+  return 'failed_actionable';
+}
 function runRecoveryDto(r) {
   const safeMessage = m => {
     const out = { role: String((m && m.role) || ''), content: m && m.content != null ? m.content : '' };
@@ -17182,6 +17196,8 @@ function runRecoveryDto(r) {
     forensicOnly: !!r.forensicOnly,
     canResolve: r.status === 'needs_review' && !r.corrupt && !r.repairError && !r.forensicOnly,
     canContinue: canContinueRunRecovery(r),
+    canAutoContinue: canAutoContinueRunRecovery(r),
+    operationalState: runRecoveryOperationalState(r),
     resolution: r.resolution ? {
       resolutionId: String(r.resolution.resolutionId || ''),
       operator: String(r.resolution.operator || ''),
@@ -17191,6 +17207,7 @@ function runRecoveryDto(r) {
     } : null,
     continuation: r.continuation ? {
       continuationId: String(r.continuation.continuationId || ''),
+      mode: String(r.continuation.mode || 'reviewed'),
       state: String(r.continuation.state || ''),
       preparedAt: Number(r.continuation.preparedAt || 0),
       startedAt: Number(r.continuation.startedAt || 0),
@@ -17292,7 +17309,8 @@ async function handleRunRecoveryContinue(req, res) {
     || !/^[A-Za-z0-9._:-]{8,100}$/.test(continuationId)) {
     return json(400, { error: 'runId, owned agentId, and continuationId are required' });
   }
-  if (body.confirmedSafeContinuation !== true) {
+  const automatic = body.mode === 'automatic';
+  if (!automatic && body.confirmedSafeContinuation !== true) {
     return json(400, { error: 'explicit safe-continuation confirmation is required' });
   }
   let current;
@@ -17301,6 +17319,9 @@ async function handleRunRecoveryContinue(req, res) {
   if (String((current.meta && current.meta.agentId) || '') !== agentId) return json(403, { error: 'forbidden' });
   if (current.continuation) {
     if (current.continuation.continuationId !== continuationId) return json(409, { error: 'a different continuation already exists' });
+    if (String(current.continuation.mode || 'reviewed') !== (automatic ? 'automatic' : 'reviewed')) {
+      return json(409, { error: 'continuation mode does not match the durable preparation' });
+    }
     return json(200, {
       ok: true, idempotent: true, canStart: current.continuation.state === 'ready',
       continuationToken: current.continuation.state === 'ready' ? runContinuationToken(current) : '',
@@ -17311,11 +17332,12 @@ async function handleRunRecoveryContinue(req, res) {
     return json(409, { error: 'recovery changed; reload before continuing' });
   }
   let plan;
-  try { plan = RunRecovery.continuationPlan(current); }
+  try { plan = automatic ? RunRecovery.automaticContinuationPlan(current) : RunRecovery.continuationPlan(current); }
   catch (e) { return json(409, { error: String((e && e.message) || e) }); }
   try {
     const next = markRunRecoveryForensic(runJournal.prepareContinuation(runId, {
       continuationId, operator: 'local', preparedAt: Date.now(),
+      mode: automatic ? 'automatic' : 'reviewed',
       blockedFingerprints: plan.blockedFingerprints, context: plan.context
     }));
     return json(200, {
@@ -17342,7 +17364,11 @@ function consumeRunRecoveryContinuation(request, agentId, continuedRunId) {
   if (!c || c.state !== 'ready' || c.continuationId !== continuationId) return { ok: false, code: 409, error: 'continuation is not ready or was already consumed' };
   if (!constantTimeTextEqual(body.continuationToken, runContinuationToken(current))) return { ok: false, code: 409, error: 'continuation token is stale' };
   let plan;
-  try { plan = RunRecovery.continuationPlan(current); }
+  try {
+    plan = c.mode === 'automatic'
+      ? RunRecovery.automaticContinuationPlan(current)
+      : RunRecovery.continuationPlan(current);
+  }
   catch (e) { return { ok: false, code: 409, error: String((e && e.message) || e) }; }
   if (JSON.stringify(plan.blockedFingerprints) !== JSON.stringify(c.blockedFingerprints || [])
     || String(plan.context || '') !== String(c.context || '')) {

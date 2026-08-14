@@ -1145,11 +1145,73 @@ const Harness = (() => {
       .catch(() => done(timedOut ? null : false));
   }
 
+  // Durable interrupted-run recovery. Listing is read-only; preparation is accepted only when the sidecar's
+  // journal proves there is no uncertain dispatched mutation. The returned token is one-shot and consumed by
+  // the ordinary /api/run path, so recovery does not create a privileged second execution route.
+  async function runRecoveries() {
+    const r = await fetch('/api/run-recoveries?limit=100', { cache: 'no-store' });
+    if (!r.ok) throw new Error('recovery list unavailable');
+    const j = await r.json();
+    return Array.isArray(j && j.recoveries) ? j.recoveries : [];
+  }
+  async function prepareAutomaticRecovery(row) {
+    row = row || {};
+    const continuationId = row.continuation && row.continuation.state === 'ready'
+      ? String(row.continuation.continuationId || '')
+      : ((typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('auto-' + Date.now()));
+    const r = await fetch('/api/run-recoveries/continue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        runId: String(row.runId || ''), agentId: String(row.agentId || ''),
+        recoveryToken: String(row.recoveryToken || ''), continuationId, mode: 'automatic'
+      })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.continuationToken) throw new Error(String(j.error || 'automatic recovery could not be prepared'));
+    return {
+      sourceRunId: String(row.runId || ''), continuationId,
+      continuationToken: String(j.continuationToken)
+    };
+  }
+  async function resolveRunRecovery(row, outcomes) {
+    row = row || {};
+    const resolutionId = 'review-ui-' + String(row.runId || '').replace(/[^A-Za-z0-9._:-]/g, '').slice(0, 80);
+    const r = await fetch('/api/run-recoveries/resolve', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        runId: String(row.runId || ''), agentId: String(row.agentId || ''),
+        recoveryToken: String(row.recoveryToken || ''), resolutionId,
+        confirmedNoReplay: true, outcomes: Array.isArray(outcomes) ? outcomes : []
+      })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.recovery) throw new Error(String(j.error || 'recovery decision could not be saved'));
+    return j.recovery;
+  }
+  async function prepareReviewedRecovery(row) {
+    row = row || {};
+    const continuationId = row.continuation && row.continuation.state === 'ready'
+      ? String(row.continuation.continuationId || '')
+      : ('review-continue-' + String(row.runId || '').replace(/[^A-Za-z0-9._:-]/g, '').slice(0, 70));
+    const r = await fetch('/api/run-recoveries/continue', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        runId: String(row.runId || ''), agentId: String(row.agentId || ''),
+        recoveryToken: String(row.recoveryToken || ''), continuationId,
+        confirmedSafeContinuation: true, mode: 'reviewed'
+      })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.continuationToken) throw new Error(String(j.error || 'reviewed recovery could not be prepared'));
+    return { sourceRunId: String(row.runId || ''), continuationId, continuationToken: String(j.continuationToken) };
+  }
+
   return {
     pingEngine,
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
     getKey, setKey, setKeyPool, validateAndSetKeyPool, keyPoolSize, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, refreshCreditsConfigured, hasStoredCredential, setDesktopConfigured,
     listModels, probeProvider, validateAndSetKey, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, consentAnswer, summonAck, notebook,
+    runRecoveries, prepareAutomaticRecovery, resolveRunRecovery, prepareReviewedRecovery,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPending, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,
