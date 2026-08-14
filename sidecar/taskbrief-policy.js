@@ -51,8 +51,9 @@ function routeReply(text, explicit) {
   return { action: 'answer', text: raw };
 }
 
-function validateQuestion(candidate, brief) {
-  const c = candidate && typeof candidate === 'object' ? candidate : {};
+// Per-question field rules, shared by the single and batched paths. `call` carries call-level
+// attestations (discoverable) so a batch attests once, not per item.
+function validateQuestionFields(c, call) {
   const dimension = clean(c.dimension, 24).toLowerCase();
   const question = clean(c.question || c.text, 240);
   // Dedupe on the LOOSENED form: exact-string dedupe let "operators" / "operators." / "the operators" through
@@ -61,17 +62,47 @@ function validateQuestion(candidate, brief) {
   const options = TaskIntent.dedupeOptions(c.options);
   const recommended = clean(c.recommended || c.defaultOption, 72);
   const reason = clean(c.reason, 240);
-  const prior = brief && Array.isArray(brief.questions) ? brief.questions : [];
   if (!DIMENSIONS.has(dimension)) return { ok: false, error: 'dimension must be one of: ' + Array.from(DIMENSIONS).join(', ') };
   if (!question || VAGUE.test(question)) return { ok: false, error: 'ask one concrete, non-vague question' };
   if (options.length < 2) return { ok: false, error: 'provide 2-3 genuinely different options' };
   const pick = matchOption(options, recommended);
   if (!pick) return { ok: false, error: 'recommended must match one option (copy it verbatim from options)' };
   if (!reason) return { ok: false, error: 'state why this decision materially changes the result' };
-  if (c.discoverable !== false) return { ok: false, error: 'inspect available context first; discoverable must be false' };
-  if (prior.length >= 2) return { ok: false, error: 'this task already used its two-question limit' };
-  if (prior.length === 1 && (c.newBlocker !== true || !prior[0].answer)) return { ok: false, error: 'a second question requires an answered first question and a newly exposed blocker' };
-  return { ok: true, question: { dimension, question, text: question, options, recommended: pick, reason, newBlocker: c.newBlocker === true } };
+  if ((call || c).discoverable !== false) return { ok: false, error: 'inspect available context first; discoverable must be false' };
+  return { ok: true, question: { dimension, question, text: question, options, recommended: pick, reason,
+    multiSelect: c.multiSelect === true, newBlocker: (call || c).newBlocker === true } };
+}
+// How many brief_ask calls this brief has spent. Legacy briefs persisted before batching carry no
+// askCalls field; for them every stored question WAS its own call, so the count is the honest backfill.
+function askCallsOf(brief) {
+  const n = brief && Number(brief.askCalls);
+  if (Number.isFinite(n) && n > 0) return n;
+  return brief && Array.isArray(brief.questions) ? brief.questions.length : 0;
+}
+// The budget is now counted in ASK CALLS (interruptions), not questions: one call may bundle up to
+// three questions on distinct dimensions, so related unknowns cost the Commander ONE moment, not three.
+function validateQuestions(candidate, brief) {
+  const c = candidate && typeof candidate === 'object' ? candidate : {};
+  const extra = Array.isArray(c.also) ? c.also : [];
+  const raw = [c].concat(extra).filter(x => x && typeof x === 'object');
+  if (raw.length > 3) return { ok: false, error: 'ask at most 3 questions in one call — keep only the material ones' };
+  const prior = brief && Array.isArray(brief.questions) ? brief.questions : [];
+  const calls = askCallsOf(brief);
+  if (calls >= 2) return { ok: false, error: 'this task already used its two-question limit' };
+  if (calls === 1 && (c.newBlocker !== true || prior.some(q => !q.answer))) return { ok: false, error: 'a second question requires an answered first question and a newly exposed blocker' };
+  const out = []; const dims = new Set();
+  for (const q of raw) {
+    const v = validateQuestionFields(q, c);
+    if (!v.ok) return v;
+    if (dims.has(v.question.dimension)) return { ok: false, error: 'each bundled question must cover a DIFFERENT dimension — merge same-dimension unknowns into one question' };
+    dims.add(v.question.dimension);
+    out.push(v.question);
+  }
+  return { ok: true, questions: out };
+}
+function validateQuestion(candidate, brief) {
+  const r = validateQuestions(candidate && typeof candidate === 'object' ? Object.assign({}, candidate, { also: [] }) : candidate, brief);
+  return r.ok ? { ok: true, question: r.questions[0] } : r;
 }
 
 function validateProceed(candidate) {
@@ -95,4 +126,4 @@ function canMutate(brief, tool) {
     : { ok: false, reason: 'settle the Task Brief with brief_proceed, or ask the one material question with brief_ask, before consequential work' };
 }
 
-module.exports = { DIMENSIONS, routeReply, validateQuestion, validateProceed, canMutate, clean, matchOption };
+module.exports = { DIMENSIONS, routeReply, validateQuestion, validateQuestions, askCallsOf, validateProceed, canMutate, clean, matchOption };

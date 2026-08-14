@@ -36,7 +36,8 @@ A.eq(TaskIntent.answerMessage('who is this for?', 'operators'), 'operators', 'ch
 const doctrine = TaskIntent.directive('KNOWN: existing React admin shell');
 A.ok(/Research before asking/.test(doctrine) && /what does good look like/.test(doctrine), 'doctrine says discover first and bans vague questions');
 A.ok(/use your judgment/i.test(doctrine) && /Proceed immediately/.test(doctrine), 'doctrine preserves autonomy for clear/defaultable tasks');
-A.ok(/at most two questions total/.test(doctrine) && /second is allowed only/.test(doctrine), 'doctrine caps the whole task and permits a second question only when blocking');
+A.ok(/at most two brief_ask calls total/.test(doctrine) && /second is allowed only/.test(doctrine), 'doctrine caps the whole task in ASK CALLS and permits a second only when blocking');
+A.ok(/BUNDLE related material questions into ONE brief_ask call/.test(doctrine) && /multiSelect:true/.test(doctrine), 'doctrine tells the model to batch related questions and mark non-exclusive options');
 A.ok(/brief_proceed/.test(doctrine) && /brief_ask/.test(doctrine), 'doctrine names the structured host controls');
 
 const replyCases = [
@@ -430,7 +431,7 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
     const toolsSrc = fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8');
     const cxSrc = fs.readFileSync(path.join(__dirname, '../sidecar/commander-context.js'), 'utf8');
     A.ok(/typeof store\.deferredDimensions === 'function'/.test(toolsSrc), 'the ask-worthiness gate degrades safely when the store cannot answer');
-    A.ok(/deferred\.indexOf\(checked\.question\.dimension\) >= 0/.test(toolsSrc), 'a habitually deferred dimension is refused at the tool boundary');
+    A.ok(/deferred\.indexOf\(q\.dimension\)/.test(toolsSrc) && /!kept\.length/.test(toolsSrc), 'a habitually deferred dimension is trimmed (and an all-deferred ask refused) at the tool boundary');
     A.ok(/<deferred_decisions provenance="commander-observed">/.test(cxSrc), 'the deferred dimensions are declared to the model with honest provenance');
     A.ok(/deferredDimensions = taskBriefStore\.deferredDimensions\(\)/.test(indexSrc) && /goal, patterns, deferredDimensions/.test(indexSrc), 'runOnce feeds the observed deferrals into the composed context');
     A.eq(CommanderContext.compose({ deferredDimensions: [] }), '', 'no observed deferrals -> no block');

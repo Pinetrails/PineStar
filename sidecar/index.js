@@ -12545,7 +12545,10 @@ async function handleRun(req, res) {
         question: clip(f.question, 400),
         options: (Array.isArray(f.options) ? f.options.slice(0, 6) : []).map(x => clip(x, 120)),
         recommended: clip(f.recommended, 120),
-        reason: clip(f.reason, 240)
+        reason: clip(f.reason, 240),
+        // batched clarify (2026-08-14): lets the card toggle non-exclusive options and show "1 of 3"
+        multiSelect: f.multiSelect === true,
+        ordinal: Number(f.ordinal) || 0, total: Number(f.total) || 0
       })
     }).then(v => (v && typeof v === 'object' && v.__clarify && v.text)
       ? { answered: true, text: String(v.text) }

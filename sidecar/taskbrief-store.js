@@ -23,6 +23,7 @@ function normalizeQuestion(q) {
   return {
     id: bounded(q.id, 80), text, options, dimension: bounded(q.dimension, 24),
     recommended: bounded(q.recommended, 72), reason: bounded(q.reason, 240), newBlocker: q.newBlocker === true,
+    multiSelect: q.multiSelect === true,
     answer: bounded(q.answer, 500), askedAt: Number(q.askedAt) || 0, answeredAt: Number(q.answeredAt) || 0
   };
 }
@@ -34,6 +35,9 @@ function normalizeBrief(b) {
     originalDirective: bounded(x.originalDirective, 4000), currentInput: bounded(x.currentInput, 4000),
     status: STATES.has(x.status) ? x.status : 'ready',
     questions: Array.isArray(x.questions) ? x.questions.map(normalizeQuestion).filter(Boolean).slice(-8) : [],
+    // Ask-call budget (batching, 2026-08-14): pre-batching briefs stored one question per call, so for
+    // them the question count IS the call count — the fallback keeps their budget honest after upgrade.
+    askCalls: Number(x.askCalls) > 0 ? Number(x.askCalls) : (Array.isArray(x.questions) ? x.questions.filter(q => q && (q.text || q.question)).length : 0),
     assumptions: Array.isArray(x.assumptions) ? x.assumptions.map(v => bounded(v, 300)).filter(Boolean).slice(-12) : [],
     settled: x.settled && typeof x.settled === 'object' ? {
       objective: bounded(x.settled.objective, 500), deliverable: bounded(x.settled.deliverable, 500),
@@ -106,8 +110,11 @@ function makeTaskBriefStore(deps) {
           rec.briefs.push(out); while (rec.briefs.length > CAP) rec.briefs.shift();
           out = Object.assign({}, out, { inputAction: 'replace' }); return rec;
         }
-        const q = prior.questions[prior.questions.length - 1];
-        if (q && !q.answer) { q.answer = routed.text; q.answeredAt = ts; }
+        // FIRST unanswered, not last: a batched ask can leave several open questions when the Commander
+        // walks away mid-batch; the durable fallback re-asks them in order, so the reply belongs to the
+        // earliest open one. For legacy single-question briefs the two are the same question.
+        const q = prior.questions.find(x => !x.answer);
+        if (q) { q.answer = routed.text; q.answeredAt = ts; }
         prior.currentInput = text; prior.status = 'ready'; prior.updatedAt = ts; out = prior;
       } else {
         out = normalizeBrief({
@@ -126,6 +133,9 @@ function makeTaskBriefStore(deps) {
     const key = String(id || ''); const fromMarker = !!(opts && opts.source === 'marker'); let out = null;
     return durable.update(STORE_KEY, cur => {
       const rec = normalize(cur); const b = rec.briefs.find(x => x.id === key); if (!b) return undefined;
+      // Snapshot the call count BEFORE pushing: askCallsOf's legacy fallback counts questions, so reading
+      // it after the push would double-count the question just added.
+      const spentCalls = Policy.askCallsOf(b);
       let fields;
       if (fromMarker) {
         // Marker path: the model asked via the plain TASK_QUESTION reply line, so only the question and
@@ -133,15 +143,33 @@ function makeTaskBriefStore(deps) {
         // stamping placeholder values would let an unvalidated question masquerade as a host-validated one
         // (and a fabricated recommendation would surface in the UI). The whole-task question budget still holds.
         const base = normalizeQuestion(question); if (!base || base.options.length < 2) return undefined;
-        if (b.questions.length >= 2) return undefined;
-        if (b.questions.length === 1 && !b.questions[0].answer) return undefined;
+        if (Policy.askCallsOf(b) >= 2) return undefined;
+        if (b.questions.some(x => !x.answer)) return undefined;
         fields = { text: base.text, options: base.options };
       } else {
         const checked = Policy.validateQuestion(question, b); if (!checked.ok) return undefined;
         fields = checked.question;
       }
       const q = normalizeQuestion(Object.assign({ id: key + '_q' + (b.questions.length + 1), askedAt: now }, fields));
-      b.questions.push(q); b.status = 'clarifying'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
+      b.questions.push(q); b.askCalls = spentCalls + 1;
+      b.status = 'clarifying'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
+    }).then(() => out);
+  }
+
+  /* askMany(id, candidate, now) — the batched sibling of ask() (2026-08-14). One brief_ask call may bundle
+     up to three host-validated questions on distinct dimensions; the whole batch is validated and stored
+     atomically and spends ONE ask call of the two-call budget. Returns the advanced brief or null. */
+  function askMany(id, candidate, now) {
+    const key = String(id || ''); let out = null;
+    return durable.update(STORE_KEY, cur => {
+      const rec = normalize(cur); const b = rec.briefs.find(x => x.id === key); if (!b) return undefined;
+      const spentCalls = Policy.askCallsOf(b);   // before the pushes — the legacy fallback counts questions
+      const checked = Policy.validateQuestions(candidate, b); if (!checked.ok) return undefined;
+      for (const fields of checked.questions) {
+        b.questions.push(normalizeQuestion(Object.assign({ id: key + '_q' + (b.questions.length + 1), askedAt: now }, fields)));
+      }
+      b.askCalls = spentCalls + 1;
+      b.status = 'clarifying'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
     }).then(() => out);
   }
 
@@ -151,15 +179,23 @@ function makeTaskBriefStore(deps) {
      the directive didn't change, only the open question got its answer — so every restart/reconnect
      fallback that reads the durable 'clarifying' record keeps working untouched. Refuses anything but
      the open-question state (a second answer, a settled brief) so a stale POST can't rewrite history. */
-  function answerInTurn(id, text, now) {
+  function answerInTurn(id, text, now, questionId) {
     const key = String(id || ''); const ans = bounded(text, 4000); let out = null;
     if (!key || !ans) return Promise.resolve(null);
     return durable.update(STORE_KEY, cur => {
       const rec = normalize(cur); const b = rec.briefs.find(x => x.id === key); if (!b) return undefined;
       if (b.status !== 'clarifying') return undefined;
-      const q = b.questions[b.questions.length - 1]; if (!q || q.answer) return undefined;
+      // Batched asks answer one SPECIFIC question per round-trip; without an id, the first unanswered
+      // question is the target (identical to the old last-question behavior for single-question briefs).
+      const q = questionId
+        ? b.questions.find(x => x.id === String(questionId))
+        : b.questions.find(x => !x.answer);
+      if (!q || q.answer) return undefined;
       q.answer = ans; q.answeredAt = Number(now) || 0;
-      b.status = 'ready'; b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
+      // 'ready' only when the whole batch is settled — a half-answered batch must keep its durable
+      // 'clarifying' state so a walk-away mid-batch still resumes on the remaining question.
+      if (!b.questions.some(x => !x.answer)) b.status = 'ready';
+      b.updatedAt = Number(now) || b.updatedAt; out = b; return rec;
     }).then(() => out);
   }
 
@@ -282,7 +318,7 @@ function makeTaskBriefStore(deps) {
       .map(t => t.dimension);
   }
 
-  return { read, list, active, prepare, ask, answerInTurn, proceed, complete, patterns, groundedFor, dimensionDeferrals, deferredDimensions, fingerprintQuestion, _durable: durable };
+  return { read, list, active, prepare, ask, askMany, answerInTurn, proceed, complete, patterns, groundedFor, dimensionDeferrals, deferredDimensions, fingerprintQuestion, _durable: durable };
 }
 
 module.exports = { makeTaskBriefStore, normalize, normalizeBrief, normalizeQuestion, fingerprintQuestion };

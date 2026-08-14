@@ -15,21 +15,30 @@ function registerTaskBriefTools(registry, store, state, deps) {
     // The clarify wait blocks INSIDE run(), so the default 30s ctx.timeoutMs would kill it mid-question
     // (same shape as browser.login's hour). The wait itself is bounded by the consent waiter's fail-closed
     // timer + one ack extension; this ceiling only has to sit safely above that.
-    timeoutMs: 20 * 60 * 1000,
-    description: 'Ask the Commander one host-validated material question, then stop. Use only after inspecting available context. If a call is rejected, CORRECT the arguments and call again — never ask in plain prose; as a last resort end your reply with the TASK_QUESTION: line.',
-    schema: { type: 'object', required: ['dimension', 'question', 'options', 'recommended', 'reason', 'discoverable'], properties: {
-      // the enum IS the whitelist (taskbrief-policy DIMENSIONS) — live-caught 2026-07-16: without it the
-      // model invents dimensions ('dashboard_tech'), burns retries on rejections, then falls back to prose.
-      dimension: { type: 'string', enum: Array.from(Policy.DIMENSIONS) },
-      question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } },
-      recommended: { type: 'string' }, reason: { type: 'string' },
-      // live-caught 2026-07-16: with no description the model reads 'discoverable' as an open judgment call
-      // and stalls; it is an attestation, not a research report.
-      discoverable: { type: 'boolean', description: 'Pass false to attest you checked the available context (conversation, task brief, granted files) and the answer is not there. Only false is accepted.' },
-      newBlocker: { type: 'boolean' }
-    } },
+    // Batched asks (up to 3 questions) wait sequentially inside one run() — the ceiling must cover three
+    // consent waits (fail-closed timer + one ack extension each), not one.
+    timeoutMs: 30 * 60 * 1000,
+    description: 'Ask the Commander your host-validated material question(s), then stop. BUNDLE every material question into ONE call: the most material one in the top-level fields, up to two more in `also` (each on a DIFFERENT dimension) — related unknowns must cost the Commander one interruption, not three. Set multiSelect:true on a question whose options are not mutually exclusive. Use only after inspecting available context. If a call is rejected, CORRECT the arguments and call again — never ask in plain prose; as a last resort end your reply with the TASK_QUESTION: line.',
+    schema: (() => {
+      const qProps = {
+        // the enum IS the whitelist (taskbrief-policy DIMENSIONS) — live-caught 2026-07-16: without it the
+        // model invents dimensions ('dashboard_tech'), burns retries on rejections, then falls back to prose.
+        dimension: { type: 'string', enum: Array.from(Policy.DIMENSIONS) },
+        question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } },
+        recommended: { type: 'string' }, reason: { type: 'string' },
+        multiSelect: { type: 'boolean', description: 'true when the options are NOT mutually exclusive and the Commander may pick several (e.g. sources, constraints). The chips then toggle instead of firing.' }
+      };
+      return { type: 'object', required: ['dimension', 'question', 'options', 'recommended', 'reason', 'discoverable'], properties: Object.assign({}, qProps, {
+        // live-caught 2026-07-16: with no description the model reads 'discoverable' as an open judgment call
+        // and stalls; it is an attestation, not a research report.
+        discoverable: { type: 'boolean', description: 'Pass false to attest you checked the available context (conversation, task brief, granted files) and the answer is not there. Only false is accepted. Attested once for the whole call.' },
+        newBlocker: { type: 'boolean' },
+        also: { type: 'array', maxItems: 2, description: 'Up to two MORE material questions (distinct dimensions) asked in the same interruption. Never split related questions across calls.',
+          items: { type: 'object', required: ['dimension', 'question', 'options', 'recommended', 'reason'], properties: qProps } }
+      }) };
+    })(),
     run: async args => {
-      const checked = Policy.validateQuestion(args, state.brief);
+      const checked = Policy.validateQuestions(args, state.brief);
       // A rejection is model-facing steering: name the fix and forbid the prose fallback (live-caught
       // 2026-07-16: after rejections the model asked in plain prose and escaped the brief lifecycle).
       if (!checked.ok) {
@@ -46,32 +55,52 @@ function registerTaskBriefTools(registry, store, state, deps) {
       // assumption in brief_proceed, where the read card makes it visible and steerable.
       let deferred = [];
       try { deferred = typeof store.deferredDimensions === 'function' ? store.deferredDimensions() : []; } catch (_) { deferred = []; }
-      if (deferred.indexOf(checked.question.dimension) >= 0) {
-        try { console.warn('[taskbrief] brief_ask suppressed: ' + checked.question.dimension + ' is a habitually deferred dimension'); } catch (_) {}
-        throw new Error('the Commander has repeatedly answered "use your judgment" on ' + checked.question.dimension
+      const kept = checked.questions.filter(q => deferred.indexOf(q.dimension) < 0);
+      const droppedDims = checked.questions.filter(q => deferred.indexOf(q.dimension) >= 0).map(q => q.dimension);
+      if (!kept.length) {
+        try { console.warn('[taskbrief] brief_ask suppressed: ' + droppedDims.join(', ') + ' habitually deferred'); } catch (_) {}
+        throw new Error('the Commander has repeatedly answered "use your judgment" on ' + droppedDims.join(', ')
           + ' decisions — do not ask this. Choose the most sensible reversible default, call brief_proceed, and state that choice as a correctable assumption.');
       }
-      const saved = await store.ask(state.brief.id, args, now());
+      if (droppedDims.length) { try { console.warn('[taskbrief] brief_ask trimmed deferred dimension(s): ' + droppedDims.join(', ')); } catch (_) {} }
+      // Unattended surfaces have no live round-trip: only ONE question can survive to the durable end-run
+      // marker, so a batch there would silently discard the rest. Reject early and steer to the honest shape.
+      if (!askCommander && kept.length > 1) {
+        throw new Error('this surface cannot collect multiple answers in one turn — re-call brief_ask with ONLY the single most material question and decide the rest with reversible defaults stated in brief_proceed');
+      }
+      // Rebuild the candidate to exactly the kept questions (call-level fields ride along), so the store
+      // validates and persists the same batch that will be asked.
+      const candidate = Object.assign({}, kept[0], { discoverable: false, newBlocker: args && args.newBlocker === true, also: kept.slice(1) });
+      const saved = await (typeof store.askMany === 'function' ? store.askMany(state.brief.id, candidate, now()) : store.ask(state.brief.id, candidate, now()));
       if (!saved) throw new Error('question was rejected by the Task Brief policy');
       state.brief = saved;
-      const q = checked.question;
+      const asked = saved.questions.slice(-kept.length);   // the freshly stored batch, with durable ids
       if (askCommander) {
-        let res = null;
-        try {
-          res = await askCommander({ question: q.question, options: q.options.slice(), recommended: q.recommended || '', reason: q.reason || '' });
-        } catch (_) { res = null; }
-        if (res && res.answered && res.text && typeof store.answerInTurn === 'function') {
-          const updated = await store.answerInTurn(state.brief.id, res.text, now());
-          if (updated) {
-            state.brief = updated;
-            return { content: 'The Commander answered: "' + res.text + '". Continue the task with this decision applied — do not re-ask it.', summary: 'answered in turn' };
-          }
+        const answers = [];
+        for (let i = 0; i < asked.length; i++) {
+          const q = asked[i];
+          let res = null;
+          try {
+            res = await askCommander({ question: q.text, options: q.options.slice(), recommended: q.recommended || '', reason: q.reason || '',
+              multiSelect: q.multiSelect === true, ordinal: i + 1, total: asked.length });
+          } catch (_) { res = null; }
+          if (!(res && res.answered && res.text && typeof store.answerInTurn === 'function')) break;   // walk-away: stop asking, fall back below
+          const updated = await store.answerInTurn(state.brief.id, res.text, now(), q.id);
+          if (!updated) break;
+          state.brief = updated;
+          answers.push({ q, text: res.text });
+        }
+        if (answers.length === asked.length) {
+          const lines = answers.map(a => 'The Commander answered "' + a.text + '" to: ' + a.q.text);
+          return { content: lines.join('\n') + '\nContinue the task with ' + (answers.length > 1 ? 'these decisions' : 'this decision') + ' applied — do not re-ask them.', summary: 'answered in turn' };
         }
         // no live answer (walked away, disconnected, or the store refused a stale write): fall through to
-        // the durable end-run question below, exactly today's flow — the answer then arrives as a new run.
+        // the durable end-run question below — the FIRST unanswered question rides the marker and the
+        // remaining ones resume from the durable 'clarifying' brief on the next reply.
       }
+      const open = (state.brief.questions || []).find(x => !x.answer) || asked[0];
       return { content: 'Waiting for the Commander\'s decision.', summary: 'task question ready', control: {
-        final: true, reason: 'done', text: 'TASK_QUESTION: ' + q.question + ' || ' + q.options.join(' | ')
+        final: true, reason: 'done', text: 'TASK_QUESTION: ' + open.text + ' || ' + open.options.join(' | ')
       } };
     }
   });

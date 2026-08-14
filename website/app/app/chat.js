@@ -2391,10 +2391,13 @@ const Chat = (() => {
      decided chips vanish into a verdict tag, pending-span bookkeeping excludes the wait from run time, and
      focus is never stolen from a mid-typing Commander. */
   function clarifyRow(p, ws) {
-    let q = { question: '', options: [], recommended: '', reason: '' };
+    let q = { question: '', options: [], recommended: '', reason: '', multiSelect: false, ordinal: 0, total: 0 };
     try { q = Object.assign(q, JSON.parse(p.argsSummary || '{}')); } catch (_) {}
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('consent');
-    r.body.appendChild(document.createTextNode('▣ ' + name + ' asks: ' + (q.question || 'which way should this go?') + ' '));
+    // A batched ask shows its place ("asks (2 of 3)") so the Commander knows one more tap ends it —
+    // three unannounced sequential cards would read as an interrogation with no visible bottom.
+    const seq = (Number(q.total) > 1 && Number(q.ordinal) > 0) ? ' (' + q.ordinal + ' of ' + q.total + ')' : '';
+    r.body.appendChild(document.createTextNode('▣ ' + name + ' asks' + seq + ': ' + (q.question || 'which way should this go?') + ' '));
     if (q.reason) {
       const why = document.createElement('div'); why.className = 'dim'; why.textContent = q.reason;
       r.body.appendChild(why);
@@ -2413,12 +2416,40 @@ const Chat = (() => {
       syncStatus();
     }
     const opts = Array.isArray(q.options) ? q.options.slice(0, 6) : [];
-    for (const opt of opts) {
-      const b = document.createElement('button');
-      b.className = 'consent-btn';
-      b.textContent = (q.recommended && opt === q.recommended ? '★ ' : '') + opt;
-      b.onclick = () => answer(opt, '✓ ' + opt);
-      btns.appendChild(b);
+    if (q.multiSelect === true && opts.length > 1) {
+      // NON-EXCLUSIVE options: chips toggle, a confirm chip fires. The answer is the Commander's picks
+      // joined as plain text — a typed multi-answer was always legal downstream, so the store and the
+      // model see exactly what free text would have said.
+      const hint = document.createElement('div'); hint.className = 'dim';
+      hint.textContent = 'pick all that apply, then confirm';
+      r.body.appendChild(hint);
+      const picked = new Set();
+      const done = document.createElement('button');
+      const syncDone = () => { done.textContent = picked.size ? ('✔ confirm ' + picked.size + ' pick' + (picked.size > 1 ? 's' : '')) : '✔ confirm'; done.disabled = !picked.size; };
+      for (const opt of opts) {
+        const b = document.createElement('button');
+        b.className = 'consent-btn';
+        b.textContent = (q.recommended && opt === q.recommended ? '★ ' : '') + opt;
+        b.setAttribute('aria-pressed', 'false');
+        b.onclick = () => {
+          if (picked.has(opt)) { picked.delete(opt); b.classList.remove('sel'); b.setAttribute('aria-pressed', 'false'); }
+          else { picked.add(opt); b.classList.add('sel'); b.setAttribute('aria-pressed', 'true'); }
+          syncDone();
+        };
+        btns.appendChild(b);
+      }
+      done.className = 'consent-btn consent-confirm';
+      syncDone();
+      done.onclick = () => { if (!picked.size) return; const list = opts.filter(o => picked.has(o)); answer(list.join(', '), '✓ ' + list.join(', ')); };
+      btns.appendChild(done);
+    } else {
+      for (const opt of opts) {
+        const b = document.createElement('button');
+        b.className = 'consent-btn';
+        b.textContent = (q.recommended && opt === q.recommended ? '★ ' : '') + opt;
+        b.onclick = () => answer(opt, '✓ ' + opt);
+        btns.appendChild(b);
+      }
     }
     const skip = document.createElement('button');
     skip.className = 'consent-btn';
@@ -3726,6 +3757,8 @@ const Chat = (() => {
       const suggested = !!(rec && o.toLowerCase() === rec);
       return { label: suggested ? '★ ' + o : o, value: o, suggested };
     });
+    const isMulti = tq.multiSelect === true;
+    if (isMulti) items.push({ label: '✔ confirm picks', value: '', confirm: true });
     items.push({ label: 'use your judgment', value: '', skip: true });
     const q = row('agent'); q.d.classList.add('nudge');
     q.body.textContent = '⌖ ' + tq.question;
@@ -3745,17 +3778,20 @@ const Chat = (() => {
     // Worded without a direction: this line sits ABOVE the chip row (choices() appends that to the log after
     // this body), so "below" would have pointed at the composer past the very options it is an alternative to.
     const hint = document.createElement('div'); hint.className = 'tq-hint';
-    hint.textContent = 'or ignore these and type your own answer — more than one is fine';
+    hint.textContent = isMulti
+      ? 'these aren\'t exclusive — tap all that apply, then confirm; or type your own answer'
+      : 'or ignore these and type your own answer — more than one is fine';
     q.body.appendChild(hint);
     autoscroll();
     choices(items, item => {
       vanish(q.d);
-      const ans = (item && !item.skip) ? String(item.value || '').trim() : '';
+      const ans = (item && item.confirm) ? (item.values || []).join(', ')
+        : (item && !item.skip) ? String(item.value || '').trim() : '';
       const msg = (typeof TaskIntent !== 'undefined' && TaskIntent.answerMessage)
         ? TaskIntent.answerMessage(tq.question, ans)
         : (ans || 'Use your judgment and continue the original task.');
       if (!isBusy()) send(msg, { taskAction: 'answer' }); else echoUser(msg);
-    });
+    }, { multi: isMulti });
   }
 
   // TASTE EXTRACTION (announce-and-act): the model settled its Task Brief mid-run — surface its READ
@@ -3911,21 +3947,25 @@ const Chat = (() => {
   // chips — though a marker question may still carry a grounded suggestion, which comes from the Commander's
   // own answered history rather than from the unvalidated question.
   async function presentTaskQuestion(ws, tq) {
-    let recommended = '', reason = '', grounded = null;
+    let recommended = '', reason = '', grounded = null, multiSelect = false;
     try {
       const r = await fetch('/api/task-briefs?key=' + encodeURIComponent('stream:' + ws.id) + '&status=clarifying&limit=1', { cache: 'no-store' });
       if (r.ok) {
         const j = await r.json();
         const b = j && Array.isArray(j.briefs) && j.briefs[0];
-        const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
+        // FIRST unanswered, not last: a batched ask's durable fallback re-asks the earliest open question,
+        // so that is the stored row this marker corresponds to (identical for single-question briefs).
+        const qs = (b && Array.isArray(b.questions)) ? b.questions : [];
+        const q = qs.find(x => x && !x.answer) || qs[qs.length - 1];
         if (q && !q.answer && q.text === tq.question) {
           recommended = q.recommended || ''; reason = q.reason || '';
+          multiSelect = q.multiSelect === true;
           grounded = j.grounded || null;   // this response always carried it; the client used to drop it
         }
       }
     } catch (_) { /* enrichment only — the question itself never depends on this fetch */ }
     if (!isActiveWs(ws)) return;   // the Commander switched away mid-fetch; restoreTaskQuestion re-presents on return
-    offerTaskQuestion(Object.assign({}, tq, { recommended, reason, grounded }));
+    offerTaskQuestion(Object.assign({}, tq, { recommended, reason, grounded, multiSelect }));
   }
 
   // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so
@@ -7997,7 +8037,7 @@ const Chat = (() => {
     for (const r of Array.from(activeChoiceRows)) { if (r && r.parentNode) r.remove(); }
     activeChoiceRows.clear();
   }
-  function choices(items, onPick) {
+  function choices(items, onPick, opts) {
     if (!log) return;
     // in a live voice call, chips never render (see liveVoiceCall) — no pick means the producer's optional
     // beat simply goes unanswered, exactly as if the Commander never clicked, which every caller tolerates
@@ -8007,15 +8047,38 @@ const Chat = (() => {
     const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
     activeChoiceRows.add(rowEl);
     let done = false;
+    // MULTI-SELECT (2026-08-14): opts.multi turns the plain option chips into toggles; only a chip marked
+    // it.confirm (or it.skip) fires onPick — the confirm chip carries the picked values. Single-select
+    // callers pass nothing and get byte-identical behavior.
+    const multi = !!(opts && opts.multi);
+    const picked = new Set();
+    let confirmBtn = null;
+    const syncConfirm = () => { if (confirmBtn) confirmBtn.disabled = !picked.size; };
     (items || []).forEach(it => {
       const b = document.createElement('button'); b.className = 'choice' + (it.quiet ? ' quiet' : '') + (it.suggested ? ' suggested' : ''); b.textContent = it.label;   // .quiet = subdued secondary chip; .suggested = the task brief's host-validated recommended default (gold)
-      const pick = () => { if (done) return; done = true; activeChoiceRows.delete(rowEl); rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click(); onPick(it); };
+      const pick = () => {
+        if (done) return;
+        if (multi && !it.skip && !it.confirm) {   // a toggle, not an answer — the confirm chip fires
+          if (picked.has(it.value)) { picked.delete(it.value); b.classList.remove('sel'); b.setAttribute('aria-pressed', 'false'); }
+          else { picked.add(it.value); b.classList.add('sel'); b.setAttribute('aria-pressed', 'true'); }
+          if (typeof SFX !== 'undefined') SFX.click();
+          syncConfirm();
+          return;
+        }
+        done = true; activeChoiceRows.delete(rowEl); rowEl.remove(); if (typeof SFX !== 'undefined') SFX.click();
+        onPick(it.confirm ? Object.assign({}, it, { values: (items || []).filter(x => !x.skip && !x.confirm && picked.has(x.value)).map(x => x.value) }) : it);
+      };
+      if (multi && it.confirm) { confirmBtn = b; b.classList.add('confirm'); syncConfirm(); }
+      if (multi && !it.skip && !it.confirm) b.setAttribute('aria-pressed', 'false');
       // activate on POINTERDOWN, not click: a document-level activity listener (autopilotstore's welcome-back
       // digest) can fire during the capture phase of this same press and remove this row mid-dispatch. The event
       // path is fixed at dispatch start, so this listener still runs on the detached button — whereas the later
       // `click` (press+release) never fires on a removed element and the answer was silently eaten.
-      b.addEventListener('pointerdown', e => { if (e.button === 0) pick(); });
-      b.onclick = pick;   // keyboard activation (Enter/Space synthesizes click, no pointerdown)
+      // In multi mode a toggle does NOT flip `done`, so the click that follows the same press would
+      // immediately un-toggle it — swallow exactly one click after each pointerdown.
+      let sawPointer = false;
+      b.addEventListener('pointerdown', e => { if (e.button === 0) { sawPointer = true; pick(); } });
+      b.onclick = () => { if (sawPointer) { sawPointer = false; return; } pick(); };   // keyboard activation (Enter/Space synthesizes click, no pointerdown)
       rowEl.appendChild(b);
     });
     log.appendChild(rowEl); autoscroll();
