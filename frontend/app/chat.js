@@ -5728,8 +5728,28 @@ const Chat = (() => {
       if (seg && !seg.body.textContent.trim()) seg.d.remove();
       seg = null; raw = '';
     }
+    // A folded /steer note echoes back from the sidecar as a '\n[steering] …\n' token delta. It is the
+    // Commander's note, not agent prose — render it as its own dim note row and CLOSE the paragraph around
+    // it, so it never sits in a caret'd row that reads as the agent typing it.
+    function steerNote(text) {
+      endToolRail();
+      const r = row('agent', { stamp: true, who: whoName || null });
+      r.d.classList.add('tool', 'steer-echo');
+      r.body.textContent = '[steering] ' + text;
+      autoscroll();
+    }
+    function plain(t) { if (!t) return; if (!seg) open(); raw += t; renderProse(seg.body, raw); autoscroll(); }
     return {
-      append(t) { if (!t) return; if (!seg) open(); raw += t; renderProse(seg.body, raw); autoscroll(); },
+      append(t) {
+        if (!t) return;
+        if (!/(^|\n)\[steering\] /.test(t)) return plain(t);
+        // split-with-capture: odd indices are the steering lines, even indices the surrounding prose
+        const parts = t.split(/(?:^|\n)\[steering\] ([^\n]*)\n?/);
+        for (let i = 0; i < parts.length; i++) {
+          if (i % 2 === 1) { closeSeg(); steerNote(parts[i]); }
+          else plain(parts[i]);
+        }
+      },
       breakSeg() { closeSeg(); },   // an inline action is about to render below — end this paragraph
       cleanTaskIntent() { if (seg && typeof TaskIntent !== 'undefined' && TaskIntent.strip) { raw = TaskIntent.strip(raw); renderProse(seg.body, raw); } },
       done() { closeSeg(); },
