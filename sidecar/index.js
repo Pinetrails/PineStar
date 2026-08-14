@@ -91,6 +91,7 @@ const { makeCapCtx } = require('./capability/capGate.js');
 const { composeOffice, stationWithObject, stationWithConnectors } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
 const { summarizeCapabilities } = require('./capability/capsummary.js');   // truthful "what you can/can't do" so the agent stops over-promising
 const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
+const FinishLine = require('./finish-line.js');     // immutable "crawl to the finish line" task doctrine at the final prompt seam
 const { makeHarnessSnapshot } = require('./harness-snapshot.js');   // bounded secret-free build/scheduler/connectors/diagnostics truth for station.inspect
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const edgetts = require('./edgetts.js');   // V-EDGE: free keyless neural TTS floor (decoupled from the LLM provider)
@@ -14461,9 +14462,13 @@ async function runOnce(o) {
      A byte-stable constant, so it never shifts the cached system prefix. */
   const canName = !!(resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('deliverable_note') >= 0);
   const deliverableNote = canName ? DELIVERABLE_NOTE_CLAUSE : '';
+  const taskSystem = FinishLine.append((system || '') + runtimeBlock + toolNote + teamNote + manualBlock
+    + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock
+    + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock
+    + deliverableNote, { isTask, internal, tools: resolved.tools });
   const sys = internal
     ? (String(system || '') + evidenceBlock)
-    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface, ownerTrusted }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote + directDomainBlock + journeyBlock + deliverableNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+    : withQuests(taskSystem, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
