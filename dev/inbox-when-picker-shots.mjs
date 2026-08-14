@@ -29,6 +29,7 @@ const CDP_PORT = Number(process.env.SKYNET_CDP_PORT || 9487);
 const URL = `http://127.0.0.1:${PORT}/`;
 const OUT = process.env.SKYNET_SHOT_OUT || join(process.cwd(), 'dev', '.shots-inbox-when');
 const MODEL = 'test/model';
+const NOCREW = !!process.env.SKYNET_SHOT_NOCREW;
 
 function startMock() {
   return new Promise(resolve => {
@@ -86,12 +87,49 @@ async function main() {
       if (!res || !res.ok) return { err: 'stamp-failed' };
       const ok = document.querySelector('.tut-coach-ok'); if (ok) ok.click();
       const bays = st.props().filter(p => p.t === 'bay').sort((a, b) => a.x - b.x);
-      const r1 = st.assignPropAgent(bays[0].id, 'agent');
-      return { spot, entry: r1 && r1.agentId, inbox: (st.props().find(p => p.t === 'intake') || {}).id };
+      const r1 = ${process.env.SKYNET_SHOT_NOCREW ? 'null' : `st.assignPropAgent(bays[0].id, 'agent')`};
+      return { spot, entry: r1 && r1.agentId, bays: bays.map(b => b.id), inbox: (st.props().find(p => p.t === 'intake') || {}).id };
     })()`);
     console.log('STAMP+CREW:', JSON.stringify(built));
-    if (!built || built.err || !built.inbox || !built.entry) throw new Error('setup failed: ' + JSON.stringify(built));
+    if (!built || built.err || !built.inbox || (!built.entry && !NOCREW)) throw new Error('setup failed: ' + JSON.stringify(built));
     report.setup = built;
+
+    /* ---- THE UNCREWED LINE (SKYNET_SHOT_NOCREW=1) — the DELIBERATE guard, pinned so nobody "fixes" it.
+       A routine fires AT an agent, so a line whose docks hold nobody cannot take one: CREATE ROUTINE is
+       disabled and the card states the reason above it. Confirmed intended by Andrew 2026-08-14 after he
+       hit it on an uncrewed line. What this asserts is that the refusal is EXPLAINED, never bare. ---- */
+    if (NOCREW) {
+      const dead = JSON.parse(await evalJS(cdp, `JSON.stringify((() => {
+        document.querySelectorAll('.refit-flow-card,.refit-step-card').forEach(n => n.remove());
+        Build.openAssign(${JSON.stringify(built.inbox)});
+        const g = document.querySelector('.refit-flow-card');
+        g.querySelector('#trg-new').click();
+        const p = g.querySelector('#trg-prompt');
+        p.value = 'summarize the week\\u2019s AI-policy news';
+        p.dispatchEvent(new Event('input', { bubbles: true }));
+        const btn = g.querySelector('#trg-create');
+        const before = { disabled: btn.disabled, label: btn.textContent.trim(), sched: g.querySelector('#trg-sched').value };
+        btn.click();
+        const msg = g.querySelector('#trg-msg');
+        return { before, msgShown: msg.style.display !== 'none', msg: msg.textContent.trim(),
+                 notes: [...g.querySelectorAll('.refit-note')].map(n => n.textContent.trim()),
+                 // the picker must still work on an uncrewed line — the WHEN half is not what is missing
+                 modes: [...g.querySelectorAll('.sp-mode')].length };
+      })())`));
+      console.log('UNCREWED:', JSON.stringify(dead, null, 2));
+      report.uncrewed = dead;
+      report.shotUncrewed = (await capture(cdp, OUT, 'inbox-uncrewed-line')).path;
+      report.consoleErrors = diag.consoleMsgs.filter(m => m.level === 'error').slice(0, 10);
+      console.log('\n===== REPORT =====\n' + JSON.stringify(report, null, 2));
+      const bad = [];
+      if (!dead.before.disabled) bad.push('CREATE ROUTINE is clickable on an uncrewed line — a routine has no agent to fire at');
+      if (!dead.notes.some(n => /crew a dock first/.test(n))) bad.push('the card does not say WHY it refuses (notes: ' + JSON.stringify(dead.notes) + ')');
+      if (dead.modes !== 6) bad.push('the WHEN picker did not mount on an uncrewed line (' + dead.modes + ' cadence keys)');
+      if (dead.before.sched !== '0 9 * * *') bad.push('the picker did not seed a schedule on an uncrewed line (' + JSON.stringify(dead.before.sched) + ')');
+      if (bad.length) throw new Error('UNCREWED PATH FAILED:\n  - ' + bad.join('\n  - '));
+      console.log('\nUNCREWED PATH: PASS — refusal is explained, picker still works');
+      return;
+    }
 
     /* ---- 2. open the INBOX card and the create form ---- */
     const opened = await evalJS(cdp, `(() => {
