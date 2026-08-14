@@ -3311,6 +3311,59 @@ body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
 .gx-tro.off .nm { color:var(--ph-dim); opacity:.75; }
 .gx-tro .sub { font-family:inherit; font-size:10px; letter-spacing:.04em; margin-top:3px; color:var(--ph-dim); opacity:.7; }
 
+/* ---- THE GOAL TRACK (2026-08-13) ----------------------------------------------------------------
+   The active goal drawn as a path: filled nodes behind you, the node you are on, the steps ahead. It is
+   the panel's hero band, so it is the one place in the log that carries a lit rail and a real meter.
+   NOT a battle pass in the part that matters — nothing is locked, so there is no padlock, no tier
+   number, and no unlock language; an upcoming node is simply not yet, and it says so. */
+.q-track { border: 1px solid var(--ph-dim); border-left: 2px solid var(--gold); border-radius: var(--r-sm);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb), .05), rgba(0,0,0,.34) 62%);
+  box-shadow: var(--raise); padding: 12px 14px 13px; margin-bottom: 13px; }
+.q-track-head { display: flex; align-items: baseline; gap: 10px; }
+.q-track-goal { flex: 1 1 auto; min-width: 0; font-size: 14px; line-height: 1.35; color: var(--gold);
+  text-shadow: 0 0 8px rgba(var(--gold-rgb), .3); letter-spacing: .02em; }
+.q-track-pct { flex: 0 0 auto; font-size: 15px; color: var(--gold); font-variant-numeric: tabular-nums;
+  letter-spacing: .04em; }
+.q-track-bar { height: 7px; margin-top: 9px; }
+.q-track-bar .q-bar-fill { box-shadow: 0 0 10px rgba(var(--gold-rgb), .45); transition: width var(--t-med) var(--ease-out); }
+
+/* THE NODE ROW — one node per milestone (the engine caps a goal at 3-5, so they always fit unstretched). */
+.q-nodes { display: flex; align-items: flex-start; gap: 0; margin: 12px 0 0; padding: 0; list-style: none; }
+.q-node { position: relative; flex: 1 1 0; min-width: 0; display: flex; flex-direction: column;
+  align-items: center; text-align: center; padding: 0 4px; }
+/* the connector: drawn from THIS node's dot to the next one's, lit only where the path is already walked */
+.q-node::after { content: ''; position: absolute; top: 10px; left: 50%; width: 100%; height: 2px;
+  background: var(--ph-glow2); z-index: 0; }
+.q-node:last-child::after { display: none; }
+.q-node-done::after { background: var(--gold); opacity: .55; }
+.q-node-dot { position: relative; z-index: 1; width: 21px; height: 21px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 10px; line-height: 1;
+  border: 1px solid var(--ph-dim); background: var(--panel2, #0b0b0b); color: var(--ph-dim); }
+.q-node-label { margin-top: 7px; font-size: 10px; line-height: 1.35; color: var(--ph-dim); opacity: .75;
+  overflow-wrap: anywhere; }
+/* BEHIND YOU — real, finished work; the only nodes that carry the gold fill. */
+.q-node-done .q-node-dot { border-color: var(--gold); color: var(--ink, #000); background: var(--gold); }
+.q-node-done .q-node-label { color: var(--ph); opacity: .6; }
+/* THE NODE YOU ARE ON — the one actionable front. Lit, ringed, and named in words. */
+.q-node-now .q-node-dot { border-color: var(--gold); color: var(--gold); background: rgba(var(--gold-rgb), .12);
+  box-shadow: 0 0 0 3px rgba(var(--gold-rgb), .14), 0 0 12px rgba(var(--gold-rgb), .4); }
+.q-node-now .q-node-label { color: var(--gold); opacity: 1; }
+.q-node-tag { margin-top: 4px; font-size: 8px; letter-spacing: .14em; color: var(--gold); opacity: .9;
+  border: 1px solid rgba(var(--gold-rgb), .45); border-radius: 2px; padding: 0 4px; white-space: nowrap; }
+/* AHEAD — visible and numbered, never locked: the order is information, not a gate. */
+.q-node-ahead .q-node-dot { border-style: dashed; }
+.q-track-acts { display: flex; margin-top: 12px; }
+.q-track-acts .q-arc-accept { flex: 1 1 auto; text-align: center; }
+.q-track-running { display: block; margin-top: 10px; color: var(--gold); opacity: .8; }
+/* the whole path walked — the meter reads full and the frame answers in kind */
+.q-track-done { border-left-color: var(--gold); box-shadow: var(--raise), inset 0 0 26px rgba(var(--gold-rgb), .1); }
+/* NO GOAL YET — a slim invitation that teaches what the track is, never an empty frame */
+.q-track-empty { display: flex; align-items: center; gap: 12px; border-left-color: var(--ph-dim);
+  background: linear-gradient(180deg, rgba(var(--ph-rgb), .04), rgba(0,0,0,.3) 62%); }
+.q-track-empty .sub { flex: 1 1 auto; font-size: 11px; line-height: 1.45; opacity: .75; }
+.q-track-empty .q-go { flex: 0 0 auto; margin-left: 0; font-size: 10px; letter-spacing: .1em; padding: 5px 10px; }
+.q-track-sec { margin-top: 0; }
+
 /* ---- THE QUEST CARD (2026-08-13) ---------------------------------------------------------------
    The card's SKIN lives here; its GRID lives in motion.css (`.gx-quests .q-grid`), which loads after
    this file and outranks it — putting a second `grid-template-columns` here would just create a

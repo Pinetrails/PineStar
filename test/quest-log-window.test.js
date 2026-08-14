@@ -61,6 +61,25 @@ A.ok(/\.term\.quests-win \{ --con-h:/.test(css), 'quests-win RESTATES --con-h (d
 A.ok(/\.gx-quests \.q-grid \{ grid-template-columns: repeat\(auto-fill/.test(motion), 'the quest grid follows the window width at its CANONICAL rule in motion.css (app.css copies are silent no-ops)');
 A.ok(/align-items: stretch/.test(motion), 'cards in a row share a height — one action baseline per row');
 
+/* ---- 5. THE GOAL TRACK — the active goal drawn as a path, at the top ---- */
+A.ok(/function questTrackHtml/.test(station), 'the goal track has its own renderer');
+const trackFn = station.slice(station.indexOf('function questTrackHtml'), station.indexOf('function QSS_CELEBRATING'));
+A.ok(render.indexOf('questTrackHtml(arcs)') >= 0 && render.indexOf('questTrackHtml(arcs)') < render.indexOf('questRefreshHtml()'),
+  'the track leads the panel (the Commander’s goal is the first thing in the window)');
+A.ok(/const isArc = q =>/.test(station) && /const rest = qs\.filter\(q => !isArc\(q\)\)/.test(station),
+  'arc quests are MOVED out of the card grid — the path is never printed twice');
+/* the ordering bug this test exists for: Quests.build() returns open.concat(done), so a COMPLETED
+   milestone jumps to the end of the array. A path rendered in that order shows step 1 after step 4. */
+A.ok(/GoalStore\.activeGoal/.test(trackFn) && /\.sort\(\(a, b\) => at\(a\.milestoneId\) - at\(b\.milestoneId\)\)/.test(trackFn),
+  'track nodes are re-sorted into the goal tree’s own milestone order (build() returns open-then-done)');
+A.ok(/isDone \? 'done' : \(s\.isNext \? 'now' : 'ahead'\)/.test(trackFn), 'three honest node states: behind you (done), the one you are on (now), ahead');
+A.ok(/YOU ARE HERE/.test(trackFn) && /RUNNING/.test(trackFn), 'the live front is named in words; a bound build in flight says RUNNING');
+A.ok(/next && !next\.inFlight/.test(trackFn), 'ACCEPT is withheld while the step’s bound build is running (a second accept would double-mint it)');
+A.ok(/goal\.pct/.test(trackFn) && /goal\.done/.test(trackFn) && /goal\.total/.test(trackFn), 'the meter reads the engine’s real done/total/pct — never an invented number');
+A.ok(!/locked|unlock|LOCKED|TIER \d/.test(trackFn), 'NOTHING on the track claims to be locked — the log reveals order, it never gates (standing law)');
+A.ok(/q-track-empty/.test(trackFn) && /SET A GOAL/.test(trackFn), 'with no goal the track teaches what it is and offers the real door, never an empty frame');
+A.ok(/\.q-track \{/.test(css) && /\.q-node-now \.q-node-dot/.test(css), 'the track ships its CSS layer');
+
 /* ---- the pure engine: per-dimension WHY (executed, not grepped) ---- */
 const Quests = require('../frontend/app/quests.js');
 const dims = [

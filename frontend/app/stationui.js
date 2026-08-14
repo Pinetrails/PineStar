@@ -7678,6 +7678,86 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // believes the Commander is chasing (with its provenance — a Commander-set goal vs an inference), the manual
   // REFRESH QUESTS action, the most recent honest attempt outcome (minted / rejected: why / skipped: why), and
   // when the next cycle is due. Absent store / no fetch yet -> a quiet, honest placeholder (never a fake value).
+  /* ============== THE GOAL TRACK — the active goal drawn as a path (2026-08-13) ==============
+     Andrew's ask: show the Commander's goals at the top, in the spirit of a battle pass. The data was
+     already here and already honest — Goals.project decomposes the ACTIVE GOAL into 3-5 milestones and
+     reports real done/total/pct — but it rendered as a header card plus one card per step, scattered
+     through a grid of unrelated quests, so the PATH (the thing a pass makes legible at a glance) was
+     invisible. This draws that same data as one continuous track: filled nodes behind you, the live node
+     you are on, and the steps ahead.
+
+     WHERE IT DEPARTS FROM A BATTLE PASS, DELIBERATELY: nothing here is locked, and no node is a tier you
+     buy or unlock. StarNet's standing law is that the log reveals ORDER and never withholds — so upcoming
+     nodes read as "coming up", never as locked loot, and there is no padlock, no tier number, and no
+     fake currency. The reward each node names is the real outcome the milestone produces.
+
+     Every value is engine truth: `pct`/`done`/`total` come from Goals.progress, `isNext` marks the one
+     actionable front, and `inFlight` means a real bound build is running (so Accept is withheld rather
+     than offered twice — a second accept would double-mint the build and double-spend a paid run). */
+  function questTrackHtml(arcs) {
+    const goal = arcs.find(q => q && q.kind === 'arc-goal') || null;
+    /* ORDER IS THE WHOLE POINT OF A PATH — and the list handed to us is NOT in it. Quests.build() returns
+       `open.concat(done)`, so a finished milestone jumps to the END of the array; rendered straight, the
+       track showed step 1 sitting after step 4 the moment it was completed. Re-sort by the goal tree's own
+       milestone order (the authoritative sequence; the projected quest objects still supply every state).
+       Absent store → keep the given order rather than guess. */
+    let steps = arcs.filter(q => q && q.kind === 'arc-step');
+    try {
+      const live = (typeof GoalStore !== 'undefined' && GoalStore.activeGoal) ? GoalStore.activeGoal() : null;
+      const seq = (live && Array.isArray(live.milestones)) ? live.milestones.map(m => m && m.id) : null;
+      if (seq && seq.length) {
+        const at = id => { const i = seq.indexOf(id); return i < 0 ? Number.MAX_SAFE_INTEGER : i; };
+        steps = steps.slice().sort((a, b) => at(a.milestoneId) - at(b.milestoneId));
+      }
+    } catch (_) { /* keep the projection's order */ }
+    // NO ACTIVE GOAL: say what the track is FOR and point at the one surface that starts one, rather than
+    // rendering an empty frame (or worse, a fake path). The dossier's goals dimension is the real door.
+    if (!goal) {
+      return '<div class="gx-sec q-track-sec"><span class="gx-title">YOUR GOAL</span></div>'
+        + '<div class="q-track q-track-empty">'
+        + '<div class="sub">no goal path yet — tell the station a goal and it breaks it into a handful of real steps, then tracks them here as you finish them.</div>'
+        + '<button class="q-go q-track-setgoal" data-dest="commander" title="Open where you do this next">▶ SET A GOAL</button>'
+        + '</div>';
+    }
+    const total = Math.max(0, goal.total | 0), doneN = Math.max(0, goal.done | 0);
+    const pct = Math.max(0, Math.min(100, goal.pct | 0));
+    // the node row — one per milestone, in engine order. Three honest states: behind you, the one you're
+    // on, and ahead. `clip` already happened upstream; strip the list-position glyphs the card titles
+    // carried ("done — ", "▸ ", "· ") so the node label is just the milestone.
+    const label = s => String(s || '').replace(/^(done — |▸ |· )/, '');
+    const nodes = steps.map((s, i) => {
+      const isDone = s.status === 'done';
+      const state = isDone ? 'done' : (s.isNext ? 'now' : 'ahead');
+      const glow = (QSS_CELEBRATING(s.id)) ? ' q-celebrate' : '';
+      const mark = isDone ? '&#10003;' : (s.isNext ? '&#9670;' : (i + 1));
+      return '<li class="q-node q-node-' + state + glow + '">'
+        + '<span class="q-node-dot" aria-hidden="true">' + mark + '</span>'
+        + '<span class="q-node-label">' + esc(label(s.title)) + '</span>'
+        + (s.isNext ? '<span class="q-node-tag">' + (s.inFlight ? 'RUNNING' : 'YOU ARE HERE') + '</span>' : '')
+        + '</li>';
+    }).join('');
+    // the one actionable front, offered ONCE — withheld while its bound build is in flight.
+    const next = steps.find(s => s.isNext && s.status !== 'done');
+    const accept = (next && !next.inFlight)
+      ? '<button class="consent-btn q-arc-accept q-track-accept" data-gid="' + esc(next.arcGoalId) + '" data-mid="' + esc(next.milestoneId) + '">▶ ACCEPT THIS STEP</button>'
+      : (next && next.inFlight ? '<span class="sub q-track-running">the build for this step is running — finishing it completes the step.</span>' : '');
+    const complete = total > 0 && doneN >= total;
+    return '<div class="gx-sec q-track-sec"><span class="gx-title">YOUR GOAL</span>'
+      + '<span class="gx-tag">' + doneN + ' / ' + total + '</span></div>'
+      + '<div class="q-track' + (complete ? ' q-track-done' : '') + '">'
+      + '<div class="q-track-head"><b class="q-track-goal">' + esc(goal.title) + '</b>'
+      + '<span class="q-track-pct">' + pct + '%</span></div>'
+      + '<div class="q-bar q-track-bar"><div class="q-bar-fill" style="width:' + pct + '%"></div></div>'
+      + '<ol class="q-nodes">' + nodes + '</ol>'
+      + (accept ? '<div class="q-track-acts">' + accept + '</div>' : '')
+      + '</div>';
+  }
+  // the celebration read, guarded once so questTrackHtml stays readable (the store may be absent)
+  function QSS_CELEBRATING(id) {
+    try { return !!(typeof QuestStateStore !== 'undefined' && QuestStateStore.isCelebrating && QuestStateStore.isCelebrating(id)); }
+    catch (_) { return false; }
+  }
+
   function questRefreshHtml() {
     const QRS = (typeof QuestRefreshStore !== 'undefined') ? QuestRefreshStore : null;
     if (QRS && QRS.sync) { try { QRS.sync(); } catch (_) {} }   // throttled — no-ops the network unless the poll window elapsed
@@ -7836,7 +7916,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (!v) { body.innerHTML = '<p class="dim">Quest log unavailable.</p>'; return; }
     const m = v.meter, all = Array.isArray(v.quests) ? v.quests : [];
     const qs = (QSS && QSS.visible) ? QSS.visible(all) : all;   // dismissed = gone forever (degrades to the raw list if the store is absent)
-    const open = qs.filter(q => q.status !== 'done'), done = qs.filter(q => q.status === 'done');
+    /* THE GOAL ARC IS RENDERED AS A TRACK, NOT AS CARDS. Its header + milestone steps are pulled out of the
+       card grid here and drawn by questTrackHtml as one continuous path at the top of the panel. They are
+       MOVED, never removed — every milestone still shows, the next one is still the only actionable one, and
+       Accept still routes through the same GoalStore seam. Rendering them in both places would print the same
+       path twice, which is the defect this exists to avoid. */
+    const isArc = q => q && (q.kind === 'arc-goal' || q.kind === 'arc-step');
+    const arcs = qs.filter(isArc);
+    const rest = qs.filter(q => !isArc(q));
+    const open = rest.filter(q => q.status !== 'done'), done = rest.filter(q => q.status === 'done');
     // a station-gap / work / maintenance quest is a fix-it or build SUGGESTION — always dismissible while open
     // (the sandbox law); each routes through its OWN store's denylist, not QuestState (whose dismiss is
     // dossier-only). Only the get-to-know-you (dossier) kind falls through to QuestState's dismissible check.
@@ -7950,6 +8038,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
        star and REFRESH QUESTS are what the quest list is derived from — it is the header of this list, not a
        separate console. */
     body.innerHTML = '<div class="gx gx-quests">'
+      + questTrackHtml(arcs)
       + questRefreshHtml()
       + proposalsHtml
       + '<div class="gx-sec"><span class="gx-title">OPEN</span> <span class="gx-tag">' + open.length + '</span></div>'
