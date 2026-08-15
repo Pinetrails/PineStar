@@ -487,6 +487,32 @@ async function journeyTaskLifecycle(cdp, A, mock) {
   const activeLane = await evalJS(cdp, `(() => { const c=document.querySelector('.kb-card[data-id="${tid}"]'); if(!c) return 'NO_CARD'; const col=c.closest('.kb-col'); const h=col&&col.querySelector('h4'); return h?h.textContent.trim():'NO_COL'; })()`).catch(() => 'ERR');
   A.ok('J1/assigned-card-active', /^ACTIVE\b/.test(String(activeLane)) && /(RUNNING|READY TO REVIEW)/.test(String(activeLane)), 'card column header = "' + activeLane + '"');
 
+  // step 2b: A LIVE RUN OUTRANKS THE LANE (regression guard, 2026-08-14). ↩ QUEUE (and ✓ SHIP, and a
+  // drag) can move a card out of ACTIVE while its run is STILL in flight. stateChip used to gate the
+  // whole chip on lane==='active', so the card then read "queued, not started" while Channels could
+  // prove the agent was working on it. parityCheck's running-implies-busy can't catch that — it only
+  // fails a chip that LIES, never a chip that VANISHES — so assert the busy card keeps RUNNING here.
+  const queuedMidRun = await evalJS(cdp, `(() => {
+    const c = document.querySelector('.kb-card[data-id="${tid}"]');
+    if (!c) return 'NO_CARD';
+    const b = c.querySelector('button[data-act=queue]');
+    if (!b) return 'NO_QUEUE_BTN';
+    b.click();
+    const c2 = document.querySelector('.kb-card[data-id="${tid}"]');
+    if (!c2) return 'CARD_GONE';
+    const col = c2.closest('.kb-col'); const h = col && col.querySelector('h4');
+    return JSON.stringify({
+      lane: h ? h.textContent.trim().split(/\\s+/)[0] : 'NO_COL',
+      running: !!c2.querySelector('.kb-state.running'),
+      busy: (typeof Channels !== 'undefined' && Channels.isBusy) ? !!Channels.isBusy('${tid}') : null
+    });
+  })()`).catch(() => 'ERR');
+  const qmr = (() => { try { return JSON.parse(String(queuedMidRun)); } catch (_) { return null; } })();
+  A.ok('J1/queue-midrun-keeps-running-chip', !!qmr && qmr.busy === true && qmr.running === true && /^TO\b/.test(String(qmr.lane)),
+    qmr ? `re-queued mid-run → lane=${qmr.lane} busy=${qmr.busy} RUNNING chip=${qmr.running}` : 'probe failed: ' + queuedMidRun);
+  // put it back in ACTIVE so step 3's settled-outcome (DONE — REVIEW & SHIP) assertion reads its own lane.
+  await evalJS(cdp, `(() => { Workstreams.setLane('${tid}','active'); if (typeof App!=='undefined'){ App.persist && App.persist(); App.refreshRail && App.refreshRail(); } return 1; })()`).catch(() => 0);
+
   // step 3: let the run complete → the chip must flip RUNNING → DONE (never forever-RUNNING).
   for (let i = 0; i < 30 && mock.control.openCount() < 1; i++) await sleep(50);
   mock.control.setMode('quick');
