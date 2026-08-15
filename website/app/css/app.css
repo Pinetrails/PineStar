@@ -3388,6 +3388,10 @@ body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
 /* NO GOAL YET — a slim invitation that teaches what the track is, never an empty frame */
 .q-track-empty { display: flex; align-items: center; gap: 12px; border-left-color: var(--ph-dim);
   background: linear-gradient(180deg, rgba(var(--ph-rgb), .04), rgba(0,0,0,.3) 62%); }
+/* a path already finished: the band keeps the gold rail it earned rather than dimming to a cold prompt */
+.q-track-reached-band { border-left-color: var(--gold);
+  background: linear-gradient(180deg, rgba(var(--gold-rgb), .05), rgba(0,0,0,.32) 62%); }
+.q-track-reached, .q-track-stage { color: var(--gold); }
 .q-track-empty .sub { flex: 1 1 auto; font-size: 11px; line-height: 1.45; opacity: .75; }
 .q-track-empty .q-go { flex: 0 0 auto; margin-left: 0; font-size: 10px; letter-spacing: .1em; padding: 5px 10px; }
 .q-track-sec { margin-top: 0; }

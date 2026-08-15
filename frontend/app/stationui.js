@@ -7760,10 +7760,26 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // NO ACTIVE GOAL: say what the track is FOR and point at the one surface that starts one, rather than
     // rendering an empty frame (or worse, a fake path). The dossier's goals dimension is the real door.
     if (!goal) {
+      /* A FINISHED PATH IS NOT AN EMPTY ONE. Goals.project surfaces nothing for a completed goal (a done arc
+         is history, by design), so the band used to snap straight back to "no goal path yet" the instant the
+         last milestone landed — telling a Commander who had just finished a four-step goal that they had
+         never had one. When the journey reports goals actually reached, say so and name the stage that work
+         moved the station to, THEN offer the next one. Both numbers are the engine's own. */
+      let reached = 0, stageName = '';
+      try {
+        const j = (typeof JourneyStore !== 'undefined' && JourneyStore.status) ? JourneyStore.status() : null;
+        const evo = j && j.evolution;
+        if (evo) { reached = Math.max(0, evo.goalsReached | 0); stageName = String(evo.name || ''); }
+      } catch (_) { /* no read → fall through to the first-time copy */ }
+      const lede = reached > 0
+        ? '<div class="sub"><b class="q-track-reached">&#9670; ' + reached + ' goal' + (reached === 1 ? '' : 's') + ' reached</b>'
+          + (stageName ? ' — the station is now <b class="q-track-stage">' + esc(stageName) + '</b>' : '')
+          + '. set the next one and it gets broken into steps here.</div>'
+        : '<div class="sub">no goal path yet — tell the station a goal and it breaks it into a handful of real steps, then tracks them here as you finish them.</div>';
       return '<div class="gx-sec q-track-sec"><span class="gx-title">YOUR GOAL</span></div>'
-        + '<div class="q-track q-track-empty">'
-        + '<div class="sub">no goal path yet — tell the station a goal and it breaks it into a handful of real steps, then tracks them here as you finish them.</div>'
-        + '<button class="q-go q-track-setgoal" data-dest="commander" title="Open where you do this next">▶ SET A GOAL</button>'
+        + '<div class="q-track q-track-empty' + (reached > 0 ? ' q-track-reached-band' : '') + '">'
+        + lede
+        + '<button class="q-go q-track-setgoal" data-dest="commander" title="Open where you do this next">▶ ' + (reached > 0 ? 'SET THE NEXT GOAL' : 'SET A GOAL') + '</button>'
         + '</div>';
     }
     const total = Math.max(0, goal.total | 0), doneN = Math.max(0, goal.done | 0);

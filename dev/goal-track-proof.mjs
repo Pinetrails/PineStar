@@ -102,6 +102,79 @@ const ADVANCE = `(async () => {
     nodeStates: nodes, labels, liveFronts: nodes.filter(s => s === 'now').length });
 })()`;
 
+/* THE PROMISE, KEPT (2026-08-14). The track tells the Commander that finishing this path advances the
+   station. That is a claim the harness must be able to back, so this drives the REAL chain to its end:
+   the production `Goals.foldMilestoneDone` for each milestone (the same fold `reconcile` calls when a
+   bound work quest completes) -> the goal's own status flips done -> the production
+   `GoalStore._syncJourneyMilestones()` posts `goalDone` to the LIVE sidecar -> `addGoalReached` ->
+   the evolution stage increments. Then we re-read the panel: the payoff must now name the NEXT stage. */
+const COMPLETE_THE_PATH = `(async () => {
+  const before = await (await fetch('/api/journey', { cache: 'no-store' })).json();
+  const g = GoalStore.activeGoal();
+  if (!g) return JSON.stringify({ ok: false, why: 'no active goal to finish' });
+  const folds = [];
+  for (const m of g.milestones.slice()) {
+    const r = Goals.foldMilestoneDone(g, m.id, 'proof: the real fold path', Date.now());
+    folds.push({ id: m.id, changed: !!r.changed, goalDone: !!r.goalDone });
+  }
+  const synced = await GoalStore._syncJourneyMilestones();
+  await new Promise(r => setTimeout(r, 900));
+  await JourneyStore.sync(true);
+  StationUI.rerender('quests', false);
+  await new Promise(r => setTimeout(r, 700));
+  const after = await (await fetch('/api/journey', { cache: 'no-store' })).json();
+  const track = document.querySelector('.q-track');
+  const ev0 = before.journey && before.journey.evolution, ev1 = after.journey && after.journey.evolution;
+  return JSON.stringify({
+    ok: true,
+    goalStatus: g.status,
+    lastFoldReportedGoalDone: folds.length ? folds[folds.length - 1].goalDone : null,
+    journeySync: synced,
+    stageBefore: ev0 ? { stage: ev0.stage, name: ev0.name, next: ev0.next } : null,
+    stageAfter: ev1 ? { stage: ev1.stage, name: ev1.name, next: ev1.next } : null,
+    goalsReachedAfter: ev1 ? ev1.goalsReached : null,
+    payoffNow: track ? ((track.querySelector('.q-track-payoff') || {}).textContent || '(no payoff line)') : '(no track)',
+    // a finished path must ACKNOWLEDGE the work, never snap back to "no goal path yet"
+    finishedBand: track ? track.textContent.replace(/\\s+/g, ' ').trim().slice(0, 120) : '(no track)',
+    acknowledgesReached: !!(track && track.classList.contains('q-track-reached-band')),
+    nextGoalDoor: !!document.querySelector('.q-track-setgoal'),
+    trackComplete: !!(track && track.classList.contains('q-track-done')),
+    nodeStates: track ? [...track.querySelectorAll('.q-node')].map(n => n.className.match(/q-node-(done|now|ahead)/)[1]) : []
+  });
+})()`;
+
+/* The RUNNING state: a milestone whose bound build is in flight must say so and must NOT offer ACCEPT
+   (a second accept double-mints the build and double-spends a paid run). Staged by binding a real live
+   work quest to the front milestone, which is exactly what acceptMilestone does. */
+const RUNNING_STATE = `(async () => {
+  const wqId = WorkQuestStore.accept({ title: 'Proof: a build already running', build: { kind: 'freeform' } });
+  const g = GoalStore.activeGoal();
+  if (!g) return JSON.stringify({ ok: false, why: 'no active goal' });
+  const front = g.milestones.find(m => m.status !== 'done');
+  if (!front) return JSON.stringify({ ok: false, why: 'no open milestone' });
+  front.questRef = wqId;
+  StationUI.rerender('quests', false);
+  await new Promise(r => setTimeout(r, 600));
+  const track = document.querySelector('.q-track');
+  const nowNode = track.querySelector('.q-node-now');
+  return JSON.stringify({ ok: true, boundQuest: wqId,
+    tag: nowNode && nowNode.querySelector('.q-node-tag') ? nowNode.querySelector('.q-node-tag').textContent.trim() : null,
+    acceptOffered: track.querySelectorAll('.q-arc-accept').length,
+    runningNote: !!track.querySelector('.q-track-running') });
+})()`;
+
+// The empty-state door must actually LAND somewhere (a button that exists is not a button that works).
+const SET_GOAL_DOOR = `(async () => {
+  const b = document.querySelector('.q-track-setgoal');
+  if (!b) return JSON.stringify({ ok: false, why: 'no SET A GOAL button (a goal already exists?)' });
+  b.click();
+  await new Promise(r => setTimeout(r, 1400));
+  const opened = [...document.querySelectorAll('.term')].map(t => (t.querySelector('.term-title') || {}).textContent || '')
+    .filter(Boolean);
+  return JSON.stringify({ ok: true, openWindows: opened,
+    landedOnDossier: opened.some(t => /COMMANDER|DOSSIER/i.test(t)) });
+})()`;
+
 (async () => {
   rmSync(OUT, { recursive: true, force: true });
   mkdirSync(OUT, { recursive: true });
@@ -120,6 +193,7 @@ const ADVANCE = `(async () => {
 
     console.log('empty state ->', await evalJS(cdp, OPEN_EMPTY));
     console.log(' shot       ->', JSON.stringify(await capture(cdp, OUT, '1-no-goal-yet')));
+    console.log('set-goal door ->', await evalJS(cdp, SET_GOAL_DOOR));
 
     console.log('stage goal  ->', await evalJS(cdp, STAGE_GOAL));
     console.log('track       ->', await evalJS(cdp, READ_TRACK));
@@ -127,6 +201,12 @@ const ADVANCE = `(async () => {
 
     console.log('advance     ->', await evalJS(cdp, ADVANCE));
     console.log(' shot       ->', JSON.stringify(await capture(cdp, OUT, '3-advanced')));
+
+    console.log('running     ->', await evalJS(cdp, RUNNING_STATE));
+    console.log(' shot       ->', JSON.stringify(await capture(cdp, OUT, '4-running')));
+
+    console.log('FINISH PATH ->', await evalJS(cdp, COMPLETE_THE_PATH));
+    console.log(' shot       ->', JSON.stringify(await capture(cdp, OUT, '5-path-complete')));
 
     const errs = (diag.exceptions || []).length;
     console.log('page exceptions:', errs);

@@ -81,6 +81,13 @@ A.ok(/goal\.pct/.test(trackFn) && /goal\.done/.test(trackFn) && /goal\.total/.te
 const trackEmitted = trackFn.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 A.ok(!/locked|unlock|LOCKED|TIER \d/i.test(trackEmitted), 'NOTHING the track RENDERS claims to be locked — the log reveals order, it never gates (standing law)');
 A.ok(/q-track-empty/.test(trackFn) && /SET A GOAL/.test(trackFn), 'with no goal the track teaches what it is and offers the real door, never an empty frame');
+/* A FINISHED path is not an empty one. Goals.project surfaces nothing for a completed goal, so without
+   this the band snapped back to "no goal path yet" the instant the last milestone landed — telling a
+   Commander who had just finished a goal that they never had one. */
+A.ok(/evo\.goalsReached/.test(trackFn) && /' reached<\/b>'/.test(trackFn),
+  'a completed path is ACKNOWLEDGED with the engine’s real goals-reached count, never reset to "no goal yet"');
+A.ok(/SET THE NEXT GOAL/.test(trackFn), 'after a goal is reached the door invites the NEXT one');
+A.ok(/q-track-reached-band/.test(trackFn) && /\.q-track-reached-band/.test(css), 'the finished band keeps the gold rail it earned');
 A.ok(/\.q-track \{/.test(css) && /\.q-node-now \.q-node-dot/.test(css), 'the track ships its CSS layer');
 /* the payoff: what the path cashes out in. The stage NAME must come from the engine, never a copy of the
    ladder in the frontend — and it must not read as an unlock, because evolution grants nothing. */
