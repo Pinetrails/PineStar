@@ -78,6 +78,22 @@ function cargoVersion() {
   const m = readText(join(ROOT, 'src-tauri', 'Cargo.toml')).match(/^\s*version\s*=\s*"([^"]+)"/m);
   return m ? m[1] : '';
 }
+function cargoLockVersion() {
+  const m = readText(join(ROOT, 'src-tauri', 'Cargo.lock')).match(/name = "skynet-desktop"\r?\nversion = "([^"]+)"/);
+  return m ? m[1] : '';
+}
+function releaseVersions() {
+  const pkg = readJson(join(ROOT, 'package.json'));
+  const lock = readJson(join(ROOT, 'package-lock.json'));
+  return {
+    packageJson: String(pkg.version || ''),
+    packageLock: String(lock.version || ''),
+    packageLockRoot: String((lock.packages && lock.packages[''] && lock.packages[''].version) || ''),
+    tauri: tauriVersion(),
+    cargo: cargoVersion(),
+    cargoLock: cargoLockVersion()
+  };
+}
 function updaterEndpoint() {
   const conf = readJson(join(ROOT, 'src-tauri', 'tauri.conf.json'));
   const eps = conf.plugins && conf.plugins.updater && conf.plugins.updater.endpoints;
@@ -96,18 +112,26 @@ function findInstaller(nsisDir) {
 }
 
 async function preflight() {
-  const version = tauriVersion();
-  const cargo = cargoVersion();
+  const versions = releaseVersions();
+  const version = versions.tauri;
   log('== Preflight ==');
-  log('  tauri.conf.json version : ' + version);
-  log('  Cargo.toml version      : ' + cargo);
+  log('  package.json version    : ' + versions.packageJson);
+  log('  package-lock version    : ' + versions.packageLock + ' (root ' + versions.packageLockRoot + ')');
+  log('  tauri.conf.json version : ' + versions.tauri);
+  log('  Cargo.toml version      : ' + versions.cargo);
+  log('  Cargo.lock version      : ' + versions.cargoLock);
   log('  updater endpoint        : ' + updaterEndpoint());
   log('  createUpdaterArtifacts  : ' + createUpdaterArtifacts());
   log('  releases repo           : ' + RELEASES_REPO);
   log('  updater key             : ' + KEY_FILE + (existsSync(KEY_FILE) ? ' (present)' : ' (MISSING)'));
 
   if (!version) fail('tauri.conf.json has no version');
-  if (cargo !== version) fail('Cargo.toml (' + cargo + ') and tauri.conf.json (' + version + ') versions disagree — bump both.');
+  const mismatched = Object.entries(versions).filter(([, value]) => value !== version);
+  if (mismatched.length) {
+    fail('release version pins disagree with tauri.conf.json (' + version + '): '
+      + mismatched.map(([name, value]) => name + '=' + (value || '(missing)')).join(', ')
+      + '. Run release:bump; never name an installer from a partial version bump.');
+  }
   if (!createUpdaterArtifacts()) fail('bundle.createUpdaterArtifacts is false — the updater REQUIRES the .sig. Re-enable it.');
   const ep = updaterEndpoint();
   if (!/^https:\/\/github\.com\/.+\/releases\/latest\/download\/latest\.json$/.test(ep)) {

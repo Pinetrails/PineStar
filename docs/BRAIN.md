@@ -15,10 +15,11 @@ telemetry**: the UI never asserts anything the harness can't prove.
 - Lineage: UltronOS (banned from Claude API 2026-04-04) → "v7" fake sim → this real harness
   (reuses v7's canvas + U.bus). Rebranded Skynet→StarNet 2026-06-22; internal `skynet.*`
   keys are intentionally kept.
-- Current repository desktop version: **v0.8.5**. **Three files carry the version and must agree** —
-  `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` — `release:cut` refuses to
-  build if the last two disagree. `package.json` is no longer pinned at `0.0.0`; `release:bump`
-  moves all three together.
+- The repository desktop version is read from the release pins, never copied into this document. **Five
+  locations must agree**: `package.json`, the root entries in `package-lock.json`,
+  `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and the `skynet-desktop` entry in
+  `src-tauri/Cargo.lock`. `release:bump` moves all five together; release preflight and CI must prove
+  their agreement before an artifact is named or tagged.
 
 ## Architecture in one screen
 

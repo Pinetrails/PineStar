@@ -24,10 +24,11 @@ see or download anything.
   `https://github.com/androoAGI/starnet-releases/releases/latest/download/latest.json`
 - Updater signing key: `~/.tauri/starnet-updater.key` (see section 4 — this is the single
   most dangerous thing to lose in the whole project).
-- Last version *built* at time of writing: `0.4.1` (`tauri.conf.json`). **Nothing has ever been
-  published** — `starnet-releases` carries no public release, so `releases/latest` currently 404s
-  and `v1.0.0` will be the first real public artifact. (The `0.1.9` / `0.2.0` version numbers used
-  as examples below are illustrative, not a shipped history.)
+- Release state is live data, not a fact to freeze in this runbook. Read the current in-tree version from
+  the five pins listed in `docs/BRAIN.md`; list publicly receivable distribution releases with
+  `gh release list -R androoAGI/starnet-releases --exclude-drafts`; and inspect drafts separately before
+  selecting a version. A source tag or distribution draft already bearing that version is a collision even
+  when no updater fleet can see it. (The version numbers used as examples below are illustrative.)
 
 ---
 
