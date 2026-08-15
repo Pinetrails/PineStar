@@ -56,6 +56,16 @@ function binaryContains(file, needles) {
   if (absent.length) throw new Error('executable is missing embedded provenance: ' + absent.join(', '));
 }
 
+export function probeStarNetRuntimeNode(runtimeRoot, runtimeNode = '') {
+  const executablePath = resolve(runtimeNode || join(runtimeRoot, process.platform === 'win32' ? 'node.exe' : 'node'));
+  const run = spawnSync(executablePath, ['--version'], { encoding: 'utf8', timeout: 30000, windowsHide: true });
+  const output = (String(run.stdout || '') + String(run.stderr || '')).trim();
+  if (run.status !== 0 || !/^v\d+\.\d+\.\d+(?:[-+].*)?$/.test(output)) {
+    throw new Error(`installed StarNet runtime Node probe failed (${executablePath}): ${output || run.error?.message || `exit ${run.status}`}`);
+  }
+  return { path: executablePath, version: output };
+}
+
 async function healthProbe(url, expected) {
   const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
   if (!response.ok) throw new Error(`health probe returned HTTP ${response.status}`);
@@ -70,13 +80,14 @@ export async function bindStarNet(opts) {
   if (source.tree !== opts.tree) throw new Error(`source tree ${source.tree} != ${opts.tree}`);
   binaryContains(opts.executable, [source.commit, source.tree, describe]);
   const runtime = verifyRuntimeTree(source, opts.runtimeRoot, opts.runtimePaths || ['frontend', 'sidecar', 'shared']);
+  const runtimeNode = probeStarNetRuntimeNode(opts.runtimeRoot, opts.runtimeNode);
   const probe = await healthProbe(opts.healthUrl, describe);
   return { schemaVersion: 'starnet.eval.candidate-manifest.v1', subject: {
     name: 'StarNet', version: opts.version, commit: source.commit,
     sourceTree: { algorithm: 'git-tree', value: source.tree }, executable: executable(opts.executable),
-    platform: { platform: process.platform, arch: process.arch, node: process.version }, dirty: false,
-    provenance: { verified: true, kind: 'embedded-build-and-runtime-tree', describe, runtime, probe,
-      checks: ['commit object exists', 'tree matches commit', 'executable embeds commit/tree/describe', 'all shipped runtime blobs match commit exactly or after CRLF-to-LF normalization', 'live health matches describe'] }
+    platform: { platform: process.platform, arch: process.arch, node: runtimeNode.version }, dirty: false,
+    provenance: { verified: true, kind: 'embedded-build-and-runtime-tree', describe, runtime, runtimeNode, probe,
+      checks: ['commit object exists', 'tree matches commit', 'executable embeds commit/tree/describe', 'all shipped runtime blobs match commit exactly or after CRLF-to-LF normalization', 'installed runtime Node reports its version', 'live health matches describe'] }
   } };
 }
 

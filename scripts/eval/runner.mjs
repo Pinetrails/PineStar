@@ -276,7 +276,8 @@ async function bind(opts) {
   let manifest;
   if (opts.profile === 'starnet') manifest = await bindStarNet({
     sourceDir: opts['source-dir'], runtimeRoot: opts['runtime-root'], executable: opts.executable,
-    commit: opts.commit, tree: opts.tree, version: opts.version, describe: opts.describe, healthUrl: opts['health-url']
+    runtimeNode: opts['runtime-node'], commit: opts.commit, tree: opts.tree, version: opts.version,
+    describe: opts.describe, healthUrl: opts['health-url']
   });
   else if (opts.profile === 'hermes') {
     const contract = readJson(opts.contract || DEFAULTS.contract), ref = contract.reference;

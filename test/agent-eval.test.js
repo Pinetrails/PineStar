@@ -3,7 +3,7 @@
 const A = require('./_assert.js');
 const { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('node:fs');
 const { spawnSync } = require('node:child_process');
-const { join, resolve } = require('node:path');
+const { dirname, join, resolve } = require('node:path');
 const { tmpdir } = require('node:os');
 
 (async () => {
@@ -110,6 +110,10 @@ const { tmpdir } = require('node:os');
   A.throws(() => core.validateTasks([invalidDimension]), 'unknown quality dimensions fail validation instead of diluting the score');
 
   const bind = await import('../scripts/eval/bind.mjs');
+  const runtimeNode = bind.probeStarNetRuntimeNode(dirname(process.execPath), process.execPath);
+  A.eq(runtimeNode.version, process.version, 'StarNet binding records the installed subject Node rather than the controller process by assumption');
+  A.eq(runtimeNode.path, resolve(process.execPath), 'runtime Node evidence records the exact executable it probed');
+  A.throws(() => bind.probeStarNetRuntimeNode(dirname(process.execPath), join(root, 'missing-node')), 'missing installed runtime Node fails candidate binding closed');
   const bindTemp = mkdtempSync(join(tmpdir(), 'starnet-eval-bind-'));
   try {
     const source = join(bindTemp, 'source'), runtime = join(bindTemp, 'runtime');
