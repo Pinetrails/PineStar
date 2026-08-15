@@ -517,6 +517,11 @@ jobs:
           Assert-Authenticode -Label 'installed StarNet executable' -Path $app.FullName -PublisherPattern 'CN=Andrew Sims(?:,|$)'
           Assert-Authenticode -Label 'installed StarNet uninstaller' -Path $uninstaller.FullName -PublisherPattern 'CN=Andrew Sims(?:,|$)'
           Assert-Authenticode -Label 'installed bundled Node runtime' -Path $node.FullName -PublisherPattern 'CN=OpenJS Foundation(?:,|$)'
+          $expectedNodeVersion = (& node -e "import('./scripts/prepare-node.mjs').then(m => console.log(m.NODE_VERSION))").Trim()
+          $actualNodeVersion = (& $node.FullName --version).Trim()
+          if ($actualNodeVersion -ne $expectedNodeVersion) {
+            throw "[$env:TARGET] installed bundled Node version is $actualNodeVersion; expected $expectedNodeVersion"
+          }
 
       # macOS pre-notarization trust proof. Signing can fail SILENTLY GREEN in three ways,
       # each of which ships

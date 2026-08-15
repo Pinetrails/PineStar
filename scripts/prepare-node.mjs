@@ -102,9 +102,14 @@ export function pickSha(sumsBody, entry) {
   throw new Error(`missing ${entry} in SHASUMS256.txt`);
 }
 
-export function cachedRuntimeMatches(file, version) {
+export function cachedRuntimeMatches(file, version, readRuntimeVersion = runtime => execFileSync(runtime, ['--version'], {
+  encoding: 'utf8', timeout: 10000, windowsHide: true
+})) {
   if (!existsSync(file)) return false;
-  try { return readFileSync(file + '.version', 'utf8').trim() === String(version); }
+  try {
+    if (readFileSync(file + '.version', 'utf8').trim() !== String(version)) return false;
+    return String(readRuntimeVersion(file) || '').trim() === String(version);
+  }
   catch (_) { return false; }
 }
 

@@ -63,11 +63,14 @@ const path = require('node:path');
   try {
     const cached = path.join(cacheDir, 'node.exe');
     fs.writeFileSync(cached, 'binary');
-    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2'), false, 'an unstamped cached runtime is never trusted');
+    const reportsCurrent = () => 'v22.23.2\n';
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', reportsCurrent), false, 'an unstamped cached runtime is never trusted');
     fs.writeFileSync(cached + '.version', 'v22.12.0\n');
-    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2'), false, 'an old cached runtime is invalidated after a pin bump');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', reportsCurrent), false, 'an old cached runtime is invalidated after a pin bump');
     fs.writeFileSync(cached + '.version', 'v22.23.2\n');
-    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2'), true, 'the exact stamped runtime remains reusable');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', reportsCurrent), true, 'the exact stamped runtime remains reusable');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', () => 'v22.12.0\n'), false, 'a cached executable that reports the wrong runtime is refreshed even when its stamp was forged');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', () => { throw new Error('cannot execute'); }), false, 'an unexecutable cached runtime is never trusted');
   } finally {
     fs.rmSync(cacheDir, { recursive: true, force: true });
   }

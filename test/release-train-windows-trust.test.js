@@ -61,5 +61,7 @@ A.ok(/Get-ChildItem -LiteralPath \$installRoot[\s\S]*-Filter 'uninstall\.exe'/.t
   'trust proof checks the generated uninstaller from the installed payload');
 A.ok(/CN=Andrew Sims/.test(trust), 'StarNet binaries must carry the verified publisher identity');
 A.ok(/CN=OpenJS Foundation/.test(trust), 'bundled Node must retain its upstream publisher identity');
+A.ok(/prepare-node\.mjs[\s\S]*NODE_VERSION[\s\S]*\$node\.FullName --version[\s\S]*actualNodeVersion -ne \$expectedNodeVersion/.test(trust),
+  'trust proof executes the installed Node runtime and matches it to the source-controlled release pin');
 
 A.report('release-train-windows-trust.test');
