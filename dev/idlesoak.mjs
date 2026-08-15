@@ -167,13 +167,27 @@ try {
      removes the WAITING, not the beat: the encounter still has to be selected, planned, walked and
      held by the shipped engine — we only put the two of them in the same place. */
   const PAIR = process.argv.indexOf('--pair') > -1;
+  /* W5: gather EVERY free crew body around the first one, not just one partner. A trio needs three
+     bodies inside SOCIAL_NEAR_RADIUS of the decider at the same instant; nudging only one of them
+     would mean the third-body branch is never even reachable and the run could not tell "the trio
+     code is broken" apart from "the third body was across the room". Offsets are the same few pixels
+     the proven two-body nudge used, just distinct per body; containBody and the huddle planner are
+     what resolve them onto real walkable tiles. The engine still has to select, plan, walk and hold
+     the encounter — this removes the WAITING, not the beat. */
   const NUDGE = `(() => { try {
     const bs = World.bodies().filter(b => b && !b.hero && !b.unplaced);
     if (bs.length < 2) return 'need 2 crew';
     if (bs.some(b => b.socialKind)) return 'in encounter';
-    const [a, b] = bs;
-    if (a.working || b.working || a.sitting || b.sitting) return 'busy';
-    return World._dbgTeleport(b.id, a.px + 3, a.py + 3) ? 'nudged' : 'teleport refused';
+    const [a, ...rest] = bs;
+    if (a.working || a.sitting) return 'busy';
+    const off = [[3, 3], [-3, 3], [3, -3], [-3, -3]];
+    let moved = 0;
+    rest.forEach((b, i) => {
+      if (b.working || b.sitting) return;
+      const o = off[i % off.length];
+      if (World._dbgTeleport(b.id, a.px + o[0], a.py + o[1])) moved++;
+    });
+    return moved ? ('nudged ' + moved) : 'teleport refused';
   } catch (e) { return 'err ' + e; } })()`;
 
   const t0 = Date.now(), END = t0 + MINUTES * 60000, samples = [];
@@ -209,6 +223,36 @@ try {
       prevSocial.set(b.id, { kind: b.socialKind || null, held });
     }
   }
+
+  /* W5 — the counters above are PER BODY, which is exactly the wrong unit once an encounter can hold
+     three of them: a trio would post 3 "conversations" and read as 50% more social life than a pair
+     when it is ONE conversation with an extra mouth in it. These are per-EVENT, keyed off the run of
+     samples in which any body is in a talking beat:
+       parties        how many talking encounters happened, bucketed by how many bodies were in them
+       maxTalkers     the most bodies ever simultaneously mouth-moving — MUST be 1. A trio's whole
+                      claim is round-robin turn-taking; 2 here means they talk over each other and
+                      the beat is a crowd, not a conversation. This is a violation, not a stat.
+       trioProved     a talking encounter with 3 distinct bodies actually reached the hold */
+  const parties = {}; let maxTalkers = 0, trioProved = false, cur = null;
+  const flush = () => {
+    if (cur && cur.held) {
+      parties[cur.ids.size] = (parties[cur.ids.size] || 0) + 1;
+      if (cur.ids.size >= 3) trioProved = true;
+    }
+    cur = null;
+  };
+  for (const s of samples) {
+    const talkers = s.bodies.filter(b => b && (b.socialKind === 'huddle' || b.socialKind === 'border'));
+    if (!talkers.length) { flush(); continue; }
+    maxTalkers = Math.max(maxTalkers, talkers.filter(b => b.talking).length);
+    if (!cur) cur = { ids: new Set(), held: false };
+    for (const b of talkers) cur.ids.add(b.id);
+    if (talkers.some(b => b.socialPhase === 'hold')) cur.held = true;
+  }
+  flush();
+  encounters.parties = parties;                 // { "2": n, "3": n }
+  encounters.maxSimultaneousTalkers = maxTalkers;
+  encounters.trioProved = trioProved;
 
   // the SHAPE of the encounter, not just that one happened: who was in it, what phase, who had the
   // floor, and the sprite track each was drawn in. This is the W4 evidence — a conversation is a
