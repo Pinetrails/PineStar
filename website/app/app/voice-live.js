@@ -26,8 +26,10 @@ const VoiceLive = (() => {
   // Which of the provider's voices speaks. Empty = the provider descriptor's default.
   const LOCAL_VOICE_KEY = 'starnet.liveVoice.localVoice.v1';
   const TURN_END_KEY = 'starnet.liveVoice.turnEndMs.v1';
-  const DEFAULT_TURN_END_MS = 1800;
-  const TURN_END_CHOICES = [1200, DEFAULT_TURN_END_MS, 2600];
+  // Start complete turns on the proven QUICK boundary. A partial that visibly trails off still gets the
+  // existing +600ms continuation grace below, and NORMAL/PATIENT remain explicit Commander choices.
+  const DEFAULT_TURN_END_MS = 1200;
+  const TURN_END_CHOICES = [DEFAULT_TURN_END_MS, 1800, 2600];
   const PRE_ROLL_MS = 900;
   const MAX_UTTERANCE_MS = 60000;
   const CALIBRATION_FLOOR_CEILING = 0.016;

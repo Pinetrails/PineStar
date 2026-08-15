@@ -71,6 +71,19 @@ function pcmToWav(pcm, sampleRate, channels) {
   return Buffer.concat([h, pcm]);
 }
 
+// The standard voice button captures mono 16 kHz Float32 PCM so the exact two-click take can be handed to
+// Windows System.Speech. Convert it to the PCM16 WAV container that SetInputToWaveFile accepts.
+function float32PcmToWav(buf, sampleRate) {
+  if (!Buffer.isBuffer(buf) || !buf.length || buf.length % 4) return null;
+  const pcm16 = Buffer.alloc(buf.length / 2);
+  for (let src = 0, dst = 0; src < buf.length; src += 4, dst += 2) {
+    const n = buf.readFloatLE(src);
+    const clamped = Number.isFinite(n) ? Math.max(-1, Math.min(1, n)) : 0;
+    pcm16.writeInt16LE(clamped < 0 ? Math.round(clamped * 32768) : Math.round(clamped * 32767), dst);
+  }
+  return pcmToWav(pcm16, sampleRate || 16000, 1);
+}
+
 function wavToMono16kFloat32(buf) {
   if (!buf || buf.length < 44) return null;
   if (buf.toString('latin1', 0, 4) !== 'RIFF' || buf.toString('latin1', 8, 12) !== 'WAVE') return null;
@@ -612,7 +625,17 @@ function makeMediaService(options) {
   async function handleNativeStt(req, res) {
     const ac = new AbortController();
     res.on('close', () => { if (!res.writableEnded) ac.abort(); });
-    const result = await nativeStt.recognize({ signal: ac.signal });
+    let pcm = Buffer.alloc(0);
+    try { pcm = await readBodyBuffer(req, 4 * 16000 * 120, res); }
+    catch (_) {
+      if (res.destroyed || res.writableEnded) return;
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      return res.end(JSON.stringify({ ok: false, text: '', error: 'invalid audio payload' }));
+    }
+    const audioWav = pcm.length ? float32PcmToWav(pcm, 16000) : null;
+    const result = pcm.length && !audioWav
+      ? { ok: false, text: '', error: 'invalid audio payload' }
+      : await nativeStt.recognize({ signal: ac.signal, audioWav });
     if (res.destroyed || res.writableEnded) return;
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     res.end(JSON.stringify(result));
@@ -640,7 +663,7 @@ function makeMediaService(options) {
       res.end(JSON.stringify(value));
     };
     let pcm;
-    try { pcm = await readBodyBuffer(req, 4 * 16000 * 30, res); }
+    try { pcm = await readBodyBuffer(req, 4 * 16000 * 120, res); }
     catch (error) { if (!res.headersSent) json(error && error.tooLarge ? 413 : 400, { error: 'invalid audio payload' }); return; }
     try { json(200, { ok: true, text: await localVoice.transcribe(pcm) }); }
     catch (error) { json(error && error.unavailable ? 501 : 503, { ok: false, error: String((error && error.message) || error) }); }
@@ -686,6 +709,7 @@ function makeMediaService(options) {
 module.exports = {
   makeMediaService,
   pcmToWav,
+  float32PcmToWav,
   wavToMono16kFloat32,
   oggOpusToMono16kFloat32,
   sttMultipartBody,

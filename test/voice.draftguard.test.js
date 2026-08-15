@@ -106,6 +106,7 @@ const lastSR = () => srInstances[srInstances.length - 1];
     lastSR().fireInterim('hello commander');
     A.ok(t.input.value === 'hello commander', 'empty composer: later interim replaces dictation\'s own preview');
     lastSR().fireFinal('hello commander'); await tick();
+    t.Voice.stopListening(); await tick();
     A.ok(t.input.value === '', 'empty composer: finalize clears dictation\'s own preview');
     A.ok(t.sent().length === 1 && t.sent()[0] === 'hello commander', 'empty composer: finalize sends the transcript');
   }
@@ -118,6 +119,7 @@ const lastSR = () => srInstances[srInstances.length - 1];
     lastSR().fireInterim('noise words');
     A.ok(t.input.value === 'my typed draft', 'typed draft: interim does NOT overwrite it');
     lastSR().fireFinal('noise words'); await tick();
+    t.Voice.stopListening(); await tick();
     A.ok(t.input.value === 'my typed draft', 'typed draft: non-empty finalize does NOT clear it');
     A.ok(t.sent().length === 1 && t.sent()[0] === 'noise words', 'typed draft: the spoken transcript still sends as its own message');
   }
@@ -127,7 +129,8 @@ const lastSR = () => srInstances[srInstances.length - 1];
     const t = boot();
     t.input.value = 'draft that used to get wiped';
     t.Voice.startListening(); await tick();
-    lastSR().fireEmptyEnd(); await tick();                   // mic heard nothing → onFinal('')
+    lastSR().fireEmptyEnd(); await tick();                   // browser endpointed, but the two-click take stays open
+    t.Voice.stopListening(); await tick();
     A.ok(t.input.value === 'draft that used to get wiped', 'typed draft: an EMPTY finalize leaves it untouched (the reported bug)');
     A.ok(t.sent().length === 0, 'typed draft: an empty finalize sends nothing');
   }
@@ -142,6 +145,7 @@ const lastSR = () => srInstances[srInstances.length - 1];
     lastSR().fireInterim('partial dictation grows');
     A.ok(t.input.value === 'partial dict plus my typing', 'mixing: once the Commander typed, interims stop overwriting');
     lastSR().fireFinal('partial dictation grows'); await tick();
+    t.Voice.stopListening(); await tick();
     A.ok(t.input.value === 'partial dict plus my typing', 'mixing: finalize leaves the Commander\'s hybrid text alone');
     A.ok(t.sent().length === 1, 'mixing: the transcript still sends');
   }
@@ -161,6 +165,7 @@ const lastSR = () => srInstances[srInstances.length - 1];
     lastSR().fireInterim('unrelated');
     A.ok(t.input.value === 'ghost words', 'fresh listen: typed text is protected even when it equals a stale preview string');
     lastSR().fireEmptyEnd(); await tick();
+    t.Voice.stopListening(); await tick();
     A.ok(t.input.value === 'ghost words', 'fresh listen: empty finalize cannot clear typed text matching a stale preview');
   }
 
