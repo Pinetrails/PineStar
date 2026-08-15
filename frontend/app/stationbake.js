@@ -143,7 +143,21 @@ const StationBake = (() => {
                   both the row and column counts are rounded tile divisions and only step at integer
                   boundaries. What 8 is NOT is the old failure — that trough sat at 17.5 and kept
                   falling to black with no recovery; 31 is a dip between two lamps. */
-  const LIGHT = { ambient: 0.77, ambR: 7, ambG: 5, ambB: 3, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2, crown: 0.45, pitch: 8 };   // crown = how far the ambient gives way over a wall's lit top surface (0 = off, the old inversion)
+  /* DULLED 2026-08-15 (Andrew: "the station is a bit too bright with the lighting… slightly dull
+     it"). The four CUT strengths came down and the ambient plate went up one notch; the additive
+     warm floor pool (`floor`) and the fixture grid (`pitch`) are untouched, because those are what
+     put light ON the deck — dimming them flattens the modelling instead of dimming the room.
+     WHICH KNOB ACTUALLY MOVES THE PICTURE, measured on the seeded hab (npm run shoot --only ingame,
+     mean luma over the deck rect): `ambient` alone is nearly inert — 0.77 → 0.84 moved the deck
+     29.3 → 28.8 (-1.8%), because the room cut already takes 60% of the plate back out and what is
+     left is a near-black film. The CUTS are the lever: pool/room/corridor/door at the values below
+     read 26.2 (-10.7%), p95 58.1 → 52.6, with the lamp pools' shape intact. `ambient` still earns
+     its bump — it deepens the troughs the cuts don't reach (p5 9.1 → 7.9), which is the contrast
+     half of "duller"; 0.82 is the CRT LAB's own 'Dark + pools' value, not a new number.
+     THE CROWN LAW STILL HOLDS at these values (checked, don't assume): the wall's lit top reads
+     59.6 against the hull skirt's 11.1 — the skirt hangs outside the ambient plate so it never
+     moved, and a deeper plate is exactly what could have put the crown back UNDER it. */
+  const LIGHT = { ambient: 0.82, ambR: 7, ambG: 5, ambB: 3, pool: 0.85, room: 0.48, corridor: 0.34, door: 0.42, floor: 0.2, crown: 0.45, pitch: 8 };   // crown = how far the ambient gives way over a wall's lit top surface (0 = off, the old inversion)
 
   /* live-tunable DEPTH FX — the CRT LAB writes these and re-bakes (same contract as LIGHT/WALL).
      Pure top-down 2D cosmetics that make the deck read a touch more 3D — never imply agent/run

@@ -323,7 +323,7 @@ input[type=file]::file-selector-button:hover { border-color: var(--ph); backgrou
    Heavier chrome (corner brackets, an ASCII titlebar, a faux boot stamp) so it reads as a premium
    piece of station hardware, not a web form. Collapses to one column under 860px. */
 .connect-panel {
-  width: min(1060px, 95vw); padding: 0;            /* the header/body manage their own insets */
+  width: min(1060px, 95%); padding: 0;             /* % of `.screen` (fixed inset:0) — a bare 95vw is not a cap under the TEXT SIZE zoom */
   position: relative; overflow: hidden;            /* clip the corner brackets + scanline to the bezel */
 }
 .connect-panel label { display: block; color: var(--ph); letter-spacing: 1px; margin: 8px 0 3px; font-size: 15px; }
@@ -1271,7 +1271,11 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .fnv-dialogue.show { opacity: 1; }
 .fnv-dialogue.no-anim { transition: none; }
-.fnv-floating { position: fixed; right: 18px; bottom: 18px; width: min(440px, 92vw); height: auto; max-height: 70vh; border: 2px solid var(--ph-dim); border-radius: var(--r-lg); }
+/* A body-level fixed panel, so its viewport caps carry the --sn-unzoom reciprocal (see style.css
+   `.term`): a bare 70vh renders as 101vh at HUGE, and this panel is anchored to the BOTTOM, so the
+   overflow leaves by the top — it would grow past the frame exactly where the speaker line is.
+   Measured at 1440x900: 874px at 145% against an 18px bottom offset, i.e. flush against 0. */
+.fnv-floating { position: fixed; right: 18px; bottom: 18px; width: min(440px, calc(92vw * var(--sn-unzoom, 1))); height: auto; max-height: calc(70vh * var(--sn-unzoom, 1)); border: 2px solid var(--ph-dim); border-radius: var(--r-lg); }
 .fnv-speaker {
   color: var(--ph-bright); font-size: 13px; letter-spacing: 3px; text-transform: uppercase;
   text-shadow: 0 0 8px var(--ph-glow2); padding-bottom: 8px; border-bottom: 1px solid var(--ph-dim); flex: 0 0 auto;
@@ -1914,7 +1918,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* SKIN picker — thumbnail grid on the LEFT, a LIVE preview stage on the RIGHT. At 40px a
    chunky pixel sprite is unreadable, so the stage plays the picked (or hovered) skin's real
    walk cycle big enough to actually tell a bear from a capybara before committing. */
-.connect-panel { max-height: 96vh; overflow-y: auto; }   /* desktop console: a touch taller cap so the two-column body lands without a scrollbar */
+/* % of the screen, not vh: `.screen` is `position:fixed; inset:0`, which under the TEXT SIZE body
+   zoom is viewport-exact, while a bare 96vh would render as 139vh at HUGE. #screen-connect resets
+   this to height:100% below, so the cap that survives is the forward-version gate's card. */
+.connect-panel { max-height: 96%; overflow-y: auto; }   /* desktop console: a touch taller cap so the two-column body lands without a scrollbar */
 
 /* ===== CREATE YOUR OVERSEER (v4) — a FULL-SCREEN console: hero pod | identity | brain =====
    The genesis moment owns the whole display. Three numbered columns read left→right as the three

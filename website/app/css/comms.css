@@ -687,12 +687,21 @@
   animation: lb-in var(--t-med, 180ms) var(--ease-out, ease-out);
 }
 @keyframes lb-in { from { opacity: 0; } to { opacity: 1; } }
+/* SIZED OFF THE BACKDROP (%), NEVER THE VIEWPORT (vw/vh) — same law as `.mkt` in marketplace.css.
+   TEXT SIZE is a body zoom, so a vh here computes against the REAL viewport and is THEN multiplied
+   by the zoom: `88vh` rendered as 128vh at HUGE. Measured at 1440x900, an oversized image hung
+   5 / 65 / 124px past BOTH edges at 115 / 130 / 145% (the backdrop centres, so the excess splits) —
+   and the top of a tall image is the part you enlarged it to read. `.comms-lightbox` is
+   `position:fixed; inset:0`, which under zoom is viewport-exact, so % of it IS the glass in the
+   frame's own zoomed coordinate space. The image then rides flex-shrink (`min-height:0` defeats a
+   flex item's content-based minimum) instead of a second viewport cap, so it always lands inside
+   whatever the frame is, with the caption's row still counted. */
 .comms-lightbox .lb-frame {
-  margin: 0; cursor: default; max-width: min(92vw, 1400px); max-height: 88vh;
+  margin: 0; cursor: default; max-width: min(92%, 1400px); max-height: 88%;
   display: flex; flex-direction: column; align-items: center; gap: 6px;
 }
 .comms-lightbox .lb-frame img {
-  display: block; max-width: 100%; max-height: calc(88vh - 28px);
+  display: block; max-width: 100%; min-height: 0; flex: 0 1 auto;
   object-fit: contain; background: #000;
   border: 1px solid var(--ph-dim); border-radius: 4px;
   box-shadow: 0 0 28px var(--ph-glow), 0 12px 40px rgba(0, 0, 0, .6);
@@ -700,7 +709,7 @@
 .comms-lightbox .lb-frame.loading img { min-width: 120px; min-height: 90px; }
 .comms-lightbox .lb-frame.loading::after { content: 'loading…'; color: var(--ph-dim); font-size: 12px; letter-spacing: .12em; }
 .comms-lightbox .lb-name {
-  max-width: 92vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--ph-dim); font-size: 12px; letter-spacing: .06em;
 }
 .comms-lightbox .lb-close {
