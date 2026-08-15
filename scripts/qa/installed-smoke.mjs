@@ -70,14 +70,16 @@ export const REQUIRED_CHECKS = Object.freeze([
 // The board invariant is only meaningful against a rendered TASKS board. Installed smoke used to
 // inspect the boot-default (closed) surface and report a product RED without ever operating the
 // control whose contents it claimed to verify. Drive the real dock control first and wait for the
-// panel to settle; SMOKE_PROBE remains the read-only assertion pass.
+// panel to settle; SMOKE_PROBE remains the read-only assertion pass. A cold WebView can expose the
+// dock DOM before StationUI.init() has attached its listener, so an unhandled first click is not
+// evidence of a product failure. Retry while the board is absent. Opening TASKS creates .kb-cols
+// synchronously, which makes the success check prevent a later retry from toggling it closed.
 export const PREPARE_SMOKE_SURFACE = `(async () => {
-  let clicked = false;
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 120; i++) {
     if (document.querySelectorAll('.kb-cols').length === 1) return true;
     const trigger = document.querySelector('[data-term="tasks"]');
-    if (!clicked && trigger) { trigger.click(); clicked = true; }
-    await new Promise(resolve => setTimeout(resolve, 100));
+    if (trigger) trigger.click();
+    await new Promise(resolve => setTimeout(resolve, 250));
   }
   return document.querySelectorAll('.kb-cols').length === 1;
 })()`;

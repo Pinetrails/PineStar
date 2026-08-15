@@ -51,6 +51,25 @@ async function runInPageProbe({ boardOpen, cards = [], busyIds = [] }) {
   return await vm.runInNewContext(SMOKE_PROBE, context);
 }
 
+async function runPrepareWithDelayedWiring(handledClick) {
+  let clicks = 0;
+  let boardOpen = false;
+  const context = {
+    document: {
+      querySelector: (selector) => selector === '[data-term="tasks"]' ? {
+        click() {
+          clicks += 1;
+          if (clicks >= handledClick) boardOpen = true;
+        }
+      } : null,
+      querySelectorAll: (selector) => selector === '.kb-cols' && boardOpen ? [{}] : []
+    },
+    setTimeout: (resolve) => resolve()
+  };
+  const prepared = await vm.runInNewContext(PREPARE_SMOKE_SURFACE, context);
+  return { prepared, clicks };
+}
+
 // a fake io that records everything into inspectable arrays (no disk).
 function memIo() {
   const evidence = [], stamps = [], findings = [], logs = [];
@@ -197,6 +216,11 @@ const GREEN_PROBE = {
 
 /* ---- E. makeSmoke: BLOCKED-on-unreachable — stamp written BLOCKED + a P0 finding, never silent green ---- */
 (async () => {
+  /* ---- A0.1. cold boot retries the physical TASKS control until its listener is wired ---- */
+  const delayedSurface = await runPrepareWithDelayedWiring(3);
+  A.eq(delayedSurface.prepared, true, 'surface preparation survives dock DOM appearing before its listener is wired');
+  A.eq(delayedSurface.clicks, 3, 'surface preparation retries ignored cold-boot clicks and stops once TASKS opens');
+
   /* ---- A1. open-empty TASKS is observable proof; a closed board is still fail-closed ---- */
   const emptyOpen = await runInPageProbe({ boardOpen: true });
   const emptyOpenCheck = emptyOpen.checks.find(c => c.name === 'board/no-forever-running');
