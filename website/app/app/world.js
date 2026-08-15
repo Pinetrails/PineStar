@@ -241,9 +241,11 @@ const World = (() => {
      ~1 encounter/25min. It now has its OWN station cooldown lane (like THE CHASE's chaseGateUntil), decoupled
      from the quirk race so the encounter RATE is governed by this cooldown, not by whoever wins the gate — but
      a fired encounter STILL arms the shared gate (armBeat, in startEncounter) so total station calm is preserved
-     (we re-slice the pie, we don't grow it). MC-calibrated (5-8min lane + selRoll 0.08) → ~9.5 encounters/hr on
-     a 3-6 body idle floor (target 7-12), total noticeable beats within ~6% of before, N=1 provably unchanged
-     (a solo floor never has a pair → never rolls → never arms this lane). */
+     (we re-slice the pie, we don't grow it). N=1 provably unchanged (a solo floor never has a pair → never
+     rolls → never arms this lane).
+     W5 (2026-08-14): the lane SPLIT in two — a conversation (huddle/border) and a silent beat (watch/follow)
+     no longer draw the same cooldown, because a beat with no talking in it was rate-limiting the one Andrew
+     wants to watch. See SOCIAL_STATION_CD_* / SOCIAL_QUIET_CD_* and armSocialBudget. */
   let socialGateUntil = -1e9;               // earliest `now` the next social encounter may be selected (own lane)
   /* TIER D · D4 THE CHASE (the headline, ultra-rare). Exactly ONE chaser station-wide, mutually exclusive
      WITH a live social beat (the same one-noticeable-thing-at-a-time discipline as the social slot). `chaseId`
@@ -2542,32 +2544,67 @@ const World = (() => {
   }
 
   /* ================= TIER D · D3 — SOCIAL ENCOUNTERS (Tier C grows legs) =================
-     Bounded, SILENT movement beats between two idle bodies. The four kinds:
-       'huddle'  — two SAME-ZONE bodies converge to adjacent tiles, face each other, hold, break.
-       'watch'   — an idle body stands ~2 tiles behind a WORKING body in its own zone, faces the desk, holds.
+     Bounded movement beats between idle bodies. The four kinds, in SELECTION order (the first that
+     assembles a legal plan wins the single slot, so this order is a priority — see maybeSocial/W5b):
+       'huddle'  — TWO OR THREE same-zone bodies converge on adjacent tiles, face one another, take
+                   turns talking, hold, break. The conversation. (W5: the third body is optional and
+                   is only recruited when a legal third tile exists — see planHuddle.)
        'border'  — two ADJACENT-zone bodies each walk to the nearest tile of their shared edge (each INSIDE its
-                   own zone), face each other across the line, hold, break.
-       'follow'  — an idle body notices a walking body passing nearby, half-follows 2-4 tiles (zone-clamped), then
-                   loses interest and STOPS. It NEVER completes the follow — the incompleteness is the design.
+                   own zone), face each other across the line, talk, hold, break.
+       'watch'   — SILENT. An idle body stands ~2 tiles behind a WORKING body in its own zone, faces the desk, holds.
+       'follow'  — SILENT. An idle body notices a walking body passing nearby, half-follows 2-4 tiles (zone-clamped),
+                   then loses interest and STOPS. It NEVER completes the follow — the incompleteness is the design.
+     The two SILENT kinds are deliberately last and draw a SHORTER lane cooldown than the talking
+     ones: they are what happens when there is nobody available to actually talk to (W5a).
      INVARIANTS (each is a named review hunt): containment (every target zone-clamped, G3/K1); work seizes
      instantly (any participant summoned → abandons; the survivor releases within the hard timeout, G2/K3);
      one live encounter (the `socialBeat` slot + hard `until`, G4); no deadlock/cascade (idle-cadence selection off
      neighborsOf, per-pair cooldowns, a beat never spawns another, K4); station rarity (consult crewBeatDamp + arm
      via armBeat, G5); Tier B self-discipline (startEncounter is the ONE cross-body write; stepSocial mutates only
      self, K2); chat-stare exclusion (a chatFocus body never joins). */
-  const SOCIAL_SEL_ROLL = 0.08;             // per idle re-decide, when a candidate pair exists + the social LANE is open (G5: rare; the lane cooldown — not this roll — sets the rate)
+  const SOCIAL_SEL_ROLL = 0.25;             // per idle re-decide, when a candidate pair exists + the social LANE is open (the lane cooldown — not this roll — sets the rate; this only sets how fast an OPEN lane gets consumed)
   /* W4 (2026-08-08): the lane was 5-8 MINUTES station-wide, one encounter at a time — which is why
      nobody had ever actually watched two agents meet: on a floor you look at for a few minutes, the
      expected number of encounters was under one. The beat is also no longer a silent stand-off (it
      now carries a greeting, a turn-taking exchange and a parting wave), so it is worth seeing.
-     90-150s keeps the "one thing happening at a time" character — every other governor (the single
-     slot G4, the per-pair cooldown, crewBeatDamp, the hard timeout) is untouched. */
-  const SOCIAL_STATION_CD_MIN = 90000, SOCIAL_STATION_CD_MAX = 150000;   // dedicated social station cooldown LANE — the rate governor (one at a time, G4)
-  const SOCIAL_HOLD_MIN = 3000, SOCIAL_HOLD_MAX = 7000;   // the silent face-each-other hold (varied)
-  const SOCIAL_HARD_MS = 25000;             // whole-encounter hard timeout — the slot ALWAYS frees by this (G4)
-  const SOCIAL_PAIR_CD_MIN = 180000, SOCIAL_PAIR_CD_MAX = 360000;   // per-pair cooldown (minutes) so a duo never loops (K4)
-  const SOCIAL_NEAR_RADIUS = 5;             // tiles — huddle/watch candidate proximity (within the observer's zone via neighborsOf)
+
+     W5 (2026-08-14, Andrew: "it seems to very very rarely happen"). W4 halved the wait and it was
+     still rare, because the LANE NUMBER was never the whole story — four independent governors
+     multiply, and three of them were invisible in the tuning:
+
+       (a) the lane is shared with the beats that DON'T talk. A 'watch' or a 'follow' fires
+           armSocialBudget too, so a body idly tailing a walker burned the entire 90-150s
+           conversation budget on a beat with no conversation in it. Split: a talking beat draws the
+           CONVERSATION lane, a quiet one draws a much shorter QUIET lane (see armSocialBudget).
+       (b) the kinds were TRIED in the order watch → huddle → follow → border, so whenever a
+           neighbour happened to be working, the non-talking 'watch' won the race and (a) then shut
+           the lane. The talking kinds are now tried FIRST (see maybeSocial).
+       (c) SOCIAL_NEAR_RADIUS 5 is small against a real station: two agents at their own desks are
+           usually further apart than five tiles, so the candidate set was empty on most re-decides
+           and the roll was never even reached. 8 still means "in the same part of the room".
+       (d) the hold was 3-7s. Even when it all lined up, the conversation was over before you looked
+           at it. 9-20s is long enough to notice, watch, and record.
+
+     What is NOT relaxed: the single live slot (G4), containment (G3), work-seizes-instantly (G2/K3),
+     the shared calm budget (armBeat/G5) and the hard timeout. Still one thing at a time. */
+  const SOCIAL_STATION_CD_MIN = 30000, SOCIAL_STATION_CD_MAX = 60000;    // CONVERSATION lane (huddle/border) — the rate governor for the beat Andrew actually wants to see
+  const SOCIAL_QUIET_CD_MIN = 12000, SOCIAL_QUIET_CD_MAX = 25000;        // QUIET lane (watch/follow) — a beat with no conversation in it must not spend the conversation budget (W5a)
+  const SOCIAL_HOLD_MIN = 9000, SOCIAL_HOLD_MAX = 20000;  // the face-each-other hold — long enough to READ as a conversation and be watched (W5d)
+  const SOCIAL_HARD_MS = 55000;             // whole-encounter hard timeout — the slot ALWAYS frees by this (G4). Must exceed walk + SOCIAL_HOLD_MAX or the cap, not the hold, would end every talk.
+  const SOCIAL_PAIR_CD_MIN = 75000, SOCIAL_PAIR_CD_MAX = 165000;   // per-pair cooldown so a duo never loops (K4) — still longer than the lane, so a 3-crew floor rotates partners rather than replaying one pair
+  const SOCIAL_NEAR_RADIUS = 8;             // tiles — huddle/watch candidate proximity (within the observer's zone via neighborsOf). 5 was smaller than the distance between two desks (W5c).
   const SOCIAL_FOLLOW_MIN = 2, SOCIAL_FOLLOW_MAX = 4;   // half-follow distance (tiles) — bounded, never completes
+  /* ---------- W5: A THIRD BODY CAN JOIN (2026-08-14) ----------
+     "maybe even 3 of them just start communicating." A huddle was hard-wired to exactly two bodies
+     (the slot carried aId/bId and nothing else). The slot now carries `ids` — the full participant
+     list, aId/bId retained as its first two entries so every existing reader keeps working — and a
+     huddle recruits a third eligible neighbour when one is standing there. Turn-taking generalises
+     to N speakers by round-robin (myTurnN), so three bodies rotate the floor exactly the way two
+     alternate: at most ONE mouth moving at any instant, which is the property that makes it read as
+     a conversation rather than a crowd. A trio is deliberately the ceiling — four sprites cannot
+     ring one tile without one of them talking to a back. */
+  const SOCIAL_TRIO_CHANCE = 0.45;          // when a huddle has a third eligible body in reach, how often it becomes a trio
+  const SOCIAL_MAX_PARTY = 3;               // hard ceiling on one encounter's participants
   /* ---------- W4: THEY TALK, AND THEY WAVE (2026-08-08) ----------
      A meeting between two agents used to be two sprites standing a tile apart, silent, motionless,
      for three to seven seconds. Read cold it is indistinguishable from two stuck pathfinds. Both
@@ -2595,11 +2632,24 @@ const World = (() => {
   /* armSocialBudget — the two station-level side-effects EVERY fired encounter must do, at ALL fire sites
      (startEncounter for huddle/border, and the one-sided planWatch/planFollow which set the slot inline):
      (1) armBeat — count it against the SHARED station calm budget so quirks stay quiet in its shadow (total
-     station beat rate is preserved — G5), and (2) draw the dedicated social LANE cooldown (5-8min) so the
-     encounter RATE is governed here, decoupled from the quirk-gate race. Kept as one helper so a new social
-     beat can never forget one half (a lane-arm-without-armBeat would grow the total rate; the reverse would
-     let social loop). */
-  function armSocialBudget(now) { armBeat(now); socialGateUntil = now + U.irnd(SOCIAL_STATION_CD_MIN, SOCIAL_STATION_CD_MAX); }
+     station beat rate is preserved — G5), and (2) draw the dedicated social LANE cooldown so the encounter
+     RATE is governed here, decoupled from the quirk-gate race. Kept as one helper so a new social beat can
+     never forget one half (a lane-arm-without-armBeat would grow the total rate; the reverse would let
+     social loop).
+
+     W5a — WHICH lane depends on whether the beat is a CONVERSATION. The two are not interchangeable:
+     'watch' (stand behind a working peer) and 'follow' (tail a walker and lose interest) are silent
+     by construction — talkTurn refuses them — yet they used to draw the same 90-150s cooldown as a
+     talk. On any floor where somebody is working, the silent kinds fire first and often, so the
+     conversation Andrew wants to see was being rate-limited by beats that contain no conversation.
+     They now draw the short QUIET lane; only a real exchange spends the conversation budget. */
+  function isTalkKind(kind) { return kind === 'huddle' || kind === 'border'; }
+  function armSocialBudget(now, kind) {
+    armBeat(now);
+    socialGateUntil = now + (isTalkKind(kind)
+      ? U.irnd(SOCIAL_STATION_CD_MIN, SOCIAL_STATION_CD_MAX)
+      : U.irnd(SOCIAL_QUIET_CD_MIN, SOCIAL_QUIET_CD_MAX));
+  }
 
   // stable sorted-pair key for the per-pair cooldown map
   function pairKey(aId, bId) { return (String(aId) < String(bId)) ? (aId + '|' + bId) : (bId + '|' + aId); }
@@ -2615,15 +2665,22 @@ const World = (() => {
     return bodyIsIdle(b, now);                                   // idle, not tasked/walking/mid-goal (hero: activity idle; crew: summoned+free)
   }
 
-  // free the whole encounter + clear both participants' plans. Idempotent. Called on: hard timeout, partner-gone,
+  /* participantIds — the encounter's full roster. W5 added `ids` (2 for a pair, 3 for a trio); the
+     `|| [aId, bId]` fallback is not defensive noise, it is the compatibility hinge: aId/bId remain
+     the first two entries at every fire site, so a slot written by any older path still reads back
+     as a complete roster here. Every teardown walks THIS list, never [a, b] — the whole point of a
+     trio is that the third body must be released by the same code that releases the other two. */
+  function participantIds(s) { return (s && s.ids && s.ids.length) ? s.ids : (s ? [s.aId, s.bId] : []); }
+  function participantBodies(s) { return participantIds(s).map(bodyForAgent).filter(Boolean); }
+
+  // free the whole encounter + clear EVERY participant's plan. Idempotent. Called on: hard timeout, partner-gone,
   // a participant seized by work, or a clean natural end. NEVER leaves the slot occupied (G4).
   function endEncounter(now, armCd) {
     const s = socialBeat; socialBeat = null;
     if (!s) return;
-    const a = bodyForAgent(s.aId), b = bodyForAgent(s.bId);
-    for (const body of [a, b]) {
-      // W4 SAFETY: the conversation pose is dropped for BOTH bodies on ANY end, even one whose plan
-      // was already torn down elsewhere (a seize clears .social first) — a body left mouth-moving
+    for (const body of participantBodies(s)) {
+      // W4 SAFETY: the conversation pose is dropped for EVERY participant on ANY end, even one whose
+      // plan was already torn down elsewhere (a seize clears .social first) — a body left mouth-moving
       // at nobody is exactly the kind of state this project calls a lie.
       if (body && !body.social) setTalking(body, false);
       if (!body || !body.social) continue;
@@ -2633,7 +2690,13 @@ const World = (() => {
       body.social = null;
       if (body.goal === 'social') { body.goal = null; body.state = 'idle'; body.pathPts = null; body.target = null; body.idleUntil = Math.max(body.idleUntil || 0, now + U.irnd(300, 900)); }
     }
-    if (armCd !== false && s.aId != null && s.bId != null) armPairCd(s.aId, s.bId, now);   // arm the per-pair cooldown on any end (so a loop can't restart it)
+    // arm the per-pair cooldown on any end (so a loop can't restart it). W5: a trio arms all THREE
+    // pairs — otherwise the two bodies who happened not to be aId/bId would be free to re-huddle
+    // instantly and the encounter would replay with the same faces.
+    if (armCd !== false) {
+      const ids = participantIds(s).filter(id => id != null);
+      for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) armPairCd(ids[i], ids[j], now);
+    }
   }
 
   // has the encounter been pulled apart (a participant seized by work / despawned / chat-focused)? ⇒ tear down so
@@ -2643,19 +2706,27 @@ const World = (() => {
   // the whole point, not a break. Chat-focus on either body breaks it (the Commander now owns that body's attention).
   function encounterBroken(now) {
     const s = socialBeat; if (!s) return true;
-    const a = bodyForAgent(s.aId), b = bodyForAgent(s.bId);
-    if (!a || !b || a.unplaced || b.unplaced) return true;                 // a participant despawned
+    const ids = participantIds(s);
+    const bodies = ids.map(bodyForAgent);
+    if (bodies.some(x => !x || x.unplaced)) return true;                   // a participant despawned
+    const a = bodies[0];
     const oneSided = (s.kind === 'watch' || s.kind === 'follow');
-    // the OBSERVER (aId) always carries the plan — its loss/seizure always breaks the beat.
+    // the OBSERVER (aId, always ids[0]) always carries the plan — its loss/seizure always breaks the beat.
     if (a.social == null) return true;                                     // observer's plan cleared out from under us
     if (a.working) return true;                                            // observer's crew run seized it
     if (a === agent && activity === 'task') return true;                   // observer (hero) got summoned
-    if (chatHot(now) && (a === chatFocusBody() || b === chatFocusBody())) return true;   // either pulled into a LIVE (hot) chat-stare — a cold focus doesn't seize, so it doesn't break the beat
+    if (chatHot(now)) { const f = chatFocusBody(); if (f && bodies.indexOf(f) >= 0) return true; }   // ANY participant pulled into a LIVE (hot) chat-stare — a cold focus doesn't seize, so it doesn't break the beat
     if (!oneSided) {
-      // TWO-SIDED: the partner (bId) must also still be holding its own plan and not seized.
-      if (b.social == null) return true;
-      if (b.working) return true;
-      if (b === agent && activity === 'task') return true;
+      // TWO-SIDED: every OTHER participant must also still be holding its own plan and not seized.
+      // W5: this loop is what makes a trio safe — a third body that gets summoned tears the whole
+      // encounter down on the very next tick rather than leaving two bodies talking at a gap where
+      // somebody used to be. Work seizing instantly (G2/K3) outranks the conversation, always.
+      for (let i = 1; i < bodies.length; i++) {
+        const o = bodies[i];
+        if (o.social == null) return true;
+        if (o.working) return true;
+        if (o === agent && activity === 'task') return true;
+      }
     }
     return false;
   }
@@ -2663,18 +2734,29 @@ const World = (() => {
   /* startEncounter — THE ONE coordinator (K2). Assigns each body its OWN plan on `body.social` at initiation
      (this is the sanctioned cross-body write, done once, explicitly, here). Each plan is fully self-contained so
      per-tick stepSocial(self) mutates only self. Every walk target is zone-clamped to the MOVER's own zone (G3).
-     Returns true iff an encounter was armed (⇒ caller should not fall through to a normal idle beat). */
-  function startEncounter(a, b, kind, now, planA, planB) {
+     Returns true iff an encounter was armed (⇒ caller should not fall through to a normal idle beat).
+
+     W5: `extras` is an optional list of [{ body, plan }] for the third body of a trio. a and b stay
+     the named pair so aId/bId keep their meaning for every existing reader (the source lock, the
+     one-sided beats, the soak); the roster the teardown and the turn-taker walk is `ids`. Each body
+     is given `partnerIds` — everyone ELSE in the encounter — so a body faces the group it is
+     standing in rather than one arbitrarily-chosen member of it. */
+  function startEncounter(a, b, kind, now, planA, planB, extras) {
     if (socialBeat) return false;                                         // G4: one live encounter station-wide
-    a.social = planA; b.social = planB;
-    a.social.partnerId = b.id; b.social.partnerId = a.id;
-    a.social.kind = kind; b.social.kind = kind;
-    a.goal = 'social'; b.goal = 'social';
-    // drop any in-flight idle state so the social plan owns each body cleanly (does NOT touch working/task — those
-    // paths are excluded by socialEligible, so a/b are genuinely idle here).
-    for (const body of [a, b]) { body.stilling = false; body.usingProp = null; body.sitting = false; body.pauseUntil = 0; body.pauseLook = null; body.studyKey = null; }
-    socialBeat = { kind, aId: a.id, bId: b.id, until: now + SOCIAL_HARD_MS, startedAt: now };   // startedAt: the ONE clock both turn-takers read (see talkTurn)
-    armSocialBudget(now);                                                 // G5 shared-gate arm + the 5-8min social LANE draw (total calm preserved; rate governed by the lane)
+    const party = [{ body: a, plan: planA }, { body: b, plan: planB }].concat(extras || []).slice(0, SOCIAL_MAX_PARTY);
+    const ids = party.map(p => p.body.id);
+    for (const { body, plan } of party) {
+      body.social = plan;
+      plan.kind = kind;
+      plan.partnerId = (body === a) ? b.id : a.id;                        // the one named partner (kept: the one-sided beats and older readers use it)
+      plan.partnerIds = ids.filter(id => id !== body.id);                 // everyone else — what facePartner actually aims at
+      body.goal = 'social';
+      // drop any in-flight idle state so the social plan owns each body cleanly (does NOT touch working/task — those
+      // paths are excluded by socialEligible, so every member of the party is genuinely idle here).
+      body.stilling = false; body.usingProp = null; body.sitting = false; body.pauseUntil = 0; body.pauseLook = null; body.studyKey = null;
+    }
+    socialBeat = { kind, aId: a.id, bId: b.id, until: now + SOCIAL_HARD_MS, startedAt: now, ids: ids };   // startedAt: the ONE clock every turn-taker reads (see talkTurn)
+    armSocialBudget(now, kind);                                           // G5 shared-gate arm + the CONVERSATION lane draw (total calm preserved; rate governed by the lane)
     return true;
   }
 
@@ -2692,7 +2774,17 @@ const World = (() => {
   function stepSocial(now) {
     const pl = self.social; if (!pl) return;
     // face resolution
-    const facePartner = () => { const p = bodyForAgent(pl.partnerId); if (p) self.dir = dirToward(self.px, self.py, p.px, p.py); };
+    /* W5: face the GROUP, not one nominated member of it. With two bodies the centroid of "everyone
+       else" IS the partner, so a pair is unchanged; with three it is the point between the other two,
+       which is what standing in a circle looks like. Falls back to the single partnerId so the
+       one-sided beats (watch/follow), which never carry partnerIds, keep their exact behaviour. */
+    const facePartner = () => {
+      const others = (pl.partnerIds || [pl.partnerId]).map(bodyForAgent).filter(p => p && !p.unplaced);
+      if (!others.length) return;
+      let sx = 0, sy = 0;
+      for (const p of others) { sx += p.px; sy += p.py; }
+      self.dir = dirToward(self.px, self.py, sx / others.length, sy / others.length);
+    };
     if (pl.phase === 'walk') {
       if (self.state === 'walk' || self.target) return;   // still walking — the walk machinery in tick/crewEngineStep drives it
       const cur = tileOf(self.px, self.py);
@@ -2731,11 +2823,11 @@ const World = (() => {
       if (now >= pl.until) endEncounter(now);                                         // natural end → free the slot + arm the pair cooldown
     }
   }
-  /* W4 — one body's turn in a two-sided exchange. Both bodies read the SAME hold clock (pl.holdAt,
-     stamped by each as it settles) and their own side of the pair, so they alternate without either
-     writing to the other or to any shared turn state (K2). A body only mouth-moves for the first
-     TALK_SPEAK_MS of its own slot, so there is a real beat of silence between turns — the pause is
-     what makes it read as listening rather than as two sprites vibrating. */
+  /* W4/W5 — one body's turn in a talking encounter (2 or 3 participants). Every body reads the SAME
+     encounter clock and its OWN seat in the roster, so they take turns without any of them writing to
+     the others or to shared turn state (K2). A body only mouth-moves for the first TALK_SPEAK_MS of
+     its own slot, so there is a real beat of silence between turns — the pause is what makes it read
+     as listening rather than as sprites vibrating. */
   /* The turn phase MUST come from the ENCOUNTER's clock (socialBeat.startedAt), not from each
      body's own arrival. Each body stamps pl.holdAt when IT settles, and the two rarely arrive
      together — the first live soak caught them 2s apart, which put both of them in "slot 0" and
@@ -2743,26 +2835,45 @@ const World = (() => {
      at all; the shared origin is what makes the two alternate. */
   function talkTurn(b, now, pl) {
     if (!b || !pl) return;
-    const twoSided = pl.kind === 'huddle' || pl.kind === 'border';
-    if (!twoSided || !socialBeat || !socialBeat.startedAt || !pl.holdAt) { setTalking(b, false); return; }
-    setTalking(b, myTurn(now - socialBeat.startedAt, socialBeat.aId === b.id, TALK_SLOT_MS, TALK_SPEAK_MS));
+    if (!isTalkKind(pl.kind) || !socialBeat || !socialBeat.startedAt || !pl.holdAt) { setTalking(b, false); return; }
+    /* W5: the body's SEAT in the roster replaces "am I the first speaker", and the roster length
+       replaces the hard-coded 2. Both come from the slot, which is written once by the coordinator
+       and only ever READ here — the property that keeps this K2-clean (no body writes another's
+       turn state) survives the generalisation unchanged. An id missing from the roster (a torn-down
+       encounter racing this tick) yields -1, which myTurnN answers with silence rather than a lie. */
+    const ids = participantIds(socialBeat);
+    setTalking(b, myTurnN(now - socialBeat.startedAt, ids.indexOf(b.id), ids.length, TALK_SLOT_MS, TALK_SPEAK_MS));
   }
   /* TALK-TURN-PURE-BEGIN — the turn-taking decision, extracted PURE (arguments only; no module
      state, no RNG, no clock, no DOM) so the alternation is unit-testable headlessly. WHY headless:
      an encounter is rare, tick-driven and needs two bodies to meet, so "do they take turns rather
      than flap in unison" is not something a live soak can assert at every millisecond — but it is
      the one property that decides whether this reads as a conversation.
-       elapsed  ms since the pair entered the hold (both read the SAME clock)
-       first    is this body the pair's FIRST speaker (socialBeat.aId)? The two bodies pass
-                opposite values, which is the ONLY thing that distinguishes them — no shared
-                mutable turn state, so neither body ever writes to the other (K2).
+
+     myTurnN — the N-speaker form (W5, so three bodies can hold one conversation):
+       elapsed  ms since the ENCOUNTER started (every participant reads the SAME clock)
+       idx / n  this body's seat in the roster, and how many seats there are. The seat is the ONLY
+                thing that distinguishes one participant from another — no shared mutable turn
+                state, so no body ever writes another's turn (K2). Out-of-roster ⇒ silent.
        slotMs   one turn + the silence after it · speakMs how much of the turn is mouth-moving
-     The gap (slotMs - speakMs) is load-bearing: without it the two swap instantly and it reads as
-     two sprites vibrating rather than one listening while the other speaks. */
-  function myTurn(elapsed, first, slotMs, speakMs) {
-    if (!(elapsed >= 0) || !(slotMs > 0)) return false;
-    const mine = (Math.floor(elapsed / slotMs) % 2 === 0) === !!first;
+     Round-robin on the slot index means exactly one seat holds the floor at a time for ANY n, which
+     is the property that scales: with three bodies the risk is not silence, it is a crowd all
+     mouthing at once, and `% n` makes that unrepresentable rather than merely unlikely.
+
+     myTurn is the n=2 case (idx 0 = the pair's FIRST speaker, socialBeat.aId) kept as a named
+     function: it is the shape test/talk-turn.test.js sweeps, and a pair must stay byte-identical
+     to the W4 behaviour that was tuned and shipped.
+
+     The gap (slotMs - speakMs) is load-bearing: without it the speakers swap instantly and it reads
+     as sprites vibrating rather than one listening while another speaks. */
+  function myTurnN(elapsed, idx, n, slotMs, speakMs) {
+    if (!(elapsed >= 0) || !(slotMs > 0) || !(n > 0)) return false;
+    if (!(idx >= 0) || idx >= n) return false;              // not in the roster ⇒ silent (never guess a turn)
+    const mine = (Math.floor(elapsed / slotMs) % n) === idx;
     return mine && (elapsed % slotMs) < speakMs;
+  }
+  function myTurn(elapsed, first, slotMs, speakMs) {
+    return myTurnN(elapsed, first ? 0 : 1, 2, slotMs, speakMs);
   }
   /* TALK-TURN-PURE-END */
   // `talking` is the world's own reason for the speaking pose; the hero ORs it with Voice in
@@ -2795,17 +2906,20 @@ const World = (() => {
 
   /* maybeSocial — SELECTION hook, called from decideIdle at the existing idle cadence with self = the deciding
      idle body (K4: never triggered by observing another encounter — only off neighborsOf at re-decide time). Rolls
-     rarely (SOCIAL_SEL_ROLL) and only when: the station gate is open (crewBeatDamp — shared G5 budget), no encounter
-     is live (G4), self is eligible, and a concrete candidate pair exists. Tries the beats in order; the first that
-     assembles a zone-legal plan wins. reduceMotion → no walking beats (degrade to Tier C: return false, let the
-     normal gaze life run). Returns true iff an encounter was started (⇒ decideIdle stops). */
+     (SOCIAL_SEL_ROLL) and only when: the station gate is open (crewBeatDamp — shared G5 budget), no encounter
+     is live (G4), self is eligible, and a concrete candidate pair exists. Tries the beats in PRIORITY order (see
+     the W5b note below); the first that assembles a zone-legal plan wins. reduceMotion → no walking beats
+     (degrade to Tier C: return false, let the normal gaze life run). Returns true iff an encounter was started
+     (⇒ decideIdle stops).
+     NOTE the roll is NOT the rate governor — the lane cooldown is. The roll only decides how quickly an
+     already-open lane gets spent, which is why raising it does not multiply the encounter count. */
   function maybeSocial(now) {
     if (reduceMotion()) return false;                                    // reduceMotion: no walking social beats (Tier C glances only)
     if (socialBeat) return false;                                        // G4: one live encounter
     if (chaseId != null) return false;                                   // TIER D · D4: mutual exclusion — no social beat while THE CHASE is live (one noticeable station-level thing at a time, from EITHER body's decideIdle)
     if (self.social) return false;                                       // already in one (defensive)
     if (!socialEligible(self, now)) return false;
-    if (now < socialGateUntil) return false;                             // TIER D · D3 LANE: social has its OWN station cooldown (5-8min) — decoupled from the quirk-gate race so the RATE is governed here, not by whoever wins the shared gate. RNG-free (N=1 parity preserved). A fired encounter STILL arms the shared gate (armBeat) so total station calm holds.
+    if (now < socialGateUntil) return false;                             // TIER D · D3 LANE: social has its OWN station cooldown (W5: conversation 30-60s, silent beats 12-25s) — decoupled from the quirk-gate race so the RATE is governed here, not by whoever wins the shared gate. RNG-free (N=1 parity preserved). A fired encounter STILL arms the shared gate (armBeat) so total station calm holds.
     // in-sight SAME-ZONE neighbors (Tier C read-only scan) + whether ANY other placed body exists (adjacent-zone
     // border candidates aren't same-zone, so the border precheck scans allBodies). CRITICAL N=1 PARITY (hunt 6):
     // the U.chance roll is gated BEHIND candidate existence — a solo floor (no other body) returns here BEFORE the
@@ -2814,33 +2928,56 @@ const World = (() => {
     const near = neighborsOf(self, SOCIAL_NEAR_RADIUS);
     const anyOther = allBodies().some(b => b !== self && !b.unplaced);   // is there any OTHER placed body at all (border candidates aren't same-zone)?
     if (!near.length && !anyOther) return false;                         // no same-zone neighbor AND no other placed body → not a candidate; skip the roll (N=1 parity: solo floor never rolls)
-    if (!U.chance(SOCIAL_SEL_ROLL)) return false;                        // RARE (only reached when a real candidate could exist)
-    // 1) WATCH-A-PEER-WORK: a WORKING neighbor in my zone → stand ~2 tiles behind it, face its desk.
+    if (!U.chance(SOCIAL_SEL_ROLL)) return false;                        // only reached when a real candidate could exist
+    /* ORDER MATTERS, AND IT USED TO BE BACKWARDS (W5b). The kinds are tried in sequence and the first
+       that assembles a legal plan wins the single slot — so the order is a PRIORITY, not a list. It
+       ran watch → huddle → follow → border, which put the two SILENT kinds ahead of the conversation:
+       on any floor where somebody was working, 'watch' won the race almost every time, and (before
+       W5a split the lanes) it then shut the social lane for minutes on a beat with no talking in it.
+       The talking kinds now go first. The silent ones still happen — they are the fallback when there
+       is nobody to actually talk to, which is exactly what they should be. */
+    // 1) HUDDLE: eligible same-zone idle neighbours → converge and talk (a trio if a third is in reach).
+    const idleCands = near.filter(o => socialEligible(o, now) && !pairOnCd(self.id, o.id, now));
+    if (idleCands.length && planHuddle(self, idleCands, now)) return true;
+    // 2) BORDER MEETING: an eligible idle body in an ADJACENT zone with a shared edge → meet at the border and talk.
+    if (planBorderMeeting(self, now)) return true;
+    // 3) WATCH-A-PEER-WORK (silent): a WORKING neighbor in my zone → stand ~2 tiles behind it, face its desk.
     for (const w of near) {
       if (!(w.working)) continue;
       if (pairOnCd(self.id, w.id, now)) continue;
       if (planWatch(self, w, now)) return true;
     }
-    // 2) HUDDLE: an eligible same-zone idle neighbor → converge to adjacent tiles.
-    const idleCands = near.filter(o => socialEligible(o, now) && !pairOnCd(self.id, o.id, now));
-    if (idleCands.length && planHuddle(self, U.pick(idleCands), now)) return true;
-    // 3) HALF-FOLLOW: a WALKING body passing nearby (may be tasked/idle-walking) → half-follow its path.
+    // 4) HALF-FOLLOW (silent): a WALKING body passing nearby (may be tasked/idle-walking) → half-follow its path.
     for (const w of near) {
       if (w.state !== 'walk') continue;
       if (pairOnCd(self.id, w.id, now)) continue;
       if (planFollow(self, w, now)) return true;
     }
-    // 4) BORDER MEETING: an eligible idle body in an ADJACENT zone with a shared edge → meet at the border.
-    if (planBorderMeeting(self, now)) return true;
     return false;
   }
 
   // ---- per-kind plan builders (each returns true iff it armed a zone-legal encounter) ----
 
-  // HUDDLE: pick a walkable in-zone tile for each body that is ADJACENT to the other's approach, so they end up
-  // facing each other a tile apart. Simplest robust form: each walks to a tile adjacent to the midpoint, inside its
-  // OWN zone. We resolve concrete tiles so both plans are fixed at initiation (K2 — no mid-tick partner reads for the target).
-  function planHuddle(a, b, now) {
+  /* HUDDLE: pick a walkable in-zone tile for each body that is ADJACENT to the others' approach, so they end up
+     facing one another a tile apart. Simplest robust form: each walks to a tile near the midpoint, inside its
+     OWN zone. We resolve concrete tiles so every plan is fixed at initiation (K2 — no mid-tick partner reads for
+     the target).
+
+     W5 — `cands` is now the whole eligible neighbour LIST, not one pre-picked body, because the third
+     body of a trio has to be chosen HERE: only this function knows whether a legal third tile exists,
+     and a recruit that cannot be given a tile must not be recruited at all. Order of business:
+       1. pick the partner (unchanged: one uniform pick over the candidates)
+       2. resolve the pair's two tiles — if that fails there is no huddle at all, trio or not
+       3. only then roll for a third, and only among candidates that are ALSO eligible with the partner
+          (pair cooldown both ways) and can be given a third distinct tile in their OWN zone
+     Failing the third is never fatal: it falls back to the pair that was already legal. This ordering
+     is what stops the trio from being able to COST encounters — the feature can only ever add a body
+     to a huddle that was going to happen anyway. */
+  function planHuddle(a, cands, now) {
+    const list = Array.isArray(cands) ? cands : [cands];
+    if (!list.length) return false;
+    const b = U.pick(list);
+    if (!b) return false;
     const zA = zoneFor(a), zB = zoneFor(b);
     const ca = tileOf(a.px, a.py), cb = tileOf(b.px, b.py);
     const mx = Math.round((ca.x + cb.x) / 2), my = Math.round((ca.y + cb.y) / 2);
@@ -2849,9 +2986,19 @@ const World = (() => {
     // b aims for a tile adjacent to a's target, still in b's own zone (so they end up ~1 tile apart, facing)
     const tb = nearestWalkableInZone(zB, ta.x, ta.y, cb, 4, ta);   // exclude a's exact tile
     if (!tb) return false;
-    return startEncounter(a, b, 'huddle', now,
-      { phase: 'walk', tx: ta.x, ty: ta.y, faceTile: 'partner' },
-      { phase: 'walk', tx: tb.x, ty: tb.y, faceTile: 'partner' });
+    const planA = { phase: 'walk', tx: ta.x, ty: ta.y, faceTile: 'partner' };
+    const planB = { phase: 'walk', tx: tb.x, ty: tb.y, faceTile: 'partner' };
+    // ---- the third body (W5) ----
+    const extras = [];
+    const rest = list.filter(o => o !== b && !pairOnCd(b.id, o.id, now));
+    if (rest.length && U.chance(SOCIAL_TRIO_CHANCE)) {
+      const c = U.pick(rest);
+      const cc = tileOf(c.px, c.py);
+      // a third tile near the SAME meeting point, in c's own zone (G3), distinct from both taken tiles.
+      const tc = nearestWalkableInZone(zoneFor(c), ta.x, ta.y, cc, 4, ta, tb);
+      if (tc) extras.push({ body: c, plan: { phase: 'walk', tx: tc.x, ty: tc.y, faceTile: 'partner' } });
+    }
+    return startEncounter(a, b, 'huddle', now, planA, planB, extras);
   }
 
   // WATCH-A-PEER-WORK: stand ~2 tiles behind the worker (on the side away from its desk facing), inside the
@@ -2875,8 +3022,8 @@ const World = (() => {
       if (socialBeat) return false;
       obs.social = { phase: 'walk', tx: c.x, ty: c.y, faceTile: { x: wt.x, y: wt.y }, kind: 'watch', partnerId: worker.id };
       obs.goal = 'social'; obs.stilling = false; obs.usingProp = null; obs.sitting = false; obs.pauseUntil = 0; obs.pauseLook = null; obs.studyKey = null;
-      socialBeat = { kind: 'watch', aId: obs.id, bId: worker.id, until: now + SOCIAL_HARD_MS, startedAt: now };
-      armSocialBudget(now);   // shared-gate arm + social LANE draw (same as startEncounter — one-sided beats govern the lane too)
+      socialBeat = { kind: 'watch', aId: obs.id, bId: worker.id, until: now + SOCIAL_HARD_MS, startedAt: now, ids: [obs.id, worker.id] };
+      armSocialBudget(now, 'watch');   // shared-gate arm + the SHORT quiet lane (W5a: a silent beat must not spend the conversation budget)
       return true;
     }
     return false;
@@ -2902,8 +3049,8 @@ const World = (() => {
     obs.goal = 'social'; obs.stilling = false; obs.usingProp = null; obs.sitting = false; obs.pauseUntil = 0; obs.pauseLook = null; obs.studyKey = null;
     if (!setPathTo({ x: first.x, y: first.y })) { obs.social = null; obs.goal = null; return false; }
     obs.social.followLeft -= 1;
-    socialBeat = { kind: 'follow', aId: obs.id, bId: walker.id, until: now + SOCIAL_HARD_MS, startedAt: now };
-    armSocialBudget(now);   // shared-gate arm + social LANE draw (same as startEncounter)
+    socialBeat = { kind: 'follow', aId: obs.id, bId: walker.id, until: now + SOCIAL_HARD_MS, startedAt: now, ids: [obs.id, walker.id] };
+    armSocialBudget(now, 'follow');   // shared-gate arm + the SHORT quiet lane (W5a)
     return true;
   }
 
@@ -2979,7 +3126,8 @@ const World = (() => {
   /* D3-PURE-GEOMETRY-END */
   // nearest walkable in-zone tile to (tx,ty), searching a small ring; `cur` biases toward reachability; `excl` an
   // optional tile to skip (so a huddle partner doesn't target the same tile). Deterministic ring scan (no RNG).
-  function nearestWalkableInZone(zone, tx, ty, cur, radius, excl) {
+  function nearestWalkableInZone(zone, tx, ty, cur, radius, ...excl) {
+    const taken = excl.filter(Boolean);   // W5: variadic — a trio has TWO tiles already spoken for, not one
     for (let r = 0; r <= radius; r++) {
       const ring = [];
       for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
@@ -2988,7 +3136,7 @@ const World = (() => {
       }
       ring.sort((p, q) => (Math.abs(p.x - cur.x) + Math.abs(p.y - cur.y)) - (Math.abs(q.x - cur.x) + Math.abs(q.y - cur.y)));
       for (const c of ring) {
-        if (excl && c.x === excl.x && c.y === excl.y) continue;
+        if (taken.some(e => c.x === e.x && c.y === e.y)) continue;
         if (tileInZone(zone, c.x, c.y) && geo.walkable(c.x, c.y, blocked)) return c;
       }
     }
