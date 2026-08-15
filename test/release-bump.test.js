@@ -18,6 +18,9 @@ let assertions = 0;
 function check(cond, msg) { assert.ok(cond, msg); assertions++; }
 function eq(a, b, msg) { assert.equal(a, b, msg); assertions++; }
 
+check(/\['release', 'list', '-R', repo, '--exclude-drafts'/.test(fs.readFileSync(script, 'utf8')),
+  'published-floor query excludes draft releases — a draft is not an updater fleet floor');
+
 // Build a fixture "repo root": just the files release-bump reads/writes.
 function makeFixture(dir, version, opts) {
   opts = opts || {};

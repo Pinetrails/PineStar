@@ -129,7 +129,11 @@ function resolveReleasesRepo() {
 // (same seam pattern as STARNET_BUMP_ROOT) and exercise every branch offline.
 function queryPublishedFloor(repo) {
   const ghBin = process.env.STARNET_BUMP_GH || 'gh';
-  const ghArgs = ['release', 'list', '-R', repo, '--json', 'tagName', '--limit', '200'];
+  // Drafts have no updater fleet behind them and may already reserve the in-tree version. Counting one as the
+  // published floor makes the diagnostic false (and obscures a source-tag/draft mismatch), so query only releases
+  // users can actually receive. Pre-releases remain included because an installed pre-release fleet is still a
+  // version floor we must never move backwards across.
+  const ghArgs = ['release', 'list', '-R', repo, '--exclude-drafts', '--json', 'tagName', '--limit', '200'];
   // Test seam: a fake gh supplied as a .mjs/.cjs/.js script is run with the current node so the
   // unit test can exercise the real spawn+parse path cross-platform (a bare .cmd/.js can't be
   // spawned without a shell on Windows). Real gh is a native binary and takes the plain path.
