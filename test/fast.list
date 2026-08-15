@@ -618,6 +618,7 @@ test/website-live-preview.test.js
 test/font.law.test.js
 test/sprite-assets.test.js
 test/sprite-walk-motion.test.js
+test/sprite-detached-prop.test.js
 test/lint-gate-can-fail.js
 test/lint-emits.js
 test/lint-determinism.js
