@@ -38,7 +38,13 @@ A.ok(luminance(glow) < luminance(oldGlow), 'animated shimmer is slightly less lu
 A.ok(luminance(glow) > 0.65, 'animated shimmer remains visible over the ambient mask');
 A.ok(warm(glow) > warm(oldGlow), 'animated shimmer shifts warmer rather than merely darker');
 
-const lightControls = { ambient: '0.77', pool: '1', room: '0.6', corridor: '0.42', door: '0.5', floor: '0.2', crown: '0.45', pitch: '8' };
+/* The shipped light controls, locked so a polish pass can't drift them silently — and so the CRT
+   LAB's RESET can never restore a state that never shipped. Dulled 2026-08-15 on Andrew's call
+   ("a bit too bright… slightly dull it"): the four CUT strengths came down and the ambient plate
+   went up a notch. `floor` (the additive warm pool that puts light ON the deck) and `pitch` (the
+   fixture grid) deliberately did NOT move — dimming those flattens the model instead of dimming
+   the room, which is the failure this file exists to prevent. */
+const lightControls = { ambient: '0.82', pool: '0.85', room: '0.48', corridor: '0.34', door: '0.42', floor: '0.2', crown: '0.45', pitch: '8' };
 for (const [key, value] of Object.entries(lightControls)) {
   const lock = new RegExp('\\b' + key + ': ' + value.replace('.', '\\.') + '(?:[, }])');
   A.ok(lock.test(bake), 'the shipped ' + key + ' lighting control remains ' + value);
