@@ -507,11 +507,15 @@ jobs:
             Select-Object -First 1
           $node = Get-ChildItem -LiteralPath $installRoot -Recurse -File -Filter 'node.exe' |
             Select-Object -First 1
+          $uninstaller = Get-ChildItem -LiteralPath $installRoot -Recurse -File -Filter 'uninstall.exe' |
+            Select-Object -First 1
           if ($null -eq $app) { throw "[$env:TARGET] installed payload has no skynet-desktop.exe" }
           if ($null -eq $node) { throw "[$env:TARGET] installed payload has no bundled node.exe" }
+          if ($null -eq $uninstaller) { throw "[$env:TARGET] installed payload has no uninstall.exe" }
 
           Assert-Authenticode -Label 'NSIS installer' -Path $installer.FullName -PublisherPattern 'CN=Andrew Sims(?:,|$)'
           Assert-Authenticode -Label 'installed StarNet executable' -Path $app.FullName -PublisherPattern 'CN=Andrew Sims(?:,|$)'
+          Assert-Authenticode -Label 'installed StarNet uninstaller' -Path $uninstaller.FullName -PublisherPattern 'CN=Andrew Sims(?:,|$)'
           Assert-Authenticode -Label 'installed bundled Node runtime' -Path $node.FullName -PublisherPattern 'CN=OpenJS Foundation(?:,|$)'
 
       # macOS pre-notarization trust proof. Signing can fail SILENTLY GREEN in three ways,

@@ -225,7 +225,9 @@ pub(crate) fn migrate_credits_token_from_plaintext(workspaces: &Path) -> bool {
     // it. Strip the plaintext token only once a READ-BACK confirms the keychain really has this
     // exact value. If the store failed (locked keychain, no backend, permissions), leave the token
     // on disk — a token in a file beats a token nobody has. The next launch retries (self-healing).
-    let keychain_has_it = read_credits_token().map(|held| held == token).unwrap_or(false);
+    let keychain_has_it = read_credits_token()
+        .map(|held| held == token)
+        .unwrap_or(false);
     if keychain_has_it {
         if let Some(object) = json.as_object_mut() {
             object.remove("deviceToken");

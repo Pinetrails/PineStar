@@ -56,6 +56,9 @@ A.ok(/Start-Process[\s\S]*-ArgumentList '\/S',[\s\S]*\/D=\$installRoot/.test(tru
   'trust proof silently installs the exact NSIS candidate into an isolated root');
 A.ok(/Get-ChildItem -LiteralPath \$installRoot[\s\S]*-Filter 'node\.exe'/.test(trust),
   'trust proof checks the bundled Node runtime from the installed payload');
+A.ok(/Get-ChildItem -LiteralPath \$installRoot[\s\S]*-Filter 'uninstall\.exe'/.test(trust)
+  && /installed StarNet uninstaller/.test(trust),
+  'trust proof checks the generated uninstaller from the installed payload');
 A.ok(/CN=Andrew Sims/.test(trust), 'StarNet binaries must carry the verified publisher identity');
 A.ok(/CN=OpenJS Foundation/.test(trust), 'bundled Node must retain its upstream publisher identity');
 
