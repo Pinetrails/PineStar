@@ -588,8 +588,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     clearTimeout(resizeClampTimer);
     // the bars move with the frame (and F11 removes the desktop one outright) — re-measure the
     // band BEFORE anything clamps against it, then again once the reflow has settled.
-    requestAnimationFrame(() => { syncTermBand(); Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); });
-    resizeClampTimer = setTimeout(() => { syncTermBand(); Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); }, 120);
+    requestAnimationFrame(() => { syncTermBand(); reseatToasts(); Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); });
+    resizeClampTimer = setTimeout(() => { syncTermBand(); reseatToasts(); Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); }, 120);
   });
 
   // Land a freshly-opened window in a tidy left-anchored column, CASCADING each so stacked panels
@@ -7027,6 +7027,53 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const m = TOAST_LABEL_RE.exec(String(text || ''));
     return m ? { label: m[1].trim(), body: m[2].trim() } : { label: '', body: String(text || '') };
   }
+  /* ---------- WHERE THE TOAST RACK IS BOLTED (motion.css §7) ----------
+     Same law as syncTermBand: the cabinet re-flows its padding, gap, rows and columns at three
+     breakpoints and again for crew-rail-off/cinema, and the CREW seam is draggable on top of that
+     — so the seat is MEASURED off the real chrome and published as vars, never arithmetic against
+     the grid's numbers written out a second time.
+       · #bottombar.left  — the shell's outer padding line (the same x as #topbar, the CREW rail
+         and the dock). Chosen over the stage's left edge because it survives a rail drag, a hidden
+         rail and cinema mode, and because it parks the rack in the left gutter instead of in the
+         middle of the stage where every floating window is centred.
+       · #stage-wrap.bottom — the line where the rail, the stage and COMMS all end; the rack rests
+         on that seam. Also gives the right-hand room cap, so the rack can never reach COMMS.
+     Rects are VISUAL px and a <body> child's style px are ZOOMED px, so divide by uiZoom() exactly
+     once (the uiZoom law). The rack is empty and invisible except while a card is up, so seating it
+     at emit time is enough; the resize listener re-seats a card that is already on screen (a TEXT
+     SIZE flip dispatches a synthetic resize, so that path is covered too).
+     Fail open, never closed: a screen that isn't the station — or a frame mid-boot — leaves the
+     CSS fallbacks alone rather than seating the rack against a degenerate rect. */
+  function seatToastRack(stack) {
+    if (!stack || typeof document === 'undefined') return;
+    const game = document.getElementById('screen-game');
+    if (!game || !game.classList.contains('active')) return;   // hidden screens have no geometry
+    const box = id => {
+      const el = document.getElementById(id);
+      const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+      return r && r.width > 0 && r.height > 0 ? r : null;
+    };
+    const bar = box('bottombar'), stage = box('stage-wrap');
+    if (!bar || !stage) return;
+    const z = uiZoom();
+    const cap = (stage.right - bar.left) / z;
+    // This corner is already the station's NOTICE corner — .nav-coach (the one-time "your panels
+    // now live down here" mark, app.css §2428) parks at left:14/bottom:58 and points at the docks.
+    // That is corroboration the gutter is the right home, not a reason to move: the rack simply
+    // stacks ABOVE the coach while it is up, so a first-run instruction with a dismiss button is
+    // never buried under a transient card (the rack wins on z at 9600, so nothing else can).
+    const coach = document.querySelector('.nav-coach');
+    const cr = coach && !coach.hasAttribute('hidden') && coach.getBoundingClientRect
+      ? coach.getBoundingClientRect() : null;
+    let floor = window.innerHeight - stage.bottom;
+    if (cr && cr.height > 0) floor = Math.max(floor, window.innerHeight - cr.top + 6);
+    stack.style.setProperty('--toast-x', (bar.left / z) + 'px');
+    stack.style.setProperty('--toast-b', (floor / z) + 'px');
+    if (cap > 0) stack.style.setProperty('--toast-cap', cap + 'px');
+  }
+  // a card that is already up must follow the cabinet too — its seat is measured, not declarative,
+  // so the resize path re-runs it (a TEXT SIZE flip dispatches a synthetic resize, so that is covered).
+  function reseatToasts() { try { seatToastRack(document.getElementById('toast-stack')); } catch (_) {} }
   // transient on-screen toast — a station readout card that seats in, holds for its dwell, then leaves.
   // The persistent record still lives in the NOTIFICATIONS panel (buildNotifs); this is the
   // ephemeral heads-up so a result isn't silent when that panel is closed.
@@ -7037,6 +7084,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (playSound !== false) sfx(severityOf(cls) === 'bad' ? 'bad' : 'notify');
     let stack = document.getElementById('toast-stack');
     if (!stack) { stack = mkEl('div'); stack.id = 'toast-stack'; document.body.appendChild(stack); }
+    seatToastRack(stack);   // re-read the cabinet before the card is visible — a rail drag or a breakpoint may have moved the seam
     const sev = severityOf(cls);
     // keep the caller's raw cls (good/gold/warn/bad already have edge styling) AND add a normalized
     // sev-* class so 'error'/'info' also get an edge + the lead glyph.
