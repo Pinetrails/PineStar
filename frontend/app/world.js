@@ -241,9 +241,11 @@ const World = (() => {
      ~1 encounter/25min. It now has its OWN station cooldown lane (like THE CHASE's chaseGateUntil), decoupled
      from the quirk race so the encounter RATE is governed by this cooldown, not by whoever wins the gate — but
      a fired encounter STILL arms the shared gate (armBeat, in startEncounter) so total station calm is preserved
-     (we re-slice the pie, we don't grow it). MC-calibrated (5-8min lane + selRoll 0.08) → ~9.5 encounters/hr on
-     a 3-6 body idle floor (target 7-12), total noticeable beats within ~6% of before, N=1 provably unchanged
-     (a solo floor never has a pair → never rolls → never arms this lane). */
+     (we re-slice the pie, we don't grow it). N=1 provably unchanged (a solo floor never has a pair → never
+     rolls → never arms this lane).
+     W5 (2026-08-14): the lane SPLIT in two — a conversation (huddle/border) and a silent beat (watch/follow)
+     no longer draw the same cooldown, because a beat with no talking in it was rate-limiting the one Andrew
+     wants to watch. See SOCIAL_STATION_CD_* / SOCIAL_QUIET_CD_* and armSocialBudget. */
   let socialGateUntil = -1e9;               // earliest `now` the next social encounter may be selected (own lane)
   /* TIER D · D4 THE CHASE (the headline, ultra-rare). Exactly ONE chaser station-wide, mutually exclusive
      WITH a live social beat (the same one-noticeable-thing-at-a-time discipline as the social slot). `chaseId`
@@ -2904,17 +2906,20 @@ const World = (() => {
 
   /* maybeSocial — SELECTION hook, called from decideIdle at the existing idle cadence with self = the deciding
      idle body (K4: never triggered by observing another encounter — only off neighborsOf at re-decide time). Rolls
-     rarely (SOCIAL_SEL_ROLL) and only when: the station gate is open (crewBeatDamp — shared G5 budget), no encounter
-     is live (G4), self is eligible, and a concrete candidate pair exists. Tries the beats in order; the first that
-     assembles a zone-legal plan wins. reduceMotion → no walking beats (degrade to Tier C: return false, let the
-     normal gaze life run). Returns true iff an encounter was started (⇒ decideIdle stops). */
+     (SOCIAL_SEL_ROLL) and only when: the station gate is open (crewBeatDamp — shared G5 budget), no encounter
+     is live (G4), self is eligible, and a concrete candidate pair exists. Tries the beats in PRIORITY order (see
+     the W5b note below); the first that assembles a zone-legal plan wins. reduceMotion → no walking beats
+     (degrade to Tier C: return false, let the normal gaze life run). Returns true iff an encounter was started
+     (⇒ decideIdle stops).
+     NOTE the roll is NOT the rate governor — the lane cooldown is. The roll only decides how quickly an
+     already-open lane gets spent, which is why raising it does not multiply the encounter count. */
   function maybeSocial(now) {
     if (reduceMotion()) return false;                                    // reduceMotion: no walking social beats (Tier C glances only)
     if (socialBeat) return false;                                        // G4: one live encounter
     if (chaseId != null) return false;                                   // TIER D · D4: mutual exclusion — no social beat while THE CHASE is live (one noticeable station-level thing at a time, from EITHER body's decideIdle)
     if (self.social) return false;                                       // already in one (defensive)
     if (!socialEligible(self, now)) return false;
-    if (now < socialGateUntil) return false;                             // TIER D · D3 LANE: social has its OWN station cooldown (5-8min) — decoupled from the quirk-gate race so the RATE is governed here, not by whoever wins the shared gate. RNG-free (N=1 parity preserved). A fired encounter STILL arms the shared gate (armBeat) so total station calm holds.
+    if (now < socialGateUntil) return false;                             // TIER D · D3 LANE: social has its OWN station cooldown (W5: conversation 30-60s, silent beats 12-25s) — decoupled from the quirk-gate race so the RATE is governed here, not by whoever wins the shared gate. RNG-free (N=1 parity preserved). A fired encounter STILL arms the shared gate (armBeat) so total station calm holds.
     // in-sight SAME-ZONE neighbors (Tier C read-only scan) + whether ANY other placed body exists (adjacent-zone
     // border candidates aren't same-zone, so the border precheck scans allBodies). CRITICAL N=1 PARITY (hunt 6):
     // the U.chance roll is gated BEHIND candidate existence — a solo floor (no other body) returns here BEFORE the
