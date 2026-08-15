@@ -2605,6 +2605,11 @@ const World = (() => {
      ring one tile without one of them talking to a back. */
   const SOCIAL_TRIO_CHANCE = 0.45;          // when a huddle has a third eligible body in reach, how often it becomes a trio
   const SOCIAL_MAX_PARTY = 3;               // hard ceiling on one encounter's participants
+  /* Read-only selection counters. A trio needs FOUR things to line up (a huddle is planned at all, a
+     second candidate survives both pair cooldowns, the roll passes, a third tile resolves) and when
+     no trio appears in a live soak the interesting question is WHICH one failed — a rate this rare
+     cannot be diagnosed by watching. Counters only; nothing here steers a decision. */
+  const huddleStats = { planned: 0, candCounts: {}, noThirdCandidate: 0, trioRolled: 0, trioTileFail: 0, trioFired: 0 };
   /* ---------- W4: THEY TALK, AND THEY WAVE (2026-08-08) ----------
      A meeting between two agents used to be two sprites standing a tile apart, silent, motionless,
      for three to seven seconds. Read cold it is indistinguishable from two stuck pathfinds. Both
@@ -2973,9 +2978,11 @@ const World = (() => {
      Failing the third is never fatal: it falls back to the pair that was already legal. This ordering
      is what stops the trio from being able to COST encounters — the feature can only ever add a body
      to a huddle that was going to happen anyway. */
-  function planHuddle(a, cands, now) {
+  function planHuddle(a, cands, now, forceTrio) {
     const list = Array.isArray(cands) ? cands : [cands];
     if (!list.length) return false;
+    huddleStats.planned++;
+    huddleStats.candCounts[list.length] = (huddleStats.candCounts[list.length] || 0) + 1;
     const b = U.pick(list);
     if (!b) return false;
     const zA = zoneFor(a), zB = zoneFor(b);
@@ -2991,13 +2998,17 @@ const World = (() => {
     // ---- the third body (W5) ----
     const extras = [];
     const rest = list.filter(o => o !== b && !pairOnCd(b.id, o.id, now));
-    if (rest.length && U.chance(SOCIAL_TRIO_CHANCE)) {
+    if (!rest.length) huddleStats.noThirdCandidate++;
+    if (rest.length && (forceTrio || U.chance(SOCIAL_TRIO_CHANCE))) {
+      huddleStats.trioRolled++;
       const c = U.pick(rest);
       const cc = tileOf(c.px, c.py);
       // a third tile near the SAME meeting point, in c's own zone (G3), distinct from both taken tiles.
       const tc = nearestWalkableInZone(zoneFor(c), ta.x, ta.y, cc, 4, ta, tb);
       if (tc) extras.push({ body: c, plan: { phase: 'walk', tx: tc.x, ty: tc.y, faceTile: 'partner' } });
+      else huddleStats.trioTileFail++;
     }
+    if (extras.length) huddleStats.trioFired++;
     return startEncounter(a, b, 'huddle', now, planA, planB, extras);
   }
 
@@ -7702,6 +7713,29 @@ const World = (() => {
     // TEST/DEBUG ONLY — containment harness: raw-place a body (bypassing every walkable-checked picker)
     // so the per-tick containment backstop (containBody / hero ensureAgentValid) is provable live.
     _dbgTeleport: (aid, px, py) => { const b = bodyForAgent(aid); if (!b) return false; b.pathPts = null; b.target = null; b.sitting = false; b.seated = false; b.px = +px; b.py = +py; return true; },
+    // TEST/DEBUG ONLY — read the huddle SELECTION counters (see huddleStats). Answers "why was there
+    // no trio" without a second instrumented build: planned vs. how many candidates each huddle saw
+    // vs. roll vs. tile failure. Read-only snapshot; the caller cannot mutate the live object.
+    _dbgHuddleStats: () => JSON.parse(JSON.stringify(huddleStats)),
+    /* TEST/DEBUG ONLY — assemble a huddle from named bodies through the REAL planHuddle path (same
+       borrowed-actor discipline as _dbgSit/greetNewcomer: set `self`, restore in finally). A trio is
+       rare by design — it needs three eligible bodies standing together AND a roll AND a legal third
+       tile — so waiting for the idle engine's dice is not a way to prove the three-body conversation
+       WORKS. `force` bypasses the frequency roll ONLY; every legality gate (zone containment, pair
+       cooldowns, the tile resolver, the single-slot rule) is untouched, so what this proves is the
+       real thing and not a staged one. Returns the roster that was actually armed. */
+    _dbgHuddle: (ids, force) => {
+      if (!geo || !Array.isArray(ids) || ids.length < 2) return { ok: false, err: 'need >= 2 ids' };
+      const bodies = ids.map(bodyForAgent);
+      if (bodies.some(b => !b || b.unplaced)) return { ok: false, err: 'a body is missing or unplaced' };
+      if (socialBeat) return { ok: false, err: 'an encounter is already live' };
+      const keep = self, now = (typeof performance !== 'undefined') ? performance.now() : fnow;   // the same clock the tick hands every social function
+      try {
+        self = bodies[0];
+        const ok = planHuddle(bodies[0], bodies.slice(1), now, !!force);
+        return { ok: !!ok, roster: socialBeat ? participantIds(socialBeat).slice() : null, kind: socialBeat ? socialBeat.kind : null };
+      } finally { self = keep; }
+    },
     // TEST/DEBUG ONLY — deterministically seat a body on a single-tile seat prop (stool/chair) through the
     // REAL planSeat path (claim + pendSeat + lift + counterFace), so the perch render is provable live
     // without waiting on the idle engine's dice. Same borrowed-actor discipline as spawnAgent (B1 restore).
