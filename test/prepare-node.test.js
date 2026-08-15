@@ -12,6 +12,8 @@ const path = require('node:path');
 (async () => {
   const m = await import('../scripts/prepare-node.mjs');
 
+  A.eq(m.NODE_VERSION, 'v22.23.2', 'desktop bundles the current security-patched Node 22 LTS runtime');
+
   // ---- win-x64: identical to the original hardcoded script (the Windows ship path must not move) ----
   const w = m.resolveTarget('win-x64', 'v22.12.0');
   A.eq(w.triple, 'x86_64-pc-windows-msvc', 'win triple unchanged');
@@ -55,6 +57,20 @@ const path = require('node:path');
   A.eq(m.pickSha(sums, 'win-x64/node.exe'), 'deadbeef'.repeat(8), 'pickSha finds the win entry');
   A.eq(m.pickSha(sums, 'node-v22.12.0-linux-x64.tar.gz'), 'a'.repeat(64), 'pickSha finds the linux entry');
   A.throws(() => m.pickSha(sums, 'node-v22.12.0-darwin-arm64.tar.gz'), 'pickSha throws on a missing entry');
+
+  // ---- a changed runtime pin must invalidate an already-present cached binary ----
+  const cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'prepare-node-cache-'));
+  try {
+    const cached = path.join(cacheDir, 'node.exe');
+    fs.writeFileSync(cached, 'binary');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2'), false, 'an unstamped cached runtime is never trusted');
+    fs.writeFileSync(cached + '.version', 'v22.12.0\n');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2'), false, 'an old cached runtime is invalidated after a pin bump');
+    fs.writeFileSync(cached + '.version', 'v22.23.2\n');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2'), true, 'the exact stamped runtime remains reusable');
+  } finally {
+    fs.rmSync(cacheDir, { recursive: true, force: true });
+  }
 
   // ---- packaging hygiene: ignored sidecar runtime state must never be bundled into the installer ----
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'prepare-node-hygiene-'));

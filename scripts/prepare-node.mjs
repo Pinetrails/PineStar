@@ -7,10 +7,10 @@
 //
 // Run directly:        node scripts/prepare-node.mjs            (auto-detects the host OS/arch)
 // Cross-target:        node scripts/prepare-node.mjs linux-x64  (or darwin-arm64 / darwin-x64 / win-x64)
-// Override version:    SKYNET_BUNDLE_NODE=v22.12.0
+// Override version:    SKYNET_BUNDLE_NODE=v22.23.2
 //
 // Windows ships Node as a bare node.exe; macOS/Linux ship a .tar.gz whose bin/node we extract via `tar`.
-import { createWriteStream, mkdirSync, existsSync, rmSync, renameSync, readFileSync, chmodSync, readdirSync } from 'node:fs';
+import { createWriteStream, mkdirSync, existsSync, rmSync, renameSync, readFileSync, writeFileSync, chmodSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { get } from 'node:https';
 import { join, dirname } from 'node:path';
@@ -18,7 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 
-const NODE_VERSION = process.env.SKYNET_BUNDLE_NODE || 'v22.12.0';
+export const NODE_VERSION = process.env.SKYNET_BUNDLE_NODE || 'v22.23.2';
 
 // the supported externalBin targets. `dist` / `sha` are paths under https://nodejs.org/dist/<version>/ ;
 // `member` (archive targets) is the path INSIDE the tarball to extract as the bundled binary. ${V} = version.
@@ -102,6 +102,12 @@ export function pickSha(sumsBody, entry) {
   throw new Error(`missing ${entry} in SHASUMS256.txt`);
 }
 
+export function cachedRuntimeMatches(file, version) {
+  if (!existsSync(file)) return false;
+  try { return readFileSync(file + '.version', 'utf8').trim() === String(version); }
+  catch (_) { return false; }
+}
+
 // Build hygiene: Tauri copies the whole sidecar resource directory, including gitignored files.
 // Refuse to package machine-local runtime state such as sidecar/workspaces/agent.save.json.
 export function assertNoBundledRuntimeState(rootDir = join(dirname(fileURLToPath(import.meta.url)), '..')) {
@@ -122,9 +128,12 @@ async function main(target) {
   const outDir = join(here, '..', 'src-tauri', 'binaries');
   const out = join(outDir, r.outName);
   mkdirSync(outDir, { recursive: true });
-  if (existsSync(out) && !process.env.SKYNET_BUNDLE_FORCE) {
+  if (cachedRuntimeMatches(out, r.version) && !process.env.SKYNET_BUNDLE_FORCE) {
     console.log(`[prepare-node] ${out} already present; skipping (set SKYNET_BUNDLE_FORCE=1 to re-fetch)`);
     return;
+  }
+  if (existsSync(out) && !process.env.SKYNET_BUNDLE_FORCE) {
+    console.log(`[prepare-node] cached runtime is unstamped or not ${r.version}; refreshing ${out}`);
   }
 
   console.log(`[prepare-node] fetching Node ${r.version} (${r.target}) -> ${out}`);
@@ -149,6 +158,7 @@ async function main(target) {
       rmSync(exDir, { recursive: true, force: true });
       rmSync(dl, { force: true });
     }
+    writeFileSync(out + '.version', r.version + '\n', 'utf8');
     console.log('[prepare-node] done (checksum verified; gitignored build input)');
   } catch (e) {
     try { rmSync(dl, { force: true }); } catch {}

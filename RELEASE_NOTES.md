@@ -18,9 +18,11 @@ This update turns the latest autonomy, recovery, deliverables, and station-inter
 - Recovery behavior is covered across restart, cancellation, consent refusal, capability denial, trusted-read failure, mutation replay, and duplicate-work boundaries.
 - The overnight reliability campaign is resumable and records cycle evidence rather than silently losing an interrupted run.
 - Implement durability is fault-injected at the manifest, registration, and source-retirement commit seams; retries recover without exposing an unregistered build or spending a duplicate run after a proven build.
+- The bundled sidecar runtime is Node.js 22.23.2 LTS, incorporating the current Node 22 security fixes rather than the obsolete 22.12.0 runtime.
 
 ## Release boundaries
 
 - The exact installer must pass installed-app smoke and the requested eight-hour stress campaign before launch preparation.
 - The repository's formal release-candidate policy still requires a 48-hour installed real-provider soak. An eight-hour campaign is valuable release evidence but does not satisfy that longer qualification by itself.
 - This candidate remains private until its exact artifact identity, signatures, update metadata, installed behavior, and QA authority are reviewed. Nothing is published by the version bump or local installer build.
+- On Windows, the expected Authenticode publisher is **Andrew Sims**. Do not install a public artifact that is unsigned or names a different signer.

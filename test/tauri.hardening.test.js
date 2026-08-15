@@ -10,6 +10,10 @@ const caps = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri', 'capabiliti
 const mainRs = fs.readFileSync(path.join(root, 'src-tauri', 'src', 'main.rs'), 'utf8');
 const indexJs = fs.readFileSync(path.join(root, 'sidecar', 'index.js'), 'utf8');
 const browserJs = fs.readFileSync(path.join(root, 'sidecar', 'tools', 'builtin', 'browser.js'), 'utf8');
+const cargoToml = fs.readFileSync(path.join(root, 'src-tauri', 'Cargo.toml'), 'utf8');
+
+A.eq(conf.bundle && conf.bundle.publisher, 'Andrew Sims', 'Windows package publisher matches the release signing identity instead of leaking the legacy identifier');
+A.ok(!cargoToml.includes('???'), 'desktop package metadata contains no corrupted placeholder punctuation');
 
 const csp = String(conf.app && conf.app.security && conf.app.security.csp || '');
 A.ok(csp.length > 0 && csp !== 'null', 'Tauri CSP is configured');
