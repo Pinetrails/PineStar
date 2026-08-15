@@ -2825,7 +2825,11 @@ const World = (() => {
       if (pl.faceTile === 'partner') facePartner();
       else if (pl.faceTile) self.dir = dirToward(self.px, self.py, (pl.faceTile.x + 0.5) * T, (pl.faceTile.y + 0.5) * T);
       talkTurn(self, now, pl);                                                        // W4: take (or yield) this body's turn in the exchange
-      if (now >= pl.until) endEncounter(now);                                         // natural end → free the slot + arm the pair cooldown
+      // W5: measure from the LAST arrival (see enterHold) so a late third body is not cut out of the
+      // conversation it just walked into. Falls back to this body's own arrival when the slot carries
+      // no mark (a one-sided beat, or a slot torn down under us this tick).
+      const holdFrom = (socialBeat && socialBeat.lastArrivalAt) || pl.holdAt || 0;
+      if (now >= holdFrom + (pl.holdLen || 0)) endEncounter(now);                     // natural end → free the slot + arm the pair cooldowns
     }
   }
   /* W4/W5 — one body's turn in a talking encounter (2 or 3 participants). Every body reads the SAME
@@ -2888,11 +2892,29 @@ const World = (() => {
     b.talking = !!on;
     if (b !== agent) b.speaking = !!on;
   }
-  // enter the silent face-each-other hold (varied duration). Both bodies enter their own hold independently; the
-  // encounter ends when EITHER reaches its `until` (endEncounter frees both) — a hard cap already bounds it.
+  /* Enter the face-each-other hold (varied duration). Each body enters its own hold independently as
+     it arrives.
+
+     W5 — THE CLOCK RUNS FROM THE LAST ARRIVAL, NOT THE FIRST. This used to end the encounter as soon
+     as ANY participant reached its own `until`, which was survivable with two bodies (they arrive
+     seconds apart, and the loser still got most of the exchange) but is a real defect with three:
+     the live probe caught a run where the third body was still walking when the first one's timer
+     expired, so it reached the huddle and got ZERO turns — the encounter it had been recruited into
+     ended in its face. Stamping the latest arrival on the SLOT and measuring from there means a late
+     arrival extends the conversation rather than being cut out of it.
+
+     Bounded on both sides, so this cannot hang: it can only ever push the end LATER, and
+     SOCIAL_HARD_MS still ends everything regardless (stepSocialGuard). A body that never arrives at
+     all never stamps, so the ones who did arrive still finish on time — the encounter is not held
+     hostage by a body that cannot reach it. Writing this one monotonic timestamp on the station slot
+     is not a K2 break: K2 forbids a body writing ANOTHER BODY's state, and the slot is already
+     coordinator-owned (startEncounter writes it, endEncounter clears it). */
   function enterHold(now, pl) {
-    pl.phase = 'hold'; pl.until = now + U.irnd(SOCIAL_HOLD_MIN, SOCIAL_HOLD_MAX);
+    pl.phase = 'hold';
+    pl.holdLen = U.irnd(SOCIAL_HOLD_MIN, SOCIAL_HOLD_MAX);
+    pl.until = now + pl.holdLen;                        // kept: the per-body deadline older readers expect
     pl.holdAt = now;                                    // W4: THIS body has arrived (the turn PHASE comes from socialBeat.startedAt — see talkTurn)
+    if (socialBeat) socialBeat.lastArrivalAt = Math.max(socialBeat.lastArrivalAt || 0, now);   // W5: the shared "everyone who is coming is here" mark
     self.pathPts = null; self.target = null; self.state = 'idle'; self.goal = 'social';
     // (The GREETING wave that used to fire here is gone with the rest of the gesture-track misuse:
     // the only such art in the project is an arms-up stretch, and a stretch is not a wave. What

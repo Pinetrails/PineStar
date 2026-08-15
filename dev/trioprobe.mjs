@@ -85,16 +85,42 @@ try {
   console.log('[trioprobe] parked:', parked);
   await sleep(1500);
 
+  /* Arming must yield a roster of THREE, and "it armed a pair instead" is neither a pass nor a
+     product failure — it is the run failing to set up its own experiment. `force` skips the
+     frequency roll and nothing else, so a pair cooldown between two of the crew (earned by an
+     organic encounter during the settle) legitimately blocks the third body. Observed live: one run
+     armed T0,T1 with trioFired 0 for exactly that reason. Retry, rotating WHICH body initiates so a
+     single cooled-off pair cannot veto the whole attempt; if three never assemble, exit
+     INCONCLUSIVE (4) rather than grade — the same discipline idlesoak uses for a starved run. */
   let armed = null;
-  for (let attempt = 0; attempt < 12; attempt++) {
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const rot = attempt % 3;
     armed = await evalJS(cdp, `(() => { try {
       const bs = World.bodies().filter(b => b && !b.hero && !b.unplaced);
       if (bs.length < 3) return { ok: false, err: 'crew vanished' };
-      return World._dbgHuddle(bs.map(b => b.id), true);
+      const rot = ${rot}, ids = bs.map(b => b.id);
+      const order = ids.slice(rot).concat(ids.slice(0, rot));
+      return World._dbgHuddle(order, true);
     } catch (e) { return { ok: false, err: String(e) }; } })()`);
-    if (armed && armed.ok) break;
-    console.log('[trioprobe] arm attempt ' + attempt + ':', JSON.stringify(armed));
-    await sleep(2000);
+    if (armed && armed.ok && armed.roster && armed.roster.length === 3) break;
+    if (armed && armed.ok) {
+      // armed a PAIR — release it so the retry is not blocked by its own leftover encounter
+      console.log('[trioprobe] arm attempt ' + attempt + ': armed only ' + armed.roster.join(',') + ' — waiting for a legal third');
+      await sleep(4000);
+    } else {
+      console.log('[trioprobe] arm attempt ' + attempt + ':', JSON.stringify(armed));
+      await sleep(2000);
+    }
+  }
+  if (!(armed && armed.ok && armed.roster && armed.roster.length === 3)) {
+    console.log('\nTRIOPROBE INCONCLUSIVE — could not assemble three bodies into one encounter.');
+    console.log('  last attempt:', JSON.stringify(armed));
+    const st = await evalJS(cdp, `(() => World._dbgHuddleStats ? World._dbgHuddleStats() : null)()`).catch(() => null);
+    console.log('  selection counters:', JSON.stringify(st));
+    console.log('  (a pair cooldown between two crew blocks the third body — that is the engine behaving, not a defect)');
+    try { if (proc) proc.kill(); } catch { }
+    try { if (side) side.kill(); } catch { }
+    process.exit(4);
   }
   console.log('[trioprobe] armed:', JSON.stringify(armed));
   // WHERE each body was asked to go, and whether that tile is inside its OWN zone. A body whose
@@ -127,7 +153,12 @@ try {
           rosterTalkingAtRelease = mine.filter(b => b.talking).map(b => b.name);
         }
       }
-      const inIt = s.bodies.filter(b => b && b.socialKind === 'huddle');
+      /* SCOPED TO THE ARMED ROSTER — not "any body in any huddle". The unscoped version produced a
+         FALSE PASS: a run that armed only a PAIR still reported "all three reached the hold",
+         because a later, unrelated organic huddle involving the third body was counted as if it
+         were this encounter. A measurement that can be satisfied by a different event than the one
+         under test is not evidence. */
+      const inIt = s.bodies.filter(b => b && b.socialKind === 'huddle' && roster.indexOf(b.id) >= 0);
       if (inIt.length) {
         sawEncounter++;
         const talking = inIt.filter(b => b.talking);
