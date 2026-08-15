@@ -102,13 +102,12 @@ export function pickSha(sumsBody, entry) {
   throw new Error(`missing ${entry} in SHASUMS256.txt`);
 }
 
-export function cachedRuntimeMatches(file, version, readRuntimeVersion = runtime => execFileSync(runtime, ['--version'], {
-  encoding: 'utf8', timeout: 10000, windowsHide: true
-})) {
+export function cachedRuntimeMatches(file, version, expectedSha256) {
   if (!existsSync(file)) return false;
   try {
     if (readFileSync(file + '.version', 'utf8').trim() !== String(version)) return false;
-    return String(readRuntimeVersion(file) || '').trim() === String(version);
+    return /^[a-f0-9]{64}$/i.test(String(expectedSha256 || ''))
+      && sha256(file) === String(expectedSha256).toLowerCase();
   }
   catch (_) { return false; }
 }
@@ -133,7 +132,14 @@ async function main(target) {
   const outDir = join(here, '..', 'src-tauri', 'binaries');
   const out = join(outDir, r.outName);
   mkdirSync(outDir, { recursive: true });
-  if (cachedRuntimeMatches(out, r.version) && !process.env.SKYNET_BUNDLE_FORCE) {
+  let expected;
+  try {
+    expected = pickSha(await fetchText(r.shasumsUrl), r.shasumEntry);
+  } catch (e) {
+    console.error(`[prepare-node] FAILED: could not establish the official checksum for ${r.shasumEntry}: ${e.message}`);
+    process.exit(1);
+  }
+  if (cachedRuntimeMatches(out, r.version, expected) && !process.env.SKYNET_BUNDLE_FORCE) {
     console.log(`[prepare-node] ${out} already present; skipping (set SKYNET_BUNDLE_FORCE=1 to re-fetch)`);
     return;
   }
@@ -145,7 +151,6 @@ async function main(target) {
   const dl = out + '.download';
   try {
     await fetchTo(r.distUrl, dl);
-    const expected = pickSha(await fetchText(r.shasumsUrl), r.shasumEntry);
     const actual = sha256(dl);
     if (actual !== expected) throw new Error(`checksum mismatch for ${r.shasumEntry}: expected ${expected}, got ${actual}`);
 
