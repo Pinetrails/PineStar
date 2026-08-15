@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "7a09910d701d6beb46cd75952a9a575e52e6bd10",
+    "sourceCommit": "720411e056e7f89dc0a5d712e7925cb595d8364b",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -98,8 +98,8 @@
       },
       {
         "path": "frontend/app/autopilot.js",
-        "bytes": 49160,
-        "sha256": "cc57ed50d867acdbffbdf4c9424f1ac06f65e6dfc87cc6e4087f5536c9d76252"
+        "bytes": 53848,
+        "sha256": "a3f59254d0e4fa912902c4c3b679b7349131fbdcf55110940a01763134ea95c1"
       },
       {
         "path": "frontend/app/autopilotstore.js",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 594336,
-        "sha256": "96c4d21b2a04ea9a8e3a31894db64846a00147b502f551aaa15df5602879c730"
+        "bytes": 603090,
+        "sha256": "e04cdef25c4f218a7162d0cac9cd6171c507a799bb6d620f3c45571e17fed5ed"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -213,8 +213,8 @@
       },
       {
         "path": "frontend/app/deliverables.js",
-        "bytes": 29493,
-        "sha256": "59fd2d1e43501a46e28866685219c9b46f2a7348fc10ed5b5928def0fa2c9bc4"
+        "bytes": 29804,
+        "sha256": "3f1416df9b3ed4fb3c7ea46a452652657550b31883ac296aef471af3b163c11c"
       },
       {
         "path": "frontend/app/diagnostics.js",
@@ -743,8 +743,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 624694,
-        "sha256": "5c905a56a4e1f2b087c49c2b0bc449987c08c2cfcb9b5c901446fb39a935c37c"
+        "bytes": 625260,
+        "sha256": "ef175966e2cd4653f14366d356cbae42790f15436a192989a5838c8dfeee71a8"
       },
       {
         "path": "frontend/app/study.js",
@@ -928,8 +928,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 37262,
-        "sha256": "da4c550dfb5f32359a26fcdfd0b2b9d82333ea2fb0b64112d071f819fe578348"
+        "bytes": 39703,
+        "sha256": "4c533d37eca0285bda19a5f11bffd4809f6d4eb1d12385acb755c6c164aebe4a"
       },
       {
         "path": "frontend/app/worksignal.js",
