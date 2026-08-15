@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "97300e67709ab7871de92810db1f667ab3c52b19",
+    "sourceCommit": "166d5453e6052e66cce64e9b0dd73f5ddfe4ccb3",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -708,8 +708,8 @@
       },
       {
         "path": "frontend/app/spacebg.js",
-        "bytes": 67206,
-        "sha256": "79815f0c34dc4e224b3f290081c30a8fc74259e91944a88b4cc10db31b6edd05"
+        "bytes": 68124,
+        "sha256": "34222b27a5c99131106981404ca09929f2e150cc5acafb76bfbbcb5367594aba"
       },
       {
         "path": "frontend/app/specialties.js",
@@ -743,8 +743,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 628930,
-        "sha256": "20c123ec3f666cc9cbc6ec499d5609e7161a4b1cab67b885fb7f3ad7472c08f2"
+        "bytes": 628405,
+        "sha256": "d41408a836ea421b4497f5200af0d55e60ecd4e9a16d2e8a30c802f6466b804d"
       },
       {
         "path": "frontend/app/study.js",
@@ -763,8 +763,8 @@
       },
       {
         "path": "frontend/app/terrain.js",
-        "bytes": 112993,
-        "sha256": "060e9cad0d0edc91cd92ed15bf5745c471a54cc20b924764b615ede73ede74ec"
+        "bytes": 114032,
+        "sha256": "4c5462c2e921004f0ffbd3ec3e451534f7a354b8804368a1c221a3831cbdb48e"
       },
       {
         "path": "frontend/app/testapi.js",
@@ -973,8 +973,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 377911,
-        "sha256": "a660c4824f743e32947d61845fadbda106ea8cbeb45a07e96fa641b8251cdb7b"
+        "bytes": 377740,
+        "sha256": "efd140342973c9f64e73d3bdf1c9fbe89c2be727cc26a1e796cadd0632176afe"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -993,8 +993,8 @@
       },
       {
         "path": "frontend/css/motion.css",
-        "bytes": 44806,
-        "sha256": "24d21700faefedc0cc42424dd5d865c3753c293e3b9477de48d24c6008864332"
+        "bytes": 43637,
+        "sha256": "f2417ce084ea4965bed6c31ed1382c7640f1da17574f68a19259c8dcaa41211d"
       },
       {
         "path": "frontend/css/panelchrome.css",
