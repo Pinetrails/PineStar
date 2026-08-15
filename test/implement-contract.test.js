@@ -39,4 +39,32 @@ const selected = { title: 'Add a retry to the uploader', grounds: 'they said upl
   A.ok(/DESCRIBES work/.test(d), 'and defines it as "describes work rather than being the finished thing"');
 })();
 
+/* THE AUTONOMY RUNG DECIDES WHETHER A PLAN IS A DELIVERABLE (2026-08-15).
+   Before this, NO rung information reached the build directive at all: FREE (FULLY AUTONOMOUS) and
+   BUILD (DRAFTS) sent byte-identical prompts, so the top rung differed only in how OFTEN it ran — and could
+   still hand back a backlog describing work instead of doing it, under a headline that says it BUILT something. */
+(function rungChangesThePrompt() {
+  const base = { runId: 'r9', dir: 'workshop/r9', backlogId: 'b9' };
+  const free = AP.buildDoDirectiveV2(selected, Object.assign({ initiative: 'free' }, base));
+  const leash = AP.buildDoDirectiveV2(selected, Object.assign({ initiative: 'leash' }, base));
+  A.ok(free !== leash, 'FREE and BUILD (DRAFTS) no longer send an identical build directive');
+
+  A.ok(/FINISH IT, DO NOT PLAN IT/.test(free), 'FREE forbids delivering a plan');
+  A.ok(/smallest COMPLETE WORKING PIECE/i.test(free), 'and says what to do instead when the job is too big');
+  A.ok(/"planOnly": false/.test(free), 'FREE pins planOnly to false in the manifest shape');
+  A.ok(!/planOnly": <true ONLY if/.test(free), 'and does not also offer the tri-state that would contradict it');
+
+  A.ok(/acceptable deliverable/.test(leash), 'BUILD (DRAFTS) still allows a plan — that rung literally says drafts');
+  A.ok(/planOnly": <true ONLY if/.test(leash), 'and keeps the tri-state planOnly field');
+  A.ok(!/FINISH IT, DO NOT PLAN IT/.test(leash), 'the FREE-only refusal never leaks onto the draft rung');
+
+  // a research ANSWER is not a plan — refusing plans must not ban findings docs at the top rung.
+  A.ok(/findings doc/.test(free), 'FREE still permits a findings doc (an answer IS the deliverable)');
+  A.ok(/NOT a plan/.test(free), 'and says so explicitly, so the model does not over-apply the ban');
+
+  // an unknown/absent rung must behave like the permissive default, never silently like FREE.
+  const unknown = AP.buildDoDirectiveV2(selected, base);
+  A.ok(!/FINISH IT, DO NOT PLAN IT/.test(unknown), 'an absent initiative does not silently impose the FREE refusal');
+})();
+
 A.report();

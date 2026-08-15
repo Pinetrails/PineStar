@@ -476,6 +476,29 @@
   // instructs the agent to BUILD the artifact with its real tools under a given run directory and write a workshop
   // manifest — the SAME deliverable.json contract the away-workshop validates, so the return card + ship gate are
   // reused verbatim. The runId/dir come from the caller (ctx.runId, ctx.dir); the sidecar re-jails every path.
+  /* THE AUTONOMY RUNG DECIDES WHETHER A PLAN IS A DELIVERABLE (2026-08-15).
+     The Commander's dial reads WAIT / SUGGEST / BUILD (DRAFTS) / FREE (FULLY AUTONOMOUS) and maps to
+     initiative wait|propose|leash|free. Until now NONE of that reached the build directive: FREE and
+     BUILD (DRAFTS) sent byte-identical prompts, so the top rung differed only in CADENCE (a beat every
+     ~45 min vs all night) and could still hand back a backlog describing work instead of the work. That
+     makes the headline promise — "while you were away, it BUILT this" — false at the rung that promises
+     it hardest.
+       leash (BUILD DRAFTS) → a plan is a legitimate deliverable; that rung literally says drafts.
+       free  (FULLY AUTONOMOUS) → a plan is a FAILED shift. Build the thing, or the smallest complete
+             working piece of it. Enforced server-side too (a planOnly manifest is refused, never
+             delivered) — prose alone is not a guarantee.
+     A research/findings answer is NOT a plan: it IS the deliverable, and stays allowed at every rung. */
+  function planRuleFor(initiative) {
+    return String(initiative || '') === 'free'
+      ? '- FINISH IT, DO NOT PLAN IT. The Commander is at FREE (fully autonomous) — they want the WORKING THING, not a document about it. NEVER deliver a backlog, roadmap, spec, plan, proposal, checklist, or "next steps" write-up as the artifact. If the job is too big for one shift, build the SMALLEST COMPLETE WORKING PIECE of it and say in the summary what it covers and what is left. At this level a plan is not a deliverable — it is a failed shift, and it will be refused. (Answering a question with a findings doc is NOT a plan; that is still fine.)'
+      : '- If the job is genuinely too big to finish now, a short plan the Commander can act on IS an acceptable deliverable — set "planOnly": true so they are offered a one-click build of it. Prefer finishing something small over describing something large.';
+  }
+  function planOnlyFieldFor(initiative) {
+    return String(initiative || '') === 'free'
+      ? '    "planOnly": false,   <-- MUST be false at this autonomy level; a plan-shaped deliverable is refused (see the rule above),'
+      : '    "planOnly": <true ONLY if this deliverable DESCRIBES work to be done (a plan, backlog, spec, proposal) rather than BEING the finished thing; false for anything the Commander can open and use as-is, including a research answer>,';
+  }
+
   function buildDoDirectiveV2(selected, ctx) {
     selected = selected || {}; ctx = ctx || {};
     const dir = String(ctx.dir || ('workshop/' + (ctx.runId || 'run')));
@@ -491,6 +514,7 @@
     if (hasSnap && String(ctx.targetRoot || '').trim()) {
       lines.push('- THIS IS A PROJECT PATCH: write a UNIFIED-DIFF file (e.g. "' + dir + '/change.patch") that applies cleanly with `git apply` from the repo root ' + String(ctx.targetRoot).trim() + '. Base every hunk on the PROJECT SNAPSHOT above; do not invent files or lines that aren\'t there. In the manifest set "kind":"patch" and "targetRoot":"' + String(ctx.targetRoot).trim() + '", and list the .patch file in "files". The Commander applies it to a NEW branch on Keep — you never touch their repo yourself.');
     }
+    lines.push(planRuleFor(ctx.initiative));
     lines.push('- MATCH THE FORMAT TO THE ASK — build the SIMPLEST thing that fully serves it, never the most impressive: a question/research ask -> a short findings doc (answer first, sources after); a draft ask -> the draft file itself; a comparison/decision -> a short ranked write-up, recommendation on top. ONLY build an interactive SINGLE-FILE HTML tool (all CSS/JS inline, no build step, named index.html) when the ask genuinely needs interaction the Commander will use repeatedly — NEVER default to a dashboard unless the ask is literally to watch several changing numbers in one place.');
     lines.push('- Whatever the format: ZERO SETUP on their end — self-contained, one-click openable, no external files or build step; a script ships with its single run note in "howToUse".');
     lines.push('- Do the real work with your tools (web read/search, files). Ground factual claims in what the tools return. Write every file for this deliverable UNDER "' + dir + '/" (use paths like "' + dir + '/<file>").');
@@ -502,7 +526,7 @@
     // until 2026-08-14 — the rule said "patch", the shape said otherwise, so a patch build came back as a plain
     // file copy AND skipped the savedOnly honesty line (which is keyed on the same kind). Never drop it again.
     lines.push('    "title": "<short name>", "kind": "tool|fix|draft|doc|patch|other",');
-    lines.push('    "planOnly": <true ONLY if this deliverable DESCRIBES work to be done (a plan, backlog, spec, proposal) rather than BEING the finished thing; false for anything the Commander can open and use as-is, including a research answer>,');
+    lines.push(planOnlyFieldFor(ctx.initiative));
     lines.push('    "summary": "<2-3 SHORT plain sentences a busy person absorbs in ten seconds: what it IS and what it does for them. NEVER an inventory — no inline lists of categories, failure modes, or counts, and no sentence over ~25 words; the deliverable itself holds the detail>",');
     lines.push('    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],');
     lines.push('    "howToUse": "<ONE short sentence — at most the single run command. The station gives the Commander an Open link and a one-click Implement action (a patch is applied for them), so NEVER write multi-step setup or git instructions here>",');
@@ -631,7 +655,7 @@
     eligibleArchetypes, grounded, sigTokens, flattenBeliefs, pushActivityBlock,
     pushThreadsBlock, citedThreadId, threadRef, pushFocusBlock, pushSnapshotBlock, pushPriorTonight,
     buildCandidateDirective, parseCandidates, scoreAndSelect, buildDoDirective, parseDeliverable,
-    buildCandidateDirectiveV2, buildDoDirectiveV2, learnFold, learnWeightsFrom,
+    buildCandidateDirectiveV2, buildDoDirectiveV2, planRuleFor, planOnlyFieldFor, learnFold, learnWeightsFrom,
     buildCritiqueDirective, parseCritique, digestLines, digestSummary, digestHeadline,
     writePath, canWrite, fileBody,
     DEFAULT_IDLE_MS, DEFAULT_TICK_MS, REQUIRE_DIM, WARM_MIN, HOT_MIN, STALE_MS,

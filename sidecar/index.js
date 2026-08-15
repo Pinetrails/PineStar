@@ -5386,6 +5386,21 @@ const NIGHTSHIFT_ACT_MARK = '[NIGHTSHIFT_ACT]';   // prompt sentinel (parallels 
    else yields empty strings → the caller simply omits its patch block and builds a file deliverable instead.
    projectScan consults blessedRoots() itself and NEVER blesses a new root; nightpatch re-checks blessedness at
    DECIDE time, so a root that loses its grant between build and Implement is refused there too. Never throws. */
+/* THE RUNG THIS STATION IS AT, for the build directives. 'wait' | 'propose' | 'leash' | 'free' — the same field
+   the Commander's dial writes (WAIT / SUGGEST / BUILD (DRAFTS) / FREE (FULLY AUTONOMOUS)). Never throws. */
+function currentInitiative() {
+  try { return String((commanderPosture.summary() || {}).initiative || ''); } catch (_) { return ''; }
+}
+/* PLAN REFUSED AT FREE. The directive TELLS the agent not to hand back a plan at the top rung, but a prompt is a
+   request, not a guarantee — and the whole promise of "while you were away it BUILT this" rests on it. So the
+   manifest is checked after the fact: at 'free', a planOnly deliverable is not delivered at all. It counts as a
+   failed build (claim released, attempt counted, item eventually parked) rather than becoming a card that
+   contradicts the rung the Commander chose. Only fires on an EXPLICIT planOnly:true — a build that never
+   declared the field is left alone, because refusing on a guess would silently eat real work. */
+function planRefusedAtFree(manifest) {
+  return currentInitiative() === 'free' && !!(manifest && manifest.planOnly === true);
+}
+
 async function resolveProjectPatchTarget(foc) {
   const f = (foc && foc.focus) || null;
   if (!f || f.kind !== 'project' || !f.ref) return { projectSnapshot: '', targetRoot: '' };
@@ -5459,7 +5474,7 @@ async function runNightshiftActShift(opts) {
   await workshopStore.claimNext(agentId, runId, isRunLive).catch(() => null);   // stamp buildingRunId (zombie-reap aware)
 
   const dir = 'workshop/' + runId;
-  const prompt = NIGHTSHIFT_ACT_MARK + '\n' + Autopilot.buildDoDirectiveV2(sel.selected, { runId, dir, backlogId, focusHeader, projectSnapshot, targetRoot });
+  const prompt = NIGHTSHIFT_ACT_MARK + '\n' + Autopilot.buildDoDirectiveV2(sel.selected, { runId, dir, backlogId, focusHeader, projectSnapshot, targetRoot, initiative: currentInitiative() });
   const ac = signal ? null : new AbortController();
   const sig = signal || (ac && ac.signal);
   if (ac) runs.set(runId, ac);
@@ -5485,6 +5500,13 @@ async function runNightshiftActShift(opts) {
   //    marked built (feeds /pending), workshop.built fires (the return card renders it), and the ledger records an
   //    'act' with the artifact path(s) + runId. On no-manifest the claim releases (counts an attempt → eventual park).
   const manifest = await validateWorkshopManifest(agentId, runId);
+  // FREE means FINISHED — same refusal as runWorkshopShift: at the top rung the night shift builds, it does not
+  // hand back a plan describing what it would build.
+  if (manifest && planRefusedAtFree(manifest)) {
+    console.warn('[nightshift] refused a plan-only deliverable at FREE (fully autonomous): "' + manifest.title + '" — that rung builds, it does not plan.');
+    try { await workshopStore.releaseClaim(agentId, runId, { failed: true }); } catch (_) {}
+    return { delivered: false, reason: 'plan-refused', runId };
+  }
   if (!manifest) {
     try { await workshopStore.releaseClaim(agentId, runId, { failed: true }); } catch (_) {}
     return { delivered: false, reason: threw ? 'run-failed' : 'no-manifest', runId };
@@ -10510,6 +10532,7 @@ function workshopPrompt(runId, item, ctx) {
     + (targetRoot && snapshot ? ('PROJECT SNAPSHOT — ' + targetRoot + ' (read by the harness, not guessed):\n' + snapshot + '\n\n') : '')
     + 'RULES:\n'
     + (targetRoot && snapshot ? ('- IF THIS ASK IS A CODE CHANGE TO THAT PROJECT: your artifact is a UNIFIED-DIFF file (e.g. "' + dir + '/change.patch") that applies cleanly with `git apply` from the repo root ' + targetRoot + '. Base every hunk on the PROJECT SNAPSHOT above; never invent files or lines that are not there. Set the manifest "kind":"patch" and "targetRoot":"' + targetRoot + '", and list the .patch file in "files". The Commander applies it to a NEW branch on Implement — you never touch their repo yourself.\n') : '')
+    + Autopilot.planRuleFor(c.initiative) + '\n'
     + '- MATCH THE FORMAT TO THE ASK — build the SIMPLEST thing that fully serves it, never the most impressive:\n'
     + '    * a question / research ask -> a short findings doc (e.g. "' + dir + '/findings.md"), answer first, sources after.\n'
     + '    * a draft ask (email, post, script, plan) -> the draft file itself.\n'
@@ -10522,7 +10545,7 @@ function workshopPrompt(runId, item, ctx) {
     + '- When finished, write a manifest to "' + dir + '/deliverable.json" with EXACTLY this shape:\n'
     + '  { "v": 1, "runId": "' + runId + '", "agentId": "<your id>", "backlogId": "' + ((item && item.id) || '') + '",\n'
     + '    "title": "<short name>", "kind": "tool|fix|draft|doc|patch|other",\n'
-    + '    "planOnly": <true ONLY if this deliverable DESCRIBES work to be done (a plan, backlog, spec, proposal) rather than BEING the finished thing; false for anything the Commander can open and use as-is, including a research answer>,\n'
+    + Autopilot.planOnlyFieldFor(c.initiative) + '\n'
     + '    "summary": "<2-3 SHORT plain sentences a busy person absorbs in ten seconds: what it IS and what it does for them. NEVER an inventory — no inline lists of categories, failure modes, or counts, and no sentence over ~25 words; the deliverable itself holds the detail>",\n'
     + '    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],\n'
     + '    "howToUse": "<ONE short sentence — at most the single run command. The station already gives the Commander an Open link and one-click actions, so NEVER write multi-step setup or git instructions here>",\n'
@@ -10652,7 +10675,7 @@ async function runWorkshopShift(agentId, opts) {
   const emit = typeof o.emit === 'function' ? o.emit : function () {};
   // PATCH PARITY: hand a queued build the same real project state the night shift gets, so a Commander-asked code
   // change can come back as an applicable patch instead of a folder of files. No project focus → empty → no block.
-  const prompt = workshopPrompt(runId, item, await resolveProjectPatchTarget(resolveNightFocus()));
+  const prompt = workshopPrompt(runId, item, Object.assign({ initiative: currentInitiative() }, await resolveProjectPatchTarget(resolveNightFocus())));
   try { placeCronWorkitem(id, 'Workshop: ' + (item.title || 'build'), runId); } catch (_) {}
   let threw = null;
   try {
@@ -10676,6 +10699,14 @@ async function runWorkshopShift(agentId, opts) {
 
   // VALIDATE the manifest against the real files. Only a proven manifest emits workshop.built (truthful telemetry).
   const manifest = await validateWorkshopManifest(id, runId);
+  // FREE means FINISHED: a plan-shaped deliverable is refused at the top rung rather than delivered as a card
+  // that contradicts it (see planRefusedAtFree). Treated exactly like a failed build so the item retries/parks.
+  if (manifest && planRefusedAtFree(manifest)) {
+    console.warn('[workshop] refused a plan-only deliverable at FREE (fully autonomous) for ' + id + ': "' + manifest.title + '" — that rung builds, it does not plan.');
+    const rel = await workshopStore.releaseClaim(id, runId, { failed: true });
+    noteShift({ reason: 'plan-refused', runId: runId, title: manifest.title, parkedTitle: (rel && rel.parked) ? (rel.parked.title || rel.parked.id) : undefined });
+    return { fired: true, runId: runId, reason: 'plan-refused', parked: !!(rel && rel.parked) };
+  }
   if (!manifest) {
     // failed build → count the attempt; at the cap the item PARKS so a doomed item can't burn a run every shift.
     const rel = await workshopStore.releaseClaim(id, runId, { failed: true });

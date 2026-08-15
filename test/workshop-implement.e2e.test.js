@@ -219,7 +219,28 @@ async function readNdjson(res) {
     A.ok(!(libFail.items || []).some(r => r.runId === doomRun && (r.status === 'implemented' || r.status === 'kept')),
       'and a failed build never records the plan as implemented or kept');
 
-    // 7. gates.
+    /* 7. FREE (FULLY AUTONOMOUS) REFUSES A PLAN. The rung promises the Commander a built thing; a prompt asking
+          for one is a request, not a guarantee, so the manifest is checked after the fact. A plan-only build at
+          'free' is never delivered — it counts as a failed shift instead of becoming a card that contradicts the
+          dial. At 'leash' (BUILD DRAFTS) the same build is legitimate and DOES deliver, proven first above. */
+    await post('/api/autonomy/posture', { posture: { initiative: 'free', reach: 'sandbox' } });
+    await post('/api/workshop/queue', { agentId: 'builder', id: 'item-freeplan', title: 'Free-rung plan' });
+    const freeShift = await readNdjson(await post('/api/workshop/shift', { agentId: 'builder' }));
+    const freeRes = ((freeShift.find(e => e.name === 'workshop.shift.result') || {}).payload || {});
+    A.eq(freeRes.reason, 'plan-refused', 'a plan-only build at FREE is refused, not delivered');
+    A.ok(freeRes.fired === true, 'the shift did run — the refusal is about its OUTPUT, not the attempt');
+    A.ok(!freeShift.some(e => e.name === 'workshop.built'), 'and workshop.built never fires for it (no card is minted)');
+    const freePending = await (await fetch(B + '/api/workshop/pending?agent=builder', { headers })).json();
+    A.ok(!freePending.pending.some(m => m.runId === freeRes.runId), 'the refused plan is not pending a decision');
+    // back down to the draft rung: the SAME build shape is delivered again (the refusal is rung-scoped, not a ban).
+    await post('/api/autonomy/posture', { posture: { initiative: 'leash', reach: 'sandbox' } });
+    await post('/api/workshop/queue', { agentId: 'builder', id: 'item-leashplan', title: 'Leash-rung plan' });
+    const leashShift = await readNdjson(await post('/api/workshop/shift', { agentId: 'builder' }));
+    const leashRes = ((leashShift.find(e => e.name === 'workshop.shift.result') || {}).payload || {});
+    A.eq(leashRes.reason, 'built', 'the same plan-shaped build DELIVERS at BUILD (DRAFTS)');
+    A.eq((leashRes.manifest || {}).planOnly, true, 'and arrives declared as a plan, so the card offers to build it');
+
+    // 8. gates.
     const gone = await readNdjson(await post('/api/workshop/implement', { agentId: 'builder', runId: 'no-such-run' }));
     A.eq(((gone.find(e => e.name === 'workshop.implement.result') || {}).payload || {}).reason, 'source-gone', 'an unknown deliverable is refused as source-gone');
     A.eq((await post('/api/workshop/implement', { agentId: '../etc', runId: planRun })).status, 400, 'a malformed agentId is refused 400');
