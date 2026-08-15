@@ -4307,7 +4307,15 @@ const cronDriver = makeCronDriver({
     // shape as the workshop sentinel above. Deterministic, zero spend, and the answer is the identical text
     // every other surface prints — "/usage every morning at 9" needs no model and should not pay for one.
     if (first && first.charAt(0) === '/' && !opts.cronScript) return runSlashRoutine(first, opts);
-    return runOnce(opts);
+    // TRUTHFUL SNAPSHOT: register the scheduled run in runsMeta for its lifetime. The frontend's
+    // reconnect/30s reconciliation (world.js reconcileFromSnapshot) treats /api/state/snapshot as the
+    // authority on live runs and STANDS DOWN any agent whose run it doesn't list — a scheduled fire
+    // seized its agent to the desk via agent.run.start, then the first snapshot poll released the body
+    // mid-run (the app asserting idle over a provably live run). Run Now (handleCronRun), nightshift,
+    // loops and the channel hubs all already register; this was the one autonomous lane that didn't.
+    const schedRunId = opts && opts.runId ? String(opts.runId) : '';
+    if (schedRunId) runsMeta.set(schedRunId, { agentId: String((opts && opts.agentId) || 'agent'), startedAt: Date.now(), source: 'cron' });
+    return Promise.resolve(runOnce(opts)).finally(() => { if (schedRunId) runsMeta.delete(schedRunId); });
   },
   emit: cronEmitNotify, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
   getKey: (provider) => cronKeyFor(provider),
@@ -4378,13 +4386,18 @@ const cronDriver = makeCronDriver({
         else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
         try { const view = runTeeView(name, p); if (view) cronEmitNotify(name, view); } catch (_) {}
       };
+      // a hop is a live run on ITS agent — it must appear in the reconnect snapshot or the world
+      // stands that agent's body down on the next 30s poll while the hop provably runs (same
+      // truthful-snapshot law as the scheduled entry run above).
+      const hopRunId = crypto.randomUUID();
+      runsMeta.set(hopRunId, { agentId: String(h.agentId || 'agent'), startedAt: Date.now(), source: 'cron' });
       try {
         await runOnce({
           key: hopConfig.key, model: hopConfig.model, provider: hopConfig.provider,
           baseUrl: hopConfig.baseUrl || '', reasoningEffort: hopConfig.reasoningEffort,
           system: cronSystemFor(h.agentId),
           messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
-          emit: sink, signal: h.signal, runId: crypto.randomUUID(), streamId: o.streamId,
+          emit: sink, signal: h.signal, runId: hopRunId, streamId: o.streamId,
           surface: 'autonomous', trigger: 'schedule', reflect: true,
           station: router.stationFor(h.agentId) || undefined,
           preloadSkills: o.preloadSkills, requiredPreloads: o.requiredPreloads, workdir: o.workdir, enabledToolsets: o.enabledToolsets,
@@ -4394,6 +4407,7 @@ const cronDriver = makeCronDriver({
           initialTaint: o.initialTaint, unattendedGrants: []
         });
       } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
+      finally { runsMeta.delete(hopRunId); }
       return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
     }
   })
@@ -10409,13 +10423,18 @@ async function handleCronRun(req, res) {
               else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
               else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
             };
+            // truthful snapshot: a Run-Now hop is a live run on the TARGET agent — register it in
+            // runsMeta or the world's 30s snapshot reconcile stands the hop agent's body down mid-run
+            // (mirrors the scheduled advanceChain seam above).
+            const hopRunId = crypto.randomUUID();
+            runsMeta.set(hopRunId, { agentId: String(h.agentId || 'agent'), startedAt: Date.now(), source: 'cron' });
             try {
               await runOnce({
                 key: hopConfig.key, model: hopConfig.model, provider: hopConfig.provider,
                 baseUrl: hopConfig.baseUrl || '', reasoningEffort: hopConfig.reasoningEffort,
                 system: cronSystemFor(h.agentId),
                 messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
-                emit: hopSink, signal: h.signal, runId: crypto.randomUUID(), streamId: 'cron-' + runId,
+                emit: hopSink, signal: h.signal, runId: hopRunId, streamId: 'cron-' + runId,
                 surface: 'autonomous', trigger: 'schedule', broadcast: true, reflect: true,
                 station: router.stationFor(h.agentId) || undefined,
                 /* GRANTS NEVER FLOW DOWN A LINE (2026-08-04): the unattended grant was approved for the
@@ -10429,6 +10448,7 @@ async function handleCronRun(req, res) {
                 initialTaint: !!(job.contextFrom && job.contextFrom.length)
               });
             } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
+            finally { runsMeta.delete(hopRunId); }
             return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
           }
         });
