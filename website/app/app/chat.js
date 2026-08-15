@@ -3132,11 +3132,26 @@ const Chat = (() => {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('turnin'); r.d.classList.add('workshop-return');
     try { r.d.setAttribute('data-wsrun', String(m.runId)); } catch (_) {}   // the re-present dedupe key (above)
 
-    // ── headline (+ an honest kind chip straight off the validated manifest) ──
+    /* ── headline (+ an honest kind chip straight off the validated manifest) ──
+       THE VERB MUST MATCH WHAT THE SHIFT ACTUALLY DID. Every card used to say "built", including the ones that
+       merely wrote a document — and once the headline claims a plan was BUILT, the action offering to build it
+       reads as a contradiction ("it built X… now it will build X?"). Andrew hit exactly that. The verb comes from
+       DECLARED manifest fields (planOnly, kind), never from a guess about the content. */
+    // ONE past-tense word, reused by the headline AND the verification line below — they sat next to each other
+    // saying "wrote:" and "built —" about the same deliverable.
+    const didWord = (m.planOnly === true) ? 'drafted' : (m.kind === 'doc') ? 'written' : (m.kind === 'draft') ? 'drafted' : 'built';
+    const didVerb = (m.planOnly === true) ? 'drafted a plan:'
+      : (m.kind === 'doc') ? 'wrote:'
+      : (m.kind === 'draft') ? 'drafted:'
+      : (m.kind === 'patch') ? 'prepared a patch:'
+      : 'built:';
     const title = document.createElement('span'); title.className = 'turnin-title';
-    title.textContent = '◈ while you were away — ' + who + ' built: ' + String(m.title || 'a deliverable');
-    if (m.kind && m.kind !== 'other') {
-      const chip = document.createElement('span'); chip.className = 'ws-kindchip'; chip.textContent = String(m.kind);
+    title.textContent = '◈ while you were away — ' + who + ' ' + didVerb + ' ' + String(m.title || 'a deliverable');
+    // a declared plan is labelled 'plan' — more use than its raw kind ('doc'), which says nothing about the
+    // decision in front of the Commander.
+    const chipText = (m.planOnly === true) ? 'plan' : ((m.kind && m.kind !== 'other') ? String(m.kind) : '');
+    if (chipText) {
+      const chip = document.createElement('span'); chip.className = 'ws-kindchip'; chip.textContent = chipText;
       title.appendChild(chip);
     }
     r.body.appendChild(title);
@@ -3156,10 +3171,15 @@ const Chat = (() => {
       ver.textContent = 'tested — ' + passed + ' of ' + vcmds.length + ' command' + (vcmds.length > 1 ? 's' : '') + ' passed';
       ver.classList.add(passed === vcmds.length ? 'ok' : 'dim');
     } else if (notVer.length) {
-      ver.textContent = 'built — the agent couldn’t test here; ' + notVer.length + ' thing' + (notVer.length > 1 ? 's' : '') + ' for you to check';
+      // same verb as the headline, and no "couldn't test here" on a deliverable with nothing to run — that
+      // sentence exists to excuse an untested TOOL, and reads as a failure report on a document.
+      const runnable = !(m.planOnly === true || m.kind === 'doc' || m.kind === 'draft');
+      ver.textContent = didWord + ' — ' + (runnable ? 'the agent couldn’t test here; ' : '')
+        + notVer.length + ' thing' + (notVer.length > 1 ? 's' : '') + ' for you to check';
       ver.classList.add('dim');
     } else {
-      ver.textContent = 'built — no test commands were defined';
+      ver.textContent = (m.planOnly === true) ? 'drafted — nothing has been built from this yet'
+        : (didWord + ' — no test commands were defined');
       ver.classList.add('dim');
     }
     r.body.appendChild(ver);
@@ -3337,9 +3357,10 @@ const Chat = (() => {
     } else if (buildable) {
       // A PLAN is not the deliverable — copying its .md into a folder is the "regular save button" outcome this
       // action exists to replace, and the file is already archived AND readable from the list above. So say what
-      // actually happens: a build runs. Nothing is copied.
+      // actually happens: a build runs. Nothing is copied. ("this plan" only when the shift DECLARED it one.)
       const pl = document.createElement('div'); pl.className = 'ws-line ws-plan';
-      pl.textContent = 'implement → ' + who + ' BUILDS what this describes. Nothing is copied to a folder — the result arrives as its own card.';
+      pl.textContent = '→ ' + who + ' builds ' + (m.planOnly === true ? 'this plan' : 'what this describes')
+        + '. Nothing is copied to a folder — the result arrives as its own card.';
       r.body.appendChild(pl);
     } else if (plan && plan.dest) {
       const pl = document.createElement('div'); pl.className = 'ws-line ws-plan';
@@ -3449,7 +3470,11 @@ const Chat = (() => {
     const patchSaveOnly = !!(plan && m.kind === 'patch' && plan.action !== 'apply');
     // gold PRIMARY when the click really implements; a fallback save stays neutral so the gold always means "accept"
     const implBtn = document.createElement('button'); implBtn.className = 'consent-btn' + (patchSaveOnly ? '' : ' ws-primary');
-    implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
+    // THE LABEL STATES THE CONSEQUENCE. One word "Implement" covered three different outcomes (apply a patch,
+    // save files, run a build), so the button taught the Commander nothing and the explanatory line below had to
+    // carry all of it. On a plan the action IS a build — say so.
+    const implLabel = buildable ? 'Build it' : patchSaveOnly ? 'Save patch file' : 'Implement';
+    implBtn.textContent = implLabel;
     implBtn.title = (plan && plan.action === 'apply') ? ('applies this patch to a new branch in ' + plan.root)
       : patchSaveOnly ? 'saves the .patch file only — it will NOT be applied to your project'
       : buildable ? ('has ' + who + ' BUILD what this describes — nothing is copied to a folder')
@@ -3457,7 +3482,7 @@ const Chat = (() => {
     // why a build can be refused, in the Commander's words — never a raw reason code.
     const implFailCopy = (reason) => {
       const r = String(reason || '');
-      if (r === 'no-capability') return 'no model or key is available for unattended runs — set one in KEYS, then press Implement again';
+      if (r === 'no-capability') return 'no model or key is available for unattended runs — set one in KEYS, then press ' + implLabel + ' again';
       if (r === 'source-gone') return 'this deliverable’s files are no longer on disk';
       if (r === 'queue-refused') return 'this work was discarded before, so the station won’t rebuild it';
       if (r === 'already-implemented') return 'this plan has already been built — its build is in your rail';
@@ -3468,7 +3493,7 @@ const Chat = (() => {
     };
     implBtn.onclick = async () => {
       if (implBtn.disabled) return;
-      implBtn.disabled = true; implBtn.textContent = patchSaveOnly ? 'saving…' : 'implementing…';
+      implBtn.disabled = true; implBtn.textContent = buildable ? 'building…' : patchSaveOnly ? 'saving…' : 'implementing…';
 
       /* IMPLEMENT-AS-BUILD — a plan is NOT the deliverable, so this path never keeps: no file copy, and NO
          DECISION IS RECORDED YET. That second part is the important one. Keeping first retired the backlog item
@@ -3500,7 +3525,7 @@ const Chat = (() => {
       // PLAIN KEEP (a patch apply, or an artifact that IS the deliverable) — the files landing is the whole action.
       let res = null; try { res = await onDecide('keep'); } catch (_) { res = { ok: false }; }
       if (!(res && res.ok)) {
-        implBtn.disabled = false; implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
+        implBtn.disabled = false; implBtn.textContent = implLabel;
         localLine('Could not implement this: ' + ((res && res.error) || 'the station refused') + '.');
         return;
       }
