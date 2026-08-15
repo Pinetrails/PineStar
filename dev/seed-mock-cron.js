@@ -29,7 +29,10 @@ function startMock() {
         return;
       }
       if (req.url.indexOf('/chat/completions') >= 0) {
-        let b = ''; req.on('data', d => b += d); req.on('end', () => {
+        let b = ''; req.on('data', d => b += d); req.on('end', async () => {
+          // dev-only: SKYNET_MOCK_DELAY_MS holds the reply open so a live proof can catch the run IN FLIGHT
+          const hold = Number(process.env.SKYNET_MOCK_DELAY_MS || 0);
+          if (hold > 0) await new Promise(r => setTimeout(r, hold));
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
           res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: REPLY } }] }) + '\n\n');
           res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 6, total_tokens: 11 } }) + '\n\n');

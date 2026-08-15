@@ -188,7 +188,7 @@ async function opensWithin(t, ms) {
 }
 
 (async () => {
-  // --- regular push-to-talk selects a proven desktop STT engine; Local Live remains separate ----
+  // --- standard voice is one click to record, a second click to finish; Local Live stays automatic ----
   {
     const calls = [];
     const fetch = (url) => {
@@ -199,12 +199,20 @@ async function opensWithin(t, ms) {
     };
     const t = boot({ desktop: true, fetch });
     await tick();
-    t.Voice.startListening();
+    t.nodes['chat-mic'].onclick();
+    await until(() => processorInstances.length > 0, 500);
+    const processor = processorInstances[processorInstances.length - 1];
+    const voiced = new Float32Array(2048); voiced.fill(0.18); processor.fire(voiced);
+    await tick(80); // longer than the former compressed silence endpoint: the take must remain open
+    A.eq(t.Voice.isListening(), true, 'Windows standard voice remains recording across a pause');
+    A.eq(t.sandbox.__sent.length, 0, 'the first click never auto-submits a standard voice take');
+    A.ok(/click again to finish and send/i.test(t.nodes['chat-mic'].title), 'the active mic names the second-click action');
+    t.nodes['chat-mic'].onclick();
     await until(() => t.sandbox.__sent.length === 1, 1000);
-    A.eq(t.Voice.sttEngine(), 'native', 'Windows push-to-talk selects the available native dictation engine');
-    A.eq(t.sandbox.__sent[0], 'windows dictation', 'Windows native dictation is sent as a regular typed message');
-    A.eq(t.gumCalls(), 0, 'Windows native dictation does not also open the MediaRecorder microphone path');
-    A.ok(calls.includes('/api/stt/native') && !calls.includes('/api/local-voice/transcribe'), 'regular dictation stays separate from Local Live transcription');
+    A.eq(t.Voice.sttEngine(), 'recorder', 'Windows standard voice captures the bounded take before native transcription');
+    A.eq(t.sandbox.__sent[0], 'windows dictation', 'the second click sends the Windows-native transcript as a regular message');
+    A.eq(t.gumCalls(), 1, 'Windows standard voice opens one browser-owned microphone take');
+    A.ok(calls.includes('/api/stt/native') && !calls.includes('/api/local-voice/transcribe'), 'standard dictation stays separate from Local Live transcription');
     A.ok(t.Voice.inVoiceMode() === false, 'regular dictation does not enable hands-free/live voice mode');
   }
 
@@ -248,6 +256,20 @@ async function opensWithin(t, ms) {
   }
 
   A.ok(!/cb\.onInterim\([\s\S]{0,100}repeat\(/.test(SRC), 'recorder progress never writes fake dot or bullet text into the composer');
+
+  // Browser recognition may end its own instance after a pause even in continuous mode. Standard voice
+  // keeps the take open, retains those words, and sends them only when the Commander clicks again.
+  {
+    const t = boot();
+    t.nodes['chat-mic'].onclick(); await tick();
+    srInstances[srInstances.length - 1].fireFinal('first half');
+    await until(() => srInstances.length >= 2, 1000);
+    A.eq(t.Voice.isListening(), true, 'browser endpointing does not close a standard two-click take');
+    A.eq(t.sandbox.__sent.length, 0, 'a browser-final phrase remains buffered until the second click');
+    t.nodes['chat-mic'].onclick();
+    await until(() => t.sandbox.__sent.length === 1, 1000);
+    A.eq(t.sandbox.__sent[0], 'first half', 'the second click sends the transcript accumulated across browser instances');
+  }
 
   // --- webSpeech: recognition.start() throws (double-start / InvalidStateError) -----------------
   {

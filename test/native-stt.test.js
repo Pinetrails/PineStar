@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const {
-  WINDOWS_SCRIPT, DEFAULT_MIN_CONFIDENCE, parseRecognition, gateTranscript, makeNativeStt
+  WINDOWS_SCRIPT, WINDOWS_WAV_SCRIPT, DEFAULT_MIN_CONFIDENCE, parseRecognition, gateTranscript, makeNativeStt
 } = require('../sidecar/native-stt.js');
 
 const win = (stdout, env) => makeNativeStt({
@@ -18,6 +18,7 @@ const win = (stdout, env) => makeNativeStt({
   assert.match(WINDOWS_SCRIPT, /Confidence/);
   assert.match(WINDOWS_SCRIPT, /\[int\]\(\$x\.Confidence\*1000\)/);
   assert.equal(/N3/.test(WINDOWS_SCRIPT), false);
+  assert.match(WINDOWS_WAV_SCRIPT, /SetInputToWaveFile\(\$env:STARNET_NATIVE_STT_WAV\)/, 'captured takes use a sidecar-owned environment value, never command interpolation');
 
   const unsupported = makeNativeStt({ platform: 'linux', execFile() {} });
   assert.equal(unsupported.status().available, false);
@@ -57,6 +58,28 @@ const win = (stdout, env) => makeNativeStt({
   assert.equal(call.options.windowsHide, true);
   assert.ok(call.args.includes(WINDOWS_SCRIPT));
 
+  // Standard voice owns endpointing: the exact WAV captured between the two clicks is written, recognized,
+  // and removed. Local Live still calls recognize() without audio and keeps the default-microphone script.
+  {
+    const writes = [], unlinks = [];
+    let wavCall = null;
+    const wavEngine = makeNativeStt({
+      platform: 'win32', tempDir: 'C:\\safe-temp', randomUUID: () => 'take-id',
+      fsp: {
+        async writeFile(file, bytes) { writes.push([file, Buffer.from(bytes)]); },
+        async unlink(file) { unlinks.push(file); }
+      },
+      execFile(file, args, options, callback) { wavCall = { file, args, options }; callback(null, '910|manual endpoint\r\n'); }
+    });
+    const wav = Buffer.from('RIFF-test-wave');
+    assert.deepEqual(await wavEngine.recognize({ audioWav: wav }), { ok: true, text: 'manual endpoint', confidence: 0.91 });
+    assert.equal(writes.length, 1);
+    assert.deepEqual(writes[0][1], wav, 'the captured WAV reaches the recognizer byte-for-byte');
+    assert.ok(wavCall.args.includes(WINDOWS_WAV_SCRIPT));
+    assert.equal(wavCall.options.env.STARNET_NATIVE_STT_WAV, writes[0][0], 'the generated path is passed out-of-band from the static command');
+    assert.deepEqual(unlinks, [writes[0][0]], 'the temporary take is removed after recognition');
+  }
+
   // A dropped utterance reports ok:true with an EMPTY text and NO `error` — the caller reads that as
   // "silence, listen again". An `error` here would paint a red failure in the panel for a quiet room.
   const noisy = await win('980|Mm.\r\n').recognize();
@@ -64,6 +87,7 @@ const win = (stdout, env) => makeNativeStt({
   assert.equal(noisy.text, '');
   assert.equal(noisy.error, undefined);
   assert.equal(noisy.dropped, 'below-threshold');
+  assert.deepEqual(await win('').recognize(), { ok: true, text: '' }, 'a completed quiet audio file is silence, not a native-engine failure');
 
   const unsure = await win('120|maybe words\r\n').recognize();
   assert.equal(unsure.text, '', 'a low-confidence transcript never becomes a run');

@@ -1,5 +1,28 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-14 — VOICE ENDPOINTS: MANUAL STANDARD + QUICKER LOCAL LIVE (`agent/latency-hotpath`)
+
+READY TO MERGE. Standard voice is now an explicit two-click take: click the mic to start recording,
+pause as needed, then click it again to finish, transcribe, and send. Browser speech recognition
+reopens across provider-imposed pause endpoints while retaining the take, and recorder-backed
+desktop speech no longer uses silence as a submit signal. On native-only Windows installs, the
+sidecar transcribes the exact browser-captured take through System.Speech instead of asking the OS
+to decide when the user finished. A two-minute ceiling remains only as a forgotten-microphone safety
+release. Local Live keeps its automatic turn detection unchanged.
+
+New/default Local Live sessions also use the already-exposed QUICK 1.2-second turn boundary instead
+of NORMAL 1.8 seconds, removing a deterministic 600 ms from complete spoken turns. The existing
+transcript-aware continuation rule still gives an unfinished partial another 600 ms, and
+NORMAL/PATIENT remain explicit persisted choices.
+
+Live seeded UI proof rendered the normal mic as `Click to talk` beside a separate `Start Local Live
+hands-free voice` control. No microphone permission or provider spend was used. A real Windows
+System.Speech file-input probe accepted a generated spoken WAV and returned a transcript with
+confidence telemetry; physical-microphone acoustic proof remains outstanding. Focused Voice button
+(92 assertions), draft protection (21), native STT, media service (34), Local Live UI, syntax, and
+website-mirror checks are green. `npm run test:http` is **76/76 GREEN** and `npm run test:fast` is
+**630/630 GREEN** on this lane.
+
 ## 2026-08-09 — WEBSITE PREVIEW STATE CORRECTION (`agent/station-preview-state`)
 
 READY TO MERGE. The first preview repair updated the renderer mirror and stage crop but left the
