@@ -57,9 +57,20 @@ body.no-scan .mkt-scrim::after { display: none; }
    "retune both together" law held structurally instead of by memory. */
 @keyframes mkt-fade { from { opacity: 0; } to { opacity: 1; } }
 
-/* ---- the console frame ---- */
+/* ---- the console frame ----
+   SIZED OFF THE SCRIM (%), NEVER THE VIEWPORT (vw/vh). TEXT SIZE is a body zoom, and a vh length
+   inside the zoomed subtree still computes against the REAL viewport and is THEN multiplied by the
+   zoom — so `92vh` rendered as 133vh at HUGE. Measured at 1440x900 before this line existed:
+   100% 1180x828 fits · 115% 1357x952 · 130% 1440x1076 · 145% 1440x1201, overflowing top AND bottom
+   (the scrim centres, so the excess splits) and taking the ✕ with it: the close button sat at
+   top:-4 / -63 / -122 px, i.e. OFF the glass. The bay could not be closed with the mouse at any
+   size above STANDARD — and 115% is what AUTO picks on a ≤1470px laptop, so this was the DEFAULT
+   on a small screen. The scrim is `position:fixed; inset:0`, which under zoom is viewport-exact
+   (probe: 1440x900 at every scale), so 100% of it IS the glass in the bay's own zoomed frame —
+   identical to 100vw/100vh at textScale 100, and correct at every other. Same law as `.refit-dock`
+   in app.css and the `--sn-unzoom` caps on `.term` in style.css. */
 .mkt {
-  position: relative; width: min(1180px, 96vw); max-height: 92vh; display: flex; flex-direction: column;
+  position: relative; width: min(1180px, 96%); max-height: 92%; display: flex; flex-direction: column;
   background: radial-gradient(ellipse 130% 90% at 50% 0%, var(--ph-glow2), transparent 44%), var(--panel);
   border-radius: var(--r-lg, 11px);
   box-shadow: var(--bezel, 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 12px 34px rgba(0,0,0,.85), inset 0 0 56px rgba(0,0,0,.85));

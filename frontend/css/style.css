@@ -1382,7 +1382,10 @@ body.crt-dull #chat-log, body.crt-dull .term-body, body.crt-dull #left, body.crt
   transition: opacity 0.6s;
 }
 #boot.off { opacity: 0; pointer-events: none; }
-#boot-inner { width: 640px; max-width: 92vw; }
+/* the vw cap is the narrow-screen fit guard, so it carries the --sn-unzoom reciprocal or it is a
+   DEAD guard under TEXT SIZE: at HUGE a bare 92vw resolves to 133% of the real glass, which can
+   never bind, while the 640px beside it renders at 928. Same law as `.term` below. */
+#boot-inner { width: 640px; max-width: calc(92vw * var(--sn-unzoom, 1)); }
 #boot-logo {
   font-family: inherit; color: var(--ph); font-size: 14px; line-height: 1.02; letter-spacing: 0;
   text-shadow: 0 0 18px var(--ph-glow), 0 0 4px var(--ph-glow);
@@ -1405,7 +1408,9 @@ body.crt-dull #chat-log, body.crt-dull .term-body, body.crt-dull #left, body.crt
   55%  { transform: scaleY(1.02);  filter: brightness(2.2); }
   100% { transform: scaleY(1);     filter: brightness(1); }
 }
-.pw { transform: none; animation: rt-power 0.18s ease-out; max-width: min(96vw, 760px); }
+/* a prop window overrides `.term`'s max-width, so it must carry the same reciprocal — otherwise the
+   96vw half of this min() can never bind under TEXT SIZE and 760px renders at 1102 on a 1024 screen. */
+.pw { transform: none; animation: rt-power 0.18s ease-out; max-width: min(calc(96vw * var(--sn-unzoom, 1)), 760px); }
 .pw .term-title {
   font-size: 14px; letter-spacing: 2px; flex-shrink: 1; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

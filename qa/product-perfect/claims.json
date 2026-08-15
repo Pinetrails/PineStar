@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "3ff7d057de6bffe84883dc030e66d063c7e0b9c4",
+    "sourceCommit": "16bea9b115829d0c793a0a51c554ebf66aafdb65",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -188,8 +188,8 @@
       },
       {
         "path": "frontend/app/crtlab.js",
-        "bytes": 18130,
-        "sha256": "d1feecfa9a5e11d28c0f7f2f055d4b2ea28bf355c3dda827982bbce5feaff87b"
+        "bytes": 18590,
+        "sha256": "022c7b3b10ebcbc445f434acaf45eaa9c035c8a6f15b0aae675b43ad1341d9a6"
       },
       {
         "path": "frontend/app/ctxgauge.js",
@@ -723,8 +723,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 274519,
-        "sha256": "c916af9e0740f12947ade3dc12f8b22d9330f95172a61e251032165b07f45e20"
+        "bytes": 275898,
+        "sha256": "c86d721c8b151bbcacde9af49eb16c8f46d228cd65dd6b75eda69d0eb3178a56"
       },
       {
         "path": "frontend/app/stationcommands.js",
@@ -973,8 +973,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 377128,
-        "sha256": "645c6a7de578be8617453888b95d384818d4ae9e47f3cd94c3962cff631e485c"
+        "bytes": 377911,
+        "sha256": "a660c4824f743e32947d61845fadbda106ea8cbeb45a07e96fa641b8251cdb7b"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -983,13 +983,13 @@
       },
       {
         "path": "frontend/css/comms.css",
-        "bytes": 45212,
-        "sha256": "06d46f8f09606f9170b742e31e09985b7387364b063cf15dc13a1d19ec1d3eaa"
+        "bytes": 46060,
+        "sha256": "a8ad37a7db6f9ad36bdf650b44be79d3346c2d42264acbe26462bdae09dc2db9"
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 72573,
-        "sha256": "d28d3e6c5d4b670d684d706c0c5efae50e7ad927bdb9586c518f7dca2d766fc6"
+        "bytes": 73625,
+        "sha256": "30931c32868751d5786aac4a6a264c6f14738398f197d7c452ea11b8a45db3df"
       },
       {
         "path": "frontend/css/motion.css",
@@ -1013,8 +1013,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 102882,
-        "sha256": "21cbdd4f824aa8139b8b8f9314e07e382b7a02eb8d08ff5f2af64f337b9babad"
+        "bytes": 103428,
+        "sha256": "2a3872d8b47779b734953932251a272b5aafd3a48a37eca006426498b5995c38"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -1028,8 +1028,8 @@
       },
       {
         "path": "frontend/css/tutorial.css",
-        "bytes": 8902,
-        "sha256": "16a97720e12f2d7e9178b2b809e2c6a4fa20d65197ab32bbb593e76689f330cd"
+        "bytes": 9120,
+        "sha256": "8175e8f58be9b9151d401cceddd10221f75d7ca6059b54483ae6775222dc3c2a"
       },
       {
         "path": "frontend/css/warroom.css",

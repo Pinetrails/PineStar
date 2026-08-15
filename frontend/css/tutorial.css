@@ -105,7 +105,9 @@
 .tut-coach.kit {
   left: 50%;
   width: 460px;
-  max-width: calc(100vw - 32px);
+  /* the reciprocal, or this narrow-screen guard is dead under TEXT SIZE (a bare 100vw resolves to
+     145% of the real glass at HUGE and can never bind) — same law as `.term` in style.css. */
+  max-width: calc(100vw * var(--sn-unzoom, 1) - 32px);
   margin-left: -230px;
   animation: tutCoachFade .2s ease both;
 }
