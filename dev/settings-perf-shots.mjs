@@ -186,6 +186,27 @@ async function main() {
     check('rerender(settings) costs under 60ms (was 405-534ms)', Math.max(...warm.rerenderMs) < 60, warm.rerenderMs);
     check('a warm swatch repaint of all six costs under 20ms (was ~600ms)', warm.sampleTotal < 20, warm.sampleTotal + 'ms');
 
+    /* ── 4b. THE OTHER THING A USER DRAGS ───────────────────────────────────────────────────────
+       Reported, not asserted at a tight bound: the APPEARANCE sliders recolour the whole station
+       per input tick (applySettings), which is a real cost this lane did not touch. Printing it
+       keeps the next person from re-discovering it as "settings is still laggy". */
+    const slider = await evalJS(cdp, `(() => {
+      const win = document.querySelector('.term.console');
+      win.querySelector('.con-rail-item[data-section="appearance"]').click();
+      const hue = win.querySelector('#set-hue');
+      if (!hue) return null;
+      const ticks = [];
+      for (let i = 0; i < 6; i++) {
+        hue.value = String(30 + i * 4);
+        const t = performance.now();
+        hue.dispatchEvent(new Event('input', { bubbles: true }));
+        void win.offsetHeight;
+        ticks.push(+(performance.now() - t).toFixed(1));
+      }
+      return ticks;
+    })()`);
+    if (slider) console.log('   HUE slider, ms per drag tick: ' + slider.join(', ') + '  (untouched by this lane)');
+
     /* ── 5. THE PANE STILL SCROLLS ──────────────────────────────────────────────────────────────
        A fixed shell is only honest if the content it can no longer grow for is reachable. */
     console.log('\n— THE CONTENT IS STILL REACHABLE —');
@@ -204,24 +225,54 @@ async function main() {
        `.term.console` is shared, so this change is not a SETTINGS change — it is a shell change.
        Sweep the rest of the consoles rather than assume. */
     console.log('\n— EVERY CONSOLE HOLDS ONE SHELL —');
+    const shellH = sizes.heights[0];   // what SETTINGS settled at; every console reads the same --con-h
+    /* DELIVERABLES is `console`-classed but mounts its own body rather than mountConsole's rail, so
+       it has no tabs to sweep. The thing its dropped `.dlv-win` height rule protected was the DETAILS
+       DRAWER — toggling one used to re-centre the window and slide the row out from under the pointer
+       — so drive that instead of pretending it is a tab set. */
     for (const key of ['agents', 'connectors', 'messaging', 'automation', 'deliverables']) {
       const r = await evalJS(cdp, `(async () => {
         StationUI.openTerm(${JSON.stringify(key)});
-        await new Promise(r => setTimeout(r, 700));
+        await new Promise(r => setTimeout(r, 900));
         const wins = [...document.querySelectorAll('.term.console')];
         const win = wins[wins.length - 1];
         if (!win) return { key: ${JSON.stringify(key)}, missing: true };
-        const tabs = [...win.querySelectorAll('.con-rail-item')];
         const hs = [];
-        for (const t of tabs) { t.click(); await new Promise(r => setTimeout(r, 60)); hs.push(win.offsetHeight); }
-        const out = { key: ${JSON.stringify(key)}, tabs: tabs.length, heights: [...new Set(hs)],
-                      fill: Math.round(100 * (win.querySelector('.con-pane').scrollHeight) / win.offsetHeight) };
+        const tabs = [...win.querySelectorAll('.con-rail-item')];
+        let mode = 'tabs';
+        if (tabs.length) {
+          for (const t of tabs) { t.click(); await new Promise(r => setTimeout(r, 60)); hs.push(win.offsetHeight); }
+        } else {
+          /* no rail: drive the tallest content toggle this window owns (a card's details drawer).
+             NEVER a bare button selector — it matched the window's own close control and shut the
+             thing under measurement, which reads as a height of 0 rather than as a harness bug. */
+          mode = 'drawer';
+          const togs = [...win.querySelectorAll('.dlv-card, .con-sec-body details > summary')].slice(0, 4);
+          if (!togs.length) {
+            // still record the shell it opened at — this is the one window whose explicit
+            // dlv-win height rule this change removed, so "it kept the shell" must be measured.
+            const h = win.offsetHeight;
+            StationUI.closeTerm(${JSON.stringify(key)});
+            return { key: ${JSON.stringify(key)}, noToggle: true, openedAt: h };
+          }
+          hs.push(win.offsetHeight);
+          for (const t of togs) { try { t.click(); } catch (_) {} await new Promise(r => setTimeout(r, 150)); hs.push(win.offsetHeight); }
+        }
+        const scroller = win.querySelector('.con-pane') || win.querySelector('.term-body');
+        const out = { key: ${JSON.stringify(key)}, mode, steps: hs.length, heights: [...new Set(hs)],
+                      fill: scroller ? Math.round(100 * scroller.scrollHeight / win.offsetHeight) : null };
         StationUI.closeTerm(${JSON.stringify(key)});
         return out;
       })()`);
       if (r.missing) { check(key + ' console opened', false, 'no .term.console found'); continue; }
-      console.log('   ' + r.key.padEnd(13) + r.tabs + ' tabs · heights ' + JSON.stringify(r.heights) + ' · pane fills ~' + r.fill + '% of the shell');
-      check(r.key + ' holds ONE height across its tabs', r.heights.length === 1, r.heights);
+      if (r.noToggle) {
+        console.log('   ' + key.padEnd(13) + 'opened at ' + r.openedAt + 'px · no card/drawer on a seeded station, so the drawer sweep is skipped');
+        check(key + ' opens at the shared console shell height', r.openedAt === shellH, r.openedAt + 'px vs ' + shellH + 'px');
+        continue;
+      }
+      console.log('   ' + r.key.padEnd(13) + r.steps + ' ' + r.mode + ' · heights ' + JSON.stringify(r.heights) +
+        (r.fill == null ? '' : ' · content is ~' + r.fill + '% of the shell'));
+      check(r.key + ' holds ONE height across its ' + r.mode, r.heights.length === 1, r.heights);
     }
 
     const errs = diag.consoleMsgs.filter(m => m.type === 'error' && !/favicon/i.test(m.text)).concat(diag.exceptions);
