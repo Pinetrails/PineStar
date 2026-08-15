@@ -31,6 +31,8 @@ dev/.scratch-mock-comms/
 dev/.scratch-calm-errors/
 dev/.scratch-adversarial/
 dev/.scratch-deliverables/
+# free-chain dev sidecar runtime state (seed-free-chain.js materializes it; never committed)
+dev/.scratch-free-chain/
 dev/.shots-deliverables/
 dev/.shots-wallcorner/
 dev/.shots-walljoin/
