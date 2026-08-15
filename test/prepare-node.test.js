@@ -8,6 +8,7 @@ const A = require('./_assert.js');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { createHash } = require('node:crypto');
 
 (async () => {
   const m = await import('../scripts/prepare-node.mjs');
@@ -63,14 +64,15 @@ const path = require('node:path');
   try {
     const cached = path.join(cacheDir, 'node.exe');
     fs.writeFileSync(cached, 'binary');
-    const reportsCurrent = () => 'v22.23.2\n';
-    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', reportsCurrent), false, 'an unstamped cached runtime is never trusted');
+    const exactSha = createHash('sha256').update('binary').digest('hex');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', exactSha), false, 'an unstamped cached runtime is never trusted');
     fs.writeFileSync(cached + '.version', 'v22.12.0\n');
-    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', reportsCurrent), false, 'an old cached runtime is invalidated after a pin bump');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', exactSha), false, 'an old cached runtime is invalidated after a pin bump');
     fs.writeFileSync(cached + '.version', 'v22.23.2\n');
-    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', reportsCurrent), true, 'the exact stamped runtime remains reusable');
-    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', () => 'v22.12.0\n'), false, 'a cached executable that reports the wrong runtime is refreshed even when its stamp was forged');
-    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', () => { throw new Error('cannot execute'); }), false, 'an unexecutable cached runtime is never trusted');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', exactSha), true, 'the exact stamped runtime remains reusable');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', '0'.repeat(64)), false, 'a forged stamp cannot make bytes that differ from the official checksum reusable');
+    fs.writeFileSync(cached, 'tampered');
+    A.eq(m.cachedRuntimeMatches(cached, 'v22.23.2', exactSha), false, 'post-download cache corruption is detected without executing untrusted bytes');
   } finally {
     fs.rmSync(cacheDir, { recursive: true, force: true });
   }
