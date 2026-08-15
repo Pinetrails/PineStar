@@ -129,6 +129,12 @@ const sig = (v) => Array.from({ length: SIG_LEN }, () => v);
   A.ok(/classList\.add\('no-flicker'\)/.test(shoot), 'shared screenshot runner disables the global seven-second flicker cycle');
   A.ok(/rmSync\(PROFILE,\s*\{\s*recursive:\s*true,\s*force:\s*true\s*\}\)/.test(shoot),
     'shared screenshot runner clears its reused Chrome profile before every sweep');
+  A.ok(/document\.fonts[\s\S]{0,80}document\.fonts\.ready/.test(shoot),
+    'shared screenshot runner waits for the local house font before treating panel geometry as final');
+  A.ok(/querySelectorAll\('\.loading'\)[\s\S]{0,500}getBoundingClientRect\(\)[\s\S]{0,500}quiet >= 3/.test(shoot),
+    'shared screenshot runner requires visible loaders to clear and three stable panel-rectangle samples');
+  A.ok(/layout-timeout[\s\S]{0,700}const bad[\s\S]{0,180}layout-\(\?:timeout\|settle-error\)/.test(shoot),
+    'a panel that never settles fails the capture gate instead of blessing transient layout');
 }
 
 // The navigation-condense change merged ROUTINES + LOOPS behind the AUTOMATION dock entry. The

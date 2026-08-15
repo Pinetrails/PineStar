@@ -96,8 +96,40 @@ export async function runShoot({ port, cdpPort, outDir, win = '1440,900', only =
             return 'toasts-cleared, animations-finished:' + n;
           })()`);
         } catch {}
+        // A panel can be structurally complete while its active pane is still replacing an async
+        // `loading...` row (ABILITIES does this for GET /api/toolsets). Under a saturated Guardian
+        // run that replacement once landed between the fixed sleep and capture: the same commit
+        // produced two valid-looking ABILITIES frames whose centred window heights differed by
+        // 20px, tripping the structural golden gate. Fonts and animations are not sufficient proof
+        // that layout is durable. Wait until the visible pane has no loading sentinel AND the open
+        // window's measured rectangle is unchanged for three consecutive double-paint samples.
+        // Bounded and fail-loud in the manifest: a genuinely stuck loader still gets captured, but
+        // its driveResult names the timeout instead of presenting a transient frame as settled.
+        try {
+          const settled = await evalJS(cdp, `(async () => {
+            try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (_) {}
+            const deadline = performance.now() + 4000;
+            let prior = '', quiet = 0;
+            while (performance.now() < deadline) {
+              await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+              const w = document.querySelector('#terms .term:not(.term-min-hidden)');
+              if (!w) return 'no-open-window';
+              const loading = Array.from(w.querySelectorAll('.loading')).some(el => {
+                const cs = getComputedStyle(el);
+                return cs.display !== 'none' && cs.visibility !== 'hidden' && el.getClientRects().length > 0;
+              });
+              const r = w.getBoundingClientRect();
+              const sig = [r.left, r.top, r.width, r.height].map(n => Number(n).toFixed(2)).join(',');
+              quiet = !loading && sig === prior ? quiet + 1 : 0;
+              prior = sig;
+              if (quiet >= 3) return 'layout-settled:' + sig;
+            }
+            return 'layout-timeout:' + prior;
+          })()`);
+          if (String(settled).startsWith('layout-timeout:')) driveResult += ':' + settled;
+        } catch (e) { driveResult += ':layout-settle-error:' + e.message; }
         const { kb } = await capture(cdp, outDir, st.name);
-        const bad = /^(NOTFOUND|CLICK_ERR|DRIVE_ERR)/.test(String(driveResult));
+        const bad = /^(NOTFOUND|CLICK_ERR|DRIVE_ERR)/.test(String(driveResult)) || /:layout-(?:timeout|settle-error):/.test(String(driveResult));
         if (bad) exitCode = 3;
         console.log(`  ${bad ? 'FAIL' : 'ok  '} ${st.name.padEnd(16)} ${String(kb).padStart(4)}KB  ${driveResult}`);
         manifest.states.push({ name: st.name, kb, driveResult, ok: !bad });
