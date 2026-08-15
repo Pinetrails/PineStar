@@ -10816,6 +10816,30 @@ function implementPrompt(runId, source, ctx) {
     + '- The manifest MUST list the real files you wrote. A build with no manifest is discarded.';
 }
 
+/* Retire an implemented source as a recoverable two-step transaction. The lifecycle row lands FIRST: if the
+   sidecar dies before complete(), the source remains pending and the next Implement press can finish retirement.
+   The reverse order could permanently hide the source without any durable record of what happened to it. */
+async function retireImplementedSource(agentId, sourceRunId, source, now) {
+  const id = String(agentId || '');
+  const rid = String(sourceRunId || '');
+  const rowId = 'workshop:' + id + ':' + rid;
+  let recorded = false;
+  try { recorded = deliverableStore.list().some(r => r.id === rowId && r.status === 'implemented'); }
+  catch (_) { recorded = false; }
+  const srcItem = workshopStore.itemForRun(id, rid);
+  // No pending source is valid only when the durable lifecycle row proves an earlier retirement completed.
+  if (!srcItem) return recorded ? { ok: true, recovered: true } : { ok: false, reason: 'source-state-missing' };
+  try {
+    if (!recorded) await deliverableStore.record(lifecycleRow('implemented', id, rid, srcItem, source), now);
+    await workshopStore.complete(id, srcItem.id);
+    if (workshopStore.itemForRun(id, rid)) throw new Error('source plan still pending after complete');
+    return { ok: true };
+  } catch (e) {
+    console.warn('[workshop] implement source retirement failed for ' + id + '/' + rid + ': ' + ((e && e.message) || e));
+    return { ok: false, reason: 'source-retire-failed' };
+  }
+}
+
 /* run ONE implement build. Returns { fired, runId?, reason, manifest? } — same honest shape as runWorkshopShift.
    Every failure path is named (no silent no-op) because this one is Commander-initiated: they pressed a button and
    are owed an answer. */
@@ -10861,7 +10885,19 @@ async function runImplementBuild(agentId, sourceRunId, opts) {
   if (!queued || !queued.item) return { fired: false, reason: 'queue-refused' };
   // claim THIS item by id: claimNext would stamp whatever sits at the top of the backlog, which is not ours.
   const claimed = await workshopStore.claimById(id, backlogId, runId, isRunLive).catch(() => null);
-  if (!claimed) return { fired: false, reason: 'already-implemented' };
+  if (!claimed) {
+    // A previous build may have landed durably while its source-retirement step failed. Re-pressing Implement is
+    // the repair path: finish that idempotent retirement, never spend a second build or strand the source forever.
+    const existing = workshopStore.backlogOf(id).find(b => b.id === backlogId && b.builtRunId);
+    if (existing) {
+      const prior = await validateWorkshopManifest(id, existing.builtRunId);
+      if (prior && prior.implementOf === String(sourceRunId)) {
+        const retired = await retireImplementedSource(id, sourceRunId, source, Date.now());
+        if (!retired.ok) return { fired: false, runId: existing.builtRunId, reason: 'built-source-retire-failed', manifest: prior };
+      }
+    }
+    return { fired: false, reason: 'already-implemented' };
+  }
 
   const patchCtx = await resolveProjectPatchTarget(resolveNightFocus());
   const prompt = implementPrompt(runId, source, Object.assign({ backlogId: backlogId, note: note }, patchCtx));
@@ -10892,17 +10928,32 @@ async function runImplementBuild(agentId, sourceRunId, opts) {
     return { fired: true, runId: runId, reason: threw ? 'run-failed' : 'no-manifest' };
   }
   // STAMP THE LOOP GUARD ON DISK. Every reader re-validates from deliverable.json, so an in-memory field would be
-  // lost on the next read — this must live in the file. Best-effort: a failed stamp costs the guard, not the build.
+  // lost on the next read. Atomic durable replace + readback are the commit point: without proof of this stamp the
+  // build MUST NOT be registered/emitted, or a truncated/missing guard permits recursive and duplicate builds.
   try {
     const { abs } = await fsJail.resolveInside(id, dir + '/deliverable.json');
     const raw = JSON.parse(await fsp.readFile(abs, 'utf8'));
     raw.implementOf = String(sourceRunId);
-    await fsp.writeFile(abs, JSON.stringify(raw, null, 2), 'utf8');
+    writeFileDurable({ fs: fs, path: path }, abs, JSON.stringify(raw, null, 2));
+    const proven = JSON.parse(await fsp.readFile(abs, 'utf8'));
+    if (proven.implementOf !== String(sourceRunId)) throw new Error('implementOf readback mismatch');
     manifest.implementOf = String(sourceRunId);
-  } catch (_) { /* the build stands; the card just can't prove this one came from a plan */ }
+  } catch (e) {
+    console.warn('[workshop] implement manifest stamp failed for ' + id + '/' + runId + ': ' + ((e && e.message) || e));
+    try { await workshopStore.releaseClaim(id, runId, { failed: false }); } catch (_) {}
+    return { fired: true, runId: runId, reason: 'manifest-stamp-failed' };
+  }
 
   const builtAt = Date.now();
-  try { await workshopStore.markBuilt(id, backlogId, runId, builtAt); } catch (_) {}
+  try {
+    await workshopStore.markBuilt(id, backlogId, runId, builtAt);
+    const registered = workshopStore.backlogOf(id).find(b => b.id === backlogId && b.builtRunId === String(runId));
+    if (!registered) throw new Error('built registration readback mismatch');
+  } catch (e) {
+    console.warn('[workshop] implement registration failed for ' + id + '/' + runId + ': ' + ((e && e.message) || e));
+    try { await workshopStore.releaseClaim(id, runId, { failed: false }); } catch (_) {}
+    return { fired: true, runId: runId, reason: 'registration-failed' };
+  }
   manifest.builtAt = builtAt;
   /* INHERIT THE PLAN'S LEARNING IDENTITY. nightshiftDecideLearn() returns early on `!arch`, and the archetype +
      cited thread are recorded against the run that PROPOSED the work — the plan. Once a build is chained from
@@ -10921,16 +10972,13 @@ async function runImplementBuild(agentId, sourceRunId, opts) {
      Commander with the card gone and a "press Implement again" that pointed at nothing). A failed build simply
      falls out above with the plan still PENDING, so its card returns. 'implemented' is its own honest lifecycle
      status: the plan was acted on and produced this build — no files were copied anywhere, so it is not 'kept'. */
-  try {
-    const srcItem = workshopStore.itemForRun(id, sourceRunId);
-    if (srcItem) await workshopStore.complete(id, srcItem.id);
-    await deliverableStore.record(lifecycleRow('implemented', id, String(sourceRunId), srcItem, source), Date.now());
-  } catch (_) { /* the build stands; the plan just stays listed */ }
+  const retired = await retireImplementedSource(id, sourceRunId, source, Date.now());
   try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
   try {
-    recordAutonomy({ ts: Date.now(), source: 'implement', kind: 'act', agentId: id, runId: runId, reason: 'built',
+    recordAutonomy({ ts: Date.now(), source: 'implement', kind: 'act', agentId: id, runId: runId, reason: retired.ok ? 'built' : 'built-source-retire-failed',
       detail: { phase: 'implement', title: manifest.title, fromRunId: String(sourceRunId), artifacts: (manifest.files || []).map(f => dir + '/' + f.path).slice(0, 8).join(', ') } });
   } catch (_) {}
+  if (!retired.ok) return { fired: true, runId: runId, reason: 'built-source-retire-failed', manifest: manifest, sourceRetirementPending: true };
   return { fired: true, runId: runId, reason: 'built', manifest: manifest };
 }
 

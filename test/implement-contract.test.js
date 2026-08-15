@@ -12,6 +12,8 @@
 'use strict';
 const A = require('./_assert.js');
 const AP = require('../frontend/app/autopilot.js');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const selected = { title: 'Add a retry to the uploader', grounds: 'they said uploads fail', spec: 'a patch that retries 3x' };
 
@@ -89,6 +91,33 @@ const selected = { title: 'Add a retry to the uploader', grounds: 'they said upl
   // the ids are LEARN-STORE KEYS — renaming one silently orphans a Commander's learned preferences.
   ['advance-goal', 'kill-pain', 'prep-next', 'maintain-extend', 'scout'].forEach(id =>
     A.ok(AP.ARCHETYPES.some(a => a.id === id), 'archetype id "' + id + '" is preserved (learn-store key)'));
+})();
+
+/* THE IMPLEMENT COMMIT IS FAIL-CLOSED (2026-08-15). A plain write + swallowed failures let the API announce
+   `built` even when the on-disk loop guard was absent (or the manifest was truncated), and even when no durable
+   backlog registration existed. The source plan could then be retired despite there being no reviewable build. */
+(function implementCommitIsDurableAndOrdered() {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+  const start = src.indexOf('async function runImplementBuild(');
+  const end = src.indexOf('\n/* ---- the WORKSHOP SHIFT ROUTINE', start);
+  const body = src.slice(start, end);
+  A.ok(start >= 0 && end > start, 'the real Implement routine is present for the durability contract');
+  A.ok(/writeFileDurable\(\{ fs: fs, path: path \}, abs, JSON\.stringify\(raw, null, 2\)\)/.test(body),
+    'the manifest loop guard uses the shared atomic durable writer, never a plain writeFile');
+  A.ok(/proven\.implementOf !== String\(sourceRunId\)/.test(body),
+    'the durable manifest stamp is read back and proved before registration');
+  A.ok(/reason: 'manifest-stamp-failed'/.test(body),
+    'a failed/mismatched manifest stamp returns an explicit failure');
+  A.ok(/reason: 'registration-failed'/.test(body) && /built registration readback mismatch/.test(body),
+    'durable backlog registration is read back and failure is explicit');
+  A.ok(body.indexOf("reason: 'manifest-stamp-failed'") < body.indexOf('workshopStore.markBuilt'),
+    'stamp failure exits before any built registration');
+  A.ok(body.indexOf('workshopStore.markBuilt') < body.indexOf("chanEmit('workshop.built'"),
+    'the station cannot emit workshop.built before durable registration');
+  A.ok(/retireImplementedSource\(id, sourceRunId, source/.test(body),
+    'source retirement runs through the recoverable durable transaction');
+  A.ok(/reason: 'built-source-retire-failed'/.test(body),
+    'a retirement failure is surfaced instead of silently claiming a clean build');
 })();
 
 A.report();

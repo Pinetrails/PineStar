@@ -126,6 +126,68 @@ async function readNdjson(res) {
   return events;
 }
 
+function implementationRuns(workspace) {
+  const root = path.join(workspace, 'builder', 'workshop');
+  let dirs = []; try { dirs = fs.readdirSync(root); } catch (_) {}
+  return dirs.filter(runId => {
+    try { return !!JSON.parse(fs.readFileSync(path.join(root, runId, 'deliverable.json'), 'utf8')).implementOf; }
+    catch (_) { return false; }
+  });
+}
+
+async function exerciseDurabilityFault(mock, mode, expectedReason, seq) {
+  const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-workshop-impl-' + mode + '-'));
+  // Patch the CHILD's real fs.renameSync only. The durable writer has already written+fsynced its temp bytes;
+  // failing the atomic rename models ENOSPC/device failure at each exact commit boundary without production hooks.
+  const hook = `import fs from 'node:fs';
+const original = fs.renameSync.bind(fs); let fired = false;
+function jsonAt(p){ try { return JSON.parse(fs.readFileSync(p,'utf8')); } catch (_) { return null; } }
+function backlogOf(v){ if(!v||typeof v!=='object') return null; if(Array.isArray(v.backlog)) return v.backlog; for(const x of Object.values(v)){ const b=backlogOf(x); if(b) return b; } return null; }
+fs.renameSync = function(src,dst){
+  const target=String(dst), data=(()=>{try{return fs.readFileSync(src,'utf8')}catch(_){return ''}})(); let fail=false;
+  if(!fired && process.env.STARNET_IMPL_FAULT==='stamp' && target.endsWith('deliverable.json') && data.includes('\\"implementOf\\"')) fail=true;
+  if(!fired && /builder\\.workshop\\.json$/.test(target)) { const b=backlogOf(jsonAt(src))||[]; const built=b.filter(x=>x&&x.builtRunId); const impl=b.filter(x=>x&&String(x.id||'').startsWith('impl-'));
+    if(process.env.STARNET_IMPL_FAULT==='registration' && built.length>=2 && impl.some(x=>x.builtRunId)) fail=true;
+    if(process.env.STARNET_IMPL_FAULT==='retirement' && b.length===1 && impl.length===1 && impl[0].builtRunId) fail=true;
+  }
+  if(fail){ fired=true; const e=new Error('INJECT_IMPLEMENT_'+process.env.STARNET_IMPL_FAULT.toUpperCase()); e.code='ENOSPC'; throw e; }
+  return original(src,dst);
+};`;
+  const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1', SKYNET_OPENROUTER_BASE: mock.base,
+    SKYNET_OPENROUTER_KEY: 'sk-or-v1-workshop-fake', SKYNET_DEFAULT_MODEL: 'test/model', STARNET_IMPL_FAULT: mode,
+    NODE_OPTIONS: '--import=data:text/javascript,' + encodeURIComponent(hook) };
+  const live = await boot(9050 + (process.pid % 25) + seq * 30, env, 20);
+  const B = 'http://' + HOST + ':' + live.port;
+  try {
+    const token = await bootToken(B, B);
+    const headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
+    const post = (p, b) => fetch(B + p, { method: 'POST', headers, body: JSON.stringify(b) });
+    await post('/api/workshop/grant', { agentId: 'builder', on: true });
+    await post('/api/workshop/queue', { agentId: 'builder', id: 'item-plan-' + mode, title: 'Durability plan ' + mode });
+    const shift = await readNdjson(await post('/api/workshop/shift', { agentId: 'builder' }));
+    const plan = ((shift.find(e => e.name === 'workshop.shift.result') || {}).payload || {});
+    A.eq(plan.reason, 'built', mode + ': source plan builds before the injected commit fault');
+    const first = await readNdjson(await post('/api/workshop/implement', { agentId: 'builder', runId: plan.runId }));
+    const failed = ((first.find(e => e.name === 'workshop.implement.result') || {}).payload || {});
+    A.eq(failed.reason, expectedReason, mode + ': the exact durability failure is reported, never built');
+    const pending = await (await fetch(B + '/api/workshop/pending?agent=builder', { headers })).json();
+    A.ok(pending.pending.some(m => m.runId === plan.runId), mode + ': the source plan remains pending after the fault');
+    if (mode !== 'retirement') A.ok(!pending.pending.some(m => m.runId === failed.runId), mode + ': an uncommitted build is never reviewable');
+    else A.ok(pending.pending.some(m => m.runId === failed.runId), 'retirement: the durably registered build remains reviewable');
+
+    const beforeRetry = implementationRuns(ws).length;
+    const retryEvents = await readNdjson(await post('/api/workshop/implement', { agentId: 'builder', runId: plan.runId }));
+    const retry = ((retryEvents.find(e => e.name === 'workshop.implement.result') || {}).payload || {});
+    A.ok(retry.reason === 'built' || retry.reason === 'already-implemented', mode + ': a retry heals the one-shot durability fault');
+    const healed = await (await fetch(B + '/api/workshop/pending?agent=builder', { headers })).json();
+    A.ok(!healed.pending.some(m => m.runId === plan.runId), mode + ': successful retry durably retires the source');
+    if (mode === 'retirement') A.eq(implementationRuns(ws).length, beforeRetry, 'retirement: recovery reuses the proven build instead of spending a duplicate run');
+  } finally {
+    try { live.child.kill(); } catch (_) {}
+    try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
 (async () => {
   const mock = await startMockOpenRouter();
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-workshop-impl-e2e-'));
@@ -293,6 +355,12 @@ async function readNdjson(res) {
     A.eq(((gone.find(e => e.name === 'workshop.implement.result') || {}).payload || {}).reason, 'source-gone', 'an unknown deliverable is refused as source-gone');
     A.eq((await post('/api/workshop/implement', { agentId: '../etc', runId: planRun })).status, 400, 'a malformed agentId is refused 400');
     A.eq((await post('/api/workshop/implement', { agentId: 'builder', runId: '' })).status, 400, 'a missing runId is refused 400');
+
+    // 9. FAIL-FIRST, REAL-ROUTE DURABILITY PROOF. Each child gets one injected atomic-rename failure, then heals
+    // on retry. This locks the three seams that formerly swallowed persistence failures and still claimed built.
+    await exerciseDurabilityFault(mock, 'stamp', 'manifest-stamp-failed', 1);
+    await exerciseDurabilityFault(mock, 'registration', 'registration-failed', 2);
+    await exerciseDurabilityFault(mock, 'retirement', 'built-source-retire-failed', 3);
   } finally {
     try { child.kill(); } catch (_) {}
     try { mock.server.close(); } catch (_) {}

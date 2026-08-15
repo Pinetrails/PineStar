@@ -3488,6 +3488,9 @@ const Chat = (() => {
       if (r === 'already-implemented') return 'this plan has already been built — its build is in your rail';
       if (r === 'already-an-implementation') return 'this build IS an implementation already — there is nothing further to build from it';
       if (r === 'no-manifest' || r === 'run-failed') return 'the build ran but produced nothing reviewable';
+      if (r === 'manifest-stamp-failed') return 'the files landed, but the station could not durably prove their link to this plan';
+      if (r === 'registration-failed') return 'the files landed, but the station could not durably register a reviewable build';
+      if (r === 'built-source-retire-failed') return 'the build landed, but the station could not durably retire this source plan';
       if (r === 'unreachable' || r.indexOf('http') === 0) return 'the station couldn’t be reached';
       return r || 'the station refused';
     };
