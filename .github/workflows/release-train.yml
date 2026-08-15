@@ -523,6 +523,36 @@ jobs:
             throw "[$env:TARGET] installed bundled Node version is $actualNodeVersion; expected $expectedNodeVersion"
           }
 
+      # Clean-install/signature proof cannot catch the field failure where an existing
+      # installation's uninstall.exe is missing, blocked, or exits nonzero. Exercise the exact
+      # human path (double-click candidate with no flags) from both latest and N-1 published
+      # Windows releases while the old shell + sidecar are active and uninstall.exe is deleted.
+      # The candidate must switch itself onto /UPDATE, preserve state, relaunch, and then prove
+      # that its own future uninstaller can stop those active processes cleanly.
+      - name: Prove published Windows upgrades survive a broken old uninstaller
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $installer = Get-ChildItem -Path 'src-tauri/target' -Recurse -File -Filter '*-setup.exe' |
+            Where-Object { $_.FullName -match '[\\/]bundle[\\/]nsis[\\/]' } |
+            Select-Object -First 1
+          if ($null -eq $installer) { throw 'could not locate candidate NSIS installer for upgrade proof' }
+          $version = (Get-Content 'src-tauri/tauri.conf.json' -Raw | ConvertFrom-Json).version
+          & ./scripts/ci/windows-published-upgrade-proof.ps1 `
+            -CandidateInstaller $installer.FullName `
+            -CandidateVersion $version `
+            -Output 'windows-published-upgrade-proof.json'
+
+      - name: Upload Windows published-upgrade receipt
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-published-upgrade-proof-${{ matrix.target }}
+          path: windows-published-upgrade-proof.json
+          if-no-files-found: error
+          retention-days: 30
+
       # macOS pre-notarization trust proof. Signing can fail SILENTLY GREEN in three ways,
       # each of which ships
       # a build that looks fine in CI and is broken in the user's hands:
