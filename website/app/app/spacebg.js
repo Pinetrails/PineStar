@@ -395,6 +395,9 @@ const SpaceBG = (() => {
     blurb: 'A star factory. Hot cores, cold lanes, and a deep field behind it.',
     base: '#030308',                       // empty space must read BLACK, not faintly violet
     D: { star: 0.012, gas: 0.03, mote: 0.075 },
+    // the deep field SWAYS about the framed cloud instead of drifting off it — see draw().
+    // x/y are amplitudes in px; sx/sy the periods in seconds (deliberately not a simple ratio).
+    SWAY: { x: 46, y: 13, sx: 240, sy: 290 },
 
     LEVELS: 12,
 
@@ -503,6 +506,37 @@ const SpaceBG = (() => {
           fL[i] = Math.max(0, Math.min(1, (lane1(u0 * 1.15, v0 * 1.15) * 0.62 + lane2(u0, v0) * 0.38 - 0.54) * 3.0));
         }
       }
+      /* WHERE THE CLOUD IS — so draw() can keep it framed (2026-08-15, Andrew: "the purple nebula
+         disappears regularly, can we keep that specifically in frame").
+         This tile is deliberately BIGGER than any viewport, so the screen is only ever a window
+         onto part of it, and the envelope above leaves a lot of empty tile. Drifting that window
+         at 1.1 px/s in x and 0.3 in y meant the subject spent most of a ~107-minute cycle
+         completely off-screen: measured over one full cycle at 1440x900, gas coverage of the frame
+         ran 0.04 -> 0.35, i.e. stretches of many minutes with nothing but stars.
+         The tile is a TORUS, so a plain centroid of the density is meaningless — a cloud straddling
+         the seam averages out to the empty middle. Take the CIRCULAR mean instead: read each axis
+         as an angle, sum the density as unit vectors, convert the resultant angle back to a
+         coordinate. `r` is the resultant LENGTH, i.e. how concentrated the gas is; if a future tune
+         ever spreads the gas evenly over the tile there is no subject to frame and draw() falls
+         back to the plain offset rather than pinning to a meaningless point. */
+      let cxs = 0, sxs = 0, cys = 0, sys = 0, mass = 0;
+      for (let y = 0, i = 0; y < SH; y++) {
+        const ay = (y / SH) * Math.PI * 2, cay = Math.cos(ay), say = Math.sin(ay);
+        for (let x = 0; x < SW; x++, i++) {
+          const d = fT[i];
+          if (d <= 0) continue;
+          const ax = (x / SW) * Math.PI * 2;
+          cxs += d * Math.cos(ax); sxs += d * Math.sin(ax);
+          cys += d * cay; sys += d * say;
+          mass += d;
+        }
+      }
+      const turn = (c, s) => { const a = Math.atan2(s, c); return (a < 0 ? a + Math.PI * 2 : a) / (Math.PI * 2); };
+      const focus = mass > 0
+        ? { x: turn(cxs, sxs) * w, y: turn(cys, sys) * h,
+            r: Math.min(Math.hypot(cxs, sxs), Math.hypot(cys, sys)) / mass }
+        : { x: 0, y: 0, r: 0 };
+
       // deterministic per-pixel dither offset in [-0.5,0.5) — same pixel, same grain, every build
       const dith = (x, y) => {
         let k = Math.imul(x + 0x1F123BB5, 0x27D4EB2D) ^ Math.imul(y + 0x68E31DA4, 0x165667B1);
@@ -579,7 +613,7 @@ const SpaceBG = (() => {
         mc.fillRect((rnd() * w) | 0, (rnd() * h) | 0, rnd() < 0.8 ? 1 : 2, 1);
       }
 
-      return { starCv, gasCv, moteCv };
+      return { starCv, gasCv, moteCv, focus };
     },
 
     draw(ctx, w, h, now, cam, st) {
@@ -589,7 +623,21 @@ const SpaceBG = (() => {
          SAME offset: they are at one distance and must not slide apart. The gas plate carries
          alpha, so thin gas lets the field through and dense gas and dust lanes occlude it. */
       const TW = st.starCv.width, TH = st.starCv.height;
-      const ox = parX(cam, D.gas) + t * 1.1, oy = parY(cam, D.gas) + t * 0.3;
+      /* THE SUBJECT STAYS FRAMED. These plates used to drift (`+ t * 1.1`, `+ t * 0.3`), which on a
+         tile larger than the viewport is not "the sky moves" but "the window walks off the cloud" —
+         and it took ~107 minutes to walk back. The nebula is the whole point of this backdrop, so
+         the offset now PINS its centre (see build()'s focus) to the centre of the frame and only
+         SWAYS about it: two slow, out-of-phase waves so the drift never repeats on an obvious beat,
+         with peak speeds ~1.2 and ~0.3 px/s — the same rates the old drift ran at, so the motion
+         reads exactly as before. It simply stops accumulating.
+         Camera parallax is unchanged and still added on top: the field is at a finite distance, so
+         panning the station must still slide it (law 2). The motes below keep their own drift —
+         they are foreground grain with no subject to lose. */
+      const F = st.focus || { x: 0, y: 0, r: 0 };
+      const S = NURSERY_BG.SWAY;
+      const pinX = F.r > 0.08 ? w / 2 - F.x : 0, pinY = F.r > 0.08 ? h / 2 - F.y : 0;
+      const ox = parX(cam, D.gas) + pinX + S.x * Math.sin(t / S.sx * Math.PI * 2);
+      const oy = parY(cam, D.gas) + pinY + S.y * Math.sin(t / S.sy * Math.PI * 2);
       tileN(ctx, st.starCv, TW, TH, w, h, ox, oy);
       tileN(ctx, st.gasCv, TW, TH, w, h, ox, oy);
       ctx.globalAlpha = 0.8;
