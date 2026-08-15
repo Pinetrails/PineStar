@@ -111,6 +111,20 @@ const GoalStore = (() => {
     return [];
   }
 
+  // A Commander-authored goal can exist before it has a confirmed milestone tree. Surface that state explicitly
+  // instead of letting the QUEST LOG claim there is "no goal". Goals already represented by an active/completed
+  // tree are excluded; the active projection renders those from the authoritative tree instead.
+  function unplannedGoal() {
+    if (!ready()) return null;
+    const beliefs = goalsBeliefs();
+    for (const b of beliefs) {
+      if (!b || !b.id || !String(b.text || '').trim()) continue;
+      const represented = state.goals.some(g => g && g.sourceBeliefId === String(b.id) && (g.status === 'active' || g.status === 'done'));
+      if (!represented) return b;
+    }
+    return null;
+  }
+
   // mirror the ACTIVE goal to the sidecar (fire-and-forget) so server-composed cron runs can see the current path.
   // Mirrors DossierStore.pushToSidecar exactly: a plain POST, a no-op if unreachable. Only the active goal's text +
   // progress + next step travel (a compact, cron-useful summary — never the whole history).
@@ -430,7 +444,7 @@ const GoalStore = (() => {
   function isFiring() { return firing; }
 
   return {
-    init, reset, sync, quests, activeGoal, pushToSidecar,
+    init, reset, sync, quests, activeGoal, unplannedGoal, pushToSidecar,
     willOfferDecomposition, pendingDecomposition, proposeDecomposition, confirm, declineDecomposition, markOffered,
     acceptMilestone, reconcile, syncDrift, setFiring, isFiring, beliefFingerprint, questLive,
     _state: () => state, _onRunEnd: onRunEnd, _syncJourneyMilestones: syncJourneyMilestones

@@ -45,6 +45,8 @@ A.eq(withQuests(SYS, questBlock([])), SYS + '\n\n' + questBlock([]), 'an empty l
   A.ok(b.indexOf('next step (b): write the script') >= 0, 'stanza names the FIRST not-done step (a is done → b)');
   A.ok(b.indexOf('the bound run finishes') >= 0, 'run contract phrased "the bound run finishes"');
   A.ok(b.indexOf('why: dossier: exports CSVs by hand every morning') >= 0, 'groundedIn surfaced as "why:"');
+  A.ok(b.indexOf('op:"start"') >= 0, 'run stanza tells the agent to explicitly start THIS quest before doing its work');
+  A.ok(b.indexOf('id:"q:1"') >= 0, 'the start instruction names the exact quest id — no ambient auto-binding');
 }
 
 /* ---------- an attest quest with a prior decline: completes-when phrasing + the decline note ---------- */

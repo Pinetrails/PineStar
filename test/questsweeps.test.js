@@ -9,7 +9,7 @@
 const A = require('./_assert.js');
 const path = require('path');
 const { makeQuestStore } = require('../sidecar/quest-store.js');
-const { runBindIds, livePropKeys, learnedFactKeys, artifactQuestKeys, _internals } = require('../sidecar/questsweeps.js');
+const { livePropKeys, learnedFactKeys, artifactQuestKeys, _internals } = require('../sidecar/questsweeps.js');
 
 function memFs() {
   const files = new Map();
@@ -27,32 +27,12 @@ const fresh = () => makeQuestStore({ fs: memFs(), path, workspaces: '/ws', write
 
 (async () => {
 
-  // ---- 1. RUN: the injection seam binds the agent's OWN open run quests; run-end 'done' then completes them ----
+  // ---- 1. RUN: admission never guesses which quest an unrelated run is doing ----
   {
-    const s = fresh();
-    const own = await s.mint({ title: 'own run quest', contract: { type: 'run', key: 'wq:1' }, agentId: 'hero' }, 1);
-    const shared = await s.mint({ title: 'station run quest', contract: { type: 'run', key: 'wq:2' } }, 2);          // station-wide
-    const theirs = await s.mint({ title: 'their run quest', contract: { type: 'run', key: 'wq:3' }, agentId: 'other' }, 3);
-    const notRun = await s.mint({ title: 'attest quest', contract: { type: 'attest', key: '' }, agentId: 'hero' }, 4);
-
-    const ids = runBindIds(s.openForAgent('hero'), 'hero');
-    A.eq(ids, [own.id], 'runBindIds selects ONLY the agent\'s OWN open run-contract quests (never station-wide, never another agent\'s, never non-run)');
-
-    // the seam: bind the live task run, then the existing run-end settle sweep completes on 'done'
-    for (const id of ids) await s.bindRun(id, 'run-42');
-    await s.completeByContract('run', 'run-42', 100);
-    A.eq(s.get(own.id).status, 'done', 'the bound OWN run quest completes when its run ends done');
-    A.eq(s.get(shared.id).status, 'open', 'the station-wide run quest was NOT claimed by an unrelated run');
-    A.eq(s.get(theirs.id).status, 'open', 'another agent\'s run quest was NOT claimed');
-    A.eq(s.get(notRun.id).status, 'open', 'a non-run contract is untouched by the run seam');
-
-    // a NON-matching runId completes nothing
-    const before = s.list().filter(q => q.status === 'done').length;
-    await s.completeByContract('run', 'run-unrelated', 101);
-    A.eq(s.list().filter(q => q.status === 'done').length, before, 'a non-matching runId completes nothing');
-
-    // done quests are never re-selected for binding
-    A.eq(runBindIds(s.openForAgent('hero'), 'hero'), [], 'a completed quest is never re-selected for binding');
+    const idx = require('fs').readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+    const sweeps = require('fs').readFileSync(path.join(__dirname, '..', 'sidecar', 'questsweeps.js'), 'utf8');
+    A.ok(!/runBindIds\s*\(/.test(idx), 'run admission does not auto-bind every open run quest to an unrelated task');
+    A.ok(!/function runBindIds\s*\(/.test(sweeps), 'the misleading bulk run selector no longer exists');
   }
 
   // ---- 2. PROP: resolved capability set (objectType / capId / tool / compute) proves a prop key live ----
@@ -125,11 +105,9 @@ const fresh = () => makeQuestStore({ fs: memFs(), path, workspaces: '/ws', write
   {
     const junk = [null, 'x', { id: 'q:1' }, { id: 'q:2', status: 'done', contract: { type: 'run', key: 'r' }, agentId: 'hero' },
       { id: 'q:3', status: 'open', contract: { type: 'attest', key: '' }, agentId: 'hero' }];
-    A.eq(runBindIds(junk, 'hero'), [], 'runBindIds: junk + done + attest are never selected');
     A.eq(livePropKeys(junk, 'hero', {}, {}), [], 'livePropKeys: junk never matches');
     A.eq(learnedFactKeys(junk, 'hero', { id: 'm1', content: 'anything at all' }), [], 'learnedFactKeys: junk never matches');
     A.eq(artifactQuestKeys(junk, 'hero'), [], 'artifactQuestKeys: junk never selected');
-    A.eq(runBindIds(null, 'hero'), [], 'a non-array quest list is safe');
   }
 
   A.report('questsweeps.test');

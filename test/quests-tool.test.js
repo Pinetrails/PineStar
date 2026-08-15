@@ -68,6 +68,23 @@ const ctxOf = (agentId, runId) => ({ agentId, runId });
     A.ok(/No open step "zzz"/.test((await tool.run({ op: 'progress', id: q.id, stepKey: 'zzz' }, ctxOf('hero'))).content), 'progress on an unknown step → honest no-op');
   }
 
+  // ---- op:start — explicitly bind ONLY the named run quest to THIS run ----
+  {
+    const store = fresh();
+    const tool = toolFor(store);
+    const first = await store.mint({ title: 'First run quest', contract: { type: 'run', key: 'work:first' }, agentId: 'hero' }, 1);
+    const second = await store.mint({ title: 'Second run quest', contract: { type: 'run', key: 'work:second' }, agentId: 'hero' }, 2);
+    const attest = await store.mint({ title: 'Not mechanical', contract: { type: 'attest', key: '' }, agentId: 'hero' }, 3);
+
+    const started = await tool.run({ op: 'start', id: second.id }, ctxOf('hero', 'live-run'));
+    A.ok(/Started quest/.test(started.content), 'start reports the explicitly named quest as started');
+    A.eq(store.get(first.id).runId, null, 'another open run quest is NOT attached to the live run');
+    A.eq(store.get(second.id).runId, 'live-run', 'the explicitly started run quest is bound to the live run');
+    A.ok(/needs the current run/.test((await tool.run({ op: 'start', id: first.id }, ctxOf('hero', null))).content), 'start without a live runId is refused');
+    A.ok(/not one of your open quests/.test((await tool.run({ op: 'start', id: first.id }, ctxOf('intruder', 'bad-run'))).content), 'another agent cannot start an owned quest');
+    A.ok(/not a run quest/.test((await tool.run({ op: 'start', id: attest.id }, ctxOf('hero', 'live-run'))).content), 'a non-run contract cannot be bound through start');
+  }
+
   // ---- op:attest_complete — evidence required, proposes (never completes), mechanical rejected ----
   {
     const store = fresh();

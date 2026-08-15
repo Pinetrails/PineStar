@@ -50,6 +50,10 @@ A.ok(/return 'session'/.test(station) && !/GO ▸ task board/.test(station), 'wo
 A.ok(/function questOpenSession/.test(station) && /\.find\(s => s && !s\.archived && s\.title === title\)/.test(station), 'START QUEST is idempotent by title (a second click returns to the same conversation)');
 A.ok(/Chat\.prefill\(/.test(station.slice(station.indexOf('function questOpenSession'), station.indexOf('function questSessionTitle') + 4000)), 'the ask is PREFILLED, never sent — no fabricated turns');
 A.ok(/q\.agentId && String\(q\.agentId\)/.test(station), 'a ledger quest binds its OWN agent; agent-less kinds fall to the hero');
+A.ok(/q\.id === 'st:crew'/.test(stationFns) && /return 'recruit'/.test(stationFns), 'the recruit quest routes to Recruitment Bay, never Refit');
+A.ok(/App\.openSummonBay/.test(station.slice(station.indexOf("body.querySelectorAll('.q-go')"), station.indexOf("body.querySelectorAll('.q-attest-yes')"))), 'the recruit destination opens the real Recruitment Bay surface');
+A.ok(/case 'prop':[\s\S]{0,120}return 'refit'/.test(stationFns), 'a capability contract routes to the placement surface');
+A.ok(/case 'fact':|case 'attest':/.test(stationFns), 'fact and attest ledger contracts have a real action destination');
 
 /* ---- 4. quests lead the panel; the shell holds steady ---- */
 const render = station.slice(station.indexOf("body.innerHTML = '<div class=\"gx gx-quests\">"), station.indexOf("body.innerHTML = '<div class=\"gx gx-quests\">") + 900);
@@ -81,6 +85,8 @@ A.ok(/goal\.pct/.test(trackFn) && /goal\.done/.test(trackFn) && /goal\.total/.te
 const trackEmitted = trackFn.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 A.ok(!/locked|unlock|LOCKED|TIER \d/i.test(trackEmitted), 'NOTHING the track RENDERS claims to be locked — the log reveals order, it never gates (standing law)');
 A.ok(/q-track-empty/.test(trackFn) && /SET A GOAL/.test(trackFn), 'with no goal the track teaches what it is and offers the real door, never an empty frame');
+A.ok(/GoalStore\.unplannedGoal/.test(trackFn) && /GOAL SAVED/.test(trackFn), 'a saved dossier goal appears in YOUR GOAL even before a milestone path exists');
+A.ok(/PLAN THIS GOAL/.test(trackFn), 'an unplanned saved goal offers the explicit path-planning action');
 /* A FINISHED path is not an empty one. Goals.project surfaces nothing for a completed goal, so without
    this the band snapped back to "no goal path yet" the instant the last milestone landed — telling a
    Commander who had just finished a goal that they never had one. */
@@ -89,6 +95,7 @@ A.ok(/evo\.goalsReached/.test(trackFn) && /' reached<\/b>'/.test(trackFn),
 A.ok(/SET THE NEXT GOAL/.test(trackFn), 'after a goal is reached the door invites the NEXT one');
 A.ok(/q-track-reached-band/.test(trackFn) && /\.q-track-reached-band/.test(css), 'the finished band keeps the gold rail it earned');
 A.ok(/\.q-track \{/.test(css) && /\.q-node-now \.q-node-dot/.test(css), 'the track ships its CSS layer');
+A.ok(/const milestones = rest\.filter/.test(station) && /<summary[^>]*>MILESTONES/.test(station), 'lifetime milestones live in a collapsed shelf instead of inflating the current OPEN list');
 /* the payoff: what the path cashes out in. The stage NAME must come from the engine, never a copy of the
    ladder in the frontend — and it must not read as an unlock, because evolution grants nothing. */
 A.ok(/evo\.next/.test(trackFn) && !/DRIFT|VECTOR|ORBIT|CONSTELLATION|DEEP FIELD/.test(trackFn),

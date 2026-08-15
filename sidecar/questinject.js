@@ -32,7 +32,8 @@
   const BLOCK_CAP = 2200;
 
   const HEADER = 'STATION QUESTS — your standing objectives for the Commander. These progress the game in sync '
-    + 'with the Commander\'s real work. To interact, use the quest.update tool: op:"progress" ticks a named step '
+    + 'with the Commander\'s real work. To interact, use the quest.update tool: op:"start" binds the ONE named run '
+    + 'quest you are beginning to this run; op:"progress" ticks a named step '
     + '(pass a short note on what you did); op:"attest_complete" PROPOSES a quest done with concrete evidence — it '
     + 'is NEVER complete until the Commander confirms. Never claim a quest done in prose alone; a mechanical quest '
     + 'completes on its own when the harness proves it.';
@@ -85,6 +86,7 @@
     const ns = nextStep(q);
     if (ns) lines.push('    next step (' + ns.key + '): ' + (String(ns.label || ns.key).trim() || ns.key)
       + ' — tick it with quest.update op:"progress" stepKey:"' + ns.key + '"');
+    if (q && q.contract && q.contract.type === 'run') lines.push('    start this quest first with quest.update op:"start" id:"' + String(q.id || '') + '" — only this explicit binding can make the run count');
     lines.push('    ✓ ' + completesWhen(q && q.contract));
     const grounded = q && q.groundedIn != null ? String(q.groundedIn).trim() : '';
     if (grounded) lines.push('    why: ' + grounded);
