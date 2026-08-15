@@ -1112,9 +1112,25 @@ const SpaceBG = (() => {
      the picker's swatches use, so a preview is the REAL renderer and can never promise a sky
      the station won't deliver (the same law the deck/wall material swatches follow). Builds a
      throwaway state at the swatch's own size; never touches the live tile cache. */
+  /* MEMOISED for the same reason Terrain.paintSample is: every call builds a 960px-wide reference
+     sky from scratch, and SETTINGS repaints all six picker swatches on EVERY build of the panel.
+     Measured live at 112x63: nursery 54ms, ocean 26ms, city 14ms. The inputs are deterministic
+     (fixed SEED, an explicit `now`, no camera, no theme), so a cached chip is bit-identical to a
+     fresh render — the swatch is still the REAL renderer's output, never a stand-in. */
+  const sampleChips = new Map();
   function paintSample(ctx, w, h, id, now) {
     const bid = resolve(id);
     const bd = BACKDROPS[bid];
+    const key = bid + '|' + w + '|' + h + '|' + (now || 0);
+    const hit = sampleChips.get(key);
+    if (hit) {
+      ctx.save();
+      ctx.clearRect(0, 0, w, h);
+      ctx.drawImage(hit, 0, 0);
+      ctx.restore();
+      ctx.globalAlpha = 1;
+      return;
+    }
     /* Build at a REFERENCE size and scale DOWN — never build at the swatch's own size. Every
        backdrop scales its content two different ways: counts by area (stars, grain, windows) and
        radii by min(w,h) (nebulas, glint, city cores). Building straight into a 112x63 swatch
@@ -1127,11 +1143,15 @@ const SpaceBG = (() => {
     oc.fillRect(0, 0, RW, RH);
     bd.draw(oc, RW, RH, now || 0, null, bd.build(RW, RH, mulberry32(SEED)));
 
+    const chip = mkCv(w, h), cc = chip.getContext('2d');
+    cc.imageSmoothingEnabled = true;           // a true miniature; NN-crushing a starfield eats the stars
+    cc.imageSmoothingQuality = 'high';
+    cc.drawImage(off, 0, 0, RW, RH, 0, 0, w, h);
+    sampleChips.set(key, chip);
+
     ctx.save();
     ctx.clearRect(0, 0, w, h);
-    ctx.imageSmoothingEnabled = true;          // a true miniature; NN-crushing a starfield eats the stars
-    ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(off, 0, 0, RW, RH, 0, 0, w, h);
+    ctx.drawImage(chip, 0, 0);
     ctx.restore();
     ctx.globalAlpha = 1;
   }

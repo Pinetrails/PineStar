@@ -4726,18 +4726,21 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    cross-section search. Kills the small-window scroll tunnel. Phosphor vars
    only; motion (the .swap-in crossfade) rides motion.css.
    ============================================================ */
-/* HEIGHT FITS THE CONTENT (UI audit 2026-08-03). This used to be a FLAT `height: min(78vh,720px)`, so every
-   console panel opened at the same 720px box no matter what was in it — measured at 1600x1000 that left LOOPS
-   84% empty, LOGBOOK 82%, ROUTINES 79%, and 650px of blank rail under a two-item list. Only SETTINGS ever
-   filled it. Now the box grows with its section and stops at the SAME ceiling, so a dense panel is unchanged
-   and a sparse one reads as a deliberate window instead of an empty hangar.
-   - min-height keeps a one-line panel a credible window rather than a slit, and holds the box steady while an
-     async section is still fetching (LOGBOOK/ROUTINES/LOOPS/ABILITIES all paint "loading…" first).
-   - max-height is the old fixed value: nothing that used to fit can now overflow.
-   - a user drag writes inline width/height (.term-sized), which still wins over both.
+/* STEADY SHELL — ONE HEIGHT PER CONSOLE, FOR EVERY SECTION (2026-08-15).
+   Content-fit height (`height:auto`, the 2026-08-03 audit's answer to sparse panels) is wrong for a TAB SET,
+   and every console mounted through mountConsole is one. A never-moved window is CSS-centred
+   (translate(-50%,-50%)), so a section that is shorter than its neighbour re-centres the whole box and drags
+   the rail out from under the cursor: measured live at 1280x720, SETTINGS was 590px on PROVIDERS, 534px on
+   BUDGET and 462px on ALERTS — a 128px jump, and the tab you were aiming at moved 64px while you clicked it.
+   The DOSSIER (seven tabs) and DELIVERABLES (a details drawer) had each already been pinned to `--con-h` for
+   exactly this reason; the remaining consoles — SETTINGS, ABILITIES, CHANNELS, AUTOMATION — were still
+   breathing. Pin the shell here instead and let the pane scroll, so it is one rule, not four exceptions.
+   - the sparse-panel case the audit fixed is gone by other means: LOOPS/LOGBOOK/ROUTINES are no longer
+     windows of their own, they are lanes inside the AUTOMATION console.
+   - min-height still yields to a short viewport, so a <=380px-tall screen can't be out-sized by the floor.
+   - a user drag writes inline width/height (.term-sized), which still wins over this.
    NO height transition here: the window already animates open via term-power (scaleY 0.012->1), and adding a
-   height tween on top left the box measurable at ~4px mid-animation. The entrance covers the open; the async
-   loading… -> rows growth snaps, which is the safe trade. */
+   height tween on top left the box measurable at ~4px mid-animation. */
 /* WIDE — the second (and last) window size. `.term.wide` is WIDTH ONLY: it gives a non-console window
    (TASK BOARD's three lanes, QUEST LOG's card grid, the COMMANDER DOSSIER's two columns) the same
    shell as the consoles without mounting the console rail markup. --term-w-wide is declared on `.term`
@@ -4750,18 +4753,14 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
   --con-w: var(--term-w-wide);
   --con-h: min(var(--term-band, calc(78vh * var(--sn-unzoom, 1))), 720px);
   width: var(--con-w);
-  height: auto;
+  height: var(--con-h);
   /* the floor yields to a short viewport — a flat 320px would out-size the window on a <=380px-tall screen
      (and out-size the 84vh narrow-breakpoint height below), pushing the panel past the frame. */
   min-height: min(320px, var(--con-h));
   max-width: var(--con-w); max-height: var(--con-h);
 }
-/* STEADY SHELL (dossier). A content-fit console is fine for a single-shape panel, but the AGENT DOSSIER
-   is a TAB SET: its seven sections differ by 300px of height, and because a never-moved window is
-   CSS-centred (translate(-50%,-50%)), every switch re-centres the whole box — measured live, the tab strip
-   moved from y=236 to y=387 between sections. The tab you are aiming at must not move when you hit it,
-   so this window holds one height and lets the pane scroll. */
-.term.console.dossier { height: var(--con-h); }
+/* (the AGENT DOSSIER's own `.dossier` height override is gone — `.term.console` above now carries the
+   steady shell for every console, which is what that rule was asking for one window at a time.) */
 .term.console .term-body.term-console-body {
   display: flex; flex-direction: row; gap: 0;
   padding: 0; overflow: hidden;              /* the content pane owns the scroll, not the body */
@@ -5499,10 +5498,8 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
   color: var(--text); opacity: 0.6; }
 
 /* ---- DELIVERABLES: the wide shell, the summary strip, the kind chips, and the details drawer ---- */
-/* STEADY SHELL, same reasoning as .term.console.dossier: a card's drawer changes the content height, and a
-   never-moved window is CSS-centred — without a fixed height the whole window would re-centre on every toggle
-   and the row you just clicked would slide out from under the pointer. The card list scrolls inside instead. */
-.term.console.dlv-win { height: var(--con-h); }
+/* (the steady shell this window needs — a card's drawer must not re-centre the whole box and slide the row
+   out from under the pointer — is now `.term.console`'s own height; no per-window override left to keep.) */
 
 /* the one-line answer to "what have I been working on" */
 .dlv-head-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px;

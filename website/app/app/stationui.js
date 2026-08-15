@@ -1054,7 +1054,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
      hidden, not removed). That lets the caller run its existing wiring (wireBudget/wireFallbackChain/…)
      ONCE against the returned content root and reach every control — no per-section rewire, and no
      regression of the settings behaviour/ids the tests source-lock. The builder returns nothing; it
-     calls mountConsole(body, key, sections, opts) and then wires the returned host. */
+     calls mountConsole(body, key, sections, opts) and then wires the returned host.
+
+     `sec.onShow(bodyEl)` (optional) is the escape hatch for content that is EXPENSIVE and INVISIBLE.
+     Building every pane up-front is what makes the single wiring pass work, but it also means a
+     section nobody opened still paid for itself: SETTINGS ran the real world renderer over six
+     backdrop swatches — 600ms, measured — on every build of the panel, for a pane the Commander
+     usually never scrolls to. onShow fires ONCE, the first time that pane is actually revealed
+     (mount, tab click, or a search that shows every pane), so the cost follows the eyes. */
   function mountConsole(body, key, sections, opts) {
     opts = opts || {};
     body.classList.add('term-console-body');
@@ -1153,8 +1160,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     body.appendChild(left);
     body.appendChild(right);   // === host when there is no top strip (the vertical-rail consoles are unchanged)
 
+    /* first-reveal hook. Fires at most once per pane per mount; a throw is swallowed for the same
+       reason sec.build's is — one expensive extra must never take the console down with it. */
+    const revealed = {};
+    function reveal(id) {
+      if (revealed[id] || !panes[id]) return;
+      revealed[id] = true;
+      const sec = sections.find(x => x.id === id);
+      if (!sec || typeof sec.onShow !== 'function') return;
+      try { sec.onShow(panes[id].querySelector('.con-sec-body')); } catch (_) {}
+    }
+
     function selectSection(id, viaClick) {
       if (!panes[id]) return;
+      reveal(id);
       consoleSection[key] = id;
       if (viaClick) saveWindowState();   // remember the section the Commander navigated to, across reloads
       activeId = id;
@@ -1218,6 +1237,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const matches = [];
         sections.forEach(sec => {
           const pane = panes[sec.id];
+          reveal(sec.id);   // search shows every pane, so every pane is now on screen and must be complete
           pane.classList.remove('con-sec-hidden');
           pane.classList.add('con-sec-searchshow');
           // a "row" = a labelled control block. We match on visible text of these granular blocks.
@@ -1272,7 +1292,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       });
     }
 
+    /* The MOUNT reveal is deferred one frame, unlike every later one. onShow targets are installed by
+       the caller's wiring pass, which runs AFTER mountConsole returns — firing the landing section's
+       hook inline here would call it before it exists and silently skip the pane the Commander is
+       actually looking at. selectSection still runs synchronously so the pane itself is visible now. */
+    const landing = activeId;
     selectSection(activeId, false);
+    delete revealed[landing];
+    (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : fn => setTimeout(fn, 0))(() => reveal(landing));
     return host;   // caller wires its controls against this (spans every section pane)
   }
 
@@ -5819,6 +5846,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       }
     }
 
+    /* the backdrop swatches are painted by the REAL world renderer, which costs a full sky/ground build
+       per chip. Assigned by the APPEARANCE wiring below and fired by mountConsole's onShow, so a panel
+       opened on PROVIDERS never pays for a picker nobody looked at. */
+    let paintBackdropSwatches = () => {};
+
     const sections = [
       { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
       { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How far your agents may act on their own between your messages — the initiative, reach, and pace dials.', build: frag(secAutonomy) },
@@ -5829,7 +5861,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // build, not frag: the pane is created lazily when the section is opened, so wiring at MOUNT time
       // ran before this element existed and left the list stuck on its placeholder. Paint it when it is born.
       { id: 'livevoice', label: 'LIVE VOICE', glyph: '◍', desc: "The voice your agent speaks with hands-free, supplied by the provider you already connected.", build: el => { el.innerHTML = secLiveVoice; wireLiveVoice(el); } },
-      { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance) },
+      { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance), onShow: () => paintBackdropSwatches() },
       // NAV CONDENSE (2026-08-04) — two label renames, ids untouched (remembered-section keys + wiring
       // bind to the id): 'NOTIFICATIONS' collided with the SYSTEM-dock NOTIFICATIONS panel (inbox vs
       // preferences — same word, two doors), and a 'SYSTEM' section inside SETTINGS inside the SYSTEM
@@ -5938,22 +5970,37 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       flashSaved(appMsg());
     }));
     /* BACKDROP chips — instant-apply + persist, same idiom as the theme row. Each swatch is
-       painted ONCE by the real backdrop renderer at swatch size; SpaceBG builds a throwaway
-       state for the sample, so this never disturbs the live station's tiles. The sample is
-       drawn with no camera, which is the honest still of a moving sky. */
+       painted by the REAL backdrop renderer, off a throwaway state, so this never disturbs the
+       live station's tiles. The sample is drawn with no camera, which is the honest still of a
+       moving sky. WHEN it is painted is the lazy/chunked business below; that it is the real
+       renderer's own pixels is the part that must never change. */
     const bdChips = host.querySelectorAll('#set-backdrop [data-bd]');
     if (bdChips.length && typeof SpaceBG !== 'undefined' && SpaceBG.paintSample) {
-      bdChips.forEach(b => {
-        const cv = b.querySelector('canvas');
-        if (!cv) return;
-        // route each swatch to the layer that actually owns that id — a ground painted by the
-        // sky renderer would just be a black chip, and vice versa.
-        const isGround = typeof Terrain !== 'undefined' && Terrain.GROUNDS && Terrain.GROUNDS[b.dataset.bd];
-        try {
-          if (isGround) Terrain.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd);
-          else SpaceBG.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd, 8000);
-        } catch (_) { /* a swatch that cannot paint stays blank rather than taking the panel down */ }
-      });
+      /* ONE CHIP PER FRAME, and only once the pane is on screen (mountConsole's onShow). Painting all
+         six inline is what made SETTINGS feel laggy: it is the real renderer, so a cold cache costs a
+         whole sky or ground build per swatch — measured live at 112x63, moon 400ms + forest 150ms +
+         the four skies ≈ 600ms of blocked main thread, on EVERY build of the panel including tab
+         swaps and background repaints. The layers memoise their samples now, so this is paid once per
+         session; yielding between chips keeps even that first pass from freezing the window. */
+      paintBackdropSwatches = () => {
+        const queue = [...bdChips];
+        const step = () => {
+          const b = queue.shift();
+          if (!b) return;
+          const cv = b.querySelector('canvas');
+          if (cv) {
+            // route each swatch to the layer that actually owns that id — a ground painted by the
+            // sky renderer would just be a black chip, and vice versa.
+            const isGround = typeof Terrain !== 'undefined' && Terrain.GROUNDS && Terrain.GROUNDS[b.dataset.bd];
+            try {
+              if (isGround) Terrain.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd);
+              else SpaceBG.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd, 8000);
+            } catch (_) { /* a swatch that cannot paint stays blank rather than taking the panel down */ }
+          }
+          if (queue.length) requestAnimationFrame(step);
+        };
+        step();
+      };
       const syncBackdrop = () => bdChips.forEach(x => {
         const on = x.dataset.bd === (s.backdrop || 'void');
         x.classList.toggle('sel', on);

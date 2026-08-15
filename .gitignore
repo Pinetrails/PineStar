@@ -174,3 +174,6 @@ dev/.shots-wcmat/
 
 # INBOX WHEN-PICKER lane visual-proof screenshots (headless capture output; never committed)
 dev/.shots-inbox-when/
+
+# settings-perf lane visual-proof screenshots (headless capture output; never committed)
+dev/.shots-settings-perf/
