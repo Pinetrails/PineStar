@@ -190,6 +190,25 @@ function makeWorkshopStore(deps) {
     }).then(() => claimed);
   }
 
+  /* claim ONE NAMED backlog item for a run. claimNext's "top of the queue" rule is right for a shift (which asks
+     "what next?") and WRONG for a caller that already knows which item is its own: with a non-empty backlog it
+     would stamp somebody ELSE's item with this runId, leaving that item wedged in-flight while the real one was
+     never claimed. The Commander-initiated implement build knows its item by id, so it claims by id.
+     Returns the claimed item, or null when the id is unknown / already building / already built / parked. */
+  function claimById(agentId, id, runId, isRunLive) {
+    const want = String(id || '');
+    let claimed = null;
+    return durable.update(keyOf(agentId), (cur) => {
+      const rec = normalize(cur);
+      const reaped = reapZombieClaims(rec, isRunLive);
+      const it = rec.backlog.find(b => b.id === want && !b.buildingRunId && !b.builtRunId && !(Number(b.attempts) >= MAX_BUILD_ATTEMPTS));
+      if (!it) { claimed = null; return reaped ? rec : undefined; }
+      it.buildingRunId = String(runId || '');
+      claimed = it;
+      return rec;
+    }).then(() => claimed);
+  }
+
   // boot sweep: clear every zombie claim for an agent (a buildingRunId whose run is not live) so a crash mid-shift
   // never wedges the backlog. Returns the count of items un-stuck. Host calls this at boot for each granted agent.
   function sweepStaleClaims(agentId, isRunLive) {
@@ -347,7 +366,7 @@ function makeWorkshopStore(deps) {
 
   return {
     read, hasGrant, setGrant, grantIfUndecided, backlogOf, isDenied,
-    queue, claimNext, sweepStaleClaims, markBuilt, releaseClaim, discard, complete, restorePending, itemForRun, remove, setLastShift,
+    queue, claimNext, claimById, sweepStaleClaims, markBuilt, releaseClaim, discard, complete, restorePending, itemForRun, remove, setLastShift,
     _durable: durable
   };
 }

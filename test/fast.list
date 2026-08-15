@@ -174,6 +174,8 @@ test/workshop-permissions.test.js
 test/master-bypass.test.js
 test/workshop-store.test.js
 test/workshop-undo.e2e.test.js
+test/workshop-implement.e2e.test.js
+test/implement-contract.test.js
 test/workshop-visibility.test.js
 test/workshop-resolution.test.js
 test/workshop-toggle-ui.test.js

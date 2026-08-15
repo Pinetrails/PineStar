@@ -3070,13 +3070,15 @@ const Chat = (() => {
      Simple by design: the headline, the honest verification line, the link that RUNS it FIRST (when a
      web entry exists — open-not-read law), then WHAT it did / WHY / check-yourself, the files, and ONE action row — an optional message to the agent plus three one-click
      decisions: Implement (decide keep — the sidecar applies a patch deliverable to a new branch, or lands
-     files in the default deliverables folder), Later (dismiss; the session stays), Discard (single confirm →
+     files in the default deliverables folder; and when the deliverable is a PLAN rather than the finished thing,
+     it then RUNS the build that does the work — see `buildable` below), Later (dismiss; the session stays), Discard (single confirm →
      wipe + denylist). A typed message rides the decision as a REAL user turn in this same session — the
      session id IS the shift's durable streamId, so the agent replies with the build's actual transcript
      behind it. Decided cards vanish(); the outcome persists as a sys marker (opts.noteDecision).
      TRUTHFUL TELEMETRY: the verification line renders "tested — N passed" ONLY from a real manifest.verified
      block; absent → honest not-tested copy. The card never asserts status the manifest doesn't prove.
      opts: { sessionId, onDecide(decision, destPath?, extra?) -> Promise<{ok,destPath?,applied?,branch?,root?,error?}>,
+             onImplement() -> Promise<{fired,reason,runId?,manifest?}> (absent → Implement stays a plain keep),
              readFile(agentId,runId,path) -> Promise<string>, runUrl(relPath), openFile(relPath),
              noteDecision(text) }. */
   function workshopReturn(m, opts, _try) {
@@ -3311,6 +3313,17 @@ const Chat = (() => {
     // ── WHAT IMPLEMENT WILL DO — the server-resolved plan (current blessed roots), stated BEFORE the click.
     // A patch that can't auto-apply is the loudest case: the old card let "files saved" read as an apply.
     const plan = (m.implementPlan && typeof m.implementPlan === 'object') ? m.implementPlan : null;
+    /* IMPLEMENT-AS-BUILD (2026-08-14): a deliverable that DESCRIBES work (a backlog, spec, plan) used to make
+       Implement a pure file copy — press it on a backlog and a .md appeared in a folder, nothing else happened.
+       For those, Implement now also RUNS the build that does the work. Three conditions, all required:
+         • not already an implementation (m.implementOf) — otherwise plan→build→"build it again" recurses forever;
+         • not a patch — a patch's implement is the apply, which really does change the project;
+         • the shift declared planOnly:true … or, for a build from BEFORE that field existed (planOnly absent,
+           never false), the conservative guess: an inert doc/other with no runnable entry point. A build that
+           says planOnly:false is taken at its word — the guess never overrides a declaration. */
+    const buildable = !!opts.onImplement && !m.implementOf && m.kind !== 'patch'
+      && (m.planOnly === true
+        || (m.planOnly === undefined && (m.kind === 'doc' || m.kind === 'other') && !htmlEntry));
     if (plan && plan.action === 'apply') {
       const pl = document.createElement('div'); pl.className = 'ws-line ws-plan';
       pl.textContent = 'implement → applies this patch to a NEW branch in ' + plan.root + ' (your current branch is untouched)';
@@ -3322,7 +3335,9 @@ const Chat = (() => {
       r.body.appendChild(pl);
     } else if (plan && plan.dest) {
       const pl = document.createElement('div'); pl.className = 'ws-line ws-plan';
-      pl.textContent = 'implement → saves the files to ' + plan.dest;
+      pl.textContent = buildable
+        ? ('implement → saves the files to ' + plan.dest + ', then BUILDS what this describes')
+        : ('implement → saves the files to ' + plan.dest);
       r.body.appendChild(pl);
     }
 
@@ -3417,21 +3432,49 @@ const Chat = (() => {
     implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
     implBtn.title = (plan && plan.action === 'apply') ? ('applies this patch to a new branch in ' + plan.root)
       : patchSaveOnly ? 'saves the .patch file only — it will NOT be applied to your project'
+      : buildable ? ('saves the files, then has ' + who + ' BUILD what this describes')
       : ('saves the files to ' + ((plan && plan.dest) || 'your StarNet deliverables folder'));
+    // why a build can be refused, in the Commander's words — never a raw reason code.
+    const implFailCopy = (reason) => {
+      const r = String(reason || '');
+      if (r === 'no-capability') return 'no model or key is available for unattended runs — set one in KEYS, then press Implement again';
+      if (r === 'source-gone') return 'this deliverable’s files are no longer on disk';
+      if (r === 'queue-refused') return 'this work was discarded before, so the station won’t rebuild it';
+      if (r === 'already-implemented') return 'this plan has already been built — its build is in your rail';
+      if (r === 'already-an-implementation') return 'this build IS an implementation already — there is nothing further to build from it';
+      if (r === 'no-manifest' || r === 'run-failed') return 'the build ran but produced nothing reviewable';
+      if (r === 'unreachable' || r.indexOf('http') === 0) return 'the station couldn’t be reached';
+      return r || 'the station refused';
+    };
     implBtn.onclick = async () => {
       if (implBtn.disabled) return;
       implBtn.disabled = true; implBtn.textContent = patchSaveOnly ? 'saving…' : 'implementing…';
       let res = null; try { res = await onDecide('keep'); } catch (_) { res = { ok: false }; }
-      if (res && res.ok) {
-        const done = res.applied
-          ? ('✓ implemented — applied to branch ' + (res.branch || '?') + (res.root ? (' in ' + res.root) : ''))
-          : res.savedOnly
-            ? ('⚠ patch file saved to ' + (res.destPath || 'your StarNet deliverables folder') + ' — NOT applied to your project')
-            : ('✓ implemented — files saved to ' + (res.destPath || 'your StarNet deliverables folder'));
-        decideNote(done); sendNote(); settle(done, false, res.applied ? '' : (res.destPath || ''));
-      } else {
+      if (!(res && res.ok)) {
         implBtn.disabled = false; implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
         localLine('Could not implement this: ' + ((res && res.error) || 'the station refused') + '.');
+        return;
+      }
+      const saved = res.applied
+        ? ('✓ implemented — applied to branch ' + (res.branch || '?') + (res.root ? (' in ' + res.root) : ''))
+        : res.savedOnly
+          ? ('⚠ patch file saved to ' + (res.destPath || 'your StarNet deliverables folder') + ' — NOT applied to your project')
+          : ('✓ implemented — files saved to ' + (res.destPath || 'your StarNet deliverables folder'));
+      // PLAIN KEEP (a patch apply, or an artifact that IS the deliverable) — the files landing is the whole action.
+      if (!buildable) { decideNote(saved); sendNote(); settle(saved, false, res.applied ? '' : (res.destPath || '')); return; }
+      // IMPLEMENT-AS-BUILD — the files land first (never lose them), then the real work starts. The card settles on
+      // an honest in-progress line: the build is running NOW, and its result arrives as its own delivery card. We
+      // claim only what has happened — "saved, and building" — never "built" before the build has returned.
+      const starting = '✓ files saved to ' + (res.destPath || 'your StarNet deliverables folder')
+        + ' — ▶ ' + who + ' is building it now. The finished build arrives as its own card.';
+      decideNote(starting); sendNote(); settle(starting, false, res.destPath || '');
+      let br = null; try { br = await opts.onImplement(); } catch (_) { br = null; }
+      if (br && br.reason === 'built') {
+        const okLine = '✓ built — “' + String((br.manifest && br.manifest.title) || 'the build') + '” is waiting in your rail.';
+        decideNote(okLine); localLine(okLine);
+      } else {
+        const bad = 'The build didn’t finish: ' + implFailCopy(br && br.reason) + '.';
+        decideNote(bad); localLine(bad);
       }
     };
     acts.appendChild(implBtn);

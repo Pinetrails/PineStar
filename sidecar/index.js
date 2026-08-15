@@ -5380,6 +5380,22 @@ async function runNightshiftBeat(opts) {
    registered as a synthetic backlog item so the built deliverable flows into /pending + /decide identically. */
 const NIGHTSHIFT_ACT_MARK = '[NIGHTSHIFT_ACT]';   // prompt sentinel (parallels WORKSHOP_MARK); e2e mock keys off it
 
+/* THE PROJECT PATCH TARGET — one resolver, every build path (night shift, queued workshop shift, implement run).
+   A build can only produce an APPLICABLE code change when we can hand it the REAL repo state, so the rule is the
+   same everywhere: the focus must be a PROJECT, and the bounded harness scan must actually return text. Anything
+   else yields empty strings → the caller simply omits its patch block and builds a file deliverable instead.
+   projectScan consults blessedRoots() itself and NEVER blesses a new root; nightpatch re-checks blessedness at
+   DECIDE time, so a root that loses its grant between build and Implement is refused there too. Never throws. */
+async function resolveProjectPatchTarget(foc) {
+  const f = (foc && foc.focus) || null;
+  if (!f || f.kind !== 'project' || !f.ref) return { projectSnapshot: '', targetRoot: '' };
+  try {
+    const scan = await projectScan.scan(f.ref, { sinceMs: (f.resolvedAt || 0) - 30 * 86400000 });
+    if (scan && scan.ok && scan.text) return { projectSnapshot: scan.text, targetRoot: f.ref };
+  } catch (_) { /* unreadable project → build a file deliverable, never a patch against guessed state */ }
+  return { projectSnapshot: '', targetRoot: '' };
+}
+
 async function runNightshiftActShift(opts) {
   opts = opts || {};
   const agentId = String(opts.agentId || NIGHTSHIFT_AGENT);
@@ -5413,13 +5429,7 @@ async function runNightshiftActShift(opts) {
   const focusHeader = foc.focus ? nightfocus.focusLine(foc.focus) : '';
   ledgerNightFocus(agentId, foc);
   const priorTonight = nightFocusPriorTonight();
-  let projectSnapshot = '', targetRoot = '';
-  if (foc.focus && foc.focus.kind === 'project') {
-    try {
-      const scan = await projectScan.scan(foc.focus.ref, { sinceMs: (foc.focus.resolvedAt || 0) - 30 * 86400000 });
-      if (scan && scan.ok && scan.text) { projectSnapshot = scan.text; targetRoot = foc.focus.ref; }
-    } catch (_) { projectSnapshot = ''; targetRoot = ''; }
-  }
+  const { projectSnapshot, targetRoot } = await resolveProjectPatchTarget(foc);
 
   const cRes = await nightshiftChat({ agentId, system, signal, broadcast: !!opts.broadcast, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, activity, threads, eligible, focusHeader, priorTonight, projectSnapshot }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
@@ -8101,6 +8111,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/workshop/undo', h: handleWorkshopUndo },   // EL-11 #8: reverse a keep — remove the out-of-jail copy + restore pending
   { m: 'POST', exact: '/api/workshop/remove', h: handleWorkshopRemove },
   { m: 'POST', exact: '/api/workshop/shift', h: handleWorkshopShiftNow },
+  { m: 'POST', exact: '/api/workshop/implement', h: handleWorkshopImplement },   // BUILD what a plan deliverable describes (streams NDJSON)
   { m: 'GET', qsplit: '/api/deliverables', h: handleDeliverablesList },
   { m: 'POST', exact: '/api/deliverables/cleanup-preview', h: handleDeliverablesCleanupPreview },
   { m: 'POST', exact: '/api/deliverables/cleanup', h: handleDeliverablesCleanup },
@@ -10483,13 +10494,22 @@ async function handleCronRun(req, res) {
 // to put it, and to describe it honestly. The '[WORKSHOP_SHIFT]' first line is also the cron routine's stored
 // prompt sentinel (armWorkshopShift) — the injected runOnce wrapper detects it and redirects to runWorkshopShift.
 const WORKSHOP_MARK = '[WORKSHOP_SHIFT]';
-function workshopPrompt(runId, item) {
+function workshopPrompt(runId, item, ctx) {
   const dir = 'workshop/' + runId;
+  const c = ctx || {};
+  const targetRoot = String(c.targetRoot || '').trim();
+  const snapshot = String(c.projectSnapshot || '').trim();
   const what = (item && (item.title || item.detail)) ? ((item.title || '') + (item.detail ? ('\n\nDetails: ' + item.detail) : '')) : 'a small, genuinely useful deliverable';
   return WORKSHOP_MARK + '\n'
     + 'You are working in your private workshop while the Commander is away — build something real and reviewable.\n\n'
     + 'BUILD THIS:\n' + what + '\n\n'
+    // PATCH PARITY (2026-08-14): a Commander-QUEUED build could never be a project change — only the night shift
+    // got this block, so anything asked for by hand could at best be a file copied to a folder. Same resolution as
+    // the night shift (a blessed project root + a harness-READ snapshot); no target → no block, and the keep path
+    // still refuses any root that isn't blessed AT DECIDE TIME. The agent never touches the repo itself.
+    + (targetRoot && snapshot ? ('PROJECT SNAPSHOT — ' + targetRoot + ' (read by the harness, not guessed):\n' + snapshot + '\n\n') : '')
     + 'RULES:\n'
+    + (targetRoot && snapshot ? ('- IF THIS ASK IS A CODE CHANGE TO THAT PROJECT: your artifact is a UNIFIED-DIFF file (e.g. "' + dir + '/change.patch") that applies cleanly with `git apply` from the repo root ' + targetRoot + '. Base every hunk on the PROJECT SNAPSHOT above; never invent files or lines that are not there. Set the manifest "kind":"patch" and "targetRoot":"' + targetRoot + '", and list the .patch file in "files". The Commander applies it to a NEW branch on Implement — you never touch their repo yourself.\n') : '')
     + '- MATCH THE FORMAT TO THE ASK — build the SIMPLEST thing that fully serves it, never the most impressive:\n'
     + '    * a question / research ask -> a short findings doc (e.g. "' + dir + '/findings.md"), answer first, sources after.\n'
     + '    * a draft ask (email, post, script, plan) -> the draft file itself.\n'
@@ -10501,7 +10521,8 @@ function workshopPrompt(runId, item) {
     + '- You CANNOT run commands or tests here, so do not claim anything was tested — list what a human still needs to verify.\n'
     + '- When finished, write a manifest to "' + dir + '/deliverable.json" with EXACTLY this shape:\n'
     + '  { "v": 1, "runId": "' + runId + '", "agentId": "<your id>", "backlogId": "' + ((item && item.id) || '') + '",\n'
-    + '    "title": "<short name>", "kind": "tool|fix|draft|doc|other",\n'
+    + '    "title": "<short name>", "kind": "tool|fix|draft|doc|patch|other",\n'
+    + '    "planOnly": <true ONLY if this deliverable DESCRIBES work to be done (a plan, backlog, spec, proposal) rather than BEING the finished thing; false for anything the Commander can open and use as-is, including a research answer>,\n'
     + '    "summary": "<2-3 SHORT plain sentences a busy person absorbs in ten seconds: what it IS and what it does for them. NEVER an inventory — no inline lists of categories, failure modes, or counts, and no sentence over ~25 words; the deliverable itself holds the detail>",\n'
     + '    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],\n'
     + '    "howToUse": "<ONE short sentence — at most the single run command. The station already gives the Commander an Open link and one-click actions, so NEVER write multi-step setup or git instructions here>",\n'
@@ -10580,6 +10601,17 @@ async function validateWorkshopManifest(agentId, runId) {
     files: provenFiles,
     howToUse: String(man.howToUse || '').slice(0, 4000),
     notVerified: Array.isArray(man.notVerified) ? man.notVerified.map(s => String(s).slice(0, 500)).slice(0, 40) : [],
+    // PLAN-ONLY (2026-08-14): the shift declares that this deliverable DESCRIBES work rather than BEING it (a
+    // backlog, spec, or plan). It only decides what the card's Implement action MEANS — build-it-for-real vs
+    // land-the-files — and both actions are Commander-initiated, so a model-authored hint is safe here exactly
+    // like kind/summary/howToUse. It is never authority: no path, grant, or apply target is derived from it.
+    // TRI-STATE ON PURPOSE: true / false / absent. "Absent" means the shift that built this predates the field and
+    // never declared either way — the card falls back to a conservative guess for those, and stops guessing the
+    // moment a build actually says false. Normalizing absent→false would erase that distinction forever.
+    planOnly: (man.planOnly === true) ? true : (man.planOnly === false ? false : undefined),
+    // set on a deliverable produced BY an implement run — the source plan's runId. The card reads it to refuse a
+    // second implement hop, so "build it for real" can never recurse into an endless plan→plan→plan chain.
+    implementOf: man.implementOf ? String(man.implementOf).slice(0, 200) : undefined,
     // disk-proven (scanned above), never the model's claim; the card warns before Open when true
     capturesInput: capturesInput,
     usesMedia: usesMedia
@@ -10618,7 +10650,9 @@ async function runWorkshopShift(agentId, opts) {
   if (ac) runs.set(runId, ac);
   runsMeta.set(runId, { agentId: id, startedAt: Date.now(), source: 'workshop' });
   const emit = typeof o.emit === 'function' ? o.emit : function () {};
-  const prompt = workshopPrompt(runId, item);
+  // PATCH PARITY: hand a queued build the same real project state the night shift gets, so a Commander-asked code
+  // change can come back as an applicable patch instead of a folder of files. No project focus → empty → no block.
+  const prompt = workshopPrompt(runId, item, await resolveProjectPatchTarget(resolveNightFocus()));
   try { placeCronWorkitem(id, 'Workshop: ' + (item.title || 'build'), runId); } catch (_) {}
   let threw = null;
   try {
@@ -10662,6 +10696,153 @@ async function runWorkshopShift(agentId, opts) {
   // WHY-THIS: the card's provenance line, from the REAL backlog ask that queued this build.
   manifest.because = workshopBecause(item);
   try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
+  return { fired: true, runId: runId, reason: 'built', manifest: manifest };
+}
+
+/* ---- IMPLEMENT: make a PLAN deliverable real -------------------------------------------------------------
+   The delivery card's Implement action used to have exactly one way to change the world — apply a `kind:"patch"`
+   deliverable to a branch — and that path is unreachable unless the station has a blessed project AND the night
+   focus was a project. Everywhere else Implement was a file copy, so pressing it on a backlog/spec/plan produced
+   a .md in a folder and nothing else. That is the gap this closes: for a deliverable that DESCRIBES work rather
+   than being it, Implement now runs a REAL build that does the work, seeded with the plan the agent itself wrote.
+
+   Reuses the night-shift ACT shape verbatim (synthetic backlog item → runOnce → validated manifest → workshop.built)
+   so the result lands in /pending and gets its own delivery card exactly like any other build. Nothing here writes
+   outside the jail: the implement run produces a new deliverable the Commander then decides on.
+
+   LOOP GUARD: the produced manifest is stamped `implementOf: <source runId>` ON DISK after the build, so it survives
+   the re-validation every read does. The card refuses to offer Implement-as-build on a deliverable that already
+   carries it — a plan can be built, but its build can never be "built" again into an endless plan→plan chain. */
+/* its OWN sentinel, never WORKSHOP_MARK: the cron driver's injected runOnce redirects any prompt STARTING with
+   WORKSHOP_MARK into runWorkshopShift (pop the backlog and build that instead). An implement run calls runOnce
+   directly today so the wrapper never sees it — but borrowing that prefix would make any future cron-routed
+   implement silently build the wrong item. Parallels NIGHTSHIFT_ACT_MARK; test mocks branch on it. */
+const IMPLEMENT_MARK = '[IMPLEMENT_BUILD]';
+function implementPrompt(runId, source, ctx) {
+  const dir = 'workshop/' + runId;
+  const c = ctx || {};
+  const targetRoot = String(c.targetRoot || '').trim();
+  const snapshot = String(c.projectSnapshot || '').trim();
+  const srcDir = 'workshop/' + String(source.runId);
+  const srcFiles = (source.files || []).map(f => srcDir + '/' + f.path).slice(0, 20);
+  return IMPLEMENT_MARK + '\n'
+    + 'The Commander pressed IMPLEMENT on a plan you delivered. They are not asking for another plan — they are\n'
+    + 'asking you to BUILD the thing it describes, now.\n\n'
+    + 'THE PLAN YOU WROTE: "' + String(source.title || 'a plan') + '"\n'
+    + (source.summary ? ('Its summary: ' + String(source.summary) + '\n') : '')
+    + 'Its files (READ THEM FIRST with your file tools — they are in your workspace):\n'
+    + srcFiles.map(p => '  - ' + p).join('\n') + '\n\n'
+    + (targetRoot && snapshot ? ('PROJECT SNAPSHOT — ' + targetRoot + ' (read by the harness, not guessed):\n' + snapshot + '\n\n') : '')
+    + 'RULES:\n'
+    + '- READ THE PLAN FIRST. Everything below is about executing THAT document, not your memory of it.\n'
+    + '- BUILD, DO NOT RE-PLAN. Do not deliver another backlog, roadmap, checklist, spec, summary, or "next steps"\n'
+    + '  document. If the plan lists several items, BUILD THE FIRST ONE IT SAYS TO BUILD, completely, and say in the\n'
+    + '  summary which one you built and what is left. One finished thing beats five described things.\n'
+    + (targetRoot && snapshot
+        ? ('- IF THE PLAN IS A CODE CHANGE TO THAT PROJECT: your artifact is a UNIFIED-DIFF file (e.g. "' + dir + '/change.patch")\n'
+         + '  that applies cleanly with `git apply` from the repo root ' + targetRoot + '. Base every hunk on the PROJECT\n'
+         + '  SNAPSHOT above; never invent files or lines that are not there. Set "kind":"patch" and "targetRoot":"' + targetRoot + '".\n'
+         + '  The Commander applies it to a NEW branch — you never touch their repo yourself.\n')
+        : '- There is no blessed project to patch here, so build the working artifact itself: the script, the tool, the\n'
+         + '  file that does the job. ZERO SETUP — self-contained, one-click openable or one command to run.\n')
+    + '- Write every file for this build UNDER "' + dir + '/" (use paths like "' + dir + '/<file>").\n'
+    + '- Do the real work with your tools. You CANNOT run commands or tests here, so never claim anything was tested —\n'
+    + '  list what a human still needs to check.\n'
+    + '- When finished, write a manifest to "' + dir + '/deliverable.json" with EXACTLY this shape:\n'
+    + '  { "v": 1, "runId": "' + runId + '", "agentId": "<your id>", "backlogId": "' + String(c.backlogId || '') + '",\n'
+    + '    "title": "<short name of the THING YOU BUILT, not the plan>", "kind": "tool|fix|draft|doc|patch|other",\n'
+    + '    "planOnly": false,\n'
+    + '    "summary": "<2-3 SHORT plain sentences: what you BUILT and what it does for them. Name which part of the plan this covers>",\n'
+    + '    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],\n'
+    + '    "howToUse": "<ONE short sentence — at most the single run command>",\n'
+    + '    "notVerified": ["<up to 5 short checks written FOR the Commander>"] }\n'
+    + '- The manifest MUST list the real files you wrote. A build with no manifest is discarded.';
+}
+
+/* run ONE implement build. Returns { fired, runId?, reason, manifest? } — same honest shape as runWorkshopShift.
+   Every failure path is named (no silent no-op) because this one is Commander-initiated: they pressed a button and
+   are owed an answer. */
+async function runImplementBuild(agentId, sourceRunId, opts) {
+  const o = opts || {};
+  const id = String(agentId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(id)) return { fired: false, reason: 'bad-agent' };
+  // only ever act on a disk-proven source deliverable (same law as decide) — never on the card's claim.
+  const source = await validateWorkshopManifest(id, sourceRunId);
+  if (!source) return { fired: false, reason: 'source-gone' };
+  if (source.implementOf) return { fired: false, reason: 'already-an-implementation' };   // loop guard
+
+  const model = cronModelFor({ agentId: id });
+  const provider = cronProviderFor({ agentId: id });
+  const key = cronKeyFor(provider);
+  if (!model || !cronHasCredential(provider, key)) return { fired: false, reason: 'no-capability' };
+
+  const runId = o.runId || crypto.randomUUID();
+  const dir = 'workshop/' + runId;
+  // DETERMINISTIC PER SOURCE, not per press: a re-press after a FAILED build re-uses this id, which un-parks the
+  // item (queue's "exists" branch clears attempts) so the retry works; a re-press after a SUCCESSFUL one finds it
+  // already carrying builtRunId, so claimById refuses and we say "already implemented" instead of building twice.
+  const backlogId = 'impl-' + String(sourceRunId);
+  const title = ('Implement: ' + String(source.title || 'plan')).slice(0, 200);
+  // register a synthetic backlog item so the result lands in /pending + /decide exactly like any other build
+  // (the return card and ship gate are keyed on a backlog item carrying builtRunId).
+  let queued = null;
+  try {
+    queued = await workshopStore.queue(id, { id: backlogId, title: title, detail: 'Build what "' + String(source.title || 'the plan') + '" describes.',
+      source: 'implement', grounds: 'the Commander pressed Implement on "' + String(source.title || 'a plan') + '"' }, Date.now());
+  } catch (_) { queued = null; }
+  // queue RESOLVES with a reason rather than throwing — a discarded/denylisted id comes back { item: null }.
+  if (!queued || !queued.item) return { fired: false, reason: 'queue-refused' };
+  // claim THIS item by id: claimNext would stamp whatever sits at the top of the backlog, which is not ours.
+  const claimed = await workshopStore.claimById(id, backlogId, runId, isRunLive).catch(() => null);
+  if (!claimed) return { fired: false, reason: 'already-implemented' };
+
+  const patchCtx = await resolveProjectPatchTarget(resolveNightFocus());
+  const prompt = implementPrompt(runId, source, Object.assign({ backlogId: backlogId }, patchCtx));
+  const ac = o.signal ? null : new AbortController();
+  const signal = o.signal || (ac && ac.signal);
+  if (ac) runs.set(runId, ac);
+  runsMeta.set(runId, { agentId: id, startedAt: Date.now(), source: 'implement' });
+  try { placeCronWorkitem(id, '▶ implement: ' + String(source.title || 'plan'), runId); } catch (_) {}
+  let threw = null;
+  try {
+    await runOnce({
+      key: key, model: model, system: cronSystemFor(id), provider: provider,
+      messages: [{ role: 'user', content: prompt }],
+      agentId: id, isTask: true, emit: (typeof o.emit === 'function' ? o.emit : function () {}), signal: signal,
+      runId: runId, streamId: 'workshop-' + runId, surface: 'autonomous', trigger: 'directive', broadcast: !!o.broadcast,
+      reflect: true,
+      station: router.stationFor(id) || undefined
+    });
+  } catch (e) { threw = e; }
+  finally {
+    if (ac) runs.delete(runId); runsMeta.delete(runId); dropSteer(runId, 'implement-build');
+    try { settleCronWorkitem(runId, threw ? null : 'done'); } catch (_) {}
+  }
+
+  const manifest = await validateWorkshopManifest(id, runId);
+  if (!manifest) {
+    try { await workshopStore.releaseClaim(id, runId, { failed: true }); } catch (_) {}
+    return { fired: true, runId: runId, reason: threw ? 'run-failed' : 'no-manifest' };
+  }
+  // STAMP THE LOOP GUARD ON DISK. Every reader re-validates from deliverable.json, so an in-memory field would be
+  // lost on the next read — this must live in the file. Best-effort: a failed stamp costs the guard, not the build.
+  try {
+    const { abs } = await fsJail.resolveInside(id, dir + '/deliverable.json');
+    const raw = JSON.parse(await fsp.readFile(abs, 'utf8'));
+    raw.implementOf = String(sourceRunId);
+    await fsp.writeFile(abs, JSON.stringify(raw, null, 2), 'utf8');
+    manifest.implementOf = String(sourceRunId);
+  } catch (_) { /* the build stands; the card just can't prove this one came from a plan */ }
+
+  const builtAt = Date.now();
+  try { await workshopStore.markBuilt(id, backlogId, runId, builtAt); } catch (_) {}
+  manifest.builtAt = builtAt;
+  manifest.because = workshopBecause({ grounds: 'the Commander pressed Implement on "' + String(source.title || 'a plan') + '"', title: manifest.title });
+  try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
+  try {
+    recordAutonomy({ ts: Date.now(), source: 'implement', kind: 'act', agentId: id, runId: runId, reason: 'built',
+      detail: { phase: 'implement', title: manifest.title, fromRunId: String(sourceRunId), artifacts: (manifest.files || []).map(f => dir + '/' + f.path).slice(0, 8).join(', ') } });
+  } catch (_) {}
   return { fired: true, runId: runId, reason: 'built', manifest: manifest };
 }
 
@@ -11508,6 +11689,27 @@ async function handleWorkshopShiftNow(req, res) {
   catch (e) { result = { fired: false, reason: 'error: ' + ((e && e.message) || e) }; }
   kaOff();
   try { res.write(JSON.stringify({ name: 'workshop.shift.result', payload: result }) + '\n'); } catch (_) {}
+  try { res.end(); } catch (_) {}
+}
+
+/* POST /api/workshop/implement { agentId, runId } — BUILD what a plan deliverable describes. Streams the run as
+   NDJSON exactly like /api/workshop/shift (same keep-alive + emitter), then a final workshop.implement.result frame
+   carrying the honest outcome. The Commander pressed a button, so every refusal is named rather than silent. */
+async function handleWorkshopImplement(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  const agentId = String(body.agentId || '');
+  const runId = String(body.runId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'choose a valid agent' })); }
+  if (!runId) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'no deliverable named' })); }
+  res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+  const kaOff = attachStreamKeepAlive(res);
+  const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e) console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
+  let result;
+  try { result = await runImplementBuild(agentId, runId, { emit: emit, broadcast: true }); }
+  catch (e) { result = { fired: false, reason: 'error: ' + ((e && e.message) || e) }; }
+  kaOff();
+  try { res.write(JSON.stringify({ name: 'workshop.implement.result', payload: result }) + '\n'); } catch (_) {}
   try { res.end(); } catch (_) {}
 }
 

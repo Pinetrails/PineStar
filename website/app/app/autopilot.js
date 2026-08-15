@@ -497,7 +497,12 @@
     lines.push('- LOCAL ONLY: never send, publish, spend, or message. You cannot run commands or tests, so do not claim anything was tested — list what a human still needs to verify.');
     lines.push('- When finished, write a manifest to "' + dir + '/deliverable.json" with EXACTLY this shape:');
     lines.push('  { "v": 1, "runId": "' + String(ctx.runId || '') + '", "agentId": "<your id>", "backlogId": "' + backlogId + '",');
-    lines.push('    "title": "<short name>", "kind": "tool|fix|draft|doc|other",');
+    // 'patch' MUST be listed here: the PROJECT PATCH rule above tells the agent to set it, and the apply path
+    // (nightpatch.patchTargetFrom) fires ONLY on kind === 'patch'. It was missing from this enum from 2026-07-07
+    // until 2026-08-14 — the rule said "patch", the shape said otherwise, so a patch build came back as a plain
+    // file copy AND skipped the savedOnly honesty line (which is keyed on the same kind). Never drop it again.
+    lines.push('    "title": "<short name>", "kind": "tool|fix|draft|doc|patch|other",');
+    lines.push('    "planOnly": <true ONLY if this deliverable DESCRIBES work to be done (a plan, backlog, spec, proposal) rather than BEING the finished thing; false for anything the Commander can open and use as-is, including a research answer>,');
     lines.push('    "summary": "<2-3 SHORT plain sentences a busy person absorbs in ten seconds: what it IS and what it does for them. NEVER an inventory — no inline lists of categories, failure modes, or counts, and no sentence over ~25 words; the deliverable itself holds the detail>",');
     lines.push('    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],');
     lines.push('    "howToUse": "<ONE short sentence — at most the single run command. The station gives the Commander an Open link and a one-click Implement action (a patch is applied for them), so NEVER write multi-step setup or git instructions here>",');
