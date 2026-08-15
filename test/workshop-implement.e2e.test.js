@@ -57,7 +57,11 @@ function startMockOpenRouter() {
           };
           const text = t => { res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: t } }] }) + '\n\n'); res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n'); };
           const dir = 'workshop/' + runId;
-          if (prompt.indexOf(IMPLEMENT_MARK) === 0) {
+          if (prompt.indexOf(IMPLEMENT_MARK) === 0 && /Doomed plan/.test(prompt)) {
+            // A BUILD THAT PRODUCES NOTHING — no files, no manifest. Drives the failure path that used to strand
+            // the Commander: the plan must survive it and stay pending.
+            text('I could not build this.');
+          } else if (prompt.indexOf(IMPLEMENT_MARK) === 0) {
             // THE IMPLEMENT RUN — build the real thing the plan asked for.
             if (toolResults === 0) {
               // probe: did the prompt actually carry the plan's file path, forbid re-planning, and carry the
@@ -77,10 +81,12 @@ function startMockOpenRouter() {
             } else { text('Built the snapshot script.'); }
           } else if (prompt.indexOf(WORKSHOP_MARK) === 0) {
             // THE PLAN — exactly the shape that used to make Implement a no-op file copy.
+            const doomed = /Doomed plan/.test(prompt);
             if (toolResults === 0) {
               tool('w1', 'fs_write', { path: dir + '/automation-backlog.md', content: '# Automation backlog\n\n1. A PC snapshot script.\n2. A disk report.\n' });
             } else if (toolResults === 1) {
-              const manifest = { v: 1, runId: runId, agentId: 'builder', backlogId: 'item-plan', title: 'Recent-work automation backlog', kind: 'doc', planOnly: true,
+              const manifest = { v: 1, runId: runId, agentId: 'builder', backlogId: doomed ? 'item-doomed' : 'item-plan',
+                title: doomed ? 'Doomed plan' : 'Recent-work automation backlog', kind: 'doc', planOnly: true,
                 summary: 'A backlog turning repeated workstation questions into automation candidates.',
                 files: [{ path: 'automation-backlog.md', bytes: 60 }], howToUse: 'Open automation-backlog.md.', notVerified: ['pick which to build first'] };
               tool('w2', 'fs_write', { path: dir + '/deliverable.json', content: JSON.stringify(manifest) });
@@ -178,6 +184,13 @@ async function readNdjson(res) {
     A.eq(implMan.implementOf, planRun, 'and /pending carries implementOf, so the card refuses a second hop');
     A.eq(implMan.planOnly, false, 'the implementation declares planOnly:false — it IS the thing');
 
+    // 3b. THE PLAN IS RETIRED ONLY BECAUSE A BUILD LANDED — and it is NOT 'kept': nothing was copied anywhere.
+    A.ok(!pending2.pending.some(m => m.runId === planRun), 'the source plan stops being pending once its build landed');
+    const lib = await (await fetch(B + '/api/deliverables', { headers })).json();
+    const planRow = (lib.items || []).find(r => r.runId === planRun);
+    A.ok(planRow && planRow.status === 'implemented', 'the library records the plan as IMPLEMENTED (acted on, not kept)');
+    A.ok(!(lib.items || []).some(r => r.runId === planRun && r.status === 'kept'), 'the plan is never marked kept — no files were copied out of the jail');
+
     // 4. implementing an IMPLEMENTATION is refused — a plan can be built; its build cannot be built again.
     const loop = await readNdjson(await post('/api/workshop/implement', { agentId: 'builder', runId: implRun }));
     const loopRes = ((loop.find(e => e.name === 'workshop.implement.result') || {}).payload || {});
@@ -189,7 +202,24 @@ async function readNdjson(res) {
     const againRes = ((again.find(e => e.name === 'workshop.implement.result') || {}).payload || {});
     A.eq(againRes.reason, 'already-implemented', 're-implementing the same plan is refused honestly, never a double build');
 
-    // 6. gates.
+    /* 6. A FAILED BUILD MUST LEAVE THE PLAN. The first cut kept-then-built: the plan was retired BEFORE the build
+          ran, so a build that produced nothing left the Commander with the card gone and a failure line telling
+          them to "press Implement again" at a deliverable that was no longer pending. Nothing is decided until a
+          build actually lands. */
+    await post('/api/workshop/queue', { agentId: 'builder', id: 'item-doomed', title: 'Doomed plan' });
+    const doomShift = await readNdjson(await post('/api/workshop/shift', { agentId: 'builder' }));
+    const doomRun = (((doomShift.find(e => e.name === 'workshop.shift.result') || {}).payload) || {}).runId;
+    A.ok(doomRun, 'the second plan built');
+    const doomImpl = await readNdjson(await post('/api/workshop/implement', { agentId: 'builder', runId: doomRun }));
+    const doomRes = ((doomImpl.find(e => e.name === 'workshop.implement.result') || {}).payload || {});
+    A.eq(doomRes.reason, 'no-manifest', 'a build that produces nothing reports no-manifest honestly');
+    const afterFail = await (await fetch(B + '/api/workshop/pending?agent=builder', { headers })).json();
+    A.ok(afterFail.pending.some(m => m.runId === doomRun), 'the plan is STILL PENDING after a failed build — the card returns so "try again" is true');
+    const libFail = await (await fetch(B + '/api/deliverables', { headers })).json();
+    A.ok(!(libFail.items || []).some(r => r.runId === doomRun && (r.status === 'implemented' || r.status === 'kept')),
+      'and a failed build never records the plan as implemented or kept');
+
+    // 7. gates.
     const gone = await readNdjson(await post('/api/workshop/implement', { agentId: 'builder', runId: 'no-such-run' }));
     A.eq(((gone.find(e => e.name === 'workshop.implement.result') || {}).payload || {}).reason, 'source-gone', 'an unknown deliverable is refused as source-gone');
     A.eq((await post('/api/workshop/implement', { agentId: '../etc', runId: planRun })).status, 400, 'a malformed agentId is refused 400');

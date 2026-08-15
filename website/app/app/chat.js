@@ -3334,11 +3334,16 @@ const Chat = (() => {
       pl.textContent = '⚠ this patch can’t be auto-applied (' + (plan.patchRefused || 'no valid target') + '). '
         + 'The button below only SAVES the .patch file — bless the target project in PROJECTS to enable auto-apply.';
       r.body.appendChild(pl);
+    } else if (buildable) {
+      // A PLAN is not the deliverable — copying its .md into a folder is the "regular save button" outcome this
+      // action exists to replace, and the file is already archived AND readable from the list above. So say what
+      // actually happens: a build runs. Nothing is copied.
+      const pl = document.createElement('div'); pl.className = 'ws-line ws-plan';
+      pl.textContent = 'implement → ' + who + ' BUILDS what this describes. Nothing is copied to a folder — the result arrives as its own card.';
+      r.body.appendChild(pl);
     } else if (plan && plan.dest) {
       const pl = document.createElement('div'); pl.className = 'ws-line ws-plan';
-      pl.textContent = buildable
-        ? ('implement → saves the files to ' + plan.dest + ', then BUILDS what this describes')
-        : ('implement → saves the files to ' + plan.dest);
+      pl.textContent = 'implement → saves the files to ' + plan.dest;
       r.body.appendChild(pl);
     }
 
@@ -3447,7 +3452,7 @@ const Chat = (() => {
     implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
     implBtn.title = (plan && plan.action === 'apply') ? ('applies this patch to a new branch in ' + plan.root)
       : patchSaveOnly ? 'saves the .patch file only — it will NOT be applied to your project'
-      : buildable ? ('saves the files, then has ' + who + ' BUILD what this describes')
+      : buildable ? ('has ' + who + ' BUILD what this describes — nothing is copied to a folder')
       : ('saves the files to ' + ((plan && plan.dest) || 'your StarNet deliverables folder'));
     // why a build can be refused, in the Commander's words — never a raw reason code.
     const implFailCopy = (reason) => {
@@ -3464,6 +3469,35 @@ const Chat = (() => {
     implBtn.onclick = async () => {
       if (implBtn.disabled) return;
       implBtn.disabled = true; implBtn.textContent = patchSaveOnly ? 'saving…' : 'implementing…';
+
+      /* IMPLEMENT-AS-BUILD — a plan is NOT the deliverable, so this path never keeps: no file copy, and NO
+         DECISION IS RECORDED YET. That second part is the important one. Keeping first retired the backlog item
+         BEFORE the build ran, so a build that failed left the Commander with the plan already decided and the
+         card gone — while the failure line told them to "press Implement again" at a card that no longer existed.
+         Now the plan stays PENDING until a build actually lands; the SERVER retires it on success (it is the only
+         side that knows the build landed). Failure leaves the card to try again, which is what the copy promises. */
+      if (buildable) {
+        // the typed text is this build's INSTRUCTION, not a chat message — it rides into the prompt (see msgInput).
+        const steer = String(msgInput.value || '').trim();
+        const starting = '▶ ' + who + ' is building ' + (steer ? '“' + steer + '”' : 'this') + ' now. The finished build arrives as its own card.';
+        decideNote(starting);
+        // start the build IMMEDIATELY, but only report its outcome after the card has settled into its feed line —
+        // otherwise an instant refusal (no key, discarded) prints its "didn't finish" line ABOVE the line it answers.
+        let buildP = null; try { buildP = Promise.resolve(opts.onImplement(steer)).catch(() => null); } catch (_) { buildP = Promise.resolve(null); }
+        await settle(starting, false, '');
+        const br = await buildP;
+        if (br && br.reason === 'built') {
+          const okLine = '✓ built — “' + String((br.manifest && br.manifest.title) || 'the build') + '” is waiting in your rail.';
+          decideNote(okLine); localLine(okLine);
+        } else {
+          const bad = 'The build didn’t finish: ' + implFailCopy(br && br.reason)
+            + '. This plan is still waiting — reopen this session to try again.';
+          decideNote(bad); localLine(bad);
+        }
+        return;
+      }
+
+      // PLAIN KEEP (a patch apply, or an artifact that IS the deliverable) — the files landing is the whole action.
       let res = null; try { res = await onDecide('keep'); } catch (_) { res = { ok: false }; }
       if (!(res && res.ok)) {
         implBtn.disabled = false; implBtn.textContent = patchSaveOnly ? 'Save patch file' : 'Implement';
@@ -3475,28 +3509,7 @@ const Chat = (() => {
         : res.savedOnly
           ? ('⚠ patch file saved to ' + (res.destPath || 'your StarNet deliverables folder') + ' — NOT applied to your project')
           : ('✓ implemented — files saved to ' + (res.destPath || 'your StarNet deliverables folder'));
-      // PLAIN KEEP (a patch apply, or an artifact that IS the deliverable) — the files landing is the whole action.
-      if (!buildable) { decideNote(saved); sendNote(); settle(saved, false, res.applied ? '' : (res.destPath || '')); return; }
-      // IMPLEMENT-AS-BUILD — the files land first (never lose them), then the real work starts. The card settles on
-      // an honest in-progress line: the build is running NOW, and its result arrives as its own delivery card. We
-      // claim only what has happened — "saved, and building" — never "built" before the build has returned.
-      // the typed text is this build's INSTRUCTION, not a chat message — it rides into the prompt (see msgInput).
-      const steer = String(msgInput.value || '').trim();
-      const starting = '✓ files saved to ' + (res.destPath || 'your StarNet deliverables folder')
-        + ' — ▶ ' + who + ' is building' + (steer ? ' “' + steer + '”' : ' it') + ' now. The finished build arrives as its own card.';
-      decideNote(starting);
-      // start the build IMMEDIATELY, but only report its outcome after the card has settled into its feed line —
-      // otherwise an instant refusal (no key, discarded) prints its "didn't finish" line ABOVE the line it answers.
-      let buildP = null; try { buildP = Promise.resolve(opts.onImplement(steer)).catch(() => null); } catch (_) { buildP = Promise.resolve(null); }
-      await settle(starting, false, res.destPath || '');
-      const br = await buildP;
-      if (br && br.reason === 'built') {
-        const okLine = '✓ built — “' + String((br.manifest && br.manifest.title) || 'the build') + '” is waiting in your rail.';
-        decideNote(okLine); localLine(okLine);
-      } else {
-        const bad = 'The build didn’t finish: ' + implFailCopy(br && br.reason) + '.';
-        decideNote(bad); localLine(bad);
-      }
+      decideNote(saved); sendNote(); settle(saved, false, res.applied ? '' : (res.destPath || ''));
     };
     acts.appendChild(implBtn);
 

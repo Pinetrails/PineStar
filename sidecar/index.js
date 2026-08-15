@@ -10850,7 +10850,17 @@ async function runImplementBuild(agentId, sourceRunId, opts) {
   const builtAt = Date.now();
   try { await workshopStore.markBuilt(id, backlogId, runId, builtAt); } catch (_) {}
   manifest.builtAt = builtAt;
-  manifest.because = workshopBecause({ grounds: 'the Commander pressed Implement on "' + String(source.title || 'a plan') + '"', title: manifest.title });
+  manifest.because = workshopBecause({ grounds: note ? ('you asked for: ' + note) : ('the Commander pressed Implement on "' + String(source.title || 'a plan') + '"'), title: manifest.title });
+  /* RETIRE THE SOURCE PLAN — but ONLY here, where we know a build actually landed. The card deliberately does not
+     decide the plan before starting (a keep-then-build retired it even when the build failed, stranding the
+     Commander with the card gone and a "press Implement again" that pointed at nothing). A failed build simply
+     falls out above with the plan still PENDING, so its card returns. 'implemented' is its own honest lifecycle
+     status: the plan was acted on and produced this build — no files were copied anywhere, so it is not 'kept'. */
+  try {
+    const srcItem = workshopStore.itemForRun(id, sourceRunId);
+    if (srcItem) await workshopStore.complete(id, srcItem.id);
+    await deliverableStore.record(lifecycleRow('implemented', id, String(sourceRunId), srcItem, source), Date.now());
+  } catch (_) { /* the build stands; the plan just stays listed */ }
   try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
   try {
     recordAutonomy({ ts: Date.now(), source: 'implement', kind: 'act', agentId: id, runId: runId, reason: 'built',
