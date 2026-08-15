@@ -3078,7 +3078,8 @@ const Chat = (() => {
      TRUTHFUL TELEMETRY: the verification line renders "tested — N passed" ONLY from a real manifest.verified
      block; absent → honest not-tested copy. The card never asserts status the manifest doesn't prove.
      opts: { sessionId, onDecide(decision, destPath?, extra?) -> Promise<{ok,destPath?,applied?,branch?,root?,error?}>,
-             onImplement() -> Promise<{fired,reason,runId?,manifest?}> (absent → Implement stays a plain keep),
+             onImplement(note) -> Promise<{fired,reason,runId?,manifest?}> (absent → Implement stays a plain keep;
+                                  note = the Commander's typed build instruction, which part of the plan to build),
              readFile(agentId,runId,path) -> Promise<string>, runUrl(relPath), openFile(relPath),
              noteDecision(text) }. */
   function workshopReturn(m, opts, _try) {
@@ -3341,15 +3342,22 @@ const Chat = (() => {
       r.body.appendChild(pl);
     }
 
-    // ── decide: an optional message + Implement / Later / Discard ──
+    // ── decide: one optional input + Implement / Later / Discard ──
     const acts = document.createElement('div'); acts.className = 'turnin-rate ws-acts';
-    // the message rides the decision as a REAL user turn in THIS session — its id is the shift's durable
-    // streamId, so the agent replies with the build's actual transcript behind it (server-side resume seed).
+    /* THE INPUT HAS TWO MEANINGS, and the card must not lie about which one is live:
+         • ordinary card  → a MESSAGE. It rides the decision as a REAL user turn in this session (the session id is
+           the shift's durable streamId, so the agent replies with the build's actual transcript behind it).
+         • buildable card → a BUILD STEER. A plan usually lists several things and this is the Commander's ONLY
+           chance to say WHICH, so the text goes into the implement prompt instead of the chat stream.
+       Why not both (2026-08-14): sending it as a chat turn AND starting a build fires TWO model runs at once — the
+       agent answers in COMMS while the build that needed the instruction never hears it. The steer path wins. */
     const msgInput = document.createElement('input'); msgInput.className = 'turnin-edit ws-msg'; msgInput.type = 'text';
     // the placeholder must FIT: at the card's own type scale the long form clipped mid-word in a
     // COMMS column, which reads as a broken field rather than an optional one.
-    msgInput.placeholder = 'message ' + who + ' (optional)';
-    msgInput.setAttribute('aria-label', 'Optional message to the agent, sent with your decision');
+    msgInput.placeholder = buildable ? ('what should ' + who + ' build first? (optional)') : ('message ' + who + ' (optional)');
+    msgInput.setAttribute('aria-label', buildable
+      ? 'Optional instruction telling the agent which part of this plan to build'
+      : 'Optional message to the agent, sent with your decision');
     acts.appendChild(msgInput);
 
     let settled = false;
@@ -3421,6 +3429,9 @@ const Chat = (() => {
       }, 900));
     };
     const sendNote = () => {   // the optional typed message → a REAL user turn in this session
+      // on a BUILDABLE card the input is a build steer, not a message: Implement consumes it into the prompt, and
+      // Later/Discard must not quietly re-post "do the PowerShell one first" into COMMS as if it were chat.
+      if (buildable) return;
       const msg = String(msgInput.value || '').trim();
       if (!msg || !inOwnSession()) return;
       send('About the “' + String(m.title || 'away build') + '” build you delivered: ' + msg);
@@ -3469,12 +3480,14 @@ const Chat = (() => {
       // IMPLEMENT-AS-BUILD — the files land first (never lose them), then the real work starts. The card settles on
       // an honest in-progress line: the build is running NOW, and its result arrives as its own delivery card. We
       // claim only what has happened — "saved, and building" — never "built" before the build has returned.
+      // the typed text is this build's INSTRUCTION, not a chat message — it rides into the prompt (see msgInput).
+      const steer = String(msgInput.value || '').trim();
       const starting = '✓ files saved to ' + (res.destPath || 'your StarNet deliverables folder')
-        + ' — ▶ ' + who + ' is building it now. The finished build arrives as its own card.';
-      decideNote(starting); sendNote();
+        + ' — ▶ ' + who + ' is building' + (steer ? ' “' + steer + '”' : ' it') + ' now. The finished build arrives as its own card.';
+      decideNote(starting);
       // start the build IMMEDIATELY, but only report its outcome after the card has settled into its feed line —
       // otherwise an instant refusal (no key, discarded) prints its "didn't finish" line ABOVE the line it answers.
-      let buildP = null; try { buildP = Promise.resolve(opts.onImplement()).catch(() => null); } catch (_) { buildP = Promise.resolve(null); }
+      let buildP = null; try { buildP = Promise.resolve(opts.onImplement(steer)).catch(() => null); } catch (_) { buildP = Promise.resolve(null); }
       await settle(starting, false, res.destPath || '');
       const br = await buildP;
       if (br && br.reason === 'built') {

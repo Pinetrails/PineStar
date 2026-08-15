@@ -215,8 +215,11 @@ const WorkshopStore = (() => {
      harness.js's run reader, so the station animates the build LIVE (floor, COMMS beats, work item) rather than
      the Commander staring at a frozen card for minutes. Resolves the final workshop.implement.result payload.
      Never throws: an unreachable station resolves { fired:false, reason:'unreachable' }. */
-  async function implement(agentId, runId) {
+  async function implement(agentId, runId, note) {
     const body = { agentId: agentId || 'agent', runId: String(runId) };
+    // what the Commander typed on the card — WHICH part of the plan to build. Rides into the build prompt, not
+    // the chat stream (see chat.js: on a buildable card the box is a build steer, not a message).
+    if (note != null && String(note).trim()) body.note = String(note).trim().slice(0, 2000);
     let res;
     try {
       res = await fetch('/api/workshop/implement', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -366,7 +369,7 @@ const WorkshopStore = (() => {
       runUrl: (relPath) => runUrl(aid, runId, relPath),          // W7: URL that RUNS a web file in a tab
       openFile: (relPath) => openFile(aid, runId, relPath),      // W7: manual-open guidance; never OS-launch
       onDecide: (decision, destPath, extra) => decide(aid, runId, decision, destPath, extra),
-      onImplement: () => implement(aid, runId),                  // build what a PLAN deliverable describes
+      onImplement: (note) => implement(aid, runId, note),        // build what a PLAN deliverable describes
       noteDecision: (text) => noteDecision(runId, text)
     });
   }

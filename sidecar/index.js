@@ -10725,6 +10725,11 @@ function implementPrompt(runId, source, ctx) {
   const snapshot = String(c.projectSnapshot || '').trim();
   const srcDir = 'workshop/' + String(source.runId);
   const srcFiles = (source.files || []).map(f => srcDir + '/' + f.path).slice(0, 20);
+  // THE COMMANDER'S STEER — what they typed on the card before pressing Implement. A plan usually lists SEVERAL
+  // things; this is the only place they get to say WHICH, so it leads the rules and outranks the default
+  // "build the first one". It is build guidance ONLY: never a path, a grant, or a target (those resolve from
+  // blessed roots server-side), so an instruction typed here can widen no permission.
+  const steer = String(c.note || '').trim().slice(0, 2000);
   return IMPLEMENT_MARK + '\n'
     + 'The Commander pressed IMPLEMENT on a plan you delivered. They are not asking for another plan — they are\n'
     + 'asking you to BUILD the thing it describes, now.\n\n'
@@ -10732,12 +10737,16 @@ function implementPrompt(runId, source, ctx) {
     + (source.summary ? ('Its summary: ' + String(source.summary) + '\n') : '')
     + 'Its files (READ THEM FIRST with your file tools — they are in your workspace):\n'
     + srcFiles.map(p => '  - ' + p).join('\n') + '\n\n'
+    + (steer ? ('THE COMMANDER TOLD YOU WHAT TO BUILD — this outranks every default below:\n  "' + steer + '"\n\n') : '')
     + (targetRoot && snapshot ? ('PROJECT SNAPSHOT — ' + targetRoot + ' (read by the harness, not guessed):\n' + snapshot + '\n\n') : '')
     + 'RULES:\n'
     + '- READ THE PLAN FIRST. Everything below is about executing THAT document, not your memory of it.\n'
     + '- BUILD, DO NOT RE-PLAN. Do not deliver another backlog, roadmap, checklist, spec, summary, or "next steps"\n'
-    + '  document. If the plan lists several items, BUILD THE FIRST ONE IT SAYS TO BUILD, completely, and say in the\n'
-    + '  summary which one you built and what is left. One finished thing beats five described things.\n'
+    + (steer
+        ? '  document. BUILD WHAT THE COMMANDER ASKED FOR ABOVE, completely — if the plan and their instruction\n'
+        + '  disagree, THEY win. Say in the summary what you built. One finished thing beats five described things.\n'
+        : '  document. If the plan lists several items, BUILD THE FIRST ONE IT SAYS TO BUILD, completely, and say in the\n'
+        + '  summary which one you built and what is left. One finished thing beats five described things.\n')
     + (targetRoot && snapshot
         ? ('- IF THE PLAN IS A CODE CHANGE TO THAT PROJECT: your artifact is a UNIFIED-DIFF file (e.g. "' + dir + '/change.patch")\n'
          + '  that applies cleanly with `git apply` from the repo root ' + targetRoot + '. Base every hunk on the PROJECT\n'
@@ -10783,12 +10792,16 @@ async function runImplementBuild(agentId, sourceRunId, opts) {
   // already carrying builtRunId, so claimById refuses and we say "already implemented" instead of building twice.
   const backlogId = 'impl-' + String(sourceRunId);
   const title = ('Implement: ' + String(source.title || 'plan')).slice(0, 200);
+  const note = String(o.note || '').trim().slice(0, 2000);
   // register a synthetic backlog item so the result lands in /pending + /decide exactly like any other build
-  // (the return card and ship gate are keyed on a backlog item carrying builtRunId).
+  // (the return card and ship gate are keyed on a backlog item carrying builtRunId). The Commander's steer rides
+  // GROUNDS so the delivery card's why-this line quotes what they actually asked for, in their own words.
   let queued = null;
   try {
-    queued = await workshopStore.queue(id, { id: backlogId, title: title, detail: 'Build what "' + String(source.title || 'the plan') + '" describes.',
-      source: 'implement', grounds: 'the Commander pressed Implement on "' + String(source.title || 'a plan') + '"' }, Date.now());
+    queued = await workshopStore.queue(id, { id: backlogId, title: title,
+      detail: note || ('Build what "' + String(source.title || 'the plan') + '" describes.'),
+      source: 'implement',
+      grounds: note ? ('you asked for: ' + note) : ('the Commander pressed Implement on "' + String(source.title || 'a plan') + '"') }, Date.now());
   } catch (_) { queued = null; }
   // queue RESOLVES with a reason rather than throwing — a discarded/denylisted id comes back { item: null }.
   if (!queued || !queued.item) return { fired: false, reason: 'queue-refused' };
@@ -10797,7 +10810,7 @@ async function runImplementBuild(agentId, sourceRunId, opts) {
   if (!claimed) return { fired: false, reason: 'already-implemented' };
 
   const patchCtx = await resolveProjectPatchTarget(resolveNightFocus());
-  const prompt = implementPrompt(runId, source, Object.assign({ backlogId: backlogId }, patchCtx));
+  const prompt = implementPrompt(runId, source, Object.assign({ backlogId: backlogId, note: note }, patchCtx));
   const ac = o.signal ? null : new AbortController();
   const signal = o.signal || (ac && ac.signal);
   if (ac) runs.set(runId, ac);
@@ -11692,7 +11705,9 @@ async function handleWorkshopShiftNow(req, res) {
   try { res.end(); } catch (_) {}
 }
 
-/* POST /api/workshop/implement { agentId, runId } — BUILD what a plan deliverable describes. Streams the run as
+/* POST /api/workshop/implement { agentId, runId, note? } — BUILD what a plan deliverable describes. `note` is what
+   the Commander typed on the card ("do the PowerShell one first") — a plan usually lists several things and this is
+   the only place they get to choose. Build guidance only; it resolves no path, grant, or target. Streams the run as
    NDJSON exactly like /api/workshop/shift (same keep-alive + emitter), then a final workshop.implement.result frame
    carrying the honest outcome. The Commander pressed a button, so every refusal is named rather than silent. */
 async function handleWorkshopImplement(req, res) {
@@ -11706,7 +11721,7 @@ async function handleWorkshopImplement(req, res) {
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
   const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e) console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   let result;
-  try { result = await runImplementBuild(agentId, runId, { emit: emit, broadcast: true }); }
+  try { result = await runImplementBuild(agentId, runId, { emit: emit, broadcast: true, note: body.note }); }
   catch (e) { result = { fired: false, reason: 'error: ' + ((e && e.message) || e) }; }
   kaOff();
   try { res.write(JSON.stringify({ name: 'workshop.implement.result', payload: result }) + '\n'); } catch (_) {}

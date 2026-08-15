@@ -60,10 +60,13 @@ function startMockOpenRouter() {
           if (prompt.indexOf(IMPLEMENT_MARK) === 0) {
             // THE IMPLEMENT RUN — build the real thing the plan asked for.
             if (toolResults === 0) {
-              // probe: did the prompt actually carry the plan's file path, and forbid re-planning?
+              // probe: did the prompt actually carry the plan's file path, forbid re-planning, and carry the
+              // Commander's typed steer (the "which of these five things" answer) as an overriding instruction?
               const sawSource = /workshop\/[A-Za-z0-9-]+\/automation-backlog\.md/.test(prompt);
               const forbidsPlan = /BUILD, DO NOT RE-PLAN/.test(prompt);
-              tool('i0', 'fs_write', { path: dir + '/probe.txt', content: 'SAW_SOURCE=' + sawSource + '\nFORBIDS_REPLAN=' + forbidsPlan + '\n' });
+              const sawSteer = /THE COMMANDER TOLD YOU WHAT TO BUILD/.test(prompt) && /do the PowerShell one first/.test(prompt);
+              const steerWins = /if the plan and their instruction\s*\n?\s*disagree, THEY win/.test(prompt);
+              tool('i0', 'fs_write', { path: dir + '/probe.txt', content: 'SAW_SOURCE=' + sawSource + '\nFORBIDS_REPLAN=' + forbidsPlan + '\nSAW_STEER=' + sawSteer + '\nSTEER_WINS=' + steerWins + '\n' });
             } else if (toolResults === 1) {
               tool('i1', 'fs_write', { path: dir + '/snapshot.ps1', content: 'Get-ComputerInfo | Select-Object CsName, OsName\n' });
             } else if (toolResults === 2) {
@@ -146,7 +149,7 @@ async function readNdjson(res) {
     A.ok(!planMan.implementOf, 'the plan itself is not an implementation');
 
     // 2. IMPLEMENT — the whole point: a second, real build that does what the plan describes.
-    const implEvents = await readNdjson(await post('/api/workshop/implement', { agentId: 'builder', runId: planRun }));
+    const implEvents = await readNdjson(await post('/api/workshop/implement', { agentId: 'builder', runId: planRun, note: 'do the PowerShell one first' }));
     const implRes = ((implEvents.find(e => e.name === 'workshop.implement.result') || {}).payload || {});
     A.ok(implRes.fired === true && implRes.reason === 'built', 'implement ran a real build (fired:true, reason:built)');
     const implRun = implRes.runId;
@@ -158,6 +161,13 @@ async function readNdjson(res) {
     const probe = fs.readFileSync(path.join(implDir, 'probe.txt'), 'utf8');
     A.ok(/SAW_SOURCE=true/.test(probe), 'the implement prompt named the source plan file (the run reads the real plan)');
     A.ok(/FORBIDS_REPLAN=true/.test(probe), 'the implement prompt forbids delivering another plan');
+    // THE STEER: a plan lists several things; what the Commander typed on the card is how they pick one.
+    A.ok(/SAW_STEER=true/.test(probe), 'the Commander’s typed instruction reached the BUILD prompt (not the chat stream)');
+    A.ok(/STEER_WINS=true/.test(probe), 'and it outranks the plan’s own ordering when the two disagree');
+    // it is also recorded as the build's provenance, so the delivery card can say WHY in the Commander's words.
+    const implItem = ((await (await fetch(B + '/api/workshop/backlog?agent=builder', { headers })).json()).backlog || [])
+      .find(b => b.id === 'impl-' + planRun);
+    A.ok(implItem && /do the PowerShell one first/.test(String(implItem.grounds || '')), 'the steer is recorded as the build’s grounds (why-this provenance)');
 
     // 3. the loop guard is stamped ON DISK (every reader re-validates from deliverable.json).
     const onDisk = JSON.parse(fs.readFileSync(path.join(implDir, 'deliverable.json'), 'utf8'));
