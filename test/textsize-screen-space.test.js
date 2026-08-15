@@ -253,4 +253,54 @@ for (const r of WINDOW_RULES) {
 A.ok(!/(^|[\s;{])top:\s*50%/.test(rulesFor(styleCss, '.term')[0] || ''),
   'the window shell centres in the band, never on the raw glass');
 
+/* ================= NO SURFACE MAY BE TOO BIG TO FIT IN STARNET =================
+ * Reported 2026-08-15: at any TEXT SIZE above STANDARD the RECRUITMENT BAY and the RECIPES bay
+ * hung off the top AND the bottom of the frame, taking the ✕ with them — the only mouse way out
+ * of a modal sat OFF the glass, so the bay could not be used or closed without going back to
+ * STANDARD first. Measured live at 1440x900 before the fix, `.mkt` box vs the real viewport:
+ *     100% 1180x828 fits · 115% 1357x952 (±26) · 130% 1440x1076 (±88) · 145% 1440x1201 (±150)
+ * and the ✕ at top:-4 / -63 / -122. 115% is what AUTO picks on a <=1470px laptop, so this was
+ * the DEFAULT on a small screen. One cause, several surfaces: `92vh` inside the body zoom is not
+ * 92% of the glass — the viewport unit resolves against the REAL viewport and is THEN multiplied
+ * by the zoom, so it renders as 133vh at HUGE. The same bare cap was on the COMMS lightbox
+ * (measured ±5 / ±65 / ±124 with an oversized image).
+ *
+ * A frame gets ONE of two treatments, and this gate accepts either:
+ *   · it is a child of a `position:fixed; inset:0` layer (a scrim, `.screen`) — that layer is
+ *     viewport-exact under zoom (probed: 1440x900 at every scale), so a PERCENTAGE of it is the
+ *     glass in the frame's own zoomed coordinate space. Preferred: no reciprocal to forget.
+ *   · it is a body-level fixed panel with nothing to be a percentage of — then every viewport
+ *     cap is written `calc(<n>vh * var(--sn-unzoom, 1))`, like `.term` above.
+ * What is FORBIDDEN either way is a bare vw/vh cap, which is not a cap at all above 100%.
+ */
+const commsCss = read('frontend', 'css', 'comms.css');
+const tutorialCss = read('frontend', 'css', 'tutorial.css');
+const OVERLAY_RULES = [
+  { what: 'marketplace.css .mkt (the RECRUITMENT BAY / RECIPES frame)', css: marketCss, sel: '.mkt' },
+  { what: 'comms.css .comms-lightbox .lb-frame', css: commsCss, sel: '.comms-lightbox .lb-frame' },
+  { what: 'comms.css .comms-lightbox .lb-frame img', css: commsCss, sel: '.comms-lightbox .lb-frame img' },
+  { what: 'comms.css .comms-lightbox .lb-name', css: commsCss, sel: '.comms-lightbox .lb-name' },
+  { what: 'app.css .fnv-floating (the free-floating dialogue panel)', css: appCss, sel: '.fnv-floating' },
+  { what: 'app.css .connect-panel', css: appCss, sel: '.connect-panel' },
+  { what: 'style.css #boot-inner', css: styleCss, sel: '#boot-inner' },
+  { what: 'style.css .pw (a prop window, which overrides .term max-width)', css: styleCss, sel: '.pw' },
+  { what: 'tutorial.css .tut-coach.kit', css: tutorialCss, sel: '.tut-coach.kit' },
+];
+for (const r of OVERLAY_RULES) {
+  const bodies = rulesFor(r.css, r.sel);
+  A.ok(bodies.length, r.what + ' still exists as a rule');
+  bodies.forEach((body, i) => A.eq(unzoomed(body), [],
+    `${r.what} rule #${i + 1}: a bare vw/vh inside the TEXT SIZE body zoom is NOT a fit cap — ` +
+    `size off the fixed inset:0 parent with %, or write calc(<n>vh * var(--sn-unzoom, 1)). ` +
+    `Not riding either: ${unzoomed(body).join(', ')}`));
+}
+// …and the bay specifically must still be sized off its scrim, not left uncapped.
+const mkt = rulesFor(marketCss, '.mkt').join('\n');
+A.ok(/max-height:\s*\d+%/.test(mkt), '.mkt caps its height against the scrim (a % of a fixed inset:0 layer)');
+A.ok(/width:\s*min\([^;]*\d+%\)/.test(mkt), '.mkt caps its width against the scrim too, so a narrow frame still fits it');
+// The scrim it measures against has to STAY the viewport-exact layer that makes those % true.
+const scrim = rulesFor(marketCss, '.mkt-scrim').join('\n');
+A.ok(/position:\s*fixed/.test(scrim) && /inset:\s*0/.test(scrim),
+  '.mkt-scrim is still position:fixed; inset:0 — that is what makes a % of it equal the glass under zoom');
+
 A.report('textsize-screen-space.test');
