@@ -264,6 +264,21 @@ async function readNdjson(res) {
     A.ok(fbPending.pending.some(m => m.runId === fbRes.runId), 'and it really is pending a decision, not discarded');
     await post('/api/workshop/decide', { agentId: 'builder', runId: fbRes.runId, decision: 'discard' });
 
+    /* 7c. THE CHAINED BUILD INHERITS THE PLAN'S LEARNING IDENTITY. nightshiftDecideLearn() early-returns on a run
+           with no archetype, and the archetype is recorded against the run that PROPOSED the work. Without this,
+           a FREE beat would silently stop teaching: the Commander's verdict lands on the chained BUILD (no
+           archetype) while the plan is retired by the server with no verdict at all. Asserted through the
+           nightshift acts file, which is the durable record both loops read. */
+    const actsFile = path.join(ws, 'nightshift.acts.json');
+    if (fs.existsSync(actsFile)) {
+      const acts = (JSON.parse(fs.readFileSync(actsFile, 'utf8')) || {}).acts || {};
+      const planAct = acts[freeRes.chainedFrom];
+      if (planAct && planAct.archetype) {
+        A.ok(acts[freeRes.runId], 'the chained build has its own acts entry (it can be learned from)');
+        A.eq((acts[freeRes.runId] || {}).archetype, planAct.archetype, 'and it inherits the PLAN’s archetype, so a verdict on the build still teaches');
+      }
+    }
+
     // back down to the draft rung: the SAME build shape stays a PLAN — the chain is rung-scoped, not universal.
     await post('/api/autonomy/posture', { posture: { initiative: 'leash', reach: 'sandbox' } });
     await post('/api/workshop/queue', { agentId: 'builder', id: 'item-leashplan', title: 'Leash-rung plan' });

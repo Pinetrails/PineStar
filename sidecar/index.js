@@ -10904,6 +10904,17 @@ async function runImplementBuild(agentId, sourceRunId, opts) {
   const builtAt = Date.now();
   try { await workshopStore.markBuilt(id, backlogId, runId, builtAt); } catch (_) {}
   manifest.builtAt = builtAt;
+  /* INHERIT THE PLAN'S LEARNING IDENTITY. nightshiftDecideLearn() returns early on `!arch`, and the archetype +
+     cited thread are recorded against the run that PROPOSED the work — the plan. Once a build is chained from
+     that plan, the Commander's keep/discard lands on the BUILD, which carries no archetype, while the plan is
+     retired by the server without any verdict at all. Both feedback loops (archetype preference AND the NS-6
+     thread deliver/decline) would go silent at FREE, precisely where the station acts most. Carrying the
+     mapping forward is also the honest semantics: a verdict on the built thing IS the verdict on the idea. */
+  try {
+    const srcArch = archetypeForRun(sourceRunId);
+    const srcThread = (nightshiftActs[String(sourceRunId)] || {}).threadId;
+    if (srcArch) recordNightshiftAct(runId, srcArch, srcThread);
+  } catch (_) { /* best-effort: the build stands either way, it just teaches nothing */ }
   manifest.because = workshopBecause({ grounds: note ? ('you asked for: ' + note) : ('the Commander pressed Implement on "' + String(source.title || 'a plan') + '"'), title: manifest.title });
   /* RETIRE THE SOURCE PLAN — but ONLY here, where we know a build actually landed. The card deliberately does not
      decide the plan before starting (a keep-then-build retired it even when the build failed, stranding the
