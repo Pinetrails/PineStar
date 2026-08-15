@@ -855,12 +855,21 @@
           const port = launchPort;
           // The BROWSER endpoint is what makes popup adoption possible; /json/list is still the
           // readiness proof and the fallback when a rig exposes no browser websocket.
-          let wsUrl = null, viaBrowser = false;
+          let wsUrl = null, viaBrowser = false, browserProbeTransient = false;
           if (deps.adoptPopups !== false && deps.syntheticInputOnly !== false) {
             try {
               const v = await (await fetchImpl('http://127.0.0.1:' + port + '/json/version')).json();
               if (v && v.webSocketDebuggerUrl) { wsUrl = v.webSocketDebuggerUrl; viaBrowser = true; }
-            } catch (_) { wsUrl = null; }
+            } catch (_) { wsUrl = null; browserProbeTransient = true; }
+          }
+          // Chrome can expose /json/list a scheduler beat before /json/version while starting under load. Falling
+          // back to the page websocket on that first transient miss permanently disables popup adoption for the
+          // whole run even though the browser endpoint becomes ready milliseconds later. Retry that exact failure
+          // within the existing bounded readiness loop; a successful-but-unsupported /json/version response still
+          // falls back immediately, and the final iterations preserve page-only compatibility.
+          if (!wsUrl && browserProbeTransient && i < 30) {
+            await sleep(50);
+            continue;
           }
           if (!wsUrl) {
             const r = await fetchImpl('http://127.0.0.1:' + port + '/json/list');

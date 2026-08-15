@@ -344,10 +344,14 @@ function fakeDriver() {
       }
       close() {}
     }
+    let browserVersionAttempts = 0;
     const d = T.makeCdpDriver({
       chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9347,
       inputSeed: 'browser-input-contract', inputSleep: async ms => { inputDelays.push(ms); },
-      fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://fake' }] }),
+      fetchImpl: async url => {
+        if (url.endsWith('/json/version') && browserVersionAttempts++ === 0) throw new Error('browser endpoint still starting');
+        return { json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://fake' }] };
+      },
       WebSocketImpl: FakeWS,
       spawn: (exe, args) => { launches.push({ exe, args }); return fakeProc(42); }
     });
@@ -359,6 +363,7 @@ function fakeDriver() {
     A.ok(/state\.ready/.test(sent[installAt].params.source), 'pointer-lock bootstrap exposes a verifiable ready marker');
     A.ok(launches[0].args.some(a => /^--headless/.test(a)) && launches[0].args.includes('--mute-audio'), 'CDP browser process is headless and muted');
     A.ok(!launches[0].args.includes('--new-window'), 'synthetic test browser never requests a window');
+    A.eq(browserVersionAttempts, 2, 'a transient /json/version startup miss is retried before page-only fallback disables popup adoption');
     A.ok(sent.some(m => m.method === 'Target.setAutoAttach' && m.params.waitForDebuggerOnStart === true), 'new targets are paused before scripts can reach native input APIs');
     A.ok(!sent.some(m => m.method === 'Runtime.enable'), 'the page-observable Runtime domain is never globally enabled');
     await d.consoleLog();
