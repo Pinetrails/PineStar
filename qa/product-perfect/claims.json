@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "4b6862d404586e24519b0a4bb47edc886b790db3",
+    "sourceCommit": "fb6f465d66250f59dd12108bbc0db70d6757ab1b",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -743,8 +743,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 625260,
-        "sha256": "ef175966e2cd4653f14366d356cbae42790f15436a192989a5838c8dfeee71a8"
+        "bytes": 628930,
+        "sha256": "20c123ec3f666cc9cbc6ec499d5609e7161a4b1cab67b885fb7f3ad7472c08f2"
       },
       {
         "path": "frontend/app/study.js",
@@ -993,8 +993,8 @@
       },
       {
         "path": "frontend/css/motion.css",
-        "bytes": 43637,
-        "sha256": "f2417ce084ea4965bed6c31ed1382c7640f1da17574f68a19259c8dcaa41211d"
+        "bytes": 44806,
+        "sha256": "24d21700faefedc0cc42424dd5d865c3753c293e3b9477de48d24c6008864332"
       },
       {
         "path": "frontend/css/panelchrome.css",
