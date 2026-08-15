@@ -197,7 +197,13 @@ try {
     if (s && s.bodies) {
       samples.push(s);
       if (s.bodies.some(b => b && b.socialKind)) seenEncounter = true;
-      if (PAIR && !seenEncounter && Date.now() >= nextNudge) {
+      /* Nudge for the WHOLE run, not only until the first encounter. The original stopped at
+         `!seenEncounter`, which was right when the question was "does a meeting ever happen" — but
+         a 3-crew floor answers that within seconds (the first run of this soak fired a huddle at
+         ~10s and so never nudged at all), and then the bodies drift apart again and no THIRD body
+         is ever standing near a huddle. NUDGE self-guards: it returns 'in encounter' while one is
+         live, so re-arming it cannot interrupt a beat. */
+      if (PAIR && Date.now() >= nextNudge) {
         nextNudge = Date.now() + 8000;
         const r = await evalJS(cdp, NUDGE).catch(() => 'eval failed');
         console.log('[idlesoak] nudge:', r);
@@ -253,6 +259,31 @@ try {
   encounters.parties = parties;                 // { "2": n, "3": n }
   encounters.maxSimultaneousTalkers = maxTalkers;
   encounters.trioProved = trioProved;
+
+  /* WAS A TRIO EVEN POSSIBLE? Without this the run cannot tell "the third-body code never fires"
+     apart from "three bodies were never standing together", and those two call for opposite next
+     moves. A trio needs three bodies that are all eligible AND all within SOCIAL_NEAR_RADIUS of the
+     one deciding, at the same instant — so count the samples where some body had >= 2 eligible
+     others inside that radius. Tile Chebyshev distance, matching neighborsOf's own radius test.
+     (This is an UPPER bound: it ignores the same-zone requirement, which it cannot see from here.
+     A zero here means the opportunity provably never arose; a non-zero does not by itself mean it
+     did — so it can falsify, never confirm.) */
+  const NEAR = 8;
+  let trioOpportunities = 0, maxCluster = 0;
+  const eligible = (b) => b && !b.unplaced && !b.working && !b.sitting && !b.socialKind && b.state !== 'walk';
+  for (const s of samples) {
+    const free = s.bodies.filter(eligible);
+    let best = 0;
+    for (const a of free) {
+      const n = free.filter(o => o !== a
+        && Math.max(Math.abs(o.tile.x - a.tile.x), Math.abs(o.tile.y - a.tile.y)) <= NEAR).length;
+      best = Math.max(best, n + 1);
+    }
+    maxCluster = Math.max(maxCluster, best);
+    if (best >= 3) trioOpportunities++;
+  }
+  encounters.trioOpportunitySamples = trioOpportunities;
+  encounters.maxEligibleCluster = maxCluster;
 
   // the SHAPE of the encounter, not just that one happened: who was in it, what phase, who had the
   // floor, and the sprite track each was drawn in. This is the W4 evidence — a conversation is a

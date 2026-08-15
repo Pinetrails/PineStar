@@ -139,4 +139,22 @@ A.ok(/\(pl\.partnerIds \|\| \[pl\.partnerId\]\)/.test(src), 'facing falls back t
 A.ok(/self\.dir = dirToward\(self\.px, self\.py, sx \/ others\.length, sy \/ others\.length\)/.test(src),
   'a participant faces the CENTROID of the others — with two that is the partner, with three it is the circle');
 
+/* ---- the live proof hooks (dev/trioprobe.mjs) ----
+   A trio is rare by construction, so the three-body conversation cannot be proven by waiting: two
+   7-minute soaks produced eight encounters and zero trios. dev/trioprobe.mjs drives the selection
+   instead and watches the result. These locks exist because the hook's VALUE is entirely in what it
+   does NOT bypass — if `force` ever grew to skip a legality gate, the probe would keep printing PASS
+   while proving something staged. */
+A.ok(/_dbgHuddle: \(ids, force\) =>/.test(src), 'the debug hook to arm a huddle from named bodies exists');
+A.ok(/if \(socialBeat\) return \{ ok: false, err: 'an encounter is already live' \}/.test(src), 'the hook still respects the single-slot rule (G4)');
+A.ok(/const keep = self[\s\S]{0,400}\} finally \{ self = keep; \}/.test(src.slice(src.indexOf('_dbgHuddle:'))), 'the hook restores the borrowed `self` in a finally (B1)');
+const hookFn = src.slice(src.indexOf('_dbgHuddle: (ids, force)'), src.indexOf('_dbgSit:'));
+A.ok(/planHuddle\(bodies\[0\], bodies\.slice\(1\), now, !!force\)/.test(hookFn), 'the hook goes through the REAL planHuddle, not a staged copy');
+A.ok(/forceTrio \|\| U\.chance\(SOCIAL_TRIO_CHANCE\)/.test(src), 'force bypasses the frequency ROLL only — every legality gate still runs');
+// the roll is the ONLY thing force can skip: the tile resolver must still be consulted after it
+const trioBranch = src.slice(src.indexOf('forceTrio || U.chance(SOCIAL_TRIO_CHANCE)'), src.indexOf('return startEncounter(a, b, \'huddle\''));
+A.ok(/nearestWalkableInZone\(zoneFor\(c\)/.test(trioBranch), 'even a forced trio must still resolve a legal in-zone tile for the third body');
+A.ok(/_dbgHuddleStats: \(\) => JSON\.parse\(JSON\.stringify\(huddleStats\)\)/.test(src), 'the selection counters are exposed as a read-only copy (a caller cannot mutate live engine state)');
+A.ok(/huddleStats\.candCounts\[list\.length\]/.test(src), 'the counters record how many candidates each huddle actually saw — the number that explains a missing trio');
+
 A.report('social-trio.test');
