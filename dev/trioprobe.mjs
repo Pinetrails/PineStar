@@ -142,6 +142,13 @@ try {
      That is the rate work doing its job, not a leaked slot. What actually has to be true is that the
      bodies THIS probe armed were all let go at some point after they held. */
   let rosterAllHeld = false, rosterReleased = false, rosterTalkingAtRelease = [];
+  /* TIME-TO-ARRIVE per body. The open thread this closes: one early run had a body walk
+     west->north->east for 24s without arriving while all three were parked on effectively ONE tile.
+     movementBlockers marks every OTHER body's tile AND its target, so three bodies stacked on one
+     tile force each other onto detours — a longer route is expected, an unbounded one is a defect.
+     Timing every arrival turns "it looked stuck" into a number that can be compared across runs. */
+  const arriveMs = new Map();
+  let watchT0 = null;
   const shots = [];
   for (let i = 0; i < 80; i++) {
     const s = await evalJS(cdp, SAMPLE).catch(() => null);
@@ -164,7 +171,9 @@ try {
         const talking = inIt.filter(b => b.talking);
         maxTalkers = Math.max(maxTalkers, talking.length);
         if (talking.length > 1) overlapSamples++;
+        if (watchT0 == null) watchT0 = s.t;
         for (const b of inIt) {
+          if (b.socialPhase === 'hold' && !arriveMs.has(b.id)) arriveMs.set(b.id, s.t - watchT0);
           if (b.socialPhase === 'hold') held.add(b.id);
           if (b.talking) talked.add(b.id);
         }
@@ -179,7 +188,13 @@ try {
   for (const line of shots) console.log('  ' + line);
   console.log('');
 
+  const arrivals = [...arriveMs.entries()].map(([id, ms]) => `${id}:${ms}ms`).join(' ');
+  const slowest = Math.max(0, ...arriveMs.values());
+  console.log(`[trioprobe] time-to-arrive: ${arrivals}  (slowest ${slowest}ms)`);
   check(sawEncounter > 0, 'the encounter was observable in World.bodies()');
+  // The detour is legitimate; an unbounded walk is not. SOCIAL_HARD_MS is 55s, so anything near that
+  // means a body effectively never made it and the hard timeout was doing the work.
+  check(slowest < 20000, `every body arrived in a bounded time (slowest ${slowest}ms, hard timeout is 55000ms)`);
   check(held.size === 3, `all three bodies reached the hold (got ${held.size})`);
   check(talked.size === 3, `all three bodies took a turn talking (got ${talked.size})`);
   check(overlapSamples === 0, `never two mouths at once across ${sawEncounter} samples (overlaps: ${overlapSamples}, max simultaneous: ${maxTalkers})`);

@@ -285,6 +285,21 @@ try {
   encounters.trioOpportunitySamples = trioOpportunities;
   encounters.maxEligibleCluster = maxCluster;
 
+  /* DUTY CYCLE — the number that decides whether the pace is right, and the one a per-encounter
+     COUNT cannot tell you. "6 conversations in 7 minutes" sounds modest; if each runs 25s that is a
+     third of the time with two agents standing around talking, which on a station whose whole point
+     is that it does real work reads as slacking rather than as life. Counted over samples: the share
+     of the run in which a talking encounter was live at all, and the share in which somebody was
+     actually mouth-moving. */
+  let convSamples = 0, mouthSamples = 0;
+  for (const s of samples) {
+    const talkers = s.bodies.filter(b => b && (b.socialKind === 'huddle' || b.socialKind === 'border'));
+    if (talkers.length) convSamples++;
+    if (talkers.some(b => b.talking)) mouthSamples++;
+  }
+  encounters.conversationDutyPct = pct(convSamples, samples.length);
+  encounters.mouthMovingDutyPct = pct(mouthSamples, samples.length);
+
   // the SHAPE of the encounter, not just that one happened: who was in it, what phase, who had the
   // floor, and the sprite track each was drawn in. This is the W4 evidence — a conversation is a
   // sequence, so a count could never show it.
