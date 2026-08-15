@@ -54,17 +54,20 @@ const MEASURE = `(async () => {
     const bar = (barH / contentH >= 0.5 && (colN[end + 1] || 0) <= barH * 0.5)
       ? { x0: first, x1: end, barH, inside: colN[end + 1] || 0 } : null;
     // staff wood + gem green, counted the way the repair painted them
-    let wood = 0, gem = 0;
+    let wood = 0, gem = 0, pale = 0;
     for (let i = 0; i < c.width * c.height; i++) {
       const r = d[i*4], g2 = d[i*4+1], b = d[i*4+2], a = d[i*4+3];
       if (a < 200) continue;
       if (g2 > 120 && g2 > r * 1.4 && g2 > b * 1.4) gem++;
       else if (r > 70 && r < 140 && r > b * 1.4 && r >= g2) wood++;
+      else if (Math.min(r, g2, b) > 150 && Math.max(r, g2, b) - Math.min(r, g2, b) < 40) pale++;
     }
-    return { rel, w: im.width, h: im.height, total, top, bot, contentH, bar, wood, gem };
+    return { rel, w: im.width, h: im.height, total, top, bot, contentH, bar, wood, gem, pale };
   };
   const out = {};
-  for (const key of ['voidwizard.walk.north-west', 'voidwizard.walk.west', 'voidwizard.rot.north', 'voidwizard.walk.east']) {
+  for (const key of ['voidwizard.walk.north-west', 'voidwizard.walk.west', 'voidwizard.rot.north',
+                     'voidwizard.walk.east', 'voidwizard.rot.north-west',
+                     'grimreaper.rot.north-west', 'grimreaper.rot.north-east']) {
     out[key] = [];
     for (const rel of man.sprites[key]) out[key].push(await measure(rel));
   }
@@ -97,7 +100,7 @@ async function main() {
     say(!!m.catalog, `the app's own catalog still carries voidwizard: ${JSON.stringify(m.catalog)}`);
     say(m.setSkinLive, 'World.setSkin is live, so the skin is still selectable on the floor');
 
-    for (const key of ['voidwizard.walk.north-west', 'voidwizard.walk.west', 'voidwizard.rot.north', 'voidwizard.walk.east']) {
+    for (const key of Object.keys(m).filter(k => k.includes('.'))) {
       const frames = m[key];
       say(frames.length > 0, `${key}: app served ${frames.length} frame(s)`);
       const bars = frames.filter(f => f.bar);
@@ -113,7 +116,13 @@ async function main() {
     say(west.every(f => f.gem >= 2), `walk.west carries a green gem in all 6 frames (gem px: ${west.map(f => f.gem).join(',')})`);
     say(east.every(f => f.wood >= 8), `walk.east (untouched control) still carries its shaft (wood px: ${east.map(f => f.wood).join(',')})`);
     const rn = m['voidwizard.rot.north'][0];
-    say(rn.wood >= 20, `rot.north's staff now runs to the floor rather than stopping in mid-air (wood ${rn.wood}px)`);
+    say(rn.wood >= 20, `voidwizard rot.north's staff now runs to the floor rather than stopping in mid-air (wood ${rn.wood}px)`);
+    const rnw = m['voidwizard.rot.north-west'][0];
+    say(rnw.wood >= 15, `voidwizard rot.north-west now carries a staff at all (wood ${rnw.wood}px) — it had none`);
+    // the reaper's scythe: a blade with no shaft is a FLOATING BLADE, so both are asserted
+    const gnw = m['grimreaper.rot.north-west'][0], gne = m['grimreaper.rot.north-east'][0];
+    say(gnw.pale >= 10, `grimreaper rot.north-west has a scythe BLADE (${gnw.pale}px pale vs ${gne.pale}px on its mirror)`);
+    say(gnw.wood >= 8, `grimreaper rot.north-west has the scythe SHAFT too (${gnw.wood}px vs ${gne.wood}px on its mirror) — not a floating blade`);
 
     console.log(`\n${bad === 0 ? 'ALL LIVE CHECKS PASSED' : bad + ' LIVE CHECK(S) FAILED'}  (served from ${URL})`);
   } finally {

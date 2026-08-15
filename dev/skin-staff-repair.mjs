@@ -208,3 +208,72 @@ for (let i = 0; i < 6; i++) {
   const r = extendStub(f, { x: 54, fromY: 48, toY: 68, core: SHAFT, edge: SHAFT_DARK });
   save(f, r.im, r.note);
 }
+{
+  // rot.north-west was the last facing with NO staff at all (7 of 8 carry one, including its own
+  // north view). Run the same shaft down the robe's free edge so the ring is complete.
+  const f = F('voidwizard', 'rot_north-west');
+  const r = extendStub(f, { x: 53, fromY: 40, toY: 68, core: SHAFT, edge: SHAFT_DARK });
+  save(f, r.im, r.note);
+}
+
+// ------------------------------------------------------- 4. MIRROR a prop from its mirror facing
+// grimreaper.rot.north-west is the same defect class as voidwizard's rot.north: the scythe is a
+// bare stump on top of the hood with no shaft and no blade, while all seven other facings carry
+// the full weapon. Its mirror (north-east) has a clean one, and a body seen from behind-left is
+// the mirror of the same body seen from behind-right — so the weapon is lifted from there,
+// flipped, and laid in BEHIND the robe (transparent pixels only, so the body always wins).
+function mirrorProp(donorFile, targetFile, { pick, dx = null, dy = 0, inFront = false }) {
+  const donor = readRGBA(donorFile);
+  const im = readRGBA(targetFile);
+  // ALIGN BY THE BODY, not by the frame. The two facings are not pixel mirrors of each other —
+  // the robe sits at a different offset — so mirroring about the frame centre drops the shaft
+  // inside the body and only the blade survives, which reads as a floating blade: the very
+  // defect being repaired. Matching the mirrored donor's body centroid to the target's puts the
+  // weapon in the same relation to the body that the donor draws it in.
+  const centroid = (img, skip) => {
+    let sum = 0, n = 0;
+    for (let y = 0; y < img.height; y++) for (let x = 0; x < img.width; x++) {
+      if (!isInk(img, x, y)) continue;
+      if (skip && skip(px(img, x, y))) continue;          // the prop itself must not drag the centre
+      sum += x; n++;
+    }
+    return n ? sum / n : img.width / 2;
+  };
+  if (dx == null) {
+    const donorBody = donor.width - 1 - centroid(donor, pick);   // mirrored
+    dx = Math.round(centroid(im, pick) - donorBody);
+  }
+  // the prop's own colours, plus the outline pixels hugging them, so it arrives drawn not naked
+  const core = [];
+  for (let y = 0; y < donor.height; y++) for (let x = 0; x < donor.width; x++) {
+    if (pick(px(donor, x, y))) core.push([x, y]);
+  }
+  const take = new Set(core.map(([x, y]) => y * donor.width + x));
+  for (const [x, y] of core) {
+    for (let ddy = -1; ddy <= 1; ddy++) for (let ddx = -1; ddx <= 1; ddx++) {
+      const nx = x + ddx, ny = y + ddy;
+      if (nx < 0 || ny < 0 || nx >= donor.width || ny >= donor.height) continue;
+      if (isBlack(px(donor, nx, ny))) take.add(ny * donor.width + nx);
+    }
+  }
+  let laid = 0, blocked = 0;
+  for (const i of take) {
+    const sx = i % donor.width, sy = (i / donor.width) | 0;
+    const tx = (donor.width - 1 - sx) + dx, ty = sy + dy;
+    if (tx < 0 || ty < 0 || tx >= im.width || ty >= im.height) continue;
+    if (isInk(im, tx, ty) && !inFront) { blocked++; continue; }   // the body is in front
+    setPx(im, tx, ty, px(donor, sx, sy));
+    laid++;
+  }
+  return { im, note: `mirrored prop from ${path.basename(donorFile)} (${laid}px laid, ${blocked}px behind the body)` };
+}
+{
+  // the blade is the only near-white on this skin and the shaft the only brown — both measured
+  // absent from north-west by dev/skin-feature-dropout.mjs before this was written
+  const isBlade = p => p.a > 200 && Math.min(p.r, p.g, p.b) > 150 &&
+    (Math.max(p.r, p.g, p.b) - Math.min(p.r, p.g, p.b)) < 40;
+  const isShaft = p => p.a > 200 && p.r > 70 && p.r > p.b * 1.35 && p.r >= p.g;
+  const f = F('grimreaper', 'rot_north-west');
+  const r = mirrorProp(F('grimreaper', 'rot_north-east'), f, { pick: p => isBlade(p) || isShaft(p) });
+  save(f, r.im, r.note);
+}
