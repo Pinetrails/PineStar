@@ -174,35 +174,51 @@ button:active {
    MATTE, per the surface law: depth comes from molding, seating
    shadows and hairlines — never an outer glow wash.
    ============================================================ */
-/* Bottom-LEFT over the stage (clear of the COMMS composer's mic/model cluster on the right),
-   and above every overlay tier — toasts fired while RECRUITMENT (.mkt, z 9000) is open used
-   to be buried under it at z 960 (audit P0 #13). */
-/* ONE rack width for the whole stack (align-items: stretch, not flex-start): shrink-to-fit cards
-   turn a burst into a ragged staircase — a rack of instruments is flush, so the frames, blades,
-   stamps and dwell rails all line up column-by-column no matter how long each message is. */
-/* The rack is sized so ordinary one-line prose still fits on one line: dropping below ~356px
-   starts wrapping, and a wrapped compact card is TALLER than the roomy one it was meant to shrink.
+/* WHERE THE RACK IS BOLTED — the cabinet's bottom-left corner, measured, never guessed.
+   Above every overlay tier: toasts fired while RECRUITMENT (.mkt, z 9000) is open used to be
+   buried under it at z 960 (audit P0 #13), so the rack keeps --z-toast and stays a <body> child
+   (inside #screen-game — a z:10 stacking context — it would drop under the tooltip card, the
+   live-voice panel and the brand mark).
 
-   TEXT-SIZE geometry (the --cz law, app.css §1): this stack is a `body` CHILD, so body's zoom
-   multiplies into it — but the things it is parked BETWEEN (the CREW rail, the COMMS panel, the
-   dock) are cabinet, counter-zoomed to a fixed visual size. A plain `left: 268px` therefore
-   walked the rack deeper into the stage at every text step while the gap it had to fit in never
-   moved, and at HUGE it landed on COMMS. So the ANCHOR and the SPACE CAP are written in hardware
-   units (`* var(--cz)`) and only the 356px design width stays content-scaled — the card's type is
-   what you READ and still grows with the dial; where it sits and how much room it may claim do not. */
+   The anchor used to be the literal numbers `left: 268px * --cz; bottom: 128px * --cz`, and they
+   pinned the rack to NOTHING. Measured live at 1600x960 (2026-08-15): the columns run x 11→1589
+   and end at y 896, so the rack sat 16px inside the stage's left edge and floated 64px above the
+   floor line — no edge of the cabinet to read it against, which is exactly what "not aligned"
+   looks like. Worse, the CREW seam is DRAGGABLE (--crew-w, leftrail.js): drag the rail to 380px
+   and the stage starts at x 400 while the rack stayed at 268 — the card was then sitting ON the
+   crew list it was supposed to be parked beside.
+
+   So the seat is MEASURED off the cabinet by StationUI.seatToastRack() (the syncTermBand idiom:
+   read the real rects, divide by the TEXT SIZE zoom exactly once, publish the answer as vars):
+     --toast-x   the columns' LEFT edge  (#bottombar.left — the shell's outer padding line, the
+                 same x as #topbar, the CREW rail and the dock: the longest alignment line in the
+                 frame, and it exists even when the rail is hidden or cinema collapses a column)
+     --toast-b   the columns' BOTTOM edge (#stage-wrap.bottom — where the rail, the stage and
+                 COMMS all end; the rack rests ON that seam instead of hovering over it)
+     --toast-cap the room between those two edges and the stage's right edge, so the rack can
+                 never reach COMMS at any scale. This replaces the old 1120px fork, which was
+                 hand-guessing the same promise one breakpoint at a time.
+   Measuring beats arithmetic here because #screen-game re-flows its padding, gap, rows AND
+   columns at 1120/1000/860px and again for crew-rail-off + cinema; the fallbacks below are the
+   ≤1000px gutter numbers, so a frame that has not measured yet still opens sane.
+
+   ONE rack width for the whole stack (align-items: stretch, not flex-start): shrink-to-fit cards
+   turn a burst into a ragged staircase — a rack of instruments is flush, so the frames, blades,
+   stamps and dwell rails all line up column-by-column no matter how long each message is.
+
+   The rack is sized so ordinary one-line prose still fits on one line: dropping below ~356px
+   starts wrapping, and a wrapped compact card is TALLER than the roomy one it was meant to shrink.
+   Re-measured 2026-08-15 against four real notify() strings: at 232px (the CREW rail's own width)
+   two of them went to THREE lines — so the rack keeps its 356px design width and overhangs the
+   rail rather than matching it. The width stays content-scaled on purpose: the card's type is what
+   you READ and still grows with the TEXT SIZE dial, while --toast-x/-b/-cap arrive already divided
+   by that zoom, so where it sits and how much room it may claim do not. */
 #toast-stack {
   position: fixed; z-index: var(--z-toast, 9600);
-  left: calc(268px * var(--cz, 1)); bottom: calc(128px * var(--cz, 1));
+  left: var(--toast-x, 8px); bottom: var(--toast-b, 58px);
   display: flex; flex-direction: column-reverse; gap: 6px; align-items: stretch;
-  pointer-events: none; width: min(356px, calc(37vw * var(--cz, 1)));
+  pointer-events: none; width: min(356px, var(--toast-cap, 37vw));
 }
-/* Below 1120px the cabinet stops counter-zooming (app.css §"1120" narrows the grid to
-   `200px 1fr var(--chat-w,300px)` with no `* var(--cz)`), so at a big text scale COMMS itself
-   swells leftward across the stage and the gap the rack was parked in disappears. Park it in the
-   left gutter from that breakpoint on — the same move the layout already makes at 900px. A
-   transient card briefly over the CREW list is strictly better than one over the live
-   conversation, and from the gutter it can never reach COMMS at any scale. */
-@media (max-width: 1120px) { #toast-stack { left: calc(12px * var(--cz, 1)); } }
 .toast {
   --sev: var(--ph);        /* the blade colour for this card — remapped per severity below */
   --lamp-w: 22px;

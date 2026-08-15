@@ -1814,24 +1814,43 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
      drawing straight into a 112x63 chip shows one third of one tree crown, because the features
      are sized in WORLD px and the chip is a tiny window onto the world — not a small picture of
      it. Rendering a proper 4x view and shrinking it shows the place instead of a close-up of its
-     dirt. */
+     dirt.
+
+     MEMOISED, because a sample costs a whole ground BUILD. `st = null` below forces build(id) to
+     regenerate the patch, the overlay and every sprite pool before it can draw one chip — measured
+     live on a seeded station at 112x63: moon 400ms, forest 150ms, and SETTINGS repainted all six
+     swatches on EVERY build of the panel (open, tab swap, any rerender). The inputs are fully
+     deterministic (fixed seed 0x0FE57, no camera, no clock, no theme), so the cached chip is
+     bit-identical to a fresh render — this caches the REAL renderer's output, it does not stand in
+     for it, and the honesty law is intact. Keyed by id+size+zoom so a differently-sized picker
+     still renders its own. */
+  const sampleChips = new Map();
   function paintSample(ctx, w, h, id, zoom) {
     if (!has(id)) return;
-    const keep = curId, keepSt = st, keepId = builtId;
-    curId = id; st = null; builtId = '';
-    const RW = Math.max(w, 448), RH = Math.round(RW * h / w);
-    const ref = mkCv(RW, RH), rc = ref.getContext('2d');
     const z = zoom || 0.9;
-    rc.fillStyle = GROUNDS[id].base; rc.fillRect(0, 0, RW, RH);
-    rc.imageSmoothingEnabled = false;
-    rc.setTransform(z, 0, 0, z, 0, 0);
-    draw(rc, { scale: z, panX: 0, panY: 0 }, RW, RH, null);
-    rc.setTransform(1, 0, 0, 1, 0, 0);
+    const key = id + '|' + w + '|' + h + '|' + z;
+    let chip = sampleChips.get(key);
+    if (!chip) {
+      const keep = curId, keepSt = st, keepId = builtId;
+      curId = id; st = null; builtId = '';
+      const RW = Math.max(w, 448), RH = Math.round(RW * h / w);
+      const ref = mkCv(RW, RH), rc = ref.getContext('2d');
+      rc.fillStyle = GROUNDS[id].base; rc.fillRect(0, 0, RW, RH);
+      rc.imageSmoothingEnabled = false;
+      rc.setTransform(z, 0, 0, z, 0, 0);
+      draw(rc, { scale: z, panX: 0, panY: 0 }, RW, RH, null);
+      rc.setTransform(1, 0, 0, 1, 0, 0);
+      chip = mkCv(w, h);
+      const cc = chip.getContext('2d');
+      cc.imageSmoothingEnabled = true;                 // a smooth downscale, per the sprite law
+      cc.drawImage(ref, 0, 0, RW, RH, 0, 0, w, h);
+      sampleChips.set(key, chip);
+      curId = keep; st = keepSt; builtId = keepId;
+    }
     ctx.save();
-    ctx.imageSmoothingEnabled = true;                  // a smooth downscale, per the sprite law
-    ctx.drawImage(ref, 0, 0, RW, RH, 0, 0, w, h);
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(chip, 0, 0);
     ctx.restore();
-    curId = keep; st = keepSt; builtId = keepId;
   }
 
   return { draw, setGround, getGround, active, baseColor, list, paintSample, GROUNDS };

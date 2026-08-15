@@ -11,7 +11,10 @@
   if (!/[?&]crtlab\b/.test(location.search)) return;
 
   const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.09, vig: 0.30, over: 1.20, dust: 0.5, aberr: 0.35, grain: 0.24 };
-  const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2, crown: 0.45, pitch: 8 };
+  // MUST MIRROR StationBake.LIGHT — RESET writes these back over the live object (same contract as
+  // WALL_DEFAULTS below). Dulled 2026-08-15 alongside the bake; a stale mirror here would make RESET
+  // restore the brighter station that no longer ships.
+  const LIGHT_DEFAULTS = { ambient: 0.82, pool: 0.85, room: 0.48, corridor: 0.34, door: 0.42, floor: 0.2, crown: 0.45, pitch: 8 };
   // MUST MIRROR StationBake.SHAPE — same RESET-writes-these contract as WALL_DEFAULTS below.
   const SHAPE_DEFAULTS = { cornerN: 1 };
   /* MUST MIRROR StationBake.WALL EXACTLY — these are not just the readout's key list, RESET writes
@@ -35,6 +38,8 @@
     'Bright room':     { light: { ambient: 0.52, pool: 0.9, floor: 0.2 } },
     'Balanced':        { light: { ambient: 0.66, pool: 0.95, floor: 0.22 } },
     'Dark + pools':    { light: { ambient: 0.82, pool: 1.0, floor: 0.26 } },
+    // the pre-2026-08-15 station, for A/Bing the dulling pass against what shipped before it
+    'Light: pre-08-15': { light: { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5 } },
     // side is pinned at `pad` (7) — past it the wall band juts out of the station's own silhouette
     'Flat (old)':      { wall: { up: 0, corUp: 0, skirt: 12, side: 4 }, depth: { wallShadow: 0, sheen: 0, cornerAO: 0, dither: 0, floorWear: 0, floorDetail: 0, deckSeam: 0, wallDetail: 0, poolAlbedo: 0 } },
     'Tall halls':      { wall: { up: 10, corUp: 6, skirt: 32, side: 7 } },

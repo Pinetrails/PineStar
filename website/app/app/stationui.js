@@ -588,8 +588,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     clearTimeout(resizeClampTimer);
     // the bars move with the frame (and F11 removes the desktop one outright) — re-measure the
     // band BEFORE anything clamps against it, then again once the reflow has settled.
-    requestAnimationFrame(() => { syncTermBand(); Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); });
-    resizeClampTimer = setTimeout(() => { syncTermBand(); Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); }, 120);
+    requestAnimationFrame(() => { syncTermBand(); reseatToasts(); Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); });
+    resizeClampTimer = setTimeout(() => { syncTermBand(); reseatToasts(); Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); }, 120);
   });
 
   // Land a freshly-opened window in a tidy left-anchored column, CASCADING each so stacked panels
@@ -1054,7 +1054,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
      hidden, not removed). That lets the caller run its existing wiring (wireBudget/wireFallbackChain/…)
      ONCE against the returned content root and reach every control — no per-section rewire, and no
      regression of the settings behaviour/ids the tests source-lock. The builder returns nothing; it
-     calls mountConsole(body, key, sections, opts) and then wires the returned host. */
+     calls mountConsole(body, key, sections, opts) and then wires the returned host.
+
+     `sec.onShow(bodyEl)` (optional) is the escape hatch for content that is EXPENSIVE and INVISIBLE.
+     Building every pane up-front is what makes the single wiring pass work, but it also means a
+     section nobody opened still paid for itself: SETTINGS ran the real world renderer over six
+     backdrop swatches — 600ms, measured — on every build of the panel, for a pane the Commander
+     usually never scrolls to. onShow fires ONCE, the first time that pane is actually revealed
+     (mount, tab click, or a search that shows every pane), so the cost follows the eyes. */
   function mountConsole(body, key, sections, opts) {
     opts = opts || {};
     body.classList.add('term-console-body');
@@ -1153,8 +1160,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     body.appendChild(left);
     body.appendChild(right);   // === host when there is no top strip (the vertical-rail consoles are unchanged)
 
+    /* first-reveal hook. Fires at most once per pane per mount; a throw is swallowed for the same
+       reason sec.build's is — one expensive extra must never take the console down with it. */
+    const revealed = {};
+    function reveal(id) {
+      if (revealed[id] || !panes[id]) return;
+      revealed[id] = true;
+      const sec = sections.find(x => x.id === id);
+      if (!sec || typeof sec.onShow !== 'function') return;
+      try { sec.onShow(panes[id].querySelector('.con-sec-body')); } catch (_) {}
+    }
+
     function selectSection(id, viaClick) {
       if (!panes[id]) return;
+      reveal(id);
       consoleSection[key] = id;
       if (viaClick) saveWindowState();   // remember the section the Commander navigated to, across reloads
       activeId = id;
@@ -1218,6 +1237,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const matches = [];
         sections.forEach(sec => {
           const pane = panes[sec.id];
+          reveal(sec.id);   // search shows every pane, so every pane is now on screen and must be complete
           pane.classList.remove('con-sec-hidden');
           pane.classList.add('con-sec-searchshow');
           // a "row" = a labelled control block. We match on visible text of these granular blocks.
@@ -1272,7 +1292,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       });
     }
 
+    /* The MOUNT reveal is deferred one frame, unlike every later one. onShow targets are installed by
+       the caller's wiring pass, which runs AFTER mountConsole returns — firing the landing section's
+       hook inline here would call it before it exists and silently skip the pane the Commander is
+       actually looking at. selectSection still runs synchronously so the pane itself is visible now. */
+    const landing = activeId;
     selectSection(activeId, false);
+    delete revealed[landing];
+    (typeof requestAnimationFrame === 'function' ? requestAnimationFrame : fn => setTimeout(fn, 0))(() => reveal(landing));
     return host;   // caller wires its controls against this (spans every section pane)
   }
 
@@ -5819,6 +5846,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       }
     }
 
+    /* the backdrop swatches are painted by the REAL world renderer, which costs a full sky/ground build
+       per chip. Assigned by the APPEARANCE wiring below and fired by mountConsole's onShow, so a panel
+       opened on PROVIDERS never pays for a picker nobody looked at. */
+    let paintBackdropSwatches = () => {};
+
     const sections = [
       { id: 'providers', label: 'PROVIDERS', glyph: '⌁', desc: 'Which AI services can run, and the API keys they use — stored on this machine only.', build: frag(secProviders) },
       { id: 'autonomy', label: 'AUTONOMY', glyph: '◈', desc: 'How far your agents may act on their own between your messages — the initiative, reach, and pace dials.', build: frag(secAutonomy) },
@@ -5829,7 +5861,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // build, not frag: the pane is created lazily when the section is opened, so wiring at MOUNT time
       // ran before this element existed and left the list stuck on its placeholder. Paint it when it is born.
       { id: 'livevoice', label: 'LIVE VOICE', glyph: '◍', desc: "The voice your agent speaks with hands-free, supplied by the provider you already connected.", build: el => { el.innerHTML = secLiveVoice; wireLiveVoice(el); } },
-      { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance) },
+      { id: 'appearance', label: 'APPEARANCE', glyph: '☀', desc: 'Phosphor colour, CRT effects, and terminal sound.', build: frag(secAppearance), onShow: () => paintBackdropSwatches() },
       // NAV CONDENSE (2026-08-04) — two label renames, ids untouched (remembered-section keys + wiring
       // bind to the id): 'NOTIFICATIONS' collided with the SYSTEM-dock NOTIFICATIONS panel (inbox vs
       // preferences — same word, two doors), and a 'SYSTEM' section inside SETTINGS inside the SYSTEM
@@ -5938,22 +5970,37 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       flashSaved(appMsg());
     }));
     /* BACKDROP chips — instant-apply + persist, same idiom as the theme row. Each swatch is
-       painted ONCE by the real backdrop renderer at swatch size; SpaceBG builds a throwaway
-       state for the sample, so this never disturbs the live station's tiles. The sample is
-       drawn with no camera, which is the honest still of a moving sky. */
+       painted by the REAL backdrop renderer, off a throwaway state, so this never disturbs the
+       live station's tiles. The sample is drawn with no camera, which is the honest still of a
+       moving sky. WHEN it is painted is the lazy/chunked business below; that it is the real
+       renderer's own pixels is the part that must never change. */
     const bdChips = host.querySelectorAll('#set-backdrop [data-bd]');
     if (bdChips.length && typeof SpaceBG !== 'undefined' && SpaceBG.paintSample) {
-      bdChips.forEach(b => {
-        const cv = b.querySelector('canvas');
-        if (!cv) return;
-        // route each swatch to the layer that actually owns that id — a ground painted by the
-        // sky renderer would just be a black chip, and vice versa.
-        const isGround = typeof Terrain !== 'undefined' && Terrain.GROUNDS && Terrain.GROUNDS[b.dataset.bd];
-        try {
-          if (isGround) Terrain.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd);
-          else SpaceBG.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd, 8000);
-        } catch (_) { /* a swatch that cannot paint stays blank rather than taking the panel down */ }
-      });
+      /* ONE CHIP PER FRAME, and only once the pane is on screen (mountConsole's onShow). Painting all
+         six inline is what made SETTINGS feel laggy: it is the real renderer, so a cold cache costs a
+         whole sky or ground build per swatch — measured live at 112x63, moon 400ms + forest 150ms +
+         the four skies ≈ 600ms of blocked main thread, on EVERY build of the panel including tab
+         swaps and background repaints. The layers memoise their samples now, so this is paid once per
+         session; yielding between chips keeps even that first pass from freezing the window. */
+      paintBackdropSwatches = () => {
+        const queue = [...bdChips];
+        const step = () => {
+          const b = queue.shift();
+          if (!b) return;
+          const cv = b.querySelector('canvas');
+          if (cv) {
+            // route each swatch to the layer that actually owns that id — a ground painted by the
+            // sky renderer would just be a black chip, and vice versa.
+            const isGround = typeof Terrain !== 'undefined' && Terrain.GROUNDS && Terrain.GROUNDS[b.dataset.bd];
+            try {
+              if (isGround) Terrain.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd);
+              else SpaceBG.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd, 8000);
+            } catch (_) { /* a swatch that cannot paint stays blank rather than taking the panel down */ }
+          }
+          if (queue.length) requestAnimationFrame(step);
+        };
+        step();
+      };
       const syncBackdrop = () => bdChips.forEach(x => {
         const on = x.dataset.bd === (s.backdrop || 'void');
         x.classList.toggle('sel', on);
@@ -7027,6 +7074,53 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const m = TOAST_LABEL_RE.exec(String(text || ''));
     return m ? { label: m[1].trim(), body: m[2].trim() } : { label: '', body: String(text || '') };
   }
+  /* ---------- WHERE THE TOAST RACK IS BOLTED (motion.css §7) ----------
+     Same law as syncTermBand: the cabinet re-flows its padding, gap, rows and columns at three
+     breakpoints and again for crew-rail-off/cinema, and the CREW seam is draggable on top of that
+     — so the seat is MEASURED off the real chrome and published as vars, never arithmetic against
+     the grid's numbers written out a second time.
+       · #bottombar.left  — the shell's outer padding line (the same x as #topbar, the CREW rail
+         and the dock). Chosen over the stage's left edge because it survives a rail drag, a hidden
+         rail and cinema mode, and because it parks the rack in the left gutter instead of in the
+         middle of the stage where every floating window is centred.
+       · #stage-wrap.bottom — the line where the rail, the stage and COMMS all end; the rack rests
+         on that seam. Also gives the right-hand room cap, so the rack can never reach COMMS.
+     Rects are VISUAL px and a <body> child's style px are ZOOMED px, so divide by uiZoom() exactly
+     once (the uiZoom law). The rack is empty and invisible except while a card is up, so seating it
+     at emit time is enough; the resize listener re-seats a card that is already on screen (a TEXT
+     SIZE flip dispatches a synthetic resize, so that path is covered too).
+     Fail open, never closed: a screen that isn't the station — or a frame mid-boot — leaves the
+     CSS fallbacks alone rather than seating the rack against a degenerate rect. */
+  function seatToastRack(stack) {
+    if (!stack || typeof document === 'undefined') return;
+    const game = document.getElementById('screen-game');
+    if (!game || !game.classList.contains('active')) return;   // hidden screens have no geometry
+    const box = id => {
+      const el = document.getElementById(id);
+      const r = el && el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+      return r && r.width > 0 && r.height > 0 ? r : null;
+    };
+    const bar = box('bottombar'), stage = box('stage-wrap');
+    if (!bar || !stage) return;
+    const z = uiZoom();
+    const cap = (stage.right - bar.left) / z;
+    // This corner is already the station's NOTICE corner — .nav-coach (the one-time "your panels
+    // now live down here" mark, app.css §2428) parks at left:14/bottom:58 and points at the docks.
+    // That is corroboration the gutter is the right home, not a reason to move: the rack simply
+    // stacks ABOVE the coach while it is up, so a first-run instruction with a dismiss button is
+    // never buried under a transient card (the rack wins on z at 9600, so nothing else can).
+    const coach = document.querySelector('.nav-coach');
+    const cr = coach && !coach.hasAttribute('hidden') && coach.getBoundingClientRect
+      ? coach.getBoundingClientRect() : null;
+    let floor = window.innerHeight - stage.bottom;
+    if (cr && cr.height > 0) floor = Math.max(floor, window.innerHeight - cr.top + 6);
+    stack.style.setProperty('--toast-x', (bar.left / z) + 'px');
+    stack.style.setProperty('--toast-b', (floor / z) + 'px');
+    if (cap > 0) stack.style.setProperty('--toast-cap', cap + 'px');
+  }
+  // a card that is already up must follow the cabinet too — its seat is measured, not declarative,
+  // so the resize path re-runs it (a TEXT SIZE flip dispatches a synthetic resize, so that is covered).
+  function reseatToasts() { try { seatToastRack(document.getElementById('toast-stack')); } catch (_) {} }
   // transient on-screen toast — a station readout card that seats in, holds for its dwell, then leaves.
   // The persistent record still lives in the NOTIFICATIONS panel (buildNotifs); this is the
   // ephemeral heads-up so a result isn't silent when that panel is closed.
@@ -7037,6 +7131,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (playSound !== false) sfx(severityOf(cls) === 'bad' ? 'bad' : 'notify');
     let stack = document.getElementById('toast-stack');
     if (!stack) { stack = mkEl('div'); stack.id = 'toast-stack'; document.body.appendChild(stack); }
+    seatToastRack(stack);   // re-read the cabinet before the card is visible — a rail drag or a breakpoint may have moved the seam
     const sev = severityOf(cls);
     // keep the caller's raw cls (good/gold/warn/bad already have edge styling) AND add a normalized
     // sev-* class so 'error'/'info' also get an edge + the lead glyph.
