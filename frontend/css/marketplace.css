@@ -133,7 +133,10 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-lane:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
 
 /* ---- stage: two-pane roster + dossier (or a full-width form) ---- */
-.mkt-stage { position: relative; z-index: 10; flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr 360px; }
+/* the dossier column carries the description AND the whole summon config now, so it is wider than the 360px it
+   held when it was a spec sheet (2026-08-15) — 440px is what gives the blurb a readable measure and the skin
+   grid more than two columns. The roster is a ROW list; it gives up the 80px without noticing. */
+.mkt-stage { position: relative; z-index: 10; flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr 440px; }
 .mkt-stage.form { display: block; overflow-y: auto; padding: 16px 18px; }
 .mkt-roster { overflow-y: auto; overflow-x: hidden; padding: 14px 16px 32px;
   /* soft-clip the scroll edge so a long roster doesn't hard-cut mid-card at the bottom (audit item 8) */
@@ -282,21 +285,20 @@ body.no-scan .mkt-scrim::after { display: none; }
   text-shadow: 0 0 12px var(--ph-glow2); }
 .mkt-dos-tag { color: var(--accent, var(--ph)); font-size: 13.5px; margin-top: 6px; letter-spacing: .3px; }
 .mkt-dos-class { color: var(--ph-dim); font-size: 11px; letter-spacing: 2px; margin-top: 6px; }
-.mkt-spec { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; align-items: center;
-  padding: 10px 12px; margin-bottom: 12px; border-radius: 2px; background: var(--panel2);
-  border-left: 3px solid var(--accent, var(--ph)); border-top: 1px solid var(--ph-faint);
-  box-shadow: inset 0 1px 4px rgba(0,0,0,.55), inset 0 0 0 1px rgba(0,0,0,.5); }
-.mkt-spec .k { color: var(--ph-dim); font-size: 11px; letter-spacing: 1.5px; }
-.mkt-spec .v { color: var(--ph-bright); font-size: 13px; letter-spacing: .4px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
-.mkt-bars { display: flex; flex-direction: column; gap: 6px; margin-bottom: 13px; }
-.mkt-barrow { display: flex; align-items: center; gap: 9px; }
-.mkt-barrow .bk { width: 70px; color: var(--ph-dim); font-size: 10.5px; letter-spacing: 1px; }
-.mkt-barrow .trk { flex: 1 1 auto; height: 7px; border-radius: 99px; background: var(--ph-faint); box-shadow: var(--well); overflow: hidden; }
-.mkt-barrow .fill { height: 100%; background: var(--accent, var(--ph)); opacity: .9; }
-.mkt-barrow .bv { width: 30px; text-align: right; color: var(--ph); font-size: 11px; }
-.mkt-block { margin-bottom: 12px; }
-.mkt-block .bh { color: var(--ph); font-size: 10.5px; letter-spacing: 2.5px; margin-bottom: 5px; }
-.mkt-block .bp { color: var(--text); font-size: 12.5px; line-height: 1.5; opacity: .9; margin: 0; }
+/* the three facts worth stating about a class, as chips under the hero — the lane it leads with, the clearance
+   tier it's tuned for, the voice it speaks in. This replaced a 4-row label/value spec grid whose values were
+   mostly "station default" (2026-08-15): four rows of chrome for three words of content. */
+.mkt-dos-meta { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 16px; }
+.mkt-block { margin-bottom: 18px; }
+.mkt-block .bh { color: var(--ph); font-size: 10.5px; letter-spacing: 2.5px; margin-bottom: 7px; }
+.mkt-block .bp { color: var(--text); font-size: 12.5px; line-height: 1.55; opacity: .9; margin: 0; }
+/* WHAT IT DOES — the dossier's actual answer, so it gets prose measure and room to breathe. The blurb LEADS at
+   reading size; the standing brief follows a notch smaller and dimmer (it is the agent's instructions, not a
+   pitch). Both are text you are meant to READ, never a spec row you scan. */
+.mkt-about .bp { max-width: 62ch; }
+.mkt-about .bp.lead { color: var(--ph-bright); font-size: 14px; line-height: 1.6; opacity: 1;
+  text-shadow: 0 0 10px var(--ph-glow2); }
+.mkt-about .bp.lead + .bp { margin-top: 10px; font-size: 12.5px; opacity: .78; }
 .mkt-block pre { color: var(--text); font-size: 12px; line-height: 1.5; white-space: pre-wrap; font-family: inherit; opacity: .82; margin: 0; }
 /* STANDING ORDERS as a disclosure — collapsed by default so the dossier isn't dominated by prompt text (audit item 8) */
 .mkt-orders > summary { cursor: pointer; list-style: none; }
@@ -312,7 +314,6 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-starters li::before { content: "▸ "; color: var(--accent, var(--ph)); }
 
 /* ---- LOADOUT: DRAWS ON STATION GEAR + SKILL PACKAGE dossier rows (shared-gear model) ---- */
-.mkt-clr-note { color: var(--ph-dim); font-size: 10.5px; letter-spacing: .5px; opacity: .85; }
 .mkt-kit, .mkt-skills { display: flex; flex-direction: column; gap: 4px; }
 .mkt-kit-row, .mkt-skill-row { display: flex; align-items: baseline; gap: 9px; padding: 6px 10px; border-radius: 0;
   background: rgba(0,0,0,.26); border: 1px solid var(--ph-faint); border-left: 2px solid var(--ph-dim);
@@ -327,8 +328,10 @@ body.no-scan .mkt-scrim::after { display: none; }
 .mkt-kit-row.mkt-kit-missing { opacity: .55; border-color: var(--ph-faint); }
 .mkt-kit-row.mkt-kit-missing .mkt-kit-dot { color: var(--ph-dim); }
 .mkt-kit-note { color: var(--ph-dim); font-size: 10.5px; letter-spacing: .4px; margin-top: 5px; opacity: .8; }
-.mkt-dos-cta { display: flex; flex-direction: column; gap: 8px; position: sticky; bottom: -20px;
-  padding-top: 16px; margin-top: 4px;
+/* the SECOND verb, in normal flow above the pinned block (see agentDossierHTML) */
+.mkt-cta-second { display: flex; flex-direction: column; gap: 6px; margin: 18px 0 4px; }
+.mkt-dos-cta { display: flex; flex-direction: column; gap: 7px; position: sticky; bottom: -20px;
+  padding-top: 14px; margin-top: 4px;
   /* tightened so scrolled content is fully masked before the CTA (was a long 26% fade that let rows ghost
      through under the button, audit item 8); the color matches the dossier's own #070402 floor. */
   background: linear-gradient(180deg, transparent, #070402 20px); }
@@ -756,24 +759,35 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 /* the live stage caption names itself: a dim "LIVE PREVIEW —" label + the skin name SkinStage fills in */
 .mkt-stage-lbl { color: var(--ph-dim); letter-spacing: 1.5px; font-size: 10.5px; }
 
-/* ---- SUMMON CONFIG: the collapsible APPEARANCE + MODEL strip (keeps the class roster above the fold) ----
-   Slim resting bar with a one-line summary of the current picks; expands to the full skin stage + model picker.
-   Plain-label header rank (NOT the amber roster plate, NOT gold) — config is a secondary decision. */
-.mkt-cfg { margin: 0 0 12px; border: 1px solid var(--ph-dim); border-radius: 2px; overflow: hidden;
-  background: linear-gradient(180deg, var(--ph-faint), transparent 60%), var(--panel2); }
-.mkt-cfg-head { display: flex; align-items: center; gap: 9px; width: 100%; font-family: inherit; text-align: left;
-  cursor: pointer; background: transparent; border: 0; color: var(--ph-bright); padding: 9px 12px; }
-.mkt-cfg-head:hover { background: var(--ph-faint); }
-.mkt-cfg-caret { color: var(--ph); font-size: 12px; flex: 0 0 auto; }
-.mkt-cfg-ttl { color: var(--ph); font-size: 11.5px; letter-spacing: 2px; flex: 0 0 auto; }
-.mkt-cfg-sum { color: var(--ph-dim); font-size: 11.5px; letter-spacing: .3px; flex: 1 1 auto;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mkt-cfg-sum .mkt-cfg-k { color: var(--ph); opacity: .8; letter-spacing: 1px; margin: 0 4px 0 10px; font-size: 10.5px; }
-.mkt-cfg-sum .mkt-cfg-k:first-child { margin-left: 0; }
-.mkt-cfg-body { padding: 4px 12px 12px; }
-/* inside the config body the bars lose their own frames — the strip already IS the frame */
-.mkt-cfg-body .mkt-skinbar { margin: 0 0 10px; padding: 0; border: 0; background: none; box-shadow: none; }
-.mkt-cfg-body .mkt-skinbar:last-child { margin-bottom: 0; }
+/* ---- CONFIGURE: the summon's three settable fields, in the dossier, above the button they feed ----
+   One framed panel, always open, with the fields separated by rules rather than by three nested boxes. The old
+   version was a collapsed strip at the top of the LEFT pane, which split one decision across two panes and made
+   the config read as optional. Generous vertical rhythm is the point here: this is the part of the window the
+   Commander actually operates, so it gets more room than anything above it, not less. */
+.mkt-config { margin: 22px 0 14px; border: 1px solid var(--ph-dim); border-radius: 2px;
+  background: linear-gradient(180deg, var(--ph-faint), transparent 40%), var(--panel2);
+  box-shadow: var(--raise); }
+.mkt-config-h { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 11px 15px; border-bottom: 1px solid var(--ph-faint); }
+.mkt-config-ttl { color: var(--ph-bright); font-size: 12px; letter-spacing: 3px; flex: 0 0 auto;
+  text-shadow: 0 0 8px var(--ph-glow2); }
+.mkt-config-note { color: var(--ph-dim); font-size: 11px; letter-spacing: .3px; flex: 1 1 auto; }
+/* inside the panel each field loses its own frame — the panel IS the frame; a hairline rule keeps them apart */
+.mkt-config .mkt-skinbar { margin: 0; padding: 15px; border: 0; border-radius: 0; background: none; box-shadow: none;
+  border-bottom: 1px solid var(--ph-faint); }
+.mkt-config .mkt-skinbar:last-child { border-bottom: 0; }
+.mkt-config .mkt-skinlabel { margin-bottom: 10px; }
+/* the helper line under a field: what the current setting actually resolves to (see modelHelpHTML) */
+.mkt-field-help { color: var(--ph-dim); font-size: 11.5px; line-height: 1.5; letter-spacing: .3px; margin-top: 8px; max-width: 62ch; }
+.mkt-field-help b { color: var(--ph-bright); font-weight: normal; }
+.mkt-field-help .mkt-pips { margin-right: 2px; }
+/* APPEARANCE in a 440px column: the picker beside a 132px stage would leave room for two thumbs, so the stage
+   goes ON TOP (column-reverse — the stage is the second child) and the 37-skin grid gets the full width under it. */
+.mkt-config .mkt-skin-section { flex-direction: column-reverse; gap: 12px; }
+.mkt-config .mkt-skin-stage { flex: 0 0 auto; align-self: center; }
+.mkt-config .mkt-skin-section .skin-picker { grid-template-columns: repeat(auto-fill, minmax(62px, 1fr));
+  max-height: 168px; gap: 7px; }
+.mkt-config .mkt-namebar .mkt-in, .mkt-config .mkt-name-meta { max-width: none; }
 /* SUMMON NAME field: uppercase echo matches the ≤18 UPPER normalization the summon actually applies */
 .mkt-namebar .mkt-in { max-width: 320px; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
 .mkt-namebar .mkt-in::placeholder { text-transform: none; letter-spacing: .3px; color: var(--ph-dim); }
@@ -782,13 +796,6 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-name-count { flex:0 0 auto; font-variant-numeric:tabular-nums; }
 .mkt-namebar .mkt-in[aria-invalid="true"] { border-color:var(--warn, #ffb34e); }
 
-/* ---- SUMMON commit summary: the confirm row above the CTA (skin thumb + model/effort + class code) ---- */
-.mkt-commit { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 8px 11px; margin-bottom: 9px;
-  border-radius: 2px; background: var(--panel2); border: 1px solid var(--ph-faint); box-shadow: var(--well); }
-.mkt-cs-cell { display: inline-flex; align-items: center; gap: 7px; color: var(--ph-bright); font-size: 12px; letter-spacing: .4px; }
-.mkt-cs-k { color: var(--ph-dim); font-size: 10px; letter-spacing: 1.5px; }
-.mkt-cs-skin { width: 26px; height: 26px; object-fit: contain; object-position: center bottom; image-rendering: auto;
-  background: radial-gradient(ellipse 66% 40% at 50% 84%, var(--ph-glow2), transparent 72%); border-radius: 4px; }
 .mkt-adopt-cta { margin: 0 0 2px; }
 
 /* ---- the ＋ build tile (a quiet recessed cell) + the custom-class builder form ---- */
