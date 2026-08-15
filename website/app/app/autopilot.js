@@ -155,9 +155,12 @@
   // no candidate of that kind. ARRAY ORDER is the tie-break precedence (advance › kill-pain › prep › maintain ›
   // scout) used when scores are close.
   const ARCHETYPES = [
+    // NOTE (2026-08-15): the BLURBS teach the shift what shape of work to propose, and two of them used to say
+    // "draft" — so "draft a tool for it" / "research / draft / stage" invited a document about the job instead of
+    // the job. The ids are LEARN-STORE KEYS and persisted per Commander; never rename them, only the prose.
     { id: 'advance-goal',    dim: 'goals', blurb: 'take the next concrete step toward a goal' },
-    { id: 'kill-pain',       dim: 'pain',  blurb: 'chip away at a pain point / draft a tool for it' },
-    { id: 'prep-next',       dim: 'goals', blurb: 'research / draft / stage something they will need soon' },
+    { id: 'kill-pain',       dim: 'pain',  blurb: 'chip away at a pain point — build the thing that removes it' },
+    { id: 'prep-next',       dim: 'goals', blurb: 'research or stage something they will need soon' },
     { id: 'maintain-extend', dim: 'goals', blurb: 'improve or extend a prior piece of work' },
     { id: 'scout',           dim: 'stack', blurb: 'watch / scout something in their stack' }
   ];
@@ -462,13 +465,14 @@
     if (hasActivity) lines.push('- CONTINUE THEIR WORK: prefer a job that directly advances, unblocks, or extends something in "What they worked on recently" above — that beats a generic idea. But stay HONEST: only cite work that is actually listed; never invent activity.');
     lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (an open thread / a real recent job / goal / pain / etc). Quote the exact thing in GROUNDS. If you cannot ground it in something you actually know or they actually did, do not propose it.');
     lines.push('- BUILDABLE NOW, UNATTENDED, LOCAL: it must finish as a FILE or small self-contained tool you write into your workshop folder. You MAY read/research with your tools first. You may NOT send, publish, spend, message, or touch anything outside your sandbox — the artifact stays local for the Commander to review.');
+    lines.push(finishRuleFor(ctx.initiative));
     lines.push('- HONEST CONFIDENCE: rate how sure you are it is genuinely useful AND that you can build it well now (high/medium/low). Low is fine — better than padding.');
     lines.push('Reply with one block PER job, EXACTLY this format, nothing else:');
     lines.push('JOB: <short title, a few words>');
     lines.push('KIND: <one id from the list>');
     lines.push('GROUNDS: <the exact goal/pain/etc this serves — quote what you know>');
     lines.push('CONFIDENCE: <high | medium | low>');
-    lines.push('SPEC: <one line — exactly what the finished artifact will be (your own done-check)>');
+    lines.push('SPEC: <one line — exactly what the finished artifact will be, as a THING that works (your own done-check)>');
     return lines.join('\n');
   }
 
@@ -488,6 +492,19 @@
              working piece of it. Enforced server-side too (a planOnly manifest is refused, never
              delivered) — prose alone is not a guarantee.
      A research/findings answer is NOT a plan: it IS the deliverable, and stays allowed at every rung. */
+  /* THE SELECTOR IS WHERE THE VISION LEAKS (2026-08-15). "While you were away" exists to GET THINGS DONE toward
+     the Commander's goals — but a goal, quest, or thread is often PHRASED as a draft ("Draft Automation Backlog"
+     was a real quest that produced a real backlog-instead-of-a-tool). The shift obeyed the wording, so the
+     plan-shaped deliverable was chosen at CANDIDATE time, long before any card rendered it. Fixing the card was
+     treating the symptom. This rule aims the proposal at finishable work, and re-reads a draft-phrased ask as an
+     instruction to build the thing it describes. */
+  function finishRuleFor(initiative) {
+    const common = '- PREFER WHAT YOU CAN FINISH: a smaller job you can COMPLETE tonight beats a bigger one you could only describe. If an ask is phrased as "draft/plan/spec/outline X", the job is to BUILD X — the wording describes the goal, not the artifact.';
+    return String(initiative || '') === 'free'
+      ? common + ' At this autonomy level NEVER propose writing a plan, backlog, roadmap, or "next steps" document as the job itself — those are refused. Propose the smallest COMPLETE working thing that moves it.'
+      : common;
+  }
+
   function planRuleFor(initiative) {
     return String(initiative || '') === 'free'
       ? '- FINISH IT, DO NOT PLAN IT. The Commander is at FREE (fully autonomous) — they want the WORKING THING, not a document about it. NEVER deliver a backlog, roadmap, spec, plan, proposal, checklist, or "next steps" write-up as the artifact. If the job is too big for one shift, build the SMALLEST COMPLETE WORKING PIECE of it and say in the summary what it covers and what is left. At this level a plan is not a deliverable — it is a failed shift, and it will be refused. (Answering a question with a findings doc is NOT a plan; that is still fine.)'
@@ -655,7 +672,7 @@
     eligibleArchetypes, grounded, sigTokens, flattenBeliefs, pushActivityBlock,
     pushThreadsBlock, citedThreadId, threadRef, pushFocusBlock, pushSnapshotBlock, pushPriorTonight,
     buildCandidateDirective, parseCandidates, scoreAndSelect, buildDoDirective, parseDeliverable,
-    buildCandidateDirectiveV2, buildDoDirectiveV2, planRuleFor, planOnlyFieldFor, learnFold, learnWeightsFrom,
+    buildCandidateDirectiveV2, buildDoDirectiveV2, planRuleFor, planOnlyFieldFor, finishRuleFor, learnFold, learnWeightsFrom,
     buildCritiqueDirective, parseCritique, digestLines, digestSummary, digestHeadline,
     writePath, canWrite, fileBody,
     DEFAULT_IDLE_MS, DEFAULT_TICK_MS, REQUIRE_DIM, WARM_MIN, HOT_MIN, STALE_MS,

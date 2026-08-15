@@ -5391,13 +5391,15 @@ const NIGHTSHIFT_ACT_MARK = '[NIGHTSHIFT_ACT]';   // prompt sentinel (parallels 
 function currentInitiative() {
   try { return String((commanderPosture.summary() || {}).initiative || ''); } catch (_) { return ''; }
 }
-/* PLAN REFUSED AT FREE. The directive TELLS the agent not to hand back a plan at the top rung, but a prompt is a
-   request, not a guarantee — and the whole promise of "while you were away it BUILT this" rests on it. So the
-   manifest is checked after the fact: at 'free', a planOnly deliverable is not delivered at all. It counts as a
-   failed build (claim released, attempt counted, item eventually parked) rather than becoming a card that
-   contradicts the rung the Commander chose. Only fires on an EXPLICIT planOnly:true — a build that never
-   declared the field is left alone, because refusing on a guess would silently eat real work. */
-function planRefusedAtFree(manifest) {
+/* FREE MEANS FINISHED — AND FINISHING IS NOT REFUSING (2026-08-15, after Andrew).
+   The directive tells the agent not to hand back a plan at the top rung, but a prompt is a request, not a
+   guarantee. The first cut of this REFUSED such a build and retried — which burned a run and a leash slot and
+   left the Commander with NOTHING. That is the opposite of what away-work is for: the point is that value
+   arrives while they are gone. So at 'free' a plan is treated as an INTERMEDIATE STEP, not a delivery: the
+   shift chains straight into the implement build and delivers the finished thing, with the plan recorded as
+   its provenance. If the chain fails we still deliver the plan — a plan beats an empty morning.
+   Only fires on an EXPLICIT planOnly:true; a build that never declared the field is left alone. */
+function planAutoBuildAtFree(manifest) {
   return currentInitiative() === 'free' && !!(manifest && manifest.planOnly === true);
 }
 
@@ -5446,7 +5448,7 @@ async function runNightshiftActShift(opts) {
   const priorTonight = nightFocusPriorTonight();
   const { projectSnapshot, targetRoot } = await resolveProjectPatchTarget(foc);
 
-  const cRes = await nightshiftChat({ agentId, system, signal, broadcast: !!opts.broadcast, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, activity, threads, eligible, focusHeader, priorTonight, projectSnapshot }) }] });
+  const cRes = await nightshiftChat({ agentId, system, signal, broadcast: !!opts.broadcast, messages: [{ role: 'user', content: Autopilot.buildCandidateDirectiveV2({ beliefs, activity, threads, eligible, focusHeader, priorTonight, projectSnapshot, initiative: currentInitiative() }) }] });
   if (cRes.error) return { delivered: false, reason: cRes.error };
   // NS-5b: the PROJECT SNAPSHOT lines (real git status / TODO markers the harness READ) join the grounding-veto
   // evidence pool, so a candidate that grounds itself in the actual repo state (e.g. a planted TODO) survives the
@@ -5500,13 +5502,6 @@ async function runNightshiftActShift(opts) {
   //    marked built (feeds /pending), workshop.built fires (the return card renders it), and the ledger records an
   //    'act' with the artifact path(s) + runId. On no-manifest the claim releases (counts an attempt → eventual park).
   const manifest = await validateWorkshopManifest(agentId, runId);
-  // FREE means FINISHED — same refusal as runWorkshopShift: at the top rung the night shift builds, it does not
-  // hand back a plan describing what it would build.
-  if (manifest && planRefusedAtFree(manifest)) {
-    console.warn('[nightshift] refused a plan-only deliverable at FREE (fully autonomous): "' + manifest.title + '" — that rung builds, it does not plan.');
-    try { await workshopStore.releaseClaim(agentId, runId, { failed: true }); } catch (_) {}
-    return { delivered: false, reason: 'plan-refused', runId };
-  }
   if (!manifest) {
     try { await workshopStore.releaseClaim(agentId, runId, { failed: true }); } catch (_) {}
     return { delivered: false, reason: threw ? 'run-failed' : 'no-manifest', runId };
@@ -5519,6 +5514,17 @@ async function runNightshiftActShift(opts) {
   recordNightshiftAct(runId, sel.selected.archetype, sel.selected.threadId);   // so a keep/discard verdict feeds the RIGHT archetype into LEARN (+ NS-6: delivers/declines the cited thread)
   // WHY-THIS: the card's provenance line — the grounding-veto-checked GROUNDS quote this job was selected on.
   manifest.because = workshopBecause({ grounds: sel.selected.grounds, detail: sel.selected.spec, title: manifest.title });
+  // FREE = FINISHED (same as runWorkshopShift): a plan is an intermediate step at the top rung, so chain into the
+  // build and deliver the thing. A failed chain still delivers the plan — never an empty morning.
+  if (planAutoBuildAtFree(manifest)) {
+    let chained = null;
+    try { chained = await runImplementBuild(agentId, runId, { emit: (typeof opts.emit === 'function' ? opts.emit : undefined), broadcast: !!opts.broadcast }); }
+    catch (e) { chained = { fired: false, reason: 'chain-crashed: ' + ((e && e.message) || e) }; }
+    if (chained && chained.reason === 'built') {
+      return { delivered: true, reason: 'built', title: (chained.manifest || {}).title, archetype: sel.selected.archetype, runId: chained.runId, backlogId, chainedFrom: runId };
+    }
+    console.warn('[nightshift] FREE auto-build from "' + manifest.title + '" did not land (' + ((chained && chained.reason) || '?') + ') — delivering the plan itself.');
+  }
   try { chanEmit('workshop.built', { agentId, runId, manifest }); } catch (_) {}
   const paths = (manifest.files || []).map(f => dir + '/' + f.path).slice(0, 8).join(', ');
   // LEDGER TRUTH (NS-3): a real tool-run that BUILT an artifact records kind 'act' here — the authoritative place
@@ -10699,14 +10705,6 @@ async function runWorkshopShift(agentId, opts) {
 
   // VALIDATE the manifest against the real files. Only a proven manifest emits workshop.built (truthful telemetry).
   const manifest = await validateWorkshopManifest(id, runId);
-  // FREE means FINISHED: a plan-shaped deliverable is refused at the top rung rather than delivered as a card
-  // that contradicts it (see planRefusedAtFree). Treated exactly like a failed build so the item retries/parks.
-  if (manifest && planRefusedAtFree(manifest)) {
-    console.warn('[workshop] refused a plan-only deliverable at FREE (fully autonomous) for ' + id + ': "' + manifest.title + '" — that rung builds, it does not plan.');
-    const rel = await workshopStore.releaseClaim(id, runId, { failed: true });
-    noteShift({ reason: 'plan-refused', runId: runId, title: manifest.title, parkedTitle: (rel && rel.parked) ? (rel.parked.title || rel.parked.id) : undefined });
-    return { fired: true, runId: runId, reason: 'plan-refused', parked: !!(rel && rel.parked) };
-  }
   if (!manifest) {
     // failed build → count the attempt; at the cap the item PARKS so a doomed item can't burn a run every shift.
     const rel = await workshopStore.releaseClaim(id, runId, { failed: true });
@@ -10723,9 +10721,28 @@ async function runWorkshopShift(agentId, opts) {
   const wsBuiltAt = Date.now();
   await workshopStore.markBuilt(id, item.id, runId, wsBuiltAt);
   manifest.builtAt = wsBuiltAt;
-  noteShift({ reason: 'built', runId: runId, title: manifest.title });
   // WHY-THIS: the card's provenance line, from the REAL backlog ask that queued this build.
   manifest.because = workshopBecause(item);
+
+  // FREE = FINISHED: the plan is an intermediate step at the top rung — chain into the build and deliver the
+  // THING. markBuilt ran first on purpose, so the plan is a disk-proven source the implement path can read (and
+  // so a crash between the two leaves a reviewable plan rather than nothing).
+  if (planAutoBuildAtFree(manifest)) {
+    let chained = null;
+    try { chained = await runImplementBuild(id, runId, { emit: emit, broadcast: !!o.broadcast }); }
+    catch (e) { chained = { fired: false, reason: 'chain-crashed: ' + ((e && e.message) || e) }; }
+    if (chained && chained.reason === 'built') {
+      noteShift({ reason: 'built', runId: chained.runId, title: (chained.manifest || {}).title });
+      return { fired: true, runId: chained.runId, reason: 'built', manifest: chained.manifest, chainedFrom: runId };
+    }
+    // the build didn't land — deliver the PLAN rather than nothing, and say so honestly.
+    console.warn('[workshop] FREE auto-build from "' + manifest.title + '" did not land (' + ((chained && chained.reason) || '?') + ') — delivering the plan itself so the shift is not wasted.');
+    noteShift({ reason: 'plan-fallback', runId: runId, title: manifest.title });
+    try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
+    return { fired: true, runId: runId, reason: 'built', manifest: manifest, autoBuildFailed: (chained && chained.reason) || 'unknown' };
+  }
+
+  noteShift({ reason: 'built', runId: runId, title: manifest.title });
   try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
   return { fired: true, runId: runId, reason: 'built', manifest: manifest };
 }
@@ -10822,7 +10839,13 @@ async function runImplementBuild(agentId, sourceRunId, opts) {
   // item (queue's "exists" branch clears attempts) so the retry works; a re-press after a SUCCESSFUL one finds it
   // already carrying builtRunId, so claimById refuses and we say "already implemented" instead of building twice.
   const backlogId = 'impl-' + String(sourceRunId);
-  const title = ('Implement: ' + String(source.title || 'plan')).slice(0, 200);
+  /* THE TITLE MUST BE AS UNIQUE AS THE ID. workshopStore.queue de-dupes by NORMALISED TITLE as well as by id, so
+     a bare "Implement: <plan title>" collides with any earlier implement of a same-named plan — queue returns the
+     OLD (already built) item, claimById finds nothing to claim, and the build is refused 'already-implemented'.
+     That is a title collision masquerading as a decision, and at FREE it silently costs the Commander the build.
+     The source runId tag makes the item as unique as the plan it came from. (The delivery card shows the MODEL's
+     manifest title, never this one — this string is only the backlog/work-item label.) */
+  const title = ('Implement: ' + String(source.title || 'plan') + ' · ' + String(sourceRunId).slice(0, 6)).slice(0, 200);
   const note = String(o.note || '').trim().slice(0, 2000);
   // register a synthetic backlog item so the result lands in /pending + /decide exactly like any other build
   // (the return card and ship gate are keyed on a backlog item carrying builtRunId). The Commander's steer rides

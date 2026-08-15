@@ -67,4 +67,28 @@ const selected = { title: 'Add a retry to the uploader', grounds: 'they said upl
   A.ok(!/FINISH IT, DO NOT PLAN IT/.test(unknown), 'an absent initiative does not silently impose the FREE refusal');
 })();
 
+/* THE SELECTOR IS WHERE THE VISION LEAKS. Away-work exists to GET THINGS DONE toward the Commander's goals, but
+   goals/quests/threads are often PHRASED as drafts — "Draft Automation Backlog" was a real quest that produced a
+   real backlog instead of the tool it described. That choice happens at CANDIDATE time, before any card exists. */
+(function selectorAimsAtFinishableWork() {
+  const ctx = { beliefs: { goals: ['ship the station'] }, activity: ['ran a build (today)'], eligible: AP.ARCHETYPES };
+  const free = AP.buildCandidateDirectiveV2(Object.assign({ initiative: 'free' }, ctx));
+  const leash = AP.buildCandidateDirectiveV2(Object.assign({ initiative: 'leash' }, ctx));
+
+  [['free', free], ['leash', leash]].forEach(([rung, d]) => {
+    A.ok(/PREFER WHAT YOU CAN FINISH/.test(d), rung + ': the selector prefers work it can COMPLETE');
+    A.ok(/the job is to BUILD X/.test(d), rung + ': a draft-phrased ask is re-read as an instruction to build the thing');
+  });
+  A.ok(/NEVER propose writing a plan, backlog, roadmap/.test(free), 'FREE additionally bans proposing a plan as the job');
+  A.ok(!/NEVER propose writing a plan/.test(leash), 'BUILD (DRAFTS) keeps the softer form — plans are legitimate there');
+
+  // the ARCHETYPE BLURBS teach the shape of work; two of them used to say "draft".
+  const blurbs = AP.ARCHETYPES.map(a => a.blurb).join(' | ');
+  A.ok(!/draft a tool/.test(blurbs), 'no archetype invites "draft a tool" instead of building one');
+  A.ok(!/research \/ draft \/ stage/.test(blurbs), 'and none offers "draft" as a default deliverable shape');
+  // the ids are LEARN-STORE KEYS — renaming one silently orphans a Commander's learned preferences.
+  ['advance-goal', 'kill-pain', 'prep-next', 'maintain-extend', 'scout'].forEach(id =>
+    A.ok(AP.ARCHETYPES.some(a => a.id === id), 'archetype id "' + id + '" is preserved (learn-store key)'));
+})();
+
 A.report();

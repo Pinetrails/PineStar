@@ -218,27 +218,60 @@ async function readNdjson(res) {
     const libFail = await (await fetch(B + '/api/deliverables', { headers })).json();
     A.ok(!(libFail.items || []).some(r => r.runId === doomRun && (r.status === 'implemented' || r.status === 'kept')),
       'and a failed build never records the plan as implemented or kept');
+    /* Retire BOTH leftovers before the next leg. claimNext takes the TOP of the queue, so anything still
+       claimable silently becomes the subject of every later shift — and a failed implement leaves TWO: the plan
+       itself AND the never-built `impl-<runId>` item it queued. This exact trap made the FREE leg below assert
+       against the wrong deliverable twice. */
+    await post('/api/workshop/decide', { agentId: 'builder', runId: doomRun, decision: 'discard' });
+    const rmImpl = await post('/api/workshop/remove', { agentId: 'builder', backlogId: 'impl-' + doomRun });
+    A.eq(rmImpl.status, 200, 'the failed implement’s unbuilt backlog item can be removed from the queue');
 
-    /* 7. FREE (FULLY AUTONOMOUS) REFUSES A PLAN. The rung promises the Commander a built thing; a prompt asking
-          for one is a request, not a guarantee, so the manifest is checked after the fact. A plan-only build at
-          'free' is never delivered — it counts as a failed shift instead of becoming a card that contradicts the
-          dial. At 'leash' (BUILD DRAFTS) the same build is legitimate and DOES deliver, proven first above. */
+    /* 7. FREE (FULLY AUTONOMOUS) FINISHES THE JOB ITSELF. The whole point of away-work is that value arrives
+          while the Commander is gone, so a plan at the top rung is an INTERMEDIATE STEP, not a delivery: the
+          shift chains straight into the build and hands back the finished thing. (An earlier cut REFUSED the
+          plan and retried — which burned a run and delivered nothing. That is the failure this locks out.)
+          At 'leash' (BUILD DRAFTS) the same build stays a plan, because that rung is where the Commander wants
+          the approval beat. */
     await post('/api/autonomy/posture', { posture: { initiative: 'free', reach: 'sandbox' } });
+    // prove the rung actually took — otherwise every assertion below silently tests the DEFAULT rung.
+    const rung = await (await fetch(B + '/api/autonomy/posture', { headers })).json();
+    A.eq(((rung.summary) || {}).initiative, 'free', 'the station really is at FREE for this leg');
     await post('/api/workshop/queue', { agentId: 'builder', id: 'item-freeplan', title: 'Free-rung plan' });
     const freeShift = await readNdjson(await post('/api/workshop/shift', { agentId: 'builder' }));
     const freeRes = ((freeShift.find(e => e.name === 'workshop.shift.result') || {}).payload || {});
-    A.eq(freeRes.reason, 'plan-refused', 'a plan-only build at FREE is refused, not delivered');
-    A.ok(freeRes.fired === true, 'the shift did run — the refusal is about its OUTPUT, not the attempt');
-    A.ok(!freeShift.some(e => e.name === 'workshop.built'), 'and workshop.built never fires for it (no card is minted)');
+    A.eq(freeRes.reason, 'built', 'the FREE shift still DELIVERS — value arrives, it is never thrown away');
+    A.ok(freeRes.chainedFrom, 'and it reports that it chained from a plan');
+    A.ok(freeRes.runId !== freeRes.chainedFrom, 'the delivered run is the BUILD, not the plan that seeded it');
+    A.eq((freeRes.manifest || {}).planOnly, false, 'what lands at FREE is the finished thing, not a plan');
+    A.eq((freeRes.manifest || {}).implementOf, freeRes.chainedFrom, 'the build records the plan it came from');
+    const freeDir = path.join(ws, 'builder', 'workshop', freeRes.runId);
+    A.ok(fs.existsSync(path.join(freeDir, 'snapshot.ps1')), 'the built artifact really exists on disk — the Commander wakes to a THING');
     const freePending = await (await fetch(B + '/api/workshop/pending?agent=builder', { headers })).json();
-    A.ok(!freePending.pending.some(m => m.runId === freeRes.runId), 'the refused plan is not pending a decision');
-    // back down to the draft rung: the SAME build shape is delivered again (the refusal is rung-scoped, not a ban).
+    A.ok(freePending.pending.some(m => m.runId === freeRes.runId), 'the finished build is what waits for a decision');
+    A.ok(!freePending.pending.some(m => m.runId === freeRes.chainedFrom), 'the intermediate plan does not also nag for one');
+
+    /* 7b. A FAILED CHAIN STILL DELIVERS THE PLAN. This is the guarantee that makes the whole feature safe to
+           automate: if the auto-build doesn't land, the Commander gets the plan rather than an empty morning —
+           and can press BUILD IT themselves. Never a wasted shift. */
+    await post('/api/workshop/queue', { agentId: 'builder', id: 'item-freedoomed', title: 'Doomed plan at free' });
+    const fbShift = await readNdjson(await post('/api/workshop/shift', { agentId: 'builder' }));
+    const fbRes = ((fbShift.find(e => e.name === 'workshop.shift.result') || {}).payload || {});
+    A.eq(fbRes.reason, 'built', 'a FREE shift whose auto-build fails still DELIVERS');
+    A.ok(fbRes.autoBuildFailed, 'and says the auto-build did not land, rather than reporting a clean build');
+    A.ok(!fbRes.chainedFrom, 'the delivered run is the plan itself, not a chained build');
+    A.eq((fbRes.manifest || {}).planOnly, true, 'so what waits is the plan — pressable via BUILD IT');
+    const fbPending = await (await fetch(B + '/api/workshop/pending?agent=builder', { headers })).json();
+    A.ok(fbPending.pending.some(m => m.runId === fbRes.runId), 'and it really is pending a decision, not discarded');
+    await post('/api/workshop/decide', { agentId: 'builder', runId: fbRes.runId, decision: 'discard' });
+
+    // back down to the draft rung: the SAME build shape stays a PLAN — the chain is rung-scoped, not universal.
     await post('/api/autonomy/posture', { posture: { initiative: 'leash', reach: 'sandbox' } });
     await post('/api/workshop/queue', { agentId: 'builder', id: 'item-leashplan', title: 'Leash-rung plan' });
     const leashShift = await readNdjson(await post('/api/workshop/shift', { agentId: 'builder' }));
     const leashRes = ((leashShift.find(e => e.name === 'workshop.shift.result') || {}).payload || {});
-    A.eq(leashRes.reason, 'built', 'the same plan-shaped build DELIVERS at BUILD (DRAFTS)');
-    A.eq((leashRes.manifest || {}).planOnly, true, 'and arrives declared as a plan, so the card offers to build it');
+    A.eq(leashRes.reason, 'built', 'BUILD (DRAFTS) delivers too');
+    A.ok(!leashRes.chainedFrom, 'but it does NOT auto-chain — that rung is where the Commander presses the button');
+    A.eq((leashRes.manifest || {}).planOnly, true, 'so what arrives is the plan, and the card offers to build it');
 
     // 8. gates.
     const gone = await readNdjson(await post('/api/workshop/implement', { agentId: 'builder', runId: 'no-such-run' }));

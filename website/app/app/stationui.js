@@ -2462,9 +2462,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (r === 'empty-backlog') return '· last shift (' + when + '): nothing queued, so it rested';
       if (r === 'no-capability') return '⚠ last shift (' + when + '): couldn’t run — no model/key available for unattended builds. Fix the provider key in SETTINGS.';
       if (r === 'run-failed' || r === 'no-manifest') return '⚠ last shift (' + when + '): tried “' + esc(ls.title || '') + '” but produced nothing reviewable' + (ls.parkedTitle ? ' — it’s now PARKED after repeated failures (retry below to try again)' : ' — it will retry next shift');
-      // FREE means FINISHED: the top rung refuses a plan-shaped deliverable, and the Commander is told WHY rather
-      // than seeing a generic "produced nothing" — the shift worked, it just handed back the wrong SHAPE.
-      if (r === 'plan-refused') return '⚠ last shift (' + when + '): “' + esc(ls.title || '') + '” came back as a PLAN, and FREE (fully autonomous) builds rather than plans — refused' + (ls.parkedTitle ? ' — now PARKED after repeated tries' : ' — it will retry next shift. Drop to BUILD (DRAFTS) if you want plans.');
+      // FREE = FINISHED: the top rung chains a plan straight into its build. When that chain doesn't land we
+      // still deliver the plan (never an empty morning) — say so, rather than reporting a clean "built".
+      if (r === 'plan-fallback') return '⚠ last shift (' + when + '): planned “' + esc(ls.title || '') + '” but couldn’t build it in the same shift — the plan is waiting in your rail, press BUILD IT to finish it';
       if (r === 'not-granted') return '· last shift (' + when + '): skipped — the grant was off';
       return '· last shift (' + when + '): ' + esc(r);
     };
@@ -2530,7 +2530,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             if (p.reason === 'built') notify('⚒ built — it’s waiting as a new session in your rail', 'gold');
             else if (p.reason === 'no-capability') notify('couldn’t build — no model/key available for unattended runs', 'bad');
             else if (p.reason === 'empty-backlog') notify('nothing queued to build', 'warn');
-            else if (p.reason === 'plan-refused') notify('it came back with a PLAN — FREE (fully autonomous) builds instead. Refused; it will retry', 'warn');
+            else if (p.chainedFrom) notify('⚒ planned it, then BUILT it — the finished thing is in your rail', 'gold');
             else if (p.fired) notify('the shift ran but produced nothing reviewable — it will retry', 'warn');
             else notify('the shift didn’t run (' + (p.reason || 'unknown') + ')', 'warn');
             loadWsLive();
