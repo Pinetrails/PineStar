@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "16bea9b115829d0c793a0a51c554ebf66aafdb65",
+    "sourceCommit": "8f511091ba94e1518ee5039777b7e2cbc22cdbf4",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -373,8 +373,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 252417,
-        "sha256": "bc38b27e33680a4a81f14f0e8bd40af959309a3e6739675fa4d8d1bb1b2d02a0"
+        "bytes": 252119,
+        "sha256": "fe87461aeb4f951627af02116377d144c69e46d873f9d6ce92b19882f16bdf20"
       },
       {
         "path": "frontend/app/mint.js",
@@ -988,8 +988,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 73625,
-        "sha256": "30931c32868751d5786aac4a6a264c6f14738398f197d7c452ea11b8a45db3df"
+        "bytes": 73928,
+        "sha256": "412c1afef5b5e91beb97b735a482062526d9a6109df41d896bf4d81cd104dfc7"
       },
       {
         "path": "frontend/css/motion.css",
