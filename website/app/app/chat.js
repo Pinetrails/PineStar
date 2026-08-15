@@ -3356,14 +3356,17 @@ const Chat = (() => {
     // settle: flash the outcome on the card, then the card leaves and ONE honest line stays in the feed.
     // destPath (when the decision landed files) adds copy-path / reveal-folder chips to that line — the old
     // flow stranded the user with a long un-clickable path (2026-07-15 UX audit).
+    // returns a promise that resolves once the card has VANISHED and its one honest line is in the feed — an
+    // implement-as-build appends its outcome after that, so a fast failure can never print before the
+    // "…is building it now" line it is the outcome of (live DOM check, 2026-08-14).
     const settle = (label, isDeny, destPath) => {
-      if (settled) return; settled = true;
+      if (settled) return Promise.resolve(); settled = true;
       acts.remove();
       const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = label;
       r.body.appendChild(tag);
-      setTimeout(() => {
+      return new Promise((resolveSettled) => setTimeout(() => {
         vanish(r.d);
-        if (!inOwnSession()) return;
+        if (!inOwnSession()) { resolveSettled(); return; }
         const lr = row('system'); lr.body.textContent = label;
         if (destPath) {
           const chips = document.createElement('span'); chips.className = 'consent-btns ws-destchips';
@@ -3414,7 +3417,8 @@ const Chat = (() => {
           lr.body.appendChild(chips);
         }
         autoscroll();
-      }, 900);
+        resolveSettled();
+      }, 900));
     };
     const sendNote = () => {   // the optional typed message → a REAL user turn in this session
       const msg = String(msgInput.value || '').trim();
@@ -3467,8 +3471,12 @@ const Chat = (() => {
       // claim only what has happened — "saved, and building" — never "built" before the build has returned.
       const starting = '✓ files saved to ' + (res.destPath || 'your StarNet deliverables folder')
         + ' — ▶ ' + who + ' is building it now. The finished build arrives as its own card.';
-      decideNote(starting); sendNote(); settle(starting, false, res.destPath || '');
-      let br = null; try { br = await opts.onImplement(); } catch (_) { br = null; }
+      decideNote(starting); sendNote();
+      // start the build IMMEDIATELY, but only report its outcome after the card has settled into its feed line —
+      // otherwise an instant refusal (no key, discarded) prints its "didn't finish" line ABOVE the line it answers.
+      let buildP = null; try { buildP = Promise.resolve(opts.onImplement()).catch(() => null); } catch (_) { buildP = Promise.resolve(null); }
+      await settle(starting, false, res.destPath || '');
+      const br = await buildP;
       if (br && br.reason === 'built') {
         const okLine = '✓ built — “' + String((br.manifest && br.manifest.title) || 'the build') + '” is waiting in your rail.';
         decideNote(okLine); localLine(okLine);
