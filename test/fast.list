@@ -504,6 +504,7 @@ test/crew-containment.test.js
 test/prop-awareness.test.js
 test/chat-stare-throttle.test.js
 test/talk-turn.test.js
+test/glyph-speech.test.js
 test/g1bprops.test.js
 test/g3btrophy.test.js
 test/stationbake.chunk.test.js
