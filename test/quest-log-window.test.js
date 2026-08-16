@@ -87,6 +87,9 @@ A.ok(!/locked|unlock|LOCKED|TIER \d/i.test(trackEmitted), 'NOTHING the track REN
 A.ok(/q-track-empty/.test(trackFn) && /SET A GOAL/.test(trackFn), 'with no goal the track teaches what it is and offers the real door, never an empty frame');
 A.ok(/GoalStore\.unplannedGoal/.test(trackFn) && /GOAL SAVED/.test(trackFn), 'a saved dossier goal appears in YOUR GOAL even before a milestone path exists');
 A.ok(/PLAN THIS GOAL/.test(trackFn), 'an unplanned saved goal offers the explicit path-planning action');
+const savedGoalRule = css.match(/\.q-track-saved \.q-track-goal\s*\{([^}]*)\}/);
+A.ok(savedGoalRule && /color:\s*var\(--gold\)/.test(savedGoalRule[1]) && !/var\(--ink\)/.test(savedGoalRule[1]),
+  'the saved goal title uses a visible track foreground, never the near-black inverted-text token');
 /* A FINISHED path is not an empty one. Goals.project surfaces nothing for a completed goal, so without
    this the band snapped back to "no goal path yet" the instant the last milestone landed — telling a
    Commander who had just finished a goal that they never had one. */
