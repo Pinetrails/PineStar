@@ -36,29 +36,22 @@
    24px copy-button lane below is padding on this same row, so the name still clears the ⧉ button. */
 .cmsg.user > .cmsg-head { flex-direction: row-reverse; }
 
-/* SPEAKER NAME — a quiet callsign with ONE lit tick, not an inverted plate.
+/* SPEAKER NAME — a quiet CALLSIGN, not an inverted plate.
    The plate was the loudest thing in the transcript: a solid --ph block fired on every single turn,
    so the label out-shouted the message it labelled and the panel read as stickers, not a console.
-   The name is now type — wide-tracked caps in dimmed bright phosphor — and ONE 3px tick carries the
-   side (phosphor for the agent on the left, gold for the Commander on the right), reusing the rail
-   colours already in play. No new colour, no new token.
-   The tick is a DRAWN box, never a Block-Elements glyph: ▍/▏ are absent from VT323 (measured — they
-   fall back to a system face at a 1em advance, the symbol-glyph trap), while a box is exact at any
-   text size. Styling lands on `.cmsg.agent/.user .who` (not `.cmsg-head .who`) so it holds for BOTH
-   markup paths — chat.js only builds a .cmsg-head when the turn carries a real stamp; a stored turn
-   with no recorded time renders a bare block .who and must not fall back to the old plate. */
+   The name is now type and nothing else — wide-tracked caps in the STRUCTURAL phosphor (--ph-dim for
+   the agent, --gold at .62 for the Commander). It doesn't need to carry the side: the card's own rail
+   already does that, on the same edge the name sits against. No new colour, no new token, no glyph.
+   Styling lands on `.cmsg.agent/.user .who` (not `.cmsg-head .who`) so it holds for BOTH markup paths
+   — chat.js only builds a .cmsg-head when the turn carries a real stamp; a stored turn with no
+   recorded time renders a bare block .who and must not fall back to the old plate. */
 .cmsg.agent .who, .cmsg.user .who {
-  font-size: 11px; letter-spacing: 2.2px; text-transform: uppercase;
-  color: var(--ph-bright); opacity: .72;
+  font-size: 11px; letter-spacing: 2.6px; text-transform: uppercase;
   background: none; padding: 0; border-radius: 0; box-shadow: none;
 }
+.cmsg.agent .who { color: var(--ph-dim); }
+.cmsg.user  .who { color: var(--gold); opacity: .62; }
 .cmsg .cmsg-head .who { display: inline-block; margin: 0; line-height: 1.5; }
-.cmsg.agent .who::before, .cmsg.user .who::after {
-  content: ""; display: inline-block; width: 3px; height: 9px; border-radius: 1px;
-  vertical-align: -1px; background: var(--ph);
-}
-.cmsg.agent .who::before { margin-right: 7px; }
-.cmsg.user  .who::after  { margin-left: 7px; background: var(--gold); }
 /* dim, quiet timestamp — HOVER-ONLY (the glance law): reference info, not reading info. It keeps its
    layout slot (no reflow on hover) and simply fades in when the card is inspected. */
 .cmsg .cmsg-ts {
