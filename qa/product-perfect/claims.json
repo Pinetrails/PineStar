@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "78ed85040693e683098c04ec579c59dc92b04a69",
+    "sourceCommit": "6fdc68a7e16c373148046e668997a1db325d3e91",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -708,8 +708,8 @@
       },
       {
         "path": "frontend/app/spacebg.js",
-        "bytes": 68124,
-        "sha256": "34222b27a5c99131106981404ca09929f2e150cc5acafb76bfbbcb5367594aba"
+        "bytes": 69889,
+        "sha256": "7431d4b54bec63c08a082df3c9d2a58c92d1c69f14ac2fc1722b781291069a98"
       },
       {
         "path": "frontend/app/specialties.js",
@@ -763,8 +763,8 @@
       },
       {
         "path": "frontend/app/terrain.js",
-        "bytes": 114032,
-        "sha256": "4c5462c2e921004f0ffbd3ec3e451534f7a354b8804368a1c221a3831cbdb48e"
+        "bytes": 115304,
+        "sha256": "b041df0ee5cfed5d6e9d39b0cdffb9f2d901f8ce8443d4da436bd5fbe34ebc8e"
       },
       {
         "path": "frontend/app/testapi.js",
@@ -948,8 +948,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 600095,
-        "sha256": "64ac1dfb97cd4b4fae072ee303b7ce34c280e55282953bbe4a1acf5013980fe6"
+        "bytes": 608034,
+        "sha256": "d61dedc799c38d1a2222e0686ba20b2584c584eaa56e1de842206c1b37202c97"
       },
       {
         "path": "frontend/app/worldmodel.js",
