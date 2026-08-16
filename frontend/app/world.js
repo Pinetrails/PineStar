@@ -640,12 +640,13 @@ const World = (() => {
           needs no cooperation from the runtime, so it also catches a plate that was dropped
           without an event (and any future regression that blanks the bake).
      The probe costs one 1x1 readback a second, against a frame it saves entirely. */
-  let bakeProbe = null;        // {x,y,a} a pixel buildBase painted opaque — the loss sentinel
+  let bakeProbe = null;        // {x,y} a pixel buildBase painted opaque — the loss sentinel
   let probeOff = false;        // getImageData refused (tainted canvas): never retry, never spam
-  let lastProbeAt = 0;         // throttle — the sentinel is read at most once a second
-  let lastRecoverAt = 0;       // cooldown — a permanently broken GPU must not rebake every frame
+  let lastProbeAt = 0;         // throttle — the sentinel is read a few times a second, not per frame
+  let lastRecoverAt = 0;       // when the last recovery ran (only consulted while backing off)
+  let futileRecoveries = 0;    // consecutive recoveries that did NOT restore an opaque bake
   let recoveries = 0;
-  const PROBE_MS = 1000, RECOVER_COOLDOWN_MS = 3000;
+  const PROBE_MS = 250, RECOVER_COOLDOWN_MS = 3000;
 
   /* Find one pixel the fresh bake painted OPAQUE. Centre first (on any real station the middle
      of the footprint is deck), then a coarse ring outward — so the common case is a single
@@ -681,7 +682,13 @@ const World = (() => {
      `cache = null`): if rederive cannot produce geometry, rebake early-returns and the LAST
      GOOD bake is still better than the honest-but-empty backdrop path. */
   function recoverLostCanvases(now, why) {
-    if (now - lastRecoverAt < RECOVER_COOLDOWN_MS) return false;
+    /* BACK OFF ONLY WHEN RECOVERY IS NOT WORKING. A flat cooldown was the obvious guard and it
+       was wrong: proved live by wiping the plates five times in a row, where a cooldown earned
+       by the FIRST loss made the station sit black through the next one. A recovery that
+       restored an opaque bake is proof the GPU is healthy, so the next loss must heal on the
+       spot; only a recovery that changed nothing (futile) is evidence of a broken GPU worth
+       rate-limiting. Recovering is cheap. Sitting in a black station is not. */
+    if (futileRecoveries > 0 && now - lastRecoverAt < RECOVER_COOLDOWN_MS) return false;
     lastRecoverAt = now; recoveries++;
     try {
       console.warn('[world] cached canvases lost (' + why + ') — rebuilding station + sky + ground (recovery #' + recoveries + ')');
@@ -692,11 +699,16 @@ const World = (() => {
     return true;
   }
 
-  // per-frame (throttled) sentinel read — called from frameBody
+  /* per-frame (throttled) sentinel read — called from frameBody. Heals in THIS frame: rebake()
+     re-records the probe, so whether the fresh plate came back opaque is knowable immediately,
+     which is what tells a healthy GPU apart from a broken one. */
   function watchCanvasLoss(now) {
     if (now - lastProbeAt < PROBE_MS) return;
     lastProbeAt = now;
-    if (bakeWentBlank()) recoverLostCanvases(now, 'bake sentinel went transparent');
+    if (!bakeWentBlank()) { futileRecoveries = 0; return; }
+    if (!recoverLostCanvases(now, 'bake sentinel went transparent')) return;
+    rebake();
+    futileRecoveries = bakeProbe ? 0 : futileRecoveries + 1;
   }
 
   /* ---------- G0.7 empty-room honesty: can this agent's runs actually pass the COMPUTE GATE? ----------

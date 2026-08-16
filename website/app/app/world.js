@@ -613,6 +613,102 @@ const World = (() => {
     if (!geo) return;
     cache = StationBake.bake(geo);
     bakeDirty = false;
+    recordBakeProbe();
+  }
+
+  /* ---------- CANVAS-LOSS RECOVERY — the station may never silently go black ----------
+     Andrew, 2026-08-15, on 0.10.2: "the station randomly went black and the only thing that
+     appears is the agents, and the props."
+
+     That symptom names its own cause precisely. Every layer that is NOT redrawn from scratch
+     each frame lives in an offscreen <canvas>: the station bake (floors, walls, hull + the
+     lightmap), the SpaceBG sky, the Terrain ground. Agents draw from <img> sprite sheets and
+     props draw procedurally, so those two are rebuilt on every single frame — and those two
+     are exactly what survived.
+
+     A GPU/driver reset — sleep-wake, a display or DPI change, a TDR, the WebView's GPU process
+     restarting — zeroes the backing store of every accelerated 2D canvas in the page. The
+     canvas OBJECTS survive at full size, their PIXELS do not, and NO exception is thrown. So
+     nothing downstream can tell: `cache` is still a well-formed bake, and frameBody blits a
+     fully transparent plate over a base fill, every frame, forever. It never heals on its own,
+     because a bake only re-runs when the GEOMETRY changes and no geometry changed.
+
+     Two defences, because they fail on different days:
+       1. the CONTEXT EVENTS ('contextlost'/'contextrestored', wired in init) — the browser
+          telling us directly. Correct and instant when the runtime bothers to fire them.
+       2. this WATCHDOG — a pixel the bake painted opaque, re-read at most once a second. It
+          needs no cooperation from the runtime, so it also catches a plate that was dropped
+          without an event (and any future regression that blanks the bake).
+     The probe costs one 1x1 readback a second, against a frame it saves entirely. */
+  let bakeProbe = null;        // {x,y} a pixel buildBase painted opaque — the loss sentinel
+  let probeOff = false;        // getImageData refused (tainted canvas): never retry, never spam
+  let lastProbeAt = 0;         // throttle — the sentinel is read a few times a second, not per frame
+  let lastRecoverAt = 0;       // when the last recovery ran (only consulted while backing off)
+  let futileRecoveries = 0;    // consecutive recoveries that did NOT restore an opaque bake
+  let recoveries = 0;
+  const PROBE_MS = 250, RECOVER_COOLDOWN_MS = 3000;
+
+  /* Find one pixel the fresh bake painted OPAQUE. Centre first (on any real station the middle
+     of the footprint is deck), then a coarse ring outward — so the common case is a single
+     readback and a hole-in-the-middle layout still finds floor. Finding none is not an error:
+     it means there is nothing to sentinel (a 1x1 blank bake, or an empty station), and the
+     watchdog simply stays inert rather than rebaking a legitimately empty frame forever. */
+  function recordBakeProbe() {
+    bakeProbe = null;
+    if (probeOff || !cache || !cache.baseCv) return;
+    const c = cache.baseCv, W = c.width, H = c.height;
+    if (W < 2 || H < 2) return;
+    const pts = [[0.5, 0.5], [0.5, 0.32], [0.5, 0.68], [0.3, 0.5], [0.7, 0.5],
+                 [0.3, 0.3], [0.7, 0.3], [0.3, 0.7], [0.7, 0.7]];
+    try {
+      const g = c.getContext('2d');
+      for (const [fx, fy] of pts) {
+        const x = Math.min(W - 1, Math.max(0, Math.round(W * fx)));
+        const y = Math.min(H - 1, Math.max(0, Math.round(H * fy)));
+        if (g.getImageData(x, y, 1, 1).data[3] > 0) { bakeProbe = { x, y }; return; }
+      }
+    } catch (e) { probeOff = true; }
+  }
+
+  // has the bake's backing store been zeroed under us? (opaque -> transparent is the tell)
+  function bakeWentBlank() {
+    if (!bakeProbe || probeOff || !cache || !cache.baseCv) return false;
+    try {
+      return cache.baseCv.getContext('2d').getImageData(bakeProbe.x, bakeProbe.y, 1, 1).data[3] === 0;
+    } catch (e) { probeOff = true; return false; }
+  }
+
+  /* Rebuild everything that lives in an offscreen canvas. Only `bakeDirty` is set (never
+     `cache = null`): if rederive cannot produce geometry, rebake early-returns and the LAST
+     GOOD bake is still better than the honest-but-empty backdrop path. */
+  function recoverLostCanvases(now, why) {
+    /* BACK OFF ONLY WHEN RECOVERY IS NOT WORKING. A flat cooldown was the obvious guard and it
+       was wrong: proved live by wiping the plates five times in a row, where a cooldown earned
+       by the FIRST loss made the station sit black through the next one. A recovery that
+       restored an opaque bake is proof the GPU is healthy, so the next loss must heal on the
+       spot; only a recovery that changed nothing (futile) is evidence of a broken GPU worth
+       rate-limiting. Recovering is cheap. Sitting in a black station is not. */
+    if (futileRecoveries > 0 && now - lastRecoverAt < RECOVER_COOLDOWN_MS) return false;
+    lastRecoverAt = now; recoveries++;
+    try {
+      console.warn('[world] cached canvases lost (' + why + ') — rebuilding station + sky + ground (recovery #' + recoveries + ')');
+    } catch (_) {}
+    bakeDirty = true; bakeProbe = null;
+    try { if (typeof SpaceBG !== 'undefined' && SpaceBG.invalidate) SpaceBG.invalidate(); } catch (_) {}
+    try { if (typeof Terrain !== 'undefined' && Terrain.invalidate) Terrain.invalidate(); } catch (_) {}
+    return true;
+  }
+
+  /* per-frame (throttled) sentinel read — called from frameBody. Heals in THIS frame: rebake()
+     re-records the probe, so whether the fresh plate came back opaque is knowable immediately,
+     which is what tells a healthy GPU apart from a broken one. */
+  function watchCanvasLoss(now) {
+    if (now - lastProbeAt < PROBE_MS) return;
+    lastProbeAt = now;
+    if (!bakeWentBlank()) { futileRecoveries = 0; return; }
+    if (!recoverLostCanvases(now, 'bake sentinel went transparent')) return;
+    rebake();
+    futileRecoveries = bakeProbe ? 0 : futileRecoveries + 1;
   }
 
   /* ---------- G0.7 empty-room honesty: can this agent's runs actually pass the COMPUTE GATE? ----------
@@ -948,6 +1044,29 @@ const World = (() => {
       }
     } catch (e) {}
     window.addEventListener('resize', resize);
+
+    /* CANVAS CONTEXT LOSS (see recoverLostCanvases). preventDefault() on 'contextlost' is what
+       ASKS the browser to restore the context — without it there is no 'contextrestored' and the
+       stage stays dead. Both are cheap no-ops on runtimes that never fire them; the watchdog is
+       the belt to this pair of braces. */
+    try {
+      cv.addEventListener('contextlost', ev => {
+        try { ev.preventDefault(); } catch (_) {}
+        try { console.warn('[world] canvas 2d context lost — awaiting restore'); } catch (_) {}
+      }, false);
+      cv.addEventListener('contextrestored', () => {
+        lastRecoverAt = 0;   // an explicit restore always wins the cooldown
+        recoverLostCanvases(performance.now(), 'contextrestored');
+        redrawNow();
+      }, false);
+    } catch (e) {}
+
+    /* A GPU reset usually lands while the app is in the BACKGROUND (the machine slept, the
+       display changed, the user switched away), so the first frame back is exactly when the
+       damage is visible. Re-arm the sentinel to fire on that frame instead of up to a second
+       into it — cheap, since it only clears a throttle. */
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) lastProbeAt = 0; });
+    window.addEventListener('focus', () => { lastProbeAt = 0; });
 
     cv.addEventListener('wheel', ev => {
       ev.preventDefault();
@@ -4537,6 +4656,8 @@ const World = (() => {
     }
     if (geoDirty) rederive();
     if (bakeDirty || !cache) rebake();
+    watchCanvasLoss(now);   // a zeroed bake plate heals here, BEFORE it can paint a black station
+    if (bakeDirty || !cache) rebake();
     tick(dt, now);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
@@ -7681,6 +7802,29 @@ const World = (() => {
     ext.loseContext();
     return { ok: true };
   };
+  /* Simulate a GPU/driver reset for verify scripts + test/canvas-loss-recovery.test.js: zero the
+     backing store of every cached plate WITHOUT touching the objects or their sizes — which is
+     precisely what the browser does and precisely why nothing downstream notices. There is no JS
+     API to lose a 2D context on demand (unlike WEBGL_lose_context above), so reproducing the
+     black station means reproducing its EFFECT. `sky`/`ground` reach into the other two cache
+     owners, so one call reproduces the whole reported frame, not just the floor. */
+  const _dbgLoseCanvases = () => {
+    const wipe = c => {
+      try { const g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); return true; }
+      catch (_) { return false; }
+    };
+    let bake = 0;
+    if (cache) for (const k of ['baseCv', 'lightCv']) if (cache[k] && wipe(cache[k])) bake++;
+    let sky = 0, ground = 0;
+    try { if (typeof SpaceBG !== 'undefined' && SpaceBG._dbgLosePixels) sky = SpaceBG._dbgLosePixels(); } catch (_) {}
+    try { if (typeof Terrain !== 'undefined' && Terrain._dbgLosePixels) ground = Terrain._dbgLosePixels(); } catch (_) {}
+    return { bake, sky, ground, probe: bakeProbe ? { x: bakeProbe.x, y: bakeProbe.y } : null };
+  };
+  // what the watchdog currently knows — lets a test assert recovery happened, not just that pixels returned
+  const _dbgCanvasLoss = () => ({
+    probe: bakeProbe ? { x: bakeProbe.x, y: bakeProbe.y } : null,
+    probeOff, recoveries, blank: bakeWentBlank()
+  });
   // belt-legibility readout for CDP verify scripts: the EXACT state the renderer draws from (never a re-derivation)
   const _dbgBeltLegibility = () => ({
     beltCount: beltTileSet ? beltTileSet.size : 0,
@@ -7703,7 +7847,7 @@ const World = (() => {
     // FEED TRUTH accessor (guided workflows): the exact server-proven state the NO FEED nag keys on —
     // REFIT's finish-the-line card reads THIS, never a parallel poll, so the two can never disagree.
     feedState: () => ({ known: feedState.known, fed: feedState.fed }),
-    loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, setOnIntakeSample, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgCurveState, _dbgLoseCurveContext, _dbgBeltLegibility, _dbgPropClientPoint, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
+    loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, setOnIntakeSample, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgCurveState, _dbgLoseCurveContext, _dbgLoseCanvases, _dbgCanvasLoss, _dbgBeltLegibility, _dbgPropClientPoint, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
     setXp: (agentId, a) => {

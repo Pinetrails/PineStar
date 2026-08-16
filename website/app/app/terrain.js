@@ -1716,6 +1716,30 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
     builtId = id;
   }
 
+  /* THROW THE BUILT GROUND AWAY so the next draw() rebuilds it — the SpaceBG.invalidate story,
+     for the landed case. The deck patch, the dapple overlay and every tree/ridge sprite are
+     offscreen canvases built once; a GPU reset zeroes their pixels without touching the objects,
+     and the two CanvasPatterns cached on `st` keep pointing at the now-blank plates, so the floor
+     fills with nothing and the station stands on the void. Dropping `st` drops the patterns with
+     it, which is why this is a null and not a per-canvas repaint. */
+  function invalidate() {
+    st = null; builtId = '';
+  }
+
+  // verify/test hook — the SpaceBG._dbgLosePixels story: zero every built plate in place
+  // (objects and sizes intact, pixels gone) to reproduce a GPU reset without one.
+  function _dbgLosePixels() {
+    let n = 0;
+    if (!st) return n;
+    const wipe = c => {
+      if (!c || typeof HTMLCanvasElement === 'undefined' || !(c instanceof HTMLCanvasElement)) return;
+      try { const g = c.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); n++; } catch (_) {}
+    };
+    wipe(st.patchCv); wipe(st.dappleCv);
+    for (const s of (st.sprites || [])) wipe(s && s.cv);
+    return n;
+  }
+
   /* one scatter item, reused: the draw loop fills a pooled array rather than allocating
      thousands of objects per frame. */
   const ITEMS = [];
@@ -1853,5 +1877,5 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
     ctx.restore();
   }
 
-  return { draw, setGround, getGround, active, baseColor, list, paintSample, GROUNDS };
+  return { draw, setGround, getGround, active, baseColor, list, paintSample, invalidate, _dbgLosePixels, GROUNDS };
 })();

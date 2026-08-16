@@ -111,8 +111,21 @@ A.ok(/SpaceBG\.invalidate\(\)/.test(recBody), 'recovery rebuilds the sky too');
 A.ok(/Terrain\.invalidate\(\)/.test(recBody), 'recovery rebuilds the ground too');
 A.ok(!/\bcache = null\b/.test(recBody),
   'recovery never nulls the bake — if rederive cannot produce geometry, the last good bake still beats an empty stage');
-A.ok(/now - lastRecoverAt < RECOVER_COOLDOWN_MS/.test(recBody),
-  'a permanently broken GPU is rate-limited, never a rebake-every-frame thrash');
+/* THE BACKOFF MUST NOT BE A FLAT COOLDOWN. A plain `now - lastRecoverAt < COOLDOWN` was the
+   obvious guard and it was wrong — caught by wiping the plates five times in a row live, where
+   the cooldown earned by the FIRST loss made the station sit black through the next one
+   (cycles 2/4/5 came back 14.7%/10.1%/11.4% non-black with the sentinel still reading blank).
+   Only a recovery that changed NOTHING is evidence of a broken GPU worth rate-limiting. */
+A.ok(/futileRecoveries > 0 && now - lastRecoverAt < RECOVER_COOLDOWN_MS/.test(recBody),
+  'recovery backs off ONLY after a futile recovery — a healthy GPU heals the next loss instantly');
+A.ok(/futileRecoveries = bakeProbe \? 0 : futileRecoveries \+ 1/.test(worldSrc),
+  'a recovery that restored an opaque bake clears the futile count (success is proof the GPU is fine)');
+A.ok(/if \(!bakeWentBlank\(\)\) \{ futileRecoveries = 0; return; \}/.test(worldSrc),
+  'a healthy sentinel read clears the futile count, so an old broken spell never gates a new loss');
+A.ok(/if \(!recoverLostCanvases\([\s\S]{0,80}?\) return;\s*rebake\(\);/.test(worldSrc),
+  'the watchdog rebakes inside the same call, so the fresh plate is testable immediately');
+A.ok(/const PROBE_MS = (\d+)/.test(worldSrc) && Number(/const PROBE_MS = (\d+)/.exec(worldSrc)[1]) <= 250,
+  'the sentinel is read at least 4x a second — a lost frame is a flicker, never a black station');
 
 /* ---- 5. THE BROWSER-EVENT PATH: belt to the watchdog's braces ----
    preventDefault() on 'contextlost' is what ASKS for restoration; without it 'contextrestored'
