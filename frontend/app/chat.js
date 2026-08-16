@@ -1117,14 +1117,18 @@ const Chat = (() => {
 
   function mergeCanonicalHistory(local, turns) {
     const buckets = new Map();
+    const status = [];
     for (const row of Array.isArray(local) ? local : []) {
+      if (row && row.sys) { if (!row.transcriptPending) status.push(row); continue; }
       if (!row || (row.role !== 'user' && row.role !== 'assistant')) continue;
+      if (row.role === 'assistant' && !String(row.content == null ? '' : row.content).trim()) continue;
       const key = row.role + '\u0000' + String(row.content || '');
       const q = buckets.get(key) || []; q.push(row); buckets.set(key, q);
     }
     const merged = [];
     for (const turn of Array.isArray(turns) ? turns : []) {
       if (!turn || (turn.role !== 'user' && turn.role !== 'assistant')) continue;
+      if (turn.role === 'assistant' && !String(turn.content == null ? '' : turn.content).trim()) continue;
       const key = turn.role + '\u0000' + String(turn.content || '');
       const q = buckets.get(key) || [], prior = q.shift();
       merged.push(Object.assign({}, turn, prior || {}, { role: turn.role, content: String(turn.content || ''), ts: turn.ts != null ? turn.ts : (prior && prior.ts) }));
@@ -1132,24 +1136,49 @@ const Chat = (() => {
     // Preserve genuinely local/in-flight rows the sidecar has not committed yet. Occurrence queues, rather than
     // a Set, keep two identical user turns distinct while still preventing a duplicate final answer.
     for (const q of buckets.values()) for (const row of q) merged.push(row);
+    // Keep settled local status lines (failed / silent / nothing-to-report). A pending transcript warning is rebuilt
+    // from the latest read below, so it disappears automatically as soon as canonical prose becomes available.
+    for (const row of status) merged.push(row);
     return merged;
   }
 
   async function reconcileServerHistory(ws, loadToken) {
     if (!ws || !ws.id) return;
-    try {
-      const r = await fetch('/api/transcript?agent=' + encodeURIComponent(ws.agentId || 'agent') + '&stream=' + encodeURIComponent(ws.id) + '&limit=200', { cache: 'no-store' });
-      if (!r.ok) return;
-      const j = await r.json(), turns = j && Array.isArray(j.turns) ? j.turns : [];
-      const next = mergeCanonicalHistory(ws.history, turns);
-      if (!turns.length || JSON.stringify(next) === JSON.stringify(ws.history || [])) return;
-      ws.history = next;
-      try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
-      if (!activeWs || activeWs.id !== ws.id || historyPinPending !== loadToken) return;
-      if (log) log.innerHTML = '';
-      renderHistory(); replayChannel(); syncStatus(); maybeEmptyState();
-      pinLoadedHistoryAfterLayout(loadToken);
-    } catch (_) { /* offline sidecar: local history stays intact and the next load retries */ }
+    const cronSession = String(ws.id).indexOf('cron-') === 0;
+    let busy = false;
+    try { busy = typeof Channels !== 'undefined' && Channels.isBusy && Channels.isBusy(ws.id); } catch (_) {}
+    const waits = cronSession && !busy ? [120, 400] : [];
+    let turns = [], reachable = false;
+    for (let attempt = 0; attempt <= waits.length; attempt++) {
+      try {
+        const r = await fetch('/api/transcript?agent=' + encodeURIComponent(ws.agentId || 'agent') + '&stream=' + encodeURIComponent(ws.id) + '&limit=200', { cache: 'no-store' });
+        if (r.ok) {
+          const j = (await r.json()) || {};
+          turns = Array.isArray(j.turns) ? j.turns : [];
+          reachable = true;
+          if (!cronSession || turns.some(t => t && t.role === 'assistant' && String(t.content == null ? '' : t.content).trim())) break;
+        }
+      } catch (_) { /* retry the bounded cron persistence window below */ }
+      if (attempt < waits.length) await new Promise(resolve => setTimeout(resolve, waits[attempt]));
+    }
+    const next = mergeCanonicalHistory(ws.history, turns);
+    const readable = next.some(m => m && (
+      (m.role === 'assistant' && String(m.content == null ? '' : m.content).trim()) ||
+      (m.sys && !m.transcriptPending && String(m.content == null ? '' : m.content).trim())
+    ));
+    if (cronSession && !busy && !readable) next.push({
+      role: 'system', sys: true, error: true, transcriptPending: true,
+      content: reachable
+        ? '⚠ output has not arrived yet — StarNet will retry automatically when this session opens'
+        : '⚠ couldn\'t load the output yet — StarNet will retry automatically when this session opens'
+    });
+    if (JSON.stringify(next) === JSON.stringify(ws.history || [])) return;
+    ws.history = next;
+    try { if (typeof App !== 'undefined' && App.persist) App.persist(); } catch (_) {}
+    if (!activeWs || activeWs.id !== ws.id || historyPinPending !== loadToken) return;
+    if (log) log.innerHTML = '';
+    renderHistory(); replayChannel(); syncStatus(); maybeEmptyState();
+    pinLoadedHistoryAfterLayout(loadToken);
   }
 
   // swap the rendered conversation to a workstream (its history). Used on enter/resume and when the

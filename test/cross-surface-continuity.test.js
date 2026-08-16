@@ -43,6 +43,20 @@ const { makeWebhookVerifier } = require('../sidecar/channels/webhook-auth.js');
   const mirror = fs.readFileSync(path.join(__dirname, '..', 'website', 'app', 'app', 'chat.js'), 'utf8');
   const index = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
   A.ok(/mergeCanonicalHistory/.test(chat) && /buckets\.get\(key\)/.test(chat), 'desktop reconciliation is occurrence-aware');
+  const mergeBody = A.fnBody(chat, 'function mergeCanonicalHistory(local, turns)');
+  const mergeCanonicalHistory = new Function(mergeBody + '; return mergeCanonicalHistory;')();
+  const healed = mergeCanonicalHistory([
+    { role: 'user', content: 'make the report' },
+    { role: 'assistant', content: '' },
+    { role: 'system', sys: true, transcriptPending: true, content: 'retrying' }
+  ], [
+    { role: 'user', content: 'make the report' },
+    { role: 'assistant', content: '' },
+    { role: 'assistant', content: 'report ready' }
+  ]);
+  A.eq(healed.filter(x => x.role === 'assistant').map(x => x.content), ['report ready'], 'canonical merge drops blank tool envelopes and keeps the final prose');
+  A.ok(!healed.some(x => x.transcriptPending), 'a recovered canonical reply clears the pending transcript marker');
+  A.ok(/cronSession && !busy/.test(chat) && /transcriptPending: true/.test(chat), 'settled cron sessions retry and expose a truthful pending state when output is unavailable');
   A.ok(/reconcileServerHistory\(activeWs, historyPin\)/.test(chat), 'every desktop load reconciles the canonical transcript');
   A.eq(chat, mirror, 'website mirror carries the identical continuity behavior');
   A.ok(/\/api\/channels\/handoff/.test(index) && /\/api\/channels\/webhook\//.test(index), 'authenticated handoff and relay lifecycle routes are wired');
