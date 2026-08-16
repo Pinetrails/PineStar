@@ -146,6 +146,35 @@ const late = chatterWindow(0, SPEAK_T - 1, SLOT_T, SPEAK_T, FADE_T);
 A.ok(late.until <= SLOT_T, 'even a body joining on the last millisecond of its turn is gone before the next speaker starts');
 A.eq(chatterWindow(0, -500, SLOT_T, SPEAK_T, FADE_T).turn, 0, 'a negative elapsed (clock skew) clamps to turn 0 rather than a negative window');
 
+/* ---- ⛔ THE SAME AGENT MUST NOT REPLAY ONE SCRIPT IN EVERY CONVERSATION (2026-08-16) ----
+   Andrew: "it wont repeat the same made up language everytime?" It did. `turn` counts from the
+   start of the ENCOUNTER, so it resets to 0 every time two agents meet — seeding on (id, turn)
+   meant an agent said the identical opening line, then the identical second line, in every
+   conversation for the life of the station. Two separate live probe runs logged byte-identical
+   phrases for the same bodies, which is how it was caught. The seed is now the turn's ABSOLUTE
+   deadline, which names this turn of THIS encounter and nothing else. */
+const fnv = (s) => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
+const seedOf = (id, win) => fnv(id + '@' + Math.round(win.until));
+const encA = chatterWindow(10000, 0, SLOT_T, SPEAK_T, FADE_T);
+const encB = chatterWindow(58314, 0, SLOT_T, SPEAK_T, FADE_T);
+A.eq(encA.turn, encB.turn, 'both are turn 0 — of two different encounters');
+A.ok(encA.until !== encB.until, 'but their absolute deadlines differ, which is what makes the seed differ');
+A.ok(JSON.stringify(glyphPhrase(seedOf('NOVA', encA), dA)) !== JSON.stringify(glyphPhrase(seedOf('NOVA', encB), dA)),
+  'so the SAME agent opens two different conversations with two different lines');
+// ...and it stays deterministic WITHIN a turn — that is what keeps the bubble from shimmering
+A.eq(JSON.stringify(glyphPhrase(seedOf('NOVA', encA), dA)), JSON.stringify(glyphPhrase(seedOf('NOVA', encA), dA)),
+  'the same turn of the same encounter always yields the same line');
+// a long sweep of encounters: openings must not collapse onto a handful of phrases
+const openings = new Set();
+for (let e = 0; e < 300; e++) {
+  const w = chatterWindow(7000 + e * 41111, 0, SLOT_T, SPEAK_T, FADE_T);
+  openings.add(JSON.stringify(glyphPhrase(seedOf('NOVA', w), dA)));
+}
+A.ok(openings.size > 280, 'across 300 conversations an agent opens with ' + openings.size + ' distinct lines — it does not have a catchphrase');
+// two agents in the SAME encounter+turn still differ (the id is in the seed, not just the clock)
+A.ok(JSON.stringify(glyphPhrase(seedOf('NOVA', encA), dA)) !== JSON.stringify(glyphPhrase(seedOf('BIT', encA), dA)),
+  'two speakers never share a line just because they share a clock');
+
 // ---- the seeded stream itself is well-formed ----
 const r = glyphRnd(12345);
 for (let i = 0; i < 5000; i++) { const v = r(); A.ok(v >= 0 && v < 1, 'the seeded stream stays in [0,1)'); }
@@ -160,8 +189,10 @@ const startFn = src.slice(src.indexOf('function startChatter('), src.indexOf('//
 A.ok(/isTalkKind\(b\.social\.kind\)/.test(startFn),
   'a bubble refuses the SILENT beat kinds — a watch/follow carries no conversation to draw');
 A.ok(/b\.chatter = null/.test(startFn), 'and clears any stale line rather than leaving one behind');
-A.ok(/glyphPhrase\(U\.hash\(String\(b\.id\) \+ ':' \+ w\.turn\), dialectFor\(b\)\)/.test(startFn),
-  'the seed is the SPEAKER plus the TURN — stable while on screen, fresh when the floor comes back around');
+A.ok(/glyphPhrase\(U\.hash\(String\(b\.id\) \+ '@' \+ Math\.round\(w\.until\)\), dialectFor\(b\)\)/.test(startFn),
+  'the seed is the speaker plus the turn\'s ABSOLUTE instant — never the turn INDEX, which resets every encounter');
+A.ok(!/U\.hash\([^)]*\+ w\.turn\)/.test(startFn),
+  'the bare turn index is NOT the seed (it would replay one identical script in every conversation)');
 A.ok(/chatterWindow\(socialBeat\.startedAt, fnow - socialBeat\.startedAt, TALK_SLOT_MS, TALK_SPEAK_MS, CHATTER_FADE_MS\)/.test(startFn),
   'the deadline is computed off the ENCOUNTER clock through chatterWindow — never off the body\'s own arrival');
 A.ok(/until: w\.until/.test(startFn), 'and it is stamped on the line, so the draw path never re-derives it');

@@ -3138,14 +3138,24 @@ const World = (() => {
     return d;
   }
   /* Roll THIS turn's line — once, on the rising edge of the body's turn, never in the draw path.
-     Seeded off the speaker AND which turn of the encounter it is taking, so the line holds still
-     while it is on screen and is a different one when the floor comes back around. Refuses any
-     body that is not actually in a two-sided conversation: a 'watch'/'follow' beat is silent by
-     construction and a bubble over one would be claiming a talk that isn't happening. */
+     Refuses any body that is not actually in a two-sided conversation: a 'watch'/'follow' beat is
+     silent by construction and a bubble over one would claim a talk that isn't happening.
+
+     ⛔ THE SEED IS THE TURN'S ABSOLUTE INSTANT, NOT ITS INDEX. `w.turn` counts from the start of
+     the ENCOUNTER, so it resets to 0 every time — seeding on (id, turn) made every agent replay
+     the identical script in every conversation it ever had: same opening line, same second line,
+     for the life of the station. `w.until` is an absolute clock deadline, so it identifies THIS
+     turn of THIS encounter and nothing else, which is what makes a fresh conversation a fresh
+     one. It is still fully deterministic — same encounter, same turn, same line — so the phrase
+     holds still for as long as it is on screen, which is the property that matters for the draw.
+
+     What deliberately does NOT vary is the speaker's DIALECT (dialectFor): an agent keeps its own
+     9 runes for life, so it sounds like itself and a trio reads as three voices rather than one
+     noise source. Varying that too would make the whole floor read as static. */
   function startChatter(b) {
     if (!b || !b.social || !isTalkKind(b.social.kind) || !socialBeat || !socialBeat.startedAt) { if (b) b.chatter = null; return; }
     const w = chatterWindow(socialBeat.startedAt, fnow - socialBeat.startedAt, TALK_SLOT_MS, TALK_SPEAK_MS, CHATTER_FADE_MS);
-    b.chatter = { at: fnow, until: w.until, words: glyphPhrase(U.hash(String(b.id) + ':' + w.turn), dialectFor(b)) };
+    b.chatter = { at: fnow, until: w.until, words: glyphPhrase(U.hash(String(b.id) + '@' + Math.round(w.until)), dialectFor(b)) };
   }
   // `talking` is the world's own reason for the speaking pose; the hero ORs it with Voice in
   // drawAgent (which recomputes `speaking` every frame), crew carry it directly.
