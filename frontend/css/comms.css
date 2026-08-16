@@ -26,21 +26,37 @@
    chip) + a dim right-aligned HH:MM stamp in one header row, and
    card depth via a hairline + faint inset (NOT a heavy box).
    ============================================================ */
-/* the header row: speaker chip on the left, timestamp hard-right */
+/* the header row: speaker name on the rail side, timestamp opposite */
 .cmsg .cmsg-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
   margin: 9px 0 4px;
 }
-/* speaker chip — inverted phosphor plate, mirroring the window title chips */
-.cmsg .cmsg-head .who {
-  display: inline-block; margin: 0;
-  font-size: 10.5px; letter-spacing: 1.5px; text-transform: uppercase;
-  color: var(--ink); background: var(--ph-dim);
-  padding: 1px 7px; border-radius: 3px; line-height: 1.5;
-  box-shadow: 0 1px 0 rgba(0,0,0,.4);
+/* the COMMANDER's name sits beside ITS OWN rail (the gold edge, hard-right), so on both sides the
+   name and the card's rail read as one edge instead of the label floating off across the card. The
+   whole user header is mirrored, not just re-ordered — see the copy-button lane further down: the ⧉
+   moves to the left with the stamp, so both callsigns sit the SAME 11px off their rail. */
+.cmsg.user > .cmsg-head { flex-direction: row-reverse; }
+
+/* SPEAKER NAME — a quiet CALLSIGN, not an inverted plate.
+   The plate was the loudest thing in the transcript: a solid --ph block fired on every single turn,
+   so the label out-shouted the message it labelled and the panel read as stickers, not a console.
+   The name is now type and nothing else — wide-tracked caps in the STRUCTURAL phosphor (--ph-dim for
+   the agent, --gold at .62 for the Commander). It doesn't need to carry the side: the card's own rail
+   already does that, on the same edge the name sits against. No new colour, no new token, no glyph.
+   Styling lands on `.cmsg.agent/.user .who` (not `.cmsg-head .who`) so it holds for BOTH markup paths
+   — chat.js only builds a .cmsg-head when the turn carries a real stamp; a stored turn with no
+   recorded time renders a bare block .who and must not fall back to the old plate. */
+.cmsg.agent .who, .cmsg.user .who {
+  font-size: 11px; letter-spacing: 2.6px; text-transform: uppercase;
+  background: none; padding: 0; border-radius: 0; box-shadow: none;
 }
-.cmsg.agent .cmsg-head .who { background: var(--ph); }
-.cmsg.user  .cmsg-head .who { background: var(--gold); }
+.cmsg.agent .who { color: var(--ph-dim); }
+.cmsg.user  .who { color: var(--gold); opacity: .62; }
+.cmsg .cmsg-head .who { display: inline-block; margin: 0; line-height: 1.5; }
+/* letter-spacing lands AFTER the last glyph too, so a right-aligned callsign's box ends 2.6px past the
+   letter you can actually see — the Commander's name read as sitting further off its rail than the
+   agent's even though both boxes were flush. Trim that trailing track back so the GLYPHS match. */
+.cmsg.user .who { margin-right: -2.6px; }
 /* dim, quiet timestamp — HOVER-ONLY (the glance law): reference info, not reading info. It keeps its
    layout slot (no reflow on hover) and simply fades in when the card is inspected. */
 .cmsg .cmsg-ts {
@@ -80,8 +96,16 @@
    never reflows when the stamp fades in. Width = the button's 24px box + its 5px right offset + a
    5px gap, minus the card's own ~10px padding. Scoped to exactly the rows that GET a copy button —
    app.css hides it on the work-log beats, which must keep their stamp hard-right. */
-.cmsg.agent:not(.tool):not(.consent):not(.turnin):not(.nudge):not(.deliverable) > .cmsg-head,
-.cmsg.user > .cmsg-head { padding-right: 24px; }
+.cmsg.agent:not(.tool):not(.consent):not(.turnin):not(.nudge):not(.deliverable) > .cmsg-head {
+  padding-right: 24px;
+}
+/* THE COMMANDER'S ROW MIRRORS — the ⧉ goes top-LEFT and the lane is reserved on the LEFT. The name now
+   sits against the gold rail (hard-right), which is the same corner the button used to occupy, so
+   keeping the lane on the right pushed the callsign 24px off its own rail while the agent's sat flush
+   at 11px — the two sides no longer matched. Mirroring moves the button to the side the STAMP is on,
+   which is exactly what the lane law asks for: reserve the lane wherever the button lands. */
+.cmsg.user > .cmsg-copy { right: auto; left: 5px; }
+.cmsg.user > .cmsg-head { padding-left: 24px; }
 
 /* SYSTEM register — command/client output (/help, /whoami, unknown-command, …). Dim, no lit chip, never a
    card: the station's own words, clearly NOT the agent's speech. A quiet "SYSTEM" tag on the first of a run;
