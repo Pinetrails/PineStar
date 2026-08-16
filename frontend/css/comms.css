@@ -73,6 +73,15 @@
 
 /* copy button sits inside the padded card — nudge it clear of the header chip */
 .cmsg-copy { top: 6px; right: 5px; }
+/* …and the header row RESERVES that lane, so the hover-revealed ⧉ never lands on the hover-revealed
+   HH:MM stamp. Both surfaces are revealed by the SAME hover and both were pinned hard-right, so the
+   button covered ~19px of the 26px stamp EVERY time — the stamp was effectively unreadable.
+   PADDING (not margin on .cmsg-ts) so the lane is held whether or not a stamp exists, and the slot
+   never reflows when the stamp fades in. Width = the button's 24px box + its 5px right offset + a
+   5px gap, minus the card's own ~10px padding. Scoped to exactly the rows that GET a copy button —
+   app.css hides it on the work-log beats, which must keep their stamp hard-right. */
+.cmsg.agent:not(.tool):not(.consent):not(.turnin):not(.nudge):not(.deliverable) > .cmsg-head,
+.cmsg.user > .cmsg-head { padding-right: 24px; }
 
 /* SYSTEM register — command/client output (/help, /whoami, unknown-command, …). Dim, no lit chip, never a
    card: the station's own words, clearly NOT the agent's speech. A quiet "SYSTEM" tag on the first of a run;
