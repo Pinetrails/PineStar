@@ -138,9 +138,23 @@ try {
   } catch (e) { return 'err ' + e; } })()`));
   await sleep(1500);
 
-  // arm a real huddle; "an encounter is already live" is the rate work crowding out its own test
+  /* Get a conversation to watch. Two ways, and the FIRST is the better evidence:
+
+     ADOPT an organic beat. Parked side by side on a small floor, the idle engine usually huddles
+     these bodies by itself within seconds — and because there is a single encounter slot, that
+     made _dbgHuddle answer "an encounter is already live" for every retry and the run scored
+     INCONCLUSIVE while a perfectly good conversation was happening on screen. A beat the engine
+     started on its own is a stronger observation than a forced one, so take it when it fits.
+     Otherwise wait for the slot to free rather than hammering it, then arm through the planner. */
   let armed = null;
-  for (let attempt = 0; attempt < 14; attempt++) {
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const beat = await evalJS(cdp, `(() => { try { return World._dbgChatter().beat; } catch (e) { return null; } })()`).catch(() => null);
+    if (beat && beat.ids && beat.ids.length >= PARTY && (beat.kind === 'huddle' || beat.kind === 'border')) {
+      armed = { ok: true, roster: beat.ids.slice(), kind: beat.kind, organic: true };
+      console.log('[glyphprobe] adopted an ORGANIC ' + beat.kind + ':', beat.ids.join(','));
+      break;
+    }
+    if (beat) { await sleep(4000); continue; }   // the single slot is busy with a smaller beat — let it finish
     armed = await evalJS(cdp, `(() => { try {
       const bs = World.bodies().filter(b => b && !b.hero && !b.unplaced);
       if (bs.length < 2) return { ok: false, err: 'crew vanished' };
