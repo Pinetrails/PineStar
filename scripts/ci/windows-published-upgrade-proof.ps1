@@ -103,6 +103,21 @@ function Wait-ForExactProcessesStopped {
   }
 }
 
+function Wait-ForPathRemoved {
+  param(
+    [Parameter(Mandatory = $true)][string]$Path,
+    [Parameter(Mandatory = $true)][string]$Label,
+    [int]$Seconds = 15
+  )
+  $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+  while ((Test-Path -LiteralPath $Path) -and [DateTime]::UtcNow -lt $deadline) {
+    Start-Sleep -Milliseconds 250
+  }
+  if (Test-Path -LiteralPath $Path) {
+    throw "$Label left a file behind after ${Seconds}s: $Path"
+  }
+}
+
 function Reset-ProofInstall {
   param([Parameter(Mandatory = $true)][string]$InstallRoot)
   $root = Assert-UnderTemp $InstallRoot
@@ -235,9 +250,7 @@ try {
     $futureUninstall = Start-Process -FilePath $oldUninstaller -ArgumentList '/S' -PassThru
     Wait-Installer -Process $futureUninstall -Label "$CandidateVersion active-process uninstall"
     Wait-ForExactProcessesStopped -Paths @($app,$node) -Label "$CandidateVersion uninstaller"
-    if (Test-Path -LiteralPath $app -PathType Leaf) {
-      throw "$CandidateVersion uninstaller left skynet-desktop.exe behind"
-    }
+    Wait-ForPathRemoved -Path $app -Label "$CandidateVersion uninstaller"
     if ((Get-FileHash -LiteralPath $marker -Algorithm SHA256).Hash.ToLowerInvariant() -ne $markerHash) {
       throw "$CandidateVersion uninstaller removed or changed user state without consent"
     }

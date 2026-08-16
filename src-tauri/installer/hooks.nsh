@@ -61,9 +61,13 @@
 ; .onGUIInit runs after Tauri's .onInit has selected the registry context but before any page is
 ; shown. For a strict upgrade (or an installed record whose version is unreadable), append the
 ; same /UPDATE /P /R flags and re-run .onInit so the stock template skips the uninstall page,
-; installs passively in place, and relaunches StarNet. Same-version maintenance and downgrades keep
-; Tauri's normal UI. We intentionally use only NSIS registers here: this hooks file is included
-; before the template declares its named variables and product/version defines.
+; installs passively in place, and relaunches StarNet. The uninstall registry's InstallLocation is
+; authoritative here: pre-0.10 releases could leave Tauri's separate manufacturer key pointing at
+; the default directory after a custom /D install. Without restoring the uninstall location, the
+; upgrade installs a second copy at that stale default and leaves the old sidecar running. Same-
+; version maintenance and downgrades keep Tauri's normal UI. We intentionally use only NSIS
+; registers here: this hooks file is included before the template declares its named variables and
+; product/version defines.
 !define MUI_CUSTOMFUNCTION_GUIINIT StarNetManualUpgradeInit
 Function StarNetManualUpgradeInit
   ClearErrors
@@ -74,9 +78,11 @@ Function StarNetManualUpgradeInit
 
   ReadRegStr $R8 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\StarNet" "UninstallString"
   ReadRegStr $R9 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\StarNet" "DisplayVersion"
+  ReadRegStr $R1 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\StarNet" "InstallLocation"
   ${If} $R8 == ""
     ReadRegStr $R8 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\StarNet" "UninstallString"
     ReadRegStr $R9 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\StarNet" "DisplayVersion"
+    ReadRegStr $R1 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\StarNet" "InstallLocation"
   ${EndIf}
   ${If} $R8 == ""
     Goto starnet_manual_upgrade_done
@@ -105,6 +111,18 @@ Function StarNetManualUpgradeInit
   ${EndIf}
 
   starnet_manual_upgrade_force:
+    ; Tauri stores InstallLocation with wrapping quotes. Strip them before assigning $INSTDIR.
+    ; If a legacy record has no InstallLocation, retain Tauri's already-resolved fallback.
+    ${If} $R1 != ""
+      StrCpy $R0 $R1 1
+      ${If} $R0 == "$\""
+        StrCpy $R0 $R1 1 -1
+        ${If} $R0 == "$\""
+          StrCpy $R1 $R1 -1 1
+        ${EndIf}
+      ${EndIf}
+      StrCpy $INSTDIR $R1
+    ${EndIf}
     StrCpy $CMDLINE "$CMDLINE /UPDATE /P /R"
     Call .onInit
 

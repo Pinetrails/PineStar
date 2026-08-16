@@ -17,6 +17,10 @@ A.ok(guiInit >= 0 && guiInit < preinstall, 'manual-upgrade detection runs before
 A.ok(hooks.includes('!define MUI_CUSTOMFUNCTION_GUIINIT StarNetManualUpgradeInit'), 'manual upgrade composes with Tauri Modern UI GUI initialization');
 A.ok(hooks.includes('GetDLLVersion "$EXEPATH"'), 'manual upgrade reads the candidate executable version instead of duplicating a release pin');
 A.ok(hooks.includes('${VersionCompare} "$R3" "$R9" $R2'), 'manual upgrade uses the preloaded NSIS version comparison against installed truth');
+A.ok((hooks.match(/ReadRegStr \$R1 HK(?:CU|LM).*"InstallLocation"/g) || []).length === 2,
+  'manual upgrade reads the authoritative install location from both supported registry contexts');
+A.ok(hooks.includes('StrCpy $R1 $R1 -1 1') && hooks.includes('StrCpy $INSTDIR $R1'),
+  'manual upgrade removes registry quotes and restores the exact previous install directory');
 A.ok(hooks.includes('StrCpy $CMDLINE "$CMDLINE /UPDATE /P /R"'), 'strict manual upgrades become passive in-place updates with relaunch');
 A.ok(hooks.includes('Call .onInit'), 'Tauri reparses the augmented update command before rendering pages');
 A.ok(hooks.includes('!macro NSIS_HOOK_PREUNINSTALL'), 'new uninstallers own active-process cleanup');
@@ -37,6 +41,8 @@ A.ok(processCountLines.length === 3 && processCountLines.every(line => line.incl
   'release proof array-wraps zero-process results before StrictMode Count checks');
 A.ok(proof.includes('Wait-ForExactProcessesStopped -Paths @($app,$node)') && proof.includes('alive after ${Seconds}s'),
   'active-process uninstall gets a bounded settle window and still fails with exact survivor evidence');
+A.ok(proof.includes('Wait-ForPathRemoved -Path $app') && proof.includes('left a file behind after ${Seconds}s'),
+  'asynchronous NSIS cleanup gets a bounded settle window and still fails with exact leftover evidence');
 A.ok(proof.includes('Remove-Item -LiteralPath $oldUninstaller -Force'), 'release proof fault-injects the reported missing-old-uninstaller failure');
 A.ok(proof.includes('Start-Process -FilePath $app'), 'release proof launches the old installed shell');
 A.ok(proof.includes('Wait-ForExactProcess -Path $node'), 'release proof observes the old bundled sidecar running');
