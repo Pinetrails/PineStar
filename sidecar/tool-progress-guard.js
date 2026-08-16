@@ -13,7 +13,7 @@ const crypto = require('node:crypto');
 
 const BROWSER_ACTION_RE = /^browser\.(?:attach|back|click|detach|dialog|drag|emulate|eval|forward|hover|intercept|navigate|press|scroll|select|tab_select|tab_close|type|upload|viewport)$/;
 const BROWSER_OBSERVE_RE = /^browser\.(?:snapshot|get_text|find|wait|console|network|inspect|tabs|test_state|test_snapshot)$/;
-const COMPOSE_READ_RE = /^(?:code\.run|tool\.search)$/;
+const COMPOSE_READ_RE = /^tool\.search$/;
 
 function digest(value) {
   return crypto.createHash('sha256').update(String(value == null ? '' : value)).digest('hex');
@@ -49,6 +49,9 @@ function routeOf(name) {
 
 function trackable(call, tool) {
   const name = String((call && call.name) || '');
+  // code.run is a read-scoped composition container. Its nested calls re-enter central dispatch and are the
+  // evidence that matters; counting the outer aggregate as well would double-charge legitimate programs.
+  if (name === 'code.run') return false;
   return !!(name.startsWith('browser.') || COMPOSE_READ_RE.test(name) || (tool && tool.scope === 'read'));
 }
 
@@ -102,7 +105,10 @@ function makeToolProgressGuard(options) {
     if (!trackable(call, tool)) return publicDecision('allow', 'untracked', call, 0, '');
     const sig = digest(String(call.name || '') + '\0' + canonicalArgs(call));
     const same = exact.get(sig);
-    if (same && same.count >= exactBlockAfter) {
+    // Never infer that a state-changing action is safe to suppress from a generic result such as "clicked".
+    // Repeating one control can be the task (quantity +, paging, game input). Its following observations still
+    // feed the route breaker, while the action itself remains available.
+    if (observation(call, tool) && same && same.count >= exactBlockAfter) {
       return publicDecision('block', 'repeated_success_no_progress', call, same.count,
         'This exact tool call has already returned the same result ' + same.count + ' times. It is blocked because repeating it cannot add evidence. Change the arguments or use a different strategy.');
     }

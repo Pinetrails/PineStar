@@ -1444,7 +1444,7 @@
         }
         if (receipt && receipt.status === 'canceled') return 'clicked\nDownload canceled. No saved path was claimed.';
         if (receipt && receipt.status === 'unverified') return 'clicked\nChromium reported the download complete, but the host could not verify a readable saved file. Do not claim it was saved.';
-        return 'clicked\nDownload started but did not complete within the browser action budget. No saved path was claimed.';
+        return 'clicked\nDownload started but did not complete within the browser action budget. No saved path was claimed. Use fs.list on downloads/ later to check for a completed file.';
       }
       return 'clicked';
     }

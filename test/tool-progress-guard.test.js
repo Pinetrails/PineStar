@@ -62,15 +62,29 @@ A.eq(T.normalizeEvidence('b12 [button] X ref b9 .output/browser.snapshot-1234567
   A.eq(g.before(call('browser.navigate', { url: 'https://drive.example/download' }), tool('execute')).action, 'allow', 'state-changing browser route remains available');
 }
 
-// The run-state seam exposes one controller to nested and ordinary dispatch paths.
+// The run-state seam exposes one controller to nested and ordinary dispatch paths. code.run itself is not
+// counted: its nested dispatches already cross this seam, and the composition may legitimately mutate state.
 {
   const state = makeRunExecutionState({ progressLimits: { warnAfter: 2, exactBlockAfter: 3, routeBlockAfter: 10 } });
-  const c = call('code.run', { code: 'return tool("browser_get_text",{})' });
-  state.observeProgress(c, ok('same composed observation'), tool('read'));
-  const warning = state.observeProgress(c, ok('same composed observation'), tool('read'));
+  const outer = call('code.run', { code: 'return tool("browser_get_text",{})' });
+  for (let i = 0; i < 10; i++) state.observeProgress(outer, ok('same composed observation'), tool('read'));
+  A.eq(state.beforeProgress(outer, tool('read')).action, 'allow', 'outer code.run remains available without double-counting nested reads');
+  const c = call('browser.get_text', { selector: 'body' });
+  state.observeProgress(c, ok('same nested observation'), tool('read'));
+  const warning = state.observeProgress(c, ok('same nested observation'), tool('read'));
   A.eq(warning.action, 'warn', 'composed read participates in the same evidence ledger');
-  state.observeProgress(c, ok('same composed observation'), tool('read'));
+  state.observeProgress(c, ok('same nested observation'), tool('read'));
   A.eq(state.beforeProgress(c, tool('read')).action, 'block', 'composed read is blocked before another dispatch');
+}
+
+// State-changing browser calls remain capabilities even when their generic receipts are identical.
+{
+  const g = makeToolProgressGuard({ warnAfter: 2, exactBlockAfter: 3, routeBlockAfter: 4 });
+  const c = call('browser.click', { ref: 'b7' });
+  for (let i = 0; i < 20; i++) {
+    A.eq(g.before(c, tool('execute')).action, 'allow', 'repeated browser actions are never suppressed');
+    g.after(c, ok('clicked', 'clicked'), tool('execute'));
+  }
 }
 
 // Untracked workspace mutations are never inferred safe or blocked from result text.
