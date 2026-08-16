@@ -14864,15 +14864,8 @@ async function runOnce(o) {
   // caught). isTask is kept because a non-task run has no tools at all. Fail-open: ANY error yields no block.
   let questsBlock = '';
   try { if (isTask && resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('quest.update') >= 0) questsBlock = questBlock(questStore.openForAgent(agentId)); } catch (_) { questsBlock = ''; }
-  // QUEST V2 §A — the RUN-contract binding, wired at the same injection seam (agentId + live runId + open quests
-  // all known here). A run-contract quest's key is fixed at MINT, before any runId exists, so without a binding
-  // the run-end settle hook's completeByContract('run', runId) could never match — the exact "uncompletable"
-  // class v2 exists to kill. Bind this TASK run to the agent's OWN open run quests (never station-wide — see
-  // questsweeps.js) so the existing settle hook completes them on 'done' and stalls them on any other reason.
-  // A fresh bind also clears a prior stall (the build is live again — bindRun's own contract). Fail-open.
-  try {
-    if (isTask) for (const _qid of QuestSweeps.runBindIds(questStore.openForAgent(agentId), agentId)) questStore.bindRun(_qid, runId, agentId).catch(() => {});
-  } catch (_) {}
+  // RUN quests bind only through quest.update op:"start" (or a successful named progress tick). Admission cannot
+  // infer which of several open objectives this arbitrary task is doing, so it deliberately binds nothing here.
   let taskIntentNote = '';
   if (taskBrief) taskIntentNote = '\n\n' + TaskIntent.directive(taskContextBlock);
   // SERVICE KEYS (KEYS tab): advertise the env-var NAMES of the Commander's connected platform keys — value never

@@ -49,6 +49,7 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   /* ============================ 1. THE DECOMPOSITION CONFIRM FLOW ============================ */
 
   A.eq(GoalStore.willOfferDecomposition(), true, 'a goals belief with no tree → a decomposition is offerable');
+  A.eq(GoalStore.unplannedGoal().text, 'ship a local-first agent harness', 'a saved dossier goal is readable before its path exists');
   const pend = GoalStore.pendingDecomposition();
   A.ok(pend && pend.id === 'cd_5', 'pendingDecomposition returns the belief to decompose');
   const proposed = await GoalStore.proposeDecomposition();
@@ -62,6 +63,7 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   A.ok(posts.some(p => p.url === '/api/goals' && p.body.goal && p.body.goal.text.indexOf('harness') >= 0), 'confirm mirrors the active goal to the sidecar (POST /api/goals)');
   // it is now the active goal + surfaces in the projection
   A.ok(GoalStore.activeGoal() && GoalStore.activeGoal().id === goal.id, 'the confirmed goal is the active goal');
+  A.eq(GoalStore.unplannedGoal(), null, 'a goal with an authoritative tree is no longer reported as unplanned');
   const q1 = GoalStore.quests();
   A.eq(q1[0].kind, 'arc-goal', 'the projection leads with the goal header');
   A.eq(q1.filter(q => q.kind === 'arc-step').length, 3, 'three milestone steps project');
@@ -76,6 +78,7 @@ const { GoalStore } = require('../frontend/app/goalstore.js');
   A.eq(GoalStore.willOfferDecomposition(), true, 'a new belief with no tree is offerable');
   GoalStore.declineDecomposition(GoalStore.pendingDecomposition());
   A.eq(GoalStore.willOfferDecomposition(), false, 'not-now stops the re-offer for THIS belief state (never nag)');
+  A.eq(GoalStore.unplannedGoal().text, 'launch a public beta', 'declining decomposition never makes the saved goal disappear from YOUR GOAL');
   // the SAME belief text, unchanged → still not offered
   goalsBeliefs = [{ id: 'cd_9', text: 'launch a public beta' }];
   A.eq(GoalStore.willOfferDecomposition(), false, 'the unchanged belief still does not re-offer');

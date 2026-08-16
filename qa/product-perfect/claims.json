@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "db540bbab7138335a07fddb9580073787a488f40",
+    "sourceCommit": "aea7faf1f07a9cc0facdab994b5cd65f2c84c6ae",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 603484,
-        "sha256": "24d6548a6237d1d29caddec4553ac92df7344dc011737711c1a2868f3d54f35a"
+        "bytes": 603635,
+        "sha256": "86f9069396daa38d93aac7859fe1fd302bd63dc66c748caa8707f7b24b1e079d"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -238,8 +238,8 @@
       },
       {
         "path": "frontend/app/dossierstore.js",
-        "bytes": 7532,
-        "sha256": "c710e81da1115b18695614c09cb608fe688d0b1d9a8619719ba71ca1d327ce47"
+        "bytes": 7826,
+        "sha256": "d7b4ca483e22188dda3ab450b0679703fbcde3cf0b29e7e4bbddcaa0de62d038"
       },
       {
         "path": "frontend/app/floorstats.js",
@@ -283,8 +283,8 @@
       },
       {
         "path": "frontend/app/goalstore.js",
-        "bytes": 27849,
-        "sha256": "fd3d86cf37054fd6b0b91487b42b9fff502a7700572632b8c197cbfa0d14a943"
+        "bytes": 28580,
+        "sha256": "87d4604d5e48d7a57f8ed68e93fbbd194d74b320fae76b0dbacfd69fcaa8aa9c"
       },
       {
         "path": "frontend/app/harness.js",
@@ -743,8 +743,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 632075,
-        "sha256": "d96c0c62d99de68d47d11f9c18fef8f39711394a8e72083db8eee1c284253067"
+        "bytes": 634723,
+        "sha256": "6ffa5bb1f71b30e8daa523e67832d8bd154c917c01c7cd5ca32b8b5e42f2191d"
       },
       {
         "path": "frontend/app/study.js",
@@ -973,8 +973,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 377740,
-        "sha256": "efd140342973c9f64e73d3bdf1c9fbe89c2be727cc26a1e796cadd0632176afe"
+        "bytes": 378256,
+        "sha256": "6da15e9cb3c116056b87a53be347a62ceafb3f9c32f9d6ae27f1dc36fba38eea"
       },
       {
         "path": "frontend/css/asciifx.css",

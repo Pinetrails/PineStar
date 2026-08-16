@@ -2,18 +2,10 @@
 
    quest-store.js owns completion (completeByContract / bindRun / stallRun) but is deliberately exact-key:
    it never decides WHICH keys a live seam just proved. That decision is seam-specific — "is this capability
-   live", "does this committed memory cover that fact", "which quests should this run bind" — and this module
+   live" or "does this committed memory cover that fact" — and this module
    holds it as pure, node-testable functions so sidecar/index.js only wires call sites (composition-root law).
 
-   The four real seams (each caller passes questStore.openForAgent(agentId) — its own + station-wide quests):
-
-     • run      — runBindIds(quests, agentId): the STATION QUESTS injection seam binds the live TASK run to the
-                  agent's OWN open run-contract quests (bindRun), so the existing run-end settle hook — which
-                  already calls completeByContract('run', runId) on 'done' and stallRun on any other reason —
-                  can actually find them. Own quests ONLY (never station-wide): binding a station-wide quest to
-                  whichever agent happens to run next would let an unrelated run "complete" it. This mirrors v1
-                  workqueststore.onRunStart (the armed quest claimed the launched run); a station-wide run quest
-                  is instead bound at the tool seam when an agent provably works it (quest.update op:"progress").
+   The three real sweeps (each caller passes questStore.openForAgent(agentId) — its own + station-wide quests):
 
      • prop     — livePropKeys(quests, agentId, station, resolved): the run-admission seam is where the sidecar
                   PROVES a capability is live — resolveTools projects the placed office into real grants, fresh
@@ -51,16 +43,6 @@ function norm(s) { return String(s == null ? '' : s).toLowerCase().replace(/\s+/
 function openFor(q, type, agentId) {
   return !!(q && q.status === 'open' && q.contract && q.contract.type === type
     && (q.agentId == null || q.agentId === String(agentId == null ? '' : agentId)));
-}
-
-// ---- run: which open run-contract quests should the live task run bind? OWN quests only (see header). ----
-function runBindIds(quests, agentId) {
-  const aid = String(agentId == null ? '' : agentId);
-  const out = [];
-  for (const q of (Array.isArray(quests) ? quests : [])) {
-    if (q && q.status === 'open' && q.contract && q.contract.type === 'run' && q.agentId === aid && q.id) out.push(q.id);
-  }
-  return out;
 }
 
 // ---- prop: which open prop-contract keys does THIS run's resolved capability set prove live? ----
@@ -115,4 +97,4 @@ function artifactQuestKeys(quests, agentId) {
   return out;
 }
 
-module.exports = { runBindIds, livePropKeys, learnedFactKeys, artifactQuestKeys, _internals: { norm, openFor, MIN_FACT_KEY } };
+module.exports = { livePropKeys, learnedFactKeys, artifactQuestKeys, _internals: { norm, openFor, MIN_FACT_KEY } };

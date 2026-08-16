@@ -7761,7 +7761,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
      work happens in a conversation with an agent, so that is where the button goes: its OWN session, opened
      on the quest, with the ask already typed. The other two destinations were already right and are
      unchanged: a dossier question is answered in the dossier, a floor gap is fixed in REFIT. */
-  const GO_LABEL = { commander: '▶ ANSWER IT', session: '▶ START QUEST', refit: '▶ OPEN REFIT' };
+  const GO_LABEL = { commander: '▶ ANSWER IT', session: '▶ START QUEST', refit: '▶ OPEN REFIT', recruit: '▶ OPEN RECRUITMENT' };
   /* A one-word badge naming WHICH KIND of thing a card is. The log mixes six genuinely different sources —
      a personalized ledger quest, a goal-arc step, a capability gap on your floor, an accepted build, a
      recurring maintenance cause, a dossier question, a milestone — and rendering them identically is what
@@ -7772,8 +7772,24 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   };
   function questGoDest(q) {
     if (!q || q.status === 'done') return null;
+    if (q.id === 'st:crew') {
+      if (typeof App !== 'undefined' && App.openSummonBay) return 'recruit';
+      return null;
+    }
     if (q.kind === 'dossier') return 'commander';
-    if (q.kind === 'work' || (q.kind === 'ledger' && (q.ledgerKind === 'work' || (q.contract && (q.contract.type === 'run' || q.contract.type === 'artifact'))))) return 'session';
+    if (q.kind === 'work' || q.kind === 'maintenance') return 'session';
+    if (q.kind === 'ledger') {
+      switch (q.contract && q.contract.type) {
+        case 'prop':
+          if (typeof Build !== 'undefined' && Build.open) return 'refit';
+          return null;
+        case 'run':
+        case 'artifact':
+        case 'fact':
+        case 'attest': return 'session';
+        default: if (q.ledgerKind === 'work') return 'session';
+      }
+    }
     if (q.kind === 'station-gap' || q.kind === 'station') return (typeof Build !== 'undefined' && Build.open) ? 'refit' : null;
     return null;
   }
@@ -7859,6 +7875,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // NO ACTIVE GOAL: say what the track is FOR and point at the one surface that starts one, rather than
     // rendering an empty frame (or worse, a fake path). The dossier's goals dimension is the real door.
     if (!goal) {
+      let savedGoal = null;
+      try { savedGoal = (typeof GoalStore !== 'undefined' && GoalStore.unplannedGoal) ? GoalStore.unplannedGoal() : null; } catch (_) {}
+      if (savedGoal && savedGoal.text) {
+        let canPlan = false;
+        try { canPlan = !!(GoalStore.willOfferDecomposition && GoalStore.willOfferDecomposition()); } catch (_) {}
+        const dest = canPlan ? 'goal-plan' : 'commander';
+        const label = canPlan ? '▶ PLAN THIS GOAL' : '▶ EDIT GOAL';
+        return '<div class="gx-sec q-track-sec"><span class="gx-title">YOUR GOAL</span><span class="gx-tag">GOAL SAVED · PATH PENDING</span></div>'
+          + '<div class="q-track q-track-empty q-track-saved">'
+          + '<div class="sub"><b class="q-track-goal">' + esc(savedGoal.text) + '</b><br>this goal is saved. plan it into milestones to make the path trackable here.</div>'
+          + '<button class="q-go q-track-setgoal" data-dest="' + dest + '" title="Open where you do this next">' + label + '</button>'
+          + '</div>';
+      }
       /* A FINISHED PATH IS NOT AN EMPTY ONE. Goals.project surfaces nothing for a completed goal (a done arc
          is history, by design), so the band used to snap straight back to "no goal path yet" the instant the
          last milestone landed — telling a Commander who had just finished a four-step goal that they had
@@ -8106,7 +8135,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const isArc = q => q && (q.kind === 'arc-goal' || q.kind === 'arc-step');
     const arcs = qs.filter(isArc);
     const rest = qs.filter(q => !isArc(q));
-    const open = rest.filter(q => q.status !== 'done'), done = rest.filter(q => q.status === 'done');
+    const milestones = rest.filter(q => q.kind === 'milestone');
+    const current = rest.filter(q => q.kind !== 'milestone');
+    const open = current.filter(q => q.status !== 'done'), done = current.filter(q => q.status === 'done');
     // a station-gap / work / maintenance quest is a fix-it or build SUGGESTION — always dismissible while open
     // (the sandbox law); each routes through its OWN store's denylist, not QuestState (whose dismiss is
     // dossier-only). Only the get-to-know-you (dossier) kind falls through to QuestState's dismissible check.
@@ -8212,6 +8243,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       ? '<div class="gx-sec"><span class="gx-title">PROPOSALS</span> <span class="gx-tag">' + proposals.length + '</span></div>'
         + '<div class="gx-tros">' + proposals.map(propRow).join('') + '</div>'
       : '';
+    const milestoneDone = milestones.filter(q => q.status === 'done').length;
+    const milestonesHtml = milestones.length
+      ? '<details class="q-milestones"><summary>MILESTONES <span class="gx-tag">' + milestoneDone + ' / ' + milestones.length + '</span><span class="dim">long-term station history</span></summary>'
+        + '<div class="gx-tros q-grid q-milestone-grid">' + milestones.map(tro).join('') + '</div></details>'
+      : '';
     /* ORDER OF THE PANEL (2026-08-13). This window is opened to answer ONE question — what should I do next —
        and it used to answer it fourth: the agent-growth meter, the direction card, and the whole Commander
        Journey console (metrics, mastery, adaptation receipts, station evolution) all sat above the first
@@ -8228,6 +8264,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       + '<div class="gx-tros q-grid q-open">' + (open.map(tro).join('') || '<p class="dim">all caught up.</p>') + '</div>'
       + '<div class="gx-sec"><span class="gx-title">DONE</span> <span class="gx-tag">' + done.length + '</span></div>'
       + '<div class="gx-tros q-grid q-done">' + (done.map(tro).join('') || '<p class="dim">nothing yet.</p>') + '</div>'
+      + milestonesHtml
       + meterHtml
       + journeyHtml()
       + '</div>';
@@ -8357,6 +8394,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       ev.stopPropagation();
       const d = b.dataset.dest;
       if (d === 'refit') { if (typeof Build !== 'undefined' && Build.open) { try { Build.open(); } catch (_) {} } }
+      else if (d === 'recruit') { if (typeof App !== 'undefined' && App.openSummonBay) { try { App.openSummonBay(); } catch (_) {} } }
+      else if (d === 'goal-plan') {
+        if (typeof Chat === 'undefined' || !Chat.planGoalPath) { notify('goal planning is unavailable right now', 'bad'); return; }
+        b.disabled = true;
+        Promise.resolve(Chat.planGoalPath()).then(ok => { b.disabled = false; if (!ok) notify('finish the current prompt, then plan this goal', 'warn'); }).catch(() => { b.disabled = false; notify('could not plan that goal yet', 'bad'); });
+      }
       else if (d === 'session') {
         // the quest's own conversation — never the TASK BOARD, which shows other work and not this quest
         const q = qs.find(x => x && x.id === b.dataset.qid);

@@ -3,6 +3,9 @@
    this lets the agent ACT on those quests. It is the ONLY way an agent touches the ledger.
 
    Ops (op-routed like the todo tool):
+     • start           — bind the ONE named run-contract quest to the current run. Agent-scoped. Run admission
+                         never guesses among open objectives; only this explicit claim (or a named progress tick)
+                         lets run-end completion settle that quest.
      • progress        — tick a NAMED open step with a short note (questStore.tickStep). Agent-scoped: the quest
                          must be OPEN FOR THIS agent (openForAgent) — an agent can't tick a step on a quest that
                          isn't its own / station-wide. Progress is display only; it NEVER completes a quest.
@@ -38,7 +41,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const OPS = ['progress', 'attest_complete', 'mint'];
+  const OPS = ['start', 'progress', 'attest_complete', 'mint'];
   const str = v => String(v == null ? '' : v).trim();
 
   const MINTS_PER_RUN = 1;      // at most ONE successful mint per run — enforced MECHANICALLY here, not just by prompt doctrine
@@ -58,7 +61,8 @@
 
     const questUpdateTool = {
       name: 'quest.update', capability: 'quest', scope: 'write', requiresConsent: false, timeoutMs: 8000,
-      description: 'Act on your STATION QUESTS (listed in your prompt). op:"progress" ticks a named step of a quest '
+      description: 'Act on your STATION QUESTS (listed in your prompt). op:"start" binds the named run quest to '
+        + 'this run; use it before doing that quest so an unrelated run can never complete it. op:"progress" ticks a named step of a quest '
         + '(pass id, stepKey, and a short note on what you did) — progress is display only and never completes a '
         + 'quest. op:"attest_complete" PROPOSES a quest is done (pass id and concrete evidence of what was '
         + 'accomplished); this NEVER marks it complete — the Commander must confirm. Quests that complete '
@@ -69,7 +73,7 @@
       schema: {
         type: 'object', required: ['op'], properties: {
           op: { type: 'string', enum: OPS },
-          id: { type: 'string' },            // progress / attest_complete: which quest
+          id: { type: 'string' },            // start / progress / attest_complete: which quest
           stepKey: { type: 'string' },       // progress: which step
           note: { type: 'string' },          // progress: what you did on this step
           evidence: { type: 'string' },      // attest_complete: concrete proof of completion
@@ -96,6 +100,19 @@
         const op = str(args.op);
         const agentId = (ctx && ctx.agentId) || 'agent';
         const runId = ctx && ctx.runId ? String(ctx.runId) : null;
+
+        // ---- start: explicitly bind the named mechanical run quest to THIS run ----
+        if (op === 'start') {
+          const id = str(args.id);
+          if (!id) return { content: 'Pass the quest id to start (from your STATION QUESTS list).', summary: 'noop' };
+          if (!runId) return { content: 'Starting a run quest needs the current run. No live runId was available.', summary: 'noop' };
+          const mine = store.openForAgent(agentId).find(q => q.id === id);
+          if (!mine) return { content: 'Quest ' + id + ' is not one of your open quests. Only quests listed for you can be started.', summary: 'not yours' };
+          if (!mine.contract || mine.contract.type !== 'run') return { content: 'Quest ' + id + ' is not a run quest, so it cannot be bound to this run.', summary: 'wrong contract' };
+          const ok = await store.bindRun(id, runId, agentId);
+          if (!ok) return { content: 'Could not start quest ' + id + ' on this run.', summary: 'no-op' };
+          return { content: 'Started quest ' + id + ' on this run. Only this explicitly named quest is bound.', summary: 'started ' + id };
+        }
 
         // ---- progress: tick a named step, agent-scoped ----
         if (op === 'progress') {

@@ -4397,6 +4397,7 @@ const Chat = (() => {
     return isBusy() || interview;
   }
   async function offerArc(runId) {
+    let opened = false;
     if (typeof GoalStore === 'undefined' || typeof Dialogue === 'undefined') return;
     if (!GoalStore.willOfferDecomposition || !GoalStore.willOfferDecomposition()) return;
     if (slotCanArc() !== 'free' || arcBlocked()) return;   // the LOWEST priority: a taken/blocked moment just drops (re-offers next run end)
@@ -4419,6 +4420,7 @@ const Chat = (() => {
       let path = res.texts.slice();
       try {
         Dialogue.open({ name: (name || 'AGENT') });
+        opened = true;
         await Dialogue.say('i think i see the path to that goal — here’s how i’d break it down. does this look right?');
         const linesOf = ts => ts.map((t, i) => (i + 1) + '. ' + t).join('\n');
         // Confirm / Not-now + an ✎ EDIT custom path (allowCustom): typing a revised path (steps separated by a
@@ -4468,7 +4470,9 @@ const Chat = (() => {
     } finally {
       GoalStore.setFiring && GoalStore.setFiring(false);
     }
+    return opened;
   }
+  function planGoalPath() { return offerArc('manual:' + Date.now()); }
   // one arc confirm per run: the collection pass consults this before staging the arc candidate (the offer
   // itself, including the paid decomposition call, only happens if the arc actually WINS the moment).
   function arcSeen(runId) { return !!runId && arcRunsSeen.has(runId); }
@@ -8307,5 +8311,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, retireDeskPrompt, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, sampleCard, workshopReturn, refreshIdBar: renderIdBar, refreshAgentIdentity, setRosterStatus, askBudgetSpent, spendAsk };
+  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, contextRef, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, retireDeskPrompt, typeLine, nudge, clearNudge, offerCuriosity, offerFork, planGoalPath, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, sampleCard, workshopReturn, refreshIdBar: renderIdBar, refreshAgentIdentity, setRosterStatus, askBudgetSpent, spendAsk };
 })();
