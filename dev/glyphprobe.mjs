@@ -34,6 +34,11 @@ const arg = (f, d) => { const i = process.argv.indexOf(f); return i > -1 ? proce
 const PORT = arg('--port', '8961');
 const CDP_PORT = Number(arg('--cdp', '9361'));
 const OUT = arg('--out', join(process.cwd(), '.glyphprobe'));
+/* --party 3 exercises the TRIO. Worth its own run and not just an assumption: the overlap defect
+   this probe caught (a late joiner's bubble spilling into the next speaker's turn) is precisely
+   the class that behaves differently at n=3 — a third body is the one most likely to arrive late,
+   which is exactly how the W5 hold-clock defect hid from every two-body run. */
+const PARTY = Math.max(2, Math.min(3, Number(arg('--party', '2')) || 2));
 const APP_URL = `http://127.0.0.1:${PORT}/`;
 const SCRATCH = join(OUT, '_seed-workspace');
 mkdirSync(OUT, { recursive: true });
@@ -117,16 +122,18 @@ try {
   if (!marker || !marker.chatter) throw new Error('this page has no World._dbgChatter — wrong build/server on this port');
   console.log('[glyphprobe] ink spy:', JSON.stringify(await evalJS(cdp, INSTALL_SPY)));
 
-  for (let i = 0; i < 2; i++) {
-    await evalJS(cdp, `(() => { World.spawnAgent({ id: 'G${i}', name: 'GLYPH${i}', color: '${i ? '#77ffdd' : '#ffaa55'}' }); return true; })()`);
+  const COLORS = ['#ffaa55', '#77ffdd', '#c9a0ff'];
+  for (let i = 0; i < PARTY; i++) {
+    await evalJS(cdp, `(() => { World.spawnAgent({ id: 'G${i}', name: 'GLYPH${i}', color: '${COLORS[i]}' }); return true; })()`);
     await sleep(700);
   }
   await sleep(4000);
   // park them together so the walk is short (removes the WAITING, not the beat)
-  console.log('[glyphprobe] parked:', await evalJS(cdp, `(() => { try {
+  console.log(`[glyphprobe] party of ${PARTY}, parked:`, await evalJS(cdp, `(() => { try {
     const bs = World.bodies().filter(b => b && !b.hero && !b.unplaced);
-    if (bs.length < 2) return 'need 2 crew, got ' + bs.length;
+    if (bs.length < ${PARTY}) return 'need ${PARTY} crew, got ' + bs.length;
     World._dbgTeleport(bs[1].id, bs[0].px + 3, bs[0].py + 3);
+    if (bs.length > 2) World._dbgTeleport(bs[2].id, bs[0].px - 3, bs[0].py + 3);
     return bs.map(b => b.id).join(',');
   } catch (e) { return 'err ' + e; } })()`));
   await sleep(1500);
@@ -137,15 +144,18 @@ try {
     armed = await evalJS(cdp, `(() => { try {
       const bs = World.bodies().filter(b => b && !b.hero && !b.unplaced);
       if (bs.length < 2) return { ok: false, err: 'crew vanished' };
-      const ids = bs.map(b => b.id), rot = ${attempt % 2};
+      const ids = bs.map(b => b.id), rot = ${attempt % PARTY};
       return World._dbgHuddle(ids.slice(rot).concat(ids.slice(0, rot)), true);
     } catch (e) { return { ok: false, err: String(e) }; } })()`);
-    if (armed && armed.ok && armed.roster && armed.roster.length >= 2) break;
+    if (armed && armed.ok && armed.roster && armed.roster.length >= PARTY) break;
     console.log('[glyphprobe] arm attempt ' + attempt + ':', JSON.stringify(armed));
-    await sleep(3000);
+    await sleep(armed && armed.ok ? 4000 : 3000);   // armed a SHORT party — let it lapse before retrying
   }
-  if (!(armed && armed.ok && armed.roster && armed.roster.length >= 2)) {
-    bail(4, 'GLYPHPROBE INCONCLUSIVE — could not arm a conversation to observe.', 'last attempt: ' + JSON.stringify(armed));
+  /* "Could not assemble the party" is INCONCLUSIVE, never a verdict — `force` skips the frequency
+     roll and NOTHING else, so a pair cooldown or a missing third tile legitimately blocks a trio.
+     Grading that as a product failure would be a lie in the other direction. */
+  if (!(armed && armed.ok && armed.roster && armed.roster.length >= PARTY)) {
+    bail(4, `GLYPHPROBE INCONCLUSIVE — could not arm a party of ${PARTY} to observe.`, 'last attempt: ' + JSON.stringify(armed));
   }
   console.log('[glyphprobe] armed:', JSON.stringify(armed));
   const roster = armed.roster;
