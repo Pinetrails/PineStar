@@ -37,6 +37,7 @@ test/durable-store.test.js
 test/domain-store.test.js
 test/provider-runtime.test.js
 test/run-execution-state.test.js
+test/tool-progress-guard.test.js
 test/tool-dispatch-boundary.test.js
 test/completion-evidence.test.js
 test/task-postconditions.test.js
@@ -284,6 +285,7 @@ test/browser.login-seed.test.js
 test/browser.reach-measure.test.js
 test/browser.tool-parity.test.js
 test/browser.wait-recovery.test.js
+test/browser.download-receipt.test.js
 test/browser.attach.test.js
 test/browser.pie.test.js
 test/desktop.test.js
@@ -500,6 +502,9 @@ test/zones.test.js
 test/idle-life-regressions.test.js
 test/social-border.test.js
 test/social-trio.test.js
+test/agent-affinity.test.js
+test/agent-affinity-weight.test.js
+test/station-gathering.test.js
 test/crew-containment.test.js
 test/prop-awareness.test.js
 test/chat-stare-throttle.test.js

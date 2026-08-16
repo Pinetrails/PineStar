@@ -129,7 +129,9 @@ const huddleFn = src.slice(src.indexOf('function planHuddle('), src.indexOf('// 
 A.ok(/const tc = nearestWalkableInZone\(zoneFor\(c\), ta\.x, ta\.y, cc, 4, ta, tb\)/.test(huddleFn),
   'the third tile is resolved in the THIRD body\'s own zone and excludes both taken tiles (G3)');
 A.ok(/if \(tc\) extras\.push/.test(huddleFn), 'no legal third tile ⇒ no third body (the huddle falls back to the pair, never fails)');
-A.ok(huddleFn.indexOf('if (!tb) return false;') < huddleFn.indexOf('U.chance(SOCIAL_TRIO_CHANCE)'),
+// (the roll's argument grew a COMPANIONS bonus in 2026-08-16, so these match the call up to the
+// constant and assert the bonus separately below — the ORDERING law under test is unchanged)
+A.ok(huddleFn.indexOf('if (!tb) return false;') < huddleFn.indexOf('U.chance(SOCIAL_TRIO_CHANCE'),
   'the pair is resolved BEFORE the trio is rolled — the third body can only ever ADD to a huddle that was already legal');
 A.ok(/!pairOnCd\(b\.id, o\.id, now\)/.test(huddleFn), 'the recruit must also be off cooldown with the PARTNER, not just with the initiator');
 A.ok(/function nearestWalkableInZone\(zone, tx, ty, cur, radius, \.\.\.excl\)/.test(src), 'the tile picker takes multiple exclusions (a trio has two tiles already spoken for)');
@@ -150,9 +152,16 @@ A.ok(/if \(socialBeat\) return \{ ok: false, err: 'an encounter is already live'
 A.ok(/const keep = self[\s\S]{0,400}\} finally \{ self = keep; \}/.test(src.slice(src.indexOf('_dbgHuddle:'))), 'the hook restores the borrowed `self` in a finally (B1)');
 const hookFn = src.slice(src.indexOf('_dbgHuddle: (ids, force)'), src.indexOf('_dbgSit:'));
 A.ok(/planHuddle\(bodies\[0\], bodies\.slice\(1\), now, !!force\)/.test(hookFn), 'the hook goes through the REAL planHuddle, not a staged copy');
-A.ok(/forceTrio \|\| U\.chance\(SOCIAL_TRIO_CHANCE\)/.test(src), 'force bypasses the frequency ROLL only — every legality gate still runs');
+A.ok(/forceTrio \|\| U\.chance\(SOCIAL_TRIO_CHANCE/.test(src), 'force bypasses the frequency ROLL only — every legality gate still runs');
+/* COMPANIONS (2026-08-16): the roll's argument gained a bond bonus so a third body bonded to BOTH
+   others turns a pair into the friend GROUP more often. It must only ever ADD — a MINUS here would
+   let the social graph SUPPRESS trios, silently undoing the W5 ask ("maybe even 3 of them"), and it
+   must stay inside the roll so it can never reach a legality gate. */
+A.ok(/U\.chance\(SOCIAL_TRIO_CHANCE \+ BOND_TRIO_BONUS \* bestGroupBond\)/.test(src),
+  'the companions bonus only ADDS to the trio roll — it can never suppress a trio');
+A.ok(/const BOND_TRIO_BONUS = 0?\.\d+/.test(src), 'and that bonus is a positive constant');
 // the roll is the ONLY thing force can skip: the tile resolver must still be consulted after it
-const trioBranch = src.slice(src.indexOf('forceTrio || U.chance(SOCIAL_TRIO_CHANCE)'), src.indexOf('return startEncounter(a, b, \'huddle\''));
+const trioBranch = src.slice(src.indexOf('forceTrio || U.chance(SOCIAL_TRIO_CHANCE'), src.indexOf('return startEncounter(a, b, \'huddle\''));
 A.ok(/nearestWalkableInZone\(zoneFor\(c\)/.test(trioBranch), 'even a forced trio must still resolve a legal in-zone tile for the third body');
 A.ok(/_dbgHuddleStats: \(\) => JSON\.parse\(JSON\.stringify\(huddleStats\)\)/.test(src), 'the selection counters are exposed as a read-only copy (a caller cannot mutate live engine state)');
 A.ok(/huddleStats\.candCounts\[list\.length\]/.test(src), 'the counters record how many candidates each huddle actually saw — the number that explains a missing trio');
