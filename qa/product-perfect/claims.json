@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "8f511091ba94e1518ee5039777b7e2cbc22cdbf4",
+    "sourceCommit": "09015da734534a4b4f7a895efbb4c820ab5cc505",
     "pathSetSha256": "e8d7fbccb137a4aa34bb0378d2f52f64aecb6e9c921c2fafd46ccdce6b80aeaf",
     "files": [
       {
@@ -373,8 +373,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 252119,
-        "sha256": "fe87461aeb4f951627af02116377d144c69e46d873f9d6ce92b19882f16bdf20"
+        "bytes": 250008,
+        "sha256": "8a9848c2865653b0c434dabeff4d374d7b1aa93b8bf660e8a8bf02f67820d9da"
       },
       {
         "path": "frontend/app/mint.js",
