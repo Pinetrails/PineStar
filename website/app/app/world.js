@@ -2803,6 +2803,10 @@ const World = (() => {
     const s = socialBeat; socialBeat = null;
     if (!s) return;
     for (const body of participantBodies(s)) {
+      // W6 SAFETY, same shape as the pose below: the speech bubble dies WITH the encounter. A line
+      // left hanging over a body that is no longer in a conversation is the same lie as a mouth
+      // left moving at nobody — and unlike the pose it would keep asserting it for a full second.
+      if (body) body.chatter = null;
       // W4 SAFETY: the conversation pose is dropped for EVERY participant on ANY end, even one whose
       // plan was already torn down elsewhere (a seize clears .social first) — a body left mouth-moving
       // at nobody is exactly the kind of state this project calls a lie.
@@ -3004,12 +3008,153 @@ const World = (() => {
     return myTurnN(elapsed, first ? 0 : 1, 2, slotMs, speakMs);
   }
   /* TALK-TURN-PURE-END */
+
+  /* ---------- W6: THE STATION HAS ITS OWN TONGUE (2026-08-16) ----------
+     Two sprites mouthing at each other only read as "a conversation" if you already know the
+     rule. Andrew asked for the missing half — a speech bubble over whoever holds the floor,
+     carrying "language that can't be transcripted".
+
+     THE UNREADABILITY IS THE HONEST PART, NOT A GAG. A social beat is ambient station LIFE, not
+     a harness event: no message crossed the bus, no run happened, nothing was actually said. A
+     bubble of English would therefore be the app asserting content it cannot prove — the exact
+     class of lie this project bans everywhere else. A script that is not a language asserts
+     only what IS true: these two are talking to each other, right now. WORDS live in COMMS.
+
+     So the glyphs are not text and never can be: no font, no codepoint, no string anywhere on
+     the path. A rune is a list of strokes on a 4x6 lattice, painted as pixel rects. It cannot
+     be copied, pasted, translated or screen-read, because there is nothing there to copy. (Two
+     more reasons it has to be geometry and not characters: VT323 ships no symbol glyphs, so any
+     exotic codepoint silently falls back to a different font at a different advance — see the
+     icon-vocabulary measurements — and drawn rects stay pixel-crisp at every zoom, which a
+     scaled glyph font does not.)
+
+     DIALECT: the rune subset a body draws from is seeded off its own id, so one agent's speech
+     looks consistently unlike another's and a trio reads as three speakers rather than one
+     noise source. */
+  /* GLYPH-SPEECH-PURE-BEGIN — the tongue itself, extracted PURE (arguments only; no module
+     state, no ambient RNG, no clock, no DOM) so the alphabet and the phrase builder are
+     testable headlessly, the way the turn-taking above is. The invariants that matter:
+       • a rune is GEOMETRY, never a character — nothing on this path can be transcribed
+       • every stroke stays inside its own cell, so a glyph can never paint over its neighbour
+       • strokes are horizontal / vertical / true 45° ONLY (any other slope is a fuzzy staircase
+         at 1px, and this is pixel art)
+       • one seed ⇒ one phrase, always — a line is rolled once per turn and must not shimmer */
+  const RUNE_W = 3, RUNE_H = 5;              // lattice EXTENT: points 0..3 across, 0..5 down (a 4x6 cell)
+  // An angular technical script: spines with marks, a few closed forms. Each rune is a list of
+  // [x1,y1,x2,y2] strokes. Kept deliberately small — a 40-glyph alphabet reads as noise, ~18
+  // repeats often enough that the eye starts to believe it could be read.
+  const RUNES = [
+    [[1, 0, 1, 5], [1, 0, 3, 0]],                              // spine, crowned
+    [[1, 0, 1, 5], [1, 2, 3, 2]],                              // spine, waisted
+    [[1, 0, 1, 5], [1, 1, 3, 1], [1, 3, 3, 3]],                // ladder
+    [[1, 0, 1, 5], [1, 3, 3, 1]],                              // rising stroke
+    [[1, 0, 1, 5], [1, 2, 3, 4]],                              // falling stroke
+    [[1, 0, 1, 5], [1, 5, 3, 5], [3, 3, 3, 5]],                // footed hook
+    [[1, 0, 1, 5], [0, 2, 3, 2]],                              // full cross
+    [[0, 1, 3, 1], [0, 4, 3, 4], [0, 1, 0, 4], [3, 1, 3, 4]],  // closed cell
+    [[0, 3, 1, 2], [1, 2, 2, 3], [0, 5, 3, 5]],                // chevron on a bar
+    [[0, 0, 0, 5], [3, 0, 3, 5], [0, 2, 3, 2]],                // bridged pair
+    [[1, 0, 1, 5], [0, 1, 1, 0], [1, 0, 2, 1]],                // arrowed spine
+    [[0, 5, 3, 2], [1, 1, 3, 1]],                              // barred diagonal
+    [[0, 0, 3, 0], [3, 0, 1, 2], [1, 2, 1, 5]],                // switchback
+    [[2, 0, 2, 5], [0, 0, 2, 0], [0, 0, 0, 2]],                // left hook
+    [[0, 1, 3, 1], [0, 3, 3, 3], [1, 1, 1, 5]],                // stacked bars
+    [[0, 3, 2, 1], [2, 1, 3, 2], [3, 2, 1, 4], [1, 4, 0, 3]],  // lens
+    [[1, 0, 1, 5], [2, 1, 3, 1], [2, 3, 3, 3], [2, 5, 3, 5]],  // comb
+    [[0, 1, 2, 1], [0, 1, 0, 4], [0, 4, 2, 4], [2, 4, 3, 5]]   // tailed cup
+  ];
+  const DIALECT_SIZE = 9;                                      // how many of the 18 any one speaker uses
+  const PHRASE_WORDS_MIN = 1, PHRASE_WORDS_MAX = 3;
+  const WORD_RUNES_MIN = 2, WORD_RUNES_MAX = 4;
+  /* xorshift32 — a SEEDED stream, so the same turn always yields the same line (Math.random here
+     would re-roll the phrase every frame and the bubble would shimmer instead of speak).
+
+     The seed is FINALISED (murmur3 fmix32) before it becomes state. Raw xorshift seeded with a
+     small or sequential integer has a strongly correlated FIRST output — measured: 2000 nearby
+     seeds every one of which opened below 1/3, so every phrase came out exactly one word long.
+     The bug is invisible in the shipped call (U.hash is already an avalanche) and obvious the
+     moment anything else seeds it, which is precisely the kind of latent trap worth killing. */
+  function glyphRnd(seed) {
+    let s = (seed >>> 0) || 0x9e3779b9;
+    s ^= s >>> 16; s = Math.imul(s, 0x85ebca6b) >>> 0;
+    s ^= s >>> 13; s = Math.imul(s, 0xc2b2ae35) >>> 0;
+    s ^= s >>> 16; s = (s >>> 0) || 0x9e3779b9;
+    return function () { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+  }
+  // a speaker's own alphabet: a stable shuffled subset of the runes, chosen by its id
+  function glyphDialect(seed) {
+    const pool = [];
+    for (let i = 0; i < RUNES.length; i++) pool.push(i);
+    const r = glyphRnd((seed >>> 0) ^ 0x5bf03635);
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(r() * (i + 1)), t = pool[i];
+      pool[i] = pool[j]; pool[j] = t;
+    }
+    return pool.slice(0, DIALECT_SIZE).sort(function (a, b) { return a - b; });
+  }
+  /* WHEN A TURN'S BUBBLE MUST BE GONE — derived from the TURN, never from when the speaker
+     happened to start.
+
+     THE BUG THIS EXISTS TO KILL (found by running the live probe five times, not once; the fifth
+     run showed two bubbles up together). A bubble used to live a fixed 1410ms from its own stamp.
+     That is correct only for a body that starts speaking exactly on its slot boundary. A body
+     that ARRIVES LATE joins its turn already in progress — myTurnN puts it straight on the floor
+     mid-slot — so its bubble was still fading 500ms into the NEXT speaker's turn, and two mouths
+     appeared to be talking at once. Exactly the shape of the W5 hold-clock defect one section
+     up: a per-body clock where the encounter's own clock was the truth.
+
+     So the window is anchored to the SLOT: whichever body holds turn k, its bubble is gone at
+     k*slot + speak + fade — the instant the mouth stops, plus the fade. Late joiners get a
+     shorter bubble, which is right: their turn really is nearly over. Two consecutive windows
+     cannot overlap as long as speak + fade <= slot, which is a property of the tuning and is
+     locked as such in test/glyph-speech.test.js. */
+  function chatterWindow(startedAt, elapsed, slotMs, speakMs, fadeMs) {
+    const turn = Math.floor(Math.max(0, elapsed) / slotMs);
+    return { turn: turn, until: startedAt + turn * slotMs + speakMs + fadeMs };
+  }
+  // one utterance: a few short words, all drawn from the speaker's own dialect
+  function glyphPhrase(seed, dialect) {
+    if (!dialect || !dialect.length) return [];
+    const r = glyphRnd(seed);
+    const nw = PHRASE_WORDS_MIN + Math.floor(r() * (PHRASE_WORDS_MAX - PHRASE_WORDS_MIN + 1));
+    const out = [];
+    for (let w = 0; w < nw; w++) {
+      const nr = WORD_RUNES_MIN + Math.floor(r() * (WORD_RUNES_MAX - WORD_RUNES_MIN + 1));
+      const word = [];
+      for (let i = 0; i < nr; i++) word.push(dialect[Math.floor(r() * dialect.length)]);
+      out.push(word);
+    }
+    return out;
+  }
+  /* GLYPH-SPEECH-PURE-END */
+
+  const CHATTER_FADE_MS = 260;                          // the bubble's fade-out tail
+  const CHATTER_MS = TALK_SPEAK_MS + CHATTER_FADE_MS;   // it lives exactly as long as the mouth moves, plus that tail
+  const glyphDialects = new Map();                      // agent id -> its rune subset (stable for the session)
+  function dialectFor(b) {
+    const id = String(b.id == null ? (b.agentId || 'agent') : b.id);
+    let d = glyphDialects.get(id);
+    if (!d) { d = glyphDialect(U.hash(id)); glyphDialects.set(id, d); }
+    return d;
+  }
+  /* Roll THIS turn's line — once, on the rising edge of the body's turn, never in the draw path.
+     Seeded off the speaker AND which turn of the encounter it is taking, so the line holds still
+     while it is on screen and is a different one when the floor comes back around. Refuses any
+     body that is not actually in a two-sided conversation: a 'watch'/'follow' beat is silent by
+     construction and a bubble over one would be claiming a talk that isn't happening. */
+  function startChatter(b) {
+    if (!b || !b.social || !isTalkKind(b.social.kind) || !socialBeat || !socialBeat.startedAt) { if (b) b.chatter = null; return; }
+    const w = chatterWindow(socialBeat.startedAt, fnow - socialBeat.startedAt, TALK_SLOT_MS, TALK_SPEAK_MS, CHATTER_FADE_MS);
+    b.chatter = { at: fnow, until: w.until, words: glyphPhrase(U.hash(String(b.id) + ':' + w.turn), dialectFor(b)) };
+  }
   // `talking` is the world's own reason for the speaking pose; the hero ORs it with Voice in
   // drawAgent (which recomputes `speaking` every frame), crew carry it directly.
   function setTalking(b, on) {
     if (!b) return;
+    const rising = !!on && !b.talking;
     b.talking = !!on;
     if (b !== agent) b.speaking = !!on;
+    if (rising) startChatter(b);   // W6: this turn's line is rolled HERE, once — see startChatter
   }
   /* Enter the face-each-other hold (varied duration). Each body enters its own hold independently as
      it arrives.
@@ -5660,7 +5805,10 @@ const World = (() => {
     // keep the HERO's caption up while it's still SPEAKING (a streamed neural reply can outlast the bubble's
     // fixed timer) — so the on-screen line and the voice stay in phase. Crew bodies just follow the timer.
     const speakingNow = (who === agent) && typeof Voice !== 'undefined' && Voice.isSpeaking && Voice.isSpeaking();
-    if (!s.text || (s.until < now && !speakingNow)) return;
+    // W6: nothing REAL to say ⇒ fall through to the peer-chatter bubble (which draws only during an
+    // actual conversation, and nothing otherwise). One function, one bubble: a real line always wins
+    // the anchor, and the two can never stack over one head.
+    if (!s.text || (s.until < now && !speakingNow)) { drawChatterBubble(now, who); return; }
 
     // draw in SCREEN space (mirrors drawNameplate): pixel-snapped, unsmoothed VT323 that reads cleanly at any
     // zoom, then it rides the same barrel-curve/scanline pass the rest of the feed does. All geometry is CSS px.
@@ -5701,22 +5849,7 @@ const World = (() => {
     const by = Math.round(Math.max(4, Math.min(Hc - bh - tailH - 4, topY - 6 - tailH - bh)));
     const tx = Math.round(Math.max(bx + tailW + 1, Math.min(bx + bw - tailW - 1, ax)));   // tail apex tracks the head, kept inside the box
 
-    // CRT glass card + faint scanlines (nameplate material)
-    ctx.fillStyle = 'rgba(6,5,4,0.94)'; ctx.fillRect(bx, by, bw, bh);
-    // the pointing tail (glass, so box + tail read as one poured surface)
-    ctx.beginPath(); ctx.moveTo(tx - tailW, by + bh); ctx.lineTo(tx + tailW, by + bh); ctx.lineTo(tx, by + bh + tailH); ctx.closePath(); ctx.fill();
-    ctx.globalAlpha = 0.13; ctx.fillStyle = '#000';
-    for (let sy = by + 2; sy < by + bh - 1; sy += 3) ctx.fillRect(bx + 1, sy, bw - 2, 1);
-    ctx.globalAlpha = 1;
-
-    // amber structural frame: the box outline + the two slanted tail edges, then re-glass the seam so the tail
-    // opens into the box instead of being fenced off by the box's bottom stroke
-    ctx.strokeStyle = '#b9791c'; ctx.lineWidth = 1;
-    ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
-    ctx.beginPath(); ctx.moveTo(tx - tailW, by + bh - 0.5); ctx.lineTo(tx, by + bh + tailH); ctx.lineTo(tx + tailW, by + bh - 0.5); ctx.stroke();
-    ctx.fillStyle = 'rgba(6,5,4,0.94)'; ctx.fillRect(tx - tailW + 1, by + bh - 1, tailW * 2 - 1, 2);
-    // suit accent along the top edge (the body's own colour, like the nameplate's crown)
-    ctx.globalAlpha = 0.6; ctx.fillStyle = suit; ctx.fillRect(bx + 1, by, bw - 2, 1); ctx.globalAlpha = 1;
+    bubbleChrome(bx, by, bw, bh, tx, tailW, tailH, suit, 1);
 
     // the line(s): VT323 in warm phosphor, with any leading "label:" (received:, working…) dimmed to a tag
     ctx.font = fontSz + 'px ' + PLATE_FONT; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
@@ -5726,6 +5859,110 @@ const World = (() => {
     const label = lines.length ? (lines[0].match(/^\S+:/) || [])[0] : null;
     if (label) { ctx.shadowBlur = 3; ctx.fillStyle = 'rgba(255,171,64,0.72)'; ctx.fillText(label, bx + padX, by + padY + lh - 4); }
     ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
+  }
+
+  /* The bubble's MATERIAL, content-free: dark CRT glass + scanlines, an amber structural frame, the
+     tail poured into the same surface, a suit accent along the crown. Extracted so the spoken-line
+     bubble and the peer-chatter bubble are physically the SAME object and can never drift into two
+     looks. `a` scales every alpha in one place so a caller can fade the whole card; a === 1 is the
+     shipped spoken-line appearance, unchanged stroke for stroke. */
+  function bubbleChrome(bx, by, bw, bh, tx, tailW, tailH, suit, a) {
+    a = (a == null) ? 1 : a;
+    ctx.globalAlpha = a;
+    ctx.fillStyle = 'rgba(6,5,4,0.94)'; ctx.fillRect(bx, by, bw, bh);
+    // the pointing tail (glass, so box + tail read as one poured surface)
+    ctx.beginPath(); ctx.moveTo(tx - tailW, by + bh); ctx.lineTo(tx + tailW, by + bh); ctx.lineTo(tx, by + bh + tailH); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 0.13 * a; ctx.fillStyle = '#000';
+    for (let sy = by + 2; sy < by + bh - 1; sy += 3) ctx.fillRect(bx + 1, sy, bw - 2, 1);
+    ctx.globalAlpha = a;
+
+    // amber structural frame: the box outline + the two slanted tail edges, then re-glass the seam so the tail
+    // opens into the box instead of being fenced off by the box's bottom stroke
+    ctx.strokeStyle = '#b9791c'; ctx.lineWidth = 1;
+    ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+    ctx.beginPath(); ctx.moveTo(tx - tailW, by + bh - 0.5); ctx.lineTo(tx, by + bh + tailH); ctx.lineTo(tx + tailW, by + bh - 0.5); ctx.stroke();
+    ctx.fillStyle = 'rgba(6,5,4,0.94)'; ctx.fillRect(tx - tailW + 1, by + bh - 1, tailW * 2 - 1, 2);
+    // suit accent along the top edge (the body's own colour, like the nameplate's crown)
+    ctx.globalAlpha = 0.6 * a; ctx.fillStyle = suit; ctx.fillRect(bx + 1, by, bw - 2, 1); ctx.globalAlpha = a;
+  }
+
+  /* ---------- W6: THE PEER-CHATTER BUBBLE — the untranscribable line over whoever holds the floor.
+     Same card as the spoken bubble (bubbleChrome), filled with drawn RUNES instead of text: see the
+     GLYPH-SPEECH block above for why it has to be geometry and why unreadable is the honest answer.
+
+     It exists only while `chatter` does, and `chatter` is stamped once per turn by setTalking and
+     cleared by endEncounter — so the bubble is on screen exactly when a mouth is moving in a real
+     two-sided encounter, and never a frame longer. It cannot outlive its conversation even if a
+     frame is dropped: the window is bounded by CHATTER_MS off its own stamp. */
+  const RUNE_PX = 2;                                            // lattice unit -> CSS px (a rune is 8x12)
+  const RUNE_ADV = (RUNE_W + 2) * RUNE_PX;                      // rune cell + the gap to the next rune
+  const WORD_GAP = 3 * RUNE_PX;                                 // the extra breath between words
+  function drawChatterBubble(now, who) {
+    const ch = who.chatter;
+    if (!ch || !ch.words || !ch.words.length) return;
+    const age = now - ch.at;
+    // The turn's own deadline ends it (see chatterWindow). CHATTER_MS stays as a hard backstop so a
+    // clock jump or a missed teardown can never leave a line hanging — belt AND braces, on purpose.
+    if (age < 0 || age > CHATTER_MS || now > ch.until) { who.chatter = null; return; }
+    // envelope: a quick rise so it lands with the mouth, a hold, then the fade tail. Never a hard pop.
+    const a = Math.min(1, age / 110) * Math.min(1, Math.max(0, (ch.until - now) / CHATTER_FADE_MS));
+    if (a <= 0.01) return;
+
+    /* HAND THE CONTEXT BACK EXACTLY AS RECEIVED. Measured live (dev/glyphdiag.mjs): the shipped
+       bubble leaves `fillStyle` sitting on its phosphor, and the next frame's early 1px motes —
+       which set globalAlpha but not their own colour — were being painted in it. Rare enough to
+       have gone unseen while only a routed line raised a bubble; a conversation raises one every
+       1.7s, so the leak would have become the normal state of the frame. save/restore is the fix
+       that cannot be got wrong later, and it is scoped HERE so the spoken-line path stays byte-
+       identical to what shipped. */
+    ctx.save();
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    const Wc = cv.width / dpr, Hc = cv.height / dpr;
+    const suit = who.color || '#ffaa33';
+    const padX = 6, padY = 5, tailW = 5, tailH = 6;
+
+    // the phrase's own width — bounded by construction (<=3 words of <=4 runes), so unlike the text
+    // bubble there is nothing to wrap or ellipsize: a line that cannot overflow needs no truncation.
+    let inkW = 0;
+    for (const word of ch.words) inkW += word.length * RUNE_ADV + WORD_GAP;
+    inkW = Math.max(0, inkW - WORD_GAP - RUNE_PX);   // no trailing word gap; the last rune contributes ink, not advance
+    const bw = Math.round(Math.max(26, inkW + padX * 2));
+    const bh = (RUNE_H + 1) * RUNE_PX + padY * 2;
+
+    // same body->screen anchor as the spoken bubble (head-top when the sprite reported one)
+    const ax = (bodyPosX(who) * scale + panX) / dpr, ay = (bodyPosY(who) * scale + panY) / dpr;
+    const topY = (who.visTopPy != null) ? (who.visTopPy * scale + panY) / dpr : ay - 15 * scale / dpr;
+    const cx = Math.round(Math.max(bw / 2 + 4, Math.min(Wc - bw / 2 - 4, ax)));
+    const bx = Math.round(cx - bw / 2);
+    const by = Math.round(Math.max(4, Math.min(Hc - bh - tailH - 4, topY - 6 - tailH - bh)));
+    const tx = Math.round(Math.max(bx + tailW + 1, Math.min(bx + bw - tailW - 1, ax)));
+
+    bubbleChrome(bx, by, bw, bh, tx, tailW, tailH, suit, a);
+
+    // the runes, in the same warm phosphor the spoken line uses
+    ctx.shadowBlur = 3; ctx.shadowColor = suit;
+    ctx.fillStyle = '#ffe0b0';
+    let gx = bx + padX;
+    const gy = by + padY;
+    for (const word of ch.words) {
+      for (const idx of word) { drawRune(RUNES[idx], gx, gy, RUNE_PX); gx += RUNE_ADV; }
+      gx += WORD_GAP;
+    }
+    ctx.restore();
+  }
+  /* One rune, as pixel rects. Orthogonal strokes are a single rect; a 45° stroke walks the lattice
+     one square at a time (Bresenham is unnecessary — the alphabet admits no other slope, which is
+     exactly why it stays crisp at any zoom instead of becoming a fuzzy staircase). */
+  function drawRune(strokes, ox, oy, u) {
+    if (!strokes) return;
+    for (const s of strokes) {
+      const x1 = s[0], y1 = s[1], x2 = s[2], y2 = s[3];
+      if (y1 === y2) { ctx.fillRect(ox + Math.min(x1, x2) * u, oy + y1 * u, (Math.abs(x2 - x1) + 1) * u, u); continue; }
+      if (x1 === x2) { ctx.fillRect(ox + x1 * u, oy + Math.min(y1, y2) * u, u, (Math.abs(y2 - y1) + 1) * u); continue; }
+      const dx = x2 > x1 ? 1 : -1, dy = y2 > y1 ? 1 : -1, n = Math.abs(x2 - x1);
+      for (let i = 0; i <= n; i++) ctx.fillRect(ox + (x1 + dx * i) * u, oy + (y1 + dy * i) * u, u, u);
+    }
   }
 
   function setOnClick(fn) { onClick = fn; }
@@ -7883,6 +8120,22 @@ const World = (() => {
     // no trio" without a second instrumented build: planned vs. how many candidates each huddle saw
     // vs. roll vs. tile failure. Read-only snapshot; the caller cannot mutate the live object.
     _dbgHuddleStats: () => JSON.parse(JSON.stringify(huddleStats)),
+    /* TEST/DEBUG ONLY — W6 peer-chatter readout: which bodies are carrying a live glyph line right
+       now, straight off the SAME `chatter` objects the renderer draws from (never a re-derivation,
+       so a green read cannot mean anything but "that bubble is on screen"). `words` is the rune-
+       INDEX shape, which is all there is — there is no text on this path to report. */
+    _dbgChatter: () => {
+      const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+      const all = (agent ? [agent] : []).concat(crew);
+      return {
+        beat: socialBeat ? { kind: socialBeat.kind, ids: participantIds(socialBeat).slice() } : null,
+        alphabet: RUNES.length, holdMs: CHATTER_MS,
+        live: all.filter(b => b && b.chatter && (now - b.chatter.at) <= CHATTER_MS && now <= b.chatter.until).map(b => ({
+          id: b.id, talking: !!b.talking, ageMs: Math.round(now - b.chatter.at), leftMs: Math.round(b.chatter.until - now),
+          words: b.chatter.words.map(w => w.slice()), dialect: dialectFor(b).slice()
+        }))
+      };
+    },
     /* TEST/DEBUG ONLY — assemble a huddle from named bodies through the REAL planHuddle path (same
        borrowed-actor discipline as _dbgSit/greetNewcomer: set `self`, restore in finally). A trio is
        rare by design — it needs three eligible bodies standing together AND a roll AND a legal third
