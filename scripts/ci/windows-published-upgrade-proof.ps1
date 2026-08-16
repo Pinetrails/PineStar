@@ -85,6 +85,24 @@ function Wait-ForExactProcess {
   throw "process did not start within ${Seconds}s: $Path"
 }
 
+function Wait-ForExactProcessesStopped {
+  param(
+    [Parameter(Mandatory = $true)][string[]]$Paths,
+    [Parameter(Mandatory = $true)][string]$Label,
+    [int]$Seconds = 15
+  )
+  $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
+  $remaining = @(Get-ExactProcesses $Paths)
+  while ($remaining.Count -gt 0 -and [DateTime]::UtcNow -lt $deadline) {
+    Start-Sleep -Milliseconds 250
+    $remaining = @(Get-ExactProcesses $Paths)
+  }
+  if ($remaining.Count -gt 0) {
+    $details = ($remaining | ForEach-Object { "$($_.Id):$($_.Path)" }) -join ', '
+    throw "$Label left an owned StarNet process alive after ${Seconds}s: $details"
+  }
+}
+
 function Reset-ProofInstall {
   param([Parameter(Mandatory = $true)][string]$InstallRoot)
   $root = Assert-UnderTemp $InstallRoot
@@ -216,9 +234,7 @@ try {
     # proves NSIS_HOOK_PREUNINSTALL for every user who installs this candidate or anything newer.
     $futureUninstall = Start-Process -FilePath $oldUninstaller -ArgumentList '/S' -PassThru
     Wait-Installer -Process $futureUninstall -Label "$CandidateVersion active-process uninstall"
-    if (@(Get-ExactProcesses @($app,$node)).Count -ne 0) {
-      throw "$CandidateVersion uninstaller left an owned StarNet process alive"
-    }
+    Wait-ForExactProcessesStopped -Paths @($app,$node) -Label "$CandidateVersion uninstaller"
     if (Test-Path -LiteralPath $app -PathType Leaf) {
       throw "$CandidateVersion uninstaller left skynet-desktop.exe behind"
     }

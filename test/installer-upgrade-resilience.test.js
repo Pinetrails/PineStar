@@ -33,8 +33,10 @@ A.ok(proof.includes("Select-Object -First 2"), 'release proof requires latest an
 A.ok(proof.includes('$releaseResponse = Invoke-RestMethod') && proof.includes('$releases = @($releaseResponse)'),
   'release proof normalizes the PowerShell 7 top-level JSON array before filtering published sources');
 const processCountLines = proof.split(/\r?\n/).filter(line => line.includes('Get-ExactProcesses') && line.includes('.Count'));
-A.ok(processCountLines.length === 4 && processCountLines.every(line => line.includes('@(Get-ExactProcesses')),
+A.ok(processCountLines.length === 3 && processCountLines.every(line => line.includes('@(Get-ExactProcesses')),
   'release proof array-wraps zero-process results before StrictMode Count checks');
+A.ok(proof.includes('Wait-ForExactProcessesStopped -Paths @($app,$node)') && proof.includes('alive after ${Seconds}s'),
+  'active-process uninstall gets a bounded settle window and still fails with exact survivor evidence');
 A.ok(proof.includes('Remove-Item -LiteralPath $oldUninstaller -Force'), 'release proof fault-injects the reported missing-old-uninstaller failure');
 A.ok(proof.includes('Start-Process -FilePath $app'), 'release proof launches the old installed shell');
 A.ok(proof.includes('Wait-ForExactProcess -Path $node'), 'release proof observes the old bundled sidecar running');
