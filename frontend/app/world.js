@@ -3832,14 +3832,26 @@ const World = (() => {
      encounter and made every agent replay one identical script for the life of the station (the
      glyph-speech escape). Same law, same fix, applied here on purpose. */
   function gatherSpeak(b, now) {
-    if (!b || !b.gather) return;
+    if (!b || !b.gather || !gathering) return;
     const cycle = GATHER_SPEAK_MS + GATHER_GAP_MS;
-    const phase = (now - (gathering ? gathering.holdFrom : now)) % cycle;
-    const speaking = phase < GATHER_SPEAK_MS;
-    if (!speaking) { b.talking = false; if (b !== agent) b.speaking = false; b.chatter = null; return; }
-    const until = fnow + (GATHER_SPEAK_MS - phase);
-    if (b.gather.spokeUntil !== Math.round(until / 100)) {           // one line per speaking window
-      b.gather.spokeUntil = Math.round(until / 100);
+    const t = Math.max(0, now - gathering.holdFrom);
+    const k = Math.floor(t / cycle);
+    const phase = t - k * cycle;
+    if (phase >= GATHER_SPEAK_MS) { b.talking = false; if (b !== agent) b.speaking = false; b.chatter = null; return; }
+    /* The address is LONGER than one conversational line, and the renderer hard-kills any bubble at
+       CHATTER_MS (drawChatter's age cap) — a single line spanning the whole window would leave the
+       overseer mouth-moving WORDLESS for its tail, which is the "mouth moving at nobody" lie. So the
+       window is spoken as CONSECUTIVE CHATTER-length lines, each with its own glyphs: it reads as a
+       longer address, and a bubble is on screen for every ms the mouth moves. Every quantity here
+       derives from the encounter clock (holdFrom + constants) — an earlier draft mixed `fnow` into
+       the dedup key and float jitter near a bucket boundary re-rolled the phrase mid-line. */
+    const windowStart = gathering.holdFrom + k * cycle;
+    const j = Math.floor(phase / CHATTER_MS);
+    const until = Math.min(windowStart + (j + 1) * CHATTER_MS, windowStart + GATHER_SPEAK_MS);
+    if (b.gather.spokeUntil !== Math.round(until)) {                 // one roll per line — deterministic, jitter-free
+      b.gather.spokeUntil = Math.round(until);
+      // seeded on the line's ABSOLUTE deadline (the glyph-speech law): unique to THIS line of THIS
+      // gathering, so no meeting ever replays another's script — yet stable while it is on screen.
       b.chatter = { at: fnow, until: until, words: glyphPhrase(U.hash(String(b.id) + '@' + Math.round(until)), dialectFor(b)) };
     }
     b.talking = true; if (b !== agent) b.speaking = true;

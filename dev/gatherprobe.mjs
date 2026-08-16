@@ -97,13 +97,14 @@ try {
   check(st0.bodies.every(b => b.goal === 'gather'), 'every participant is on the gather goal');
 
   /* ---- CONVERGE + HOLD. Sample until the overseer is speaking, then inspect the formation. */
-  let held = null, sawTalkingOverseer = false, audienceEverTalked = false, maxSimultaneous = 0;
+  let held = null, sawTalkingOverseer = false, audienceEverTalked = false, maxSimultaneous = 0, wordlessMouth = 0;
   for (let i = 0; i < 90; i++) {
     await sleep(1000);
     const s = await evalJS(cdp, `(() => World._dbgGatherState())()`).catch(() => null);
     if (!s) break;
     const talking = s.bodies.filter(b => b.talking);
     maxSimultaneous = Math.max(maxSimultaneous, talking.length);
+    if (talking.some(b => b.talking && !b.chatter)) wordlessMouth++;   // the renderer kills a bubble at CHATTER_MS — a longer speak window must be spoken as consecutive lines, never as a wordless mouth
     if (talking.some(b => b.role === 'audience')) audienceEverTalked = true;
     if (s.phase === 'hold') {
       held = s;
@@ -118,6 +119,7 @@ try {
   check(sawTalkingOverseer, 'the overseer spoke');
   check(!audienceEverTalked, 'the audience never spoke — a formation with ONE speaker, not a conversation');
   check(maxSimultaneous <= 1, 'never more than one mouth moving at a time (max ' + maxSimultaneous + ')');
+  check(wordlessMouth === 0, 'a moving mouth ALWAYS has a bubble — the address is spoken as consecutive lines, never a wordless tail (' + wordlessMouth + ' wordless sample(s))');
   const over = held.bodies.find(b => b.role === 'overseer');
   const aud = held.bodies.filter(b => b.role === 'audience' && b.arrived);
   const gap = Math.min(...aud.map(b => Math.abs(b.tile.x - over.tile.x) + Math.abs(b.tile.y - over.tile.y)));
