@@ -5,6 +5,8 @@
    early-return or fallback path from quietly creating a second, partially updated copy. */
 'use strict';
 
+const { makeToolProgressGuard } = require('./tool-progress-guard.js');
+
 function makeRunExecutionState(options) {
   const opts = options || {};
   const artifacts = opts.artifacts;
@@ -24,6 +26,9 @@ function makeRunExecutionState(options) {
   let failureCode = '';
   const toolBoundaries = new Map();
   const recoveryAttempts = [];
+  // Successful tool results are not automatically progress. Ordinary model calls and code-mode nested calls
+  // share this one per-run evidence ledger through the central dispatch seam.
+  const progress = opts.progressGuard || makeToolProgressGuard(opts.progressLimits);
 
   function latchTaint(source) {
     if (!taintedBy && source) taintedBy = String(source);
@@ -179,6 +184,14 @@ function makeRunExecutionState(options) {
     });
   }
 
+  function beforeProgress(call, tool) {
+    return progress.before(call || {}, tool || null);
+  }
+
+  function observeProgress(call, result, tool) {
+    return progress.after(call || {}, result || {}, tool || null);
+  }
+
   function failJournal(error, meta) {
     meta = meta || {};
     if (!journalFailure) journalFailure = String((error && error.message) || error || 'unknown journal failure').slice(0, 500);
@@ -230,6 +243,9 @@ function makeRunExecutionState(options) {
     uncertainMutations,
     recordRecoveryAttempt,
     recoveryAttempts: () => recoveryAttempts.map(row => Object.assign({}, row)),
+    beforeProgress,
+    observeProgress,
+    progressSnapshot: () => progress.snapshot(),
     failJournal,
     observeCompletion,
     assessCompletion,
