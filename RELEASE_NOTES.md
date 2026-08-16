@@ -7,5 +7,6 @@ This update focuses on reliability, clearer guidance, and a more polished statio
 - The Recruitment Bay has a clearer dossier and configuration flow for bringing new agents aboard.
 - Quest guidance is more direct, with improved visibility for saved goal titles.
 - Completed routine sessions now recover delayed transcript output instead of reopening as prompt-only conversations.
+- The intrusive floating Run Recovery overlay has been removed from the station interface.
 - Windows upgrades are more resilient, including recovery when an older uninstaller is missing or damaged.
 - Large text, toast placement, station lighting, and several sprites received visual-fit and polish improvements.
