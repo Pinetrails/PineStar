@@ -41,9 +41,9 @@ A.ok(/const RUNES = \[/.test(block) && /function glyphPhrase\(/.test(block), 'th
 const codeOnly = block.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 A.ok(!/\bself\.|\bU\.|\bMath\.random|\bDate\b|\bdocument\b|\bwindow\b|\bctx\b|\bsocialBeat\b/.test(codeOnly),
   'the block is PURE (no module state / ambient RNG / DOM — safe to execute standalone)');
-const { RUNES, RUNE_W, RUNE_H, DIALECT_SIZE, glyphDialect, glyphPhrase, glyphRnd,
+const { RUNES, RUNE_W, RUNE_H, DIALECT_SIZE, glyphDialect, glyphPhrase, glyphRnd, chatterWindow,
         PHRASE_WORDS_MIN, PHRASE_WORDS_MAX, WORD_RUNES_MIN, WORD_RUNES_MAX } =
-  eval('(function(){' + block + '\nreturn { RUNES, RUNE_W, RUNE_H, DIALECT_SIZE, glyphDialect, glyphPhrase, glyphRnd,'
+  eval('(function(){' + block + '\nreturn { RUNES, RUNE_W, RUNE_H, DIALECT_SIZE, glyphDialect, glyphPhrase, glyphRnd, chatterWindow,'
      + ' PHRASE_WORDS_MIN, PHRASE_WORDS_MAX, WORD_RUNES_MIN, WORD_RUNES_MAX };})()');
 
 // ---- THE ALPHABET IS GEOMETRY, NOT TEXT (the whole point) ----
@@ -117,6 +117,35 @@ const dialects = new Set();
 for (let s = 1; s <= 60; s++) dialects.add(glyphDialect(s * 2654435761 >>> 0).join(','));
 A.ok(dialects.size > 40, 'dialects are genuinely varied across speakers (' + dialects.size + '/60 distinct)');
 
+/* ---- THE REGRESSION THIS CAUGHT (live probe, 5 runs, 2026-08-16) ----
+   The bubble used to live a fixed CHATTER_MS from its own stamp, which is only correct for a body
+   that starts speaking exactly on its slot boundary. A body that ARRIVES LATE joins its turn
+   already in progress, so its bubble was still fading well into the NEXT speaker's turn: run 5 of
+   the probe caught TWO bubbles up at once. The window is now anchored to the SLOT, so every body
+   holding turn k — whenever it joined — is gone at the same instant. */
+const SLOT_T = 1700, SPEAK_T = 1150, FADE_T = 260;
+const w0 = chatterWindow(0, 0, SLOT_T, SPEAK_T, FADE_T);
+A.eq(w0.turn, 0, 'the opening instant is turn 0');
+A.eq(w0.until, SPEAK_T + FADE_T, 'and its bubble is gone when the mouth stops, plus the fade');
+// EVERY join time inside one turn yields the SAME deadline — that is the whole fix
+for (let join = 0; join < SPEAK_T; join += 7) {
+  const w = chatterWindow(0, join, SLOT_T, SPEAK_T, FADE_T);
+  A.eq(w.turn, 0, 'a body joining ' + join + 'ms into turn 0 is still on turn 0');
+  A.eq(w.until, w0.until, 'a LATE joiner ends with the TURN, not CHATTER_MS after it started');
+}
+// consecutive turns can never have overlapping windows
+for (let k = 0; k < 12; k++) {
+  const cur = chatterWindow(0, k * SLOT_T, SLOT_T, SPEAK_T, FADE_T);
+  const next = chatterWindow(0, (k + 1) * SLOT_T, SLOT_T, SPEAK_T, FADE_T);
+  A.eq(next.turn, k + 1, 'the slot boundary advances the turn');
+  A.ok(cur.until <= (k + 1) * SLOT_T, 'turn ' + k + '\'s bubble is gone before turn ' + (k + 1) + ' opens its mouth');
+  A.ok(next.until > cur.until, 'and the next window is strictly later — no window ever runs backwards');
+}
+// the LATEST any body can legally join a turn still cannot spill into the next one
+const late = chatterWindow(0, SPEAK_T - 1, SLOT_T, SPEAK_T, FADE_T);
+A.ok(late.until <= SLOT_T, 'even a body joining on the last millisecond of its turn is gone before the next speaker starts');
+A.eq(chatterWindow(0, -500, SLOT_T, SPEAK_T, FADE_T).turn, 0, 'a negative elapsed (clock skew) clamps to turn 0 rather than a negative window');
+
 // ---- the seeded stream itself is well-formed ----
 const r = glyphRnd(12345);
 for (let i = 0; i < 5000; i++) { const v = r(); A.ok(v >= 0 && v < 1, 'the seeded stream stays in [0,1)'); }
@@ -131,8 +160,11 @@ const startFn = src.slice(src.indexOf('function startChatter('), src.indexOf('//
 A.ok(/isTalkKind\(b\.social\.kind\)/.test(startFn),
   'a bubble refuses the SILENT beat kinds — a watch/follow carries no conversation to draw');
 A.ok(/b\.chatter = null/.test(startFn), 'and clears any stale line rather than leaving one behind');
-A.ok(/glyphPhrase\(U\.hash\(String\(b\.id\) \+ ':' \+ turn\), dialectFor\(b\)\)/.test(startFn),
+A.ok(/glyphPhrase\(U\.hash\(String\(b\.id\) \+ ':' \+ w\.turn\), dialectFor\(b\)\)/.test(startFn),
   'the seed is the SPEAKER plus the TURN — stable while on screen, fresh when the floor comes back around');
+A.ok(/chatterWindow\(socialBeat\.startedAt, fnow - socialBeat\.startedAt, TALK_SLOT_MS, TALK_SPEAK_MS, CHATTER_FADE_MS\)/.test(startFn),
+  'the deadline is computed off the ENCOUNTER clock through chatterWindow — never off the body\'s own arrival');
+A.ok(/until: w\.until/.test(startFn), 'and it is stamped on the line, so the draw path never re-derives it');
 
 // the bubble dies WITH the encounter (the same law as the mouth-moving pose above it)
 const endFn = src.slice(src.indexOf('function endEncounter('), src.indexOf('function encounterBroken('));
@@ -146,8 +178,10 @@ A.ok(/if \(!s\.text \|\| \(s\.until < now && !speakingNow\)\) \{ drawChatterBubb
 
 // bounded lifetime: the bubble cannot outlive its own stamp even if a teardown is missed
 const chatterFn = src.slice(src.indexOf('function drawChatterBubble('), src.indexOf('/* One rune, as pixel rects.'));
-A.ok(/if \(age < 0 \|\| age > CHATTER_MS\) \{ who\.chatter = null; return; \}/.test(chatterFn),
-  'the bubble is bounded by its own stamp — a dropped teardown cannot leave one on screen forever');
+A.ok(/if \(age < 0 \|\| age > CHATTER_MS \|\| now > ch\.until\) \{ who\.chatter = null; return; \}/.test(chatterFn),
+  'the turn\'s deadline ends the bubble, with CHATTER_MS as a hard backstop against a clock jump');
+A.ok(/\(ch\.until - now\) \/ CHATTER_FADE_MS/.test(chatterFn),
+  'the FADE keys off that same deadline too — otherwise a late joiner would vanish mid-fade');
 A.ok(!/fillText|ctx\.font/.test(chatterFn) && !/fillText|ctx\.font/.test(src.slice(src.indexOf('function drawRune('), src.indexOf('function setOnClick('))),
   'the chatter bubble draws NO TEXT — no font, no fillText, nothing a screen-reader or a screenshot could transcribe');
 const SPEAK = Number((src.match(/TALK_SPEAK_MS\s*=\s*(\d+)/) || [])[1]);

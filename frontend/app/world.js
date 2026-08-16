@@ -3092,6 +3092,26 @@ const World = (() => {
     }
     return pool.slice(0, DIALECT_SIZE).sort(function (a, b) { return a - b; });
   }
+  /* WHEN A TURN'S BUBBLE MUST BE GONE — derived from the TURN, never from when the speaker
+     happened to start.
+
+     THE BUG THIS EXISTS TO KILL (found by running the live probe five times, not once; the fifth
+     run showed two bubbles up together). A bubble used to live a fixed 1410ms from its own stamp.
+     That is correct only for a body that starts speaking exactly on its slot boundary. A body
+     that ARRIVES LATE joins its turn already in progress — myTurnN puts it straight on the floor
+     mid-slot — so its bubble was still fading 500ms into the NEXT speaker's turn, and two mouths
+     appeared to be talking at once. Exactly the shape of the W5 hold-clock defect one section
+     up: a per-body clock where the encounter's own clock was the truth.
+
+     So the window is anchored to the SLOT: whichever body holds turn k, its bubble is gone at
+     k*slot + speak + fade — the instant the mouth stops, plus the fade. Late joiners get a
+     shorter bubble, which is right: their turn really is nearly over. Two consecutive windows
+     cannot overlap as long as speak + fade <= slot, which is a property of the tuning and is
+     locked as such in test/glyph-speech.test.js. */
+  function chatterWindow(startedAt, elapsed, slotMs, speakMs, fadeMs) {
+    const turn = Math.floor(Math.max(0, elapsed) / slotMs);
+    return { turn: turn, until: startedAt + turn * slotMs + speakMs + fadeMs };
+  }
   // one utterance: a few short words, all drawn from the speaker's own dialect
   function glyphPhrase(seed, dialect) {
     if (!dialect || !dialect.length) return [];
@@ -3123,9 +3143,9 @@ const World = (() => {
      body that is not actually in a two-sided conversation: a 'watch'/'follow' beat is silent by
      construction and a bubble over one would be claiming a talk that isn't happening. */
   function startChatter(b) {
-    if (!b || !b.social || !isTalkKind(b.social.kind) || !socialBeat) { if (b) b.chatter = null; return; }
-    const turn = socialBeat.startedAt ? Math.floor((fnow - socialBeat.startedAt) / TALK_SLOT_MS) : 0;
-    b.chatter = { at: fnow, words: glyphPhrase(U.hash(String(b.id) + ':' + turn), dialectFor(b)) };
+    if (!b || !b.social || !isTalkKind(b.social.kind) || !socialBeat || !socialBeat.startedAt) { if (b) b.chatter = null; return; }
+    const w = chatterWindow(socialBeat.startedAt, fnow - socialBeat.startedAt, TALK_SLOT_MS, TALK_SPEAK_MS, CHATTER_FADE_MS);
+    b.chatter = { at: fnow, until: w.until, words: glyphPhrase(U.hash(String(b.id) + ':' + w.turn), dialectFor(b)) };
   }
   // `talking` is the world's own reason for the speaking pose; the hero ORs it with Voice in
   // drawAgent (which recomputes `speaking` every frame), crew carry it directly.
@@ -5881,11 +5901,21 @@ const World = (() => {
     const ch = who.chatter;
     if (!ch || !ch.words || !ch.words.length) return;
     const age = now - ch.at;
-    if (age < 0 || age > CHATTER_MS) { who.chatter = null; return; }
+    // The turn's own deadline ends it (see chatterWindow). CHATTER_MS stays as a hard backstop so a
+    // clock jump or a missed teardown can never leave a line hanging — belt AND braces, on purpose.
+    if (age < 0 || age > CHATTER_MS || now > ch.until) { who.chatter = null; return; }
     // envelope: a quick rise so it lands with the mouth, a hold, then the fade tail. Never a hard pop.
-    const a = Math.min(1, age / 110) * Math.min(1, Math.max(0, (CHATTER_MS - age) / CHATTER_FADE_MS));
+    const a = Math.min(1, age / 110) * Math.min(1, Math.max(0, (ch.until - now) / CHATTER_FADE_MS));
     if (a <= 0.01) return;
 
+    /* HAND THE CONTEXT BACK EXACTLY AS RECEIVED. Measured live (dev/glyphdiag.mjs): the shipped
+       bubble leaves `fillStyle` sitting on its phosphor, and the next frame's early 1px motes —
+       which set globalAlpha but not their own colour — were being painted in it. Rare enough to
+       have gone unseen while only a routed line raised a bubble; a conversation raises one every
+       1.7s, so the leak would have become the normal state of the frame. save/restore is the fix
+       that cannot be got wrong later, and it is scoped HERE so the spoken-line path stays byte-
+       identical to what shipped. */
+    ctx.save();
     const dpr = window.devicePixelRatio || 1;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
     const Wc = cv.width / dpr, Hc = cv.height / dpr;
@@ -5919,7 +5949,7 @@ const World = (() => {
       for (const idx of word) { drawRune(RUNES[idx], gx, gy, RUNE_PX); gx += RUNE_ADV; }
       gx += WORD_GAP;
     }
-    ctx.shadowBlur = 0; ctx.shadowColor = 'transparent'; ctx.globalAlpha = 1;
+    ctx.restore();
   }
   /* One rune, as pixel rects. Orthogonal strokes are a single rect; a 45° stroke walks the lattice
      one square at a time (Bresenham is unnecessary — the alphabet admits no other slope, which is
@@ -8100,8 +8130,8 @@ const World = (() => {
       return {
         beat: socialBeat ? { kind: socialBeat.kind, ids: participantIds(socialBeat).slice() } : null,
         alphabet: RUNES.length, holdMs: CHATTER_MS,
-        live: all.filter(b => b && b.chatter && (now - b.chatter.at) <= CHATTER_MS).map(b => ({
-          id: b.id, talking: !!b.talking, ageMs: Math.round(now - b.chatter.at),
+        live: all.filter(b => b && b.chatter && (now - b.chatter.at) <= CHATTER_MS && now <= b.chatter.until).map(b => ({
+          id: b.id, talking: !!b.talking, ageMs: Math.round(now - b.chatter.at), leftMs: Math.round(b.chatter.until - now),
           words: b.chatter.words.map(w => w.slice()), dialect: dialectFor(b).slice()
         }))
       };
