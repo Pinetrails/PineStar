@@ -2748,9 +2748,24 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-head .ws-view { flex: 0 1 auto; min-width: 0; }
 .ws-head .ws-head-acts { flex: 0 0 auto; }
 .ws-head .ws-tab, .ws-head .ws-head-acts > button { white-space: nowrap; }
+/* + NEW joins the tabs' control family. Measured off the live rail before touching it: the tabs
+   stood 15.97px with 3px rounded outer ends, + NEW stood 14.00px with SQUARE corners (it declares
+   none, and the control floor at the top of this file deliberately paints no radius) — two corner
+   languages and two heights inside one 22px strip. Matching padding/radius puts all three chips on
+   one baseline; the raised top hairline (against .ws-tab.on's inset well) is what now separates the
+   ACTION from the view switcher, so they can share a silhouette without reading as three tabs.
+   HORIZONTAL padding stays 6px/6px on purpose. A draft widened it to 8px/7px to optically centre
+   the label against letter-spacing's trailing track, and the narrow rail priced it: + NEW is
+   `flex: 0 0 auto`, so every pixel it gains comes straight out of the tab group that yields first.
+   Measured at a 900px viewport, .ws-view went 117.70px -> 114.70px — the switcher pays for the
+   action button's cosmetics by clipping its own labels. Not worth 1px of centring.
+   The extra 1px VERTICAL padding is what lifts 14.00px to the tabs' 15.97px, and costs the row
+   nothing: .ws-head stays 21.94px and one line at every width down to 820px. */
 #ws-new {
   font-family: inherit; font-size: 12px; letter-spacing: 1px; color: var(--ink);
-  background: transparent; border: 1px solid rgba(0,0,0,.45); cursor: pointer; padding: 0 6px;
+  background: transparent; border: 1px solid rgba(0,0,0,.45); cursor: pointer;
+  padding: 1px 6px; border-radius: 3px;
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb), .22);
   white-space: nowrap; flex: 0 0 auto;
 }
 #ws-new:hover { background: rgba(0,0,0,.2); }
@@ -2912,10 +2927,22 @@ body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
 .ws-tab:first-child { border-radius: 3px 0 0 3px; border-right-width: 0; }
 .ws-tab:last-child { border-radius: 0 3px 3px 0; }
 .ws-tab:hover { background: rgba(0,0,0,.2); opacity: .8; }
-.ws-tab.on { background: rgba(0,0,0,.34); opacity: 1; }
+/* SELECTED = A RECESSED WELL, not just darker paint. Everything else in the panel chrome says
+   "pressed" with an inset shadow (#crew-sum's counter strip, #ws-wrap's housing); the segmented
+   control was the one place selection was flat fill, so SESSIONS read as a third chip rather than
+   the one that is down. The inset also lets the ON tab keep the same ink as the OFF ones without
+   the opacity ramp doing all the work. */
+.ws-tab.on {
+  background: rgba(0,0,0,.34); opacity: 1;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.5), inset 0 -1px 0 rgba(var(--ph-bright-rgb), .12);
+}
+/* + ADD swaps in for + NEW when the rail shows PROJECTS — it is the same chip in the same slot,
+   so it gets the same metrics. Skipping it would make the head change shape on a view switch. */
 #ws-addproject {
   font-family: inherit; font-size: 12px; letter-spacing: 1px; color: var(--ink);
-  background: transparent; border: 1px solid rgba(0,0,0,.45); cursor: pointer; padding: 0 6px;
+  background: transparent; border: 1px solid rgba(0,0,0,.45); cursor: pointer;
+  padding: 1px 6px; border-radius: 3px;
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb), .22);
 }
 #ws-addproject:hover { background: rgba(0,0,0,.2); }
 #ws-addproject[hidden] { display: none; }
