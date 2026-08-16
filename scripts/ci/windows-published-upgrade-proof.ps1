@@ -64,10 +64,10 @@ function Stop-ExactProcesses {
   param([Parameter(Mandatory = $true)][string[]]$Paths)
   Get-ExactProcesses $Paths | Stop-Process -Force -ErrorAction SilentlyContinue
   $deadline = [DateTime]::UtcNow.AddSeconds(15)
-  while ((Get-ExactProcesses $Paths).Count -gt 0 -and [DateTime]::UtcNow -lt $deadline) {
+  while (@(Get-ExactProcesses $Paths).Count -gt 0 -and [DateTime]::UtcNow -lt $deadline) {
     Start-Sleep -Milliseconds 250
   }
-  if ((Get-ExactProcesses $Paths).Count -gt 0) {
+  if (@(Get-ExactProcesses $Paths).Count -gt 0) {
     throw "owned StarNet process did not stop: $($Paths -join ', ')"
   }
 }
@@ -79,7 +79,7 @@ function Wait-ForExactProcess {
   )
   $deadline = [DateTime]::UtcNow.AddSeconds($Seconds)
   while ([DateTime]::UtcNow -lt $deadline) {
-    if ((Get-ExactProcesses @($Path)).Count -gt 0) { return }
+    if (@(Get-ExactProcesses @($Path)).Count -gt 0) { return }
     Start-Sleep -Milliseconds 500
   }
   throw "process did not start within ${Seconds}s: $Path"
@@ -216,7 +216,7 @@ try {
     # proves NSIS_HOOK_PREUNINSTALL for every user who installs this candidate or anything newer.
     $futureUninstall = Start-Process -FilePath $oldUninstaller -ArgumentList '/S' -PassThru
     Wait-Installer -Process $futureUninstall -Label "$CandidateVersion active-process uninstall"
-    if ((Get-ExactProcesses @($app,$node)).Count -ne 0) {
+    if (@(Get-ExactProcesses @($app,$node)).Count -ne 0) {
       throw "$CandidateVersion uninstaller left an owned StarNet process alive"
     }
     if (Test-Path -LiteralPath $app -PathType Leaf) {
