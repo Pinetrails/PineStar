@@ -929,50 +929,11 @@ const Marketplace = (() => {
       return new Set(caps.map(c => (typeof c === 'string' ? c : c && c.objectType)).filter(Boolean));
     } catch (_) { return new Set(); }
   }
-  // DRAWS ON STATION GEAR — one row per objectType the class uses: the prop + what it grants, resolved from the
-  // LIVE catalog (never a hardcoded prop label), PLUS an honest present/missing check against the ACTUAL station
-  // props. Present gear reads as available; missing gear reads dim ("not on station — add in REFIT"). Capabilities
-  // are STATION-level shared gear used under the overseer — the class is NOT issued its own copy (only its desk).
-  // Empty kit => the block is omitted (a plain persona-only class).
-  function kitBlockHTML(s) {
-    const kit = (s && Array.isArray(s.kit)) ? s.kit : [];
-    if (!kit.length) return '';
-    const have = stationGearSet();
-    let missing = 0;
-    // A ●/○ status dot carries present/missing (green ● = on station, dim ○ = not yet); the repeated per-row
-    // "NOT ON STATION — ADD IN REFIT…" sentence is gone — the single footnote below states it once (audit item 8).
-    const rows = kit.map(t => {
-      const present = have.has(t);
-      if (!present) missing++;
-      return '<div class="mkt-kit-row' + (present ? '' : ' mkt-kit-missing') + '">' +
-        '<span class="mkt-kit-dot" aria-hidden="true">' + (present ? '●' : '○') + '</span>' +
-        '<span class="mkt-kit-obj" data-hint="' + esc(t) + '">' + esc(kitPropLabel(t)) + '</span>' +
-        '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span></div>';
-    }).join('');
-    const note = missing
-      ? 'shared station gear this class draws on under the overseer — ' + missing + ' not on station yet (add ' + (missing === 1 ? 'it' : 'them') + ' in REFIT for its full toolkit).'
-      : 'shared station gear this class draws on under the overseer — all present on the station.';
-    return '<div class="mkt-block"><div class="bh">DRAWS ON STATION GEAR</div>' +
-      '<div class="mkt-kit">' + rows + '</div>' +
-      '<div class="mkt-kit-note">' + note + '</div></div>';
-  }
-  // SKILL PACKAGE — one row per bundled skill slug: name + one-line description, resolved from the /api/skills
-  // catalog the SKILLS window uses. Renders slug-only immediately (so it works offline), then hydrateSkillRows
-  // fills real names/descriptions once the catalog resolves. Empty package => the block is omitted.
-  function skillPackageHTML(s) {
-    const skills = (s && Array.isArray(s.skills)) ? s.skills : [];
-    if (!skills.length) return '';
-    const cached = skillCatalog || {};
-    const rows = skills.map(slug => {
-      const meta = cached[slug];
-      return '<div class="mkt-skill-row" data-slug="' + esc(slug) + '">' +
-        '<span class="mkt-skill-name">' + esc(meta ? meta.name : slug) + '</span>' +
-        '<span class="mkt-skill-desc">' + esc(meta ? meta.description : '') + '</span></div>';
-    }).join('');
-    return '<div class="mkt-block"><div class="bh">SKILL PACKAGE</div>' +
-      '<div class="mkt-skills">' + rows + '</div>' +
-      '<div class="mkt-kit-note">enabled for this agent on summon (adds to your global skills; still gated by its gear).</div></div>';
-  }
+  /* The class dossier's DRAWS ON STATION GEAR + SKILL PACKAGE inventories were removed 2026-08-15 (Andrew).
+     Nothing about the LOADOUT changed — `s.kit` and `s.skills` still ride applyLoadout at summon exactly as
+     before; the bay simply stopped printing the manifest. The live-source resolvers those blocks introduced are
+     still in use and still owned here: kitPropLabel/capGrant/stationGearSet by the RECIPE dossier's gear block
+     (recipeGearHTML), and loadSkillCatalog/hydrateSkillRows by its skills chips. */
   // async: fill real skill names/descriptions into a rendered dossier once the catalog loads. Re-queries the DOM
   // after the await so a dossier swapped mid-fetch is a safe no-op.
   function hydrateSkillRows() {
@@ -1121,8 +1082,10 @@ const Marketplace = (() => {
       // them a screen and a half down, behind the sticky CTA. Everything below this point is reference material.
       summonConfigPanelHTML(s) +
       (s.starters && s.starters.length ? '<div class="mkt-block"><div class="bh">TRY ASKING — things you can say to it</div><ul class="mkt-starters">' + s.starters.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
-      kitBlockHTML(s) +
-      skillPackageHTML(s) +
+      // NO gear / skill-package inventories (2026-08-15, Andrew). They listed what the class draws on under the
+      // overseer and which bundled skills it gets — true, but it is a manifest, not a reason to recruit, and it
+      // ran longer than the description above it. The loadout still applies at summon exactly as before; the
+      // station's own gear lives in REFIT and the skills in the SKILLS window, which are the surfaces that own it.
       (s.manual ? '<div class="mkt-block"><details class="mkt-orders"><summary class="bh">STANDING ORDERS</summary><pre>' + esc(s.manual) + '</pre></details></div>' : '') +
       // the merged recruit door's SECOND verb: in summon mode, a deploy context (onDeploy + agentName) also offers
       // re-speccing the CURRENT agent as this class — the old ROSTER door's action, now living on the card instead

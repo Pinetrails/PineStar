@@ -495,35 +495,36 @@ A.ok(/archiveOpen = !archiveOpen/.test(mkt), 'the archive header toggles open/cl
 A.ok(/archs\.map\(cardHTML\)/.test(mkt), 'archive classes render as REAL class cards (focusable + summonable)');
 A.ok(/archiveSectionHTML\(filtering\)/.test(mkt), 'search/lane filters include the archive — search must FIND a class, never hide one');
 
-/* ---------- S3a. DOSSIER: kit + skill package render from LIVE sources (no hardcoded prop labels) ---------- */
-// the kit block resolves each objectType's prop label from the LIVE catalog (PropSprites.CATALOG via
-// WorldModel.CAP_PROP_MAP) and its grant from WorldModel's owned CAP_LABEL — never a hardcoded prop name.
-A.ok(/function kitBlockHTML\(s\)/.test(mkt), 'the dossier has a DRAWS ON STATION GEAR block');
-A.ok(/DRAWS ON STATION GEAR/.test(mkt), 'the dossier labels the gear section "DRAWS ON STATION GEAR" (shared-gear model)');
-A.ok(!/STANDARD ISSUE KIT/.test(mkt), 'the dossier no longer calls the gear a per-agent "STANDARD ISSUE KIT"');
-A.ok(!/requisitioned at its workstation/.test(mkt), 'the dossier no longer claims the gear is requisitioned at a per-agent workstation');
-A.ok(/function kitPropLabel\(objType\)/.test(mkt), 'kit labels resolve through kitPropLabel (from the live catalog)');
+/* ---------- S3a. GEAR + SKILL resolution from LIVE sources (no hardcoded prop labels) ----------
+   2026-08-15: the CLASS dossier no longer prints a gear/skill manifest (a recruiting decision is made on what a
+   class DOES, not on an inventory) — the loadout still applies at summon, which S1/S2 above already lock. The
+   live-source resolvers those blocks introduced are still owned here and still shipped, now by the RECIPE
+   dossier's gear block, so the no-hardcoded-labels law is asserted against ITS renderer. */
+A.ok(!/function kitBlockHTML\(/.test(mkt), 'the class dossier no longer renders a DRAWS ON STATION GEAR manifest');
+A.ok(!/function skillPackageHTML\(/.test(mkt), 'the class dossier no longer renders a SKILL PACKAGE manifest');
+A.ok(!/STANDARD ISSUE KIT/.test(mkt), 'nothing calls station gear a per-agent "STANDARD ISSUE KIT"');
+A.ok(!/requisitioned at its workstation/.test(mkt), 'nothing claims the gear is requisitioned at a per-agent workstation');
+A.ok(/function kitPropLabel\(objType\)/.test(mkt), 'gear labels resolve through kitPropLabel (from the live catalog)');
 const kpl = mkt.slice(mkt.indexOf('function kitPropLabel('), mkt.indexOf('function kitPropLabel(') + 900);
 A.ok(/PropSprites\.CATALOG/.test(kpl), 'kitPropLabel reads the LIVE PropSprites catalog for the prop label (never hardcoded)');
 A.ok(/CAP_PROP_MAP/.test(kpl), 'kitPropLabel maps the objectType through WorldModel.CAP_PROP_MAP (the owned source)');
-A.ok(/WorldModel/.test(mkt) && /CAP_LABEL/.test(mkt), 'the dossier resolves capability grants from WorldModel.CAP_LABEL (the owned power-word source)');
-// PRESENT/MISSING: the gear block checks each objectType against the ACTUAL station props (World.stationCaps),
-// rendering present gear as available and missing gear as an honest dim "not on station — add in REFIT".
-const kbh = mkt.slice(mkt.indexOf('function kitBlockHTML('), mkt.indexOf('function kitBlockHTML(') + 1200);
-A.ok(/stationGearSet\(\)/.test(kbh), 'the gear block checks present/missing against the live station');
+A.ok(/WorldModel/.test(mkt) && /CAP_LABEL/.test(mkt), 'capability grants resolve from WorldModel.CAP_LABEL (the owned power-word source)');
+// PRESENT/MISSING: the recipe gear block checks each objectType against the ACTUAL station props (World.stationCaps).
+const rgh = mkt.slice(mkt.indexOf('function recipeGearHTML('), mkt.indexOf('function recipeGearHTML(') + 1200);
+A.ok(/stationGearSet\(\)/.test(rgh), 'the gear block checks present/missing against the live station');
 A.ok(/function stationGearSet\(\)[\s\S]{0,200}World\.stationCaps/.test(mkt), 'stationGearSet reads World.stationCaps (the ACTUAL station props)');
-A.ok(/not on station/.test(kbh), 'missing gear renders an honest "not on station" state');
-A.ok(/mkt-kit-missing/.test(kbh), 'missing gear is dimmed via the mkt-kit-missing state');
-// the SKILL PACKAGE block resolves names/descriptions from the /api/skills catalog the SKILLS window uses.
-A.ok(/function skillPackageHTML\(s\)/.test(mkt), 'the dossier has a SKILL PACKAGE block');
-A.ok(/SKILL PACKAGE/.test(mkt), 'the dossier labels the skills section "SKILL PACKAGE"');
+A.ok(/mkt-kit-missing/.test(rgh), 'missing gear is dimmed via the mkt-kit-missing state');
 A.ok(/function loadSkillCatalog\(\)/.test(mkt) && /fetch\('\/api\/skills'\)/.test(mkt),
   'skill names/descriptions come from the live /api/skills catalog (the SKILLS window\'s source)');
 A.ok(/function hydrateSkillRows\(\)/.test(mkt) && /hydrateSkillRows\(\)/.test(mkt.slice(mkt.indexOf('function renderDossier'))),
   'the dossier hydrates real skill names async once the catalog resolves');
-// CLEARANCE honesty: the pips read as advisory model (station default) while EFFORT is labelled applied-at-summon.
-A.ok(/model: station default/.test(mkt), 'the CLEARANCE row is honest — the model is the station default (advisory pip)');
-A.ok(/applied at summon/.test(mkt), 'the EFFORT row is honest — the reasoning effort is what summon APPLIES');
+// CLEARANCE/EFFORT honesty moved onto the control that resolves them (modelHelpHTML), replacing a spec-grid row
+// whose value was the words "station default". The claim must still be advisory, never a promise summon can't keep.
+const mhh = mkt.slice(mkt.indexOf('function modelHelpHTML('), mkt.indexOf('function modelHelpHTML(') + 1200);
+A.ok(/orchestrator/.test(mhh) && /tuned for/.test(mhh),
+  'the MODEL helper is honest — an unpinned model INHERITS the orchestrator, the class tier is only a tuning note');
+A.ok(/overrides the class default/.test(mhh), 'a pinned model is labelled as overriding the class default');
+A.ok(/applied at summon/.test(mkt), 'the builder still labels reasoning effort as what summon APPLIES');
 
 /* ---------- S3b. CUSTOM BUILDER: kit/skills/effort round-trip into the saved custom spec ---------- */
 // the builder holds picked-loadout state and folds it into the spec passed to Specialties.saveCustom.
