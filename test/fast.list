@@ -510,6 +510,7 @@ test/stationbake.chunk.test.js
 test/stationbake.materials.test.js
 test/stationbake.seam.test.js
 test/stationbake.hull.test.js
+test/canvas-loss-recovery.test.js
 test/conveyor.test.js
 test/pipeline.test.js
 test/blueprints.test.js

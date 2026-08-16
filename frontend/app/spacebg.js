@@ -1061,6 +1061,38 @@ const SpaceBG = (() => {
     builtId = id; builtW = tw; builtH = th;
   }
 
+  /* THROW THE BUILT SKY AWAY so the next draw() re-lays it from scratch.
+     Every layer here lives in an offscreen <canvas> built ONCE per session. A GPU/driver reset
+     (sleep-wake, display change, TDR, WebView GPU process restart) zeroes the backing store of
+     every accelerated 2D canvas in the page — the objects survive at full size, their PIXELS do
+     not. Nothing about that is observable from inside `st`, so the cache stays "valid" forever
+     and draw() blits transparent plates over the base fill: a starless, nebula-less black sky
+     that never recovers. World owns the detection (see its canvas-loss recovery); this is the
+     hand-back. Cheap by design — dropping the key is all it takes, the next draw rebuilds. */
+  function invalidate() {
+    st = null; builtId = ''; builtW = 0; builtH = 0; pendKey = '';
+  }
+
+  /* verify/test hook — zero every built plate IN PLACE (objects and sizes intact, pixels gone),
+     which is what a GPU reset does and what `invalidate` must be able to undo. Walks whatever
+     the backdrop's build() returned, so a new backdrop needs no wiring here. */
+  function _dbgLosePixels() {
+    let n = 0;
+    const seen = new Set();
+    const wipe = v => {
+      if (!v || seen.has(v) || typeof v !== 'object') return;
+      seen.add(v);
+      if (typeof HTMLCanvasElement !== 'undefined' && v instanceof HTMLCanvasElement) {
+        try { const g = v.getContext('2d'); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, v.width, v.height); n++; } catch (_) {}
+        return;
+      }
+      if (Array.isArray(v)) { for (const x of v) wipe(x); return; }
+      for (const k of Object.keys(v)) wipe(v[k]);
+    };
+    wipe(st);
+    return n;
+  }
+
   /* the whole backdrop, base fill included — callers do NOT pre-fill (identity transform,
      device px). `cam` is the world camera {panX,panY,scale}; omit it and every backdrop
      behaves as if the camera sat at the origin (which is exactly THE VOID's behaviour). */
@@ -1156,5 +1188,5 @@ const SpaceBG = (() => {
     ctx.globalAlpha = 1;
   }
 
-  return { draw, setBackdrop, getBackdrop, list, paintSample, DEFAULT_ID };
+  return { draw, setBackdrop, getBackdrop, list, paintSample, invalidate, _dbgLosePixels, DEFAULT_ID };
 })();
