@@ -747,7 +747,7 @@ jobs:
   # recovery through a full quit/relaunch before the release can be assembled.
   intel-macos-installed-acceptance:
     needs: [build, notarize-macos]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.notarize-macos.result == 'success' }}
     runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4

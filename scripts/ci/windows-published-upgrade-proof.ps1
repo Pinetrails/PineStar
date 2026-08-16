@@ -133,7 +133,11 @@ $headers = @{
   Accept = 'application/vnd.github+json'
   'User-Agent' = 'starnet-published-upgrade-proof'
 }
-$releases = @(Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$releaseRepo/releases?per_page=20")
+# PowerShell 7 preserves a top-level JSON array as one pipeline object when Invoke-RestMethod
+# is called directly inside @(...). Assign first, then array-wrap the value so each release is
+# an element instead of one nested Object[] whose tag_name is itself an array.
+$releaseResponse = Invoke-RestMethod -Headers $headers -Uri "https://api.github.com/repos/$releaseRepo/releases?per_page=20"
+$releases = @($releaseResponse)
 $sources = @($releases | Where-Object {
   if ($_.draft -or $_.prerelease) { return $false }
   try { return ([version]$_.tag_name.TrimStart('v')) -lt $targetVersion } catch { return $false }

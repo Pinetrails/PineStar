@@ -30,6 +30,8 @@ A.ok(hooks.includes("Where-Object Path -eq $\\'$INSTDIR\\skynet-desktop.exe$\\'"
 A.ok(hooks.includes("Where-Object Path -eq $\\'$INSTDIR\\node.exe$\\'"), 'node kill is confined to the exact bundled runtime path');
 
 A.ok(proof.includes("Select-Object -First 2"), 'release proof requires latest and N-1 published sources');
+A.ok(proof.includes('$releaseResponse = Invoke-RestMethod') && proof.includes('$releases = @($releaseResponse)'),
+  'release proof normalizes the PowerShell 7 top-level JSON array before filtering published sources');
 A.ok(proof.includes('Remove-Item -LiteralPath $oldUninstaller -Force'), 'release proof fault-injects the reported missing-old-uninstaller failure');
 A.ok(proof.includes('Start-Process -FilePath $app'), 'release proof launches the old installed shell');
 A.ok(proof.includes('Wait-ForExactProcess -Path $node'), 'release proof observes the old bundled sidecar running');
@@ -43,6 +45,8 @@ const workflowStep = workflow.indexOf('Prove published Windows upgrades survive 
 const stageDraft = workflow.indexOf('stage-draft:');
 A.ok(workflowStep >= 0 && stageDraft > workflowStep, 'published-version upgrade proof blocks the train before draft staging');
 A.ok(workflow.includes('windows-published-upgrade-proof-${{ matrix.target }}'), 'release train retains the upgrade receipt');
+A.ok(workflow.includes("!cancelled() && needs.build.result == 'success' && needs.notarize-macos.result == 'success'"),
+  'Intel installed acceptance runs only when both build and notarization prerequisites succeeded');
 
 if (process.platform === 'win32') {
   const ps = spawnSync('powershell.exe', [
