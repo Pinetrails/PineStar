@@ -8239,6 +8239,27 @@ const World = (() => {
     // no trio" without a second instrumented build: planned vs. how many candidates each huddle saw
     // vs. roll vs. tile failure. Read-only snapshot; the caller cannot mutate the live object.
     _dbgHuddleStats: () => JSON.parse(JSON.stringify(huddleStats)),
+    /* TEST/DEBUG ONLY — COMPANIONS readout + selection sampler.
+       A real social beat fires once every 30-60s and picks ONE partner, so waiting for the bias to
+       show up on its own is not a verification, it is a vigil — and a rare surface that never gets
+       forced is exactly how this project has shipped broken beats before. So this drives the SHIPPED
+       pickByBond (not a re-derivation) `n` times over a candidate list and reports where it landed.
+       A green read means the real selection maths, fed the real polled graph, actually favours the
+       agents the run log proved. `graph` is the loaded bond map, so a zero-bias result can always be
+       told apart from an empty graph. */
+    _dbgAffinity: (anchorIds, ids, n) => {
+      const list = (Array.isArray(ids) ? ids : []).map(id => ({ id: id }));
+      const anchors = Array.isArray(anchorIds) ? anchorIds : [anchorIds];
+      const sample = {};
+      for (const o of list) sample[o.id] = 0;
+      const runs = Math.max(0, Math.min(20000, n | 0));
+      for (let i = 0; i < runs; i++) { const p = pickByBond(anchors, list); if (p) sample[p.id]++; }
+      return {
+        graph: Array.from(affinityPairs.entries()).map(([k, v]) => ({ pair: k, strength: v })),
+        weights: bondWeights(anchors, list.map(o => o.id), bondOf, BOND_PULL),
+        sample: sample, runs: runs
+      };
+    },
     /* TEST/DEBUG ONLY — W6 peer-chatter readout: which bodies are carrying a live glyph line right
        now, straight off the SAME `chatter` objects the renderer draws from (never a re-derivation,
        so a green read cannot mean anything but "that bubble is on screen"). `words` is the rune-
