@@ -14,6 +14,7 @@
                  Network domain.
      /form     - a native <select>, which cannot be driven by synthetic clicks at all.
      /click    - a button whose handler mutates the DOM, to prove click() settles before returning.
+     /download - a real attachment, to prove click() returns a verified workspace receipt.
 
    Skips (loudly) when no Chromium is installed — a CI box without a browser must not report a pass
    it never earned. */
@@ -176,6 +177,20 @@ const ROUTES = {
     {
       await driver.navigate(base + '/form');
       A.eq(driver.lastResponse().status, 200, 'status does not leak from the previous 404 navigation');
+    }
+
+    // DOWNLOAD HANDOFF -- success is not merely a click. The receipt must name the verified file
+    // under downloads/, which gives the next model turn a direct fs.read action for DOCX and others.
+    {
+      await driver.navigate(base + '/download');
+      const nodes = await driver.snapshot(40);
+      const link = nodes.find(n => /Download report/.test(n.text || ''));
+      A.ok(!!link, 'the real download link is visible to Chromium');
+      const result = await driver.click(link);
+      A.ok(/Download completed/.test(result), 'click reports Chromium download completion');
+      A.ok(/downloads\/report\.txt/.test(result), 'the completed receipt includes the exact workspace-relative path');
+      A.eq(fs.readFileSync(path.join(downloadDir, 'report.txt'), 'utf8'), 'QUARTERLY REPORT BODY',
+        'the receipt names bytes that really exist in the configured agent download directory');
     }
 
     // 3a. OBSERVABLE-SURFACE REDUCTION — diagnostics survive without Runtime.enable.
