@@ -14449,6 +14449,20 @@ async function runOnce(o) {
       const gate = TaskBriefPolicy.canMutate(taskBriefState.brief, liveTool);
       if (!gate.ok) return { ok: false, isError: true, content: 'Task Brief gate: ' + gate.reason, summary: 'task-brief-gate' };
     }
+    /* EVIDENCE-PROGRESS GUARD. The old loop guard below catches an identical call only when it FAILS. The
+       live Drive incident spent 100+ calls on nominal successes (same page text, fresh refs, "clicked", parked
+       output re-reads). Gate at this central seam so code.run's nested reads cannot route around it. A block is
+       deliberately a normal tool error: loop.js's bounded failure-recovery turn keeps alternate tools alive and
+       requires a revised route instead of terminating the task. */
+    if (!internalBriefControl) {
+      const progressGate = execution.beforeProgress(c, liveTool);
+      if (progressGate && progressGate.action === 'block') {
+        return {
+          ok: false, isError: true, summary: 'strategy-exhausted',
+          content: 'STRATEGY EXHAUSTED (' + progressGate.code + '): ' + progressGate.message
+        };
+      }
+    }
     // LOOP GUARD (mirrors loop.js semantics): key on the FULL argsRaw via a sha1 digest (the old .slice(0,400)
     // collided two DIFFERENT long payloads sharing a 400-char prefix — a false positive), and count only FAILING
     // calls — a byte-identical call that keeps SUCCEEDING (e.g. many fs_write to the same path with different
@@ -14556,6 +14570,14 @@ async function runOnce(o) {
         call: c, ctx: dctx, tool: liveTool, signal: dctx && dctx.signal,
         onRecovery: recordRunRecoveryAttempt
       });
+      if (!internalBriefControl) {
+        const progressDecision = execution.observeProgress(c, r, liveTool);
+        if (progressDecision && progressDecision.action === 'warn' && r && typeof r.content === 'string') {
+          r = Object.assign({}, r, {
+            content: r.content + '\n\n<strategy_guard>' + progressDecision.message + '</strategy_guard>'
+          });
+        }
+      }
       if (DomainTask.isTargetFetch(c, directDomainTask) && DomainTask.isDomainMissing(r)) {
         r = Object.assign({}, r, { control: Object.assign({}, r && r.control, DomainTask.stopControl(directDomainTask)) });
       }

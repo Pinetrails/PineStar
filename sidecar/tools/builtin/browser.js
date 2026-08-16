@@ -55,6 +55,10 @@
   const WAIT_DEFAULT_MS = 10000;
   const WAIT_MAX_MS = 30000;
   const WAIT_POLL_MS = 150;
+  // A click that starts a download waits for Chromium's terminal download event, but stays below the
+  // browser.click tool budget. Ordinary clicks pay none of this budget because we only wait after a
+  // Browser.downloadWillBegin event has actually arrived.
+  const DOWNLOAD_WAIT_MS = 10000;
   // browser.intercept's vocabulary → CDP resource types. Module-scoped because BOTH layers need it:
   // the session validates the agent's kinds (so a bad kind fails loudly on any driver, including an
   // injected test one) and the driver maps them onto Fetch.enable patterns.
@@ -87,6 +91,91 @@
   const SETTLE_BOOTSTRAP = settleSource('__STARNET_SETTLE__');
   const SETTLE_PROBE = settleProbeSource('__STARNET_SETTLE__');
   const DEFAULT_PORT = Number(process.env.STARNET_BROWSER_CDP || process.env.SKYNET_BROWSER_CDP || 9347);
+
+  /* DOWNLOAD RECEIPTS. Browser.setDownloadBehavior already put bytes in the agent jail, but click()
+     returned only "clicked". That made a successful Google Drive export observationally identical to a
+     button that did nothing, so an agent kept inspecting the same page. This ledger turns Chromium's
+     browser-scoped download events into a receipt only when the named file also exists on disk.
+
+     The suggested filename is page/server metadata. Keep only its basename (no traversal) and fence it
+     when it is shown to the model; the trusted host claim is merely that the verified path exists. */
+  function makeDownloadLedger(downloadDir) {
+    const root = downloadDir ? P.resolve(downloadDir) : '';
+    const records = new Map();
+    const waiters = new Set();
+    let sequence = 0;
+
+    function wake() {
+      for (const fn of Array.from(waiters)) { try { fn(); } catch (_) {} }
+      waiters.clear();
+    }
+    function cursor() { return sequence; }
+    function begin(event) {
+      event = event || {};
+      const guid = String(event.guid || 'download-' + (sequence + 1));
+      const raw = String(event.suggestedFilename || 'download');
+      const filename = P.basename(raw) || 'download';
+      const record = {
+        guid, sequence: ++sequence, filename, state: 'inProgress',
+        receivedBytes: 0, totalBytes: 0
+      };
+      records.set(guid, record);
+      wake();
+      return Object.assign({}, record);
+    }
+    function progress(event) {
+      event = event || {};
+      const record = records.get(String(event.guid || ''));
+      if (!record) return null;
+      if (event.state) record.state = String(event.state);
+      if (Number.isFinite(Number(event.receivedBytes))) record.receivedBytes = Math.max(0, Number(event.receivedBytes));
+      if (Number.isFinite(Number(event.totalBytes))) record.totalBytes = Math.max(0, Number(event.totalBytes));
+      wake();
+      return Object.assign({}, record);
+    }
+    function startedAfter(after) {
+      let found = null;
+      for (const record of records.values()) {
+        if (record.sequence > Number(after || 0) && (!found || record.sequence < found.sequence)) found = record;
+      }
+      return found;
+    }
+    function verify(record) {
+      if (!record) return null;
+      if (record.state === 'canceled') return { status: 'canceled' };
+      if (record.state !== 'completed') return { status: 'started' };
+      if (!root) return { status: 'unverified' };
+      const absolute = P.resolve(root, record.filename);
+      const inside = absolute === root || absolute.startsWith(root + P.sep);
+      if (!inside) return { status: 'unverified' };
+      try {
+        const stat = FS.statSync(absolute);
+        if (!stat.isFile()) return { status: 'unverified' };
+        return {
+          status: 'completed', absolute, relative: 'downloads/' + record.filename.replace(/\\/g, '/'),
+          filename: record.filename, bytes: stat.size
+        };
+      } catch (_) { return { status: 'unverified' }; }
+    }
+    async function waitAfter(after, budgetMs) {
+      const record = startedAfter(after);
+      if (!record) return null;
+      const budget = Math.max(0, Number(budgetMs) || 0);
+      let expired = false;
+      let timer = null;
+      if (budget > 0) timer = setTimeout(() => { expired = true; wake(); }, budget);
+      try {
+        for (;;) {
+          const receipt = verify(record);
+          if (receipt.status !== 'started' || expired || budget === 0) return receipt;
+          await new Promise(resolve => waiters.add(resolve));
+        }
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+    return { cursor, begin, progress, startedAfter, waitAfter, _records: records };
+  }
   // Installed Chrome's "new" headless mode can still enter the platform pointer-lock path after
   // a CDP click. On Windows that path calls ClipCursor and moves the REAL cursor. Install this
   // bootstrap before every navigation so game code observes a faithful logical lock while the
@@ -612,6 +701,7 @@
     const settleActionBudgetMs = deps.settleActionBudgetMs == null ? SETTLE_ACTION_BUDGET_MS : Number(deps.settleActionBudgetMs);
     const settleEmptyGraceMs = deps.settleEmptyGraceMs == null ? SETTLE_EMPTY_GRACE_MS : Number(deps.settleEmptyGraceMs);
     const settleMinObserveMs = deps.settleMinObserveMs == null ? SETTLE_MIN_OBSERVE_MS : Number(deps.settleMinObserveMs);
+    const downloadWaitMs = deps.downloadWaitMs == null ? DOWNLOAD_WAIT_MS : Math.max(0, Number(deps.downloadWaitMs));
     const inputSleep = typeof deps.inputSleep === 'function' ? deps.inputSleep : sleep;
     if (!fetchImpl || !WebSocketImpl) throw new Error('browser unavailable: Node WebSocket/fetch is not available');
     /* ATTACH MODE. deps.attachPort names an ALREADY-RUNNING Chrome's DevTools port (the Commander started
@@ -627,6 +717,7 @@
     const headed = wantHeaded && !binIsHeadlessOnly;
 
     let proc = null, procExited = false, procError = null, procClosePromise = null, cdp = null, consoleLog = [], dialog = null, attachedPort = null;
+    const downloads = deps.downloadDir ? makeDownloadLedger(deps.downloadDir) : null;
     // Owned-browser identity is derived after CDP connects. Windows Chrome GUI binaries often emit
     // nothing for `chrome.exe --version`; launch-time probing alone left their UA as HeadlessChrome.
     // Attached Commander-owned Chrome is intentionally excluded from every override.
@@ -885,6 +976,12 @@
             });
             cdp = new CdpClient(ws, timeoutMs);
             attachedPort = port;
+            // Browser.* download events are emitted on the root connection, not a page session. Register
+            // before enabling downloads so a fast local/file response cannot finish between setup steps.
+            if (downloads) {
+              cdp.on('Browser.downloadWillBegin', event => { downloads.begin(event); });
+              cdp.on('Browser.downloadProgress', event => { downloads.progress(event); });
+            }
             if (deps.syntheticInputOnly !== false) {
               // New page targets do not inherit a target-scoped preload. Pause every related
               // target before its scripts run and close popups; inject the same shim into any
@@ -1328,6 +1425,7 @@
     }
     async function click(node) {
       const c = await page();
+      const downloadCursor = downloads ? downloads.cursor() : 0;
       const x = node.x + Math.max(1, Math.floor(node.w / 2));
       const y = node.y + Math.max(1, Math.floor(node.h / 2));
       await movePointer(c, { x, y }, 'none');
@@ -1335,6 +1433,19 @@
       await inputPause(35, 90);
       await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      // Do not make every click ten seconds slower. A wait is justified only when Chromium proved this
+      // click started a download; then the terminal event plus an on-disk stat produce the receipt.
+      if (downloads && downloads.startedAfter(downloadCursor)) {
+        const receipt = await downloads.waitAfter(downloadCursor, downloadWaitMs);
+        if (receipt && receipt.status === 'completed') {
+          const metadata = fenceExternal('Saved path: ' + receipt.relative + '\nSize: ' + receipt.bytes + ' bytes', 'download filename and metadata reported by the controlled browser');
+          return 'clicked\nDownload completed and the host verified the saved file.\n' + metadata
+            + '\nRead it with fs.read using the saved path above; Word (.docx) files are extracted automatically.';
+        }
+        if (receipt && receipt.status === 'canceled') return 'clicked\nDownload canceled. No saved path was claimed.';
+        if (receipt && receipt.status === 'unverified') return 'clicked\nChromium reported the download complete, but the host could not verify a readable saved file. Do not claim it was saved.';
+        return 'clicked\nDownload started but did not complete within the browser action budget. No saved path was claimed. Use fs.list on downloads/ later to check for a completed file.';
+      }
       return 'clicked';
     }
     async function type(node, text) {
@@ -2533,8 +2644,11 @@
              proceeding as though the element were there. */
           return { content: 'TIMED OUT after ' + (r && r.ms) + 'ms: ' + what + ' never ' + (a.gone === true ? 'went away' : 'appeared') + '. The page may have failed, or the condition may be wrong — browser.get_text and browser.network will say which.', summary: 'timed out' };
         }),
-      exec('browser.click', 'Click a visible element by ref from the latest browser.snapshot.', { type: 'object', required: ['ref'], properties: { ref: { type: 'string' } } },
-        async a => ({ content: await session.click(a.ref), summary: 'clicked' })),
+      exec('browser.click', 'Click a visible element by ref from the latest browser.snapshot. If the click downloads a file, the result waits for Chromium and verifies the saved file under downloads/; pass that exact path to fs.read (Word .docx files are extracted automatically).', { type: 'object', required: ['ref'], properties: { ref: { type: 'string' } } },
+        async a => {
+          const content = await session.click(a.ref);
+          return { content, summary: /Download completed/.test(content) ? 'download completed' : 'clicked' };
+        }),
       exec('browser.type', 'Click/focus an element by ref from the latest browser.snapshot, then type text into it.', { type: 'object', required: ['ref', 'text'], properties: { ref: { type: 'string' }, text: { type: 'string' } } },
         async a => ({ content: await session.type(a.ref, a.text), summary: 'typed' })),
       exec('browser.scroll', 'Scroll the page by x/y CSS pixels.', { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } } },
@@ -2752,8 +2866,8 @@
           return { content: 'Emulating: ' + parts.join(', ') + '. Take a fresh browser.snapshot — earlier refs expired. reset:true clears it.', summary: 'emulating ' + (a.device || parts.join(',')) };
         }, false)
     ];
-    return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
+    return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, makeDownloadLedger, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
   }
 
-  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, describeResponse, jsLiteral, normalizeBrowserLocale, detectBrowserVersion, makeLaunchIdentity, browserVersionFrom, cleanBrandRows, makeCdpIdentity, CHROME_CANDIDATES } };
+  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, makeDownloadLedger, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, describeResponse, jsLiteral, normalizeBrowserLocale, detectBrowserVersion, makeLaunchIdentity, browserVersionFrom, cleanBrandRows, makeCdpIdentity, CHROME_CANDIDATES } };
 });
