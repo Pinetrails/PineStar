@@ -43,6 +43,40 @@ const AutoSessions = (() => {
   const streamOf = (runId) => STREAM_PREFIX + String(runId);
   // 'cron-' + a runId (crypto.randomUUID: hex + hyphens) fits the workstream/stream grammar (/^[A-Za-z0-9_-]{1,64}$/).
   function validStream(id) { return /^cron-[A-Za-z0-9_-]{1,58}$/.test(String(id || '')); }
+  // Blank assistant envelopes can carry tool calls, but they are not visible output. Settled status markers count;
+  // a pending-transcript marker deliberately does not, so a later open/backfill remains eligible to heal it.
+  function hasReadableOutput(history) {
+    return (Array.isArray(history) ? history : []).some(m => m && (
+      (m.role === 'assistant' && String(m.content == null ? '' : m.content).trim()) ||
+      (m.sys && !m.transcriptPending && String(m.content == null ? '' : m.content).trim())
+    ));
+  }
+  function transcriptHasReadableOutput(turns) {
+    return (Array.isArray(turns) ? turns : []).some(t => t && t.role === 'assistant' && String(t.content == null ? '' : t.content).trim());
+  }
+
+  // cron.result can beat the final transcript append. Retry only that short persistence window and remember whether
+  // any complete HTTP read succeeded, so foldTurns can distinguish an empty transcript from an unreachable one.
+  async function fetchTranscript(agentId, streamId, options) {
+    const opts = options || {};
+    const waits = Array.isArray(opts.waits) ? opts.waits : [120, 400];
+    const sleep = opts.sleep || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+    let turns = [], fetchOk = false;
+    for (let attempt = 0; attempt <= waits.length; attempt++) {
+      fetchOk = false;
+      try {
+        const r = await fetch('/api/transcript?agent=' + encodeURIComponent(agentId || 'agent') + '&stream=' + encodeURIComponent(streamId) + '&limit=200', { cache: 'no-store' });
+        if (r.ok) {
+          const body = (await r.json()) || {};
+          turns = Array.isArray(body.turns) ? body.turns : [];
+          fetchOk = true;
+          if (transcriptHasReadableOutput(turns)) break;
+        }
+      } catch (_) { /* retry below; fetchOk preserves the truthful final state */ }
+      if (attempt < waits.length) await sleep(waits[attempt]);
+    }
+    return { turns, fetchOk };
+  }
 
   // ---- routine catalogue (names + prompts) ----------------------------------------------------
   async function loadRoutines() {
@@ -95,13 +129,9 @@ const AutoSessions = (() => {
     if (!ws) ws = beginSession(runId, routineFor(/* jobId unknown here */ '') || null);
     if (!ws) return;
 
-    let turns = [], fetchOk = false;
-    try {
-      const r = await fetch('/api/transcript?agent=' + encodeURIComponent(ws.agentId || 'agent') + '&stream=' + encodeURIComponent(id) + '&limit=200', { cache: 'no-store' });
-      if (r.ok) { turns = ((await r.json()) || {}).turns || []; fetchOk = true; }
-    } catch (_) { turns = []; fetchOk = false; }   // fail-open: no fabricated content — and we know the fetch FAILED
+    const loaded = await fetchTranscript(ws.agentId, id);
 
-    foldTurns(ws, turns, outcome, reason, fetchOk, endedAt);
+    foldTurns(ws, loaded.turns, outcome, reason, loaded.fetchOk, endedAt);
     if (hasCh()) Channels.end(id);   // clear the busy/running channel state
     // if this session is the one on screen, re-render it so the folded output is visible immediately.
     if (hasChat() && Workstreams.activeId && Workstreams.activeId() === id) Chat.load(ws);
@@ -116,7 +146,7 @@ const AutoSessions = (() => {
   // replayed back to the model as a prior assistant turn. `fetchOk` distinguishes a transcript-fetch FAILURE (say
   // so honestly) from a run that genuinely produced no readable output. Idempotent-ish — replaces history.
   function foldTurns(ws, turns, outcome, reason, fetchOk, endedAt) {
-    const sysMarker = (text, error) => { const m = { role: 'system', sys: true, content: String(text) }; if (error) m.error = true; return m; };
+    const sysMarker = (text, error, pending) => { const m = { role: 'system', sys: true, content: String(text) }; if (error) m.error = true; if (pending) m.transcriptPending = true; return m; };
     const next = [];
     for (const t of (turns || [])) {
       if (!t || (t.role !== 'user' && t.role !== 'assistant')) continue;   // mechanics (tool/system) stay out of COMMS
@@ -140,7 +170,7 @@ const AutoSessions = (() => {
       // the same as a run that settled quietly — never claim "nothing to report" when we simply couldn't read it.
       next.push(fetchOk
         ? sysMarker('— routine ran, nothing to report —')
-        : sysMarker('⚠ couldn\'t load the output — the run\'s transcript wasn\'t reachable', true));
+        : sysMarker('⚠ couldn\'t load the output yet — StarNet will retry automatically when this session opens', true, true));
     }
     ws.history = next;
     // hybrid-honest: a real run fired → todo advances to active. `endedAt` (heal/backfill paths) = the run
@@ -186,7 +216,7 @@ const AutoSessions = (() => {
   function stopReconcilePoll() { if (reconcilePoll) { clearInterval(reconcilePoll); reconcilePoll = null; } }
 
   // ---- boot backfill: sessions for cron runs that finished while the browser was CLOSED ---------
-  async function backfill() {
+  async function backfill(options) {
     if (backfilling || !hasWS()) return;
     backfilling = true;
     try {
@@ -221,19 +251,15 @@ const AutoSessions = (() => {
         // /api/runs list once it's DONE, so backfilling it here is correct — and it also clears the wedged busy
         // state (foldTurns → completeSession-style, plus Channels.end below).
         const existing = Workstreams.get(sid);
-        if (existing && existing.history && existing.history.some(m => m && m.role === 'assistant')) continue;   // already has output → true dedupe
+        if (existing && hasReadableOutput(existing.history)) continue;   // already has readable output/status → true dedupe
         const runId = String(sid).slice(STREAM_PREFIX.length);
         // adopt (idempotent) — an existing seed-only session is preserved by adopt; a while-away run is already DONE.
         Workstreams.adopt({ id: sid, title: String(run.title || 'Routine').split('\n')[0].slice(0, 80) || 'Routine', agentId: String(run.agentId || 'agent'), lane: 'active', history: (existing && existing.history) || [] });
         const ws = Workstreams.get(sid);
         if (!ws) continue;
-        let turns = [], fetchOk = false;
-        try {
-          const tr = await fetch('/api/transcript?agent=' + encodeURIComponent(ws.agentId || 'agent') + '&stream=' + encodeURIComponent(sid) + '&limit=200', { cache: 'no-store' });
-          if (tr.ok) { turns = ((await tr.json()) || {}).turns || []; fetchOk = true; }
-        } catch (_) { turns = []; fetchOk = false; }
+        const loaded = await fetchTranscript(ws.agentId, sid, options);
         const outcome = (run.reason === 'error' || run.error) ? 'failed' : 'ok';
-        foldTurns(ws, turns, outcome, run.error || run.reason, fetchOk, run.ts);   // run.ts = real end time, never boot time
+        foldTurns(ws, loaded.turns, outcome, run.error || run.reason, loaded.fetchOk, run.ts);   // run.ts = real end time, never boot time
         if (hasCh()) Channels.end(sid);   // a backfilled run is DONE → clear any wedged busy/running state
       }
       refreshRail();
@@ -273,7 +299,7 @@ const AutoSessions = (() => {
   }
   function reset() { routines = null; stopReconcilePoll(); }   // a fresh Commander re-reads the catalogue; sessions are cleared by Workstreams.reset()
 
-  return { init, reset, _internals: { beginSession, completeSession, foldTurns, backfill, loadRoutines, routineFor, validStream, streamOf } };
+  return { init, reset, _internals: { beginSession, completeSession, foldTurns, backfill, fetchTranscript, hasReadableOutput, loadRoutines, routineFor, validStream, streamOf } };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { AutoSessions };
