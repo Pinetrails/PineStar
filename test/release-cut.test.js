@@ -7,6 +7,8 @@ const { tmpdir } = require('node:os');
 const { join, resolve } = require('node:path');
 
 const ROOT = resolve(__dirname, '..');
+const packageVersion = require('../package.json').version;
+const versionPattern = packageVersion.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // A fixture key FILE (never real key material): --dry-run only proves the key path exists and
 // prints the signing command; it never signs. Without this, the test needs the operator's real
 // ~/.tauri key and goes red on any CI runner (v0.6.3 train run 4). Named starnet-updater.key so
@@ -27,11 +29,11 @@ assert.match(output, /--config .*release-unsigned-updater\.conf\.json/i);
 assert.match(output, /signer sign --private-key-path .*starnet-updater\.key --password=/i);
 assert.doesNotMatch(output, /TAURI_SIGNING_PRIVATE_KEY\s*=/,
   'the release cutter must not put raw private-key contents in its command output');
-assert.match(output, /package\.json version\s+: 0\.10\.2/,
+assert.match(output, new RegExp('package\\.json version\\s+: ' + versionPattern),
   'preflight proves the public package version instead of checking only Tauri/Cargo');
-assert.match(output, /package-lock version\s+: 0\.10\.2 \(root 0\.10\.2\)/,
+assert.match(output, new RegExp('package-lock version\\s+: ' + versionPattern + ' \\(root ' + versionPattern + '\\)'),
   'preflight proves both package-lock version pins');
-assert.match(output, /Cargo\.lock version\s+: 0\.10\.2/,
+assert.match(output, new RegExp('Cargo\\.lock version\\s+: ' + versionPattern),
   'preflight proves the app package pin in Cargo.lock');
 
 const source = readFileSync(join(ROOT, 'scripts', 'release-cut.mjs'), 'utf8');
