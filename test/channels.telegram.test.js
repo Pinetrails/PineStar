@@ -131,6 +131,12 @@ async function run() {
     const t = makeTelegramTransport({ fetch: fakeFetch(() => ({ __throw: new Error('ECONNRESET') })), token: 'TKN' });
     let e = null; try { await t.getUpdates({ offset: 0 }); } catch (x) { e = x; }
     A.ok(e && /ECONNRESET/.test(e.message) && !e.fatal, 'network error propagates, not fatal');
+
+    const undici = new TypeError('fetch failed');
+    undici.cause = Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND', hostname: 'api.telegram.org' });
+    const diagnosed = makeTelegramTransport({ fetch: fakeFetch(() => ({ __throw: undici })), token: 'TKN' });
+    e = null; try { await diagnosed.getUpdates({ offset: 0 }); } catch (x) { e = x; }
+    A.ok(e && /fetch failed \(ENOTFOUND api\.telegram\.org\)/.test(e.message), 'undici cause is surfaced for an actionable outage diagnosis');
   }
 
   // ---- D. send: URL/body correct, message_id mapped, `signal` stripped from the wire body ----

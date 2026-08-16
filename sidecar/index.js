@@ -16482,7 +16482,10 @@ async function handleChannelSync(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
   const t = (channelSecrets && channelSecrets.telegram) || null;
-  if (!t || !t.token) return json(200, { synced: false });   // nothing connected/configured — ignore quietly
+  // Desktop deliberately removes a keychain-durable token from the plaintext record. Resolve through the same
+  // runtime/keychain-or-fallback seam as connect/status, or a correctly saved one-time connection can never sync
+  // its edited agent identity unless the user pastes the token again.
+  if (!t || !channelToken('telegram', '', t)) return json(200, { synced: false });   // nothing configured — ignore quietly
   const patch = {};
   if (typeof body.agentId === 'string' && body.agentId.trim()) patch.agentId = body.agentId.trim();
   if (typeof body.system === 'string') patch.system = body.system;

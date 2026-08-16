@@ -202,6 +202,7 @@ const root = path.resolve(__dirname, '..');
   A.ok(!/!DESKTOP_SHELL\s*&&\s*savedRecord\s*&&\s*savedRecord\.token/.test(src), 'channelToken() no longer blocks the plaintext fallback on desktop');
   // /status exposes a truthful `durable` flag (keychain/env OR plaintext-on-disk).
   A.ok(/durable:\s*durable/.test(src), '/status endpoints report a truthful durable flag');
+  A.ok(/handleChannelSync[\s\S]*?channelToken\(['"]telegram['"],\s*['"]['"],\s*t\)/.test(src), 'Telegram identity sync resolves a keychain/runtime token instead of requiring a plaintext copy');
   A.ok(/channelTokenDurable\[channel\]\s*=\s*true/.test(src), 'a /api/channels/token push marks the token durable (keychain-backed)');
   // P1 key hygiene: the boot migration also sweeps the .bak, and the provider key is resolved from the runtime
   // layer (never persisted). Guard the .bak-scrub wiring and that no write path re-persists a resolved key.

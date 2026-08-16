@@ -79,7 +79,18 @@
       return out;
     }
     // every error string leaving this module goes through here — never `e.message` raw.
-    const errOf = (e, fallback) => redact((e && e.message) || fallback || 'error');
+    // Undici's top-level message is often only "fetch failed"; the useful reason lives in `.cause`. Surface a
+    // small, token-safe diagnosis so an outage says ECONNRESET/ENOTFOUND/etc. instead of an unactionable slogan.
+    // Never retain the raw cause object: it may itself contain the token-bearing request URL.
+    function errOf(e, fallback) {
+      const base = redact((e && e.message) || fallback || 'error');
+      const cause = e && e.cause;
+      if (!cause) return base;
+      const code = redact(cause.code || cause.name || '');
+      const host = redact(cause.hostname || cause.address || '');
+      const detail = [code, host].filter(Boolean).join(' ');
+      return detail && base.indexOf(detail) < 0 ? (base + ' (' + detail + ')') : base;
+    }
 
     /* ---- ROUTE: answering WHERE the question was asked ------------------------------------------------------
        The hub speaks a NEUTRAL route — { threadId, replyTo } — because it drives five platforms and may not know
@@ -115,12 +126,20 @@
 
     // one Bot API call -> { res, data }. data.ok distinguishes success ({result}) from error ({error_code,description}).
     async function call(method, payload, signal) {
-      const res = await fetchImpl(BASE + '/' + method, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(payload || {}),
-        signal: signal
-      });
+      let res;
+      try {
+        res = await fetchImpl(BASE + '/' + method, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(payload || {}),
+          signal: signal
+        });
+      } catch (e) {
+        const safe = new Error(errOf(e, 'network error'));
+        safe.name = (e && e.name) || 'Error';
+        if (e && e.aborted) safe.aborted = true;
+        throw safe;
+      }
       let data;
       try { data = await res.json(); }
       catch (e) { data = { ok: false, error_code: (res && res.status) || 0, description: 'non-JSON response' }; }

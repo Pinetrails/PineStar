@@ -46,6 +46,10 @@
   // because `connected` derives from poll state — one transient 409 took BOTH directions down until a restart.
   const isConflict = (e) => !!(e && e.conflict);
   const DEFAULT_CONFLICT_RETRY_MS = 60000;   // slow enough not to fight the other poller, fast enough to self-heal
+  // One failed poll proves only that ONE request failed. Keep the last proven health while we immediately retry;
+  // report `down` only after a second consecutive failure. This removes false disconnects from momentary DNS/TLS
+  // blips without hiding a sustained outage, and the loop still retries forever on the existing capped ladder.
+  const DEFAULT_DOWN_AFTER_FAILURES = 2;
   const isAbort = (e) => !!(e && (e.name === 'AbortError' || e.aborted));
 
   function normalizeAllowed(allowedChats) {
@@ -78,6 +82,7 @@
     const pollTimeoutSec = o.pollTimeoutSec || DEFAULT_POLL_TIMEOUT_SEC;
     const backoff = Array.isArray(o.backoffMs) && o.backoffMs.length ? o.backoffMs.slice() : DEFAULT_BACKOFF.slice();
     const conflictRetryMs = Number(o.conflictRetryMs) > 0 ? Number(o.conflictRetryMs) : DEFAULT_CONFLICT_RETRY_MS;
+    const downAfterFailures = Number(o.downAfterFailures) > 0 ? Math.floor(Number(o.downAfterFailures)) : DEFAULT_DOWN_AFTER_FAILURES;
     const sleep = typeof o.sleep === 'function' ? o.sleep : (ms => new Promise(r => setTimeout(r, ms)));
     const dropPending = o.dropPendingOnConnect === true;   // generic default OFF; the Telegram layer turns it on
 
@@ -258,7 +263,7 @@
     // DM-only first cut: a direct message is always admitted; a group/channel message only if whitelisted.
     function admitted(m) { return admission(m) === 'run'; }
 
-    let started = false, stopped = false, down = false, confirmed = false;
+    let started = false, stopped = false, down = false, confirmed = false, transientFailures = 0;
     let offset = Number.isFinite(o.startOffset) ? o.startOffset : 0;   // next update id to fetch from
     let ac = null;          // aborts the in-flight getUpdates on disconnect
     let loopDone = null;    // resolves when the poll loop has fully exited
@@ -266,8 +271,9 @@
     // HONEST CONNECT: `confirmed` stays false until the FIRST successful poll round-trip — only then do we assert
     // 'up'. Before that the channel is genuinely just 'connecting' (the composition root reports that state), so the
     // panel never claims CONNECTED on an unproven token. After the first success, statusUp/statusDown track live
-    // transport health exactly as before (a transient error still emits 'down' then 'up' on recovery).
+    // transport health; a single failed request keeps the last proof, while a sustained outage emits down then up.
     function statusUp() {
+      transientFailures = 0;
       if (!confirmed) { confirmed = true; down = false; onStatus && onStatus({ state: 'up' }); return; }
       if (down) { down = false; onStatus && onStatus({ state: 'up' }); }
     }
@@ -405,7 +411,8 @@
             attempt = 0;   // a conflict is its own ladder — the transient backoff restarts clean afterwards
             continue;
           }
-          statusDown((e && e.message) || 'poll error');
+          transientFailures++;
+          if (transientFailures >= downAfterFailures) statusDown((e && e.message) || 'poll error');
           await sleep(backoff[Math.min(attempt, backoff.length - 1)]);
           attempt++;
           continue;

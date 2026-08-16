@@ -7573,7 +7573,7 @@ const World = (() => {
     });
     // ── consume-side telemetry that was already validated + SSE-broadcast but had NO frontend listener
     //    (the wiring-honesty pass: render the events already on the bus so the floor reflects real activity). ──
-    const hudNote = (txt, cls) => { try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(txt, cls || ''); } catch (_) {} };
+    const hudNote = (txt, cls, opts) => { try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(txt, cls || '', undefined, opts); } catch (_) {} };
     // CRON war-room pulse: an unattended routine actually fired / finished. cron.fire + cron.result are emitted
     // and SSE-broadcast by the tick driver; surface them so an autonomous fire is VISIBLE, not just in the log.
     U.bus.on('cron.fire', () => hudNote('◷ routine fired', 'good'));
@@ -7626,16 +7626,25 @@ const World = (() => {
     // EL-11 #11 CHANNEL TROUBLE MADE VISIBLE: transport health (channel.connect) used to be seen ONLY inside the open
     // CHANNELS panel. A drop/fatal-token that happens while you're anywhere else in the station now surfaces a single
     // honest HUD line naming the channel + state — so a silently-dead channel can't swallow your messages unnoticed.
-    // Enum is FROZEN to ['up','down','error'] (shared/events.js): only the unhealthy states toast; 'up' stays quiet.
+    // Enum is FROZEN to ['up','down','error'] (shared/events.js). Recovery replaces the active outage card under
+    // one stable toast key, so the HUD never keeps asserting DOWN after the self-healing poller has proven UP.
+    const unhealthyChannels = new Set();
     U.bus.on('channel.connect', p => {
       if (!p || !p.channel) return;
       const state = String(p.state || '').toLowerCase();
-      if (state !== 'down' && state !== 'error') return;   // healthy reconnects are not alarms
       // 'telegram:<botId>' (an agent-bound bot instance) reads as 'TELEGRAM BOT' — platform truth without leaking ids.
       const raw = String(p.channel);
       const name = raw.indexOf(':') >= 0 ? (raw.split(':')[0].toUpperCase() + ' BOT') : raw.toUpperCase();
+      const toastKey = 'channel-connect:' + raw;
+      if (state === 'up') {
+        if (!unhealthyChannels.delete(raw)) return;   // initial/steady health stays quiet
+        hudNote('✓ ' + name + ' reconnected', 'good', { key: toastKey });
+        return;
+      }
+      if (state !== 'down' && state !== 'error') return;
+      unhealthyChannels.add(raw);
       const why = p.detail ? ' — ' + String(p.detail) : '';
-      hudNote((state === 'error' ? '⚠ ' + name + ' sign-in/token error' : '⚠ ' + name + ' connection down') + why, 'bad');
+      hudNote((state === 'error' ? '⚠ ' + name + ' connection needs attention' : '⚠ ' + name + ' connection down') + why, 'bad', { key: toastKey });
     });
     // G0.5 BUDGET MADE VISIBLE: budget.threshold was alarm-audio only. The payload is the frozen
     // { scope: run|day|global, usd, cap } triple (sidecar/budget.js, one emit per scope+band crossing

@@ -7053,8 +7053,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (!category || category === 'general') return { show: true, sound: p.sound !== false };
     return { show: p[category] !== false, sound: p.sound !== false };
   }
-  // opts (additive, optional): { onClick } — a click-through action for the transient toast (EL-11: a
-  // background consent toast opens ITS session). The persistent NOTIFICATIONS record is unchanged.
+  // opts (additive, optional): { onClick, key }. onClick makes the transient toast actionable (EL-11: a
+  // background consent toast opens ITS session). key replaces an active toast for the same live condition, so
+  // a recovery can never leave a stale red outage card on screen. Persistent NOTIFICATIONS remain history.
   function notify(text, cls, category, opts) {
     const pref = notifyPrefOf(category);
     if (!pref.show) return;   // this category is muted — honored here, at the real emit point (not decorative)
@@ -7131,6 +7132,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (playSound !== false) sfx(severityOf(cls) === 'bad' ? 'bad' : 'notify');
     let stack = document.getElementById('toast-stack');
     if (!stack) { stack = mkEl('div'); stack.id = 'toast-stack'; document.body.appendChild(stack); }
+    const toastKey = String((opts && opts.key) || '').slice(0, 120);
+    if (toastKey) {
+      // Avoid selector escaping entirely: keys may contain channel instance punctuation.
+      const prior = Array.prototype.find.call(stack.children, n => n.dataset && n.dataset.toastKey === toastKey);
+      if (prior) { prior._killed = true; prior.remove(); }
+    }
     seatToastRack(stack);   // re-read the cabinet before the card is visible — a rail drag or a breakpoint may have moved the seam
     const sev = severityOf(cls);
     // keep the caller's raw cls (good/gold/warn/bad already have edge styling) AND add a normalized
@@ -7141,6 +7148,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const dwell = hasAction ? 10000 : sev === 'bad' ? 6500 : 4200;
     const cut = splitToastLabel(text);
     const t = mkEl('div', 'toast' + (cls ? ' ' + cls : '') + ' sev-' + sev + (cut.label ? ' labeled' : ''));
+    if (toastKey) t.dataset.toastKey = toastKey;
     // The dwell rail drains over exactly `dwell` — the card SHOWS how long it has left rather than
     // vanishing without warning; --dwell is read by the CSS animation so the two can never disagree.
     t.style.setProperty('--dwell', dwell + 'ms');

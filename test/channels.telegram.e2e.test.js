@@ -113,6 +113,8 @@ function startMockTelegram() {
   let updateId = 1000;
   let messageId = 2000;
   let fatal = false;
+  let transientPollFailures = 0;
+  let succeedNextPoll = false;
 
   function respond(res, obj) {
     try {
@@ -144,6 +146,12 @@ function startMockTelegram() {
         // loop, leaving the module-level handle alive — which is exactly the state that used to be reported to
         // an agent as "reachable now".
         if (fatal) { respond(res, { ok: false, error_code: 401, description: 'Unauthorized' }); return; }
+        if (transientPollFailures > 0) {
+          transientPollFailures--;
+          respond(res, { ok: false, error_code: 503, description: 'temporary upstream reset' });
+          return;
+        }
+        if (succeedNextPoll) { succeedNextPoll = false; respond(res, { ok: true, result: [] }); return; }
         if (body.offset === -1) {
           respond(res, { ok: true, result: [] });
           return;
@@ -186,6 +194,17 @@ function startMockTelegram() {
           flush();
         },
         revokeToken() { fatal = true; while (waiters.length) respond(waiters.shift().res, { ok: false, error_code: 401, description: 'Unauthorized' }); },
+        failPolls(count) {
+          transientPollFailures = Math.max(0, Number(count) || 0);
+          while (waiters.length && transientPollFailures > 0) {
+            transientPollFailures--;
+            respond(waiters.shift().res, { ok: false, error_code: 503, description: 'temporary upstream reset' });
+          }
+        },
+        recoverPoll() {
+          if (waiters.length) while (waiters.length) respond(waiters.shift().res, { ok: true, result: [] });
+          else succeedNextPoll = true;
+        },
         close(done) {
           while (waiters.length) respond(waiters.shift().res, { ok: true, result: [] });
           server.close(done || (() => {}));
@@ -297,15 +316,28 @@ async function waitUntil(fn, ms, label) {
     SKYNET_TELEGRAM_API_BASE: tg.base,
     STARNET_TELEGRAM_API_BASE: tg.base
   };
-  const { child, port } = await boot(8960 + (process.pid % 50), env, 20);
+  const live = await boot(8960 + (process.pid % 50), env, 20);
+  let child = live.child;
+  const port = live.port;
   const B = 'http://' + HOST + ':' + port;
   let sse = null;
   try {
-    const token = await bootToken(B, B);
+    let token = await bootToken(B, B);
     A.ok(token.length >= 32, 'got a session API token');
     sse = await startSseCollector(B + '/api/channels/events?token=' + encodeURIComponent(token));
 
     await waitUntil(() => tg.calls.some(c => c.method === 'getUpdates' && c.body && c.body.offset === -1), 5000, 'telegram drop-pending poll');
+    tg.recoverPoll();
+    await sse.waitFor(events => events.some(e => e.name === 'channel.connect' && e.payload && e.payload.channel === 'telegram' && e.payload.state === 'up'), 5000, 'initial Telegram up proof');
+
+    // A brief failure is retried silently; a sustained one is reported once and then self-heals without token
+    // input or a connect call. Drive the REAL sidecar poll loop against the local Bot API fault seam.
+    tg.failPolls(2);
+    await sse.waitFor(events => events.some(e => e.name === 'channel.connect' && e.payload && e.payload.channel === 'telegram' && e.payload.state === 'down'), 7000, 'sustained Telegram outage');
+    tg.recoverPoll();
+    await sse.waitFor(events => events.filter(e => e.name === 'channel.connect' && e.payload && e.payload.channel === 'telegram' && e.payload.state === 'up').length >= 2, 7000, 'automatic Telegram recovery');
+    A.eq(sse.events.filter(e => e.name === 'channel.connect' && e.payload && e.payload.channel === 'telegram' && e.payload.state === 'down').length, 1,
+      'sustained poll fault emits one down state, not one alert per retry');
     // Telegram is deliberately no longer trust-on-first-DM. Enrol this test account through the same local,
     // authenticated pairing route a desktop owner uses, then prove the one-time code is consumed by Telegram
     // before asking it to run anything.
@@ -538,6 +570,39 @@ async function waitUntil(fn, ms, label) {
       // real answer above (the invariant that matters). Note it so the run log is honest about what was exercised.
       console.log('  · supersede race did not fire this run; #2 still delivered its real answer (invariant holds)');
     }
+    /* ---- ONE CONNECT SURVIVES A PROCESS RESTART -----------------------------------------------------
+       Remove BOTH token env aliases before reboot. The only possible source is the durable channel record the
+       first process wrote. A successful poll and configured+durable status prove the user is not asked again. */
+    if (sse) { sse.close(); sse = null; }
+    await new Promise(resolve => {
+      if (child.exitCode !== null) return resolve();
+      child.once('exit', resolve);
+      try { child.kill(); } catch (_) { resolve(); }
+    });
+    const pollsBeforeRestart = tg.calls.filter(c => c.method === 'getUpdates').length;
+    const restartEnv = Object.assign({}, env);
+    delete restartEnv.SKYNET_TELEGRAM_TOKEN;
+    delete restartEnv.STARNET_TELEGRAM_TOKEN;
+    const restarted = await boot(port, restartEnv, 0);
+    child = restarted.child;
+    token = await bootToken(B, B);
+    await waitUntil(() => tg.calls.filter(c => c.method === 'getUpdates').length >= pollsBeforeRestart + 2, 7000, 'saved Telegram auto-start after restart');
+    tg.pushText(9898, 99, '/start');   // a real post-restart update proves the restored poller can receive
+    tg.recoverPoll();                  // also release any stale long-poll socket left by the killed process
+    let restartStatusSeen = null;
+    try {
+      await waitUntil(async () => {
+        restartStatusSeen = await (await fetch(B + '/api/channels/telegram/status', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+        return restartStatusSeen && restartStatusSeen.connected === true && restartStatusSeen.state === 'up';
+      }, 7000, 'saved Telegram status up after restart');
+    } catch (e) {
+      e.message += ': ' + JSON.stringify(restartStatusSeen);
+      throw e;
+    }
+    const restartedStatus = await (await fetch(B + '/api/channels/telegram/status', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.eq(restartedStatus.configured, true, 'restart resolves the saved Telegram token without user input');
+    A.eq(restartedStatus.durable, true, 'restart reports the saved Telegram token has a durable home');
+
     /* ---- REACHABILITY IS A HEARTBEAT, NOT A HANDLE -------------------------------------------------
        listTargets derived `connected` from the mere existence of the composition-root handle, and that handle
        is nulled ONLY by an explicit teardown (start / shutdown / the disconnect route). A revoked token is

@@ -396,7 +396,7 @@ async function run() {
     await a.disconnect();
   }
 
-  // ---- H. a fatal poll error stops the loop with state:'error'; a transient error backs off then recovers ----
+  // ---- H. one failed request is a blip; sustained failures report down; both retry and recover forever ----
   {
     const statuses = [];
     let calls = 0;
@@ -418,8 +418,33 @@ async function run() {
     await a.connect();
     for (let i = 0; i < 8 && !inbox.length; i++) await tick();
     A.eq(inbox.length, 1, 'recovered after a transient error + backoff');
-    A.ok(statuses.some(s => s.state === 'down'), 'emitted state:down on the transient error');
-    A.ok(statuses.some(s => s.state === 'up'), 'emitted state:up on recovery');
+    A.ok(!statuses.some(s => s.state === 'down'), 'one failed poll does not falsely revoke the last proven connection');
+    A.ok(statuses.some(s => s.state === 'up'), 'successful retry proves state:up');
+    await a.disconnect();
+  }
+
+  {
+    const statuses = [];
+    let calls = 0;
+    const transport = {
+      getUpdates({ signal }) {
+        calls++;
+        if (calls <= 2) return Promise.reject(new Error(calls === 1 ? 'network blip' : 'ECONNRESET api.telegram.org'));
+        if (calls === 3) return Promise.resolve([]);
+        return new Promise((resolve, reject) => {
+          if (signal && signal.aborted) return reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+          signal && signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+        });
+      },
+      send() { return Promise.resolve({ ok: true }); }
+    };
+    const a = makeChannelAdapter({ transport, normalize, name: 'telegram', onInbound: () => {},
+      onStatus: s => statuses.push(s), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 10 && !statuses.some(s => s.state === 'up'); i++) await tick();
+    A.eq(statuses.filter(s => s.state === 'down').length, 1, 'two consecutive failures report one sustained outage');
+    A.ok(statuses.some(s => s.state === 'down' && /ECONNRESET/.test(s.detail)), 'outage carries the actionable latest cause');
+    A.ok(statuses.some(s => s.state === 'up'), 'sustained outage self-heals and emits up without reconnect input');
     await a.disconnect();
   }
 
