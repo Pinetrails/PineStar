@@ -26,21 +26,39 @@
    chip) + a dim right-aligned HH:MM stamp in one header row, and
    card depth via a hairline + faint inset (NOT a heavy box).
    ============================================================ */
-/* the header row: speaker chip on the left, timestamp hard-right */
+/* the header row: speaker name on the rail side, timestamp opposite */
 .cmsg .cmsg-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
   margin: 9px 0 4px;
 }
-/* speaker chip — inverted phosphor plate, mirroring the window title chips */
-.cmsg .cmsg-head .who {
-  display: inline-block; margin: 0;
-  font-size: 10.5px; letter-spacing: 1.5px; text-transform: uppercase;
-  color: var(--ink); background: var(--ph-dim);
-  padding: 1px 7px; border-radius: 3px; line-height: 1.5;
-  box-shadow: 0 1px 0 rgba(0,0,0,.4);
+/* the COMMANDER's name sits beside ITS OWN rail (the gold edge, hard-right), so on both sides the
+   name and the card's rail read as one edge instead of the label floating off across the card. The
+   24px copy-button lane below is padding on this same row, so the name still clears the ⧉ button. */
+.cmsg.user > .cmsg-head { flex-direction: row-reverse; }
+
+/* SPEAKER NAME — a quiet callsign with ONE lit tick, not an inverted plate.
+   The plate was the loudest thing in the transcript: a solid --ph block fired on every single turn,
+   so the label out-shouted the message it labelled and the panel read as stickers, not a console.
+   The name is now type — wide-tracked caps in dimmed bright phosphor — and ONE 3px tick carries the
+   side (phosphor for the agent on the left, gold for the Commander on the right), reusing the rail
+   colours already in play. No new colour, no new token.
+   The tick is a DRAWN box, never a Block-Elements glyph: ▍/▏ are absent from VT323 (measured — they
+   fall back to a system face at a 1em advance, the symbol-glyph trap), while a box is exact at any
+   text size. Styling lands on `.cmsg.agent/.user .who` (not `.cmsg-head .who`) so it holds for BOTH
+   markup paths — chat.js only builds a .cmsg-head when the turn carries a real stamp; a stored turn
+   with no recorded time renders a bare block .who and must not fall back to the old plate. */
+.cmsg.agent .who, .cmsg.user .who {
+  font-size: 11px; letter-spacing: 2.2px; text-transform: uppercase;
+  color: var(--ph-bright); opacity: .72;
+  background: none; padding: 0; border-radius: 0; box-shadow: none;
 }
-.cmsg.agent .cmsg-head .who { background: var(--ph); }
-.cmsg.user  .cmsg-head .who { background: var(--gold); }
+.cmsg .cmsg-head .who { display: inline-block; margin: 0; line-height: 1.5; }
+.cmsg.agent .who::before, .cmsg.user .who::after {
+  content: ""; display: inline-block; width: 3px; height: 9px; border-radius: 1px;
+  vertical-align: -1px; background: var(--ph);
+}
+.cmsg.agent .who::before { margin-right: 7px; }
+.cmsg.user  .who::after  { margin-left: 7px; background: var(--gold); }
 /* dim, quiet timestamp — HOVER-ONLY (the glance law): reference info, not reading info. It keeps its
    layout slot (no reflow on hover) and simply fades in when the card is inspected. */
 .cmsg .cmsg-ts {
