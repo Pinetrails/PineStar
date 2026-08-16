@@ -147,6 +147,7 @@ test/t2-state-safety.test.js
 test/upgrade-085-090.test.js
 test/t3-release-smoke.test.js
 test/t4-update-delivery.test.js
+test/installer-upgrade-resilience.test.js
 test/t5-public-distribution.test.js
 test/minisign-verify.test.js
 test/release-assemble-manifest.test.js
@@ -591,6 +592,7 @@ test/textsize-screen-space.test.js
 test/mobile-control-reachability.test.js
 test/station-tooltip.test.js
 test/toast-live-region.test.js
+test/toast-seat.test.js
 test/channels.discord-wire.test.js
 test/queryspine.test.js
 test/queryspine-wiring.test.js
