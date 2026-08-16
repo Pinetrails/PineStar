@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "217f6099e0027dac7b51034e3717be55a373da5a",
+    "sourceCommit": "b1d8cff0bf853d39e375a4e1911d6ae7abeac779",
     "pathSetSha256": "92160ff9edb3cc6cd7deb0d0e0b35e6e60cf470af43886963164d96bbfaccd50",
     "files": [
       {
@@ -943,8 +943,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 660049,
-        "sha256": "baec69f8522e3a14c44033be001ebfa1556a7ca390785cebb75d3d7d50915ad1"
+        "bytes": 661144,
+        "sha256": "4a7a6b058eb301116f41a901d3aac9e72baec4f224be6405dc347d5519eda96b"
       },
       {
         "path": "frontend/app/worldmodel.js",
