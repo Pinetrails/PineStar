@@ -51,7 +51,67 @@
 ; variables — `Get-Process | Where-Object Path -eq ... | Stop-Process` needs none. `$INSTDIR` is
 ; the one expansion we DO want. Do not "simplify" this into a `$_` pipeline.
 
-!macro NSIS_HOOK_PREINSTALL
+; ── MANUAL UPGRADES ARE UPDATES, NOT UNINSTALLS ────────────────────────────────────────────
+; Tauri's interactive "Already Installed" page defaults to running the OLD installer's
+; uninstall.exe before this new install reaches NSIS_HOOK_PREINSTALL. If that old uninstaller is
+; missing, quarantined, corrupt, or leaves the main exe behind, Tauri dead-ends on the generic
+; "Unable to uninstall!" dialog. The in-app updater never takes that path: it passes /UPDATE and
+; performs an in-place replacement.
+;
+; .onGUIInit runs after Tauri's .onInit has selected the registry context but before any page is
+; shown. For a strict upgrade (or an installed record whose version is unreadable), append the
+; same /UPDATE /P /R flags and re-run .onInit so the stock template skips the uninstall page,
+; installs passively in place, and relaunches StarNet. Same-version maintenance and downgrades keep
+; Tauri's normal UI. We intentionally use only NSIS registers here: this hooks file is included
+; before the template declares its named variables and product/version defines.
+!define MUI_CUSTOMFUNCTION_GUIINIT StarNetManualUpgradeInit
+Function StarNetManualUpgradeInit
+  ClearErrors
+  ${GetOptions} $CMDLINE "/UPDATE" $R9
+  ${IfNot} ${Errors}
+    Goto starnet_manual_upgrade_done
+  ${EndIf}
+
+  ReadRegStr $R8 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\StarNet" "UninstallString"
+  ReadRegStr $R9 HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\StarNet" "DisplayVersion"
+  ${If} $R8 == ""
+    ReadRegStr $R8 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\StarNet" "UninstallString"
+    ReadRegStr $R9 HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\StarNet" "DisplayVersion"
+  ${EndIf}
+  ${If} $R8 == ""
+    Goto starnet_manual_upgrade_done
+  ${EndIf}
+  ${If} $R9 == ""
+    Goto starnet_manual_upgrade_force
+  ${EndIf}
+
+  ClearErrors
+  GetDLLVersion "$EXEPATH" $R8 $R7
+  IfErrors starnet_manual_upgrade_done
+  IntOp $R6 $R8 >> 16
+  IntOp $R5 $R8 & 0xFFFF
+  IntOp $R4 $R7 >> 16
+  StrCpy $R3 "$R6.$R5.$R4"
+  ${VersionCompare} "$R3" "$R9" $R2
+  ${If} $R2 = 1
+    Goto starnet_manual_upgrade_force
+  ${ElseIf} $R2 = 0
+    Goto starnet_manual_upgrade_done
+  ${ElseIf} $R2 = 2
+    Goto starnet_manual_upgrade_done
+  ${Else}
+    ; A corrupt/legacy DisplayVersion must not route back through a possibly broken uninstaller.
+    Goto starnet_manual_upgrade_force
+  ${EndIf}
+
+  starnet_manual_upgrade_force:
+    StrCpy $CMDLINE "$CMDLINE /UPDATE /P /R"
+    Call .onInit
+
+  starnet_manual_upgrade_done:
+FunctionEnd
+
+!macro STARNET_STOP_INSTALL_PROCESSES
   Push $0
   Push $1
   Push $R9
@@ -76,4 +136,15 @@
   Pop $R9
   Pop $1
   Pop $0
+!macroend
+
+!macro NSIS_HOOK_PREINSTALL
+  !insertmacro STARNET_STOP_INSTALL_PROCESSES
+!macroend
+
+; Future uninstallers own the same process cleanup. This does not repair an already-corrupt old
+; uninstaller (the in-place upgrade above makes that irrelevant), but it prevents a healthy future
+; uninstall from failing merely because the shell or bundled sidecar is still running.
+!macro NSIS_HOOK_PREUNINSTALL
+  !insertmacro STARNET_STOP_INSTALL_PROCESSES
 !macroend
