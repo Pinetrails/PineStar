@@ -502,6 +502,7 @@ test/social-border.test.js
 test/social-trio.test.js
 test/agent-affinity.test.js
 test/agent-affinity-weight.test.js
+test/station-gathering.test.js
 test/crew-containment.test.js
 test/prop-awareness.test.js
 test/chat-stare-throttle.test.js

@@ -1611,6 +1611,7 @@ const World = (() => {
       self.placeTarget = null; self.removeId = null; self.goal = null; self.idleUntil = now + U.irnd(900, 2000);
     }
     else if (self.goal === 'social') { self.state = 'idle'; self.target = null; self.pathPts = null; }   // TIER D · D3: reached a social waypoint — stay on goal='social'; stepSocial enters the hold next tick
+    else if (self.goal === 'gather') { self.state = 'idle'; self.target = null; self.pathPts = null; }   // TIER E: reached the formation slot — stay on goal='gather'; stepGather takes over the facing/hold next tick
     else if (self.goal === 'chase') { self.state = 'idle'; self.target = null; self.pathPts = null; }    // TIER D · D4: reached a pursuit leg — stay on goal='chase'; stepChase repaths (or enters the stare) next tick
     else {
       // a plain stroll (wander/pace) with no goal at the end of it. The walk HEADING used to survive
@@ -1837,6 +1838,10 @@ const World = (() => {
     // then stepSocial ((re)path or hold). Runs BELOW the b.working seize (stepCrew skips this whole fn while working),
     // so a summon always wins (G2). stepSocial (re)establishes self.target; the walk block below then advances it.
     if (self.goal === 'social') { if (!stepSocialGuard(now)) stepSocial(now); }   // may (re)set self.target (walk) or clear goal (ended)
+    // TIER E: this crew body is in THE GATHERING. Same position in the order as the social stepper and
+    // for the same reason — it sits BELOW the b.working seize (stepCrew skips this fn entirely while
+    // working), so work arriving always scatters the assembly rather than being made to wait for it.
+    if (self.goal === 'gather') { if (!gathering || !self.gather) { releaseFromGathering(self, now, false); } else stepGather(now); }
     // TIER D · D4: this crew body's cursor-mimic (head-only) / THE CHASE (walk-pursue-stare) steppers. Below the
     // b.working seize (stepCrew skips this whole fn while working), so a summon always wins (G2). stepChase may
     // (re)set self.target (a pursuit leg); the walk block below then advances it.
@@ -1865,6 +1870,10 @@ const World = (() => {
       // TIER D · D3: in a social encounter with no active target = the HOLD phase (or a between-steps beat). stepSocial
       // above already set the facing/until; this branch just STOPS the ladder from falling through to decideIdle, which
       // would clear stilling + pick a wandering beat and stomp the encounter. The guard/stepSocial own the lifecycle.
+      self.state = 'idle';
+    } else if (self.goal === 'gather') {
+      // TIER E: standing in the assembly with no active target. Same job as the social branch above — stop the
+      // ladder reaching decideIdle, which would pick a wander and pull this body out of the formation.
       self.state = 'idle';
     } else if (self.goal === 'mimic' || self.goal === 'chase') {
       // TIER D · D4: mimic (head-only) / chase (stare or between-repaths) with no active target. stepMimic/stepChase
@@ -2885,6 +2894,7 @@ const World = (() => {
   // Reuses bodyIsIdle (the Tier C read-only idle test) — so it excludes tasked/walking/mid-goal/mid-run bodies.
   function socialEligible(b, now) {
     if (!b || b.unplaced || b.social) return false;              // already in an encounter, or nobody
+    if (b.gather || gathering) return false;                     // TIER E: the assembly owns the whole floor while it lasts — no ordinary huddle may start inside one, or pull a body out of the formation
     if (b.stilling) return false;                                // don't yank a deliberate stillness hold (eerie calm wins)
     if (chatHot(now) && b === chatFocusBody()) return false;     // chat-stare exclusion (D1): never recruit the HOT-focused body (cold focus = the body is living its life — fully eligible)
     return bodyIsIdle(b, now);                                   // idle, not tasked/walking/mid-goal (hero: activity idle; crew: summoned+free)
@@ -3557,6 +3567,325 @@ const World = (() => {
       }
     }
     return null;
+  }
+
+  /* ================= TIER E · THE GATHERING — the station assembles, and pretends it didn't ==========
+
+     THE ASK, verbatim: "every so often if the station is quiet, they will all be gathered into an
+     area big group, and then the overseer who is by himself, looking at the agents, and talking in
+     his language... they all scatter like cockroaches when the user comes back, and they pretend
+     like everything's normal. That's the whole idea." Reference: the security guard in Planet of the
+     Apes noticing the apes gathered around their leader.
+
+     WHY THIS IS ITS OWN BEAT AND NOT A BIG HUDDLE. The D3 social system is built on one encounter
+     slot and a HARD ceiling of three bodies, because four sprites cannot hold a legible conversation
+     (see SOCIAL_MAX_PARTY). This is not a conversation: nobody converses, one body speaks and the
+     rest are an audience. That removes turn-taking entirely — which is exactly why the ceiling does
+     not apply and why this is cheap to stage. It is a formation plus one speaker.
+
+     ⛔⛔⛔ THE ROAM LEASH IS SUSPENDED HERE, DELIBERATELY, AND NOWHERE ELSE.
+     Every body is normally caged to Zones.ROAM_RADIUS (14 tiles) around its OWN desk, and every
+     social target is zone-clamped (G3). A station-wide assembly is by definition bodies leaving
+     their own areas, so the gathering resolves its tiles against `geo.walkable` + the containment
+     backstop ONLY. That is the one rule this beat breaks, it is bounded to the beat's lifetime, and
+     every body is restored to ordinary leashed idle life on dissolve. Do not "fix" this by
+     re-adding tileInZone: on a real floor no single tile is inside every body's leash, so the
+     gathering would silently never assemble — which is the failure mode that looks like nothing.
+
+     ⛔⛔ THE INTERRUPT IS THE PRIMARY EXIT, NOT THE EDGE CASE. The trigger requires ~30 minutes of
+     quiet, which means it fires precisely when nobody is driving. So the overwhelmingly likely way
+     any gathering ends is the Commander coming back and moving the mouse. Scatter is therefore the
+     path that gets the care, not the timer.
+
+     TRUTHFUL TELEMETRY. The station never acknowledges this: no COMMS beat, no toast, no event, no
+     log line, nothing persisted. That is not an omission to fix later — a gathering the harness
+     could prove would stop being unsettling, and asserting the agents "held a meeting" would be
+     claiming coordination that never happened. They are sprites standing in a room. */
+  let gathering = null;                    // the single live assembly, or null. Station-wide, like socialBeat.
+  let gatherRollAt = -1e9;                 // next instant the hourly roll is allowed
+  let gatherGateUntil = -1e9;              // earliest a NEXT gathering may begin (long, after one ends)
+  let stationBusyAt = -1e9;                // last instant the station had work or a present Commander
+
+  const GATHER_QUIET_MS = 30 * 60 * 1000;  // the station must have been unattended this long ("if the station is quiet")
+  const GATHER_ROLL_EVERY_MS = 60 * 60 * 1000;  // roll at most hourly
+  const GATHER_CHANCE = 0.35;              // ...and even then it usually does not happen
+  const GATHER_MIN_BODIES = 3;             // two agents standing together is a huddle, not an assembly
+  const GATHER_CONVERGE_MS = 45000;        // walking-in budget; late bodies simply hold where they got to
+  const GATHER_HOLD_MIN = 120000, GATHER_HOLD_MAX = 240000;   // "may last a few minutes or so"
+  const GATHER_HARD_MS = 420000;           // whole-beat hard timeout — the slot ALWAYS frees (mirrors SOCIAL_HARD_MS)
+  const GATHER_AFTER_CD = 90 * 60 * 1000;  // it must stay rare even on a station left running for days
+  const GATHER_SPEAK_MS = 2600, GATHER_GAP_MS = 1500;         // the overseer's line, then a real beat of silence
+  const OVERSEER_BREAK_MS = 900;           // ⛔ the overseer holds AFTER everyone else bolts — see endGathering
+  const GATHER_STAND_R = 5;                // audience packs within this radius of the assembly point
+  const GATHER_OVERSEER_GAP = 4;           // ...and the overseer stands this far off, alone, facing them
+
+  function gatherBodies() { return (agent && !agent.unplaced ? [agent] : []).concat(crew.filter(b => b && !b.unplaced)); }
+  function gatherIds() { return gathering ? gathering.ids.slice() : []; }
+  function gatherBodiesLive() { return gatherIds().map(bodyForAgent).filter(Boolean); }
+
+  /* Is the station unattended RIGHT NOW? Work of any kind, a summoned hero, a live chat stare, or a
+     Commander who is actually moving the cursor all count as attended and re-stamp the clock. */
+  function stationAttended(now) {
+    if (activity === 'task') return true;
+    if (chatHot(now)) return true;
+    if (crew.some(b => b && b.working)) return true;
+    if (socialBeat) return false;                                   // ordinary idle life is not attendance
+    return false;
+  }
+  function cursorPresent(now) {
+    if (!lastCursor || !lastCursor.t) return false;
+    return (now - cursorMoveT) < CURSOR_MOVING_MS || (now - lastCursor.t) < CURSOR_FRESH_MS;
+  }
+  function pageVisible() { try { return typeof document === 'undefined' || !document.hidden; } catch (_) { return true; } }
+
+  /* THE FORMATION IS RESOLVED UP FRONT, ONE SLOT PER BODY (K2, same law startEncounter follows).
+     Sending everyone "toward a room" and letting them sort it out is how a dozen bodies deadlock on
+     each other's tiles; a fixed distinct target per body cannot. Returns null when the floor cannot
+     seat the whole party — better no gathering than half of one standing in a doorway. */
+  function planGathering(bodies) {
+    if (!geo || bodies.length < GATHER_MIN_BODIES) return null;
+    let sx = 0, sy = 0;
+    for (const b of bodies) { const t = tileOf(b.px, b.py); sx += t.x; sy += t.y; }
+    const cx = Math.round(sx / bodies.length), cy = Math.round(sy / bodies.length);
+    // the assembly point: nearest walkable tile to the crew's centroid
+    let center = null;
+    for (let r = 0; r <= 10 && !center; r++) {
+      for (let dy = -r; dy <= r && !center; dy++) for (let dx = -r; dx <= r && !center; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        if (geo.walkable(cx + dx, cy + dy, blocked)) center = { x: cx + dx, y: cy + dy };
+      }
+    }
+    if (!center) return null;
+    // the overseer stands apart. Try each cardinal at the gap distance and take the first walkable
+    // one — "by himself, looking at the agents" only reads if he is clear of the crowd.
+    let over = null;
+    for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+      const c = { x: center.x + dx * GATHER_OVERSEER_GAP, y: center.y + dy * GATHER_OVERSEER_GAP };
+      if (geo.walkable(c.x, c.y, blocked)) { over = c; break; }
+    }
+    if (!over) return null;
+    // audience slots: walkable tiles near the centre, nearest-to-the-overseer first, so the crowd
+    // packs FACING him instead of trailing away behind the assembly point.
+    const slots = [];
+    const seen = new Set([over.x + ',' + over.y]);
+    for (let r = 0; r <= GATHER_STAND_R; r++) {
+      const ring = [];
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const c = { x: center.x + dx, y: center.y + dy };
+        const k = c.x + ',' + c.y;
+        if (seen.has(k) || !geo.walkable(c.x, c.y, blocked)) continue;
+        seen.add(k);
+        ring.push(c);
+      }
+      ring.sort((p, q) => (Math.abs(p.x - over.x) + Math.abs(p.y - over.y)) - (Math.abs(q.x - over.x) + Math.abs(q.y - over.y)));
+      for (const c of ring) slots.push(c);
+    }
+    // the overseer is the hero when it is on the floor (it is the station's own agent); otherwise the
+    // body standing nearest the chosen spot takes the part. Never invent a body that is not there.
+    const overseer = (agent && !agent.unplaced && bodies.indexOf(agent) >= 0) ? agent
+      : bodies.slice().sort((p, q) => (Math.abs(tileOf(p.px, p.py).x - over.x) + Math.abs(tileOf(p.px, p.py).y - over.y))
+                                    - (Math.abs(tileOf(q.px, q.py).x - over.x) + Math.abs(tileOf(q.px, q.py).y - over.y)))[0];
+    const audience = bodies.filter(b => b !== overseer);
+    if (slots.length < audience.length) return null;                 // the floor cannot seat them — stage nothing
+    // greedy nearest-slot assignment, closest body first, so nobody crosses the crowd to reach a seat
+    const free = slots.slice(), plan = [];
+    for (const b of audience.slice().sort((p, q) => (Math.abs(tileOf(p.px, p.py).x - center.x) + Math.abs(tileOf(p.px, p.py).y - center.y))
+                                                  - (Math.abs(tileOf(q.px, q.py).x - center.x) + Math.abs(tileOf(q.px, q.py).y - center.y)))) {
+      const t = tileOf(b.px, b.py);
+      let bi = 0, bd = Infinity;
+      for (let i = 0; i < free.length; i++) {
+        const d = Math.abs(free[i].x - t.x) + Math.abs(free[i].y - t.y);
+        if (d < bd) { bd = d; bi = i; }
+      }
+      plan.push({ body: b, slot: free.splice(bi, 1)[0], role: 'audience' });
+    }
+    plan.push({ body: overseer, slot: over, role: 'overseer' });
+    return { center, plan, overseer };
+  }
+
+  /* maybeGather — the station-level selection hook (NOT a per-body decideIdle roll: this is one
+     station-wide event, so it is decided once per tick from the tick itself). */
+  function maybeGather(now) {
+    if (gathering || socialBeat) return false;                       // one station-level thing at a time
+    if (reduceMotion()) return false;                                // no station-wide walking beat under reduce-motion
+    if (now < gatherGateUntil) return false;
+    if (!pageVisible()) return false;                                /* ⛔ "quiet" correlates with "nobody is
+       watching": an hourly roll gated only on idleness fires all night into an empty room, and the one
+       feature whose entire point is being SEEN would go weeks unwitnessed. Visible-only is what makes it land. */
+    if (cursorPresent(now)) return false;                            // the Commander is right there
+    if (now - stationBusyAt < GATHER_QUIET_MS) return false;         // not unattended long enough
+    if (now < gatherRollAt) return false;
+    gatherRollAt = now + GATHER_ROLL_EVERY_MS;                       // roll at most hourly, win or lose
+    if (!U.chance(GATHER_CHANCE)) return false;
+    return startGathering(now);
+  }
+
+  /* startGathering — THE ONE coordinator (mirrors startEncounter): resolves the whole formation, then
+     writes each body's own self-contained plan exactly once. Per-tick stepGather mutates only self. */
+  function startGathering(now) {
+    const bodies = gatherBodies().filter(b => bodyIsIdle(b, now) && !b.social && !b.working);
+    if (bodies.length < GATHER_MIN_BODIES) return false;
+    const staged = planGathering(bodies);
+    if (!staged) return false;
+    gathering = {
+      phase: 'converge', startedAt: now,
+      convergeUntil: now + GATHER_CONVERGE_MS,
+      holdLen: U.irnd(GATHER_HOLD_MIN, GATHER_HOLD_MAX),
+      holdFrom: 0, until: now + GATHER_HARD_MS,
+      overseerId: staged.overseer.id, center: staged.center,
+      ids: staged.plan.map(p => p.body.id), scatterAt: 0,
+    };
+    for (const p of staged.plan) {
+      p.body.gather = { tx: p.slot.x, ty: p.slot.y, role: p.role, started: false, arrived: false, spokeUntil: 0 };
+      p.body.goal = 'gather';
+      p.body.stilling = false; p.body.usingProp = null; p.body.sitting = false;
+      p.body.pauseUntil = 0; p.body.pauseLook = null; p.body.studyKey = null;
+    }
+    armBeat(now);                                                    // the station's shared calm budget still applies
+    return true;
+  }
+
+  /* gatheringBroken — the scatter trigger, and the beat's most important predicate. ANY of: work
+     arriving on any participant, the hero summoned, a live chat stare, or the Commander simply
+     MOVING THE CURSOR. That last one is the Planet of the Apes shot: the guard walks in and the room
+     stops being what it was. */
+  function gatheringBroken(now) {
+    if (!gathering) return true;
+    if (cursorPresent(now)) return true;                             // ⛔ THE PRIMARY EXIT — the Commander came back
+    if (!pageVisible()) return true;
+    if (activity === 'task') return true;
+    if (chatHot(now)) return true;
+    const bodies = gatherBodiesLive();
+    if (bodies.length < GATHER_MIN_BODIES) return true;              // too few left to be an assembly
+    for (const b of bodies) { if (b.working || b.unplaced || b.gather == null) return true; }
+    return false;
+  }
+
+  /* endGathering — teardown. `scatter` distinguishes the two exits, and they must LOOK different.
+
+     ⛔⛔⛔ THE OVERSEER BREAKS LAST. Everyone else drops their plan on this tick and walks off; the
+     overseer keeps his for OVERSEER_BREAK_MS, still facing where the crowd was, and only then turns
+     away. That single delayed body is what converts "weird animation" into "that thing was in charge
+     and it knows you saw it". Removing the delay does not break a test — it just quietly deletes the
+     beat everything else here exists to serve. */
+  function endGathering(now, scatter) {
+    const g = gathering; if (!g) return;
+    const overseerId = g.overseerId;
+    for (const b of gatherBodiesLive()) {
+      if (b.id === overseerId && scatter) continue;                  // the overseer is released below, late
+      releaseFromGathering(b, now, scatter);
+    }
+    if (scatter) {
+      // keep the slot alive purely to hold the overseer a beat longer; stepGatheringStation finishes it
+      g.phase = 'breaking'; g.scatterAt = now; gathering = g;
+      gatherGateUntil = now + GATHER_AFTER_CD;
+      return;
+    }
+    const over = bodyForAgent(overseerId);
+    if (over) releaseFromGathering(over, now, false);
+    gathering = null;
+    gatherGateUntil = now + GATHER_AFTER_CD;
+  }
+  function releaseFromGathering(b, now, scatter) {
+    if (!b) return;
+    b.chatter = null; b.talking = false; if (b !== agent) b.speaking = false;
+    if (!b.gather) return;
+    b.gather = null;
+    if (b.goal === 'gather') {
+      b.goal = null; b.state = 'idle'; b.pathPts = null; b.target = null;
+      /* SCATTER IS MOVEMENT, NOT A STATE FLIP. Snapping every body back to an idle pose in one frame
+         reads as a render bug; the dread is in SEEING them disperse. A near-zero idle hold means the
+         idle engine re-decides on the very next tick and they walk off immediately, together. */
+      b.idleUntil = scatter ? now : Math.max(b.idleUntil || 0, now + U.irnd(300, 900));
+    }
+  }
+
+  /* stepGatheringStation — the station-level phase machine, ticked once per frame (not per body). */
+  function stepGatheringStation(now) {
+    if (!gathering) return;
+    if (gathering.phase === 'breaking') {                            // the overseer's last beat, then gone
+      if (now - gathering.scatterAt >= OVERSEER_BREAK_MS) {
+        const over = bodyForAgent(gathering.overseerId);
+        if (over) releaseFromGathering(over, now, true);
+        gathering = null;
+      }
+      return;
+    }
+    if (now >= gathering.until) { endGathering(now, false); return; }
+    if (gatheringBroken(now)) { endGathering(now, true); return; }
+    if (gathering.phase === 'converge') {
+      const bodies = gatherBodiesLive();
+      const allIn = bodies.every(b => b.gather && b.gather.arrived);
+      if (allIn || now >= gathering.convergeUntil) {                 // late bodies just hold where they got to
+        gathering.phase = 'hold';
+        gathering.holdFrom = now;
+      }
+      return;
+    }
+    if (gathering.phase === 'hold' && now >= gathering.holdFrom + gathering.holdLen) endGathering(now, false);
+  }
+
+  /* gatherSpeak — the overseer talking in his own tongue. Deliberately NOT routed through
+     setTalking/startChatter: those require a live `socialBeat` + `b.social` and would null the line.
+     ⛔ Seeds on the ABSOLUTE deadline (`until`), never a turn index — a turn counter resets every
+     encounter and made every agent replay one identical script for the life of the station (the
+     glyph-speech escape). Same law, same fix, applied here on purpose. */
+  function gatherSpeak(b, now) {
+    if (!b || !b.gather) return;
+    const cycle = GATHER_SPEAK_MS + GATHER_GAP_MS;
+    const phase = (now - (gathering ? gathering.holdFrom : now)) % cycle;
+    const speaking = phase < GATHER_SPEAK_MS;
+    if (!speaking) { b.talking = false; if (b !== agent) b.speaking = false; b.chatter = null; return; }
+    const until = fnow + (GATHER_SPEAK_MS - phase);
+    if (b.gather.spokeUntil !== Math.round(until / 100)) {           // one line per speaking window
+      b.gather.spokeUntil = Math.round(until / 100);
+      b.chatter = { at: fnow, until: until, words: glyphPhrase(U.hash(String(b.id) + '@' + Math.round(until)), dialectFor(b)) };
+    }
+    b.talking = true; if (b !== agent) b.speaking = true;
+  }
+
+  // read-only view of the live assembly for the dev harness — never a re-derivation, so a green read
+  // means THAT formation is the one the engine is holding.
+  function gatherStateSnapshot() {
+    if (!gathering) return null;
+    return {
+      phase: gathering.phase, overseerId: gathering.overseerId, center: gathering.center,
+      holdLen: gathering.holdLen,
+      bodies: gatherBodiesLive().map(b => ({
+        id: b.id, role: b.gather ? b.gather.role : null, goal: b.goal,
+        slot: b.gather ? { x: b.gather.tx, y: b.gather.ty } : null,
+        arrived: !!(b.gather && b.gather.arrived), talking: !!b.talking,
+        chatter: !!b.chatter, tile: tileOf(b.px, b.py), dir: b.dir,
+      })),
+    };
+  }
+
+  /* stepGather — per-tick stepper for the CURRENT body (self) while self.goal === 'gather'.
+     Mutates ONLY self, exactly like stepSocial. Walk targets are NOT zone-clamped (see the header). */
+  function stepGather(now) {
+    const pl = self.gather; if (!pl) return;
+    if (!pl.arrived) {
+      if (self.state === 'walk' || self.target) return;              // the walk machinery is driving it
+      const cur = tileOf(self.px, self.py);
+      if (cur.x === pl.tx && cur.y === pl.ty) { pl.arrived = true; }
+      else if (pl.started) { pl.arrived = true; }                    // path ran out — hold where it got to, never strand
+      else if (setPathTo({ x: pl.tx, y: pl.ty })) { pl.started = true; self.goal = 'gather'; return; }
+      else { pl.arrived = true; }                                    // unreachable → stand here and face in anyway
+    }
+    self.state = 'idle'; self.sitting = false;
+    if (pl.role === 'overseer') {
+      // face the crowd he is addressing (their centroid), not the assembly tile
+      const crowd = gatherBodiesLive().filter(b => b.gather && b.gather.role === 'audience');
+      if (crowd.length) {
+        let sx = 0, sy = 0; for (const b of crowd) { sx += b.px; sy += b.py; }
+        self.dir = dirToward(self.px, self.py, sx / crowd.length, sy / crowd.length);
+      }
+      if (gathering && gathering.phase === 'hold') gatherSpeak(self, now);
+    } else {
+      const over = bodyForAgent(gathering ? gathering.overseerId : null);
+      if (over) self.dir = dirToward(self.px, self.py, over.px, over.py);   // every face turned to him
+    }
   }
 
   /* ================= TIER D · D4 — THE CURSOR IS A CREATURE (mimic + THE CHASE) =================
@@ -4708,6 +5037,14 @@ const World = (() => {
     // tick (neither runs its per-body guard), the slot ALWAYS frees. self===agent here (set below/above), and
     // endEncounter is idempotent; this is the belt-and-suspenders that makes the slot un-leakable.
     if (socialBeat && (now >= socialBeat.until || encounterBroken(now))) endEncounter(now);
+    /* TIER E — THE GATHERING, at station level for the same belt-and-suspenders reason as the sweep
+       above: the phase machine, the hard timeout and the SCATTER check must run even on a tick where
+       no participant's own stepper does, or a seized assembly could hold the floor. Stamping
+       `stationBusyAt` here (rather than in an event handler) keeps "is the station attended" a single
+       read of live state instead of a second bookkeeping surface that could drift out of date. */
+    if (stationAttended(now) || cursorPresent(now)) stationBusyAt = now;
+    stepGatheringStation(now);
+    if (!gathering) maybeGather(now);
     sweepChase(now);                                              // TIER D · D4: station-level chase sweep (G4) — a seized/despawned/chat-focused chaser ALWAYS frees the lock same-tick, independent of its own stepper
     decayHabits(now);                                             // habituation fades (see FORGET_MS) — a floor watched for an hour must not run out of things worth looking at
     tickNeeds(dt);                                              // the inner meters drain/refill by what it is doing
@@ -4779,6 +5116,9 @@ const World = (() => {
     // holds. It sits BELOW the summon-seize block above (which flips goal off 'social' via encounterBroken → the
     // survivor releases this tick, K3), so work always wins (G2). Only runs while genuinely idle+on the social goal.
     if (activity === 'idle' && agent.goal === 'social') { if (!stepSocialGuard(now)) stepSocial(now); }
+    // TIER E: the hero is usually THE OVERSEER, so it needs the same stepper the crew get, at the same
+    // depth — below the summon-seize, gated on genuinely idle, so a summon scatters the assembly.
+    if (activity === 'idle' && agent.goal === 'gather') { if (!gathering || !agent.gather) releaseFromGathering(agent, now, false); else { const keep = self; self = agent; try { stepGather(now); } finally { self = keep; } } }
     // TIER D · D4: the hero's cursor-mimic (head-only) / THE CHASE (walk-pursue-stare) steppers. Both sit BELOW the
     // summon-seize block (which flips goal off 'mimic'/'chase') so work always wins (G2). Only while genuinely idle.
     if (activity === 'idle' && agent.goal === 'mimic') stepMimic(now);
@@ -4832,6 +5172,9 @@ const World = (() => {
       // TIER D · D3: hero in a social encounter with no active target = the HOLD phase. The guard/stepSocial (run
       // above, before `if (agent.target)`) own the facing + lifecycle; this branch only STOPS the ladder from
       // reaching decideIdle, which would stomp the encounter with a wandering beat.
+      agent.state = 'idle';
+    } else if (agent.goal === 'gather') {
+      // TIER E: the overseer standing before the crowd. Same job — keep the ladder off decideIdle.
       agent.state = 'idle';
     } else if (agent.goal === 'mimic' || agent.goal === 'chase') {
       // TIER D · D4: mimic (head-only follow) / chase (stare phase, or a between-repaths beat) with no active
@@ -8247,6 +8590,49 @@ const World = (() => {
        A green read means the real selection maths, fed the real polled graph, actually favours the
        agents the run log proved. `graph` is the loaded bond map, so a zero-bias result can always be
        told apart from an empty graph. */
+    /* TEST/DEBUG ONLY — TIER E THE GATHERING. A beat gated on 30 minutes of unattended quiet plus an
+       hourly roll cannot be observed by waiting: that is a vigil, and a surface that never renders on
+       the dev box is invisible to every live-verify pass. So `_dbgGatherNow` bypasses the FREQUENCY
+       gates ONLY (quiet window, hourly roll, chance, cooldown) — exactly the discipline trioprobe's
+       `force` follows. Every legality gate still runs inside startGathering: enough placed idle
+       bodies, and a formation the floor can actually seat. A staged pass must never be able to print
+       success for an assembly the real trigger could not have produced. */
+    _dbgGatherNow: () => {
+      const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+      if (gathering) return { ok: false, err: 'a gathering is already live' };
+      gatherGateUntil = -1e9;                                     // frequency only
+      const keep = self;
+      try { self = agent; return { ok: !!startGathering(now), state: gatherStateSnapshot() }; }
+      finally { self = keep; }
+    },
+    // read-only snapshot of the live assembly — roles, slots, who has actually arrived, and the phase.
+    _dbgGatherState: () => gatherStateSnapshot(),
+    /* Which gate is actually holding the gathering back (or tearing it down)? gatheringBroken is an OR
+       of six conditions and a live station gives no clue which one fired — the first probe run saw the
+       assembly scatter within one tick and the only honest way to find out was to read them apart. */
+    _dbgGatherGates: () => {
+      const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+      const bodies = gatherBodiesLive();
+      return {
+        cursorPresent: cursorPresent(now), pageVisible: pageVisible(),
+        heroTasked: activity === 'task', chatHot: chatHot(now),
+        attended: stationAttended(now), quietMs: Math.round(now - stationBusyAt),
+        live: !!gathering, phase: gathering ? gathering.phase : null,
+        party: bodies.length, planless: bodies.filter(b => b.gather == null).map(b => b.id),
+        working: bodies.filter(b => b.working).map(b => b.id),
+        unplaced: bodies.filter(b => b.unplaced).map(b => b.id),
+        broken: gathering ? gatheringBroken(now) : null,
+      };
+    },
+    /* Drive the SCATTER through the real predicate rather than a staged teardown: stamping the cursor
+       is precisely what "the Commander came back" means to gatheringBroken, so this proves the shipped
+       exit path (and the overseer's late break) instead of a copy of it. */
+    _dbgGatherReturn: () => {
+      const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+      if (!lastCursor) lastCursor = { wx: 0, wy: 0, t: 0 };   // shape matches the module's own tracker
+      lastCursor.t = now; cursorMoveT = now;
+      return { broken: gatheringBroken(now) };
+    },
     _dbgAffinity: (anchorIds, ids, n) => {
       const list = (Array.isArray(ids) ? ids : []).map(id => ({ id: id }));
       const anchors = Array.isArray(anchorIds) ? anchorIds : [anchorIds];
