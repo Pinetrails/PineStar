@@ -180,3 +180,9 @@ dev/.shots-settings-perf/
 
 # TOAST SEAT lane visual-proof screenshots (headless capture output; never committed)
 dev/.shots-toast/
+
+# dev/shellstep + shellholes/shellinfront/baketime harness output (offscreen bakes on magenta). Never committed.
+.shellstep/
+.shellholes/
+.shellinfront/
+.shellseam/

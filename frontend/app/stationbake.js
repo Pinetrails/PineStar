@@ -3186,18 +3186,56 @@ const StationBake = (() => {
     const tmp = canvas(CW, CH2);
     const tg = tmp.getContext('2d');
     const list = [...groups.values()];
+    const stampRect = (g, r) => g.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
+    const eraseAllChamfers = g => { for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(g, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); } };
+    /* which chamfers are a rect's OWN — the four corners it can legitimately round off itself */
+    const ownChamfers = r => G.chamfers.filter(([cx, cy, k]) =>
+      cx === (k === 'tr' || k === 'br' ? r.x2 : r.x1) && cy === (k === 'bl' || k === 'br' ? r.y2 : r.y1));
     const silOf = grp => {
       const sil = canvas(CW, CH2);
       const g = sil.getContext('2d');
       g.imageSmoothingEnabled = false;
       g.translate(-VX, -(VY - M));
       g.fillStyle = '#fff';
-      for (const r of grp.rects) g.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
+      for (const r of grp.rects) stampRect(g, r);
       /* THE CORNER ERASE RUNS OVER *ALL* CHAMFERS, NOT THIS GROUP'S. A chamfer is cut from the
          station's silhouette, and a neighbouring room's rounded corner takes a bite out of the void
          this group's skirt would otherwise fill. Filtering to the group's own chamfers put a square
          shoulder of skirt back into every corner a differently-clad neighbour had rounded. */
-      for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(g, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
+      eraseAllChamfers(g);
+      /* ...BUT A CHAMFER MAY ONLY ROUND AWAY VOID, NEVER ANOTHER FOOTPRINT'S OWN PLATE RING
+         (2026-08-16, Andrew, drawing a yellow line down the missing corner: "here i drew a literal
+         yellow line to show u where its supposed to be extended to connect. do not reshape it, it
+         still needs to be at the exact angle, but just perfectly connected").
+
+         Two rooms side by side whose south edges differ by one tile: the lower room's inner bottom
+         corner is chamfered, and the erase above — correctly running over ALL chamfers — takes that
+         45° bite out of the UPPER room's plate ring too. The skirt is this silhouette extruded
+         downward, so the bite rides the whole way down and the upper run's wall ends one tile short
+         with its coursing sliced at a hard edge. That short corner is what he drew the line on.
+
+         The line the erase must not cross is ownership: a corner rounds off the room it belongs to.
+         Where the wedge is VOID it still gets cut (that is the 2026-08-06 case above, and the skirt
+         hanging into a neighbour's rounded corner is void, covered by no rect). Where it lands on a
+         DIFFERENT footprint's plate ring, that ring is structure, and structure is not somebody
+         else's corner to round. Restoring exactly that — each rect re-stamped minus only its OWN
+         corners — extends the upper wall down to meet the chamfer at the same angle it always had.
+
+         Built per rect on a scratch and unioned, because the erase is order-dependent: stamping
+         every rect first and then cutting would let one rect's corner eat a neighbour that overlaps
+         it. Keyed on world tile coords like everything else here, so chunk↔monolithic parity holds. */
+      const keep = canvas(CW, CH2), kg = keep.getContext('2d');
+      kg.imageSmoothingEnabled = false;
+      for (const r of grp.rects) {
+        const one = canvas(CW, CH2), og = one.getContext('2d');
+        og.imageSmoothingEnabled = false;
+        og.save(); og.translate(-VX, -(VY - M)); og.fillStyle = '#fff'; stampRect(og, r);
+        for (const [ccx, ccy, kind] of ownChamfers(r)) { const A = CORNER[kind]; eraseSpandrel(og, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
+        og.restore();
+        kg.drawImage(one, 0, 0);
+      }
+      g.setTransform(1, 0, 0, 1, 0, 0);
+      g.drawImage(keep, 0, 0);
       return sil;
     };
     const sils = list.map(silOf);
@@ -3245,14 +3283,28 @@ const StationBake = (() => {
       ig.imageSmoothingEnabled = false;
       ig.save();
       ig.translate(-VX, -(VY - M));
+      const idxOf = i => { const n = i + 1; return 'rgb(' + (n & 255) + ',' + ((n >> 8) & 255) + ',0)'; };   // 0 = "no footprint"; 16 bits is far past MAX rects
       rects.forEach((r, i) => {
-        const n = i + 1;   // 0 means "no footprint"; 16 bits is far past MAX rects
-        ig.fillStyle = 'rgb(' + (n & 255) + ',' + ((n >> 8) & 255) + ',0)';
+        ig.fillStyle = idxOf(i);
         ig.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
       });
       // the same all-chamfers erase the silhouettes take, so ownership follows the rounded corners
       for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(ig, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
       ig.restore();
+      /* ...and the SAME own-corners-only restore the silhouette takes (see the note there). The
+         ownership raster is what `maskTo` cuts every group back to, so a plate ring the silhouette
+         keeps but ownership dropped would be masked straight back out and the corner would stay
+         short. The two rasters must agree pixel for pixel or the fix is invisible. */
+      rects.forEach((r, i) => {
+        const one = canvas(CW, CH2), og = one.getContext('2d');
+        og.imageSmoothingEnabled = false;
+        og.save(); og.translate(-VX, -(VY - M));
+        og.fillStyle = idxOf(i);
+        og.fillRect(r.x1 * T - pad, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
+        for (const [ccx, ccy, kind] of ownChamfers(r)) { const A = CORNER[kind]; eraseSpandrel(og, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
+        og.restore();
+        ig.drawImage(one, 0, 0);
+      });
       let img = null;
       try { img = ig.getImageData(0, 0, CW, CH2); } catch (e) { img = null; }
       if (img) {
