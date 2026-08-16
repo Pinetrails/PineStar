@@ -1142,8 +1142,10 @@ const World = (() => {
     connectChannelBridge();   // open the SSE bridge so real inbound work animates as boxes on the belts
     pollFeedState();          // feed truth (channels/cron) for the NO FEED intake nag — server-proven, refreshed slowly
     pollShipStats();          // SHIPPED TODAY truth (completed runs since local midnight) — reload-proof
+    pollAffinity();           // the PROVEN social graph — who the run log says works together (biases idle social beats)
     setInterval(pollFeedState, 60000);   // listenersBound guards init's one-time block, so these arm exactly once
     setInterval(pollShipStats, 60000);
+    setInterval(pollAffinity, 300000);   // the graph moves on the timescale of DAYS — a 5min refresh is already generous
   }
 
   function resize() {
@@ -2775,10 +2777,109 @@ const World = (() => {
       : U.irnd(SOCIAL_QUIET_CD_MIN, SOCIAL_QUIET_CD_MAX));
   }
 
+  /* ---- COMPANIONS (2026-08-16): agents drift toward the agents they actually work with ----
+
+     Andrew's ask: "users will notice some agents around specific other agents frequently."
+     The pull is real or it is nothing — every bond here is DERIVED by the sidecar from the durable
+     run log (GET /api/agents/affinity: a shared run tree, or runs reached for in the same stretch
+     of work) and never assigned here. So when the station reads as "those two are always together",
+     that is a true statement about how the Commander works, not decoration. An agent pair the log
+     can't vouch for has strength 0 and gets exactly the old uniform treatment.
+
+     THE BIAS MUST NOT BECOME A LOCK. Two things keep the station from collapsing into fixed duos:
+       (a) weight is 1 + BOND_PULL*strength, so a stranger's weight is never zero — every pair stays
+           possible, best buds are just likelier. Variety is the feature; favouritism is the accent.
+       (b) the per-pair cooldown still applies (shortened, floored), so even a top bond cannot loop.
+     Both matter: without (a) the floor turns into disjoint cliques, and without (b) one pair would
+     eat the station's whole conversation budget and the other agents would look dead. */
+  let affinityPairs = new Map();            // "idA|idB" (sorted) -> strength 0..1. Empty until the poll answers.
+  const BOND_PULL = 4;                      // a proven companion is ~4x likelier to be chosen than a stranger (weight 1 -> ~4.1 at the strongest bond seen on a real log)
+  const BOND_CD_RELIEF = 0.55;              // best buds serve at most 55% off the per-pair cooldown, so they come back to each other sooner
+  const BOND_CD_FLOOR = 45000;              // ...but never so soon that a duo could re-fire as the immediate next beat
+  const BOND_TRIO_BONUS = 0.35;             // a third body bonded to BOTH others turns a pair into the friend GROUP more often ("sometimes groups of 3")
+
+  /* the proven bond between two agents, 0 when the run log can't back one. 0 is "no bond" — it must
+     never be read as a weak bond, which is why every consumer adds it to a baseline of 1. */
+  function bondOf(aId, bId) {
+    if (aId == null || bId == null) return 0;
+    return affinityPairs.get(pairKey(aId, bId)) || 0;
+  }
+
+  /* BOND-WEIGHT-PURE-BEGIN — sliced out of THIS source and executed by test/agent-affinity-weight.test.js,
+     so the shipped selection maths is under test rather than a copy of it. Keep it pure: no module state,
+     no RNG, no DOM, no U.* — the bond lookup is INJECTED for exactly that reason.
+
+     bondMean — mean bond from a candidate to EVERY anchor. One anchor = "who does this body gravitate
+       to"; two anchors = "who belongs with this pair", which is what makes a trio read as a friend GROUP
+       rather than a pair plus a bystander: a body bonded to only one of the two scores half as hard as
+       one bonded to both.
+     bondWeights — the selection weights. THE LOAD-BEARING PROPERTY IS THE `1 +`: a stranger's weight is
+       1, never 0, so no pairing is ever impossible and the floor cannot fracture into fixed cliques.
+       Bonds are an accent on a uniform draw, not a replacement for it. A future "optimisation" that
+       drops the baseline to make favourites stronger would turn the station into disjoint duos — that
+       is the regression this block is extracted to prevent. */
+  function bondMean(anchorIds, id, bondLookup) {
+    const ids = Array.isArray(anchorIds) ? anchorIds : [anchorIds];
+    if (!ids.length) return 0;
+    let sum = 0;
+    for (const anchor of ids) sum += (bondLookup(anchor, id) || 0);
+    return sum / ids.length;
+  }
+  function bondWeights(anchorIds, ids, bondLookup, pull) {
+    return ids.map(id => 1 + pull * bondMean(anchorIds, id, bondLookup));
+  }
+  /* BOND-WEIGHT-PURE-END */
+
+  /* weighted choice over `list` from the anchors' point of view. Falls back to U.pick's exact uniform
+     behaviour whenever there is nothing to bias with (no graph yet), so an unreachable or empty
+     affinity endpoint changes nothing at all about how the station behaves. */
+  function pickByBond(anchorIds, list) {
+    if (!Array.isArray(list) || list.length < 2) return list && list.length ? list[0] : null;
+    if (!affinityPairs.size) return U.pick(list);
+    const w = bondWeights(anchorIds, list.map(o => o && o.id), bondOf, BOND_PULL);
+    let total = 0; for (const x of w) total += x;
+    if (!(total > 0)) return U.pick(list);
+    let r = Math.random() * total;
+    for (let i = 0; i < list.length; i++) { r -= w[i]; if (r <= 0) return list[i]; }
+    return list[list.length - 1];
+  }
+
+  /* GET /api/agents/affinity — refreshed slowly (the graph moves over days). Fail-quiet by design:
+     any error keeps the last known graph rather than dropping to uniform mid-session, and a first
+     failure just leaves the map empty, which IS the old behaviour. */
+  function pollAffinity() {
+    if (typeof fetch === 'undefined') return;
+    try {
+      fetch(apiUrl('/api/agents/affinity'), { cache: 'no-store' })
+        .then(r => (r.ok ? r.json() : null))
+        .then(d => {
+          if (!d || !Array.isArray(d.pairs)) return;   // nothing answered — keep the last known graph
+          const next = new Map();
+          for (const p of d.pairs) {
+            if (!p || p.a == null || p.b == null) continue;
+            const s = Number(p.strength);
+            if (Number.isFinite(s) && s > 0) next.set(pairKey(p.a, p.b), Math.min(1, s));
+          }
+          affinityPairs = next;
+        })
+        .catch(() => {});
+    } catch (_) {}
+  }
+
   // stable sorted-pair key for the per-pair cooldown map
   function pairKey(aId, bId) { return (String(aId) < String(bId)) ? (aId + '|' + bId) : (bId + '|' + aId); }
   function pairOnCd(aId, bId, now) { return now < (socialPairCd.get(pairKey(aId, bId)) || 0); }
-  function armPairCd(aId, bId, now) { socialPairCd.set(pairKey(aId, bId), now + U.irnd(SOCIAL_PAIR_CD_MIN, SOCIAL_PAIR_CD_MAX)); }
+  /* COMPANIONS: a bonded pair serves a SHORTER cooldown, so it comes back around to itself sooner.
+     This half is not optional garnish — the base cooldown (75-165s) is deliberately longer than the
+     conversation lane (30-60s) precisely so a duo can't repeat, which is a rotation force pulling
+     exactly against the bond. Without this relief the weighted pick would keep choosing best buds
+     and the cooldown would keep vetoing them. Floored so even the strongest bond can never re-fire
+     as the immediate next beat — friendship, never a loop. */
+  function armPairCd(aId, bId, now) {
+    const base = U.irnd(SOCIAL_PAIR_CD_MIN, SOCIAL_PAIR_CD_MAX);
+    const relief = 1 - BOND_CD_RELIEF * bondOf(aId, bId);
+    socialPairCd.set(pairKey(aId, bId), now + Math.max(BOND_CD_FLOOR, Math.round(base * relief)));
+  }
 
   // is body `b` a valid social participant right now? idle, placed, not chat-focused, not already in a beat.
   // Reuses bodyIsIdle (the Tier C read-only idle test) — so it excludes tasked/walking/mid-goal/mid-run bodies.
@@ -3279,7 +3380,10 @@ const World = (() => {
     if (!list.length) return false;
     huddleStats.planned++;
     huddleStats.candCounts[list.length] = (huddleStats.candCounts[list.length] || 0) + 1;
-    const b = U.pick(list);
+    // COMPANIONS: the partner is drawn with a pull toward `a`'s proven companions (was a uniform
+    // U.pick). Every candidate keeps a non-zero weight, so this shifts WHO tends to be picked over
+    // many encounters without ever making a pairing impossible.
+    const b = pickByBond(a.id, list);
     if (!b) return false;
     const zA = zoneFor(a), zB = zoneFor(b);
     const ca = tileOf(a.px, a.py), cb = tileOf(b.px, b.py);
@@ -3295,9 +3399,14 @@ const World = (() => {
     const extras = [];
     const rest = list.filter(o => o !== b && !pairOnCd(b.id, o.id, now));
     if (!rest.length) huddleStats.noThirdCandidate++;
-    if (rest.length && (forceTrio || U.chance(SOCIAL_TRIO_CHANCE))) {
+    // COMPANIONS: a candidate bonded to BOTH bodies makes the trio likelier to fire, and is likelier
+    // to be the one recruited — so the groups of three that form are the friend group, not a random
+    // third. The bonus rides the existing roll (it can only ADD trios, never cost the pair a huddle).
+    let bestGroupBond = 0;
+    for (const o of rest) bestGroupBond = Math.max(bestGroupBond, bondMean([a.id, b.id], o && o.id, bondOf));
+    if (rest.length && (forceTrio || U.chance(SOCIAL_TRIO_CHANCE + BOND_TRIO_BONUS * bestGroupBond))) {
       huddleStats.trioRolled++;
-      const c = U.pick(rest);
+      const c = pickByBond([a.id, b.id], rest);
       const cc = tileOf(c.px, c.py);
       // a third tile near the SAME meeting point, in c's own zone (G3), distinct from both taken tiles.
       const tc = nearestWalkableInZone(zoneFor(c), ta.x, ta.y, cc, 4, ta, tb);

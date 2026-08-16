@@ -82,6 +82,7 @@ const transcriptStoreModule = require('./transcriptstore.js');
 const { makeTranscriptStore } = transcriptStoreModule;
 const TRANSCRIPT_PERSISTED = transcriptStoreModule._internals && transcriptStoreModule._internals.PERSISTED;
 const { makeRunJournal, DISPATCH_BOUNDARY_MODEL } = require('./run-journal.js');
+const { makeAffinityIndex } = require('./agent-affinity.js');   // idle-life social graph: which agents the run log proves work together
 const RunRecovery = require('./run-recovery.js');
 const { makeSegmentedTranscriptIo } = require('./transcript-history.js');
 const { makeSkillStore } = require('./skillstore.js');             // H4: per-agent owned skill library (singleton)
@@ -8113,6 +8114,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/spotify/disconnect', h: handleSpotifyDisconnect },
   { m: 'GET', exact: '/api/widgets', h: handleWidgetsList },   // WIDGET RAILS Phase 2: the agent-fed readouts the chrome rails poll
   { m: 'GET', exact: '/api/state/snapshot', h: handleStateSnapshot },   // reconnect reconciliation (frontend lane consumes it)
+  { m: 'GET', exact: '/api/agents/affinity', h: handleAgentAffinity },   // idle-life: the PROVEN social graph the world biases its social beats with
   { m: 'GET', exact: '/api/lifecycle/armed', h: handleLifecycleArmed },   // Lane 4D: tray supervisor's close-decision truth
   { m: 'GET', exact: '/api/cron', h: handleCronList },
   { m: 'POST', exact: '/api/cron', h: handleCronCreate },
@@ -10066,6 +10068,40 @@ function handleStateSnapshot(req, res) {
   } catch (_) {}
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(out));
+}
+
+/* GET /api/agents/affinity — the station's PROVEN social graph, for the world's idle life.
+
+   world.js biases who talks to whom during idle social beats, so agents the Commander really uses
+   together are seen together. The bias must be earned: every pair here is derived from the durable
+   run log by agent-affinity.js (shared run tree, or runs reached for in the same stretch of work).
+   Nothing is assigned, nothing is random, and an agent pair with no shared history simply is not in
+   the list — the world reads a missing pair as "no bond", never as a weak one.
+
+   SHAPE (all derived, none fabricated — truthful-telemetry law):
+     { ts, pairs: [ { a, b, crew, shift, score, strength } ], stats: { pairs, truncated, timedRows } }
+     strength ∈ (0,1) saturating — a pair's number never moves because a DIFFERENT pair spiked.
+
+   Recomputed at most once per AFFINITY_TTL_MS: this sweeps the whole run log, the graph moves on the
+   timescale of days, and the frontend polls it. Cheap insurance against a large log, not correctness. */
+const AFFINITY_TTL_MS = 60000;
+let affinityCache = { at: 0, body: null };
+function handleAgentAffinity(req, res) {
+  const now = Date.now();
+  if (!affinityCache.body || (now - affinityCache.at) > AFFINITY_TTL_MS) {
+    let payload;
+    try {
+      const idx = makeAffinityIndex(runStore.all(), { isInternal: sid => contextpack.isInternalStream(sid) });
+      payload = { ts: now, pairs: idx.pairs(), stats: idx.stats() };
+    } catch (e) {
+      // fail-open and SAY so: an unreadable log means we cannot prove any bond, which is an empty
+      // graph, not an excuse to invent one. The world falls straight back to uniform selection.
+      payload = { ts: now, pairs: [], stats: { pairs: 0, truncated: 0, timedRows: 0 }, error: 'affinity derivation failed' };
+    }
+    affinityCache = { at: now, body: JSON.stringify(payload) };
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(affinityCache.body);
 }
 
 // POST /api/cron/arm — runtime one-click ENABLE/DISABLE of the scheduler (G4.6). body: { enabled:bool }.
