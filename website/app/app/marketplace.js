@@ -39,7 +39,6 @@ const Marketplace = (() => {
   let launchPreviewOpen = true;                  // "WHAT GETS SENT" — open by default: seeing the real directive before you commit IS the point
   let tab = 'agents';                            // 'agents' | 'recipes'
   let glassOpen = false;
-  let summonConfigOpen = false;                  // the collapsible APPEARANCE+MODEL strip (summon mode) — collapsed by default
   let scoutLogOpen = false;                       // the collapsible SCOUT LOG (attempt ledger) — collapsed by default
   let pendingCardAnim = false;                   // play the staggered card-entrance ONCE per open/tab-switch, not on every filter/search rebuild
   let pickedSummonSkin = null;
@@ -235,7 +234,6 @@ const Marketplace = (() => {
     // seeding the rotation from that would reshuffle the shelf under the Commander's cursor as they type.
     if (tab === 'recipes') bumpRecipeVisits();
     glassOpen = !acked();
-    summonConfigOpen = false;
     scoutLogOpen = false;
     pickedSummonSkin = null;
     pickedSummonModel = null;
@@ -574,22 +572,21 @@ const Marketplace = (() => {
   }
   function agentsRosterHTML() {
     const deploy = !ctx || ctx.mode !== 'pick';
-    const summon = !!(ctx && ctx.mode === 'pick' && ctx.summon);
-    // search OR a lane filter collapses the top shelves + config so the results grid owns the pane — the same
+    // search OR a lane filter collapses the top shelves so the results grid owns the pane — the same
     // discipline the RECIPES tab uses (audit item 7). MINE is a lane filter value, so it collapses too.
     const filtering = !!query || laneFilter !== 'all';
     // deploy mode keeps the SAVE-THIS-AGENT toolbar; summon drops the stale "pre-fills the wake screen" hint —
-    // the subtitle already states the summon promise, and the config strip + shelves carry the rest.
+    // the subtitle already states the summon promise, and the dossier's CONFIGURE panel + shelves carry the rest.
     const toolbar = deploy
       ? '<div class="mkt-toolbar"><button class="bb sm mkt-saveas">＋ SAVE THIS AGENT AS A SPECIALTY</button></div>'
       : '';
     let html = toolbar;
 
-    // TOP OF THE PANE (audit item 3): the class choice is primary, so the earned/recommended shelves + the roster
-    // sit up top; APPEARANCE + MODEL compress into a slim collapsible SUMMON CONFIG strip (good defaults, one click
-    // to expand). All of it hides while searching/filtering so the filtered grid is uncluttered.
+    // TOP OF THE PANE: this pane answers ONE question — WHICH CLASS — so it holds only the shelves and the roster.
+    // NAME / APPEARANCE / MODEL used to live here as a collapsible SUMMON CONFIG strip, which split the summon
+    // decision across both panes (2026-08-15): pick on the left, read on the right, then scroll BACK left to
+    // configure. They now live in the dossier's CONFIGURE panel, directly above the button they feed.
     if (!filtering) {
-      if (summon) html += summonConfigHTML();
       html += glassHTML();          // '' in pick mode; STATION FAMILIARITY glass box in deploy mode
       html += recShelfHTML();
       html += interestGapShelfHTML();   // a warm topic nobody covers — renders only when both counters say so
@@ -663,31 +660,31 @@ const Marketplace = (() => {
       '<p class="mkt-hint">niche classes held off the main roster — fully specified, summon any time. When your real work points at one, the station drafts it onto the shelf above for you.</p>' +
       '<div class="mkt-grid mkt-rows">' + archs.map(cardHTML).join('') + '</div>';
   }
-  // SUMMON CONFIG (audit item 3): a compact collapsible strip for APPEARANCE + MODEL. Both carry good defaults
-  // (Cadet skin, inherit the orchestrator's model), so it's COLLAPSED by default with a one-line summary of the
-  // current picks; expanding reveals the live skin stage + model picker. summonConfigOpen persists across the
-  // re-renders within one open bay.
-  function summonConfigHTML() {
+  /* ---------- CONFIGURE: everything you SET about the new agent, in the dossier, above its button ----------
+     One pane, one job. The roster answers WHICH CLASS; this panel answers WHAT IT IS CALLED, WHAT IT LOOKS LIKE,
+     and WHAT IT THINKS WITH — the only three things a summon actually lets you choose. It is always expanded
+     (2026-08-15): every field carries a working default, so there is nothing to protect the Commander from, and
+     a collapsed strip on the far side of the window made the config look optional AND unreachable at once. */
+  function summonConfigPanelHTML(s) {
     if (!(ctx && ctx.mode === 'pick' && ctx.summon)) return '';
-    const modelSummary = (pickedSummonModel && pickedSummonModel.model) ? esc(shortModel(pickedSummonModel.model))
-      : (pickedSummonModel && pickedSummonModel.effort) ? 'inherit · ' + esc(String(pickedSummonModel.effort).toUpperCase()) + ' effort'
-      : 'same as orchestrator';
-    const head =
-      '<button type="button" class="mkt-cfg-head" aria-expanded="' + (summonConfigOpen ? 'true' : 'false') + '">' +
-        '<span class="mkt-cfg-caret" aria-hidden="true">' + (summonConfigOpen ? '▾' : '▸') + '</span>' +
-        '<span class="mkt-cfg-ttl">SUMMON CONFIG</span>' +
-        '<span class="mkt-cfg-sum"><span class="mkt-cfg-k">NAME</span> <span class="mkt-candidate-name">' + esc(summonCandidateName((focusAgent && Specialties.get(focusAgent)) || null)) + '</span>' +
-          ' <span class="mkt-cfg-k">SKIN</span> ' + esc(summonSkinName()) +
-          ' <span class="mkt-cfg-k">MODEL</span> ' + modelSummary + '</span>' +
-      '</button>';
-    if (!summonConfigOpen) return '<div class="mkt-cfg">' + head + '</div>';
-    return '<div class="mkt-cfg open">' + head +
-      '<div class="mkt-cfg-body">' + summonNameBarHTML() + summonSkinBarHTML() + summonModelBarHTML() + '</div></div>';
+    return '<section class="mkt-config" aria-label="configure this agent">' +
+      '<div class="mkt-config-h"><span class="mkt-config-ttl">CONFIGURE</span>' +
+        '<span class="mkt-config-note">every field already has a working default — change what you care about</span></div>' +
+      summonNameBarHTML() + summonSkinBarHTML() + summonModelBarHTML(s) +
+    '</section>';
   }
-  function summonSkinName() {
-    const id = (pickedSummonSkin && typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[pickedSummonSkin]) ? pickedSummonSkin : (typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '');
-    const sk = (typeof DATA !== 'undefined' && DATA.SKINS) ? DATA.SKINS[id] : null;
-    return (sk && sk.name) || id || '—';
+  /* The MODEL field's helper line is where CLEARANCE and EFFORT became honest. They used to be two rows of a spec
+     grid at the top of the dossier that read "model: station default / class default — applied at summon" — true,
+     but stated where nothing could be done about it, which is exactly what made them read as filler. The same
+     facts belong on the control that resolves them: what this class is TUNED for, and what your pick OVERRIDES. */
+  function modelHelpHTML(s) {
+    const pin = pickedSummonModel;
+    if (pin && pin.model) return 'pinned to <b>' + esc(shortModel(pin.model)) + '</b>' +
+      (pin.effort ? ' at <b>' + esc(String(pin.effort).toUpperCase()) + '</b> effort' : '') + ' — overrides the class default.';
+    if (pin && pin.effort) return 'the same brain as your orchestrator, at <b>' + esc(String(pin.effort).toUpperCase()) + '</b> effort.';
+    const tuned = 'this class is tuned for ' + pipsOf(s && s.model) + ' <b>' + esc(clearanceLabel(s && s.model)) + '</b> work';
+    return 'left blank it runs on the same brain as your orchestrator — ' + tuned +
+      (s && s.reasoningEffort ? ' at <b>' + esc(String(s.reasoningEffort).toUpperCase()) + '</b> effort' : '') + '.';
   }
   function shortModel(m) { return String(m || '').split('/').pop().replace(/[-_]+/g, ' ').trim() || String(m || ''); }
   // ONE section-header component (audit item 8): amber struck-metal plate for roster ranks. Shelves add their own
@@ -774,7 +771,7 @@ const Marketplace = (() => {
       : dup ? 'duplicate name — summon requires a second confirmation; the agent id will remain unique'
       : 'blank uses the proposed default: ' + summonCandidateName((focusAgent && Specialties.get(focusAgent)) || null);
     return '<div class="mkt-skinbar mkt-namebar"><label class="mkt-skinlabel" for="mkt-summon-name">NAME <span class="mkt-hint">— what this agent answers to</span></label>' +
-      '<input class="mkt-in" id="mkt-summon-name" type="text" autocomplete="off" spellcheck="false" aria-invalid="' + (issue ? 'true' : 'false') + '" placeholder="proposed default" value="' + esc(pickedSummonName) + '">' +
+      '<input class="mkt-in" id="mkt-summon-name" type="text" autocomplete="off" spellcheck="false" aria-invalid="' + (issue ? 'true' : 'false') + '" placeholder="' + esc(summonCandidateName((focusAgent && Specialties.get(focusAgent)) || null)) + '" value="' + esc(pickedSummonName) + '">' +
       '<div class="mkt-name-meta"><span class="mkt-name-help' + (issue || dup ? ' warn' : '') + '">' + esc(helper) + '</span><span class="mkt-name-count' + (used > max ? ' over' : '') + '">' + used + ' / ' + max + '</span></div></div>';
   }
 
@@ -808,13 +805,15 @@ const Marketplace = (() => {
 
   // SUMMON-only: choose the new agent's MODEL (optional — blank inherits the orchestrator's). Reuses the shared
   // ModelPicker so the catalog, grouping and effort options match the COMMS dock and the dossier. The <select>
-  // is populated asynchronously after mount (wireRoster), then read at SUMMON time into spec.modelPin.
-  function summonModelBarHTML() {
+  // is populated asynchronously after mount (wireSummonConfig), then read at SUMMON time into spec.modelPin.
+  // The helper line under it carries the class's clearance/effort tuning — see modelHelpHTML.
+  function summonModelBarHTML(s) {
     if (!(ctx && ctx.mode === 'pick' && ctx.summon) || typeof ModelPicker === 'undefined') return '';
-    return '<div class="mkt-skinbar mkt-modelbar"><label class="mkt-skinlabel">MODEL <span class="mkt-hint">— which brain it runs on (blank = same as your orchestrator)</span></label>' +
+    return '<div class="mkt-skinbar mkt-modelbar"><label class="mkt-skinlabel">MODEL <span class="mkt-hint">— which brain it runs on</span></label>' +
       '<div class="mkt-modelpick" id="mkt-model-pick">' +
         ModelPicker.shellHTML({ id: 'mkt-model', inheritLabel: 'Same as the orchestrator', ariaLabel: 'New agent model', effort: true }) +
-      '</div></div>';
+      '</div>' +
+      '<div class="mkt-field-help" id="mkt-model-help">' + modelHelpHTML(s) + '</div></div>';
   }
 
   /* ---------- the class card (coin seal in the roster) ---------- */
@@ -930,50 +929,11 @@ const Marketplace = (() => {
       return new Set(caps.map(c => (typeof c === 'string' ? c : c && c.objectType)).filter(Boolean));
     } catch (_) { return new Set(); }
   }
-  // DRAWS ON STATION GEAR — one row per objectType the class uses: the prop + what it grants, resolved from the
-  // LIVE catalog (never a hardcoded prop label), PLUS an honest present/missing check against the ACTUAL station
-  // props. Present gear reads as available; missing gear reads dim ("not on station — add in REFIT"). Capabilities
-  // are STATION-level shared gear used under the overseer — the class is NOT issued its own copy (only its desk).
-  // Empty kit => the block is omitted (a plain persona-only class).
-  function kitBlockHTML(s) {
-    const kit = (s && Array.isArray(s.kit)) ? s.kit : [];
-    if (!kit.length) return '';
-    const have = stationGearSet();
-    let missing = 0;
-    // A ●/○ status dot carries present/missing (green ● = on station, dim ○ = not yet); the repeated per-row
-    // "NOT ON STATION — ADD IN REFIT…" sentence is gone — the single footnote below states it once (audit item 8).
-    const rows = kit.map(t => {
-      const present = have.has(t);
-      if (!present) missing++;
-      return '<div class="mkt-kit-row' + (present ? '' : ' mkt-kit-missing') + '">' +
-        '<span class="mkt-kit-dot" aria-hidden="true">' + (present ? '●' : '○') + '</span>' +
-        '<span class="mkt-kit-obj" data-hint="' + esc(t) + '">' + esc(kitPropLabel(t)) + '</span>' +
-        '<span class="mkt-kit-grant">' + esc(capGrant(t)) + '</span></div>';
-    }).join('');
-    const note = missing
-      ? 'shared station gear this class draws on under the overseer — ' + missing + ' not on station yet (add ' + (missing === 1 ? 'it' : 'them') + ' in REFIT for its full toolkit).'
-      : 'shared station gear this class draws on under the overseer — all present on the station.';
-    return '<div class="mkt-block"><div class="bh">DRAWS ON STATION GEAR</div>' +
-      '<div class="mkt-kit">' + rows + '</div>' +
-      '<div class="mkt-kit-note">' + note + '</div></div>';
-  }
-  // SKILL PACKAGE — one row per bundled skill slug: name + one-line description, resolved from the /api/skills
-  // catalog the SKILLS window uses. Renders slug-only immediately (so it works offline), then hydrateSkillRows
-  // fills real names/descriptions once the catalog resolves. Empty package => the block is omitted.
-  function skillPackageHTML(s) {
-    const skills = (s && Array.isArray(s.skills)) ? s.skills : [];
-    if (!skills.length) return '';
-    const cached = skillCatalog || {};
-    const rows = skills.map(slug => {
-      const meta = cached[slug];
-      return '<div class="mkt-skill-row" data-slug="' + esc(slug) + '">' +
-        '<span class="mkt-skill-name">' + esc(meta ? meta.name : slug) + '</span>' +
-        '<span class="mkt-skill-desc">' + esc(meta ? meta.description : '') + '</span></div>';
-    }).join('');
-    return '<div class="mkt-block"><div class="bh">SKILL PACKAGE</div>' +
-      '<div class="mkt-skills">' + rows + '</div>' +
-      '<div class="mkt-kit-note">enabled for this agent on summon (adds to your global skills; still gated by its gear).</div></div>';
-  }
+  /* The class dossier's DRAWS ON STATION GEAR + SKILL PACKAGE inventories were removed 2026-08-15 (Andrew).
+     Nothing about the LOADOUT changed — `s.kit` and `s.skills` still ride applyLoadout at summon exactly as
+     before; the bay simply stopped printing the manifest. The live-source resolvers those blocks introduced are
+     still in use and still owned here: kitPropLabel/capGrant/stationGearSet by the RECIPE dossier's gear block
+     (recipeGearHTML), and loadSkillCatalog/hydrateSkillRows by its skills chips. */
   // async: fill real skill names/descriptions into a rendered dossier once the catalog loads. Re-queries the DOM
   // after the await so a dossier swapped mid-fetch is a safe no-op.
   function hydrateSkillRows() {
@@ -1067,87 +1027,80 @@ const Marketplace = (() => {
            : ' <span class="dim">· no files recorded</span>') + '</div>';
   }
 
+  /* ---------- the class dossier (right pane) ----------
+     Reads top-to-bottom as one decision: WHO IT IS → WHAT IT DOES FOR YOU → WHAT IT USES → WHAT YOU SET → GO.
+     Rewritten 2026-08-15 (Andrew: "should be a simple description of the purpose of the agent, and the user should
+     configure the agent on the right side entirely"). What was cut and why:
+       • FOCUS LANES — three percentage bars off s.tags. The tags are a RECOMMENDER weighting, not a capability
+         budget: an agent at "70% research / 30% ops" is not throttled to those ratios by anything, so the bars
+         implied a mechanic the harness cannot back. The lane the class actually leads with is one chip.
+       • the CLEARANCE / EFFORT / VOICE / FOCUS spec grid — four rows of label-value whose values were mostly
+         "station default", stated where nothing could act on them. Clearance + effort moved onto the MODEL
+         control's helper (modelHelpHTML); lane + voice are chips under the hero.
+       • the commit summary — it restated NAME / SKIN / MODEL / CLASS because the controls were a pane away.
+         With CONFIGURE sitting directly above the button, it was echoing the three fields you just filled in.
+     What was ADDED: the description. s.blurb — a written-for-humans paragraph that already shipped on every
+     class — was being used only for SEARCH, never displayed here, so the dossier's whole account of a class was
+     a 4-word tagline plus a system prompt that opened "You are the station's…". */
   function agentDossierHTML() {
     const s = (focusAgent && Specialties.get(focusAgent)) || Specialties.builtins()[0];
     if (!s) return '<div class="mkt-dos-empty">no class selected.</div>';
     const deploy = !ctx || ctx.mode !== 'pick';
     const here = !!(ctx && ctx.currentSpecialtyId && ctx.currentSpecialtyId === s.id);
-    const t = s.tags || {};
-    const bar = (k, label) => { const v = Math.round((t[k] || 0) * 100);
-      return '<div class="mkt-barrow"><span class="bk">' + label + '</span><span class="trk"><span class="fill" style="width:' + v + '%"></span></span><span class="bv">' + v + '%</span></div>'; };
-    // FOCUS LANES bars only earn their space when 2+ lanes are actually lit. A one-hot class (a single lane at 100%)
-    // is already stated by the FOCUS chip above, so the three bars would just repeat it (audit item 8 declutter).
-    const laneSpread = ['code', 'research', 'general'].filter(k => (t[k] || 0) > 0).length >= 2;
     const badges = (here ? ' <span class="mkt-badge mkt-here">DEPLOYED</span>' : '') + (s.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '');
-    const ctaLabel = deploy ? ('⏼ DEPLOY TO ' + esc(((ctx && ctx.agentName) || 'AGENT')).toUpperCase()) : ('⏼ SUMMON ' + esc(summonCandidateName(s)));
+    const ctaLabel = deploy ? ('⏼ DEPLOY TO ' + esc(((ctx && ctx.agentName) || 'AGENT')).toUpperCase())
+      : ('⏼ SUMMON <span class="mkt-candidate-name">' + esc(summonCandidateName(s)) + '</span>');
     const ctaSub = deploy
       ? 're-specs ' + esc((ctx && ctx.agentName) || 'your agent') + '’s purpose &amp; standing orders'
-      : 'opens its own <span data-hint="workstream">chat thread</span> — name, voice &amp; purpose pre-filled from this class';
+      : 'joins your crew with its own <span data-hint="workstream">chat thread</span>, pre-filled from this class';
     const custActs = s.custom
       ? '<div class="mkt-cta-row"><button class="bb sm mkt-edit" data-id="' + esc(s.id) + '">✎ EDIT</button>' +
         '<button class="bb sm danger mkt-del" data-id="' + esc(s.id) + '">⌫ DELETE</button></div>' : '';
-    // CLEARANCE/EFFORT show the EFFECTIVE resolution (audit item 4): in summon mode a per-agent model/effort pinned
-    // in SUMMON CONFIG OVERRIDES the class default; otherwise the class tier resolves to the station-default model.
-    const pin = (ctx && ctx.mode === 'pick' && ctx.summon) ? pickedSummonModel : null;
-    const modelNote = (pin && pin.model)
-      ? 'model: ' + esc(shortModel(pin.model)) + ' — overrides class default'
-      : 'model: station default';
-    const effortEff = (pin && pin.effort) ? String(pin.effort).toUpperCase()
-      : (s.reasoningEffort ? String(s.reasoningEffort).toUpperCase() : null);
-    const effortNote = (pin && pin.effort) ? 'your pick — applied at summon'
-      : (s.reasoningEffort ? 'class default — applied at summon' : 'station default');
-    const clearRow =
-      '<span class="k" data-hint="clearance">CLEARANCE</span><span class="v">' + pipsOf(s.model) + ' ' + esc(clearanceLabel(s.model)) +
-        ' <span class="mkt-clr-note">' + modelNote + '</span></span>' +
-      '<span class="k" data-hint="effort">EFFORT</span><span class="v">' +
-        (effortEff ? '<span class="mkt-chip">' + esc(effortEff) + '</span> <span class="mkt-clr-note">' + effortNote + '</span>'
-                   : '<span class="mkt-clr-note">station default</span>') + '</span>';
+    // the description: the human blurb leads (what it does FOR you), the purpose follows (how it works, the brief
+    // it actually carries into every thread). A custom class may have no blurb — then the purpose leads alone.
+    const lead = String(s.blurb || '').trim();
+    const brief = String(s.purpose || '').trim();
+    const aboutBlock = (lead || brief)
+      ? '<div class="mkt-block mkt-about"><div class="bh">WHAT IT DOES</div>' +
+          (lead ? '<p class="bp lead">' + esc(lead) + '</p>' : '') +
+          (brief ? '<p class="bp">' + esc(brief) + '</p>' : '') +
+        '</div>'
+      : '';
     return '<div class="mkt-dos-label">▮ CLASS DOSSIER</div>' +
       '<div class="mkt-dos-hero">' + sealHTML(s, true) +
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(s.name) + badges + '</div>' +
           '<div class="mkt-dos-tag">' + esc(s.tagline) + '</div>' +
           '<div class="mkt-dos-class">CLASS · ' + esc(codeOf(s)) + '</div></div></div>' +
-      '<div class="mkt-spec">' +
-        clearRow +
-        '<span class="k" data-hint="voice">VOICE</span><span class="v">◈ ' + esc(voiceName(s.persona)) + '</span>' +
-        '<span class="k" data-hint="focus">FOCUS</span><span class="v"><span class="mkt-chip lane">' + esc(laneLabelOf(s)) + '</span></span>' +
+      '<div class="mkt-dos-meta">' +
+        '<span class="mkt-chip lane" data-hint="focus">' + esc(laneLabelOf(s)) + '</span>' +
+        '<span class="mkt-chip" data-hint="clearance">' + pipsOf(s.model) + ' ' + esc(clearanceLabel(s.model)) + '</span>' +
+        '<span class="mkt-chip" data-hint="voice">◈ ' + esc(voiceName(s.persona)) + ' VOICE</span>' +
       '</div>' +
-      (laneSpread ? '<div class="mkt-block"><div class="bh">FOCUS LANES</div><div class="mkt-bars">' + bar('code', 'CODE') + bar('research', 'RESEARCH') + bar('general', 'OPS') + '</div></div>' : '') +
-      kitBlockHTML(s) +
-      skillPackageHTML(s) +
-      '<div class="mkt-block"><div class="bh">PURPOSE</div><p class="bp">' + esc(s.purpose) + '</p></div>' +
-      (s.manual ? '<div class="mkt-block"><details class="mkt-orders"><summary class="bh">STANDING ORDERS</summary><pre>' + esc(s.manual) + '</pre></details></div>' : '') +
+      aboutBlock +
+      // CONFIGURE sits THIRD, immediately under the description and above the reference blocks: description then
+      // decision is the order the Commander reads in, and burying the controls under gear + starters + orders put
+      // them a screen and a half down, behind the sticky CTA. Everything below this point is reference material.
+      summonConfigPanelHTML(s) +
       (s.starters && s.starters.length ? '<div class="mkt-block"><div class="bh">TRY ASKING — things you can say to it</div><ul class="mkt-starters">' + s.starters.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></div>' : '') +
+      // NO gear / skill-package inventories (2026-08-15, Andrew). They listed what the class draws on under the
+      // overseer and which bundled skills it gets — true, but it is a manifest, not a reason to recruit, and it
+      // ran longer than the description above it. The loadout still applies at summon exactly as before; the
+      // station's own gear lives in REFIT and the skills in the SKILLS window, which are the surfaces that own it.
+      (s.manual ? '<div class="mkt-block"><details class="mkt-orders"><summary class="bh">STANDING ORDERS</summary><pre>' + esc(s.manual) + '</pre></details></div>' : '') +
+      // the merged recruit door's SECOND verb: in summon mode, a deploy context (onDeploy + agentName) also offers
+      // re-speccing the CURRENT agent as this class — the old ROSTER door's action, now living on the card instead
+      // of a separate dock button. It rides in NORMAL FLOW, outside the sticky block: pinning it too made the
+      // permanent footer four elements tall (~190px of a ~660px pane), which is what pushed CONFIGURE off screen.
+      (!deploy && ctx && ctx.onDeploy && ctx.agentName && !here
+        ? '<div class="mkt-cta-second"><button class="mkt-cta-alt mkt-deploy-cur" data-id="' + esc(s.id) + '">⏼ DEPLOY TO ' + esc(ctx.agentName).toUpperCase() + ' ▸</button>' +
+          '<div class="mkt-cta-sub">re-specs ' + esc(ctx.agentName) + ' instead — no new crew member</div></div>'
+        : '') +
       '<div class="mkt-dos-cta">' + custActs +
-        commitSummaryHTML(s) +
         // adopt-voice sits BESIDE the DEPLOY CTA it modifies (audit item 8), not orphaned up in the toolbar.
         (deploy ? '<label class="mkt-adopt mkt-adopt-cta"><input type="checkbox" class="mkt-adopt-cb"> adopt its voice too</label>' : '') +
         '<button class="mkt-cta-main mkt-deploy" data-id="' + esc(s.id) + '">' + ctaLabel + ' ▸</button>' +
         '<div class="mkt-cta-sub">' + ctaSub + '</div>' +
-        // the merged recruit door's SECOND verb: in summon mode, a deploy context (onDeploy +
-        // agentName) also offers re-speccing the CURRENT agent as this class — the old ROSTER
-        // door's action, now living on the card instead of a separate dock button.
-        (!deploy && ctx && ctx.onDeploy && ctx.agentName && !here
-          ? '<button class="mkt-cta-alt mkt-deploy-cur" data-id="' + esc(s.id) + '">⏼ DEPLOY TO ' + esc(ctx.agentName).toUpperCase() + ' ▸</button>' +
-            '<div class="mkt-cta-sub">no new crew member — re-specs ' + esc(ctx.agentName) + '’s purpose &amp; standing orders</div>'
-          : '') +
       '</div>';
-  }
-  // SUMMON commit summary (audit item 4): a compact confirm row directly above the CTA restating exactly what this
-  // summon will create — the SKIN it wears, the MODEL it runs on (pinned or inherited), and the CLASS. Summon-only.
-  function commitSummaryHTML(s) {
-    if (!(ctx && ctx.mode === 'pick' && ctx.summon) || typeof DATA === 'undefined' || !DATA.SKINS) return '';
-    const skinId = (pickedSummonSkin && DATA.SKINS[pickedSummonSkin]) ? pickedSummonSkin : DATA.DEFAULT_SKIN;
-    const sk = DATA.SKINS[skinId] || {};
-    const modelTxt = (pickedSummonModel && pickedSummonModel.model) ? esc(shortModel(pickedSummonModel.model)) : 'orchestrator model';
-    const effortTxt = (pickedSummonModel && pickedSummonModel.effort) ? esc(String(pickedSummonModel.effort).toUpperCase())
-      : (s.reasoningEffort ? esc(String(s.reasoningEffort).toUpperCase()) : '');
-    return '<div class="mkt-commit" aria-label="what this summon creates">' +
-      '<span class="mkt-cs-cell"><span class="mkt-cs-k">NAME</span> <span class="mkt-candidate-name">' + esc(summonCandidateName(s)) + '</span></span>' +
-      '<span class="mkt-cs-cell mkt-cs-appear"><img class="mkt-cs-skin" src="assets/sprites/' + esc(sk.set) + '/rot_south.png" alt="" draggable="false"><span>' + esc(sk.name || skinId) + '</span></span>' +
-      '<span class="mkt-cs-cell"><span class="mkt-cs-k">MODEL</span> ' + modelTxt + (effortTxt ? ' · ' + effortTxt : '') + '</span>' +
-      '<span class="mkt-cs-cell"><span class="mkt-cs-k">CLASS</span> ' + esc(codeOf(s)) + '</span>' +
-    '</div>';
   }
   // GEAR the recipe draws on — one advisory row per objectType: prop label + what it grants + a present/WANT
   // check against the live station gear (skills-panel WANT pattern). Missing gear is a WANT badge, NEVER a lock.
@@ -1978,71 +1931,6 @@ const Marketplace = (() => {
     const recipeSaveas = stage.querySelector('.mkt-recipe-saveas');
     if (recipeSaveas) recipeSaveas.addEventListener('click', () => { sfx('click'); pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null; enterRecipeEditor(null, 'create'); });
 
-    // SUMMON name field: track keystrokes into pickedSummonName (survives the strip's collapse/expand re-renders).
-    // No renderStage on input — a re-render would blow away the focused field mid-typing.
-    const nameIn = stage.querySelector('#mkt-summon-name');
-    if (nameIn) nameIn.addEventListener('input', () => {
-      pickedSummonName = nameIn.value;
-      renderDossier();
-      const s = (focusAgent && Specialties.get(focusAgent)) || null;
-      root.querySelectorAll('.mkt-candidate-name').forEach(e => { e.textContent = summonCandidateName(s); });
-      const used = ((typeof AgentId !== 'undefined' && AgentId.normalizeName) ? AgentId.normalizeName(pickedSummonName) : String(pickedSummonName || '')).length;
-      const max = (ctx && ctx.displayNameLimit) || (typeof AgentId !== 'undefined' && AgentId.NAME_MAX) || 18;
-      const count = root.querySelector('.mkt-name-count'); if (count) { count.textContent = used + ' / ' + max; count.classList.toggle('over', used > max); }
-      const issue = summonNameIssue(), dup = summonNameConflict();
-      const help = root.querySelector('.mkt-name-help');
-      if (help) {
-        help.textContent = issue === 'too-long' ? 'too long — shorten this name before summoning'
-          : dup ? 'duplicate name — summon requires a second confirmation; the agent id will remain unique'
-          : 'blank uses the proposed default: ' + summonCandidateName(s);
-        help.classList.toggle('warn', !!(issue || dup));
-      }
-      nameIn.setAttribute('aria-invalid', issue ? 'true' : 'false');
-    });
-
-    const skinWrap = stage.querySelector('#mkt-skin-picker');
-    if (skinWrap) {
-      // stage handle (assigned by the mount below): drive THIS stage, not the module-level shortcut — the
-      // agent dossier's CONFIG › SKIN stage can be open behind this modal and whichever mounted last owns it.
-      let skinStage = null;
-      skinWrap.querySelectorAll('.skin-thumb').forEach(b => {
-        b.addEventListener('click', () => {
-          pickedSummonSkin = b.dataset.skin;
-          skinWrap.querySelectorAll('.skin-thumb').forEach(x => x.classList.remove('sel'));
-          b.classList.add('sel'); sfx('click');
-          if (skinStage) skinStage.show(pickedSummonSkin);
-        });
-        // hover scrubs the live stage so you can compare without committing; leaving snaps back to the pick
-        b.addEventListener('mouseenter', () => { if (skinStage) skinStage.show(b.dataset.skin); });
-      });
-      skinWrap.addEventListener('mouseleave', () => { if (skinStage) skinStage.show(pickedSummonSkin); });
-      // bind the live preview stage to the picked skin
-      const stageImg = stage.querySelector('#mkt-skin-stage-img');
-      const stageName = stage.querySelector('#mkt-skin-stage-name');
-      if (stageImg && typeof SkinStage !== 'undefined') skinStage = SkinStage.mount(stageImg, stageName, pickedSummonSkin);
-    }
-
-    // SUMMON model picker: fill the catalog async, then track the choice ('' model → inherit the orchestrator's).
-    const modelWrap = stage.querySelector('#mkt-model-pick');
-    if (modelWrap && typeof ModelPicker !== 'undefined') {
-      ModelPicker.populate(modelWrap, { current: pickedSummonModel || {} }).catch(() => {});
-      ModelPicker.onChange(modelWrap, (sel) => {
-        // EFFORT is an independent axis (audit item 5): a chosen effort must survive even when the MODEL is left
-        // to inherit the orchestrator's. summonAgent/applyLoadout honor pin.effort independently of pin.model, so
-        // carry { model:'', effort } rather than dropping the whole pin the moment model is blank.
-        if (sel && sel.model) pickedSummonModel = { model: sel.model, provider: sel.provider, effort: sel.effort || '' };
-        else if (sel && sel.effort) pickedSummonModel = { model: '', provider: '', effort: sel.effort };
-        else pickedSummonModel = null;
-        sfx('click');
-        renderDossier();   // repaint CLEARANCE/EFFORT + the commit-summary so they show the EFFECTIVE resolution
-      });
-    }
-
-    // SUMMON CONFIG strip: toggle expands/collapses APPEARANCE + MODEL (re-renders so wireRoster re-mounts the
-    // live skin stage + model picker on expand).
-    const cfgHead = stage.querySelector('.mkt-cfg-head');
-    if (cfgHead) cfgHead.addEventListener('click', () => { summonConfigOpen = !summonConfigOpen; sfx('click'); renderStage(); });
-
     // SPECIALIST ARCHIVE: the deep-cut pool expands/collapses (state survives re-renders within one open bay).
     const archHead = stage.querySelector('.mkt-archive-head');
     if (archHead) archHead.addEventListener('click', () => { archiveOpen = !archiveOpen; sfx('click'); renderStage(); });
@@ -2129,8 +2017,76 @@ const Marketplace = (() => {
   }
 
   /* ---------- wiring: dossier (the action button + custom edit/delete) ---------- */
+  /* CONFIGURE panel wiring. It lives in the dossier now, which changes ONE rule that used to be free: the name
+     field is INSIDE the element renderDossier() replaces, so a keystroke may never trigger a dossier repaint —
+     that would tear the focused input out from under the Commander mid-word. Every name-driven surface is
+     therefore patched in place (counter, helper, aria-invalid, and every .mkt-candidate-name echo including the
+     CTA's). Called from wireDossier so it re-binds on both a full stage render and a dossier-only repaint. */
+  function wireSummonConfig(sc) {
+    const nameIn = sc.querySelector('#mkt-summon-name');
+    if (nameIn) nameIn.addEventListener('input', () => {
+      pickedSummonName = nameIn.value;
+      const s = (focusAgent && Specialties.get(focusAgent)) || null;
+      root.querySelectorAll('.mkt-candidate-name').forEach(e => { e.textContent = summonCandidateName(s); });
+      const used = ((typeof AgentId !== 'undefined' && AgentId.normalizeName) ? AgentId.normalizeName(pickedSummonName) : String(pickedSummonName || '')).length;
+      const max = (ctx && ctx.displayNameLimit) || (typeof AgentId !== 'undefined' && AgentId.NAME_MAX) || 18;
+      const count = root.querySelector('.mkt-name-count'); if (count) { count.textContent = used + ' / ' + max; count.classList.toggle('over', used > max); }
+      const issue = summonNameIssue(), dup = summonNameConflict();
+      const help = root.querySelector('.mkt-name-help');
+      if (help) {
+        help.textContent = issue === 'too-long' ? 'too long — shorten this name before summoning'
+          : dup ? 'duplicate name — summon requires a second confirmation; the agent id will remain unique'
+          : 'blank uses the proposed default: ' + summonCandidateName(s);
+        help.classList.toggle('warn', !!(issue || dup));
+      }
+      nameIn.setAttribute('aria-invalid', issue ? 'true' : 'false');
+    });
+
+    const skinWrap = sc.querySelector('#mkt-skin-picker');
+    if (skinWrap) {
+      // stage handle (assigned by the mount below): drive THIS stage, not the module-level shortcut — the
+      // agent dossier's CONFIG › SKIN stage can be open behind this modal and whichever mounted last owns it.
+      let skinStage = null;
+      skinWrap.querySelectorAll('.skin-thumb').forEach(b => {
+        b.addEventListener('click', () => {
+          pickedSummonSkin = b.dataset.skin;
+          skinWrap.querySelectorAll('.skin-thumb').forEach(x => x.classList.remove('sel'));
+          b.classList.add('sel'); sfx('click');
+          if (skinStage) skinStage.show(pickedSummonSkin);
+        });
+        // hover scrubs the live stage so you can compare without committing; leaving snaps back to the pick
+        b.addEventListener('mouseenter', () => { if (skinStage) skinStage.show(b.dataset.skin); });
+      });
+      skinWrap.addEventListener('mouseleave', () => { if (skinStage) skinStage.show(pickedSummonSkin); });
+      // bind the live preview stage to the picked skin
+      const stageImg = sc.querySelector('#mkt-skin-stage-img');
+      const stageName = sc.querySelector('#mkt-skin-stage-name');
+      if (stageImg && typeof SkinStage !== 'undefined') skinStage = SkinStage.mount(stageImg, stageName, pickedSummonSkin);
+    }
+
+    // SUMMON model picker: fill the catalog async, then track the choice ('' model → inherit the orchestrator's).
+    const modelWrap = sc.querySelector('#mkt-model-pick');
+    if (modelWrap && typeof ModelPicker !== 'undefined') {
+      ModelPicker.populate(modelWrap, { current: pickedSummonModel || {} }).catch(() => {});
+      ModelPicker.onChange(modelWrap, (sel) => {
+        // EFFORT is an independent axis (audit item 5): a chosen effort must survive even when the MODEL is left
+        // to inherit the orchestrator's. summonAgent/applyLoadout honor pin.effort independently of pin.model, so
+        // carry { model:'', effort } rather than dropping the whole pin the moment model is blank.
+        if (sel && sel.model) pickedSummonModel = { model: sel.model, provider: sel.provider, effort: sel.effort || '' };
+        else if (sel && sel.effort) pickedSummonModel = { model: '', provider: '', effort: sel.effort };
+        else pickedSummonModel = null;
+        sfx('click');
+        // patch the helper only — a renderDossier here would rebuild the <select> and re-run its async populate,
+        // flashing the choice the Commander just made back to blank until the catalog resolves again.
+        const help = sc.querySelector('#mkt-model-help');
+        if (help) help.innerHTML = modelHelpHTML((focusAgent && Specialties.get(focusAgent)) || null);
+      });
+    }
+  }
+
   function wireDossier(scope) {
     const sc = scope || root; if (!sc) return;
+    wireSummonConfig(sc);
     const dosBack = sc.querySelector('.mkt-dos-back');
     if (dosBack) dosBack.addEventListener('click', () => closeDossierSheet());
     const deployBtn = sc.querySelector('.mkt-deploy');
@@ -2158,8 +2114,10 @@ const Marketplace = (() => {
             close();
           };
           if (ctx.summon && summonNameIssue()) {
-            summonConfigOpen = true; sfx('bad'); note('name is too long — use 18 characters or fewer', 'bad'); renderStage();
-            const input = root.querySelector('#mkt-summon-name'); if (input) input.focus();
+            // no re-render: the field is always on screen now, so send the Commander straight to it.
+            sfx('bad'); note('name is too long — use 18 characters or fewer', 'bad');
+            const input = root.querySelector('#mkt-summon-name');
+            if (input) { try { input.scrollIntoView({ block: 'center' }); } catch (_) {} input.focus(); }
             return;
           }
           if (ctx.summon && summonNameConflict()) return armDelete(deployBtn, deployBtn.textContent, commit, 'SUMMON DUPLICATE NAME?');

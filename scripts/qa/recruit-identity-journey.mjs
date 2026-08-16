@@ -31,7 +31,9 @@ try {
   await sleep(900);
   await evalJS(cdp, `document.querySelector('.mkt-card[data-id="researcher"]').click()`);
   await sleep(250);
-  const candidate = await evalJS(cdp, `(document.querySelector('.mkt-commit .mkt-candidate-name')||{}).textContent || ''`);
+  // the candidate name is echoed on the SUMMON button itself now (the commit-summary strip it used to live in
+  // was dropped when CONFIGURE moved into the dossier — the fields it restated now sit directly above the CTA).
+  const candidate = await evalJS(cdp, `(document.querySelector('.mkt-cta-main .mkt-candidate-name')||{}).textContent || ''`);
   check('second Researcher proposes a distinct visible name', candidate === 'RESEARCHER 2', JSON.stringify(candidate));
 
   await evalJS(cdp, `document.querySelector('.mkt-deploy').click()`);
@@ -48,7 +50,8 @@ try {
 
   // A long paste stays visible and blocks summon with an inline 19 / 18 explanation.
   await evalJS(cdp, `App.openSummonBay()`); await sleep(700);
-  await evalJS(cdp, `document.querySelector('.mkt-card[data-id="researcher"]').click(); document.querySelector('.mkt-cfg-head').click()`); await sleep(250);
+  // no config strip to expand any more — CONFIGURE renders open inside the dossier the card click opens.
+  await evalJS(cdp, `document.querySelector('.mkt-card[data-id="researcher"]').click()`); await sleep(250);
   const beforeLong = await evalJS(cdp, `App.agents().length`);
   await evalJS(cdp, `(() => { const i=document.querySelector('#mkt-summon-name'); i.value='ABCDEFGHIJKLMNOPQRS'; i.dispatchEvent(new Event('input',{bubbles:true})); })()`);
   const longState = await evalJS(cdp, `({value:document.querySelector('#mkt-summon-name').value,count:document.querySelector('.mkt-name-count').textContent,invalid:document.querySelector('#mkt-summon-name').getAttribute('aria-invalid')})`);

@@ -36,10 +36,14 @@ A.ok(/function summonModelBarHTML\(/.test(mkt), 'the bay renders a SUMMON model 
 A.ok(/ModelPicker\.shellHTML\(/.test(mkt), 'the bay model bar is built from the shared ModelPicker');
 A.ok(/ModelPicker\.populate\(modelWrap/.test(mkt), 'the bay populates the catalog after mount');
 A.ok(/modelPin:\s*pickedSummonModel/.test(mkt), 'the picked model is threaded into the onPick payload as modelPin');
-// Lane D moved APPEARANCE + MODEL into a collapsible SUMMON CONFIG strip (keeps the class roster above the fold);
-// the model bar is still wired end to end, now via summonConfigHTML() rather than a bare append.
-A.ok(/html \+= summonConfigHTML\(\)/.test(mkt), 'the SUMMON CONFIG strip is inserted into the summon stage');
-A.ok(/function summonConfigHTML[\s\S]{0,1600}summonModelBarHTML\(\)/.test(mkt), 'the config strip carries the model bar (still wired into summon)');
+// NAME + APPEARANCE + MODEL live in the dossier's CONFIGURE panel (2026-08-15), directly above the SUMMON button
+// they feed — they were a collapsible strip on the far side of the window. The model bar is still wired end to end,
+// now via summonConfigPanelHTML() off the dossier rather than off the roster.
+A.ok(/summonConfigPanelHTML\(s\)/.test(mkt), 'the CONFIGURE panel is rendered into the dossier');
+A.ok(/function summonConfigPanelHTML[\s\S]{0,900}summonModelBarHTML\(s\)/.test(mkt), 'the CONFIGURE panel carries the model bar (still wired into summon)');
+A.ok(/function wireSummonConfig[\s\S]{0,3000}ModelPicker\.onChange\(modelWrap/.test(mkt), 'the panel re-binds its model picker on every dossier repaint');
+// The name field now sits INSIDE the element renderDossier() replaces, so a keystroke may never repaint the dossier.
+A.ok(!/nameIn\.addEventListener\('input',[\s\S]{0,200}renderDossier\(\)/.test(mkt), 'typing a name never re-renders the dossier out from under the focused input');
 
 // ---- SUMMON: the new agent takes the chosen model AND its provider + effort ----
 A.ok(/const pin = \(spec && spec\.modelPin\)/.test(appjs), 'summonAgent reads spec.modelPin');
