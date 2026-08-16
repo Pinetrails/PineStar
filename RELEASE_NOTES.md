@@ -6,5 +6,6 @@ This update focuses on reliability, clearer guidance, and a more polished statio
 - Settings open faster, and console layouts keep stable, readable heights.
 - The Recruitment Bay has a clearer dossier and configuration flow for bringing new agents aboard.
 - Quest guidance is more direct, with improved visibility for saved goal titles.
+- Completed routine sessions now recover delayed transcript output instead of reopening as prompt-only conversations.
 - Windows upgrades are more resilient, including recovery when an older uninstaller is missing or damaged.
 - Large text, toast placement, station lighting, and several sprites received visual-fit and polish improvements.
