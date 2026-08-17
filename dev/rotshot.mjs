@@ -26,10 +26,14 @@ const OUT = process.env.SKYNET_ROT_OUT || join(process.cwd(), 'rotshot');
 const SCALE = Number(process.env.SKYNET_ROT_SCALE || 6);
 const WORK = process.env.SKYNET_ROT_WORK !== '0';
 const IDS = process.argv.slice(2).filter(a => !a.startsWith('-'));
+/* which cells to shoot: quarter turns 0..3, plus 'm' for the MIRRORED south view (the flip is what
+   gives an angled prop its other diagonal, so it deserves a cell of its own). */
+const CELLS = (process.env.SKYNET_ROT_FACES || '0,1,2,3').split(',').map(s => s.trim()).filter(Boolean);
 
 const SHEET = `(() => {
   const WORK = ${WORK};
   const WANT = ${JSON.stringify(IDS)};
+  const CELLS = ${JSON.stringify(CELLS)};
   const cat = WANT.map(id => PropSprites.CATALOG.find(c => c.id === id)).filter(Boolean);
   if (cat.length !== WANT.length) return { error: 'unknown ids among ' + WANT.join(',') };
   PropSprites.setSpotifyConnected && PropSprites.setSpotifyConnected(true);
@@ -41,12 +45,13 @@ const SHEET = `(() => {
   const rows = [];
   let H = GY, W = GX;
   for (const c of cat) {
-    const boxes = [0, 1, 2, 3].map(r => PropSprites.footprintAt(c.id, r) || { w: c.w, h: c.h });
+    const spots = CELLS.map(k => ({ mir: k === 'm', r: k === 'm' ? 0 : (+k & 3) }));
+    const boxes = spots.map(s => PropSprites.footprintAt(c.id, s.r) || { w: c.w, h: c.h });
     const cw = Math.max(...boxes.map(b => b.w)), ch = Math.max(...boxes.map(b => b.h));
-    const cells = boxes.map((b, r) => ({ r, b, dx: GX + r * (cw + GX) }));
+    const cells = boxes.map((b, i) => ({ r: spots[i].r, mir: spots[i].mir, b, dx: GX + i * (cw + GX) }));
     rows.push({ id: c.id, cells, y: H, ch });
     H += ch + 2 * GY;
-    W = Math.max(W, GX + 4 * (cw + GX));
+    W = Math.max(W, GX + cells.length * (cw + GX));
   }
 
   const doc = WorldModel.defaultDoc();
@@ -60,10 +65,10 @@ const SHEET = `(() => {
     const c = PropSprites.CATALOG.find(x => x.id === row.id);
     for (const cell of row.cells) {
       const y = row.y + (row.ch - cell.b.h);            // bottom-align inside the row band
-      const res = st.addProp({ t: c.id, x: cell.dx, y, w: cell.b.w, h: cell.b.h, block: !!c.blocks, r: cell.r });
+      const res = st.addProp({ t: c.id, x: cell.dx, y, w: cell.b.w, h: cell.b.h, block: !!c.blocks, r: cell.r, m: cell.mir ? 1 : 0 });
       if (!res.ok) { skipped.push(c.id + ':' + cell.r + ':' + (res.code || 'REFUSED')); continue; }
       first = first || { x: cell.dx, y };
-      placed.push({ id: c.id, r: cell.r, x: cell.dx, y, w: cell.b.w, h: cell.b.h });
+      placed.push({ id: c.id, r: cell.r, mir: cell.mir ? 1 : 0, x: cell.dx, y, w: cell.b.w, h: cell.b.h });
       // what did that facing actually resolve to? (a fall-back must never pass for authored art)
       const v = PropSprites.viewAt(c.id, cell.r);
       resolved.push(c.id + ':' + cell.r + ' -> ' + (!v ? 'FELL BACK TO SOUTH'
@@ -119,11 +124,11 @@ const labelExpr = (res) => `(() => {
       g.font = 'bold ' + Math.max(10, 2.5 * S) + 'px monospace';
       g.textBaseline = 'top';
       for (const p of PLACED) {
-        const t = p.id + ' ' + FACE[p.r];
+        const t = p.id + ' ' + (p.mir ? 'FLIP' : FACE[p.r]);
         const x = (OX + p.x) * T * S, y = (OY + p.y + p.h) * T * S + 3;
         const wpx = g.measureText(t).width;
         g.fillStyle = 'rgba(4,8,10,0.72)'; g.fillRect(x - 2, y - 1, wpx + 5, 2.5 * S + 6);
-        g.fillStyle = p.r ? '#ffd88a' : '#7fe9c8'; g.fillText(t, x, y);
+        g.fillStyle = (p.r || p.mir) ? '#ffd88a' : '#7fe9c8'; g.fillText(t, x, y);
       }
       done(cv.toDataURL('image/png'));
     };
