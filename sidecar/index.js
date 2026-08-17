@@ -76,7 +76,7 @@ const { makeGrowthRatings, deriveRating: deriveGrowthRating } = require('./growt
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
 const { makeCompletionEvidence } = require('./completion-evidence.js'); // structured effect proof; never guesses task completion
-const { makeRunExecutionState } = require('./run-execution-state.js'); // one lifecycle for per-run latches/counters/artifacts
+const { makeRunExecutionState, toolBytesCapFor } = require('./run-execution-state.js'); // one lifecycle for per-run latches/counters/artifacts
 const { recoverToolResult } = require('./tool-recovery.js'); // bounded retry for host-trusted transient reads only
 const transcriptStoreModule = require('./transcriptstore.js');
 const { makeTranscriptStore } = transcriptStoreModule;
@@ -14230,10 +14230,25 @@ async function runOnce(o) {
     .concat(providerFallbacks);
 
   // ---- context auto-compaction: fold older turns into a summary once the live prompt passes 65% of the model's
-  //      window, so a long run shrinks instead of overflowing. contextLimit is 0 until the catalog warms (then the
-  //      loop never compacts — safe). The summarizer is ONE cheap model call over the older slice; on any failure
-  //      the loop keeps the full history (never a silent drop). ----
-  const ctxMgr = makeContext({ contextLimit: provider.contextLimit(model), compactAt: 0.65, keepTail: 6 });
+  //      window, so a long run shrinks instead of overflowing. The summarizer is ONE cheap model call over the
+  //      older slice; on any failure the loop keeps the full history (never a silent drop). ----
+  // COLD CATALOG ≠ NO COMPACTION. contextLimit is 0 until /models warms; that used to flow into makeContext and
+  // silently disable proactive compaction for the WHOLE run (shouldCompact returns false on 0), leaving only the
+  // reactive overflow path — which is a no-op once the summarizer's breaker trips. shouldCompact measures against
+  // the provider's REAL prompt_tokens, so assuming a modest 128k window is safe in both directions: a bigger real
+  // window just compacts a little early; a smaller one overflows into the reactive path exactly as before, but
+  // now with the proactive fold still armed. The error classifier deliberately still receives the RAW 0 (see the
+  // runAgentLoop call) so a bare 400 is never mislabelled as overflow — that design is unchanged.
+  const COLD_CATALOG_CONTEXT_TOKENS = 131072;
+  const ctxMgr = makeContext({ contextLimit: provider.contextLimit(model) || COLD_CATALOG_CONTEXT_TOKENS, compactAt: 0.65, keepTail: 6 });
+  // PER-RUN TOOL-OUTPUT CAP, scaled to the window. The flat 120KB cap (~30k tokens) sat far BELOW the compaction
+  // threshold (0.65 × window — ~130k tokens on a 200k model), so the one event that resets the budget
+  // (agent.compact, see loopEmit) could never fire: after ~120KB of reads the agent went blind — every later
+  // tool returned "[tool output omitted]" — while the loop kept paying for turns. toolBytesCapFor keeps the cap
+  // ABOVE the threshold in bytes (invariant + rationale at its definition), guaranteeing the fold-and-reset
+  // fires first. The 120KB floor still binds tiny/unknown windows; reads the LIVE ctxMgr.contextLimit so a
+  // mid-run provider fallback (loop.js re-resolve) rescales it.
+  const runToolBytesCap = () => toolBytesCapFor(ctxMgr.contextLimit, CAPS.maxToolBytes);
   // The summarizer is itself a paid model call. It RETURNS its reconciled {usd,tokens} so the loop folds the
   // spend into the run's running tally IN THE SAME TURN — so the per-run ceiling + cross-run pool guards (and the
   // run total -> ledger) all see it, not just at run end. It also surfaces a display-only agent.cost so live
@@ -14626,15 +14641,16 @@ async function runOnce(o) {
     // The registry parks a result only when that ONE result crosses its cap. The run-wide cap can still clip a
     // perfectly ordinary later command after earlier calls used the allowance, so preserve that result here too.
     // This happens before clipping and the parker returns a path only after byte-identical read-back.
-    if (execution.willBoundToolResult(r, CAPS.maxToolBytes) && r && typeof r.content === 'string' && !r.parkedPath) {
+    if (execution.willBoundToolResult(r, runToolBytesCap()) && r && typeof r.content === 'string' && !r.parkedPath) {
       const parked = await capCtx.parkOutput(r.content, { tool: c.name, reason: 'run-output-budget' });
       if (parked && parked.path) r = Object.assign({}, r, { parkedPath: parked.path, outputChars: r.content.length });
     }
     // Bound the TOTAL model-visible tool output across a run so a few big fetches/reads cannot blow context.
     // A clipped result still carries its durable path and authoritative tool summary (for example `exit 0` or
     // `verify passed`), so the model can report the outcome instead of exposing a mysterious internal cap.
-    r = execution.boundToolResult(r, CAPS.maxToolBytes, {
-      omitted: '[tool output omitted — this run hit its ' + Math.round(CAPS.maxToolBytes / 1000) + 'KB tool-output budget; finish with what you already have]'
+    // The cap is window-scaled and read live per call (see runToolBytesCap above the ctxMgr).
+    r = execution.boundToolResult(r, runToolBytesCap(), {
+      omitted: '[tool output omitted — this run hit its ' + Math.round(runToolBytesCap() / 1000) + 'KB tool-output budget; finish with what you already have]'
     });
     // loop-guard bookkeeping: a FAILING result advances this signature's streak; ANY success clears it (so an
     // intermittently-failing call that eventually works never trips the guard). Matches loop.js's reset-on-success.
