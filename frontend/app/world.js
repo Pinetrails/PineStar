@@ -2305,8 +2305,14 @@ const World = (() => {
               whatever TV it paired with) would sit the body sideways in its own seat.
        dx   — px off tile centre toward the cushion, so the body's back rests against the crown
               instead of straddling it.
-     The cushion's own height needs no lift: the couch anchor already lands the hips on it. */
-  const SIDE_SEAT = { recliner: { face: 'west', dx: -2 }, recliner_r: { face: 'east', dx: 2 } };
+       lift — the SAME perch mechanism SEAT_LIFT gives a stool, and it is not optional here. A couch
+              shows only a head, so nobody could see that a `lift` of 0 makes drawBody anchor a seated
+              body by its STANDING foot pad; a profile seat shows the whole body, and every set whose
+              sit master carries extra empty rows below the tucked legs (pikachu, xenomorph) then
+              floated up onto the backrest. A non-zero lift is what switches drawBody to getTrackPad —
+              the sit frame's OWN bottom padding — so all 36 skins land on the cushion. 2px, the
+              chair's value, because the cushion sits barely above the near arm's crown. */
+  const SIDE_SEAT = { recliner: { face: 'west', dx: -2, lift: 2 }, recliner_r: { face: 'east', dx: 2, lift: 2 } };
   const sideSeat = p => (p && SIDE_SEAT[p.t]) || null;
   function planCouchSit(now, couch, tvId, faceDir, zone) {
     /* STALE-CLAIM RULE: drop whatever seat this body still holds BEFORE claiming a new one. Committing to a
@@ -2333,7 +2339,7 @@ const World = (() => {
         if (!setPathTo({ x: ax, y: ay })) continue;
         occupiedSeats.add(couch.id + ':' + slot); self.seatKey = couch.id + ':' + slot;
         const side = sideSeat(couch);
-        self.pendSeat = { px: (sx + 0.5) * T + (side ? side.dx : 0), py: (couch.y + h) * T - 2 };   // render foot at the cushion front
+        self.pendSeat = { px: (sx + 0.5) * T + (side ? side.dx : 0), py: (couch.y + h) * T - 2, lift: side ? side.lift : 0 };   // render foot at the cushion front
         self.goal = tvId ? 'lounge' : 'use'; self.usingProp = couch.id; self.watchProp = tvId || null;
         self.useSit = true; self.useFace = side ? side.face : (faceDir || 'south');   // a profile chair points ONE way — see SIDE_SEAT
         if (!self.target) arrive(now);                       // already adjacent → settle immediately

@@ -108,11 +108,16 @@ A.ok(decl.length > 0, 'SIDE_SEAT is declared ahead of planCouchSit');
 A.ok(/recliner:\s*\{\s*face:\s*'west'/.test(decl) && /recliner_r:\s*\{\s*face:\s*'east'/.test(decl),
   'each profile seat carries the ONE direction its art points (a chair cannot swivel to the planner)');
 A.ok(/dx:\s*-?\d/.test(decl), 'and a cushion offset off tile centre, so the body rests against the crown');
+/* The perch lift is load-bearing, not decoration: drawBody only switches to the sit frame's OWN bottom
+   padding (getTrackPad) when a seat carries a lift. At 0 it anchors a seated body by its STANDING foot
+   pad, and every set whose sit master has empty rows under the tucked legs (pikachu, xenomorph) floats
+   up onto the backrest. A couch hides that behind its own back; a profile seat shows the whole body. */
+A.ok(/lift:\s*[1-9]/.test(decl), 'and a non-zero perch lift, which is what makes every skin anchor by its own sit frame');
 
 const pcs = src.slice(src.indexOf('function planCouchSit('), src.indexOf('/* SINGLE-TILE REAL SIT'));
 A.ok(/const side = sideSeat\(couch\);/.test(pcs), 'planCouchSit resolves whether the cushion it claimed is a profile seat');
-A.ok(/pendSeat = \{ px: \(sx \+ 0\.5\) \* T \+ \(side \? side\.dx : 0\), py: \(couch\.y \+ h\) \* T - 2 \}/.test(pcs),
-  'the render anchor slides onto the cushion for a profile seat and is byte-identical for every other couch');
+A.ok(/pendSeat = \{ px: \(sx \+ 0\.5\) \* T \+ \(side \? side\.dx : 0\), py: \(couch\.y \+ h\) \* T - 2, lift: side \? side\.lift : 0 \}/.test(pcs),
+  'the render anchor slides onto the cushion and perches for a profile seat, and stays byte-identical for every other couch');
 A.ok(/self\.useFace = side \? side\.face : \(faceDir \|\| 'south'\);/.test(pcs),
   "a profile seat's sitter faces the way the chair points, not the way the planner guessed");
 
