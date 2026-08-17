@@ -23,8 +23,17 @@ const src = fs.readFileSync(path.join(__dirname, '../frontend/app/world.js'), 'u
 // ---- layer 1: beltUnion() carries non-blocking prop footprints (minus rug/airlock) ----
 const bu = src.slice(src.indexOf('const SOFT_CROSS'), src.indexOf('/* ---------- IDLE ZONE'));
 A.ok(bu.length > 0, 'SOFT_CROSS + beltUnion exist ahead of the idle-zone block');
-A.ok(/SOFT_CROSS = new Set\(\['rug', 'airlock'\]\)/.test(bu),
-  'rugs and airlocks stay freely crossable (a rug is floor, an airlock is a door)');
+/* Every RUG is freely crossable (a rug is floor) and so is the airlock (it is a door). This used to
+   assert the set literal character-for-character, which meant adding a second rug to the catalog left
+   agents stepping AROUND it with a green gate. Assert the invariant instead: the set is read out of the
+   source and checked against the live catalog, so any future rug that isn't in it fails here. */
+const softSet = (bu.match(/SOFT_CROSS = new Set\(\[([^\]]*)\]\)/) || [, ''])[1]
+  .split(',').map(s => s.trim().replace(/^'|'$/g, '')).filter(Boolean);
+A.ok(softSet.includes('airlock'), 'the airlock stays freely crossable (it is a door), got: ' + softSet.join('|'));
+for (const c of require('../frontend/app/propsprites.js').CATALOG) {
+  if (!/^rug(_|$)/.test(c.id)) continue;
+  A.ok(softSet.includes(c.id), 'rug "' + c.id + '" is freely crossable (a rug is floor, not machinery to step around)');
+}
 A.ok(/if \(p\.block !== false \|\| SOFT_CROSS\.has\(p\.t\)\) continue;/.test(bu),
   'only NON-blocking props join the soft set (blocking props are already hard-blocked in geo.walkable)');
 A.ok(/for \(let dy = 0; dy < \(p\.h \|\| 1\); dy\+\+\) for \(let dx = 0; dx < \(p\.w \|\| 1\); dx\+\+\) s\.add\(\(p\.x \+ dx\) \+ ',' \+ \(p\.y \+ dy\)\);/.test(bu),
