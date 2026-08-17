@@ -154,9 +154,15 @@ try {
     const by = r.top + (b.py * cam.scale + cam.panY) * (r.height / cv.height);
     const col = [];
     for (let dy = -34; dy <= 4; dy += 6) col.push(at(bx, by + dy));
-    // the rug's own hue is red-dominant; a body pixel is one whose green/blue rise off that
-    const bodyish = col.filter(c => (c[1] + c[2]) > c[0] * 1.15).length;
-    return { bodyPx: [Math.round(b.px), Math.round(b.py)], column: col, sprite_samples: bodyish + '/' + col.length };
+    /* ⛔ do NOT classify these samples by hue. A first cut called a pixel "the sprite" when green+blue
+       outran red, which the PLUM rug satisfies on its own — the readout said 7/7 sprite while the crop
+       showed nothing but rug. The colour column is raw evidence for a human to read against the
+       close-up; what is machine-checkable is the flag the floor pass actually switches on. */
+    return {
+      bodyPx: [Math.round(b.px), Math.round(b.py)],
+      column: col,
+      flat: ['rug', 'rug_small', 'rug_large'].map(t => [t, !!(PropSprites.spec(t) || {}).flat]),
+    };
   })()`);
   await closeUp('rug_large', 'rug-large-with-agent', 150);
   await zoomOnto('rug_small'); await sleep(600);
