@@ -25,12 +25,51 @@ const PropSprites = (() => {
   const SURFACE_RISE = 8;
   let ctx = null, now = 0;
 
+  /* ============ v13 LOCAL COLOUR — one knob over every pixel a prop paints ============
+     MEASURED, not guessed (gal/shot.mjs, 29 lounge/decor props on a live seeded station): the
+     catalog's MEAN AUTHORED CHROMA is 28/255, and the render pipeline (ambient plate + room cut +
+     CRT scan/fade/vig) delivers only **54%** of it to the screen — mean rendered chroma 15. The
+     plants are the extreme: monstera authors 44 and renders 8. That is why a room full of props
+     whose source really does carry warm oak, brass, deep red and teal still reads as grey-green mud.
+     Lifting the LIGHT is a real but bounded lever and it costs brightness that is already dialled
+     (ambient 0.82 → 0.55 only recovers 54% → 66%), so the rest has to come from the art's own chroma.
+
+     `CHROMA` scales the SATURATION of every colour a prop paints, holding hue and value exactly.
+     Hue and value are what the silhouette and the lighting logic are built on; saturation is the one
+     axis with no structural job, which is why it can be a knob at all.
+     ⛔ THE TEAL TRAP IS REAL (2026-08-16): amplifying the chroma of a hue that is merely a LITTLE
+     cool turns a grey casing green/teal on a warm deck. So the ceiling is hue-dependent — warm local
+     colour (wood, brass, terracotta, fabric) is allowed to go saturated, cool machinery is held near
+     grey. Machinery is *supposed* to be grey; the defect is a prop with no saturated element at all.
+     ⛔ Already-saturated colour is LEFT ALONE (emissives, ACC leds, screen phosphor): boosting a
+     colour that is already doing its job only clips it. */
+  let CHROMA = 2.6;                                 // 1 = shipped art, untouched · 2.6 = the LOCAL COLOUR candidate
+  const CHROMA_SKIP = 0.45;                         // authored saturation at/above this is already local colour
+  const _cboost = new Map();
+  const chromaOf = (c) => {
+    if (CHROMA === 1 || typeof c !== 'string' || c.length !== 7 || c[0] !== '#') return c;
+    const hit = _cboost.get(c); if (hit !== undefined) return hit;
+    const hsl = _toHsl(c), h = hsl[0], s = hsl[1], l = hsl[2];
+    let out = c;
+    // near-black is CONTOUR (LINE/ink) and near-white is a spec catch — both carry no local colour
+    if (s > 0.001 && s < CHROMA_SKIP && l > 0.055 && l < 0.93) {
+      const deg = h * 360;
+      const warm = deg < 62 || deg > 328;            // wood / brass / terracotta / warm fabric
+      const cap = warm ? 0.52 : 0.20;                // cool machinery stays honestly grey (no teal cast)
+      out = _toHex(h, Math.min(cap, s * CHROMA), l);
+    }
+    _cboost.set(c, out);
+    return out;
+  };
+
   /* ---- core primitives (verbatim from v7 sprites.js) ---- */
   /* px is the ONE primitive nearly every prop's fill routes through, which is what lets a MIRRORED
      view re-light itself from a single hook: a horizontal flip moves a prop's lit west facets onto
      its shade side, so while MIRROR is set px re-maps the few DIRECTIONAL tones to their partner
-     (LSWAP, below the ramps). Nothing sets MIRROR except a deliberately mirrored draw. */
-  const px = (x, y, w, h, c) => { ctx.fillStyle = (MIRROR && LSWAP[c]) || c; ctx.fillRect(x, y, w, h); };
+     (LSWAP, below the ramps). Nothing sets MIRROR except a deliberately mirrored draw.
+     ORDER MATTERS: the mirror swap picks a DIFFERENT AUTHORED tone, then the chroma dial grades
+     whatever tone was picked — grading first would hand LSWAP a colour that is not in its table. */
+  const px = (x, y, w, h, c) => { ctx.fillStyle = chromaOf((MIRROR && LSWAP[c]) || c); ctx.fillRect(x, y, w, h); };
   const blink = (period, phase) => ((now / period + (phase || 0)) % 1) < 0.5;
   const flick = (period, phase) => Math.sin(now / period + (phase || 0) * 7);
   const scrCols = ['#62ff9e', '#3fd07c', '#7adfb0', '#2fa863'];
@@ -8845,6 +8884,10 @@ const PropSprites = (() => {
   return {
     setCtx(c) { ctx = c; },
     setNow(t) { now = t; },
+    // v13 LOCAL COLOUR knob (see CHROMA above) — live-tunable like the CRT LAB's own dials, so the
+    // value is DIALLED on a real deck and copied back into the constant, never guessed.
+    setChroma(k) { CHROMA = (k == null ? 1 : +k) || 1; _cboost.clear(); },
+    getChroma: () => CHROMA,
     draw, drawOver, hasOver, drawSeatFront, CATALOG, CATS, spec, has, TILE,
     // live connector state (the world layer feeds these; the connector_portal sprite reads them)
     setConnectorState, pulseConnector,
