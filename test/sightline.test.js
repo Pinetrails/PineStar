@@ -87,7 +87,7 @@ A.ok(/function losClear\(ax, ay, bx, by\)/.test(src) && /return losWalk\(ax, ay,
   'losClear injects the LIVE bake: zoneGrid for floor, geo.canStep for the room seams');
 A.ok(/x >= 0 && y >= 0 && x < geo\.COLS && y < geo\.ROWS && geo\.zoneGrid\[geo\.idx\(x, y\)\] != null/.test(src),
   'the floor test BOUNDS-CHECKS before indexing — geo.idx is row-major with no range check, so idx(-1,y) aliases onto the previous ROW and would report void as floor');
-A.ok(/if \(!geo \|\| !geo\.zoneGrid \|\| typeof geo\.idx !== 'function' \|\| typeof geo\.canStep !== 'function'\) return true;/.test(src),
+A.ok(/typeof geo\.canStep !== 'function'\) return true;/.test(src),
   'a missing geometry shape FAILS OPEN — a geo gap must never freeze the social engine into permanent silence');
 const neighbors = A.fnBody(src, 'function neighborsOf(');
 A.ok(neighbors && neighbors.length < 2000, 'neighborsOf body scanned cleanly');
@@ -100,6 +100,14 @@ A.ok(/if \(!losClear\(ta\.x, ta\.y, tb\.x, tb\.y\)\) continue;/.test(border),
   'the BORDER meeting — which walked both bodies to their own side of a shared edge — now needs them to see across it');
 A.ok(border.indexOf('borderTileFor(ra, edge') < border.indexOf('losClear(ta.x'),
   'the sightline is checked on the RESOLVED tiles, after the edge geometry — never on the bodies\' start positions');
+/* The three beats that run their OWN body scan instead of neighborsOf need the sightline applied at
+   their own scan — the gate on neighborsOf cannot reach them. Missing one is how a "fixed" law leaks. */
+const ack = A.fnBody(src, 'function maybeAcknowledge(');
+A.ok(/if \(!bodiesInSight\(me, other\)\) continue;/.test(ack),
+  'the passing acknowledgement (its own scan, runs every tick) requires sightline — otherwise a body waves at someone in the next room');
+const greet = A.fnBody(src, 'function greetNewcomer(');
+A.ok(/if \(!bodiesInSight\(other, newBody\)\) continue;/.test(greet),
+  'THE WELCOME picks a greeter that can SEE the arrival — without this planHuddle\'s gate just fails the plan and a spawn in another room gets no welcome at all');
 const huddle = A.fnBody(src, 'function planHuddle(');
 A.ok(/if \(!losClear\(ta\.x, ta\.y, tb\.x, tb\.y\)\) return false;/.test(huddle),
   'a huddle pair must see each other (each tile is resolved in its OWN zone, so they could straddle a wall)');
@@ -109,7 +117,7 @@ A.ok(/if \(!losClear\(ta\.x, ta\.y, tb\.x, tb\.y\)\) return false;/.test(huddle)
    which is the whole reason bodies interpenetrated. The resolve therefore has to run after movement,
    every frame, at the END of the tick — not inside any one body's stepper. */
 const sep = A.fnBody(src, 'function separateBodies(');
-A.ok(sep && sep.length < 4000, 'separateBodies body scanned cleanly');
+A.ok(sep && sep.length < 5500, 'separateBodies body scanned cleanly');
 A.ok(/const PERSONAL_TILES = 0\.8;/.test(src), 'personal space is UNDER one tile, so adjacent-tile beats (huddle/border/the gathering ring) are untouched by construction');
 const tickFn = A.fnBody(src, 'function tick(dt, now)');
 A.ok(/separateBodies\(now\);\s*\n\s*\}$/.test(tickFn),
@@ -131,6 +139,14 @@ A.ok(/if \(!geo\.walkable\(t\.x, t\.y, blocked\)\) return false;/.test(nudge),
   'CONTAINMENT: a push that would leave the floor is DROPPED, never clamped — separation can put nobody in a wall');
 A.ok(/const SEP_JAM_MS = 2500;/.test(src) && /seizeFromIdle\(b\);/.test(sep),
   'a walker shoved continuously (its destination taken) gives up on the leg and re-decides — no push/counter-push standoff');
+A.ok(/if \(b\.goal === 'social' \|\| b\.goal === 'gather'\) \{ b\.sepSince = 0; continue; \}/.test(sep),
+  'but NEVER a body mid-encounter: seizeFromIdle leaves b.social set, and encounterBroken tests exactly `social == null`, so releasing one here would half-kill the beat while it holds the single station slot');
+// the claim is module-level state held by a body reference — the same shape as occupiedSeats, and the
+// same leak: a body dropped by spawn()/loadStation() would hold the slot until its 45s expiry.
+A.ok((src.match(/beltWatch = null;/g) || []).length >= 3,
+  'the belt-watch claim is cleared on BOTH session resets (spawn + loadStation), not only lazily expired');
+A.ok(/if \(!geo \|\| !geo\.zoneGrid \|\| !geo\.COLS \|\| !geo\.ROWS \|\|/.test(src),
+  'the fail-open guard covers COLS/ROWS too — the bounds test reads them, and `x < undefined` is false, which would silence the whole social engine instead of failing open');
 
 /* ---- WIRING (3): the conveyor is bounded ----
    Watching a belt was the one ambient-curiosity target with unlimited supply: the other candidate is

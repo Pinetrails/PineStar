@@ -568,6 +568,7 @@ const World = (() => {
     if (unsub) { unsub(); unsub = null; }
     station = st; geo = null; cache = null; geoDirty = true; bakeDirty = true; fitNeeded = true;
     novelty = []; seenProps = null; seenBelts = null;   // re-learn the scene from scratch (no cross-station novelty)
+    beltWatch = null;                                   // ...and the belt-watch claim: this floor's belts are gone, so a claim on them is a ghost holding the slot
     clearDeferredShips();                               // a crate waiting on the OLD floor's handoff must never land on this one
     dockLineWork.clear();
     propFoot = new Map(); pendingMourn = null;          // forget where things stood (no cross-station grief)
@@ -979,6 +980,7 @@ const World = (() => {
                              // dropped — so without this a body lounging at switch time leaks its seatKey forever, and a
                              // reissued prop id (worldmodel _nid reseeds low on a fresh station) collides → a brand-new
                              // couch reads "full" over a physically EMPTY cushion. spawn()-only, same rationale as below.
+    beltWatch = null;        // the belt-watch claim is the same shape of module-level claim, held by a body we just dropped
     // …and with it every other scrap of the PREVIOUS agent's session that lives on this page. These reset
     // here (the per-agent hero (re)spawn), NOT in loadStation — loadStation also runs on a same-agent REFIT,
     // where the running economy/belts MUST persist. spawn() runs only on wake/resume, so a refit is untouched.
@@ -1810,7 +1812,10 @@ const World = (() => {
   }
   /* LOS-PURE-GEOMETRY-END */
   function losClear(ax, ay, bx, by) {
-    if (!geo || !geo.zoneGrid || typeof geo.idx !== 'function' || typeof geo.canStep !== 'function') return true;
+    // COLS/ROWS are in the guard on purpose: the bounds test below reads them, and `x < undefined` is
+    // FALSE — a geo without them would make every tile "not floor" and silence the whole social engine.
+    // The fail-open promise is only kept if the guard covers everything the test touches.
+    if (!geo || !geo.zoneGrid || !geo.COLS || !geo.ROWS || typeof geo.idx !== 'function' || typeof geo.canStep !== 'function') return true;
     // BOUNDS FIRST, always: geo.idx is a flat row-major index with no range check, so idx(-1, y) and
     // idx(COLS, y) ALIAS onto the neighbouring ROW — an off-grid coordinate would read a real zone id
     // and report void as floor. Bodies are always on the grid so this can't bite in play, but a probe
@@ -1940,6 +1945,12 @@ const World = (() => {
     for (const b of list) {
       if (!shoved.has(b)) { b.sepSince = 0; continue; }
       if (b.state !== 'walk') { b.sepSince = 0; continue; }
+      /* NOT a body mid-encounter. seizeFromIdle clears `goal` but deliberately does NOT clear `b.social`
+         (nothing else needs it to), and encounterBroken tests exactly `social == null` — so releasing a
+         social/gather walker here would leave the beat undetectably half-dead, holding the single station
+         slot until its hard timeout. It also does not need releasing: stepSocial/stepGather re-path every
+         tick and both beats already carry their own hard timeout, so a jam there is bounded anyway. */
+      if (b.goal === 'social' || b.goal === 'gather') { b.sepSince = 0; continue; }
       if (!b.sepSince) { b.sepSince = now; continue; }
       if (now - b.sepSince < SEP_JAM_MS) continue;
       b.sepSince = 0;
@@ -2845,6 +2856,7 @@ const World = (() => {
       if (other.state !== 'walk') continue;                                // it must be PASSING — this is not a standing salute
       if (other.working || other.social) continue;
       if (Math.hypot(other.px - me.px, other.py - me.py) > rPx) continue;
+      if (!bodiesInSight(me, other)) continue;                             // ...and it must be passing IN VIEW — this beat has its own scan, so the wall-aware sightline (see losClear) has to be applied here too, or a body waves at someone in the next room
       me.ackCd = now + U.irnd(ACK_CD_MIN, ACK_CD_MAX);
       other.ackCd = Math.max(other.ackCd || 0, now + U.irnd(ACK_CD_MIN, ACK_CD_MAX));   // don't let the pair volley
       if (!U.chance(0.5)) return false;                                    // half the time it just doesn't look up
@@ -7826,6 +7838,7 @@ const World = (() => {
         if (!other || other === newBody || other.unplaced) continue;
         self = other;                                                     // socialEligible/zoneFor read the CURRENT body
         if (!socialEligible(other, now)) continue;
+        if (!bodiesInSight(other, newBody)) continue;                     // greeter must be able to SEE the arrival: this scan is its own (not neighborsOf), and planHuddle's sightline gate would otherwise just fail the plan and produce no welcome at all rather than picking someone who can
         const d = Math.hypot(other.px - newBody.px, other.py - newBody.py);
         if (!best || d < best.d) best = { body: other, d };
       }
