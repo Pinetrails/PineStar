@@ -502,6 +502,7 @@ test/zones.test.js
 test/idle-life-regressions.test.js
 test/social-border.test.js
 test/social-trio.test.js
+test/sightline.test.js
 test/agent-affinity.test.js
 test/agent-affinity-weight.test.js
 test/station-gathering.test.js

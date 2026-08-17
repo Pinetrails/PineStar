@@ -3405,23 +3405,38 @@ const StationBake = (() => {
      pixels none of them own: raw transparent void inside the sliver, where the space backdrop
      shines through a gap that the eye reads as a hole punched in the wall.
 
-     So: any void pixel enclosed between hull silhouettes within ~5 tiles — vertically OR
+     So: any void pixel enclosed between hull silhouettes within GAP — vertically OR
      horizontally — is an alley the camera cannot see the sky through, and it fills with flat
      near-black shadow, composited UNDER everything already painted. The skirts, arcs and crowns
      then read as layered walls standing in front of a dark shaft, which is exactly what the
      geometry says they are. Open concave coastline (a run unbounded on either side, or wider
      than the window) keeps its backdrop.
 
+     ---- AN ALLEY IS A SLIVER, NOT A CHANNEL YOU COULD HAVE WALKED DOWN (2026-08-17) ----
+     ⛔⛔⛔ Andrew, circling the void between two rooms after building a hallway between them and
+     deleting it: "it went black where i circled." Nothing was stale — the delete bakes
+     pixel-identical to never having built the hallway (0 of 582,336 px differ, measured). This
+     pass was painting the hole. `GAP` alone admitted every footprint gap from 2 to 7 floor
+     tiles; `MIN_HALL` is 2, so EVERY deleted hallway landed inside the alley window and came
+     back as a flat #0c0b09 slab with no stars behind it.
+
+     The root shape this pass was built for was measured at the time and written down:
+     footprints **1–2 tiles apart**. Wider than that is not exterior dressing colliding in a
+     sliver, it is a genuine opening between two modules, and the backdrop belongs in it. So
+     `GAP` still says which void a hull can BOUND, and `NARROW` now says which of it is close
+     enough to be an alley at all. See NARROW for why the second test needs its own silhouette.
+
      Chunk parity: the silhouette canvas carries a margin of the full window + pad, so a
      footprint just outside a chunk's viewport still bounds runs inside it; contexts that cannot
      read pixels back (the headless canvas mock) skip the pass on BOTH bake paths, exactly like
-     ditherLight. */
+     ditherLight. Both scans read that same margin and NARROW < GAP, so the added test is bounded
+     identically and chunk↔monolithic parity is unaffected. */
   function bakeInterstitialShadow(b) {
     // capability check on a 1px canvas BEFORE the real allocation: the chunk test's canvas mock
     // counts every allocation against its chunk-size bound, and this pass skips under the mock
     // anyway — it must skip before allocating, not after.
     if (typeof canvas(1, 1).getContext('2d').getImageData !== 'function') return;
-    const GAP = T * 5 + pad * 2;   // bounded void up to ~5 floor tiles wide is an alley, not sky
+    const GAP = T * 5 + pad * 2;   // how far apart two hulls can be and still bound an alley run
     const M = GAP + pad;
     const w = CW + 2 * M, h = CH + 2 * M;
     const sil = canvas(w, h);
@@ -3435,29 +3450,60 @@ const StationBake = (() => {
     // jagged gap between the two rooms' side bands while the alley behind it filled.
     const sw = Math.max(0, Math.round(WALL.side) - pad);
     for (const r of G.allRects) g.fillRect(r.x1 * T - pad - sw, r.y1 * T - pad, (r.x2 - r.x1 + 1) * T + pad * 2 + sw * 2, (r.y2 - r.y1 + 1) * T + pad * 2);
+    /* READ THE SQUARE SILHOUETTE FIRST — it is what says how far apart two hulls really are.
+       See NARROW below: the chamfer erase that follows removes silhouette, so a run measured
+       after it can be tens of px longer than the footprint gap that produced it. */
+    let sq;
+    try { sq = g.getImageData(0, 0, w, h).data; } catch (e) { return; }
     // the same all-chamfers erase the skirt silhouettes take, so the shadow's bounds follow the
     // rounded corners and the fill reaches into the wedge the erase cut out of a neighbour's skirt
     for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(g, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, HR); }
     let img;
     try { img = g.getImageData(0, 0, w, h); } catch (e) { return; }
     const d = img.data;
-    const mark = new Uint8Array(w * h);
-    for (let x = 0; x < w; x++) {          // vertical runs of void bounded above AND below
-      let last = -1;
-      for (let y = 0; y < h; y++) {
-        if (!d[(((y * w) + x) << 2) + 3]) continue;
-        if (last >= 0 && y - last > 1 && y - last - 1 <= GAP) for (let k = last + 1; k < y; k++) mark[k * w + x] = 1;
-        last = y;
+    /* runs of void bounded on both sides within `win`, marked into `out`; `src` is the alpha
+       source (square or rounded silhouette) the bounds are measured against. */
+    const scanRuns = (src, win, out) => {
+      for (let x = 0; x < w; x++) {                        // vertical: bounded above AND below
+        let last = -1;
+        for (let y = 0; y < h; y++) {
+          if (!src[(((y * w) + x) << 2) + 3]) continue;
+          if (last >= 0 && y - last > 1 && y - last - 1 <= win) for (let k = last + 1; k < y; k++) out[k * w + x] = 1;
+          last = y;
+        }
       }
-    }
-    for (let y = 0; y < h; y++) {          // horizontal runs of void bounded left AND right
-      let last = -1;
-      const row = y * w;
-      for (let x = 0; x < w; x++) {
-        if (!d[((row + x) << 2) + 3]) continue;
-        if (last >= 0 && x - last > 1 && x - last - 1 <= GAP) for (let k = last + 1; k < x; k++) mark[row + k] = 1;
-        last = x;
+      for (let y = 0; y < h; y++) {                        // horizontal: bounded left AND right
+        let last = -1;
+        const row = y * w;
+        for (let x = 0; x < w; x++) {
+          if (!src[((row + x) << 2) + 3]) continue;
+          if (last >= 0 && x - last > 1 && x - last - 1 <= win) for (let k = last + 1; k < x; k++) out[row + k] = 1;
+          last = x;
+        }
       }
+    };
+    /* ⛔⛔⛔ NARROWNESS IS MEASURED ON THE **SQUARE** SILHOUETTE. This is the whole fix, and the
+       first two attempts died on it. A gap of Gs floor tiles leaves a void run of `G*T - 2*pad`
+       px — G=2 → 10, G=3 → 22 — so a window anywhere in [10, 21] separates the 1–2 tile root
+       shape from a walkable channel. But measured on the ROUNDED silhouette those numbers are a
+       fiction: `eraseSpandrel` cuts radius HR out of every chamfer, so rows through a corner in
+       a genuine 2-tile sliver run 10 + up to 2*HR px and fall straight out of the window. Doing
+       exactly that opened a star-lit crack down the middle of the 08-11 junction — the very
+       "hole punched in the wall" this pass exists to close. The square stamp is the footprint
+       geometry with nothing rounded away, so it answers the question actually being asked.
+       (The other blind alley, for the record: requiring BOTH axes to bound a pixel. The 08-11
+       junction's sliver is itself a channel open to space at top and bottom — just a narrow
+       one — so an AND rule erases it even harder. Enclosure is not the discriminator; WIDTH is.) */
+    const NARROW = T + pad;
+    const mark = new Uint8Array(w * h), narrow = new Uint8Array(w * h);
+    scanRuns(d, GAP, mark);          // the alley candidates, exactly as before
+    scanRuns(sq, NARROW, narrow);    // ...of which only the genuinely narrow ones survive
+    for (let p = 0, q = 3; p < mark.length; p++, q += 4) {
+      if (!mark[p]) continue;
+      // a chamfer wedge is opaque in the square stamp and void in the rounded one: it is a corner
+      // bitten out of a hull that `mark` already vouched for as enclosed, so it keeps its backing
+      // (a coastline chamfer is not enclosed, never enters `mark`, and so still shows sky).
+      if (!narrow[p] && !sq[q]) mark[p] = 0;
     }
     const out = canvas(CW, CH), og = out.getContext('2d');
     const oi = og.createImageData(CW, CH), od = oi.data;

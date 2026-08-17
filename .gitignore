@@ -56,6 +56,8 @@ src-tauri/binaries/
 # dev/rotshot.mjs + dev/catshot.mjs contact sheets (regenerated art proofs). Never committed.
 rotshot/
 catshot/
+# dev/bodyphysics.mjs output (samples.json + its own seeded workspace + chrome profile). Never committed.
+.bodyphysics*/
 # qa:summon-delegate journey scratch (seeded workspace + its own chrome profile). Never committed.
 .summon-journey/
 .qa_tmp/

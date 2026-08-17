@@ -189,6 +189,27 @@ const World = (() => {
      FORGET_MS, so a thing ignored for a while becomes worth a second look. */
   const FORGET_MS = 150000;
   let forgetAt = 0;
+  /* ---------- THE CONVEYOR IS NOT A SPECTATOR SPORT (2026-08-17, Andrew: "they all go to the conveyor
+     if one is spawned, which is not one of the idle wandering activities") ----------
+     Watching a belt go by is the ONE ambient-curiosity target with unlimited supply. planPOI's other
+     candidate — study your own workstation — is capped by habituation (seenCount < 4) and by ownership
+     (your desk only), so within a few minutes of a station's life the belt is the only thing an idle
+     body can ever pick, planPOI is consulted TWICE per idle re-decide (the bored branch and the
+     fallback), and every body runs the same engine. Spawn one agent and the routing plan lays belt to
+     its bay: the candidate switches on for the whole crew at once and the floor drains toward the line.
+     Two bounds, no new behaviour: ONE watcher station-wide at a time (a self-expiring claim, so nothing
+     has to remember to release it), and a long per-body cooldown once a body has had its look. */
+  const BELT_WATCH_CD_MIN = 180000, BELT_WATCH_CD_MAX = 360000;   // per body, once it has watched the line
+  let beltWatch = null;             // { body, until } — the single live claim; validated lazily, never released by hand
+  function beltWatchTaken(now) {
+    if (!beltWatch) return false;
+    const b = beltWatch.body;
+    // the claim is only live while the claimant is still actually standing there watching. `until` is the
+    // belt-and-suspenders: a body dropped from crew mid-watch keeps goal==='watch' forever, and the claim
+    // must not outlive it. Either failure just clears the slot for whoever asks next.
+    if (!b || b.unplaced || b.goal !== 'watch' || now > beltWatch.until) { beltWatch = null; return false; }
+    return true;
+  }
   function decayHabits(now) {
     if (now < forgetAt) return;
     forgetAt = now + FORGET_MS;
@@ -547,6 +568,7 @@ const World = (() => {
     if (unsub) { unsub(); unsub = null; }
     station = st; geo = null; cache = null; geoDirty = true; bakeDirty = true; fitNeeded = true;
     novelty = []; seenProps = null; seenBelts = null;   // re-learn the scene from scratch (no cross-station novelty)
+    beltWatch = null;                                   // ...and the belt-watch claim: this floor's belts are gone, so a claim on them is a ghost holding the slot
     clearDeferredShips();                               // a crate waiting on the OLD floor's handoff must never land on this one
     dockLineWork.clear();
     propFoot = new Map(); pendingMourn = null;          // forget where things stood (no cross-station grief)
@@ -958,6 +980,7 @@ const World = (() => {
                              // dropped — so without this a body lounging at switch time leaks its seatKey forever, and a
                              // reissued prop id (worldmodel _nid reseeds low on a fresh station) collides → a brand-new
                              // couch reads "full" over a physically EMPTY cushion. spawn()-only, same rationale as below.
+    beltWatch = null;        // the belt-watch claim is the same shape of module-level claim, held by a body we just dropped
     // …and with it every other scrap of the PREVIOUS agent's session that lives on this page. These reset
     // here (the per-agent hero (re)spawn), NOT in loadStation — loadStation also runs on a same-agent REFIT,
     // where the running economy/belts MUST persist. spawn() runs only on wake/resume, so a refit is untouched.
@@ -1748,6 +1771,65 @@ const World = (() => {
   // an in-place beat). When Zones is absent the wrapper returns null; treat that as "uncaged" so a
   // module load failure can never freeze the agent — true(in-zone) for every tile.
   function tileInZone(zone, tx, ty) { return (typeof Zones === 'undefined') ? true : Zones.inZone(zone, tx, ty); }
+
+  /* ---------- SIGHTLINE: A WALL IS A WALL (2026-08-17, Andrew: "they talk to each other through walls")
+     Every cross-body beat — the glance, the huddle, the border meeting — resolved "can these two see
+     each other?" as PROXIMITY plus ZONE MEMBERSHIP, and a zone (zones.js) is a 14-tile Chebyshev radius
+     around a desk intersected with the station's floor rects. A radius does not know about plaster: two
+     bodies three tiles apart in DIFFERENT ROOMS both sit inside each other's radius and over floor, so
+     they read as in sight with a wall between them. The D3 border meeting then made it structural rather
+     than accidental — it walks both bodies to their own side of a shared room edge and has them converse
+     across it, which on any real floor is across the wall.
+
+     losClear is the honest test and it is the same shape worldmodel's own path-smoother uses: walk the
+     tile line between the two feet; every touched tile must be REAL FLOOR (zoneGrid is null on a wall or
+     on void) and every hop must satisfy geo.canStep, so a room boundary without a door — and a room
+     sealed by an airlock — blocks sight exactly as it already blocks walking.
+
+     PROPS ARE DELIBERATELY NOT OCCLUDERS. `walkable` would also fail on a couch, and a couch between two
+     agents does not stop a conversation. This asks one question only: is there a wall in the way.
+
+     Fail-open on a missing module shape, exactly like tileInZone above — a geometry gap must never be
+     able to freeze the social engine into permanent silence. */
+  /* LOS-PURE-GEOMETRY-BEGIN — losWalk is PURE (Math.* + its own params; both the floor test and the
+     seam test are INJECTED), so test/sightline.test.js extracts THIS marked block from the source and
+     executes it headlessly — the shipped walk is what's under test, not a copy. Same discipline as the
+     D3-PURE-GEOMETRY block below. Keep it self-contained. */
+  function losWalk(ax, ay, bx, by, floorFn, stepFn) {
+    if (!floorFn(ax, ay) || !floorFn(bx, by)) return false;
+    let x = ax, y = ay;
+    // Each iteration steps the DOMINANT remaining axis by one tile, so the walk hugs the straight line
+    // (a supercover staircase — no tile the line crosses is jumped over) and |dx|+|dy| falls by exactly
+    // one every pass, which is what makes the loop provably terminate.
+    for (let guard = Math.abs(bx - ax) + Math.abs(by - ay); guard > 0; guard--) {
+      const dx = bx - x, dy = by - y;
+      let nx = x, ny = y;
+      if (Math.abs(dx) >= Math.abs(dy)) nx = x + Math.sign(dx); else ny = y + Math.sign(dy);
+      if (!floorFn(nx, ny) || !stepFn(x, y, nx, ny)) return false;
+      x = nx; y = ny;
+    }
+    return x === bx && y === by;
+  }
+  /* LOS-PURE-GEOMETRY-END */
+  function losClear(ax, ay, bx, by) {
+    // COLS/ROWS are in the guard on purpose: the bounds test below reads them, and `x < undefined` is
+    // FALSE — a geo without them would make every tile "not floor" and silence the whole social engine.
+    // The fail-open promise is only kept if the guard covers everything the test touches.
+    if (!geo || !geo.zoneGrid || !geo.COLS || !geo.ROWS || typeof geo.idx !== 'function' || typeof geo.canStep !== 'function') return true;
+    // BOUNDS FIRST, always: geo.idx is a flat row-major index with no range check, so idx(-1, y) and
+    // idx(COLS, y) ALIAS onto the neighbouring ROW — an off-grid coordinate would read a real zone id
+    // and report void as floor. Bodies are always on the grid so this can't bite in play, but a probe
+    // that scans past the station's edge is exactly how a silent aliasing bug gets shipped.
+    const floor = (x, y) => (x >= 0 && y >= 0 && x < geo.COLS && y < geo.ROWS && geo.zoneGrid[geo.idx(x, y)] != null);
+    return losWalk(ax, ay, bx, by, floor, geo.canStep);
+  }
+  // the same test between two BODIES, on their logical foot tiles (a seated body still carries px/py there)
+  function bodiesInSight(a, b) {
+    if (!a || !b) return false;
+    const ta = tileOf(a.px, a.py), tb = tileOf(b.px, b.py);
+    return losClear(ta.x, ta.y, tb.x, tb.y);
+  }
+
   function movementBlockers(body, base) {
     const s = new Set(base || []);
     const mark = (b) => {
@@ -1765,6 +1847,116 @@ const World = (() => {
   }
   function tileBlockedFor(blockers, tx, ty) {
     return blockers && blockers.has(tx + ',' + ty);
+  }
+
+  /* ---------- BODIES ARE SOLID (2026-08-17, Andrew: "the agents walk through one another") ----------
+     They did, and movementBlockers above is exactly why it LOOKED handled: setPathTo plans around the
+     other bodies' tiles, but that is a ONE-SHOT SNAPSHOT taken the instant a path is plotted. Nothing
+     re-reads it while the legs run, so two bodies crossing the same corridor — or one walking onto a
+     tile another has since stopped on — simply interpenetrate, and at T=12 with a ~35px sprite the two
+     merge into a single smear.
+
+     This is a SOFT separation, not a hard collision, and that is deliberate. The engine has no steering:
+     a hard block would stand two bodies nose to nose in a corridor with no rule that resolves it, and it
+     would fight arrive()'s snap-to-target. Instead, once every body has moved for the frame, any pair
+     closer than PERSONAL_TILES is pushed apart along the line between them, each taking half — so they
+     visibly squeeze PAST one another instead of through.
+
+     What is exempt, and why:
+       · a SEATED body (sitting/seated — desk chair, couch cushion, bed) is an ANCHOR. Its pose is bound
+         to a prop's geometry and the cushion swap is draw-time only, so nudging it would slide the
+         sprite off its own seat. It pushes; it is never pushed.
+     A first cut also exempted any body on a 'social'/'gather' goal, reasoning that those beats own their
+     own spacing. That was WRONG and the live probe caught it: a social beat owns the tiles it ENDS on,
+     not the walk in, so two bodies converging on a huddle were exempt from separation for the entire
+     approach — the exact moment they cross. The exemption is unnecessary anyway, because PERSONAL_TILES
+     is UNDER one tile: every beat that stands two bodies on ADJACENT tiles (huddle, border, the
+     gathering ring) is already untouched by construction. Only real overlap is ever resolved.
+
+     Containment is a law here (test/crew-containment.test.js): a nudge that would put a body's feet on
+     a tile it may not stand on is dropped, never clamped, so separation can push nobody into a wall. */
+  const PERSONAL_TILES = 0.8;      // min centre-to-centre spacing, in tiles. < 1 so adjacent-tile beats never fight it.
+  const SEP_JAM_MS = 2500;         // continuously shoved while walking for this long → give up on the leg and re-decide
+  const SEP_PASSES = 4;            // relaxation sweeps per frame — a pile of three needs more than one pass to settle
+  function nudgeBody(b, dx, dy) {
+    const nx = b.px + dx, ny = b.py + dy;
+    const t = tileOf(nx, ny);
+    if (!geo.walkable(t.x, t.y, blocked)) return false;   // would leave the floor / enter a blocking prop — drop the push
+    b.px = nx; b.py = ny;
+    return true;
+  }
+  /* SLIDE, don't stick. A push straight away from the partner can be refused by containment when the
+     body is standing against a wall or a desk — and a refused push leaves the overlap unresolved
+     forever, which is the bug wearing a hat. So fall back to the two single-axis components: a body
+     pinned against a wall can still move ALONG it. One axis only, never both in sequence, or the body
+     would travel further than the overlap it is resolving. */
+  function pushApart(b, dx, dy) {
+    if (nudgeBody(b, dx, dy)) return true;
+    if (dx && nudgeBody(b, dx, 0)) return true;
+    if (dy && nudgeBody(b, 0, dy)) return true;
+    return false;
+  }
+  function separateBodies(now) {
+    if (!geo || typeof geo.walkable !== 'function') return;
+    const list = [];
+    if (agent && !agent.unplaced) list.push(agent);
+    for (const b of crew) if (b && !b.unplaced) list.push(b);
+    if (list.length < 2) return;
+    const R = PERSONAL_TILES * T, R2 = R * R;
+    const anchored = b => !!(b.sitting || b.seated);   // seated only — see the note above: a walk-in is exactly when they cross
+    const shoved = new Set();
+    /* RELAX, don't single-shot. Resolving pair by pair is only exact for ONE pair: in a pile of three
+       (which a huddle walk-in routinely makes) fixing B–C re-breaks A–B, so a single sweep leaves the
+       cluster short of the law. A handful of sweeps settles it inside the same frame; the early-out
+       means the overwhelmingly common case — nobody overlapping at all — still costs exactly one
+       O(N²) scan over a handful of bodies. */
+    for (let pass = 0; pass < SEP_PASSES; pass++) {
+      let touched = false;
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const a = list[i], b = list[j];
+          const pa = anchored(a), pb = anchored(b);
+          if (pa && pb) continue;                       // two anchored bodies: neither may move, leave them be
+          let dx = b.px - a.px, dy = b.py - a.py, d2 = dx * dx + dy * dy;
+          if (d2 >= R2) continue;
+          if (d2 < 1e-6) { dx = ((i + j) & 1) ? 0 : 1; dy = ((i + j) & 1) ? 1 : 0; d2 = 1; }   // exactly coincident: a STABLE per-pair axis, never RNG (determinism, I3)
+          const d = Math.sqrt(d2), ux = dx / d, uy = dy / d, push = (R - d) / 2;
+          // an anchored partner hands its whole half to the body that can actually move
+          const sa = pb ? 2 : (pa ? 0 : 1), sb = pa ? 2 : (pb ? 0 : 1);
+          const movedA = !!sa && pushApart(a, -ux * push * sa, -uy * push * sa);
+          const movedB = !!sb && pushApart(b, ux * push * sb, uy * push * sb);
+          // ...and so does a partner whose OWN push containment refused. Without this the pair keeps its
+          // overlap indefinitely whenever one of them is standing against a wall — the live soak found a
+          // pair holding 9.15px against a 9.6px law for exactly this reason.
+          if (movedA && !movedB && sa === 1) pushApart(a, -ux * push, -uy * push);
+          if (movedB && !movedA && sb === 1) pushApart(b, ux * push, uy * push);
+          if (movedA) { shoved.add(a); touched = true; }
+          if (movedB) { shoved.add(b); touched = true; }
+        }
+      }
+      if (!touched) break;   // nothing overlapped this sweep — the floor is already legal
+    }
+    /* JAM RELEASE. A walker whose destination another body has since parked on would otherwise push in
+       and be pushed back forever (arrive() never fires, the legs cycle in place). Continuous shoving
+       across SEP_JAM_MS means the leg is not going to complete: drop the path so the next tick re-decides
+       — the same self-heal shape the stuck-walker guards in tick/crewEngineStep already use. A body that
+       merely squeezed past clears its stamp the first frame it isn't touched, so this only ever fires on
+       a genuine standoff. */
+    for (const b of list) {
+      if (!shoved.has(b)) { b.sepSince = 0; continue; }
+      if (b.state !== 'walk') { b.sepSince = 0; continue; }
+      /* NOT a body mid-encounter. seizeFromIdle clears `goal` but deliberately does NOT clear `b.social`
+         (nothing else needs it to), and encounterBroken tests exactly `social == null` — so releasing a
+         social/gather walker here would leave the beat undetectably half-dead, holding the single station
+         slot until its hard timeout. It also does not need releasing: stepSocial/stepGather re-path every
+         tick and both beats already carry their own hard timeout, so a jam there is bounded anyway. */
+      if (b.goal === 'social' || b.goal === 'gather') { b.sepSince = 0; continue; }
+      if (!b.sepSince) { b.sepSince = now; continue; }
+      if (now - b.sepSince < SEP_JAM_MS) continue;
+      b.sepSince = 0;
+      seizeFromIdle(b);                                     // drop the in-flight idle goal + any seat claim it had reserved
+      b.pathPts = null; b.target = null; b.state = 'idle'; b.idleUntil = now + U.irnd(300, 900);
+    }
   }
 
   /* ---------- crew movement helper ----------
@@ -2542,19 +2734,22 @@ const World = (() => {
   // Every body = the hero `agent` + the crew[] array. Bounded O(N) (hero + a handful of crew).
   const allBodies = () => (agent ? [agent].concat(crew) : crew.slice());
 
-  // neighborsOf — READ-ONLY. Returns the OTHER bodies within `radius` tiles of `body` AND in a basic
-  // sightline (same zone — the containment-aware "can see" test; reads px/py/tile only, mutates NOTHING).
+  // neighborsOf — READ-ONLY. Returns the OTHER bodies within `radius` tiles of `body`, inside the
+  // observer's own zone (containment) AND with a real WALL-AWARE SIGHTLINE to it (losClear — see the
+  // block above tileInZone: zone membership alone put two bodies in different rooms "in sight" of each
+  // other through the wall between them). Reads px/py/tile only, mutates NOTHING.
   // Skips: itself, unplaced bodies. N is tiny, so an O(N) scan gated to the idle cadence is cheap (K4).
   function neighborsOf(body, radius) {
     const out = [];
     if (!body || body.unplaced) return out;
     const rPx = radius * T;                       // compare in pixels (px/py are the canonical coords)
-    const zone = zoneFor(body);                   // basic sightline = the observer's own zone (read-only)
+    const zone = zoneFor(body);                   // containment half: the observer's own roam area (read-only)
     for (const other of allBodies()) {
       if (other === body || !other || other.unplaced) continue;
       if (Math.hypot(other.px - body.px, other.py - body.py) > rPx) continue;   // proximity (deterministic)
       const ot = tileOf(other.px, other.py);      // logical tile (seated bodies still carry px/py here)
-      if (!tileInZone(zone, ot.x, ot.y)) continue;   // sightline: neighbor stands within the observer's zone
+      if (!tileInZone(zone, ot.x, ot.y)) continue;   // containment: neighbor stands within the observer's zone
+      if (!bodiesInSight(body, other)) continue;     // sightline: and there is no WALL between the two of them
       out.push(other);
     }
     return out;
@@ -2675,6 +2870,7 @@ const World = (() => {
       if (other.state !== 'walk') continue;                                // it must be PASSING — this is not a standing salute
       if (other.working || other.social) continue;
       if (Math.hypot(other.px - me.px, other.py - me.py) > rPx) continue;
+      if (!bodiesInSight(me, other)) continue;                             // ...and it must be passing IN VIEW — this beat has its own scan, so the wall-aware sightline (see losClear) has to be applied here too, or a body waves at someone in the next room
       me.ackCd = now + U.irnd(ACK_CD_MIN, ACK_CD_MAX);
       other.ackCd = Math.max(other.ackCd || 0, now + U.irnd(ACK_CD_MIN, ACK_CD_MAX));   // don't let the pair volley
       if (!U.chance(0.5)) return false;                                    // half the time it just doesn't look up
@@ -3417,6 +3613,10 @@ const World = (() => {
     // b aims for a tile adjacent to a's target, still in b's own zone (so they end up ~1 tile apart, facing)
     const tb = nearestWalkableInZone(zB, ta.x, ta.y, cb, 4, ta);   // exclude a's exact tile
     if (!tb) return false;
+    // ...and the two meeting tiles must SEE each other (2026-08-17). Each tile is resolved inside its own
+    // body's zone, so when the pair straddles a room boundary the "adjacent" tiles can land on opposite
+    // sides of the wall — a huddle held through the plaster. No sightline, no huddle.
+    if (!losClear(ta.x, ta.y, tb.x, tb.y)) return false;
     const planA = { phase: 'walk', tx: ta.x, ty: ta.y, faceTile: 'partner' };
     const planB = { phase: 'walk', tx: tb.x, ty: tb.y, faceTile: 'partner' };
     // ---- the third body (W5) ----
@@ -3434,7 +3634,8 @@ const World = (() => {
       const cc = tileOf(c.px, c.py);
       // a third tile near the SAME meeting point, in c's own zone (G3), distinct from both taken tiles.
       const tc = nearestWalkableInZone(zoneFor(c), ta.x, ta.y, cc, 4, ta, tb);
-      if (tc) extras.push({ body: c, plan: { phase: 'walk', tx: tc.x, ty: tc.y, faceTile: 'partner' } });
+      // the third body has to see BOTH of the other two — a trio round a corner is one body talking to a wall
+      if (tc && losClear(tc.x, tc.y, ta.x, ta.y) && losClear(tc.x, tc.y, tb.x, tb.y)) extras.push({ body: c, plan: { phase: 'walk', tx: tc.x, ty: tc.y, faceTile: 'partner' } });
       else huddleStats.trioTileFail++;
     }
     if (extras.length) huddleStats.trioFired++;
@@ -3513,6 +3714,14 @@ const World = (() => {
       const tb = borderTileFor(rb, edge, tileOf(b.px, b.py), walk);
       if (!ta || !tb) continue;
       if (!tileInZone(zA, ta.x, ta.y) || !tileInZone(zB, tb.x, tb.y)) continue;   // belt-and-suspenders containment
+      /* AND THEY MUST BE ABLE TO SEE EACH OTHER ACROSS THE LINE (2026-08-17). This beat is the reason
+         "they talk through walls" was a designed behaviour and not a near-miss: two rects that ABUT are
+         separated on a real floor by the wall between them, so both bodies dutifully walked to their own
+         side of it and held a conversation through the plaster. The shared edge is still the right idea —
+         it is just only a MEETING when the two tiles can actually see one another, which on a walled
+         boundary means the pair resolved onto a doorway. Everything else is skipped, and the loop simply
+         tries the next candidate. */
+      if (!losClear(ta.x, ta.y, tb.x, tb.y)) continue;
       return startEncounter(a, b, 'border', now,
         { phase: 'walk', tx: ta.x, ty: ta.y, faceTile: 'partner' },
         { phase: 'walk', tx: tb.x, ty: tb.y, faceTile: 'partner' });
@@ -4241,8 +4450,12 @@ const World = (() => {
     const zone = zoneFor(self);   // P1: study/watch only kit reachable inside the zone
     const cands = [];
     const belts = (geo && geo.belts) || [];
-    // pick a belt tile that is itself in-zone (the body stands BESIDE it, but an in-zone belt keeps the approach in-zone)
-    const inBelts = belts.filter(b => tileInZone(zone, b.x, b.y));
+    // pick a belt tile that is itself in-zone (the body stands BESIDE it, but an in-zone belt keeps the approach in-zone).
+    // BOUNDED (see THE CONVEYOR IS NOT A SPECTATOR SPORT, top of file): only if this body is off its own
+    // belt cooldown AND nobody else currently holds the station's single watcher claim. Both checks are
+    // reads — the claim/cooldown are ARMED below, only once a watch actually commits.
+    const beltOk = now >= (self.beltWatchCd || 0) && !beltWatchTaken(now);
+    const inBelts = beltOk ? belts.filter(b => tileInZone(zone, b.x, b.y)) : [];
     if (inBelts.length) { const b = inBelts[U.irnd(0, inBelts.length - 1)]; cands.push({ kind: 'watch', key: 'belt:' + b.x + ',' + b.y, foot: { x: b.x, y: b.y, w: 1, h: 1 }, extra: beltUnion() }); }
     const props = (geo && geo.props) || [];
     // A deliberate prop study means checking THIS body's assigned workstation. Decorative blockers are
@@ -4254,6 +4467,10 @@ const World = (() => {
       const a = PropAnchor.deriveAnchor(c.foot, geo, { approach: 'auto', extra: c.extra });
       if (a && tileInZone(zone, a.tx, a.ty) && setPathTo({ x: a.tx, y: a.ty })) {
         self.goal = c.kind; self.useFace = a.face; self.usingProp = null; self.inspectNovel = false; self.studyKey = c.key;
+        // a belt watch COMMITTED: take the station's single watcher claim and arm this body's own cooldown.
+        // `until` only has to outlast walk + the longest watch dwell (arrive() caps it at ~14s) — it exists
+        // so an abandoned claim expires on its own rather than needing a release call on every exit path.
+        if (c.kind === 'watch') { beltWatch = { body: self, until: now + 45000 }; self.beltWatchCd = now + U.irnd(BELT_WATCH_CD_MIN, BELT_WATCH_CD_MAX); }
         if (!self.target) arrive(now);
         return true;
       }
@@ -5210,6 +5427,10 @@ const World = (() => {
     } else if (activity === 'idle' && agent.state !== 'walk' && !agent.sitting && now >= agent.idleUntil) {
       decideIdle(now);
     }
+    // BODIES ARE SOLID: last thing in the tick, once stepCrew (above) and the hero's own walk block have
+    // both committed this frame's positions — resolve any pair that ended up inside each other. Position
+    // is the ONLY thing it touches, so it can't reorder or pre-empt a single decision made above it.
+    separateBodies(now);
   }
 
   /* ---------- render ----------
@@ -7633,6 +7854,7 @@ const World = (() => {
         if (!other || other === newBody || other.unplaced) continue;
         self = other;                                                     // socialEligible/zoneFor read the CURRENT body
         if (!socialEligible(other, now)) continue;
+        if (!bodiesInSight(other, newBody)) continue;                     // greeter must be able to SEE the arrival: this scan is its own (not neighborsOf), and planHuddle's sightline gate would otherwise just fail the plan and produce no welcome at all rather than picking someone who can
         const d = Math.hypot(other.px - newBody.px, other.py - newBody.py);
         if (!best || d < best.d) best = { body: other, d };
       }
@@ -8617,6 +8839,34 @@ const World = (() => {
     // DEV harness. No world state touched (both are pure; borderTileFor takes an injected walkable predicate).
     // The headless coverage lives in test/social-border.test.js (extracts the D3-PURE-GEOMETRY block from source).
     _dbgSocialGeom: { sharedEdge: (ra, rb) => sharedEdge(ra, rb), borderTileFor: (rect, edge, cur, walkableFn) => borderTileFor(rect, edge, cur, walkableFn) },
+    /* TEST/DEBUG ONLY — the 2026-08-17 pass: bodies are solid, walls block sight, the belt is bounded.
+       All three are properties of a LIVE floor over TIME (an overlap lasts a few frames; a through-wall
+       conversation needs two bodies in two rooms), so none of them can be proven by a source read. These
+       are the read-only probes a soak samples. Nothing here mutates world state.
+         _dbgLos      — ask the shipped sightline test about any two tiles (walls/doors of the real bake)
+         _dbgSpacing  — the CLOSEST pair of placed bodies right now, in px + tiles, against the law's
+                        threshold. `min >= personalPx` sampled every frame IS the no-overlap proof.
+         _dbgBeltWatch— who (if anyone) holds the station's single conveyor-watch claim, and every body's
+                        remaining cooldown: the readout that tells a congregation from a coincidence. */
+    _dbgLos: (ax, ay, bx, by) => losClear(ax | 0, ay | 0, bx | 0, by | 0),
+    _dbgSpacing: () => {
+      const list = allBodies().filter(b => b && !b.unplaced);
+      let min = Infinity, pair = null;
+      for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+        const d = Math.hypot(list[i].px - list[j].px, list[i].py - list[j].py);
+        if (d < min) { min = d; pair = [list[i].id, list[j].id]; }
+      }
+      return { bodies: list.length, minPx: list.length > 1 ? +min.toFixed(2) : null, minTiles: list.length > 1 ? +(min / T).toFixed(2) : null, personalPx: +(PERSONAL_TILES * T).toFixed(2), pair };
+    },
+    _dbgBeltWatch: () => {
+      const now = (typeof performance !== 'undefined') ? performance.now() : fnow;
+      return {
+        belts: (geo && geo.belts) ? geo.belts.length : 0,
+        held: beltWatchTaken(now) ? (beltWatch.body.id || null) : null,
+        watching: allBodies().filter(b => b && !b.unplaced && b.goal === 'watch').map(b => b.id),
+        cooldownsMs: allBodies().filter(b => b && !b.unplaced).map(b => ({ id: b.id, ms: Math.max(0, Math.round((b.beltWatchCd || 0) - now)) })),
+      };
+    },
     // TEST/DEBUG ONLY — containment harness: raw-place a body (bypassing every walkable-checked picker)
     // so the per-tick containment backstop (containBody / hero ensureAgentValid) is provable live.
     _dbgTeleport: (aid, px, py) => { const b = bodyForAgent(aid); if (!b) return false; b.pathPts = null; b.target = null; b.sitting = false; b.seated = false; b.px = +px; b.py = +py; return true; },

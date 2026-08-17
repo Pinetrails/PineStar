@@ -25,12 +25,51 @@ const PropSprites = (() => {
   const SURFACE_RISE = 8;
   let ctx = null, now = 0;
 
-  /* ---- core primitives (verbatim from v7 sprites.js) ----
-     px is the ONE primitive nearly every prop's fill routes through, which is what makes the MIRROR
-     light-correction possible with a single hook: a horizontal flip moves a prop's lit west facets
-     onto its shade side, so while MIRROR is set px re-maps the handful of DIRECTIONAL tones to their
-     partner (see LSWAP under ORIENTATION). */
-  const px = (x, y, w, h, c) => { ctx.fillStyle = (MIRROR && LSWAP[c]) || c; ctx.fillRect(x, y, w, h); };
+  /* ============ v13 LOCAL COLOUR — one knob over every pixel a prop paints ============
+     MEASURED, not guessed (gal/shot.mjs, 29 lounge/decor props on a live seeded station): the
+     catalog's MEAN AUTHORED CHROMA is 28/255, and the render pipeline (ambient plate + room cut +
+     CRT scan/fade/vig) delivers only **54%** of it to the screen — mean rendered chroma 15. The
+     plants are the extreme: monstera authors 44 and renders 8. That is why a room full of props
+     whose source really does carry warm oak, brass, deep red and teal still reads as grey-green mud.
+     Lifting the LIGHT is a real but bounded lever and it costs brightness that is already dialled
+     (ambient 0.82 → 0.55 only recovers 54% → 66%), so the rest has to come from the art's own chroma.
+
+     `CHROMA` scales the SATURATION of every colour a prop paints, holding hue and value exactly.
+     Hue and value are what the silhouette and the lighting logic are built on; saturation is the one
+     axis with no structural job, which is why it can be a knob at all.
+     ⛔ THE TEAL TRAP IS REAL (2026-08-16): amplifying the chroma of a hue that is merely a LITTLE
+     cool turns a grey casing green/teal on a warm deck. So the ceiling is hue-dependent — warm local
+     colour (wood, brass, terracotta, fabric) is allowed to go saturated, cool machinery is held near
+     grey. Machinery is *supposed* to be grey; the defect is a prop with no saturated element at all.
+     ⛔ Already-saturated colour is LEFT ALONE (emissives, ACC leds, screen phosphor): boosting a
+     colour that is already doing its job only clips it. */
+  let CHROMA = 2.6;                                 // 1 = shipped art, untouched · 2.6 = the LOCAL COLOUR candidate
+  const CHROMA_SKIP = 0.45;                         // authored saturation at/above this is already local colour
+  const _cboost = new Map();
+  const chromaOf = (c) => {
+    if (CHROMA === 1 || typeof c !== 'string' || c.length !== 7 || c[0] !== '#') return c;
+    const hit = _cboost.get(c); if (hit !== undefined) return hit;
+    const hsl = _toHsl(c), h = hsl[0], s = hsl[1], l = hsl[2];
+    let out = c;
+    // near-black is CONTOUR (LINE/ink) and near-white is a spec catch — both carry no local colour
+    if (s > 0.001 && s < CHROMA_SKIP && l > 0.055 && l < 0.93) {
+      const deg = h * 360;
+      const warm = deg < 62 || deg > 328;            // wood / brass / terracotta / warm fabric
+      const cap = warm ? 0.52 : 0.20;                // cool machinery stays honestly grey (no teal cast)
+      out = _toHex(h, Math.min(cap, s * CHROMA), l);
+    }
+    _cboost.set(c, out);
+    return out;
+  };
+
+  /* ---- core primitives (verbatim from v7 sprites.js) ---- */
+  /* px is the ONE primitive nearly every prop's fill routes through, which is what lets a MIRRORED
+     view re-light itself from a single hook: a horizontal flip moves a prop's lit west facets onto
+     its shade side, so while MIRROR is set px re-maps the few DIRECTIONAL tones to their partner
+     (LSWAP, below the ramps). Nothing sets MIRROR except a deliberately mirrored draw.
+     ORDER MATTERS: the mirror swap picks a DIFFERENT AUTHORED tone, then the chroma dial grades
+     whatever tone was picked — grading first would hand LSWAP a colour that is not in its table. */
+  const px = (x, y, w, h, c) => { ctx.fillStyle = chromaOf((MIRROR && LSWAP[c]) || c); ctx.fillRect(x, y, w, h); };
   const blink = (period, phase) => ((now / period + (phase || 0)) % 1) < 0.5;
   const flick = (period, phase) => Math.sin(now / period + (phase || 0) * 7);
   const scrCols = ['#62ff9e', '#3fd07c', '#7adfb0', '#2fa863'];
@@ -283,30 +322,7 @@ const PropSprites = (() => {
   const keyEdge = (x, y, w, h, a) => { ctx.globalAlpha = a == null ? 0.22 : a; px(x, y, w, h, KEY); ctx.globalAlpha = 1; };
   const rimEdge = (x, y, w, h, a) => { ctx.globalAlpha = a == null ? 0.24 : a; px(x, y, w, h, SKY); ctx.globalAlpha = 1; };
 
-  /* ============ ORIENTATION ============
-     Props were authored facing ONE way — south — because that is what the v3/v4 law bakes in: a
-     foreshortened TOP face over a south-facing FRONT face, under ONE fixed light (warm KEY high and
-     west, cool SKY rim east). So a facing is NOT a canvas transform in the general case: turning a
-     chair 90° would swing its backrest (drawn at y-4, real vertical ELEVATION) out sideways and
-     rotate the light with it. Turned views are AUTHORED, one fn per facing (see AUTHORED TURNED
-     VIEWS near viewAt).
-
-     Two things ARE derived, and only these:
-       DECAL TURN — a prop with no elevation at all (rug, cable run, hazard pad) IS its own top face,
-                    so turning its footprint is the correct picture. Exact 90° integer affines keep
-                    it pixel-exact.
-       MIRROR     — a horizontal flip never changes which way a prop FACES; it swaps handedness,
-                    which is what fixes "the lamp is on the wrong side", and it is how a WEST view is
-                    derived from an authored EAST one. Geometry mirrors for free; the LIGHT does not,
-                    so px() re-maps directional tones through LSWAP.
-
-     LSWAP holds only tones whose meaning is genuinely east/west: each ramp's lit (west) <-> dk
-     (east) column, and the warm west KEY <-> the cool east SKY. `sheen` (a NORTH back-edge catch),
-     `ao` (downward), `top` and `face` are axis-neutral under a horizontal flip and stay put.
-     KNOWN LIMIT: a facet painted as U.shade(r.face, +k) rather than r.lit is a runtime colour with
-     no table entry, so it keeps its original hand — the dominant read (silhouette, top face, front
-     face, emissives) is unaffected. Props drawing through raw ctx path ops set fillStyle directly,
-     which px() never sees; those are excluded from mirroring (NO_MIRROR) until authored. */
+  /* 
   let MIRROR = false;
   const LSWAP = (() => {
     const m = {};
@@ -4687,7 +4703,6 @@ const PropSprites = (() => {
     px(ax + 1, NA + 9, aw - 2, 1, U.shade(r.face, -0.24));       // skirt band
     px(ax + 1, NA + 10, aw - 2, 1, r.ao);                        // floor-line AO
   };
-
   F.arcade = (x, y, w, h, f) => {
     /* v57 ARCADE (1x2) — built to Andrew's reference (2026-08-16), SHORTENED 2026-08-17. Read top to
          bottom: vent cap -> glowing MARQUEE -> screen flanked by MAGENTA SIDE STRIPS -> pale CONTROL
@@ -9133,6 +9148,9 @@ const PropSprites = (() => {
     { id: "pinball", label: "PINBALL", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'pinball', sit: false, approach: 'south' } },
     /* THE COLOUR SHELF (2026-08-17) — floor-sized props that each own a saturated hue, because a
        room furnished from a grey catalog cannot be made to look good by lighting alone. */
+    /* THE RECLINER PAIR — one seat of the couch, shipped as two props so aiming it is a pick
+       rather than a hidden gesture. The right-facing one is the left one MIRRORED at draw time,
+       so the two can never drift apart. */
     { id: "recliner", label: "RECLINER ‹ LEFT", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'west' } },
     { id: "recliner_r", label: "RECLINER RIGHT ›", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'east' } },
     { id: "clawmachine", label: "CLAW MACHINE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'claw', sit: false, approach: 'south' } },
@@ -9497,6 +9515,10 @@ const PropSprites = (() => {
   return {
     setCtx(c) { ctx = c; },
     setNow(t) { now = t; },
+    // v13 LOCAL COLOUR knob (see CHROMA above) — live-tunable like the CRT LAB's own dials, so the
+    // value is DIALLED on a real deck and copied back into the constant, never guessed.
+    setChroma(k) { CHROMA = (k == null ? 1 : +k) || 1; _cboost.clear(); },
+    getChroma: () => CHROMA,
     draw, drawOver, hasOver, drawSeatFront, CATALOG, CATS, spec, has, TILE,
     // ORIENTATION: what each prop's art can honestly do, and the box it covers once turned. The
     // builder asks BEFORE offering an R/M affordance — never an input that produces broken art.
