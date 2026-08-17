@@ -1955,6 +1955,16 @@ const World = (() => {
     const s = PropSprites.spec(p.t);
     return s && s.use ? s.use : null;
   }
+  /* the side an agent walks up to, TURNED WITH THE PROP. A catalog `use.approach` was authored back
+     when every prop faced south, so it names a side in the prop's OWN frame ("my front is south") —
+     turn a lounge chair to face west and that side has to turn with it, or the body stands at the
+     chair's flank staring at its armrest. 'auto' (try every side) has no frame to turn, and an
+     unturned prop (r absent) resolves byte-identically to the pre-rotation behaviour. */
+  function useApproach(use, p) {
+    const want = (use && use.approach) || 'south';
+    if (want === 'auto' || !p || !p.r) return want;
+    return PropAnchor.turnSide ? PropAnchor.turnSide(want, p.r) : want;
+  }
   // FLOOR DECAL? (catalog `flat` — rug / cable run / hazard pad). Deck paint with zero rise: it renders
   // in its own pass UNDER every body and prop, because a decal y-sorted with the bodies buries whoever
   // walks across its northern rows (a 4×3 rug sorts at its SOUTH edge, so an agent standing on its top
@@ -2160,7 +2170,11 @@ const World = (() => {
       // BAR is furniture for the bar, and a body sitting with its back to the counter it is sitting
       // at reads as a bug. If a counter-ish prop is adjacent, face THAT, even when that means
       // turning its back to the camera.
-      self.useSit = true; self.useFace = counterFace(p) || 'south';
+      // A SEAT THE USER AIMED WINS over the inferred counter: turning a chair to face west is an
+      // explicit instruction about which way whoever sits in it looks, and the sit sprite has a frame
+      // for every compass direction. An unturned seat (no `r`) resolves exactly as before.
+      self.useSit = true;
+      self.useFace = (p.r && PropAnchor.frontOf) ? PropAnchor.frontOf(p) : (counterFace(p) || 'south');
       if (!self.target) arrive(now);                          // already adjacent → sit immediately
       return true;
     }
@@ -2386,7 +2400,7 @@ const World = (() => {
         if (stool && planSeat(now, stool, zone)) { rememberFun(c.key, now); return true; }
         if (c.kind === 'bar') continue;                         // a bar without a free stool is not a standing-and-staring destination
       }
-      const a = PropAnchor.deriveAnchor(c.prop, geo, { approach: (propUse(c.prop) || {}).approach || 'south', extra: blocked });
+      const a = PropAnchor.deriveAnchor(c.prop, geo, { approach: useApproach(propUse(c.prop), c.prop), extra: blocked });
       if (!a || !tileInZone(zone, a.tx, a.ty) || !setPathTo({ x: a.tx, y: a.ty })) continue;
       self.goal = 'use'; self.usingProp = c.prop.id; self.useFace = a.face; self.useSit = false; rememberFun(c.key, now);
       if (!self.target) arrive(now);
@@ -2409,14 +2423,17 @@ const World = (() => {
       if (use.kind === 'bar') continue;                                  // its adjacent purposeful seat is the destination, never the counter face itself
       if (funBlocked(p.id, now)) continue;
       if (propInUse(p.id)) continue;                                     // occupied (or being walked to) — see propInUse
-      const a = PropAnchor.deriveAnchor(p, geo, { approach: use.approach || 'south', sit: !!use.sit, extra: blocked });
+      const a = PropAnchor.deriveAnchor(p, geo, { approach: useApproach(use, p), sit: !!use.sit, extra: blocked });
       if (a && tileInZone(zone, a.tx, a.ty)) cands.push({ id: p.id, a });   // the APPROACH tile (where the body stands) must be in-zone
     }
     if (!cands.length) return false;
     const start = U.irnd(0, cands.length - 1);   // random offset, but try each prop at most once
     for (let k = 0; k < cands.length; k++) {
       const c = cands[(start + k) % cands.length];
-      if (c.couch) { if (planCouchSit(now, c.couch, null, 'north', zone)) { rememberFun('lounge', now); return true; } continue; }   // lone couch → stand at it facing UP (back to the viewer)
+      // a lone couch seats its body facing UP (back to the viewer) — but a seat that OPENS somewhere
+      // else says so on its catalog row (`use.face`), because an armchair aimed at the room with
+      // someone sitting in it backwards is the kind of small lie the station gets judged on.
+      if (c.couch) { const fc = (propUse(c.couch) || {}).face || 'north'; if (planCouchSit(now, c.couch, null, fc, zone)) { rememberFun('lounge', now); return true; } continue; }
       if (c.seat) { if (planSeat(now, c.seat, zone)) return true; continue; }                        // stool/chair → the one honest sit
       if (setPathTo({ x: c.a.tx, y: c.a.ty })) {
         self.goal = 'use'; self.usingProp = c.id; self.useFace = c.a.face; self.useSit = c.a.sit;
@@ -5402,7 +5419,9 @@ const World = (() => {
         // SEAT-FRONT SLIVER: a stool/chair's pad front rim redraws just IN FRONT of its (lifted) sitter,
         // so the body's lap tucks INTO the pad — the couch trick, at single-seat scale. Sorted a hair
         // past the body's own key (sitter.seatPy) and well short of the next tile row.
-        if (sitter && sitterUse && sitterUse.kind === 'seat' && PropSprites.drawSeatFront)
+        // (the sliver repaints rows of the SOUTH art, so a seat the user has turned gets none — the
+        // turned view's pad front is a different set of rows and a stale copy would ghost a second seat)
+        if (sitter && sitterUse && sitterUse.kind === 'seat' && !p.r && PropSprites.drawSeatFront)
           items.push({ y: sitter.seatPy + 0.5, draw: () => PropSprites.drawSeatFront(dp) });
         // the COVERS, after the body (bodySortY puts a sleeper at sy + 0.5). Keyed off the same live
         // `sleeper` read as the base pass, so the quilt is never held back with nobody under it.
