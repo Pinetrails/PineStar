@@ -29,11 +29,14 @@ const IDS = process.argv.slice(2).filter(a => !a.startsWith('-'));
 /* which cells to shoot: quarter turns 0..3, plus 'm' for the MIRRORED south view (the flip is what
    gives an angled prop its other diagonal, so it deserves a cell of its own). */
 const CELLS = (process.env.SKYNET_ROT_FACES || '0,1,2,3').split(',').map(s => s.trim()).filter(Boolean);
+// ROW layout puts every prop side by side on ONE row — the readable shape for a single-facing batch
+const ROW = process.env.SKYNET_ROT_LAYOUT === 'row';
 
 const SHEET = `(() => {
   const WORK = ${WORK};
   const WANT = ${JSON.stringify(IDS)};
   const CELLS = ${JSON.stringify(CELLS)};
+  const ROW = ${ROW};
   const cat = WANT.map(id => PropSprites.CATALOG.find(c => c.id === id)).filter(Boolean);
   if (cat.length !== WANT.length) return { error: 'unknown ids among ' + WANT.join(',') };
   PropSprites.setSpotifyConnected && PropSprites.setSpotifyConnected(true);
@@ -44,6 +47,14 @@ const SHEET = `(() => {
   const GX = 3, GY = 3;
   const rows = [];
   let H = GY, W = GX;
+  if (ROW) {                                          // one row: every prop side by side, bottom-aligned
+    const cells = [], boxes = cat.map(c => PropSprites.footprintAt(c.id, 0) || { w: c.w, h: c.h });
+    const ch = Math.max(...boxes.map(b => b.h));
+    let dx = GX;
+    cat.forEach((c, i) => { cells.push({ id: c.id, r: 0, mir: false, b: boxes[i], dx }); dx += boxes[i].w + GX; });
+    rows.push({ id: null, cells, y: GY, ch });
+    H = GY + ch + 2 * GY; W = dx;
+  } else
   for (const c of cat) {
     const spots = CELLS.map(k => ({ mir: k === 'm', r: k === 'm' ? 0 : (+k & 3) }));
     const boxes = spots.map(s => PropSprites.footprintAt(c.id, s.r) || { w: c.w, h: c.h });
@@ -62,8 +73,8 @@ const SHEET = `(() => {
   const placed = [], skipped = [], resolved = [];
   let first = null;
   for (const row of rows) {
-    const c = PropSprites.CATALOG.find(x => x.id === row.id);
     for (const cell of row.cells) {
+      const c = PropSprites.CATALOG.find(x => x.id === (cell.id || row.id));
       const y = row.y + (row.ch - cell.b.h);            // bottom-align inside the row band
       const res = st.addProp({ t: c.id, x: cell.dx, y, w: cell.b.w, h: cell.b.h, block: !!c.blocks, r: cell.r, m: cell.mir ? 1 : 0 });
       if (!res.ok) { skipped.push(c.id + ':' + cell.r + ':' + (res.code || 'REFUSED')); continue; }

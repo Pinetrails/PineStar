@@ -8427,6 +8427,239 @@ const PropSprites = (() => {
     if (blink(4200, ph + x)) px(x + 2, y + 3, 1, 1, U.shade(lit, 0.18));            // slow satin glint
   };
 
+  /* ============ THE COLOUR SHELF (2026-08-17) ============
+     Andrew's brief: the station is hard to make look good because there are too FEW props, too many
+     face the same way, and almost none carry colour. These are the answer to the third and the
+     hardest: each is a FLOOR-SIZED object (never a tabletop trinket) built around ONE saturated
+     identity — cyan glass, racing red, plasma violet, soda orange — so a room furnished from this
+     shelf stops reading as a grey machine hall.
+     ⛔ COLOUR IS LOCAL, LIGHT IS NOT. A prop may own any hue it likes; it is still lit by the
+        station's warm west KEY and cool east SKY, and its contour is still a dark tint of its OWN
+        hue. Saturated art under the shipped lightmap is the whole trick — a prop that lights itself
+        differently from the room reads as a sticker.
+     ⛔ ONE SILHOUETTE, THEN FILLS. Paint the whole outline first, then interiors over it. Outlining
+        each panel separately is what turned an earlier batch into cabinets. */
+  F.clawmachine = (x, y, w, h, f) => {
+    /* 1x2 CLAW MACHINE — the loudest thing on the shelf, and deliberately so: a lit magenta marquee
+       over a CYAN glass box with prizes visibly piled in the bottom of it. The prizes are the point.
+       A claw machine with an empty box is a vending machine, and the catalog already has two. */
+    const INK = '#1d0e1c', BODY = '#5a2a55', BODY_LIT = '#7d3d75', BODY_DK = '#3a1a37';
+    const GLS = '#1b3a42', GLS_LIT = '#8fe8f5';
+    const on = 0.7 + 0.3 * Math.sin(now / 520 + x);
+    shadow2(x + 1, y + h - 1, w - 2);
+    /* (1) silhouette */
+    rr(x, y - 6, w, h + 6, INK);
+    /* (2) the MARQUEE — a lit sign, the prop's one emissive */
+    px(x + 1, y - 5, w - 2, 4, BODY);
+    px(x + 1, y - 5, w - 2, 1, BODY_LIT); keyEdge(x + 1, y - 5, 5, 1, 0.28);
+    px(x + 2, y - 4, w - 4, 2, '#ffd34a');
+    px(x + 2, y - 4, w - 4, 1, '#fff0a8');
+    for (let i = 0; i < 4; i++) px(x + 3 + i * 2, y - 3, 1, 1, U.shade('#e0762a', -0.2));   // lettering, unreadable by design
+    bloom(x + 2, y - 4, w - 4, 2, '#ffd34a', 0.16 + 0.14 * on);
+    px(x + 1, y - 2, w - 2, 1, BODY_DK);
+    /* (3) THE GLASS BOX — dark well, cyan pane over it, prizes heaped at the bottom */
+    px(x + 1, y - 1, w - 2, 14, '#0d1a1e');
+    px(x + 2, y, 1, 12, U.shade(GLS, 0.20)); px(x + w - 3, y, 1, 12, GLS);            // inner returns
+    for (const [px0, py0, c] of [[x + 2, y + 8, '#e05a8a'], [x + 5, y + 9, '#ffd34a'],
+                                 [x + 7, y + 7, '#5ad1a0'], [x + 4, y + 6, '#7b6ce0']]) {
+      px(px0, py0, 3, 3, U.shade(c, -0.34));                                          // a plush: body, crown, eye
+      px(px0, py0, 3, 1, c); px(px0 + 1, py0 + 1, 1, 1, '#0d1215');
+    }
+    px(x + 5, y, 2, 5, '#2a3138');                                                    // the claw's cable
+    px(x + 4, y + 4, 4, 1, '#8a949c'); px(x + 4, y + 5, 1, 2, '#6a747c'); px(x + 7, y + 5, 1, 2, '#6a747c');
+    px(x + 5, y + 6, 1, 1, '#4a545c'); px(x + 6, y + 6, 1, 1, '#4a545c');             // its two fingers
+    ctx.globalAlpha = 0.30; px(x + 2, y - 1, w - 4, 13, GLS_LIT); ctx.globalAlpha = 1;   // the pane
+    px(x + 2, y - 1, w - 4, 1, U.shade(GLS_LIT, -0.10));
+    for (let i = 0; i < 4; i++) px(x + 3 + i, y + 1 + i, 3 - (i > 1 ? 1 : 0), 1, U.shade(GLS_LIT, -0.30 - i * 0.08));   // raked specular
+    /* (4) CONTROL DESK + cabinet + plinth */
+    px(x + 1, y + 13, w - 2, 4, BODY);
+    px(x + 1, y + 13, w - 2, 1, BODY_LIT); keyEdge(x + 1, y + 13, 4, 1, 0.24);
+    px(x + 3, y + 14, 2, 2, '#8a949c'); px(x + 3, y + 14, 2, 1, '#c8331f');           // joystick
+    px(x + 7, y + 15, 1, 1, '#41ff8a'); px(x + 9, y + 15, 1, 1, '#ffd34a');           // two buttons
+    px(x + 1, y + 17, w - 2, 5, BODY_DK);
+    px(x + 1, y + 17, w - 2, 1, U.shade(BODY, -0.10));
+    px(x + 4, y + 19, 4, 1, '#0d1215'); px(x + 4, y + 19, 4, 1, U.shade(BODY_DK, -0.40));   // coin slot
+    px(x + 5, y + 20, 2, 1, '#c8a44a');
+    px(x + 1, y + 22, w - 2, 2, '#0f1418');
+    px(x + 1, y + 22, w - 2, 1, U.shade(BODY_DK, 0.10));
+    spill(x + 1, y - 1, w - 2, '#8fe8f5', 0.10, 3);
+  };
+
+  /* ⛔⛔⛔ THE CLAW-MACHINE RECIPE (2026-08-17, the only one of the first four Andrew kept).
+     Four props were shown; three were rejected and the CLAW MACHINE was kept, so what it does is
+     now the pattern for this shelf, and the three failures say why:
+       1. STACKED BANDS, not one shape. Lit sign → window → contents → control band → plinth. The
+          plasma column was a single tall shape (a lamp, not an object) and the soda fountain was a
+          flat front (a beige box).
+       2. A WINDOW WITH CONTENTS IN IT. The prizes are what make a claw machine; the read is always
+          what is INSIDE, never the casing. Every prop below has something visible behind glass.
+       3. ONE SATURATED BODY HUE + small saturated hardware. Not a grey box with a colour patch.
+       4. UPRIGHT AND FLOOR-SIZED (1x2 minimum). The racing seat failed partly on size — one tile
+          cannot carry an identity that has to compete with a 5-tile couch across the room. */
+  F.slushmachine = (x, y, w, h, f) => {
+    /* 1x2 SLUSH MACHINE — twin hoppers of red and blue slush turning over under a lit menu. The
+       CONTENTS are two colours of ice, and they are the whole prop: an opaque version of this is a
+       fridge. The paddles turn, so the ice moves. */
+    const INK = '#141a20', BODY = '#2a3138', BODY_LIT = '#3d464e', CHR = '#b9c2c9';
+    const RED = '#e0344a', RED_LIT = '#ff7a86', BLU = '#3a7ff0', BLU_LIT = '#8fc0ff';
+    const t = now / 900 + x;
+    shadow2(x + 1, y + h - 1, w - 2);
+    rr(x, y - 6, w, h + 6, INK);
+    /* the lit menu board */
+    px(x + 1, y - 5, w - 2, 4, BODY);
+    px(x + 1, y - 5, w - 2, 1, BODY_LIT); keyEdge(x + 1, y - 5, 5, 1, 0.26);
+    px(x + 2, y - 4, w - 4, 2, '#ffe9a8');
+    px(x + 3, y - 4, 3, 1, RED); px(x + 7, y - 4, 3, 1, BLU);                      // the two flavours, named in colour
+    bloom(x + 2, y - 4, w - 4, 2, '#ffe9a8', 0.18);
+    /* THE TWO HOPPERS — clear tanks, ice, and a paddle turning in each */
+    px(x + 1, y - 1, w - 2, 12, '#0e1418');
+    for (let i = 0; i < 2; i++) {
+      const hx = x + 1 + i * 5, C = i ? BLU : RED, L = i ? BLU_LIT : RED_LIT;
+      px(hx, y, 5, 10, U.shade(C, -0.42));                                          // the tank's shadowed glass
+      px(hx, y + 3, 5, 7, C);                                                       // the slush level
+      px(hx, y + 3, 5, 1, L);                                                       // its bright meniscus
+      const p = Math.sin(t + i * 2.1);
+      px(hx + 2 + ((p * 1.4) | 0), y + 4, 1, 5, U.shade(L, -0.10));                 // the paddle, turning
+      px(hx + 1, y + 6, 1, 1, L); px(hx + 3, y + 8, 1, 1, U.shade(L, -0.20));       // ice catching the light
+      px(hx, y, 1, 10, U.shade(L, -0.24)); px(hx + 4, y, 1, 10, U.shade(C, -0.30)); // the tank's own edges
+      bloom(hx, y + 3, 5, 7, C, 0.12);
+    }
+    ctx.globalAlpha = 0.22; px(x + 1, y - 1, w - 2, 11, '#cfe9ff'); ctx.globalAlpha = 1;
+    for (let i = 0; i < 3; i++) px(x + 2 + i, y + i, 2, 1, U.shade('#cfe9ff', -0.20 - i * 0.10));
+    /* dispense band: two chrome taps over a dark drip tray, then the cabinet and plinth */
+    px(x + 1, y + 11, w - 2, 5, BODY);
+    px(x + 1, y + 11, w - 2, 1, BODY_LIT);
+    for (let i = 0; i < 2; i++) { px(x + 3 + i * 5, y + 12, 2, 1, CHR); px(x + 3 + i * 5, y + 13, 1, 2, '#8a949c'); }
+    px(x + 2, y + 15, w - 4, 1, '#0f1418');
+    px(x + 1, y + 16, w - 2, 6, U.shade(BODY, -0.24));
+    px(x + 1, y + 16, w - 2, 1, U.shade(BODY, -0.06));
+    px(x + 3, y + 18, 6, 2, '#0e1418'); px(x + 3, y + 18, 6, 1, U.shade(BODY, -0.40));   // the cup shelf
+    px(x + 1, y + 22, w - 2, 2, '#0f1418');
+    spill(x + 1, y + 11, w - 2, '#8fc0ff', 0.10, 3);
+  };
+
+  F.reeftank = (x, y, w, h, f) => {
+    /* 1x2 REEF TANK — a tall aquarium on a dark stand. Everything above the stand is WATER, lit from
+       a hood, with fish crossing it and coral standing on the gravel. The catalog's wide fish tank
+       is a piece of furniture you look ACROSS; this one is a column you look INTO. */
+    const INK = '#0d1a1c', STAND = '#2b2118', STAND_LIT = '#41321f';
+    const WTR = '#1f6b6e', WTR_LIT = '#39a3a0', WTR_DK = '#123c42';
+    const t = now / 1100 + x;
+    shadow2(x + 1, y + h - 1, w - 2);
+    rr(x, y - 6, w, h + 6, INK);
+    /* the HOOD — the tank's light, and the only warm thing on the prop */
+    px(x + 1, y - 5, w - 2, 3, '#2f373d');
+    px(x + 1, y - 5, w - 2, 1, '#49535a'); keyEdge(x + 1, y - 5, 5, 1, 0.26);
+    px(x + 2, y - 3, w - 4, 1, '#d8f4ff'); bloom(x + 2, y - 3, w - 4, 1, '#9fe6ff', 0.26);
+    /* THE WATER COLUMN — bright under the hood, falling into dark at the gravel */
+    px(x + 1, y - 2, w - 2, 15, WTR);
+    px(x + 1, y - 2, w - 2, 2, WTR_LIT);
+    px(x + 1, y + 6, w - 2, 7, WTR_DK);
+    px(x + 1, y - 2, 1, 15, U.shade(WTR_LIT, -0.14)); px(x + w - 2, y - 2, 1, 15, U.shade(WTR_DK, 0.06));
+    rimEdge(x + w - 2, y - 1, 1, 13, 0.20);
+    for (let i = 0; i < 5; i++) {                                                   // the light raking down through it
+      const ry = y - 1 + i * 3;
+      px(x + 2 + ((Math.sin(t * 0.6 + i) * 1.2) | 0), ry, 2, 1, U.shade(WTR_LIT, 0.10));
+    }
+    /* CORAL on the gravel, then the fish crossing in front of it */
+    px(x + 1, y + 11, w - 2, 2, '#4a4033'); px(x + 1, y + 11, w - 2, 1, '#6b5c46');
+    px(x + 2, y + 8, 2, 3, '#e0762a'); px(x + 2, y + 8, 1, 1, '#ffa04a');           // orange coral fan
+    px(x + 7, y + 9, 3, 2, '#b44aff'); px(x + 8, y + 8, 1, 1, '#d68fff');           // violet coral
+    px(x + 5, y + 10, 1, 2, '#5ad1a0');
+    for (let i = 0; i < 3; i++) {                                                   // three fish, drifting
+      const fx = x + 2 + (((Math.sin(t + i * 2.3) + 1) * 3.4) | 0), fy = y + 1 + i * 3;
+      const c = ['#ffd34a', '#ff7a86', '#8fe8f5'][i];
+      px(fx, fy, 2, 1, c); px(fx + 2, fy, 1, 1, U.shade(c, -0.28));                 // body + tail
+      px(fx, fy - 1, 1, 1, U.shade(c, 0.20));
+    }
+    for (let i = 0; i < 3; i++) px(x + 3, y + 9 - i * 3 - ((now / 260 + i * 7) % 3 | 0), 1, 1, '#cfeeff');   // bubbles
+    ctx.globalAlpha = 0.20; px(x + 1, y - 2, w - 2, 14, '#cfeeff'); ctx.globalAlpha = 1;   // the glass itself
+    px(x + 1, y - 2, w - 2, 1, U.shade('#cfeeff', -0.10));
+    /* the STAND — dark, closed, with a doored cupboard: it must not compete with the water */
+    px(x + 1, y + 13, w - 2, 9, STAND);
+    px(x + 1, y + 13, w - 2, 1, STAND_LIT); keyEdge(x + 1, y + 13, 4, 1, 0.20);
+    px(x + 2, y + 15, 4, 6, U.shade(STAND, -0.22)); px(x + 7, y + 15, 4, 6, U.shade(STAND, -0.22));
+    px(x + 5, y + 17, 1, 2, '#c8a44a'); px(x + 7, y + 17, 1, 2, '#c8a44a');         // brass handles
+    px(x + 1, y + 22, w - 2, 2, '#0f1418');
+    spill(x + 1, y + 13, w - 2, WTR_LIT, 0.16, 4);
+  };
+
+  F.capsuletower = (x, y, w, h, f) => {
+    /* 1x2 CAPSULE TOWER — a red-and-cream gacha column: one big globe of capsules over a smaller
+       one, a coin knob, and a delivery door. The capsules are the contents and they are the ONLY
+       place the catalog gets four saturated hues in one prop. */
+    const INK = '#2a1014', BODY = '#c8331f', BODY_LIT = '#e2604a', BODY_DK = '#8a1f12';
+    const CRM = '#e6dcc4', GLS = '#cfe9ff';
+    shadow2(x + 1, y + h - 1, w - 2);
+    rr(x, y - 6, w, h + 6, INK);
+    /* the crown sign */
+    px(x + 1, y - 5, w - 2, 4, BODY);
+    px(x + 1, y - 5, w - 2, 1, BODY_LIT); keyEdge(x + 1, y - 5, 5, 1, 0.28);
+    px(x + 3, y - 4, 6, 2, CRM); px(x + 4, y - 3, 4, 1, BODY_DK);
+    bloom(x + 3, y - 4, 6, 2, '#ffe9c0', 0.14);
+    /* THE GLOBES — two, the upper one full, the lower one half-emptied (it has been used) */
+    const globe = (gy, gh, n) => {
+      px(x + 1, gy, w - 2, gh, '#101820');
+      ctx.globalAlpha = 0.26; px(x + 1, gy, w - 2, gh, GLS); ctx.globalAlpha = 1;
+      const cols = ['#ffd34a', '#ff7a86', '#5ad1a0', '#8fe8f5', '#b44aff', '#ffa04a'];
+      for (let i = 0; i < n; i++) {
+        const cx0 = x + 2 + (i * 3) % (w - 5), cy0 = gy + gh - 2 - ((i / 3) | 0) * 2;
+        const c = cols[i % cols.length];
+        px(cx0, cy0, 2, 2, U.shade(c, -0.30)); px(cx0, cy0, 2, 1, c); px(cx0, cy0, 1, 1, U.shade(c, 0.24));
+      }
+      px(x + 1, gy, w - 2, 1, U.shade(GLS, -0.06));
+      px(x + 2, gy + 1, 1, 2, U.shade(GLS, -0.22));
+      px(x + 1, gy + gh, w - 2, 1, BODY_DK);
+    };
+    globe(y - 1, 9, 9);
+    globe(y + 9, 6, 4);
+    /* the coin knob, the door, the plinth */
+    px(x + 1, y + 16, w - 2, 6, BODY);
+    px(x + 1, y + 16, w - 2, 1, BODY_LIT);
+    px(x + 3, y + 17, 3, 3, '#b9c2c9'); px(x + 3, y + 17, 3, 1, '#e2e8ec');         // chrome knob
+    px(x + 4, y + 18, 1, 1, '#2a3138');
+    px(x + 7, y + 18, 4, 3, '#1b2126'); px(x + 7, y + 18, 4, 1, CRM);               // the delivery flap
+    px(x + 1, y + 22, w - 2, 2, '#0f1418');
+  };
+
+  F.photobooth = (x, y, w, h, f) => {
+    /* 1x2 PHOTO BOOTH — a violet booth with a drawn CURTAIN instead of glass, a lit sign over it,
+       and a strip of finished photos glowing on its flank. The contents here are implied (someone
+       is behind that curtain), which is the eerier version of the same trick. */
+    const INK = '#1a0f24', BODY = '#4a2a6e', BODY_LIT = '#6b429a', BODY_DK = '#2e1a45';
+    const CUR = '#8a2f6a', CUR_LIT = '#c25a9a';
+    const on = 0.65 + 0.35 * Math.sin(now / 420 + x);
+    shadow2(x + 1, y + h - 1, w - 2);
+    rr(x, y - 6, w, h + 6, INK);
+    /* the lit sign */
+    px(x + 1, y - 5, w - 2, 4, BODY);
+    px(x + 1, y - 5, w - 2, 1, BODY_LIT); keyEdge(x + 1, y - 5, 5, 1, 0.26);
+    px(x + 2, y - 4, w - 4, 2, blink(900, x) ? '#fff0a8' : '#ffd34a');
+    px(x + 3, y - 3, 2, 1, BODY_DK); px(x + 7, y - 3, 2, 1, BODY_DK);
+    bloom(x + 2, y - 4, w - 4, 2, '#ffd34a', 0.14 + 0.12 * on);
+    /* THE CURTAIN — folds, and a gap at the bottom where the light gets out */
+    px(x + 1, y - 1, w - 2, 14, CUR);
+    for (let i = 0; i < 5; i++) {
+      px(x + 1 + i * 2, y - 1, 1, 14, U.shade(CUR, -0.26));                          // the fold's shadow
+      px(x + 2 + i * 2, y - 1, 1, 13, i < 2 ? CUR_LIT : U.shade(CUR_LIT, -0.14));    // its lit crown
+    }
+    px(x + 1, y - 1, w - 2, 1, U.shade(CUR_LIT, 0.10));
+    px(x + 1, y + 11, w - 2, 2, U.shade(CUR, -0.40));                                // the curtain's hem
+    px(x + 2, y + 13, w - 4, 1, '#ffd9a0'); glow(x + 2, y + 13, w - 4, 1, '#ffd9a0', 0.22 * on);   // light under it
+    /* the flank: a strip of three finished photos, and the coin box */
+    px(x + 1, y + 14, w - 2, 8, BODY_DK);
+    px(x + 1, y + 14, w - 2, 1, U.shade(BODY, 0.06));
+    px(x + 2, y + 16, 3, 5, '#0e1418');
+    for (let i = 0; i < 3; i++) px(x + 2, y + 16 + i * 2, 3, 1, ['#8fe8f5', '#ff7a86', '#ffd34a'][i]);
+    bloom(x + 2, y + 16, 3, 5, '#ffffff', 0.08);
+    px(x + 7, y + 17, 4, 2, '#1b2126'); px(x + 8, y + 18, 2, 1, '#c8a44a');          // coin box
+    px(x + 1, y + 22, w - 2, 2, '#0f1418');
+    spill(x + 1, y + 13, w - 2, '#ffd9a0', 0.12, 3);
+  };
+
+
+
+
   F.pinball = (x, y, w, h, f) => {   // 1x2 — v6 REBUILD. A pinball machine IS its playfield ("a prop is its
     /* ⛔ EDGES SOFTENED, NOTHING ELSE — shipped geometry, shading and colour untouched. The
        universal near-black contour becomes a dark tint so the prop stops reading as a sticker
@@ -8746,6 +8979,13 @@ const PropSprites = (() => {
     { id: "bookshelf", label: "BOOKSHELF", cat: "lounge", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true, use: { kind: 'bookshelf', sit: false, approach: 'south' } },
     { id: "beanbag", label: "BEANBAG", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'beanbag', sit: false, approach: 'auto' } },
     { id: "pinball", label: "PINBALL", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'pinball', sit: false, approach: 'south' } },
+    /* THE COLOUR SHELF (2026-08-17) — floor-sized props that each own a saturated hue, because a
+       room furnished from a grey catalog cannot be made to look good by lighting alone. */
+    { id: "clawmachine", label: "CLAW MACHINE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'claw', sit: false, approach: 'south' } },
+    { id: "slushmachine", label: "SLUSH MACHINE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'slush', sit: false, approach: 'south' } },
+    { id: "reeftank", label: "REEF TANK", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'reef', sit: false, approach: 'south' } },
+    { id: "capsuletower", label: "CAPSULE TOWER", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'capsule', sit: false, approach: 'south' } },
+    { id: "photobooth", label: "PHOTO BOOTH", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'photo', sit: false, approach: 'south' } },
   ];
   const BY_ID = {};
   for (const c of CATALOG) BY_ID[c.id] = c;
