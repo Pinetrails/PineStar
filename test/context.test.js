@@ -340,4 +340,16 @@ A.eq(JSON.stringify(compactionMemoryBlock(memRecs, 'replies', { now: 1000 })), J
   A.ok(Math.ceil(keptWire / 4) <= 2000, 'and what it keeps actually fits the budget it was given');
 }
 
+// ---- setContextLimit: a provider fallback re-resolves the window mid-run ----
+{
+  const ctx = makeContext({ contextLimit: 200000, compactAt: 0.65, keepTail: 2 });
+  A.ok(!ctx.shouldCompact({ prompt_tokens: 6000 }), 'a 6k prompt is nowhere near a 200k window');
+  A.eq(ctx.setContextLimit(8000), 8000, 'a known smaller window is adopted');
+  A.eq(ctx.contextLimit, 8000, 'the exposed property tracks the live value');
+  A.ok(ctx.shouldCompact({ prompt_tokens: 6000 }), 'the same prompt is now past 65% of the REAL window');
+  A.eq(ctx.setContextLimit(0), 8000, 'an unknown (cold-catalog) limit keeps the last known window — stale beats none');
+  A.ok(ctx.shouldCompact({ prompt_tokens: 6000 }), 'compaction stays armed after a cold-catalog fallback');
+  A.eq(ctx.setContextLimit('not a number'), 8000, 'a garbage limit is ignored, never adopted as NaN');
+}
+
 A.report('context.test');

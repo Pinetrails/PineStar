@@ -11,6 +11,7 @@
      fit(messages, {maxTokens}) -> messages[],
      shouldCompact(usage) -> bool,
      compact(history, summarize) -> {summary, tail},             // pure given summarize
+     setContextLimit(n),                                         // live re-resolve (provider fallback)
      redact(x) -> x'                                             // never mutates input
    } */
 'use strict';
@@ -291,7 +292,7 @@
 
   function makeContext(opts) {
     opts = opts || {};
-    const contextLimit = opts.contextLimit || 0;       // 0 = unknown (never auto-compact)
+    let contextLimit = opts.contextLimit || 0;         // 0 = unknown (never auto-compact); mutable — see setContextLimit
     const compactAt = opts.compactAt || 0.65;
     const keepTail = opts.keepTail || 6;
     const estimateTokens = opts.estimateTokens || defaultEstimate;
@@ -383,7 +384,22 @@
       return { older: history.slice(0, cut), tail: history.slice(cut) };
     }
 
-    return { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, planCompaction, redact, contextLimit, keepTail };
+    /* LIVE RE-RESOLVE (provider fallback). contextLimit was frozen at construction, but the loop can fail over
+       mid-run to a provider/model with a very different window: after a 200k→32k switch the 0.65 threshold was
+       still computed against 200k, so the run blew straight through the small window into a hard overflow that
+       only the reactive compress path could catch — and if the summarizer had already tripped its breaker the
+       run died 'error'. A fallback with an unknown (cold-catalog, 0) limit KEEPS the old limit rather than
+       disabling proactive compaction: the previous number is stale but strictly safer than none. The exposed
+       `contextLimit` property is kept in sync so host-side consumers (e.g. the tool-output cap) read the live
+       value. */
+    function setContextLimit(n) {
+      n = Math.max(0, Math.floor(Number(n) || 0));
+      if (n > 0) { contextLimit = n; api.contextLimit = n; }
+      return contextLimit;
+    }
+
+    const api = { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, planCompaction, setContextLimit, redact, contextLimit, keepTail };
+    return api;
   }
 
   return { makeContext, redact, renderRecall, injectRecall, rank, bm25, flagInjection, stripRecallFence, compactionMemoryBlock, compactionSummaryPrompt, COMPACTION_SECTIONS };

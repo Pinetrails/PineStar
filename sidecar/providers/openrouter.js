@@ -174,7 +174,12 @@
       if (req.tools && req.tools.length) {
         body.tools = req.tools;
         body.tool_choice = 'auto';
-        body.parallel_tool_calls = false;   // linear, one tool at a time — easier to visualize + accumulate
+        /* parallel_tool_calls is deliberately OMITTED (provider default: enabled). It was forced `false` in the
+           MVP "to keep the visualization linear" — a decision made BEFORE the loop grew its concurrent dispatch
+           path. The loop now executes an all-read-only batch under Promise.all with call-order-preserving emits
+           (loop.js), and the host's parallelSafe predicate (index.js) keeps browser/shell/mcp/consent tools
+           serial — so forcing one tool per turn here only bought extra full round trips (a four-file read cost
+           four prompt re-sends). Reverses docs/harness-runtime-spec.md's MVP position, dated 2026-08-17. */
       }
       let res;
       try { res = await requestWithRetry(body, req.signal); }   // retries transient 429/5xx + network errors BEFORE any token streams

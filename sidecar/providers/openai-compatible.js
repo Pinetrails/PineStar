@@ -140,7 +140,11 @@
       if (req.tools && req.tools.length) {
         body.tools = req.tools;
         if (!skip('tool_choice')) body.tool_choice = 'auto';
-        if (!skip('parallel_tool_calls')) body.parallel_tool_calls = false;
+        /* parallel_tool_calls is deliberately OMITTED (endpoint default: enabled). Forcing `false` predates the
+           loop's concurrent dispatch path and cost one full round trip per tool on every multi-read turn; the
+           host's parallelSafe predicate already keeps mutating/stateful tools serial. Omitting the param also
+           means an endpoint that 400s on it never sees it ('parallel_tool_calls' stays in DROPPABLE_PARAMS only
+           for saved drop-state from older builds). */
       }
       // reasoning_effort goes on the wire only when the model provably reasons (catalog) or the provider
       // profile documents the param; effort 'none' means omit it entirely.

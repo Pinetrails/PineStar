@@ -49,12 +49,13 @@ A.ok(/const use = propUse\(p\); if \(!use \|\| !purposefulIdleProp\(p\)\) contin
 A.ok(/isWorkstationProp\(p\.t\)\s*&&\s*p\.agentId\s*===\s*self\.id/.test(world), 'ambient prop inspection is limited to the body’s own desk');
 A.ok(/if \(c\.kind === ['"]bar['"]\) continue/.test(world), 'a bar without a free stool is skipped rather than stared at');
 
-// Couch/TV regression: a claimed sofa cushion is rendered as a real sit and holds for minutes,
-// while the catalog remains sit:false so the generic prop path cannot reopen bed/beanbag sitting.
-A.ok(/self\.pendSeat\s*=\s*\{\s*px:\s*\(sx\s*\+\s*0\.5\)\s*\*\s*T,\s*py:\s*\(couch\.y\s*\+\s*h\)\s*\*\s*T\s*-\s*2\s*\}/.test(world), 'couch planning records the claimed cushion render position');
+// Couch/TV regression: a claimed sofa cushion is rendered as a real sit and holds for minutes.
+// The SIDE_SEAT clause (recliner, 2026-08-17) is the only thing allowed to vary either line — a
+// profile seat slides its anchor onto the cushion and sorts behind its sitter; a sofa must not.
+A.ok(/self\.pendSeat\s*=\s*\{\s*px:\s*\(sx\s*\+\s*0\.5\)\s*\*\s*T\s*\+\s*\(side\s*\?\s*side\.dx\s*:\s*0\),\s*py:\s*\(couch\.y\s*\+\s*h\)\s*\*\s*T\s*-\s*2,\s*lift:\s*side\s*\?\s*side\.lift\s*:\s*0\s*\}/.test(world), 'couch planning records the claimed cushion render position (offset + perch only for a profile seat)');
 A.ok(/self\.useSit\s*=\s*true;\s*self\.useFace/.test(world), 'the couch plan commits to the sit pose');
 A.ok(/self\.goal\s*===\s*['"]lounge['"][\s\S]{0,500}self\.sitting\s*=\s*true[\s\S]{0,300}U\.irnd\(90000,\s*180000\)/.test(world), 'TV lounging sits on the couch for 90–180 seconds');
-A.ok(/sitterUse\s*&&\s*sitterUse\.kind\s*===\s*['"]couch['"]\s*\?\s*1\s*:\s*-1/.test(world), 'couch and stool seats retain their distinct occlusion order');
+A.ok(/sitterUse\s*&&\s*sitterUse\.kind\s*===\s*['"]couch['"]\s*&&\s*!sitterSide\s*\?\s*1\s*:\s*-1/.test(world), 'couch and stool seats retain their distinct occlusion order (a profile seat takes the stool\'s)');
 
 // Shared bar regression: reuse planSeat and the existing seat claims; one host may gain one joiner,
 // with a rare roll and a long cooldown rather than a per-frame social loop.

@@ -64,6 +64,7 @@ test/eval-acp-client.test.js
 test/eval-fixture-host.test.js
 test/eval-installed-performance.test.js
 test/eval-installed-provider-soak.test.js
+test/eval-parity-offline.test.js
 test/overnight-reliability-runner.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js
@@ -535,6 +536,8 @@ test/prop-mount.test.js
 test/prop-flat-decal.test.js
 test/bed-sleep.test.js
 test/prop-render-smoke.test.js
+test/recliner-side-seat.test.js
+test/sprite-sit-facing.test.js
 test/prop-search.test.js
 test/waitanchor.test.js
 test/harness.integration.test.js
