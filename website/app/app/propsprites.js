@@ -4622,7 +4622,10 @@ const PropSprites = (() => {
     px(BK + 4, y - 6, 1, h + 6, U.shade(r.lit, -0.32));          // piping where the crown rolls over
     px(BK + 5, y - 5, 1, h + 4, r.dk); rimEdge(BK + 5, y - 5, 1, h + 4, 0.22);
     px(BK + 1, y - 6, 2, 1, U.shade(r.lit, 0.16));               // the crown's own catch
-    /* (6) THE NEAR ARM last, so it wraps the cushion: crown, piping, then the south face + skirt */
+    /* (6) THE NEAR ARM last, so it wraps the cushion: crown, piping, then the south face + skirt.
+       ⛔ ROW y+3 IS THE SEAT LINE. Everything from here down is what a sitting body disappears
+          BEHIND — see RECLINER_FRONT_Y / drawSeatFront. Move this band and the sitter's shins
+          either float in front of the arm or get swallowed to the waist. */
     px(ax + 1, y + 4, 11, 2, r.lit); keyEdge(ax + 1, y + 4, 6, 1, 0.28);
     px(ax + 1, y + 6, 11, 1, U.shade(r.lit, -0.26));
     px(ax + 1, y + 7, aw - 3, 3, r.face);
@@ -4637,12 +4640,18 @@ const PropSprites = (() => {
      it is F.recliner under the same integer mirror the orientation system uses, so the two can never
      drift apart, and px()'s LSWAP re-lights it — the warm key stays high-west where the ceiling strip
      actually is, instead of riding the furniture round. */
-  F.recliner_r = (x, y, w, h, f) => {
+  const mirrorTile = (x, y, w, fn) => {
     ctx.save();
     ctx.translate(x, y); ctx.translate(w, 0); ctx.scale(-1, 1); ctx.translate(-x, -y);
     const was = MIRROR; MIRROR = true;
-    try { F.recliner(x, y, w, h, f); } finally { MIRROR = was; ctx.restore(); }
+    try { fn(); } finally { MIRROR = was; ctx.restore(); }
   };
+  F.recliner_r = (x, y, w, h, f) => mirrorTile(x, y, w, () => F.recliner(x, y, w, h, f));
+
+  /* THE SEAT LINE, per profile seat: px below the tile's top row where the near arm starts, i.e. the
+     row a body sitting in this chair has to be BEHIND. drawSeatFront clips to it. Both entries are the
+     same drawing, so both are step (6)'s `y + 3` — a horizontal mirror cannot move a horizontal band. */
+  const RECLINER_FRONT_Y = { recliner: 3, recliner_r: 3 };
 
   F.arcade = (x, y, w, h, f) => {
     /* v57 ARCADE (1x2) — built to Andrew's reference (2026-08-16), SHORTENED 2026-08-17. Read top to
@@ -8682,6 +8691,10 @@ const PropSprites = (() => {
     /* THE RECLINER PAIR (2026-08-17) — one seat of the couch, shipped as two props so aiming it is a
        pick rather than a hidden gesture. The right-facing one is the left one MIRRORED at draw time,
        so the two can never drift apart. */
+    /* A body DOES sit in these — but `sit` stays false, because that flag means one narrow thing: "the
+       GENERIC prop path (PropAnchor.deriveAnchor) may put a sit pose here", and that is the path the
+       SEAT LAW above closed on sofas and beds. A profile seat never reaches it. Its sit is owned by
+       planCouchSit + world.js SIDE_SEAT, which supply a real cushion anchor and a real occlusion order. */
     { id: "recliner", label: "RECLINER ‹ LEFT", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'west' } },
     { id: "recliner_r", label: "RECLINER RIGHT ›", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'east' } },
   ];
@@ -8825,6 +8838,19 @@ const PropSprites = (() => {
       px(x + 3, y + 6, 1, 1, '#26554e'); px(x + 8, y + 6, 1, 1, '#26554e');   // seat stitches
       px(x + 2, y + 7, 8, 1, r.face); px(x + 2, y + 7, 3, 1, r.lit);          // front lip
       px(x + 3, y + 8, 6, 1, r.dk);                               // rounded skirt
+    } else if (F[f.t] && RECLINER_FRONT_Y[f.t] != null) {
+      /* A PROFILE SEAT covers its sitter with the whole near arm, not a pad rim: at this scale that arm
+         IS what a person's shins disappear behind (the stool's 2-row sliver would leave the legs
+         hanging in front of the chair). Rather than copy those rows — the drift the lockstep note above
+         warns about — CLIP the seat's own drawing function to the band at and below its seat line and
+         run it again. Same code, so the overlay can never disagree with the base about what the chair
+         looks like, and a future edit to F.recliner is carried automatically.
+         Known and accepted cost: the arm-crown keyEdge is a 0.28-alpha 6x1px line, so on an OCCUPIED
+         seat it lands twice and reads a shade brighter. The unoccupied art is untouched. */
+      const w = (f.w || 1) * TILE, h = (f.h || 1) * TILE;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x - TILE, y + RECLINER_FRONT_Y[f.t], w + 2 * TILE, h + TILE); ctx.clip();
+      try { F[f.t](x, y, w, h, f); } finally { ctx.restore(); }
     }
   }
 
