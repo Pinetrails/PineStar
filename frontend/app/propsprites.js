@@ -2639,7 +2639,7 @@ const PropSprites = (() => {
     deckSocket(x + w + 1, base - 3, on);
 
     /* ---- PREVIEW SCREEN: a wide panel on a short neck ---- */
-    const sT = y - 22, sW = w - 4, sX = x + 2, sH = 10;
+    const sT = y - 12, sW = w - 4, sX = x + 2, sH = 8;   // v47: 10px shorter — see note above
     px(sX + 1, sT - 1, sW - 2, 1, r.ink);
     px(sX, sT, sW, sH + 2, r.ink);
     px(sX + 1, sT, sW - 2, 1, r.lit);                               // the bezel's lit crown
@@ -2656,7 +2656,7 @@ const PropSprites = (() => {
       /* the generated picture — five big shapes, nothing finer */
       const sky = ['#8a3f8f', '#a4499b', '#c05aa6', '#d97ab4'];
       for (let j = 0; j < gh; j++) px(gx, gy + j, gw, 1, sky[Math.min(sky.length - 1, Math.floor(j / 2))]);
-      const mx2 = gx + Math.round(gw * 0.42), my = gy + 2, MR = 2.6;   // the moon
+      const mx2 = gx + Math.round(gw * 0.42), my = gy + 2, MR = 2.2;   // the moon
       for (let dy = -MR; dy <= MR; dy++) for (let dx = -MR; dx <= MR; dx++)
         if (Math.sqrt(dx * dx + dy * dy) <= MR) px(mx2 + dx, my + dy, 1, 1, dy < 0 ? '#ffe6f6' : '#f0b8e0');
       for (let i = 0; i < gw; i++) {                                 // two mountain silhouettes
@@ -2673,11 +2673,11 @@ const PropSprites = (() => {
       px(gx, gy, gw, gh, '#120a16');
       px(gx, gy, 5, 1, '#241528'); px(gx + 1, gy + 1, 3, 1, '#1b1020');
     }
-    px(cx - 3, sT + sH + 2, 6, 3, b.ink);                            // the neck
+    px(cx - 3, sT + sH + 2, 6, 2, b.ink);                            // the neck, shortened with it
     px(cx - 2, sT + sH + 2, 4, 2, b.face);
 
     /* ---- BODY ---- */
-    const bT = y - 9;
+    const bT = y - 1;
     px(x + 1, bT, w - 2, base - bT - 2, r.ink);
     px(x + 2, bT + 1, w - 4, base - bT - 4, r.face);
     px(x + 2, bT + 1, w - 4, 1, r.lit);
