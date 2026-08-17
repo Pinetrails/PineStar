@@ -21,7 +21,9 @@ import { materializeSeedWorkspace, bootSeededSidecar, waitUp, waitDevReady } fro
 
 const PORT = process.env.SKYNET_SHOT_PORT || '8958';
 const CDP_PORT = Number(process.env.SKYNET_CDP_PORT || 9358);
-const URL = `http://127.0.0.1:${PORT}/`;
+// ⛔ CACHE-BUST: Chrome served a stale propsprites.js and the sheet came back identical after an
+// art edit — a shooter that can show you yesterday's art is worse than no shooter.
+const URL = `http://127.0.0.1:${PORT}/?rot=${process.pid}`;
 const OUT = process.env.SKYNET_ROT_OUT || join(process.cwd(), 'rotshot');
 const SCALE = Number(process.env.SKYNET_ROT_SCALE || 6);
 const WORK = process.env.SKYNET_ROT_WORK !== '0';

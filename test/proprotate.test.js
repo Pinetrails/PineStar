@@ -104,7 +104,8 @@ for (const spec of PS.CATALOG) {
   for (const r of [1, 3]) {
     const box = PS.footprintAt(spec.id, r);
     const swapped = box.w !== spec.w || box.h !== spec.h;
-    if (swapped) A.ok(spec.flat || spec.surface, spec.id + ': only a decal or a table re-tiles when turned');
+    if (swapped) A.ok(spec.flat || spec.surface || PS.PLAN_FOOTPRINT.indexOf(spec.id) >= 0,
+      spec.id + ': a turn only re-tiles a prop whose footprint IS its plan (decal, table, sofa)');
   }
 }
 A.ok(rotatables >= 5, 'the catalog has real rotatable props (got ' + rotatables + ')');
@@ -117,6 +118,8 @@ A.eq(PS.facings('longtable'), [0, 3], 'LONG TABLE offers ONE turn');
 A.eq(PS.footprintAt('longtable', 3), { w: 1, h: 3 }, 'a turned 3x1 table really is 1x3');
 A.eq(PS.footprintAt('chair', 3), { w: 1, h: 1 }, 'a turned chair keeps its box');
 A.eq(PS.facings('stool'), [0], 'the STOOL is round — it offers no turn at all');
+A.eq(PS.facings('couch'), [0, 1, 3], 'the COUCH faces left and right as well as away');
+A.eq(PS.footprintAt('couch', 1), { w: 1, h: 5 }, 'a turned 5x1 sofa really is 1x5');
 A.eq(PS.facings('desk'), [0], 'a WORKSTATION never turns (its front is load-bearing)');
 
 /* R must never dead-end: nextFacing walks the prop's own cycle in both directions */

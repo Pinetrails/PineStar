@@ -4543,6 +4543,73 @@ const PropSprites = (() => {
     }
   };
 
+  F['couch:w'] = (x, y, w, h, f) => {
+    /* THE SOFA, TURNED TO FACE WEST (Andrew, 2026-08-17: "a couch that faces left side instead of
+       backside and right side"). The shipped couch is drawn from BEHIND — it faces north at the TV —
+       so a room with two of them has two identical grey backs in it. Turned, the sofa runs
+       NORTH-SOUTH: its footprint really is 1x5, and everything the camera sees changes.
+       ⛔ THE ART IS WIDER THAN THE FOOTPRINT, ON PURPOSE. A sofa is about 1.6 tiles deep; drawn
+          inside a 12px column it came out as a girder. Tall props already overhang their box upward
+          — this one overhangs it sideways by 4px, and the tiles it BLOCKS are still the honest 1x5.
+       ⛔ WHAT IS VISIBLE IS TOPS AND SOUTH FACES. A west-facing surface is edge-on from this camera,
+          so the back reads as its CROWN — a lit band down the east side — with the seat's top planes
+          beside it. Drawing the back's inner face would be inventing a camera we do not have.
+       ⛔ THE NEAR ARM IS THE FRONT OF THE PROP: the only piece with a real south face, drawn LAST so
+          it wraps the seat, and the thing that tells you which end is closest.
+       ⛔ Written against h, so any sofa length works — the art must not care that this one is 5. */
+    const EDGE = '#161d22';
+    const r = RAMP.fabric;
+    const ax = x - 4, aw = w + 8;                                // the drawn box: 4px proud each side
+    const NA = y + h - 11;                                       // where the NEAR (south) arm starts
+    shadow2(ax + 1, y + h - 1, aw - 2);
+    /* (1) the silhouette: body + both arms, in ONE ink pass (per-panel outlines make a cabinet) */
+    rr(ax + 1, y - 5, aw - 2, h + 4, EDGE);
+    rr(ax, y - 3, aw, 8, EDGE);                                  // far arm, north end
+    rr(ax, NA, aw, 12, EDGE);                                    // near arm, south end
+    /* (2) THE BACK — its crown, running the full length down the east side */
+    px(ax + 12, y - 4, 5, h + 2, r.lit);                         // the roll's top surface
+    keyEdge(ax + 12, y - 4, 5, 12, 0.20);
+    px(ax + 12, y - 4, 1, h + 2, U.shade(r.lit, 0.08));
+    px(ax + 17, y - 4, 1, h + 2, U.shade(r.lit, -0.30));         // piping where the crown rolls over
+    px(ax + 18, y - 4, 1, h + 2, r.face);
+    px(ax + 19, y - 3, 1, h, r.dk); rimEdge(ax + 19, y - 3, 1, h, 0.22);
+    /* (3) THE SEAT — cushion tops in a row, marked by SEAMS, never by gaps */
+    px(ax + 1, y - 2, 11, h - 1, r.face);
+    px(ax + 1, y - 2, 1, h - 1, U.shade(r.face, 0.12));          // the west lip catches the strip
+    px(ax + 2, y - 2, 8, h - 1, U.shade(r.face, 0.05));          // each cushion's soft belly
+    px(ax + 10, y - 2, 2, h - 1, U.shade(r.face, -0.08));        // and falls off into the back's shade
+    for (let cy = y + 9; cy < y + h - 14; cy += 12) {
+      px(ax + 1, cy, 11, 1, r.dk);                               // cushion seam
+      px(ax + 1, cy + 1, 11, 1, U.shade(r.face, 0.09));          // the next cushion's lit lip
+      px(ax + 6, cy - 5, 1, 1, U.shade(r.face, -0.30));          // its tuft button
+      px(ax + 5, cy - 4, 1, 1, U.shade(r.face, -0.12)); px(ax + 7, cy - 4, 1, 1, U.shade(r.face, -0.12));
+    }
+    px(ax + 1, y - 2, 11, 1, U.shade(r.face, -0.16));            // the seat tucks under the far arm
+    wear(ax + 2, y + 2, 9, h - 18, 6, U.shade(r.face, -0.08));
+    /* (4) THROW PILLOWS propped against the back — the couch's own two colours, kept */
+    for (const [py0, c0, c1] of [[y + 5, '#2f6a62', '#4a8a82'], [y + h - 28, '#8a6a3a', '#caa84a']]) {
+      if (py0 < y - 1 || py0 + 7 > NA) continue;
+      px(ax + 6, py0, 6, 7, EDGE);
+      px(ax + 7, py0 + 1, 4, 5, c0); px(ax + 7, py0 + 1, 4, 1, c1);
+      px(ax + 7, py0 + 2, 1, 3, U.shade(c1, 0.16)); px(ax + 10, py0 + 2, 1, 3, U.shade(c0, -0.24));
+      px(ax + 7, py0 + 1, 1, 1, EDGE); px(ax + 10, py0 + 1, 1, 1, EDGE);   // rounded stuffed corners
+    }
+    /* (5) THE FAR ARM — a roll across the north end, catching the ceiling strip */
+    px(ax + 1, y - 2, aw - 2, 3, r.lit); keyEdge(ax + 1, y - 2, 8, 1, 0.26);
+    px(ax + 1, y + 1, aw - 2, 1, U.shade(r.lit, -0.24));
+    px(ax + 1, y + 2, aw - 2, 2, r.face);
+    px(ax + 1, y + 4, aw - 2, 1, U.shade(r.face, -0.26));        // its shadow onto the near cushion
+    /* (6) THE NEAR ARM last, so it wraps the seat: crown, piping, then a real south face */
+    px(ax + 1, NA + 1, aw - 2, 3, r.lit); keyEdge(ax + 1, NA + 1, 8, 1, 0.26);
+    px(ax + 1, NA + 4, aw - 2, 1, U.shade(r.lit, -0.24));        // piping under the crown
+    px(ax + 1, NA + 5, aw - 2, 4, r.face);                       // the arm's south face
+    px(ax + 1, NA + 5, 1, 4, U.shade(r.face, 0.10)); px(ax + aw - 2, NA + 5, 1, 4, r.dk);
+    rimEdge(ax + aw - 2, NA + 5, 1, 4, 0.22);
+    px(ax + 3, NA + 6, aw - 6, 2, U.shade(r.face, 0.05));        // the arm's own soft belly
+    px(ax + 1, NA + 9, aw - 2, 1, U.shade(r.face, -0.24));       // skirt band
+    px(ax + 1, NA + 10, aw - 2, 1, r.ao);                        // floor-line AO
+  };
+
   F.arcade = (x, y, w, h, f) => {
     /* v56 ARCADE (1x2) — built to Andrew's reference (2026-08-16). Read top to bottom:
          vent cap -> glowing MARQUEE -> screen flanked by MAGENTA SIDE STRIPS -> pale CONTROL PANEL
@@ -9057,10 +9124,12 @@ const PropSprites = (() => {
     if (!rotatable(id)) return null;
     if (isDecal(id)) return { fn: F[id], mirror: 0, turned: 1 };          // decal: transform the south art
     if (r === 2) return hasView(id, 'n') ? { fn: F[viewKey(id, 'n')], mirror: 0, turned: 0 } : null;
-    if (r === 3) return hasView(id, 'e') ? { fn: F[viewKey(id, 'e')], mirror: 0, turned: 0 } : null;
-    if (hasView(id, 'w')) return { fn: F[viewKey(id, 'w')], mirror: 0, turned: 0 };
+    // the two side facings are each other's mirror, so ONE authored profile serves both — whichever
+    // side was drawn wins outright, and the other is that fn flipped (px()'s LSWAP re-lights it).
+    const near = r === 3 ? 'e' : 'w', far = r === 3 ? 'w' : 'e';
+    if (hasView(id, near)) return { fn: F[viewKey(id, near)], mirror: 0, turned: 0 };
     if (SYM_SET[id]) return null;                                          // its two sides are one picture — offer ONE
-    return (hasView(id, 'e') && !NOMIR_SET[id]) ? { fn: F[viewKey(id, 'e')], mirror: 1, turned: 0 } : null;
+    return (hasView(id, far) && !NOMIR_SET[id]) ? { fn: F[viewKey(id, far)], mirror: 1, turned: 0 } : null;
   }
   /* SIDE_SYMMETRIC — props whose east and west views are the SAME picture, so only the east facing is
      offered. A table has no front: turned either way it is the same board, and offering both would
@@ -9113,7 +9182,13 @@ const PropSprites = (() => {
      rotation lane: `arcade` is authored 1x2, that 2 was read as DEPTH, and a quarter turn made the
      cabinet twice as wide as itself — Andrew: "it literally changes the entire height and size of
      the machine and it makes no sense." The 2 is vertical drawing room for a tall object. */
-  const reTiles = id => isDecal(id) || !!(spec(id) || {}).surface;
+  /* PLAN_FOOTPRINT — props whose box is the object's PLAN, so turning it really does swap the tiles:
+     a 5x1 sofa turned is a 1x5 sofa running along a wall. Decals and tables qualify by their catalog
+     flags (`flat` / `surface`); soft furniture has no such flag and is listed here. Everything else
+     keeps its box — the arcade's second tile is HEIGHT, not depth. */
+  const PLAN_FOOTPRINT = ['couch'];
+  const PLAN_SET = PLAN_FOOTPRINT.reduce((o, id) => (o[id] = 1, o), {});
+  const reTiles = id => isDecal(id) || !!PLAN_SET[id] || !!(spec(id) || {}).surface;
   function footprintAt(id, r) {
     const s = spec(id); if (!s) return null;
     // the swap is gated on an HONEST view at that facing: a prop that falls back to its south art
@@ -9338,7 +9413,7 @@ const PropSprites = (() => {
     draw, drawOver, hasOver, drawSeatFront, CATALOG, CATS, spec, has, TILE,
     // ORIENTATION: what each prop's art can honestly do, and the box it covers once turned. The
     // builder asks BEFORE offering an R/M affordance — never an input that produces broken art.
-    facings, canRotate, canMirror, nextFacing, footprintAt, viewAt, hasView, NO_MIRROR,
+    facings, canRotate, canMirror, nextFacing, footprintAt, viewAt, hasView, NO_MIRROR, PLAN_FOOTPRINT,
     // live connector state (the world layer feeds these; the connector_portal sprite reads them)
     setConnectorState, pulseConnector,
     // workbench pulse (the world layer feeds this off shell.exec / verify.result)
