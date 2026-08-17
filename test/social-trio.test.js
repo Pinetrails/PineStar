@@ -128,7 +128,12 @@ A.ok(/bodies\.some\(x => !x \|\| x\.unplaced\)/.test(brokenFn), 'any despawned p
 const huddleFn = src.slice(src.indexOf('function planHuddle('), src.indexOf('// WATCH-A-PEER-WORK:'));
 A.ok(/const tc = nearestWalkableInZone\(zoneFor\(c\), ta\.x, ta\.y, cc, 4, ta, tb\)/.test(huddleFn),
   'the third tile is resolved in the THIRD body\'s own zone and excludes both taken tiles (G3)');
-A.ok(/if \(tc\) extras\.push/.test(huddleFn), 'no legal third tile ⇒ no third body (the huddle falls back to the pair, never fails)');
+A.ok(/if \(tc && losClear\([\s\S]{0,120}\) extras\.push/.test(huddleFn), 'no legal third tile ⇒ no third body (the huddle falls back to the pair, never fails)');
+// SIGHTLINE (2026-08-17): "legal" now includes being able to SEE the other two. Each of the three tiles
+// is resolved inside its OWN body's zone, so a trio straddling a room boundary could put the recruit on
+// the far side of a wall — a body silently talking to plaster. It must see BOTH, or it isn't recruited.
+A.ok(/losClear\(tc\.x, tc\.y, ta\.x, ta\.y\)/.test(huddleFn) && /losClear\(tc\.x, tc\.y, tb\.x, tb\.y\)/.test(huddleFn),
+  'the third body must have a wall-free sightline to BOTH of the other two');
 // (the roll's argument grew a COMPANIONS bonus in 2026-08-16, so these match the call up to the
 // constant and assert the bonus separately below — the ORDERING law under test is unchanged)
 A.ok(huddleFn.indexOf('if (!tb) return false;') < huddleFn.indexOf('U.chance(SOCIAL_TRIO_CHANCE'),
