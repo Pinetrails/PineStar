@@ -6069,102 +6069,128 @@ const PropSprites = (() => {
      and the DINER CHAIR (red vinyl, chrome, splayed legs). A third and fourth seat only earn their
      row if you can tell which is which at 12px ACROSS A ROOM, so these two are picked to be opposite
      in both silhouette and value structure:
-       BISTRO CHAIR — AIRY. A dark hooped frame you can see the deck through, with two slats and one
-                      pale seat. Its silhouette is mostly HOLES.
-       POD CHAIR    — SOLID. One moulded shell on a pedestal, no legs and no gaps at all, opening
-                      toward whatever it faces. Its silhouette is one continuous MASS.
-     Dark-frame-pale-seat against pale-body-dark-accents is also the value inversion that keeps the
-     bistro chair from reading as the office chair's cousin. */
-  F.bistrochair = (x, y, w, h, f) => {
-    /* The cafe chair — a hooped back with two slats, a pale round seat, four thin splayed legs.
-       ⛔ ITS SILHOUETTE IS THE HOLES. Fill the gaps between the slats or between the legs and it
-          collapses into the diner chair. Every mark here is 1px and the deck shows between them. */
-    /* ⛔ AN AIRY CHAIR NEEDS A FRAME BRIGHTER THAN ITS GROUND. Drawn in charcoal on this deck the
-       hoop, the slats and the legs all fell into the dark and the back read as ONE SOLID BLOCK —
-       the holes only exist if the metal around them is lighter than the floor behind them. BRASS
-       also pairs it with the glass lounge table and keeps it off the office chair's silver. */
-    const b = MAT.brass;
-    const FR = b.mid, FR_LIT = b.hi, FR_DK = b.dk, INK = b.ink;
-    const PAD = '#b5b2ad', PAD_LIT = '#d5d2cb', PAD_DK = '#75726c';
+       POD CHAIR   — ROUND. A deep moulded bucket on a swivel pedestal, opening toward whatever it
+                     faces. Lounge furniture: soft, warm-cushioned, no hard edge on it anywhere.
+       CRASH SEAT  — ANGULAR. Squared shoulders, a harness, bolted to a floor plate. Utility: the
+                     seat you strap into, not the one you sink into.
+     ⛔ THE FIRST ATTEMPT AT THE SECOND SLOT WAS A BISTRO CHAIR AND IT WAS CUT ON SIGHT. A hooped
+        cafe chair of 1px brass members is both fragile at this size and furniture from the wrong
+        planet — this station's seating is MOULDED, a rigid shell with something soft set into it.
+        When one design in a pair lands and the other does not, the survivor is the brief. */
+  F.crashseat = (x, y, w, h, f) => {
+    /* THE CRASH SEAT — the second seat of the pair, replacing a BISTRO CHAIR that was cut on sight
+       (Andrew: "pod chair is amazing, remove the bistro chair and design a different kind of chair").
+       The survivor is the brief: this station's seating is MOULDED — a rigid shell with something
+       soft set into it — not delicate cafe metalwork of 1px brass members.
+       So this is a different OBJECT in the same language, built to be the pod's opposite:
+         POD   — round, deep, swivels on a pedestal. Lounge: you sink into it.
+         CRASH — angular, harnessed, BOLTED to a floor plate. Utility: you strap into it.
+       ⛔ THE FLOATING HEADREST IS THE SILHOUETTE. A single tapering shell — the first draft — read
+          as a BIN from behind, because an unbroken outline at this size is a cylinder no matter what
+          you paint inside it. Lifting the headrest onto two posts puts REAL DECK through the prop at
+          neck height, and that one break is what makes it a seat from every angle.
+       ⛔ Its other identity is the HARNESS: two pale straps meeting at a buckle say "this seat
+          expects the station to move" in four marks. */
+    const r = MAT.steel;
+    const PAD = '#4c5d20', PAD_LIT = '#72892b', PAD_DK = '#25300d';   // olive, authored past the chroma skip
+    const STRAP = '#c3bfb1', STRAP_DK = '#6b675c', INK = '#161c21';
     shadow2(x + 2, y + 11, 8);
-    // FOUR THIN LEGS, splayed — 1px each, stepping outward at the floor
-    for (const s2 of [[x + 3, x + 2], [x + 8, x + 9]]) {
-      px(s2[0], y + 8, 1, 2, FR); px(s2[1], y + 10, 1, 2, FR);
-      px(s2[0], y + 8, 1, 1, FR_LIT);
-    }
-    px(x + 4, y + 8, 1, 3, FR_DK); px(x + 7, y + 8, 1, 3, FR_DK);          // the rear pair, in shade
-    px(x + 3, y + 10, 6, 1, FR_DK);                                        // a stretcher ring
-    // THE HOOP — a curved top rail on two posts, with two slats between them and deck showing through
-    px(x + 4, y - 4, 4, 1, INK); px(x + 4, y - 4, 3, 1, FR_LIT); keyEdge(x + 4, y - 4, 2, 1, 0.28);
-    px(x + 3, y - 3, 1, 1, FR_LIT); px(x + 8, y - 3, 1, 1, FR);            // the hoop's shoulders
-    px(x + 3, y - 2, 1, 5, FR); px(x + 8, y - 2, 1, 5, FR_DK);             // its two posts
-    keyEdge(x + 3, y - 2, 1, 4, 0.20); rimEdge(x + 8, y - 2, 1, 4, 0.18);
-    for (const sy of [y - 2, y + 0]) {                                     // TWO SLATS, deck between them
-      px(x + 4, sy, 4, 1, PAD_DK); px(x + 4, sy, 3, 1, U.shade(PAD, -0.18));
-    }
-    px(x + 4, y + 2, 4, 1, FR_DK);                                         // the back's foot, ON the seat
-    // THE SEAT — one pale round pad, the only light mass on the prop
-    rr(x + 1, y + 3, 10, 5, INK);
-    px(x + 2, y + 4, 8, 1, PAD_LIT); keyEdge(x + 2, y + 4, 4, 1, 0.26);
-    px(x + 2, y + 5, 8, 2, PAD);
-    px(x + 2, y + 5, 1, 2, PAD_LIT); px(x + 9, y + 5, 1, 2, PAD_DK);
-    rimEdge(x + 9, y + 4, 1, 3, 0.20);
-    px(x + 3, y + 6, 6, 1, U.shade(PAD, -0.10));
-    px(x + 2, y + 7, 8, 1, FR_DK); px(x + 2, y + 7, 3, 1, FR);             // the seat's frame rail
+    // THE FLOOR PLATE — bolted down, not standing on legs. Wide, low, its bolts countable.
+    px(x + 1, y + 9, 10, 3, INK);
+    px(x + 2, y + 9, 8, 1, r.mid); keyEdge(x + 2, y + 9, 4, 1, 0.26);
+    px(x + 2, y + 10, 8, 1, r.face); px(x + 2, y + 11, 8, 1, r.ao);
+    boltH(x + 2, y + 9, r); boltH(x + 9, y + 9, r);
+    px(x + 4, y + 7, 4, 2, r.dk); px(x + 4, y + 7, 1, 2, r.mid);      // the stem into the shell
+    // THE HEADREST — floating, on two posts, with deck showing between them
+    px(x + 3, y - 5, 6, 3, INK);
+    px(x + 4, y - 4, 4, 1, r.lit); keyEdge(x + 4, y - 4, 3, 1, 0.30);
+    px(x + 4, y - 3, 4, 1, PAD); px(x + 4, y - 3, 2, 1, PAD_LIT);     // padded on its front face
+    px(x + 4, y - 2, 1, 1, r.dk); px(x + 7, y - 2, 1, 1, r.dk);       // ITS TWO POSTS — the break
+    /* THE BACK — squared shoulders, wings proud of the padding. One silhouette, then the fills. */
+    px(x + 2, y - 1, 8, 8, INK);
+    px(x + 3, y - 1, 1, 7, r.lit); keyEdge(x + 3, y - 1, 1, 5, 0.24);  // west wing, lit
+    px(x + 8, y - 1, 1, 7, r.dk); rimEdge(x + 8, y - 1, 1, 6, 0.22);   // east wing, in shade
+    px(x + 4, y - 1, 4, 1, r.mid);                                     // the shoulder rail between them
+    px(x + 4, y + 0, 4, 4, PAD_DK);
+    px(x + 4, y + 0, 4, 1, PAD_LIT); px(x + 4, y + 1, 4, 2, PAD);
+    px(x + 4, y + 1, 1, 2, PAD_LIT); px(x + 7, y + 1, 1, 2, PAD_DK);
+    px(x + 5, y + 2, 2, 1, U.shade(PAD, -0.18));                       // one quilt seam, not three
+    /* THE HARNESS — from the shoulders to a buckle. Four marks, and half the identity. */
+    px(x + 4, y + 0, 1, 2, STRAP); px(x + 5, y + 2, 1, 1, STRAP);
+    px(x + 7, y + 0, 1, 2, STRAP); px(x + 6, y + 2, 1, 1, STRAP);
+    px(x + 4, y + 2, 1, 1, STRAP_DK); px(x + 7, y + 2, 1, 1, STRAP_DK);
+    px(x + 5, y + 3, 2, 1, r.hi); px(x + 5, y + 3, 1, 1, r.sheen);     // the buckle catches the strip
+    // THE SEAT CUSHION, in front of the back so the shell reads as holding it
+    px(x + 2, y + 4, 8, 4, INK);
+    px(x + 3, y + 4, 6, 1, PAD_LIT); keyEdge(x + 3, y + 4, 3, 1, 0.26);
+    px(x + 3, y + 5, 6, 2, PAD);
+    px(x + 3, y + 5, 1, 2, PAD_LIT); px(x + 8, y + 5, 1, 2, PAD_DK);
+    px(x + 5, y + 6, 2, 1, U.shade(PAD, -0.24));
+    px(x + 3, y + 7, 6, 1, r.dk);                                      // the pan under the cushion
   };
 
-  F['bistrochair:e'] = (x, y, w, h, f) => {
-    // TURNED RIGHT. Edge-on the hoop is ONE thin post — which is the whole risk: a 1px stick over a
-    // pad is a lollipop. What saves it is the top rail curling east off the post and the slats
-    // showing as short stubs behind it, so the back still reads as a frame rather than a stalk.
-    const b = MAT.brass;
-    const FR = b.mid, FR_LIT = b.hi, FR_DK = b.dk, INK = b.ink;
-    const PAD = '#b5b2ad', PAD_LIT = '#d5d2cb', PAD_DK = '#75726c';
+  F['crashseat:e'] = (x, y, w, h, f) => {
+    // TURNED RIGHT. Side-on a bucket seat is a raked back, a headrest floating clear of it, and the
+    // cushion running out east — three masses with real gaps, which is why this facing survives the
+    // turn where a single tapering shell would just become a slab.
+    const r = MAT.steel;
+    const PAD = '#4c5d20', PAD_LIT = '#72892b', PAD_DK = '#25300d';
+    const STRAP = '#c3bfb1', INK = '#161c21';
     shadow2(x + 2, y + 11, 8);
-    for (const s2 of [[x + 3, x + 2], [x + 8, x + 9]]) {
-      px(s2[0], y + 8, 1, 2, FR); px(s2[1], y + 10, 1, 2, FR);
-      px(s2[0], y + 8, 1, 1, FR_LIT);
-    }
-    px(x + 5, y + 8, 1, 3, FR_DK); px(x + 7, y + 8, 1, 3, FR_DK);
-    px(x + 3, y + 10, 7, 1, FR_DK);
-    px(x + 2, y - 4, 4, 1, INK); px(x + 3, y - 4, 3, 1, FR_LIT);           // the rail, curling east
-    keyEdge(x + 3, y - 4, 2, 1, 0.28);
-    px(x + 2, y - 3, 2, 6, INK);
-    px(x + 2, y - 3, 1, 6, FR_LIT); px(x + 3, y - 3, 1, 6, FR);            // the post, edge-on
-    for (const sy of [y - 2, y + 0]) px(x + 4, sy, 2, 1, PAD_DK);          // the slats, end-on
-    px(x + 2, y + 2, 3, 1, FR_DK);
-    rr(x + 2, y + 3, 9, 5, INK);
-    px(x + 3, y + 4, 7, 1, PAD_LIT); keyEdge(x + 3, y + 4, 4, 1, 0.26);
-    px(x + 3, y + 5, 7, 2, PAD);
-    px(x + 3, y + 5, 1, 2, PAD_LIT); px(x + 9, y + 5, 1, 2, PAD_DK);
-    rimEdge(x + 9, y + 4, 1, 3, 0.20);
-    px(x + 4, y + 6, 5, 1, U.shade(PAD, -0.10));
-    px(x + 3, y + 7, 7, 1, FR_DK); px(x + 3, y + 7, 3, 1, FR);
+    px(x + 1, y + 9, 10, 3, INK);
+    px(x + 2, y + 9, 8, 1, r.mid); keyEdge(x + 2, y + 9, 4, 1, 0.26);
+    px(x + 2, y + 10, 8, 1, r.face); px(x + 2, y + 11, 8, 1, r.ao);
+    boltH(x + 2, y + 9, r); boltH(x + 9, y + 9, r);
+    px(x + 4, y + 7, 4, 2, r.dk); px(x + 4, y + 7, 1, 2, r.mid);
+    // the headrest, edge-on and floating on its post
+    px(x + 2, y - 5, 4, 3, INK);
+    px(x + 3, y - 4, 2, 1, r.lit); keyEdge(x + 3, y - 4, 2, 1, 0.30);
+    px(x + 5, y - 3, 1, 1, PAD);                                       // its padded face, edge-on
+    px(x + 4, y - 2, 1, 1, r.dk);                                      // the post
+    // THE BACK — raked, its lit west face carrying the light
+    px(x + 2, y - 1, 5, 8, INK);
+    px(x + 3, y - 1, 1, 7, r.lit); keyEdge(x + 3, y - 1, 1, 5, 0.24);
+    px(x + 4, y - 1, 2, 7, r.mid);
+    px(x + 6, y + 0, 1, 5, PAD_DK);                                    // the padding, edge-on
+    px(x + 4, y + 0, 1, 2, STRAP); px(x + 5, y + 2, 1, 1, STRAP);      // the harness over the shoulder
+    // THE CUSHION running east out of the shell, and the pan under it
+    px(x + 6, y + 4, 5, 4, INK);
+    px(x + 6, y + 4, 5, 1, PAD_LIT); keyEdge(x + 6, y + 4, 3, 1, 0.26);
+    px(x + 6, y + 5, 5, 2, PAD);
+    px(x + 6, y + 5, 1, 2, PAD_LIT); px(x + 10, y + 5, 1, 2, PAD_DK);
+    rimEdge(x + 10, y + 4, 1, 3, 0.22);
+    px(x + 8, y + 6, 2, 1, U.shade(PAD, -0.24));
+    px(x + 6, y + 7, 5, 1, r.dk);
+    px(x + 6, y + 3, 2, 1, r.mid); px(x + 6, y + 3, 1, 1, r.lit);      // the near wing's top edge
   };
 
-  F['bistrochair:n'] = (x, y, w, h, f) => {
-    // FROM BEHIND. A cafe chair's back is nearly symmetrical, so what makes this an honest picture
-    // rather than the south view again is the SEAT: from here you get its rear edge and underside
-    // instead of the pale plane, and the slats sit on their shade side.
-    const b = MAT.brass;
-    const FR = b.mid, FR_LIT = b.hi, FR_DK = b.dk, INK = b.ink;
-    const PAD = '#b5b2ad', PAD_DK = '#75726c';
+  F['crashseat:n'] = (x, y, w, h, f) => {
+    // FROM BEHIND — no padding, no harness, no olive at all: just the shell's outer moulding with a
+    // spine, the headrest floating clear on its posts, and the bolted plate under. The deck showing
+    // through at neck height is what keeps this from being the cylinder the first draft was.
+    const r = MAT.steel;
+    const INK = '#161c21';
     shadow2(x + 2, y + 11, 8);
-    for (const s2 of [[x + 3, x + 2], [x + 8, x + 9]]) {
-      px(s2[0], y + 8, 1, 2, FR_DK); px(s2[1], y + 10, 1, 2, FR_DK);
-    }
-    px(x + 4, y + 8, 1, 3, FR_DK); px(x + 7, y + 8, 1, 3, FR_DK);
-    px(x + 3, y + 10, 6, 1, FR_DK);
-    rr(x + 1, y + 3, 10, 5, INK);                                          // the pad, from behind
-    px(x + 2, y + 4, 8, 2, U.shade(PAD, -0.34));
-    px(x + 2, y + 4, 8, 1, U.shade(PAD, -0.24));
-    px(x + 2, y + 6, 8, 1, PAD_DK); px(x + 3, y + 7, 6, 1, FR_DK);
-    px(x + 4, y - 4, 4, 1, INK); px(x + 4, y - 4, 3, 1, FR);
-    px(x + 3, y - 3, 1, 1, FR); px(x + 8, y - 3, 1, 1, FR_DK);
-    px(x + 3, y - 2, 1, 5, U.shade(FR, -0.10)); px(x + 8, y - 2, 1, 5, FR_DK);
-    rimEdge(x + 8, y - 2, 1, 4, 0.18);
-    for (const sy of [y - 2, y + 0]) px(x + 4, sy, 4, 1, U.shade(PAD_DK, -0.26));
-    px(x + 4, y + 2, 4, 1, FR_DK);
+    px(x + 1, y + 9, 10, 3, INK);
+    px(x + 2, y + 9, 8, 1, r.face); px(x + 2, y + 10, 8, 1, r.dk); px(x + 2, y + 11, 8, 1, r.ao);
+    boltH(x + 2, y + 9, r); boltH(x + 9, y + 9, r);
+    px(x + 4, y + 7, 4, 2, r.dk);
+    px(x + 3, y - 5, 6, 3, INK);                                       // the headrest, from behind
+    px(x + 4, y - 4, 4, 1, r.face); keyEdge(x + 4, y - 4, 2, 1, 0.20);
+    px(x + 4, y - 3, 4, 1, r.dk);
+    px(x + 4, y - 2, 1, 1, r.dk); px(x + 7, y - 2, 1, 1, r.dk);        // its posts
+    px(x + 2, y - 1, 8, 8, INK);                                       // the back's outer moulding
+    px(x + 3, y - 1, 6, 7, r.face);
+    px(x + 3, y - 1, 1, 7, r.mid); px(x + 8, y - 1, 1, 7, r.dk);
+    rimEdge(x + 8, y - 1, 1, 6, 0.22);
+    px(x + 5, y - 1, 2, 7, r.dk); px(x + 5, y - 1, 1, 7, r.mid);       // ONE structural spine
+    px(x + 3, y + 2, 6, 1, U.shade(r.face, -0.24));                    // a moulding band across it
+    px(x + 3, y + 3, 6, 1, r.mid);
+    px(x + 3, y + 6, 6, 1, r.dk);
+    px(x + 2, y + 4, 8, 4, INK);                                       // the cushion pan, from behind
+    px(x + 3, y + 4, 6, 2, U.shade(r.face, -0.16));
+    px(x + 3, y + 4, 6, 1, r.dk);
+    px(x + 3, y + 6, 6, 1, U.shade(r.dk, -0.24)); px(x + 4, y + 7, 4, 1, U.shade(r.dk, -0.34));
   };
 
   F.podchair = (x, y, w, h, f) => {
@@ -9827,7 +9853,7 @@ const PropSprites = (() => {
        so it reads as a laid table rather than an empty one you are forbidden to use. */
     { id: "dinertable", label: "DINER TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 2, animated: false, blocks: true },
     { id: "dinerchair", label: "DINER CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
-    { id: "bistrochair", label: "BISTRO CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
+    { id: "crashseat", label: "CRASH SEAT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
     { id: "podchair", label: "POD CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
     { id: "loungetable", label: "LOUNGE TABLE", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, surface: true },
     { id: "longtable", label: "LONG TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, surface: true },
