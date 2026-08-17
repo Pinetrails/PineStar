@@ -43,7 +43,7 @@ const PropSprites = (() => {
      grey. Machinery is *supposed* to be grey; the defect is a prop with no saturated element at all.
      ⛔ Already-saturated colour is LEFT ALONE (emissives, ACC leds, screen phosphor): boosting a
      colour that is already doing its job only clips it. */
-  let CHROMA = 1;                                   // 1 = shipped art, untouched
+  let CHROMA = 2.6;                                 // 1 = shipped art, untouched · 2.6 = the LOCAL COLOUR candidate
   const CHROMA_SKIP = 0.45;                         // authored saturation at/above this is already local colour
   const _cboost = new Map();
   const chromaOf = (c) => {
