@@ -8771,111 +8771,90 @@ const PropSprites = (() => {
     const STK = '#8a6538', STK_LIT = '#b98d51';
     const cell = 0.55 + 0.45 * Math.sin(now / 1700 + x);
     /* (1) standoff shadow, frame, and the near-black well the arms hang in */
-    ctx.globalAlpha = 0.30; px(x + 4, y - 15, w - 5, 22, '#000'); ctx.globalAlpha = 1;
-    chamf(x + 1, y - 19, w - 2, 25, FRM_DK, 2);
-    px(x + 2, y - 18, w - 4, 23, FRM);
-    px(x + 2, y - 18, w - 4, 1, FRM_LIT); keyEdge(x + 2, y - 18, 8, 1, 0.26);
-    px(x + 2, y - 18, 1, 23, U.shade(FRM_LIT, -0.16)); px(x + w - 3, y - 18, 1, 23, FRM_DK);
-    rimEdge(x + w - 3, y - 17, 1, 21, 0.18);
-    px(x + 3, y - 17, w - 6, 21, WELL);
-    px(x + 3, y - 17, w - 6, 1, U.shade(WELL, -0.44));
-    px(x + 4, y - 16, w - 8, 1, WELL_LIT);
-    px(x + 3, y - 6, w - 6, 1, U.shade(FRM, -0.24));                               // the shelf between the two arms
-    for (const [bx, by] of [[x + 2, y - 18], [x + w - 3, y - 18], [x + 2, y + 3], [x + w - 3, y + 3]]) {
+    ctx.globalAlpha = 0.30; px(x + 4, y - 12, w - 5, 18, '#000'); ctx.globalAlpha = 1;
+    chamf(x + 1, y - 16, w - 2, 22, FRM_DK, 2);
+    px(x + 2, y - 15, w - 4, 20, FRM);
+    px(x + 2, y - 15, w - 4, 1, FRM_LIT); keyEdge(x + 2, y - 15, 7, 1, 0.26);
+    px(x + 2, y - 15, 1, 20, U.shade(FRM_LIT, -0.16)); px(x + w - 3, y - 15, 1, 20, FRM_DK);
+    rimEdge(x + w - 3, y - 14, 1, 18, 0.18);
+    px(x + 3, y - 14, w - 6, 18, WELL);
+    px(x + 3, y - 14, w - 6, 1, U.shade(WELL, -0.44));
+    px(x + 4, y - 13, w - 8, 1, WELL_LIT);
+    px(x + 3, y - 4, w - 6, 1, U.shade(FRM, -0.24));                               // the shelf between the two arms
+    for (const [bx, by] of [[x + 2, y - 15], [x + w - 3, y - 15], [x + 2, y + 3], [x + w - 3, y + 3]]) {
       px(bx, by, 1, 1, U.shade(FRM_LIT, 0.24)); px(bx, by + 1, 1, 1, FRM_DK);
     }
-    /* (2) ONE WEAPON, IN PROFILE, DEAD STRAIGHT. ⛔ THE BARREL CURVED UPWARD in v3 and Andrew caught
-       it: the barrel was drawn along a rake while the receiver and stock were drawn flat, so the
-       thing HINGED out of its own body — a straight line rounded per pixel also steps visibly at
-       this scale. Every part now shares one centre line and the variety comes from the two arms
-       being different WEAPONS at different heights, not from bending them.
-       Built butt-first so the parts chain: stock -> grip -> receiver -> magazine -> handguard ->
-       barrel -> muzzle, with an optic over the receiver and a sling drooping under it. */
+    /* (2) ONE WEAPON, IN PROFILE, DEAD STRAIGHT, AND AT THE RIGHT SIZE. Two scale corrections live
+       here, both caught by Andrew and both checkable with arithmetic rather than a render:
+       ⛔ THE BARREL CURVED UPWARD (v3) because the barrel followed a rake while the receiver and
+          stock were drawn flat, so the weapon HINGED out of its own body. Every part now shares one
+          centre line; variety comes from the two arms being different WEAPONS, never from bending.
+       ⛔ THEY WERE 1.6x TOO BIG (v5). An agent is ~35px for ~1.7m, so the station runs at ~20px per
+          metre: a 0.9m rifle is ~18px END TO END, and v5 drew 30px — 86% of a person's height, which
+          is why the rack read as a display of oars. At 18px the previous ornament pass no longer
+          fits, and that is the trade: correct scale costs detail. What survives is what still reads
+          at size — receiver, port, magazine, handguard, muzzle, and a compact optic. */
     const weapon = (x0, y0, len, opts) => {
       const o = opts || {};
-      const bl = x0 + 24;                                                          // where the barrel starts
-      /* stock: timber or polymer, with a dark butt pad and a cheek line */
-      px(x0, y0 - 3, 8, 6, GUN_DK);
-      px(x0 + 1, y0 - 2, 6, 4, o.wood ? STK : U.shade(GUN_MID, -0.10));
-      px(x0 + 1, y0 - 2, 6, 1, o.wood ? STK_LIT : GUN_MID);
-      px(x0, y0 - 2, 1, 4, U.shade(GUN_DK, 0.20));                                 // butt pad
-      px(x0 + 2, y0, 4, 1, U.shade(o.wood ? STK : GUN_MID, -0.30));                // the cheek line
-      /* pistol grip, raking back under the receiver */
-      px(x0 + 8, y0 + 3, 3, 5, GUN_DK);
-      px(x0 + 9, y0 + 3, 1, 4, o.wood ? STK : U.shade(GUN_MID, -0.16));
-      px(x0 + 8, y0 + 7, 2, 1, U.shade(GUN_DK, 0.24));
-      /* receiver: the block that makes it a weapon, with a port and a charging handle */
-      px(x0 + 7, y0 - 3, 11, 6, GUN_DK);
-      px(x0 + 8, y0 - 2, 9, 1, GUN);
-      px(x0 + 8, y0 - 1, 9, 3, GUN_MID);
-      px(x0 + 12, y0 - 1, 3, 2, U.shade(GUN_DK, 0.30));                            // ejection port
-      px(x0 + 9, y0 - 2, 2, 1, '#cfd7dc');                                         // charging handle
-      px(x0 + 8, y0 + 2, 9, 1, U.shade(GUN_MID, -0.34));
-      for (let i = 0; i < 4; i++) px(x0 + 9 + i * 2, y0 - 3, 1, 1, U.shade(GUN_MID, 0.20));   // the top rail's teeth
-      px(x0 + 8, y0 + 1, 1, 1, U.shade('#ffb347', -0.44));                                    // selector switch
-      /* magazine, curved — two steps forward as it drops */
-      px(x0 + 12, y0 + 3, 4, 2, GUN_DK); px(x0 + 13, y0 + 5, 4, 2, GUN_DK);
-      px(x0 + 13, y0 + 3, 2, 1, U.shade(GUN_MID, -0.06)); px(x0 + 14, y0 + 5, 2, 1, U.shade(GUN_MID, -0.20));
-      /* handguard with vent slots, then the barrel — ONE ROW, no rake */
-      px(x0 + 18, y0 - 2, 6, 4, GUN_DK);
-      px(x0 + 18, y0 - 1, 6, 2, GUN_MID);
-      for (let i = 0; i < 3; i++) px(x0 + 19 + i * 2, y0 - 1, 1, 2, U.shade(GUN_DK, 0.24));
-      px(x0 + 22, y0 - 4, 1, 2, GUN_MID);                                          // front sight post
-      for (let i = 0; i < len; i++) {
+      const bl = x0 + 13;                                                          // where the barrel starts
+      px(x0, y0 - 2, 6, 4, GUN_DK);                                                // stock
+      px(x0 + 1, y0 - 1, 4, 2, o.wood ? STK : U.shade(GUN_MID, -0.10));
+      px(x0 + 1, y0 - 1, 4, 1, o.wood ? STK_LIT : GUN_MID);
+      px(x0, y0 - 1, 1, 2, U.shade(GUN_DK, 0.22));                                 // butt pad
+      px(x0 + 5, y0 + 2, 2, 3, GUN_DK);                                            // pistol grip
+      px(x0 + 5, y0 + 2, 1, 2, o.wood ? STK : U.shade(GUN_MID, -0.16));
+      px(x0 + 4, y0 - 2, 7, 5, GUN_DK);                                            // receiver
+      px(x0 + 5, y0 - 1, 5, 1, GUN);
+      px(x0 + 5, y0, 5, 1, GUN_MID);
+      px(x0 + 8, y0 - 1, 2, 1, U.shade(GUN_DK, 0.34));                             // ejection port
+      px(x0 + 5, y0 - 2, 1, 1, '#cfd7dc');                                         // charging handle
+      px(x0 + 6, y0 + 1, 1, 1, U.shade('#ffb347', -0.44));                         // selector switch
+      px(x0 + 8, y0 + 2, 3, 2, GUN_DK); px(x0 + 9, y0 + 4, 3, 2, GUN_DK);          // magazine, curving forward
+      px(x0 + 9, y0 + 2, 1, 1, U.shade(GUN_MID, -0.06)); px(x0 + 10, y0 + 4, 1, 1, U.shade(GUN_MID, -0.20));
+      px(x0 + 11, y0 - 2, 3, 4, GUN_DK);                                           // handguard
+      px(x0 + 11, y0 - 1, 3, 2, GUN_MID);
+      px(x0 + 12, y0 - 1, 1, 2, U.shade(GUN_DK, 0.24));                            // its vent
+      px(x0 + 13, y0 - 3, 1, 1, GUN_MID);                                          // front sight post
+      for (let i = 0; i < len; i++) {                                              // the barrel — ONE row, no rake
         px(bl + i, y0 - 2, 1, 1, GUN_DK);
-        px(bl + i, y0 - 1, 1, 1, GUN);                                             // the lit crown, flat
+        px(bl + i, y0 - 1, 1, 1, GUN);
         px(bl + i, y0, 1, 1, GUN_MID);
         px(bl + i, y0 + 1, 1, 1, GUN_DK);
       }
-      px(bl + len, y0 - 2, 3, 4, GUN_DK);                                          // muzzle device
-      px(bl + len, y0 - 1, 3, 1, '#cfd7dc'); px(bl + len + 1, y0, 2, 1, GUN_MID);
-      px(bl + len + 1, y0 - 2, 1, 1, U.shade(GUN_DK, 0.34));                        // its port
-      px(bl - 1, y0 - 1, 1, 2, U.shade(GUN_MID, 0.18));                             // the gas block
-      /* optic on a pair of rings, and a sling drooping under the whole thing */
-      if (o.scope) {
-        px(x0 + 9, y0 - 7, 10, 3, GUN_DK);
-        px(x0 + 10, y0 - 6, 8, 1, GUN); px(x0 + 10, y0 - 5, 8, 1, GUN_MID);
-        px(x0 + 13, y0 - 8, 2, 1, GUN_MID);                                        // elevation turret
-        px(x0 + 18, y0 - 6, 1, 2, '#7fd8ff'); px(x0 + 18, y0 - 6, 1, 1, '#cfefff');  // the objective glint
-        px(x0 + 9, y0 - 6, 1, 2, U.shade(GUN_DK, 0.30));                           // the eyepiece cup
-        px(x0 + 11, y0 - 4, 1, 1, GUN_MID); px(x0 + 16, y0 - 4, 1, 1, GUN_MID);    // the rings
+      px(bl + len, y0 - 2, 2, 4, GUN_DK);                                          // muzzle device
+      px(bl + len, y0 - 1, 2, 1, '#cfd7dc');
+      if (o.scope) {                                                               // a compact optic
+        px(x0 + 5, y0 - 5, 6, 3, GUN_DK);
+        px(x0 + 6, y0 - 4, 4, 1, GUN); px(x0 + 6, y0 - 3, 4, 1, GUN_MID);
+        px(x0 + 10, y0 - 4, 1, 1, '#7fd8ff');
       }
-      if (o.bipod) {                                                                // folded back under the handguard
-        for (let i = 0; i < 4; i++) { px(x0 + 21 - i, y0 + 2 + i, 1, 1, GUN_MID); px(x0 + 22 - i, y0 + 2 + i, 1, 1, GUN_DK); }
-        px(x0 + 21, y0 + 2, 2, 1, U.shade(GUN_MID, 0.14));
-      }
-      if (o.light) {                                                                // a light module slung under it
-        px(x0 + 18, y0 + 2, 4, 2, GUN_DK); px(x0 + 18, y0 + 2, 4, 1, GUN_MID);
-        px(x0 + 21, y0 + 3, 1, 1, '#cfefff');
-      }
-      px(x0 + 6, y0 + 2, 1, 1, GUN_MID); px(x0 + 19, y0 + 2, 1, 1, GUN_MID);        // sling swivels
-      if (o.sling) {
-        for (let i = 0; i < 14; i++) {
-          const sx = x0 + 5 + i, sy = y0 + 4 + Math.round(2.6 * Math.sin((i / 13) * Math.PI));
-          px(sx, sy, 1, 1, U.shade(GUN_DK, 0.10));
+      if (o.sling) {                                                               // a strap drooping under it
+        for (let i = 0; i < 9; i++) {
+          const sx = x0 + 3 + i, sy = y0 + 3 + Math.round(1.8 * Math.sin((i / 8) * Math.PI));
+          px(sx, sy, 1, 1, U.shade(GUN_DK, 0.12));
         }
       }
     };
-    weapon(x + 4, y - 11, 4, { scope: 1, wood: 0, sling: 1, bipod: 1, light: 0 });   // top: a scoped rifle
-    weapon(x + 4, y - 1, 3, { scope: 0, wood: 1, sling: 0, bipod: 0, light: 1 });    // below: a wood-stocked carbine
+    weapon(x + 3, y - 9, 3, { scope: 1, wood: 0, sling: 1 });                      // top: a scoped rifle, ~18px
+    weapon(x + 3, y - 1, 2, { scope: 0, wood: 1, sling: 0 });                      // below: a wood-stocked carbine
     /* (3) the CHARGE CELL on the top arm — the one live thing on the prop */
-    px(x + 17, y - 8, 2, 1, U.shade('#ffb347', -0.30 + 0.30 * cell));
-    bloom(x + 17, y - 8, 2, 1, '#ffb347', 0.12 + 0.18 * cell);
+    px(x + 14, y - 7, 2, 1, U.shade('#ffb347', -0.30 + 0.30 * cell));
+    bloom(x + 14, y - 7, 2, 1, '#ffb347', 0.12 + 0.18 * cell);
     /* (4) a BLADE hung VERTICALLY at the east end — a third rifle would be a fence, and a blade
        across the whole board (v4) crowded both arms out of their own space */
-    for (let i = 0; i < 11; i++) {
-      const by = y - 15 + i;
-      px(x + 30, by, 1, 1, GUN_DK);
-      px(x + 31, by, 1, 1, i > 1 ? '#cfd7dc' : GUN_MID);
-      px(x + 32, by, 1, 1, i > 1 ? '#79838b' : GUN_DK);
+    for (let i = 0; i < 8; i++) {                                                   // ~0.4m of blade = 8px
+      const by = y - 13 + i;
+      px(x + 19, by, 1, 1, GUN_DK);
+      px(x + 20, by, 1, 1, i > 1 ? '#cfd7dc' : GUN_MID);
+      px(x + 21, by, 1, 1, i > 1 ? '#79838b' : GUN_DK);
     }
-    px(x + 30, y - 4, 3, 3, GUN_DK); px(x + 31, y - 3, 1, 2, STK); px(x + 31, y - 3, 1, 1, STK_LIT);
+    px(x + 19, y - 5, 3, 3, GUN_DK); px(x + 20, y - 4, 1, 2, STK); px(x + 20, y - 4, 1, 1, STK_LIT);
     /* (5) HOOKS the arms rest on, and spare cells clipped at the end — a rack that is USED */
-    for (const hx of [x + 6, x + 26]) { px(hx, y - 7, 1, 2, FRM_LIT); px(hx, y + 2, 1, 2, FRM_LIT); }
-    for (let i = 0; i < 3; i++) {
-      const mx = x + 5 + i * 3;
-      px(mx, y + 1, 2, 3, GUN_DK); px(mx, y + 1, 2, 1, GUN_MID);
-      px(mx, y + 3, 2, 1, i === 1 ? U.shade('#ffb347', -0.30) : U.shade(GUN_DK, 0.22));
+    for (const hx of [x + 4, x + 17]) { px(hx, y - 6, 1, 2, FRM_LIT); px(hx, y + 2, 1, 2, FRM_LIT); }
+    for (let i = 0; i < 2; i++) {
+      const mx = x + 4 + i * 3;
+      px(mx, y + 2, 2, 3, GUN_DK); px(mx, y + 2, 2, 1, GUN_MID);
+      px(mx, y + 4, 2, 1, i === 1 ? U.shade('#ffb347', -0.30) : U.shade(GUN_DK, 0.22));
     }
   };
   F.weaponrack_r = mirrorV(F.weaponrack);
@@ -9209,8 +9188,8 @@ const PropSprites = (() => {
     { id: "telescope_r", label: "TELESCOPE ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "camerarig", label: "CAMERA RIG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "camerarig_r", label: "CAMERA RIG ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
-    { id: "weaponrack", label: "WEAPON RACK ‹", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: false, mount: 'wall' },
-    { id: "weaponrack_r", label: "WEAPON RACK ›", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: false, mount: 'wall' },
+    { id: "weaponrack", label: "WEAPON RACK ‹", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false, mount: 'wall' },
+    { id: "weaponrack_r", label: "WEAPON RACK ›", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false, mount: 'wall' },
     { id: "punchbag", label: "HEAVY BAG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'bag', sit: false, approach: 'south' } },
     { id: "punchbag_r", label: "HEAVY BAG ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'bag', sit: false, approach: 'south' } },
     { id: "benchpress", label: "BENCH PRESS ‹", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, use: { kind: 'bench', sit: false, approach: 'south' } },
