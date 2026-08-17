@@ -282,5 +282,54 @@ const openCtx = () => ({ canRun: () => true, canUse: () => ({ ok: true }), agent
     A.eq(res.reason, 'done', 'a provider that never reports termination still ends done');
   }
 
+  // (window-re-resolve) a cross-provider fallback RE-RESOLVES the context window. Everything else about the
+  //     failover swaps (provider, model, cost, credential) but the compaction threshold was frozen at the
+  //     PRIMARY model's window: after a 200k→8k switch the manager kept waiting for prompt tokens the small
+  //     window can never hold, so the run overflowed with proactive compaction still "not yet due".
+  {
+    const { seq, emit } = setup();
+    const { makeContext } = require('../sidecar/context.js');
+    const ctx = makeContext({ contextLimit: 200000, compactAt: 0.65, keepTail: 2 });
+    const primary = scriptedProvider(async function* () { throw new Error('Our servers are currently overloaded. Please try again later.'); yield; });
+    const small = {
+      priceOf, contextLimit: () => 8000,
+      stream: async function* () {
+        yield { type: 'text', delta: 'served from the small window' };
+        yield { type: 'usage', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } };
+        yield { type: 'done', finishReason: 'stop' };
+      }
+    };
+    const res = await runAgentLoop({
+      messages: [{ role: 'user', content: 'x' }], provider: primary, emit, cost: cost(), model: 'big', agentId: 'a', runId: 'r',
+      context: ctx, summarize: async () => '', fallbacks: [{ provider: small, model: 'small' }], sleep: async () => {}
+    });
+    A.eq(res.reason, 'done', 'the failover served the turn');
+    A.eq(seq.filter(e => e.name === 'provider.fallback').length, 1, 'exactly one observable failover');
+    A.eq(ctx.contextLimit, 8000, 'the context manager now measures against the FALLBACK model window');
+    A.ok(ctx.shouldCompact({ prompt_tokens: 6000 }), 'a prompt past 65% of the small window is now compaction-due');
+  }
+
+  // (window-re-resolve, cold catalog) a fallback provider that does not know its window (contextLimit 0)
+  //     KEEPS the primary's limit instead of disarming proactive compaction.
+  {
+    const { emit } = setup();
+    const { makeContext } = require('../sidecar/context.js');
+    const ctx = makeContext({ contextLimit: 200000, compactAt: 0.65, keepTail: 2 });
+    const primary = scriptedProvider(async function* () { throw new Error('Our servers are currently overloaded. Please try again later.'); yield; });
+    const cold = {
+      priceOf, contextLimit: () => 0,
+      stream: async function* () {
+        yield { type: 'text', delta: 'cold catalog fallback' };
+        yield { type: 'done', finishReason: 'stop' };
+      }
+    };
+    const res = await runAgentLoop({
+      messages: [{ role: 'user', content: 'x' }], provider: primary, emit, cost: cost(), model: 'big', agentId: 'a', runId: 'r',
+      context: ctx, summarize: async () => '', fallbacks: [{ provider: cold, model: 'unknown' }], sleep: async () => {}
+    });
+    A.eq(res.reason, 'done', 'the cold-catalog failover still served the turn');
+    A.eq(ctx.contextLimit, 200000, 'an unknown fallback window keeps the last known limit — stale beats none');
+  }
+
   A.report('loop.provider-recovery.test');
 })();
