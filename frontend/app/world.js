@@ -2430,10 +2430,7 @@ const World = (() => {
     const start = U.irnd(0, cands.length - 1);   // random offset, but try each prop at most once
     for (let k = 0; k < cands.length; k++) {
       const c = cands[(start + k) % cands.length];
-      // a lone couch seats its body facing UP (back to the viewer) — but a seat that OPENS somewhere
-      // else says so on its catalog row (`use.face`), because an armchair aimed at the room with
-      // someone sitting in it backwards is the kind of small lie the station gets judged on.
-      if (c.couch) { const fc = (propUse(c.couch) || {}).face || 'north'; if (planCouchSit(now, c.couch, null, fc, zone)) { rememberFun('lounge', now); return true; } continue; }
+      if (c.couch) { if (planCouchSit(now, c.couch, null, 'north', zone)) { rememberFun('lounge', now); return true; } continue; }   // lone couch → stand at it facing UP (back to the viewer)
       if (c.seat) { if (planSeat(now, c.seat, zone)) return true; continue; }                        // stool/chair → the one honest sit
       if (setPathTo({ x: c.a.tx, y: c.a.ty })) {
         self.goal = 'use'; self.usingProp = c.id; self.useFace = c.a.face; self.useSit = c.a.sit;
