@@ -8506,6 +8506,150 @@ const PropSprites = (() => {
     glow(x - 5, y + 22, w + 10, 2, LIQ, 0.16);                                    // and the pool reaching past it
   };
 
+  /* ============ THE AIMED SET (2026-08-17) ============
+     Three props whose whole identity is that they POINT somewhere: a telescope raking at the sky, a
+     camera looking off-frame, a bench with its rack at one end. Each ships as a LEFT and a RIGHT
+     entry (Andrew's rule from the recliner: two props beat a hidden gesture), and the right one is
+     the left one under `mirrorV` — one drawing, two catalog rows, no drift.
+     ⛔ THE DIAGONAL IS THE PROP. A telescope drawn upright is a water heater and a camera drawn
+        square-on is a microwave; the tube and the lens must break the outline on the way out. */
+  const mirrorV = (fn) => (x, y, w, h, f) => {
+    ctx.save();
+    ctx.translate(x, y); ctx.translate(w, 0); ctx.scale(-1, 1); ctx.translate(-x, -y);
+    const was = MIRROR; MIRROR = true;
+    try { fn(x, y, w, h, f); } finally { MIRROR = was; ctx.restore(); }
+  };
+
+  F.telescope = (x, y, w, h, f) => {
+    /* 1x2 TELESCOPE — a brass barrel raking up and to the EAST over a splayed tripod. The barrel is
+       drawn as a stepped diagonal band with its own lit top edge and shaded underside, so it reads
+       as a cylinder seen from below rather than a painted stripe.
+       ⛔ THE TRIPOD MUST SPLAY. Three legs from one hub with daylight between them: parallel legs
+          read as a pedestal, and a pedestal makes the whole thing a lamp. */
+    const INK = '#241a10';
+    const BRS = '#a8873f', BRS_LIT = '#d8b56a', BRS_DK = '#6b5326';
+    const MET = '#39434b', MET_LIT = '#5b6771', MET_DK = '#1d242a';
+    shadow2(x + 1, y + h - 1, w - 2);
+    /* (1) THE TRIPOD — hub at the top of the legs, three splayed legs, rubber feet */
+    px(x + 4, y + 9, 4, 4, INK);
+    px(x + 5, y + 10, 2, 3, MET); px(x + 5, y + 10, 1, 3, MET_LIT);
+    for (const [lx, dx] of [[x + 5, -1], [x + 6, 0], [x + 6, 1]]) {
+      for (let i = 0; i < 9; i++) {
+        const px0 = lx + Math.round(dx * i * 0.55);
+        px(px0, y + 13 + i, 1, 1, dx < 0 ? MET_LIT : (dx > 0 ? MET_DK : MET));
+      }
+      px(lx + Math.round(dx * 5), y + 22, 2, 1, '#0d1215');
+    }
+    px(x + 4, y + 17, 5, 1, MET_DK); px(x + 4, y + 16, 5, 1, U.shade(MET, 0.10));   // the spreader
+    /* (2) THE YOKE — a fork the barrel pivots in, and the counterweight arm under it */
+    px(x + 3, y + 7, 6, 3, INK);
+    px(x + 4, y + 8, 4, 2, MET); px(x + 4, y + 8, 4, 1, MET_LIT);
+    px(x + 2, y + 10, 3, 1, MET_DK); px(x + 2, y + 11, 2, 1, U.shade(MET_DK, -0.20));   // counterweight
+    /* (3) THE BARREL — a stepped diagonal, lit along its upper edge, from the eyepiece up to the
+       aperture. Each step draws a 4px-thick slice so the tube keeps its gauge all the way. */
+    for (let i = 0; i < 11; i++) {
+      const bx = x + 1 + i, by = y + 7 - i;
+      px(bx, by - 1, 1, 1, INK);
+      px(bx, by, 1, 1, BRS_LIT);                                                   // the lit crown of the tube
+      px(bx, by + 1, 1, 2, BRS);
+      px(bx, by + 3, 1, 1, BRS_DK);                                                // its shaded belly
+      px(bx, by + 4, 1, 1, INK);
+    }
+    px(x + 5, y + 2, 1, 4, U.shade(BRS_LIT, 0.16));                                // a focus ring
+    px(x + 8, y - 1, 1, 4, U.shade(BRS_DK, 0.10));                                 // and the tube's seam
+    /* (4) THE EYEPIECE (low, west) and the APERTURE (high, east) — the two ends must differ */
+    px(x, y + 8, 2, 3, INK); px(x, y + 9, 2, 1, MET_LIT); px(x, y + 10, 2, 1, MET_DK);
+    px(x + 11, y - 5, 2, 5, INK);
+    px(x + 11, y - 4, 1, 4, U.shade(BRS_LIT, 0.10)); px(x + 12, y - 4, 1, 4, BRS_DK);
+    px(x + 11, y - 4, 1, 2, '#bfe6ff');                                            // cold sky in the glass
+    bloom(x + 11, y - 4, 1, 2, '#bfe6ff', 0.20);
+  };
+  F.telescope_r = mirrorV(F.telescope);
+
+  F.camerarig = (x, y, w, h, f) => {
+    /* 1x1 CAMERA RIG — a broadcast body on a tripod, LENS OUT WEST with a matte hood, a red tally
+       burning on its back and the viewfinder standing proud on top. Small prop, but the lens and
+       hood break the outline hard enough to read.
+       ⛔ THE HOOD IS WHAT SAYS CAMERA. A bare barrel is a telescope at one tile; the squared hood
+          flaring at the end is the difference. */
+    const INK = '#0e1114', BODY = '#1f242a', BODY_LIT = '#39424b', BODY_DK = '#12161a';
+    const MET = '#39434b', MET_LIT = '#5b6771';
+    const hot = blink(1500, x);
+    shadow2(x + 2, y + 10, 8);
+    /* (1) tripod: a splayed three-leg stand under a short column */
+    for (const [lx, dx] of [[x + 5, -1], [x + 6, 0], [x + 6, 1]]) {
+      for (let i = 0; i < 6; i++) px(lx + Math.round(dx * i * 0.6), y + 5 + i, 1, 1, dx < 0 ? MET_LIT : (dx > 0 ? '#242c33' : MET));
+      px(lx + Math.round(dx * 3), y + 11, 2, 1, '#0d1215');
+    }
+    px(x + 5, y + 3, 2, 3, MET); px(x + 5, y + 3, 1, 3, MET_LIT);
+    /* (2) the BODY — a squat block, tilted a touch so it is not a brick */
+    px(x + 3, y - 4, 8, 8, INK);
+    px(x + 4, y - 3, 6, 5, BODY);
+    px(x + 4, y - 3, 6, 1, BODY_LIT); keyEdge(x + 4, y - 3, 3, 1, 0.24);
+    px(x + 9, y - 2, 1, 4, BODY_DK); rimEdge(x + 9, y - 2, 1, 4, 0.20);
+    px(x + 5, y - 1, 3, 2, U.shade(BODY, 0.10));                                   // the cassette hatch
+    px(x + 9, y - 3, 1, 1, hot ? '#ff3b30' : '#5a1a16');                           // the TALLY, on its back
+    if (hot) bloom(x + 9, y - 3, 1, 1, '#ff3b30', 0.34);
+    /* (3) the VIEWFINDER standing proud, and the pan handle out the back */
+    px(x + 5, y - 6, 3, 2, INK); px(x + 6, y - 5, 2, 1, BODY_LIT);
+    px(x + 10, y + 1, 2, 1, MET); px(x + 11, y + 2, 1, 1, MET_LIT);
+    /* (4) THE LENS + HOOD, west — the outline break that makes it a camera */
+    px(x, y - 2, 4, 5, INK);
+    px(x + 1, y - 1, 3, 3, BODY);
+    px(x + 1, y - 1, 3, 1, U.shade(BODY_LIT, -0.10));
+    px(x, y - 2, 1, 5, BODY_DK);                                                   // the hood's flared mouth
+    px(x + 1, y, 1, 1, '#7fd8ff'); px(x + 2, y, 1, 1, U.shade('#7fd8ff', -0.34));   // glass catching the room
+    bloom(x + 1, y, 2, 1, '#7fd8ff', 0.16);
+  };
+  F.camerarig_r = mirrorV(F.camerarig);
+
+  F.benchpress = (x, y, w, h, f) => {
+    /* 2x1 BENCH PRESS — pure side profile: a raked pad running east, the rack uprights at its WEST
+       head, and the loaded bar sitting in the hooks. The NEAR plate is a full disc and the far one
+       shows only its top edge behind the uprights, which is what gives the bar depth.
+       ⛔ THE PAD MUST RAKE. A flat slab on two legs is a bench; the 1px rise toward the head end and
+          the short back-rest step are what make it a PRESS bench.
+       ⛔ ONE SATURATED THING: the plate's rubber rim. Everything else is gym black and steel. */
+    const INK = '#0e1114', PAD = '#22262b', PAD_LIT = '#39424b';
+    const MET = '#48525b', MET_LIT = '#6b7883', MET_DK = '#252c33';
+    const RIM = '#b8332f', RIM_LIT = '#d8564a';
+    shadow2(x + 3, y + h - 1, w - 6);
+    /* (1) THE FRAME — two A-legs with real deck between them, and a foot rail */
+    for (const lx of [x + 8, x + 18]) {
+      px(lx, y + 5, 3, 6, INK);
+      px(lx, y + 5, 1, 6, MET_LIT); px(lx + 1, y + 5, 1, 6, MET); px(lx + 2, y + 5, 1, 6, MET_DK);
+      px(lx - 1, y + 11, 5, 1, '#0d1215');
+    }
+    px(x + 10, y + 8, 8, 1, MET_DK); px(x + 10, y + 7, 8, 1, U.shade(MET, 0.12));
+    /* (2) THE PAD — raked: higher at the head (west), with a short back-rest step */
+    px(x + 5, y + 1, 18, 5, INK);
+    px(x + 6, y + 2, 16, 2, PAD_LIT); keyEdge(x + 6, y + 2, 6, 1, 0.24);
+    px(x + 6, y + 4, 16, 1, PAD);
+    px(x + 6, y + 5, 16, 1, U.shade(PAD, -0.30));                                  // its underside falling off
+    px(x + 5, y, 6, 3, INK);
+    px(x + 6, y + 1, 4, 1, U.shade(PAD_LIT, 0.10));                                // the head step, a row higher
+    px(x + 6, y + 2, 4, 1, PAD);
+    px(x + 12, y + 3, 1, 1, U.shade(PAD_LIT, -0.24)); px(x + 17, y + 3, 1, 1, U.shade(PAD_LIT, -0.24));   // stitching
+    /* (3) THE RACK — two uprights, the far one dimmer and offset so they read as a pair */
+    px(x + 3, y - 9, 3, 15, INK);
+    px(x + 4, y - 8, 1, 14, MET_LIT); px(x + 5, y - 8, 1, 14, MET);
+    px(x + 6, y - 7, 2, 12, INK);
+    px(x + 7, y - 6, 1, 11, U.shade(MET, -0.24));                                  // the far upright, behind
+    px(x + 3, y - 6, 3, 1, MET_DK); px(x + 3, y - 3, 3, 1, MET_DK);                // the rack's notches
+    /* (4) THE BAR + PLATES — near plate a full disc, far plate only its crown */
+    px(x + 6, y - 8, 3, 1, U.shade(MET, -0.20));                                   // the far plate's top edge
+    px(x + 1, y - 9, 7, 2, INK);
+    px(x + 2, y - 8, 5, 1, MET_LIT);                                               // the bar, spanning the rack
+    px(x + 8, y - 8, 6, 1, MET); px(x + 14, y - 8, 2, 1, MET_DK);
+    px(x, y - 11, 5, 7, INK);                                                      // THE NEAR PLATE
+    px(x + 1, y - 10, 3, 5, '#1a1e22');
+    px(x + 1, y - 10, 3, 1, RIM_LIT); px(x + 1, y - 6, 3, 1, RIM);                 // its rubber rim
+    px(x, y - 9, 1, 3, RIM); px(x + 4, y - 9, 1, 3, U.shade(RIM, -0.30));
+    px(x + 2, y - 8, 1, 1, MET_LIT);                                               // the collar in its middle
+    keyEdge(x + 1, y - 10, 2, 1, 0.26);
+  };
+  F.benchpress_r = mirrorV(F.benchpress);
+
   F.pinball = (x, y, w, h, f) => {   // 1x2 — v6 REBUILD. A pinball machine IS its playfield ("a prop is its
     /* ⛔ EDGES SOFTENED, NOTHING ELSE — shipped geometry, shading and colour untouched. The
        universal near-black contour becomes a dark tint so the prop stops reading as a sticker
@@ -8829,6 +8973,14 @@ const PropSprites = (() => {
        it. One holds something still, the other something growing. */
     { id: "cryopod", label: "CRYO POD", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "incubator", label: "INCUBATOR", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
+    /* THE AIMED SET (2026-08-17) — props whose identity is that they POINT somewhere. Each ships as
+       a LEFT and a RIGHT entry; the right one is the left one mirrored at draw time. */
+    { id: "telescope", label: "TELESCOPE ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
+    { id: "telescope_r", label: "TELESCOPE ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
+    { id: "camerarig", label: "CAMERA RIG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "camerarig_r", label: "CAMERA RIG ›", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "benchpress", label: "BENCH PRESS ‹", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, use: { kind: 'bench', sit: false, approach: 'south' } },
+    { id: "benchpress_r", label: "BENCH PRESS ›", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, use: { kind: 'bench', sit: false, approach: 'south' } },
     /* THE RECLINER PAIR (2026-08-17) — one seat of the couch, shipped as two props so aiming it is a
        pick rather than a hidden gesture. The right-facing one is the left one MIRRORED at draw time,
        so the two can never drift apart. */
