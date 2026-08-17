@@ -15499,7 +15499,8 @@ async function runOnce(o) {
 
   // ---- AUX GOVERNOR: bound the AGGREGATE post-run model spend (aux-budget lane) ----------------------------------
   // Up to SIX aux passes can fire after one hot run — reflection · study · thread-mine · scout-cycle · skill-review
-  // · skill-curator. Each still owns its full gate (salience + cooldown + cost cap), UNCHANGED below. What was
+  // · skill-curator — plus failure-review on a FAILED run (failure reasons and 'done' are mutually exclusive, so it
+  // never competes with the six). Each still owns its full gate (salience + cooldown + cost cap), UNCHANGED below. What was
   // missing is a JOINT ceiling: one substantive run could touch off five or six billable calls back-to-back. The
   // governor caps how many may SPEND this run-end (SKYNET_AUX_BUDGET, default 2; a literal 0 = unlimited/off), in
   // the LOCKED beat priority (reflection > study > threadmine > scout > skill-review > skill-curator). DEFERRED ≠
