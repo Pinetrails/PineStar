@@ -93,7 +93,11 @@ const PropSprites = (() => {
      body is drawn as a foreshortened TOP surface + a vertical FRONT face + legs/base that
      touch the floor, under one light (high + slightly west, like the walls). Bodies use
      the shared ramps below; color identity lives in ACCENTS + emissives, not casings. */
-  const LINE = '#06090c';                        // universal silhouette outline
+  /* Universal silhouette outline. LIGHTENED from #06090c (2026-08-17): at near-black it read as soot
+     and every prop looked like a sticker cut out and laid on the deck — most visible on the TV, the
+     side table and the pool table. The edge is KEPT, just lifted off pure black to the same tint the
+     glow-up props already use, so the whole catalog reads as one room. */
+  const LINE = '#161d22';                        // universal silhouette outline
   /* casings are toned DOWN ~15% (sheen rows 20%) from the authoring values so props sit inside the
      station's dim CRT lighting instead of popping against it — a locked pre-merge call. Emissives
      and ACC accents keep full brightness; only the body ramps dim. */
