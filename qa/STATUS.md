@@ -1374,6 +1374,38 @@ per-crew roll-up below can be regenerated any time with:
 node scripts/qa/ledger.mjs --status
 ```
 
+## 2026-08-17 — RECLINER (merged `f860b8797`, pure FF)
+
+One seat of the couch, shipped as TWO lounge props: `recliner` faces left, `recliner_r` faces right.
+Every other seat in the catalog faces the camera, which is half of why a furnished room reads as a
+showroom row.
+
+- `recliner_r` is not a second drawing — it calls `F.recliner` under an integer horizontal mirror,
+  and `px()` re-maps the directional tones through a new `LSWAP` table so the warm KEY stays
+  high-west where the ceiling strip is instead of riding round with the furniture. One drawing, two
+  props, no drift.
+- ⛔ **THE OUTLINE MUST OPEN.** Two drafts drew a filled rounded box and both read as an appliance.
+  A seat seen from the side is a C: the arms reach further forward than the cushion between them and
+  the back stands proud of both. Those notches ARE the silhouette; shading changes nothing until
+  they exist. The arms must also STOP at the back — run them the full width and they paint over its
+  crown, leaving a stack of horizontal bands.
+- ⛔ The art overhangs its tile 3px each side (a seat is deeper than one tile); what it BLOCKS is
+  still the honest 1x1.
+- ⛔ **MERGE ORDER IN `px`:** the mirror swap picks a different AUTHORED tone, then the local-colour
+  dial grades whatever was picked. Grading first would hand `LSWAP` a colour that is not in its
+  table. That union is the resolution of the one real conflict with the CHROMA lane.
+
+**Gate:** `npm run test:fast` **643/643 green FROM THE LOG** on the synced lane tree, hash-identical
+to trunk by the FF.
+
+⛔ **SCOPE, ON ANDREW'S ORDER:** a larger lane (prop ORIENTATION — R/M keys, chair on four facings,
+tables and the couch re-tiling — plus a five-prop colour shelf) was merged earlier today and then
+**rolled back off trunk at his word: "I ONLY want recliner merged"**. Nothing was pushed. That work
+is intact on `agent/prop-rotate`, and the merged-then-reverted state is kept at
+`backup/prop-rotate-merged` — it is re-landable as a fast-forward-able lane, not lost.
+
+⛔ **NOT PUSHED** — the diff touches `website/`, which auto-deploys starnetos.com on push.
+
 ## 2026-07-17 — Wave 4D supervised background lifecycle (agent/lifecycle-4d → trunk `7f3af0be`, W0 re-stamp `bc4ac138`)
 
 The poweruser-plan 4D owner-decision checkpoint was APPROVED (recommended shape) and shipped:
@@ -1415,7 +1447,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-17 02:13Z @ e8c53f39 | GREEN | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-17 07:19Z @ 0c5e5427 | GREEN | 0 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-16T13:01:50.743Z · ui-only · 107875ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |

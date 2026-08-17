@@ -63,7 +63,13 @@ const PropSprites = (() => {
   };
 
   /* ---- core primitives (verbatim from v7 sprites.js) ---- */
-  const px = (x, y, w, h, c) => { ctx.fillStyle = chromaOf(c); ctx.fillRect(x, y, w, h); };
+  /* px is the ONE primitive nearly every prop's fill routes through, which is what lets a MIRRORED
+     view re-light itself from a single hook: a horizontal flip moves a prop's lit west facets onto
+     its shade side, so while MIRROR is set px re-maps the few DIRECTIONAL tones to their partner
+     (LSWAP, below the ramps). Nothing sets MIRROR except a deliberately mirrored draw.
+     ORDER MATTERS: the mirror swap picks a DIFFERENT AUTHORED tone, then the chroma dial grades
+     whatever tone was picked — grading first would hand LSWAP a colour that is not in its table. */
+  const px = (x, y, w, h, c) => { ctx.fillStyle = chromaOf((MIRROR && LSWAP[c]) || c); ctx.fillRect(x, y, w, h); };
   const blink = (period, phase) => ((now / period + (phase || 0)) % 1) < 0.5;
   const flick = (period, phase) => Math.sin(now / period + (phase || 0) * 7);
   const scrCols = ['#62ff9e', '#3fd07c', '#7adfb0', '#2fa863'];
@@ -315,6 +321,24 @@ const PropSprites = (() => {
   const SKY = '#7fb4d8';                         // cool sky bounce — fills the shade side
   const keyEdge = (x, y, w, h, a) => { ctx.globalAlpha = a == null ? 0.22 : a; px(x, y, w, h, KEY); ctx.globalAlpha = 1; };
   const rimEdge = (x, y, w, h, a) => { ctx.globalAlpha = a == null ? 0.24 : a; px(x, y, w, h, SKY); ctx.globalAlpha = 1; };
+  /* ---- MIRRORED DRAWING ----
+     A horizontal flip never changes which way the LIGHT comes from: the station's warm KEY stays
+     high and west and the cool SKY bounce stays east. Geometry mirrors for free; the light does not,
+     so px() re-maps the handful of tones whose meaning is genuinely east/west — each ramp's lit
+     (west) <-> dk (east) column, and KEY <-> SKY. `sheen` (a north back-edge catch), `ao`
+     (downward), `top` and `face` are axis-neutral under a horizontal flip and stay put.
+     KNOWN LIMIT: a facet painted as U.shade(r.face, +k) is a runtime colour with no table entry, so
+     it keeps its original hand — which is why a mirrored view is authored deliberately, one prop at
+     a time, rather than offered for the whole catalog. */
+  let MIRROR = false;
+  const LSWAP = (() => {
+    const m = {};
+    const pair = (a, b) => { if (a && b && a !== b) { m[a] = b; m[b] = a; } };
+    for (const k in RAMP) pair(RAMP[k].lit, RAMP[k].dk);
+    for (const k in MAT) pair(MAT[k].lit, MAT[k].dk);
+    pair(KEY, SKY);
+    return m;
+  })();
   const bloom = (x, y, w, h, c, a) => {          // emissive with 3-ring falloff (vs glow's flat rect)
     ctx.globalAlpha = a * 0.28; px(x - 2, y - 2, w + 4, h + 4, c);
     ctx.globalAlpha = a * 0.55; px(x - 1, y - 1, w + 2, h + 2, c);
@@ -4548,6 +4572,78 @@ const PropSprites = (() => {
     }
   };
 
+  F.recliner = (x, y, w, h, f) => {
+    /* 1x1 RECLINER — one seat of the couch, FACING LEFT (Andrew: "just a small couch bro like a 1
+       person recliner or side couch piece"). Built out of the sofa's own vocabulary — same fabric
+       ramp, same crown roll, same throw pillow — so it stands beside the couch as part of a set.
+       ⛔ IT FACES WEST AT r=0, which is the entire point: every other seat in the catalog faces the
+          camera. M flips it east, so one prop furnishes both sides of a room.
+       ⛔ THE OUTLINE MUST OPEN. Two drafts drew it as a filled rounded box and both read as an
+          appliance. A seat seen from the side is a C: the two ARMS reach further west than the
+          cushion between them, and the back stands PROUD of both. Those two notches — the open
+          front and the step up to the back — are the whole silhouette; the shading inside changes
+          nothing until they are there.
+       ⛔ THE ARMS STOP AT THE BACK. Run them the full width and they paint over the back's crown,
+          which leaves a stack of horizontal bands (that was draft one).
+       ⛔ THE ART OVERHANGS ITS TILE (like couch:w) — a seat is deeper than one tile. What it BLOCKS
+          is still the honest 1x1. */
+    const EDGE = '#161d22';
+    const r = RAMP.fabric;
+    const ax = x - 3, aw = w + 6;                                // drawn 3px proud each side
+    const BK = ax + 11, SW = ax + 4;                             // back's crown / the cushion's west edge
+    shadow2(ax + 1, y + h - 1, aw - 2);
+    /* (1) THE SILHOUETTE, opened: two arms reaching west, a cushion set back between them, and the
+       back standing a row above both. One ink pass — never one box per part. */
+    rr(BK - 1, y - 7, 7, h + 7, EDGE);                           // the back, tallest
+    rr(ax, y - 5, 13, 5, EDGE);                                  // far (north) arm, reaching west
+    rr(ax, y + 3, 13, 8, EDGE);                                  // near (south) arm
+    rr(SW - 1, y - 2, 8, 7, EDGE);                               // the cushion, set BACK between them
+    /* (2) THE CUSHION — inset, so the deck shows between the arms and the outline notches */
+    px(SW, y - 1, 7, 5, r.face);
+    px(SW, y - 1, 1, 5, U.shade(r.face, 0.14));                  // its west lip catches the strip
+    px(SW + 1, y - 1, 4, 5, U.shade(r.face, 0.07));              // the soft belly
+    px(SW + 5, y - 1, 2, 5, U.shade(r.face, -0.12));             // falling into the back's shade
+    px(SW + 3, y + 1, 1, 1, U.shade(r.face, -0.34));             // tuft button
+    px(SW + 2, y + 2, 1, 1, U.shade(r.face, -0.14)); px(SW + 4, y + 2, 1, 1, U.shade(r.face, -0.14));
+    px(SW, y + 3, 7, 1, U.shade(r.face, -0.30));                 // the cushion's own front shadow
+    /* (3) THE FAR ARM — a roll, lit on top, stopping at the back */
+    px(ax + 1, y - 4, 11, 2, r.lit); keyEdge(ax + 1, y - 4, 6, 1, 0.26);
+    px(ax + 1, y - 2, 11, 1, U.shade(r.lit, -0.30));             // piping under its crown
+    px(ax + 1, y - 1, 3, 1, r.face); px(ax + 1, y - 1, 1, 1, U.shade(r.face, 0.12));   // its west end wraps down
+    /* (4) ONE THROW PILLOW, propped where the back meets the cushion */
+    px(SW + 3, y - 3, 5, 6, EDGE);
+    px(SW + 4, y - 2, 3, 4, '#2f6a62'); px(SW + 4, y - 2, 3, 1, '#4a8a82');
+    px(SW + 4, y - 1, 1, 2, U.shade('#4a8a82', 0.18)); px(SW + 6, y - 1, 1, 2, U.shade('#2f6a62', -0.26));
+    px(SW + 4, y - 2, 1, 1, EDGE); px(SW + 6, y - 2, 1, 1, EDGE);   // stuffed corners, not a card
+    /* (5) THE BACK — an unbroken crown down the east side, a row above both arms */
+    px(BK, y - 6, 4, h + 6, r.lit);
+    keyEdge(BK, y - 6, 4, 8, 0.24);
+    px(BK, y - 6, 1, h + 6, U.shade(r.lit, 0.10));
+    px(BK + 4, y - 6, 1, h + 6, U.shade(r.lit, -0.32));          // piping where the crown rolls over
+    px(BK + 5, y - 5, 1, h + 4, r.dk); rimEdge(BK + 5, y - 5, 1, h + 4, 0.22);
+    px(BK + 1, y - 6, 2, 1, U.shade(r.lit, 0.16));               // the crown's own catch
+    /* (6) THE NEAR ARM last, so it wraps the cushion: crown, piping, then the south face + skirt */
+    px(ax + 1, y + 4, 11, 2, r.lit); keyEdge(ax + 1, y + 4, 6, 1, 0.28);
+    px(ax + 1, y + 6, 11, 1, U.shade(r.lit, -0.26));
+    px(ax + 1, y + 7, aw - 3, 3, r.face);
+    px(ax + 1, y + 7, 1, 3, U.shade(r.face, 0.12)); px(ax + aw - 3, y + 7, 1, 3, r.dk);
+    px(ax + 3, y + 8, aw - 7, 1, U.shade(r.face, 0.06));         // the arm's soft belly
+    px(ax + 1, y + 10, aw - 3, 1, U.shade(r.face, -0.28));       // skirt
+    px(ax + 1, y + 11, aw - 3, 1, r.ao);                         // floor-line AO
+  };
+
+  /* THE SAME SEAT, FACING RIGHT — shipped as its OWN catalog entry rather than as a flip you have to
+     know about (Andrew: "ship them as 2 separate props to keep it easy"). It is not a second drawing:
+     it is F.recliner under the same integer mirror the orientation system uses, so the two can never
+     drift apart, and px()'s LSWAP re-lights it — the warm key stays high-west where the ceiling strip
+     actually is, instead of riding the furniture round. */
+  F.recliner_r = (x, y, w, h, f) => {
+    ctx.save();
+    ctx.translate(x, y); ctx.translate(w, 0); ctx.scale(-1, 1); ctx.translate(-x, -y);
+    const was = MIRROR; MIRROR = true;
+    try { F.recliner(x, y, w, h, f); } finally { MIRROR = was; ctx.restore(); }
+  };
+
   F.arcade = (x, y, w, h, f) => {
     /* v57 ARCADE (1x2) — built to Andrew's reference (2026-08-16), SHORTENED 2026-08-17. Read top to
          bottom: vent cap -> glowing MARQUEE -> screen flanked by MAGENTA SIDE STRIPS -> pale CONTROL
@@ -8583,6 +8679,11 @@ const PropSprites = (() => {
     { id: "bookshelf", label: "BOOKSHELF", cat: "lounge", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true, use: { kind: 'bookshelf', sit: false, approach: 'south' } },
     { id: "beanbag", label: "BEANBAG", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'beanbag', sit: false, approach: 'auto' } },
     { id: "pinball", label: "PINBALL", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'pinball', sit: false, approach: 'south' } },
+    /* THE RECLINER PAIR (2026-08-17) — one seat of the couch, shipped as two props so aiming it is a
+       pick rather than a hidden gesture. The right-facing one is the left one MIRRORED at draw time,
+       so the two can never drift apart. */
+    { id: "recliner", label: "RECLINER ‹ LEFT", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'west' } },
+    { id: "recliner_r", label: "RECLINER RIGHT ›", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'east' } },
   ];
   const BY_ID = {};
   for (const c of CATALOG) BY_ID[c.id] = c;
