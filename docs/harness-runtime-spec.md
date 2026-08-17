@@ -52,7 +52,7 @@ X-Title: STARNET
 
 - **Do NOT send `usage: { include: true }`** — Finding A verified it is a deprecated no-op; usage/cost is always returned. (The current browser `harness.js:62` still sends it; the new provider must drop it.)
 - `tools` comes verbatim from `registry.wireFormat(perCallToolList)` — already in exactly this shape (`registry.js:54`).
-- `parallel_tool_calls:false` for the MVP keeps the in-game visualization linear (one search → one result → next). The loop executes sequentially regardless, so this just simplifies streaming accumulation.
+- ~~`parallel_tool_calls:false` for the MVP keeps the in-game visualization linear (one search → one result → next). The loop executes sequentially regardless, so this just simplifies streaming accumulation.~~ **SUPERSEDED 2026-08-17:** the loop gained a concurrent dispatch path (all-read-only batches run under `Promise.all` with order-preserving emits; `parallelSafe` in index.js keeps browser/shell/MCP/consent tools serial), so the adapters now omit the param and accept the provider default (parallel enabled).
 - `tools` is included **every** turn of the loop (omitting it on follow-ups → 400). `tool_choice` is omitted when the per-call tool list is empty (pure-talk turns).
 
 ### 2b. Streamed response (SSE) → what the provider must yield
