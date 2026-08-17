@@ -5712,31 +5712,22 @@ const PropSprites = (() => {
     px(x, top + 3, w, 1, U.shade(WD_DK, -0.44));
   };
 
-  /* ---- THE DINER. A 3x2 six-seater with its own chair, built to the claw-machine recipe: stacked
-     BANDS and one saturated body hue rather than another grey box. The identity is three marks and
-     they must all survive at 12px — a CHROME RIM round a pale speckled laminate, a RED apron under
-     it, and slim chrome legs. Cream is the point: this catalog's furniture all lives in the bottom
-     half of the value range, so a genuinely pale top is the thing you see across the room. */
-  /* THE DINER TABLE'S PALETTE IS A PARAMETER while the look is being chosen. `dinerTop` draws the
-     whole table; the variant only decides the timber and what the edge BAND is made of.
+  /* ---- THE DINER. A 3x2 six-seater with its own chair. It began as cream diner laminate with a
+     chrome rim and a RED apron; Andrew rejected the red outright — "dinnertable_v2 is the only way
+     to go" — against four other edge treatments (brass, teal, bistro green, walnut-and-chrome) all
+     rendered side by side on a real deck. What won is the QUIETEST one: the edge is the slab's own
+     timber and the PLANT is the only saturated thing on the prop. That is why the top can stay
+     otherwise clear, and why this table sits with the long table and the low table instead of
+     shouting over them.
      ⛔ A COOL ACCENT MUST BE AUTHORED ABOVE THE CHROMA SKIP (0.45) OR THE DIAL GREYS IT. The dial
-        multiplies authored saturation by 2.6 but caps COOL hues at 0.20 — the anti-teal guard — so a
-        green or teal picked at a natural 0.35 comes out MORE grey than it was authored. Warm hues
-        (wood, brass, terracotta) cap at 0.52 and want authoring flat. */
-  const DINER_PAL = {
-    brass:  { WD: '#6f5433', WD_LIT: '#8a6a42', WD_DK: '#40301d', INK: '#241a10',
-              BAND: '#7a5c1e', BAND_LIT: '#a8862f', BAND_DK: '#3d2c0e' },
-    plain:  { WD: '#6f5433', WD_LIT: '#8a6a42', WD_DK: '#40301d', INK: '#241a10', BAND: null },
-    teal:   { WD: '#6f5433', WD_LIT: '#8a6a42', WD_DK: '#40301d', INK: '#241a10',
-              BAND: '#16665d', BAND_LIT: '#1f978a', BAND_DK: '#0b3a34' },
-    chrome: { WD: '#4e3a2a', WD_LIT: '#6b5138', WD_DK: '#2b1f16', INK: '#1a120c',
-              BAND: '#9aa0a3', BAND_LIT: '#dfe3e5', BAND_DK: '#4e5457' },
-    green:  { WD: '#6f5433', WD_LIT: '#8a6a42', WD_DK: '#40301d', INK: '#241a10',
-              BAND: '#1e5c2a', BAND_LIT: '#2d8a3f', BAND_DK: '#0f3317' },
-  };
+        multiplies authored saturation by 2.6 but caps COOL hues at 0.20 — the anti-teal guard — so
+        the leaf green here is picked past the threshold and passes through untouched, while a green
+        chosen at a natural 0.35 would render MORE grey than it was authored. Warm hues (timber,
+        terracotta) cap at 0.52 and want authoring flat. */
+  const DINER_WD = '#6f5433', DINER_WD_LIT = '#8a6a42', DINER_WD_DK = '#40301d', DINER_INK = '#241a10';
 
-  const dinerTop = (x, y, w, h, f, pal) => {
-    const WD = pal.WD, WD_LIT = pal.WD_LIT, WD_DK = pal.WD_DK, INK = pal.INK;
+  const dinerTop = (x, y, w, h, f) => {
+    const WD = DINER_WD, WD_LIT = DINER_WD_LIT, WD_DK = DINER_WD_DK, INK = DINER_INK;
     const CHR = '#bcbec0', CHR_HI = '#eaecee', CHR_DK = '#63676a';
     const top = y + h - 1 - SURFACE_RISE;
     const D = 11;
@@ -5788,24 +5779,13 @@ const PropSprites = (() => {
     px(cx0 + 1, py0 + 4, 3, 3, '#a8552f'); px(cx0 + 1, py0 + 4, 3, 1, '#c96f42');
     keyEdge(cx0 + 1, py0 + 4, 2, 1, 0.24);
     px(cx0 + 3, py0 + 5, 1, 2, '#6d3419');
-    // THE EDGE BAND — the one variable under test. `plain` leaves it as the slab's own timber.
-    if (pal.BAND) {
-      px(x + 1, top, w - 2, 1, pal.BAND_LIT); keyEdge(x + 2, top, 10, 1, 0.28);
-      px(x + 1, top + 1, w - 2, 2, pal.BAND);
-      px(x + 2, top + 3, w - 4, 1, pal.BAND_DK);
-      px(x, top - 2, 1, 6, pal.BAND_DK); px(x + w - 1, top - 2, 1, 6, pal.BAND_DK);
-    } else {
-      px(x + 1, top, w - 2, 1, U.shade(WD, 0.04)); keyEdge(x + 2, top, 10, 1, 0.22);
-      px(x + 1, top + 1, w - 2, 2, WD_DK);
-      px(x + 2, top + 3, w - 4, 1, U.shade(WD_DK, -0.40));
-      px(x, top - 2, 1, 6, WD_DK); px(x + w - 1, top - 2, 1, 6, WD_DK);
-    }
+    // THE NEAR EDGE — the slab's own timber. No band: that was the red, and it is gone.
+    px(x + 1, top, w - 2, 1, U.shade(WD, 0.04)); keyEdge(x + 2, top, 10, 1, 0.22);
+    px(x + 1, top + 1, w - 2, 2, WD_DK);
+    px(x + 2, top + 3, w - 4, 1, U.shade(WD_DK, -0.40));
+    px(x, top - 2, 1, 6, WD_DK); px(x + w - 1, top - 2, 1, 6, WD_DK);
   };
-  /* THE SHIPPED LOOK IS ONE WORD. Andrew rejected the red apron and asked for wood; `plain` is
-     the quiet answer — the edge is the slab's own timber and the PLANT is the only saturated thing
-     on the prop. `teal` is the same table with the catalog's own accent under the lip, and it is the
-     one to reach for if this table ever needs to carry colour in a room. */
-  F.dinertable = (x, y, w, h, f) => dinerTop(x, y, w, h, f, DINER_PAL.plain);
+  F.dinertable = (x, y, w, h, f) => dinerTop(x, y, w, h, f);
 
   F['dinertable:e'] = (x, y, w, h, f) => {
     /* 2x3 deep DINER TABLE — the same butcher block running away from you, which is how it sits
@@ -5813,8 +5793,7 @@ const PropSprites = (() => {
        it faces you, down the LENGTH when it is turned, because a board's direction is the one thing
        a turned tabletop cannot fake. Receding cues are the family's: the west rail lit end to end,
        eased ends, and a contact shadow down the east flank. */
-    const pal = DINER_PAL.plain;
-    const WD = pal.WD, WD_LIT = pal.WD_LIT, WD_DK = pal.WD_DK, INK = pal.INK;
+    const WD = DINER_WD, WD_LIT = DINER_WD_LIT, WD_DK = DINER_WD_DK, INK = DINER_INK;
     const CHR_DK = '#63676a';
     const top = y + h - 1 - SURFACE_RISE;
     const D = top - (y + 1);
