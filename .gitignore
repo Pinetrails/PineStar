@@ -53,6 +53,9 @@ src-tauri/binaries/
 .mock-shot/
 # dev/idlesoak.mjs output (report.json + its own seeded workspace + chrome profile). Never committed.
 .idlesoak*/
+# dev/rotshot.mjs + dev/catshot.mjs contact sheets (regenerated art proofs). Never committed.
+rotshot/
+catshot/
 # qa:summon-delegate journey scratch (seeded workspace + its own chrome profile). Never committed.
 .summon-journey/
 .qa_tmp/
