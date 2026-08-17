@@ -6296,6 +6296,126 @@ const PropSprites = (() => {
     px(x + 4, y + 7, 4, 1, U.shade(SH_DK, -0.34));                         // where it meets the pedestal
   };
 
+  /* ---- THE BOOTH (2026-08-17) — the one seat type the catalog had no version of at all. Every
+     other place to sit is either ONE body (stool, chair, diner chair, pod, crash seat, recliner) or
+     the five-tile COUCH that faces a TV. Nothing seats two at a TABLE, which is exactly what the
+     new diner table and the long table are for: two booths facing each other across a 3x2 top is a
+     diner, and a booth down one side of the refectory table is a mess hall.
+     ⛔ A BOOTH IS A WALL WITH A SHELF, NOT A BIG CHAIR. Its back is one tall unbroken plane — that
+        is what a booth IS — so the read cannot come from silhouette breaks the way a chair's does.
+        It comes from the BANDS: a chrome cap rail, a tufted field with countable buttons, a lit seat
+        plane, and a dark toe kick with real deck under it. Take away the toe kick and it is a crate.
+     ⛔ It shares the diner chair's red on purpose. Placed together they have to read as ONE set. */
+  F.booth = (x, y, w, h, f) => {
+    const RED = '#a8382b', RED_LIT = '#c4513f', RED_HI = '#dd7460', RED_DK = '#5e1f18';
+    const CHR = '#b6c0c5', CHR_HI = '#e8eef1', CHR_DK = '#5d666c', INK = '#20262a';
+    shadow2(x + 1, y + h - 1, w - 2);
+    /* THE BACK — one tall plane, capped in chrome. Drawn first and whole; the seat overlaps it. */
+    px(x + 1, y - 7, w - 2, 10, INK);
+    px(x + 2, y - 6, w - 4, 1, CHR_HI); keyEdge(x + 2, y - 6, 8, 1, 0.30);   // the cap rail
+    px(x + 2, y - 5, w - 4, 1, CHR_DK);
+    px(x + 2, y - 4, w - 4, 6, U.shade(RED, -0.10));
+    px(x + 2, y - 4, w - 4, 1, RED); px(x + 3, y - 4, 5, 1, RED_LIT);
+    px(x + 2, y - 3, 1, 5, RED_LIT); px(x + w - 3, y - 3, 1, 5, RED_DK);
+    rimEdge(x + w - 3, y - 3, 1, 5, 0.20);
+    for (let bx = x + 5; bx < x + w - 4; bx += 6) {                           // TUFTING — countable buttons
+      px(bx, y - 2, 1, 1, RED_DK); px(bx, y - 1, 1, 1, U.shade(RED_LIT, -0.10));
+      px(bx - 1, y - 3, 1, 1, U.shade(RED, 0.10)); px(bx + 1, y - 3, 1, 1, U.shade(RED, 0.10));
+      px(bx, y + 1, 1, 2, U.shade(RED, -0.14));                              // the pleat under each
+    }
+    px(x + 2, y + 2, w - 4, 1, RED_DK);                                      // where the back meets the seat
+    /* THE SEAT — the light plane, proud of the back at both ends so the bench reads as upholstered
+       rather than as a panel with a ledge. */
+    px(x, y + 3, w, 6, INK);
+    px(x + 1, y + 4, w - 2, 2, RED_HI); keyEdge(x + 1, y + 4, 9, 1, 0.30);
+    px(x + 1, y + 6, w - 2, 1, RED_LIT);
+    px(x + 1, y + 7, w - 2, 1, RED);
+    px(x + 1, y + 4, 1, 3, RED_HI); px(x + w - 2, y + 4, 1, 3, RED_DK);
+    rimEdge(x + w - 2, y + 4, 1, 3, 0.20);
+    for (let bx = x + 5; bx < x + w - 4; bx += 6) px(bx, y + 5, 1, 1, RED_DK);
+    px(x + 1, y + 8, w - 2, 1, CHR); px(x + 1, y + 8, 4, 1, CHR_HI);         // the chrome trim strip
+    /* THE TOE KICK — recessed, with deck under it. This is the whole difference from a crate. */
+    px(x + 2, y + 9, w - 4, 2, INK);
+    px(x + 3, y + 9, w - 6, 1, U.shade(CHR_DK, -0.20));
+    px(x + 3, y + 10, w - 6, 1, U.shade(INK, 0.10));
+    ctx.globalAlpha = 0.34; px(x + 2, y + h - 1, w - 4, 1, '#000'); ctx.globalAlpha = 1;
+  };
+
+  F['booth:e'] = (x, y, w, h, f) => {
+    /* 1x2 TURNED — the bench runs away from you with its back down the WEST side. This is how a booth
+       is actually placed, two of them flanking a table.
+       ⛔ FROM ABOVE, THE BACK IS A CROWN — NOT A WALL. The first pass drew it as a 4px red panel
+          beside the seat and the prop read as TWO PLANKS STANDING UP, because both masses were the
+          same red at the same value. A west-facing surface is edge-on from this camera: what you
+          actually see of the back is its TOP, a lit band running the length, with one shaded row
+          where it rolls over. The seat beside it is the HORIZONTAL plane and must sit lighter. That
+          value split — lit crown, dark roll, light seat — is the entire read. (Same law the turned
+          COUCH earned.) */
+    const RED = '#a8382b', RED_LIT = '#c4513f', RED_HI = '#dd7460', RED_DK = '#5e1f18';
+    const CHR = '#b6c0c5', CHR_HI = '#e8eef1', CHR_DK = '#5d666c', INK = '#20262a';
+    const NE = y + h - 5;                                                    // where the near end starts
+    shadow2(x + 1, y + h - 1, w - 2);
+    ctx.globalAlpha = 0.22; px(x + w, y + 2, 2, h - 5, '#000'); ctx.globalAlpha = 1;
+    px(x, y - 5, w, h + 1, INK);                                             // ONE silhouette, then fills
+    /* THE BACK, seen as its crown: NARROW — three px, against the seat's seven. Two red bands of
+       equal width at equal value is what made the first two passes read as a pair of planks; the
+       back has to be the minor mass and the seat the major one, with the shadow the back throws
+       across the cushion separating them. */
+    px(x + 1, y - 4, 1, h - 1, RED_HI); keyEdge(x + 1, y - 4, 1, 9, 0.26);   // its lit west lip
+    px(x + 2, y - 4, 1, h - 1, CHR_DK);                                      // THE CHROME CAP, end-on —
+    px(x + 2, y - 4, 1, 6, CHR);                                             // lit only where the strip
+    px(x + 2, y + h - 9, 1, 4, CHR);                                         // actually reaches it. A full
+    keyEdge(x + 2, y - 4, 1, 5, 0.20);                                       // bright rail is a strip light.
+    px(x + 3, y - 3, 1, h - 2, RED);                                         // the crown rolling over
+    px(x + 4, y - 3, 1, h - 2, RED_DK);                                      // and falling into shade
+    px(x + 5, y - 2, 1, h - 3, U.shade(RED_DK, -0.30));                      // its shadow ON the seat
+    for (let by = y + 1; by < NE - 2; by += 6) px(x + 3, by, 1, 1, RED_DK);  // tufting, down the length
+    /* THE SEAT — the major mass and the light plane, running the same length */
+    px(x + 6, y - 2, w - 7, h - 2, RED_LIT);
+    px(x + 6, y - 2, w - 7, 1, RED_HI); keyEdge(x + 6, y - 2, 4, 1, 0.26);   // its far end takes the strip
+    px(x + 6, y - 1, 1, h - 3, RED_HI);                                      // THE WEST RAIL, lit end to end
+    px(x + w - 3, y - 1, 1, h - 3, RED); px(x + w - 2, y - 1, 1, h - 3, RED_DK);
+    rimEdge(x + w - 2, y + 1, 1, h - 6, 0.20);
+    for (let by = y + 2; by < NE - 2; by += 6) {                             // seat buttons, down the length
+      px(x + 9, by, 1, 1, RED_DK); px(x + 9, by + 1, 1, 1, U.shade(RED_HI, -0.06));
+    }
+    /* THE NEAR END — the seat's front edge, its chrome trim, and the toe kick under everything */
+    px(x + 1, NE, w - 2, 1, RED);
+    px(x + 1, NE + 1, w - 2, 1, CHR); px(x + 1, NE + 1, 4, 1, CHR_HI);
+    px(x + 2, NE + 2, w - 4, 3, INK);
+    px(x + 3, NE + 2, w - 6, 1, U.shade(CHR_DK, -0.20));
+    px(x + 3, NE + 3, w - 6, 1, U.shade(INK, 0.10));
+    ctx.globalAlpha = 0.34; px(x + 1, y + h - 1, w - 2, 1, '#000'); ctx.globalAlpha = 1;
+  };
+
+  F['booth:n'] = (x, y, w, h, f) => {
+    /* FROM BEHIND — a booth's back is a room divider, and this is the view you get standing on the
+       other side of it. No seat plane, no tufting: those are the side you sit on. What is left is the
+       outer shell — panelled, seamed at intervals, capped by the same chrome rail. */
+    const RED = '#a8382b', RED_LIT = '#c4513f', RED_DK = '#5e1f18';
+    const CHR = '#b6c0c5', CHR_DK = '#5d666c', INK = '#20262a';
+    shadow2(x + 1, y + h - 1, w - 2);
+    px(x + 1, y - 7, w - 2, 10, INK);
+    px(x + 2, y - 6, w - 4, 1, CHR); keyEdge(x + 2, y - 6, 8, 1, 0.22);
+    px(x + 2, y - 5, w - 4, 1, CHR_DK);
+    px(x + 2, y - 4, w - 4, 6, U.shade(RED, -0.14));                          // the outer shell, dimmer
+    px(x + 2, y - 4, w - 4, 1, U.shade(RED_LIT, -0.20));
+    px(x + 2, y - 3, 1, 5, U.shade(RED_LIT, -0.26)); px(x + w - 3, y - 3, 1, 5, RED_DK);
+    rimEdge(x + w - 3, y - 3, 1, 5, 0.20);
+    for (let sx = x + 8; sx < x + w - 6; sx += 8) {                           // PANEL SEAMS, not buttons
+      px(sx, y - 4, 1, 6, RED_DK); px(sx + 1, y - 4, 1, 6, U.shade(RED, 0.06));
+    }
+    px(x + 2, y + 2, w - 4, 1, RED_DK);
+    px(x, y + 3, w, 5, INK);                                                  // the seat, from behind
+    px(x + 1, y + 4, w - 2, 2, U.shade(RED, -0.30));
+    px(x + 1, y + 4, w - 2, 1, U.shade(RED, -0.22));
+    px(x + 1, y + 6, w - 2, 1, RED_DK);
+    px(x + 1, y + 7, w - 2, 1, CHR_DK);
+    px(x + 2, y + 8, w - 4, 3, INK);
+    px(x + 3, y + 8, w - 6, 1, U.shade(CHR_DK, -0.30));
+    ctx.globalAlpha = 0.34; px(x + 2, y + h - 1, w - 4, 1, '#000'); ctx.globalAlpha = 1;
+  };
+
   /* ============ DETAIL-PASS PROPS (auto-generated) ============ */
   F.bridge_tacscreen = (x, y, w, h, f) => {   // v4 TAC SCREEN (2x1) — the bridge's HOODED wireframe monitor
     // The three bridge props share the room's red and must still be told apart in silhouette alone:
@@ -9860,6 +9980,7 @@ const PropSprites = (() => {
        top plan — which is what PLAN_FOOTPRINT is for. Its setting (caddy, ketchup, mugs) is drawn in,
        so it reads as a laid table rather than an empty one you are forbidden to use. */
     { id: "dinertable", label: "DINER TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 2, animated: false, blocks: true },
+    { id: "booth", label: "BOOTH", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'south' } },
     { id: "dinerchair", label: "DINER CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
     { id: "crashseat", label: "CRASH SEAT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
     { id: "podchair", label: "POD CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
@@ -10040,7 +10161,7 @@ const PropSprites = (() => {
      a 5x1 sofa turned is a 1x5 sofa running along a wall. Decals and tables qualify by their catalog
      flags (`flat` / `surface`); soft furniture has no such flag and is listed here. Everything else
      keeps its box — the arcade's second tile is HEIGHT, not depth. */
-  const PLAN_FOOTPRINT = ['couch', 'dinertable'];
+  const PLAN_FOOTPRINT = ['couch', 'dinertable', 'booth'];
   const PLAN_SET = PLAN_FOOTPRINT.reduce((o, id) => (o[id] = 1, o), {});
   const reTiles = id => isDecal(id) || !!PLAN_SET[id] || !!(spec(id) || {}).surface;
   function footprintAt(id, r) {
