@@ -833,10 +833,12 @@ const WorldModel = (() => {
        mount state (a decal hosts nothing; it has no top surface, it IS the deck), it is an exemption
        from the overlap test in both directions — see checkProp.
 
-       There was briefly a mount 'wall' rule too (hang a prop on the face the bake raises along a
-       room's north edge). Andrew rejected the look outright and every wall-only prop was retired with
-       it, so the rule is gone rather than left dormant: a placement constraint with no props subject
-       to it is dead code that still has to be reasoned about on every read of this function. */
+       mount:'wall' is BACK (2026-08-17, Andrew: "we need to allow mountable wall props") — but it is
+       NOT what was reverted. The first version LIFTED the prop onto the tall face the bake raises
+       along a room's north edge (a WALL_RISE), and that lifted look is what he rejected on sight;
+       every wall-only prop went with it. This version is the CONSTRAINT ONLY: the prop must be
+       placed against a north wall and it draws exactly where it always did, hanging in its own tile
+       with its own standoff shadow. Nothing lifts, so there is nothing to reject twice. */
     const ruleOf = (t) => (propRules && t) ? (propRules(t) || {}) : {};
     // the single surface prop wholly covering `foot`, or null
     /* A host must WHOLLY contain `foot`, so it necessarily covers foot's top-left tile — the index
@@ -862,6 +864,15 @@ const WorldModel = (() => {
       }
       const rule = ruleOf(type);
       let host = null;
+      /* WALL MOUNT — every footprint tile must have a WALL immediately north of it. North is the only
+         wall this camera can show: south walls are behind the viewer and the east/west ones are seen
+         edge-on, so hanging a board on either would be drawing a face that is not there. "A wall" is
+         simply the absence of deck — the bake raises its face from exactly that boundary. */
+      if (rule.mount === 'wall') {
+        for (let x = foot.x1; x <= foot.x2; x++) {
+          if (roomAt(x, foot.y1 - 1)) return fail('NEEDS_WALL', 'must hang on a wall — put it against the top edge of a room');
+        }
+      }
       if (rule.mount === 'surface') {
         host = surfaceHostFor(foot, ignoreId);
         if (!host) return fail('NEEDS_SURFACE', 'must stand on a table');

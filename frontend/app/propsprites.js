@@ -8811,6 +8811,8 @@ const PropSprites = (() => {
       px(x0 + 12, y0 - 1, 3, 2, U.shade(GUN_DK, 0.30));                            // ejection port
       px(x0 + 9, y0 - 2, 2, 1, '#cfd7dc');                                         // charging handle
       px(x0 + 8, y0 + 2, 9, 1, U.shade(GUN_MID, -0.34));
+      for (let i = 0; i < 4; i++) px(x0 + 9 + i * 2, y0 - 3, 1, 1, U.shade(GUN_MID, 0.20));   // the top rail's teeth
+      px(x0 + 8, y0 + 1, 1, 1, U.shade('#ffb347', -0.44));                                    // selector switch
       /* magazine, curved — two steps forward as it drops */
       px(x0 + 12, y0 + 3, 4, 2, GUN_DK); px(x0 + 13, y0 + 5, 4, 2, GUN_DK);
       px(x0 + 13, y0 + 3, 2, 1, U.shade(GUN_MID, -0.06)); px(x0 + 14, y0 + 5, 2, 1, U.shade(GUN_MID, -0.20));
@@ -8825,15 +8827,28 @@ const PropSprites = (() => {
         px(bl + i, y0, 1, 1, GUN_MID);
         px(bl + i, y0 + 1, 1, 1, GUN_DK);
       }
-      px(bl + len, y0 - 2, 2, 4, GUN_DK);                                          // muzzle device
-      px(bl + len, y0 - 1, 2, 1, '#cfd7dc'); px(bl + len + 1, y0, 1, 1, GUN_MID);
+      px(bl + len, y0 - 2, 3, 4, GUN_DK);                                          // muzzle device
+      px(bl + len, y0 - 1, 3, 1, '#cfd7dc'); px(bl + len + 1, y0, 2, 1, GUN_MID);
+      px(bl + len + 1, y0 - 2, 1, 1, U.shade(GUN_DK, 0.34));                        // its port
+      px(bl - 1, y0 - 1, 1, 2, U.shade(GUN_MID, 0.18));                             // the gas block
       /* optic on a pair of rings, and a sling drooping under the whole thing */
       if (o.scope) {
-        px(x0 + 9, y0 - 7, 9, 3, GUN_DK);
-        px(x0 + 10, y0 - 6, 7, 1, GUN); px(x0 + 10, y0 - 5, 7, 1, GUN_MID);
-        px(x0 + 17, y0 - 6, 1, 1, '#7fd8ff');
+        px(x0 + 9, y0 - 7, 10, 3, GUN_DK);
+        px(x0 + 10, y0 - 6, 8, 1, GUN); px(x0 + 10, y0 - 5, 8, 1, GUN_MID);
+        px(x0 + 13, y0 - 8, 2, 1, GUN_MID);                                        // elevation turret
+        px(x0 + 18, y0 - 6, 1, 2, '#7fd8ff'); px(x0 + 18, y0 - 6, 1, 1, '#cfefff');  // the objective glint
+        px(x0 + 9, y0 - 6, 1, 2, U.shade(GUN_DK, 0.30));                           // the eyepiece cup
         px(x0 + 11, y0 - 4, 1, 1, GUN_MID); px(x0 + 16, y0 - 4, 1, 1, GUN_MID);    // the rings
       }
+      if (o.bipod) {                                                                // folded back under the handguard
+        for (let i = 0; i < 4; i++) { px(x0 + 21 - i, y0 + 2 + i, 1, 1, GUN_MID); px(x0 + 22 - i, y0 + 2 + i, 1, 1, GUN_DK); }
+        px(x0 + 21, y0 + 2, 2, 1, U.shade(GUN_MID, 0.14));
+      }
+      if (o.light) {                                                                // a light module slung under it
+        px(x0 + 18, y0 + 2, 4, 2, GUN_DK); px(x0 + 18, y0 + 2, 4, 1, GUN_MID);
+        px(x0 + 21, y0 + 3, 1, 1, '#cfefff');
+      }
+      px(x0 + 6, y0 + 2, 1, 1, GUN_MID); px(x0 + 19, y0 + 2, 1, 1, GUN_MID);        // sling swivels
       if (o.sling) {
         for (let i = 0; i < 14; i++) {
           const sx = x0 + 5 + i, sy = y0 + 4 + Math.round(2.6 * Math.sin((i / 13) * Math.PI));
@@ -8841,8 +8856,8 @@ const PropSprites = (() => {
         }
       }
     };
-    weapon(x + 4, y - 11, 4, { scope: 1, wood: 0, sling: 1 });                     // top: a scoped rifle
-    weapon(x + 4, y - 1, 3, { scope: 0, wood: 1, sling: 0 });                      // below: a wood-stocked carbine
+    weapon(x + 4, y - 11, 4, { scope: 1, wood: 0, sling: 1, bipod: 1, light: 0 });   // top: a scoped rifle
+    weapon(x + 4, y - 1, 3, { scope: 0, wood: 1, sling: 0, bipod: 0, light: 1 });    // below: a wood-stocked carbine
     /* (3) the CHARGE CELL on the top arm — the one live thing on the prop */
     px(x + 17, y - 8, 2, 1, U.shade('#ffb347', -0.30 + 0.30 * cell));
     bloom(x + 17, y - 8, 2, 1, '#ffb347', 0.12 + 0.18 * cell);
@@ -9194,8 +9209,8 @@ const PropSprites = (() => {
     { id: "telescope_r", label: "TELESCOPE ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "camerarig", label: "CAMERA RIG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "camerarig_r", label: "CAMERA RIG ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
-    { id: "weaponrack", label: "WEAPON RACK ‹", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: false },
-    { id: "weaponrack_r", label: "WEAPON RACK ›", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: false },
+    { id: "weaponrack", label: "WEAPON RACK ‹", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: false, mount: 'wall' },
+    { id: "weaponrack_r", label: "WEAPON RACK ›", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: false, mount: 'wall' },
     { id: "punchbag", label: "HEAVY BAG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'bag', sit: false, approach: 'south' } },
     { id: "punchbag_r", label: "HEAVY BAG ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'bag', sit: false, approach: 'south' } },
     { id: "benchpress", label: "BENCH PRESS ‹", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, use: { kind: 'bench', sit: false, approach: 'south' } },
