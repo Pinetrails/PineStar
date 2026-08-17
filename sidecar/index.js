@@ -2172,6 +2172,40 @@ function nightshiftUndeclined(agentId, candidates) {
   return list.filter(c => c && !dIdx.has(c.title));
 }
 
+/* ---- AUX MODEL TIER (composition root — the ONE place the cheap aux-work model/effort is resolved) ----------
+   resolveAuxModel: STARNET_AUX_MODEL (SKYNET_ fallback via ENV) names the model for auxiliary LLM work —
+   reflection · study · thread-mine · scout · quest-refresh · context compaction · the skill review/curator
+   forks. The legacy REFLECT_MODEL pair is still honored so existing deploys keep working unchanged. null =
+   no aux tier configured -> every consumer uses the run's own model, byte-identical to before this tier. */
+function resolveAuxModel() {
+  return String(ENV('AUX_MODEL') || ENV('REFLECT_MODEL') || '').trim() || null;
+}
+/* auxSkillModel — which model a nested SKILL loop (review/curator) may run on. Same family as
+   fallbackchain.promoteToolCapable but STRICTER in direction: promoting a task onto a fallback entry tolerates
+   unknown support (a cold catalog must never refuse a run), while swapping a working TOOL loop down to a cheap
+   model demands affirmative proof — supportsTools(aux) === true — because a toolless model here doesn't fail
+   loudly, it just silently maintains nothing. Unknown/false/no-aux-model -> the run model, exactly as today. */
+function auxSkillModel(provider, runModel) {
+  const aux = resolveAuxModel();
+  if (!aux || aux === runModel) return runModel;
+  try { return (provider && typeof provider.supportsTools === 'function' && provider.supportsTools(aux) === true) ? aux : runModel; }
+  catch (_) { return runModel; }
+}
+/* auxReasoningEffort — the per-request reasoning effort for the SINGLE-SHOT aux streams (reflection/study/
+   thread-mine/scout/compaction). Engaged only when the aux tier is configured (an aux model, or an explicit
+   STARNET_AUX_EFFORT): an unconfigured install keeps today's requests byte-identical. Default 'low' — aux work
+   is extraction/summarization, where thinking depth buys little — overridable via STARNET_AUX_EFFORT. Returns
+   null unless the provider VERIFIABLY offers that effort for this model (provider.reasoningEfforts); null rides
+   as "no per-request override", so an adapter that can't select effort never sees a value it might reject. */
+function auxReasoningEffort(provider, model) {
+  const effortEnv = String(ENV('AUX_EFFORT') || '').trim();
+  if (!effortEnv && !resolveAuxModel()) return null;
+  if (!provider || typeof provider.reasoningEfforts !== 'function') return null;
+  const want = normalizeReasoningEffort(effortEnv || 'low');
+  let allowed; try { allowed = provider.reasoningEfforts(model); } catch (_) { return null; }
+  return (Array.isArray(allowed) && allowed.indexOf(want) >= 0) ? want : null;
+}
+
 // fire-and-forget; never throws. Uses its OWN abort signal (+ timeout) so the closing run stream can't kill it.
 async function runReflection(o) {
   const { agentId, runId, messages, provider, model, cost } = o;
@@ -2182,11 +2216,13 @@ async function runReflection(o) {
   let usd = 0, tokens = 0;
   // the aux-model call: mirrors summarize() — ONE streamed completion, reconciled for cost. reflect() builds
   // the prompt (recent user/agent exchange) and parses the tagged reply; here we only supply the model.
+  const auxEffort = (o && o.reasoningEffort) || null;   // aux-tier: pre-gated by auxReasoningEffort at the call site
   const propose = async (prompt) => {
     const req = { model, stream: true, signal: ac.signal, messages: [
       { role: 'system', content: 'You are an agent reflecting right after finishing a task. Extract only DURABLE, reusable memories worth keeping for future runs — stable user preferences or learned facts (state the gist, not the whole result). These are beliefs about the user or the world, never instructions, procedures, or advice you gave during the run. One per line, each tagged FACT: or PREFERENCE:. Skip anything transient, run-specific, or already obvious. If nothing is worth keeping, reply NONE.' },
       { role: 'user', content: prompt }
     ] };
+    if (auxEffort) req.reasoningEffort = auxEffort;
     let out = '', usage = null;
     for await (const ev of provider.stream(req)) {
       if (ev && ev.type === 'text') out += ev.delta;
@@ -2196,7 +2232,11 @@ async function runReflection(o) {
     usd += c.usd || 0; tokens += (c.tokensIn || 0) + (c.tokensOut || 0);
     return out;
   };
-  let finalCompletionEvidence = execution.completionEvidence();
+  /* (aux-tier repair, 2026-08-17) A typed-postconditions line — `let finalCompletionEvidence =
+     execution.completionEvidence()` — landed HERE instead of in runOnce (890855829 merge damage). `execution`
+     only exists inside runOnce, so that stray read threw a ReferenceError before this try/catch and the
+     caller's .catch(()=>{}) swallowed it: EVERY reflection pass died silently before its model call. The
+     local was never used in this function; removing it restores the reflection beat. */
   try {
     const stored = notebookStore.get('notebook:' + agentId);
     const existing = Array.isArray(stored) ? stored : [];
@@ -2299,11 +2339,13 @@ async function runStudy(o) {
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, STUDY_TIMEOUT_MS);
   let usd = 0, tokens = 0;
+  const auxEffort = (o && o.reasoningEffort) || null;   // aux-tier: pre-gated by auxReasoningEffort at the call site
   const propose = async (prompt) => {
     const req = { model, stream: true, signal: ac.signal, messages: [
       { role: 'system', content: 'You update a durable profile of your Commander from finished work. Propose ONLY evidenced, durable belief changes, one per line, each tagged with a dimension and ADD or RETIRE. Skip anything transient, guessed, or already known. If nothing changed, reply NONE.' },
       { role: 'user', content: prompt }
     ] };
+    if (auxEffort) req.reasoningEffort = auxEffort;
     let out = '', usage = null;
     for await (const ev of provider.stream(req)) {
       if (ev && ev.type === 'text') out += ev.delta;
@@ -2365,11 +2407,13 @@ async function runThreadMine(o) {
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, THREAD_MINE_TIMEOUT_MS);
   let usd = 0, tokens = 0;
+  const auxEffort = (o && o.reasoningEffort) || null;   // aux-tier: pre-gated by auxReasoningEffort at the call site
   const propose = async (prompt) => {
     const req = { model, stream: true, signal: ac.signal, messages: [
       { role: 'system', content: 'You surface ideas the Commander raised but never acted on, each with a VERBATIM quote copied word-for-word from the conversation. Never paraphrase or invent. If none, reply NONE.' },
       { role: 'user', content: prompt }
     ] };
+    if (auxEffort) req.reasoningEffort = auxEffort;
     let out = '', usage = null;
     for await (const ev of provider.stream(req)) {
       if (ev && ev.type === 'text') out += ev.delta;
@@ -4822,8 +4866,10 @@ async function runScoutCycle(o) {
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, SCOUT_TIMEOUT_MS);
   let usd = 0, tokens = 0;
+  const auxEffort = (o && o.reasoningEffort) || null;   // aux-tier: pre-gated by auxReasoningEffort at the call site
   const propose = async (system, prompt) => {
     const req = { model, stream: true, signal: ac.signal, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] };
+    if (auxEffort) req.reasoningEffort = auxEffort;
     let out = '', usage = null;
     for await (const ev of provider.stream(req)) {
       if (ev && ev.type === 'text') out += ev.delta;
@@ -6746,7 +6792,7 @@ async function runQuestRefreshCycle(why) {
   const baseUrl = providerRuntimeBaseUrl(providerId, '');
   const key = cronKeyFor(providerId);
   if (!cronHasCredential(providerId, key)) { questRefreshNote({ outcome: 'skipped', reason: 'no provider credential — ' + cronCredentialError(providerId, 'the quest refresh') }); return; }
-  const model = String(ENV('REFLECT_MODEL') || '').trim() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
+  const model = resolveAuxModel() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);   // aux-tier: the ONE aux-model resolution (STARNET_AUX_MODEL, legacy REFLECT_MODEL)
   if (!model) { questRefreshNote({ outcome: 'skipped', reason: 'no default model configured (set DEFAULT_MODEL)' }); return; }
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, QUESTREFRESH_TIMEOUT_MS);
@@ -14231,8 +14277,10 @@ async function runOnce(o) {
 
   // ---- context auto-compaction: fold older turns into a summary once the live prompt passes 65% of the model's
   //      window, so a long run shrinks instead of overflowing. contextLimit is 0 until the catalog warms (then the
-  //      loop never compacts — safe). The summarizer is ONE cheap model call over the older slice; on any failure
-  //      the loop keeps the full history (never a silent drop). ----
+  //      loop never compacts — safe). The summarizer is ONE model call over the older slice — on the RUN'S OWN
+  //      (full-price) model unless the aux tier (STARNET_AUX_MODEL / legacy REFLECT_MODEL) names a cheaper one;
+  //      an aux-model failure retries ONCE on the run model, and on any remaining failure the loop keeps the
+  //      full history (never a silent drop). ----
   const ctxMgr = makeContext({ contextLimit: provider.contextLimit(model), compactAt: 0.65, keepTail: 6 });
   // The summarizer is itself a paid model call. It RETURNS its reconciled {usd,tokens} so the loop folds the
   // spend into the run's running tally IN THE SAME TURN — so the per-run ceiling + cross-run pool guards (and the
@@ -14250,8 +14298,12 @@ async function runOnce(o) {
      (every existing test's fake summarizer) behaves exactly as before. */
   async function summarize(older, prevSummary, live) {
     const sProvider = (live && live.provider) || provider;
-    const sModel = (live && live.model) || model;
     const sCost = (live && live.cost) || cost;
+    // aux tier: a configured cheap model serves the fold, riding the loop's LIVE provider/credential (so the
+    // rotation/fallback fix above still holds). No aux model -> the run's live model, byte-identical to before.
+    const runModel = (live && live.model) || model;
+    const auxModel = resolveAuxModel();
+    const sModel = auxModel || runModel;
     // TRANSCRIPT DRAIN (before the fold): `older` is the exact slice compaction is about to delete from the live
     // messages array. Turns THIS run produced that land in the fold would otherwise never reach the durable
     // transcript at all — the run-end append can only see what SURVIVED the fold. The drain is STRICT: if fsync or
@@ -14275,20 +14327,31 @@ async function runOnce(o) {
     const prev = (typeof prevSummary === 'string' && prevSummary.trim()) ? prevSummary.trim() : '';   // H5.2: a prior fold's running summary to merge into
     const prevBlock = prev ? 'PREVIOUS SUMMARY (update this — merge the new turns in, drop anything now obsolete):\n' + prev + '\n\n' : '';
     const userMsg = (memBlock ? memBlock + '\n\n' : '') + prevBlock + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
-    const req = { model: sModel, stream: true, signal, messages: [
-      { role: 'system', content: compactionSummaryPrompt({ prevSummary: !!prev }) },   // H5.1 structured template; H5.2 merge-update variant when a prior summary exists
-      { role: 'user', content: userMsg }
-    ] };
-    let out = '', usage = null;
-    for await (const ev of sProvider.stream(req)) {
-      if (ev && ev.type === 'text') out += ev.delta;
-      else if (ev && ev.type === 'usage') usage = ev.usage;
+    async function attempt(useModel) {
+      const req = { model: useModel, stream: true, signal, messages: [
+        { role: 'system', content: compactionSummaryPrompt({ prevSummary: !!prev }) },   // H5.1 structured template; H5.2 merge-update variant when a prior summary exists
+        { role: 'user', content: userMsg }
+      ] };
+      const effort = auxReasoningEffort(sProvider, useModel);   // per-request 'low' (or STARNET_AUX_EFFORT) only when the aux tier is engaged AND the provider verifiably offers it
+      if (effort) req.reasoningEffort = effort;
+      let out = '', usage = null;
+      for await (const ev of sProvider.stream(req)) {
+        if (ev && ev.type === 'text') out += ev.delta;
+        else if (ev && ev.type === 'usage') usage = ev.usage;
+      }
+      const c = sCost.reconcile(usage, useModel);
+      emit('agent.cost', { agentId, runId, usd: c.usd || 0, model: useModel, reconciled: true });   // display-only; no token fields (gauge-safe)
+      const r = { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
+      if (c.unpriced) r.unpricedUsage = [{ model: useModel, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 }];
+      return r;
     }
-    const c = sCost.reconcile(usage, sModel);
-    emit('agent.cost', { agentId, runId, usd: c.usd || 0, model: sModel, reconciled: true });   // display-only; no token fields (gauge-safe)
-    const r = { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
-    if (c.unpriced) r.unpricedUsage = [{ model, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 }];
-    return r;
+    /* AUX-TIER RELIABILITY FLOOR: a configured cheap model must never make compaction LESS reliable than
+       today. The loop's contract (loop.js maybeCompact: a throw counts a compactionFail; two flip
+       compactionOff, after which a context_overflow can kill the run) is preserved by retrying the fold ONCE
+       on the run's own live model before any failure surfaces. An abort is a cancel, never retried. */
+    if (sModel === runModel) return attempt(sModel);
+    try { return await attempt(sModel); }
+    catch (e) { if (signal.aborted) throw e; return attempt(runModel); }
   }
   // per-run adapter onto the shared cross-run budget: the loop calls check(spentThisRun) each turn; the budget
   // emits any threshold crossing down THIS run's bus and returns a block when a soft pool cap is hit.
@@ -15331,8 +15394,9 @@ async function runOnce(o) {
   // governor caps how many may SPEND this run-end (SKYNET_AUX_BUDGET, default 2; a literal 0 = unlimited/off), in
   // the LOCKED beat priority (reflection > study > threadmine > scout > skill-review > skill-curator). DEFERRED ≠
   // SUPPRESSED: a deferred pass fires NOTHING and arms NO cooldown here, so its own gate re-qualifies and it retries
-  // on the next run. REFLECT_MODEL optionally points the aux passes at a cheaper model; it defaults to the run's own.
-  const reflectModel = String(ENV('REFLECT_MODEL') || '').trim();
+  // on the next run. STARNET_AUX_MODEL (legacy REFLECT_MODEL) optionally points the aux passes at a cheaper
+  // model — resolveAuxModel is the single resolution; it defaults to the run's own model.
+  const reflectModel = resolveAuxModel() || '';
   // finishReason gate (Lane A plumbs result.finishReason from loop.js): a run TRUNCATED by the provider ('length'
   // = hit max_tokens mid-thought; 'content_filter' = the model's output was cut) produced INCOMPLETE work — its
   // dialogue shouldn't seed memory/study/skills as if it were a clean finish. Guarded so it's a NO-OP when the
@@ -15346,6 +15410,12 @@ async function runOnce(o) {
   const _auxDone = !!(!o.recovery && result && result.reason === 'done' && !taskQuestionAsked && _qualifies && !signal.aborted);   // a clarification learns nothing and ships nothing
   const _auxNow = Date.now();       // one clock read for the scout cadence fold + curator-due check below
   const _auxModel = _auxDone ? (reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL })) : '';
+  // per-request effort for the single-shot aux streams — null unless the aux tier is engaged AND the provider
+  // verifiably offers the effort for _auxModel (auxReasoningEffort); null = no override, byte-identical requests.
+  const _auxEffort = _auxDone ? auxReasoningEffort(provider, _auxModel) : null;
+  // the skill review/curator forks are nested TOOL loops: they take the cheap aux model only when it is
+  // VERIFIABLY tool-capable on this run's provider (supportsTools === true), else the run's own model as today.
+  const _auxSkillModel = auxSkillModel(provider, model);
 
   // Each pass's OWN gate, computed WITHOUT firing (the EXACT predicates from before — the reflect/study/threadmine
   // cooldown comparisons are byte-for-byte the originals, so the settings-P1 source-locks still hold). A pass
@@ -15392,26 +15462,26 @@ async function runOnce(o) {
   // so it re-qualifies next run.
   if (_auxSpend.has('reflection')) {
     reflectingNow.add(agentId);
-    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, cost, unmetered: providerUnmetered, origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }) }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
+    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered, origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }) }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
   }
   if (_auxSpend.has('study')) {
     studyingNow.add(agentId);
     const studyDirective = latestUserText(result.messages);   // study the turn that actually ran, attachment or not
-    runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
+    runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
   if (_auxSpend.has('threadmine')) {
     threadMiningNow.add(agentId);
-    runThreadMine({ agentId, runId, streamId: o.streamId || '', messages: result.messages.slice(), provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { threadMiningNow.delete(agentId); });
+    runThreadMine({ agentId, runId, streamId: o.streamId || '', messages: result.messages.slice(), provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { threadMiningNow.delete(agentId); });
   }
   if (_auxSpend.has('scout')) {
     scoutingNow = true;
-    runScoutCycle({ runId, agentId, provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { scoutingNow = false; });
+    runScoutCycle({ runId, agentId, provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { scoutingNow = false; });
   }
   if (_auxSpend.has('skill-review')) {
-    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(() => {});
+    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model: _auxSkillModel, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(() => {});
   }
   if (_auxSpend.has('skill-curator')) {
-    runSkillCurator({ agentId, runId, provider, model, cost, unmetered: providerUnmetered }).catch(() => {});
+    runSkillCurator({ agentId, runId, provider, model: _auxSkillModel, cost, unmetered: providerUnmetered }).catch(() => {});
   }
 
   // TRUTHFUL TELEMETRY: when the governor holds the ceiling, record WHICH passes yielded. A deferral is NOT an
