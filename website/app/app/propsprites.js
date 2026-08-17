@@ -8521,48 +8521,66 @@ const PropSprites = (() => {
   };
 
   F.telescope = (x, y, w, h, f) => {
-    /* 1x2 TELESCOPE — a brass barrel raking up and to the EAST over a splayed tripod. The barrel is
-       drawn as a stepped diagonal band with its own lit top edge and shaded underside, so it reads
-       as a cylinder seen from below rather than a painted stripe.
-       ⛔ THE TRIPOD MUST SPLAY. Three legs from one hub with daylight between them: parallel legs
-          read as a pedestal, and a pedestal makes the whole thing a lamp. */
+    /* 1x2 TELESCOPE — v2 (Andrew: "it looks terrible, barely even looks like a telescope"). v1 drew
+       a 2px brass stripe on a stick tripod, which is a plank. A refractor is recognisable at this
+       size from FIVE things, and it needs all five:
+         a TUBE WITH GAUGE — 5px across, lit crown / mid / dark belly, so it is a cylinder;
+         a TAPER — narrow at the eyepiece, wide at the objective, with a dark ring round the mouth;
+         a FINDER SCOPE riding parallel above the tube near the eyepiece (the single clearest tell);
+         an EYEPIECE STUB standing PERPENDICULAR out of the tube, plus a focuser knob;
+         a FORK MOUNT with a counterweight — the thing tips about a pivot rather than being glued on.
+       ⛔ The tube is drawn as perpendicular SLICES along the diagonal, so its gauge stays constant
+          the whole way up; stepping a filled rect down a diagonal thins it at every corner. */
     const INK = '#241a10';
-    const BRS = '#a8873f', BRS_LIT = '#d8b56a', BRS_DK = '#6b5326';
+    const BRS = '#a8873f', BRS_LIT = '#dcb96f', BRS_MID = '#8d6f33', BRS_DK = '#5d4720';
     const MET = '#39434b', MET_LIT = '#5b6771', MET_DK = '#1d242a';
     shadow2(x + 1, y + h - 1, w - 2);
-    /* (1) THE TRIPOD — hub at the top of the legs, three splayed legs, rubber feet */
-    px(x + 4, y + 9, 4, 4, INK);
-    px(x + 5, y + 10, 2, 3, MET); px(x + 5, y + 10, 1, 3, MET_LIT);
+    /* (1) THE TRIPOD — three splayed legs off one hub, spreader, rubber feet */
     for (const [lx, dx] of [[x + 5, -1], [x + 6, 0], [x + 6, 1]]) {
-      for (let i = 0; i < 9; i++) {
-        const px0 = lx + Math.round(dx * i * 0.55);
-        px(px0, y + 13 + i, 1, 1, dx < 0 ? MET_LIT : (dx > 0 ? MET_DK : MET));
-      }
+      for (let i = 0; i < 10; i++) px(lx + Math.round(dx * i * 0.5), y + 12 + i, 1, 1, dx < 0 ? MET_LIT : (dx > 0 ? MET_DK : MET));
       px(lx + Math.round(dx * 5), y + 22, 2, 1, '#0d1215');
     }
-    px(x + 4, y + 17, 5, 1, MET_DK); px(x + 4, y + 16, 5, 1, U.shade(MET, 0.10));   // the spreader
-    /* (2) THE YOKE — a fork the barrel pivots in, and the counterweight arm under it */
-    px(x + 3, y + 7, 6, 3, INK);
-    px(x + 4, y + 8, 4, 2, MET); px(x + 4, y + 8, 4, 1, MET_LIT);
-    px(x + 2, y + 10, 3, 1, MET_DK); px(x + 2, y + 11, 2, 1, U.shade(MET_DK, -0.20));   // counterweight
-    /* (3) THE BARREL — a stepped diagonal, lit along its upper edge, from the eyepiece up to the
-       aperture. Each step draws a 4px-thick slice so the tube keeps its gauge all the way. */
-    for (let i = 0; i < 11; i++) {
-      const bx = x + 1 + i, by = y + 7 - i;
-      px(bx, by - 1, 1, 1, INK);
-      px(bx, by, 1, 1, BRS_LIT);                                                   // the lit crown of the tube
-      px(bx, by + 1, 1, 2, BRS);
-      px(bx, by + 3, 1, 1, BRS_DK);                                                // its shaded belly
-      px(bx, by + 4, 1, 1, INK);
+    px(x + 3, y + 17, 6, 1, MET_DK); px(x + 3, y + 16, 6, 1, U.shade(MET, 0.12));   // the spreader
+    px(x + 4, y + 9, 4, 4, INK); px(x + 5, y + 10, 2, 3, MET); px(x + 5, y + 10, 1, 3, MET_LIT);
+    /* (2) THE FORK MOUNT — two prongs and a pivot bolt the tube tips about */
+    px(x + 4, y + 3, 2, 7, INK); px(x + 7, y + 3, 2, 7, INK);
+    px(x + 4, y + 4, 1, 6, MET_LIT); px(x + 5, y + 4, 1, 6, MET);
+    px(x + 7, y + 4, 1, 6, U.shade(MET, -0.20)); px(x + 8, y + 4, 1, 6, MET_DK);
+    px(x + 5, y + 3, 3, 1, MET_DK);
+    px(x + 6, y + 3, 1, 1, U.shade(MET_LIT, 0.20));                                 // the pivot bolt
+    /* (3) THE COUNTERWEIGHT — a short shaft down-east with a disc, so the tube reads as balanced */
+    px(x + 8, y + 6, 3, 1, MET_DK);
+    px(x + 10, y + 5, 3, 4, INK); px(x + 11, y + 6, 1, 2, U.shade(MET, 0.10)); px(x + 12, y + 6, 1, 2, MET_DK);
+    /* (4) THE TUBE — perpendicular slices up the diagonal, tapering toward the objective */
+    for (let i = 0; i < 15; i++) {
+      const bx = x - 1 + i, by = y + 8 - i;
+      const wide = i > 6;                                                           // it fattens past the mount
+      const top = by - (wide ? 1 : 0);
+      px(bx, top - 1, 1, 1, INK);                                                   // contour above
+      px(bx, top, 1, 1, BRS_LIT);                                                   // lit crown
+      px(bx, top + 1, 1, 1, BRS);
+      px(bx, top + 2, 1, wide ? 2 : 1, BRS_MID);                                    // the mid band
+      px(bx, top + (wide ? 4 : 3), 1, 1, BRS_DK);                                   // shaded belly
+      px(bx, top + (wide ? 5 : 4), 1, 1, INK);                                      // contour below
+      if (i === 5 || i === 10) { px(bx, top, 1, wide ? 5 : 4, U.shade(BRS_DK, 0.14)); px(bx, top, 1, 1, BRS_LIT); }   // tube rings
     }
-    px(x + 5, y + 2, 1, 4, U.shade(BRS_LIT, 0.16));                                // a focus ring
-    px(x + 8, y - 1, 1, 4, U.shade(BRS_DK, 0.10));                                 // and the tube's seam
-    /* (4) THE EYEPIECE (low, west) and the APERTURE (high, east) — the two ends must differ */
-    px(x, y + 8, 2, 3, INK); px(x, y + 9, 2, 1, MET_LIT); px(x, y + 10, 2, 1, MET_DK);
-    px(x + 11, y - 5, 2, 5, INK);
-    px(x + 11, y - 4, 1, 4, U.shade(BRS_LIT, 0.10)); px(x + 12, y - 4, 1, 4, BRS_DK);
-    px(x + 11, y - 4, 1, 2, '#bfe6ff');                                            // cold sky in the glass
-    bloom(x + 11, y - 4, 1, 2, '#bfe6ff', 0.20);
+    /* (5) THE OBJECTIVE — a dark mouth ring at the high end, cold sky caught in the glass */
+    px(x + 13, y - 8, 3, 7, INK);
+    px(x + 14, y - 7, 2, 5, BRS_DK); px(x + 14, y - 7, 2, 1, BRS_MID);
+    px(x + 14, y - 6, 1, 3, '#bfe6ff'); px(x + 15, y - 6, 1, 3, U.shade('#bfe6ff', -0.40));
+    bloom(x + 14, y - 6, 2, 3, '#bfe6ff', 0.22);
+    /* (6) THE FINDER SCOPE — a small tube on brackets, parallel, above the eyepiece end */
+    for (let i = 0; i < 6; i++) {
+      const fx = x + 1 + i, fy = y + 3 - i;
+      px(fx, fy - 1, 1, 1, INK); px(fx, fy, 1, 1, U.shade(MET_LIT, 0.10));
+      px(fx, fy + 1, 1, 1, MET_DK); px(fx, fy + 2, 1, 1, INK);
+    }
+    px(x + 2, y + 4, 1, 2, MET); px(x + 5, y + 1, 1, 2, MET);                       // its two brackets
+    /* (7) THE EYEPIECE — a stub standing PERPENDICULAR out of the low end, and a focuser knob */
+    px(x - 3, y + 8, 3, 4, INK);
+    px(x - 2, y + 9, 2, 1, MET_LIT); px(x - 2, y + 10, 2, 1, MET);
+    px(x - 3, y + 9, 1, 2, U.shade(MET_LIT, 0.14));
+    px(x + 1, y + 10, 2, 2, INK); px(x + 1, y + 10, 2, 1, U.shade(MET, 0.16));      // focuser knob
   };
   F.telescope_r = mirrorV(F.telescope);
 
