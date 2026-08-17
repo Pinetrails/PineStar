@@ -199,6 +199,10 @@ function fakeStack(tools) {
   A.ok(/const keyDelivery = e\.keyHeader/.test(station) && /esc\(e\.keyHeader\)/.test(station),
     'custom-header API keys describe their real wire header instead of falsely claiming Bearer auth');
   A.ok(/Authorization: Bearer &hellip;/.test(station), 'ordinary token connectors retain the Bearer-auth explanation');
+  A.ok(/Array\.isArray\(e\.presets\)/.test(station) && /PRESETS ·/.test(station),
+    'a catalog entry can expose named presets without multiplying duplicate cards');
+  A.ok(/Array\.isArray\(e\.presets\)/.test(webStation) && /PRESETS ·/.test(webStation),
+    'web build carries the same preset rendering');
   // truthful telemetry: ADDED state comes from the backend `installed` flag, and live state is re-read after add
   A.ok(/e\.installed/.test(station) && /✓ ADDED/.test(station), 'an already-installed connector shows ADDED (from backend state, not guessed)');
   A.ok(/state === 'up'/.test(station), 'the connect result badge reflects the real manager state, not an assumption');

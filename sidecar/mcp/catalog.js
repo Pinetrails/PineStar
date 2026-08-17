@@ -23,7 +23,8 @@
    transport is always 'http' — the manager's http transport speaks MCP "Streamable HTTP" (POST JSON-RPC,
    response is JSON or an SSE stream). We deliberately seed only Streamable-HTTP `/mcp`-style endpoints and
    NEVER the legacy GET-`/sse` dual-endpoint servers that transport can't drive (listing one would be a lie
-   the moment a user clicked it). Remote-first matches CONNECTORS_MCP_PLAN; stdio/npx entries are excluded
+   the moment a user clicked it). Remote entries use HTTPS; an explicitly `local` entry may use cleartext
+   only on loopback, matching transport.http.js's guard. Remote-first matches CONNECTORS_MCP_PLAN; stdio/npx entries are excluded
    until the child-process jail is a first-class connector transport.
 
    `official` = a first-party server run by the vendor it integrates (Stripe's own Stripe server), vs a
@@ -45,7 +46,8 @@
   // here still renders — it just sorts last, alphabetically — so a new-category row never needs a code edit.
   const CATEGORY_ORDER = [
     'Docs & Knowledge', 'Search & Research', 'Compute & Data', 'Developer Tools',
-    'Automation', 'Social', 'Productivity', 'Design', 'Payments & Finance', 'CRM & Sales', 'Marketing'
+    'Advanced / Developer', 'Automation', 'Social', 'Productivity', 'Design',
+    'Payments & Finance', 'CRM & Sales', 'Marketing'
   ];
 
   /* The seed. Every endpoint below is a Streamable-HTTP `/mcp`-style URL. The `none` tier is verified to
@@ -76,6 +78,10 @@
     { id: 'tavily', name: 'Tavily', category: 'Search & Research', authType: 'apikey', transport: 'http',
       url: 'https://mcp.tavily.com/mcp', official: true, homepage: 'https://tavily.com',
       blurb: 'AI-native web search + page extraction tuned for agents. Paste your Tavily API key.' },
+    { id: 'parallel-search', name: 'Parallel Search', category: 'Search & Research', authType: 'none', transport: 'http',
+      url: 'https://search.parallel.ai/mcp', official: true, homepage: 'https://docs.parallel.ai/integrations/mcp/search-mcp',
+      aliases: ['parallel', 'parallel web search', 'parallel web fetch'],
+      blurb: 'Search and fetch the web through Parallel\'s official MCP server. Anonymous access works without setup at lower rate limits.' },
 
     // ── Compute & Data — zero-setup ───────────────────────────────────────────────────────────────────
     { id: 'wolfram', name: 'Wolfram', category: 'Compute & Data', authType: 'none', transport: 'http',
@@ -92,8 +98,9 @@
       blurb: 'Run web-scraping and automation Actors, and pull structured data from the web.' },
     { id: 'composio', name: 'Composio', category: 'Automation', authType: 'apikey', transport: 'http',
       url: 'https://connect.composio.dev/mcp', official: true, homepage: 'https://composio.dev', keyHeader: 'x-consumer-api-key',
-      aliases: ['google', 'google drive', 'gdrive', 'gmail', 'twitter', 'x', 'slack', 'notion', 'google calendar', 'gsuite', 'g suite'],
-      blurb: 'One key bridges 500+ apps — X, Slack, Gmail, Google Drive, Notion, GitHub, and more. The fastest way to reach the platforms that otherwise need their own sign-in.' },
+      aliases: ['google', 'google drive', 'gdrive', 'gmail', 'outlook', 'microsoft outlook', 'microsoft 365', 'office 365', 'email', 'twitter', 'x', 'slack', 'notion', 'google calendar', 'gsuite', 'g suite'],
+      presets: ['Gmail', 'Outlook'],
+      blurb: 'One key bridges 500+ apps — including managed Gmail and Outlook email connections, plus X, Slack, Google Drive, Notion, GitHub, and more.' },
 
     // ── Social — paste an API key (read access); posting needs OAuth ───────────────────────────────────
     { id: 'x-twitter', name: 'X (Twitter)', category: 'Social', authType: 'apikey', transport: 'http',
@@ -126,7 +133,7 @@
     { id: 'atlassian', name: 'Jira & Confluence', category: 'Productivity', authType: 'oauth', transport: 'http',
       url: '', official: true, homepage: 'https://atlassian.com', via: 'zapier',
       aliases: ['atlassian', 'jira', 'confluence'],
-      blurb: 'Atlassian Jira issues and Confluence pages. Their endpoint speaks Basic auth our transport can\'t drive — reach it today through the Zapier connector (one API key).' },
+      blurb: 'Atlassian Jira issues and Confluence pages. A newer direct OAuth endpoint is under verification; use the proven Zapier route until StarNet completes an authenticated tool call.' },
     /* apikey, NOT oauth: github.com/login/oauth exposes no RFC 7591 dynamic registration (live-probed
        2026-07-18 — discovery succeeds but registration_endpoint is absent), so our DCR sign-in flow can
        never complete against it. A PAT as `Authorization: Bearer` is the documented remote-server path. */
@@ -140,9 +147,16 @@
       url: 'https://mcp.supabase.com/mcp', official: true, homepage: 'https://supabase.com',
       blurb: 'Query your Postgres database and manage Supabase projects. Needs Supabase sign-in (OAuth).' },
 
+    // Advanced / Developer — local specialist surfaces. HTTP is allowed only on an explicit loopback host.
+    { id: 'unreal-engine', name: 'Unreal Engine', category: 'Advanced / Developer', authType: 'none', transport: 'http',
+      url: 'http://127.0.0.1:8000/mcp', official: true, local: true,
+      homepage: 'https://dev.epicgames.com/documentation/unreal-engine/unreal-mcp-in-unreal-editor',
+      aliases: ['unreal', 'ue', 'ue5', 'game engine', 'unreal editor'],
+      blurb: 'Control the open Unreal Editor through Epic\'s experimental local MCP plugin. Enable Unreal MCP and start its loopback server first.' },
+
     /* ── WAVE 2 (all live-verified 2026-07-06): open docs, bearer-key SaaS, and OAuth+DCR connectors whose
        dynamic registration was confirmed to actually mint a client. Skipped (would lie): figma (advertises DCR
-       but 403s it), atlassian (Basic-auth not bearer), plaid (no standard discovery). ── */
+       but 403s it), atlassian (direct authenticated operation not yet proven), plaid (no standard discovery). ── */
     // Docs & Knowledge — zero-setup (connect keyless, tools discovered)
     { id: 'cloudflare-docs', name: 'Cloudflare Docs', category: 'Docs & Knowledge', authType: 'none', transport: 'http',
       url: 'https://docs.mcp.cloudflare.com/mcp', official: true, homepage: 'https://developers.cloudflare.com',
@@ -208,12 +222,13 @@
     return {
       id: e.id, name: e.name, category: e.category, authType: e.authType, transport: e.transport,
       url: e.url || '', official: !!e.official, homepage: e.homepage || '', blurb: e.blurb || '',
-      via: e.via || '', keyHeader: e.keyHeader || '', installable: isInstallable(e),
+      via: e.via || '', keyHeader: e.keyHeader || '', local: !!e.local, installable: isInstallable(e),
       // ALIASES — the names a Commander actually TYPES, which are frequently not the row's name and not in
       // its blurb. "google drive" found nothing while a Google Workspace card sat on screen (2026-07-28);
       // relying on a term happening to appear in marketing copy is not a search. Ride into the card's
       // data-search attribute and into the agent's connect block, so the UI and the agent match the same words.
-      aliases: Array.isArray(e.aliases) ? e.aliases.slice() : []
+      aliases: Array.isArray(e.aliases) ? e.aliases.slice() : [],
+      presets: Array.isArray(e.presets) ? e.presets.slice() : []
     };
   }
 

@@ -1,7 +1,7 @@
 /* node test/mcp.catalog.test.js — the CURATED connector catalog (sidecar/mcp/catalog.js).
    Locks the shape + selectors AND the honesty invariants the catalog must never regress:
    every seeded endpoint is a Streamable-HTTP url the manager's http transport can actually drive
-   (https, no legacy `/sse`), ids are upsert-safe, `installable` tracks the auth tier, and installConfig
+   (https or explicit loopback, no legacy `/sse`), ids are upsert-safe, `installable` tracks the auth tier, and installConfig
    never leaks a token. Pure + deterministic — two reads deep-equal. */
 'use strict';
 const A = require('./_assert.js');
@@ -28,9 +28,16 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
   // ids are unique (a dupe would collide on install / in the manager's config list).
   const ids = all.map(e => e.id);
   A.eq(new Set(ids).size, ids.length, 'connector ids are unique');
+  const names = all.map(e => e.name.toLowerCase());
+  A.eq(new Set(names).size, names.length, 'connector names are unique');
+  const urls = all.map(e => String(e.url || '').replace(/\/+$/, '').toLowerCase()).filter(Boolean);
+  A.eq(new Set(urls).size, urls.length, 'canonical connector URLs are unique');
   // clone guarantee: mutating a returned entry must not leak into the next read.
   all[0].name = 'MUTATED';
   A.ok(C.list()[0].name !== 'MUTATED', 'list() returns defensive clones (seed is immutable)');
+  const composio = all.find(e => e.id === 'composio');
+  composio.presets[0] = 'MUTATED';
+  A.eq(C.get('composio').presets[0], 'Gmail', 'nested presets are defensively cloned');
 }
 
 // ---- B. installable tracks the auth tier exactly (none|apikey today; oauth is listed-but-gated) ----
@@ -44,14 +51,19 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
   A.ok(C.INSTALLABLE_AUTH.indexOf('none') >= 0 && C.INSTALLABLE_AUTH.indexOf('apikey') >= 0, 'none+apikey are installable');
 }
 
-// ---- C. HONESTY invariants: only endpoints the http transport can drive; installable ⇒ real https url ----
+// ---- C. HONESTY invariants: only endpoints the http transport can drive; cleartext is loopback-only ----
 {
   for (const e of C.list()) {
     // never seed a legacy GET-/sse dual-endpoint server — transport.http.js only speaks Streamable HTTP.
     A.ok(String(e.url).indexOf('/sse') < 0, e.id + ' url is not a legacy /sse endpoint');
-    if (e.url) A.ok(/^https:\/\//.test(e.url), e.id + ' url (when set) is https');
-    // an installable connector MUST have a concrete https endpoint — otherwise "Add" would fail.
-    if (e.installable) A.ok(/^https:\/\/\S+/.test(e.url), e.id + ' installable ⇒ has a concrete https url');
+    if (e.url) {
+      const u = new URL(e.url);
+      const loopback = u.protocol === 'http:' && (u.hostname === '127.0.0.1' || u.hostname === 'localhost' || u.hostname === '::1');
+      A.ok(u.protocol === 'https:' || (e.local && loopback), e.id + ' url is https or explicitly local loopback');
+      if (e.local) A.ok(loopback, e.id + ' local flag never excuses a non-loopback cleartext URL');
+    }
+    // an installable connector MUST have a concrete transport-safe endpoint — otherwise "Add" would fail.
+    if (e.installable) A.ok(/^https?:\/\/\S+/.test(e.url), e.id + ' installable ⇒ has a concrete http(s) url');
   }
 }
 
@@ -153,6 +165,26 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
     }
   }
   for (const id of ['google-workspace', 'atlassian']) A.ok(!!(C.get(id) || {}).via, id + ' points at its aggregator route (via)');
+}
+
+// ---- K. requested parity additions are present once, and pre-existing routes stay singular ----
+{
+  const parallel = C.get('parallel-search');
+  A.eq(parallel.url, 'https://search.parallel.ai/mcp', 'Parallel uses its verified anonymous Streamable-HTTP endpoint');
+  A.eq(parallel.authType, 'none', 'Parallel anonymous tier is zero-setup');
+
+  const unreal = C.get('unreal-engine');
+  A.eq(unreal.category, 'Advanced / Developer', 'Unreal Engine is filed under Advanced / Developer');
+  A.eq(unreal.url, 'http://127.0.0.1:8000/mcp', 'Unreal uses Epic\'s documented local editor endpoint');
+  A.eq(unreal.local, true, 'Unreal is explicitly marked local');
+
+  const composio = C.get('composio');
+  A.eq(composio.presets, ['Gmail', 'Outlook'], 'one existing connector exposes the Gmail + Outlook presets');
+  A.ok(composio.aliases.indexOf('email') >= 0 && composio.aliases.indexOf('microsoft outlook') >= 0, 'email searches resolve to the preset-bearing connector');
+  A.eq(C.list().filter(e => /^(gmail|outlook|email)$/i.test(e.name)).length, 0, 'email presets do not create duplicate connector cards');
+
+  A.eq(C.list().filter(e => /duckduckgo/i.test(e.id + ' ' + e.name)).length, 0, 'DuckDuckGo is not duplicated as a connector (it is built into web_search)');
+  A.eq(C.get('atlassian').via, 'zapier', 'Atlassian stays on the proven route until an authenticated direct tool call exists');
 }
 
 // report() LAST — it is what calls process.exit(fail?1:0). This file used to end in a bare

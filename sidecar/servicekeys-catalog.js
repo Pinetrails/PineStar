@@ -28,7 +28,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const CATEGORY_ORDER = ['Commerce & Print-on-Demand', 'Payments', 'Email & Messaging', 'Data & Content', 'Developer Tools', 'AI & Media'];
+  const CATEGORY_ORDER = ['Commerce & Print-on-Demand', 'Payments', 'Email & Messaging', 'Search & Research', 'Data & Content', 'Developer Tools', 'AI & Media'];
 
   const PLATFORMS = [
     // ── Commerce & Print-on-Demand — the gap that started this: no MCP server exists for ANY of these ──
@@ -73,6 +73,19 @@
       docsUrl: 'https://www.twilio.com/docs/sendgrid/api-reference', apiBase: 'https://api.sendgrid.com/v3',
       authHint: 'Authorization: Bearer ${SENDGRID_API_KEY}',
       blurb: 'Email delivery, templates, and stats.' },
+
+    // ── Search & Research — raw REST APIs; DuckDuckGo is already built into web_search ──
+    { id: 'brave-search', name: 'Brave Search', category: 'Search & Research', envVar: 'BRAVE_SEARCH_API_KEY',
+      docsUrl: 'https://api-dashboard.search.brave.com/api-reference/web/search/get', apiBase: 'https://api.search.brave.com/res/v1',
+      authHint: 'X-Subscription-Token: ${BRAVE_SEARCH_API_KEY}',
+      aliases: ['brave', 'brave web search'],
+      blurb: 'Independent web and news search through Brave\'s REST API.' },
+
+    { id: 'firecrawl', name: 'Firecrawl', category: 'Search & Research', envVar: 'FIRECRAWL_API_KEY',
+      docsUrl: 'https://docs.firecrawl.dev/api-reference/introduction', apiBase: 'https://api.firecrawl.dev/v2',
+      authHint: 'Authorization: Bearer ${FIRECRAWL_API_KEY}',
+      aliases: ['firecrawl search', 'web scrape', 'web crawl', 'web extraction'],
+      blurb: 'Search, scrape, crawl, map, and extract structured content from websites.' },
 
     // ── Data & Content ──
     { id: 'airtable', name: 'Airtable', category: 'Data & Content', envVar: 'AIRTABLE_API_KEY',

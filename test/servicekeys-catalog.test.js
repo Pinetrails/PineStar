@@ -87,4 +87,18 @@ for (const p of C.PLATFORMS) {
   A.eq(C.byId('nope'), null, 'byId is null for an unknown id');
 }
 
+// ---- E. search/API additions: exact auth shape, no duplicate built-in DuckDuckGo row ----
+{
+  const brave = C.byId('brave-search');
+  A.eq(brave.envVar, 'BRAVE_SEARCH_API_KEY', 'Brave Search advertises its saved environment variable');
+  A.ok(/^X-Subscription-Token:/.test(brave.authHint || ''), 'Brave carries its verified subscription-token header');
+
+  const firecrawl = C.byId('firecrawl');
+  A.eq(firecrawl.apiBase, 'https://api.firecrawl.dev/v2', 'Firecrawl points at the current v2 REST base');
+  A.ok(/Bearer/.test(firecrawl.authHint || ''), 'Firecrawl carries its verified bearer header');
+
+  A.eq(C.PLATFORMS.filter(p => /duckduckgo/i.test(p.id + ' ' + p.name)).length, 0,
+    'DuckDuckGo is not duplicated in KEYS because web_search already owns it');
+}
+
 A.report('servicekeys-catalog.test.js');

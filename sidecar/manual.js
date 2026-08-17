@@ -88,8 +88,9 @@ const MANUAL =
   'environment-variable NAME. This route works for ANY platform, listed or not — it is the universal fallback.\n' +
   '3. MCP CONNECTORS — the Commander already knows the URL of an MCP server; they paste it directly.\n' +
   'Some platforms are reached THROUGH another connector rather than directly (their card says so and offers ' +
-  'a “VIA …” jump) — Google Workspace (Gmail, Drive, Docs, Sheets, Calendar) and Jira/Confluence are reached ' +
-  'via the Zapier connector today, because Google and Atlassian publish no endpoint StarNet can drive.\n' +
+  'a “VIA …” jump) — Google Workspace (Gmail, Drive, Docs, Sheets, Calendar) is reached via Zapier. ' +
+  'Jira/Confluence also remains on its verified Zapier route until StarNet proves an authenticated tool call ' +
+  'through Atlassian\'s newer direct OAuth endpoint; discovery alone is not connection proof.\n' +
   'LOOK IT UP BEFORE YOU ANSWER. If you have the connectors.list tool, CALL IT — it is read-only, needs no ' +
   'approval, and returns the real catalog: what is already connected AND what the Commander could add but ' +
   'has not. That is the one way to answer “can you reach <platform>?” with a fact instead of a guess, so ' +

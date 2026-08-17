@@ -221,7 +221,7 @@
   }
 
   /* ==== THE ABILITIES CATALOG: platform seals, hybrid (2026-08-14) ==========================
-     The catalog (37 vetted MCP servers + 11 keyed platforms) printed every entry as a name and a
+     The catalog (39 vetted MCP servers + 13 keyed platforms) printed every entry as a name and a
      paragraph, so browsing it was reading. Same treatment as the recipe library, same two-layer shape
      `svg()` already uses: a BESPOKE mark for the entries people scan for by sight, and the entry's
      CATEGORY seal for everything else — so no card is ever bare and the set can grow without an art
@@ -315,6 +315,7 @@
     'search & research': '<svg viewBox="0 0 24 24"><circle cx="10.4" cy="10.4" r="7.8" fill="none" stroke="currentColor" stroke-width="2.6"/><path fill="currentColor" d="M15.8 14.2 L22 20.4 L20.2 22.2 L14 16 Z"/><g fill="currentColor"><circle cx="10.4" cy="10.4" r="2.2"/></g></svg>',
     'compute & data': CATEGORY_ICONS.data,
     'developer tools': CATEGORY_ICONS.developer,
+    'advanced / developer': CATEGORY_ICONS.developer,
     'automation': CATEGORY_ICONS.ops,
     'social': '<svg viewBox="0 0 24 24"><g fill="currentColor"><circle cx="12" cy="6.4" r="3.4"/><path d="M5.6 20.6 a6.4 6.4 0 0 1 12.8 0 a1 1 0 0 1 -1 1 H6.6 a1 1 0 0 1 -1 -1 Z"/></g><g fill="currentColor" opacity=".8"><circle cx="4.4" cy="9.6" r="2.4"/><circle cx="19.6" cy="9.6" r="2.4"/></g></svg>',
     'productivity': CATEGORY_ICONS.planning,

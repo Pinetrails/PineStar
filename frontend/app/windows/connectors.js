@@ -114,7 +114,7 @@
     // here AND verbatim in the section desc below (mountConsole), so it read twice. CRT glyphs, not emoji.
     // The legend doubles as the FILTER: it already taught the three setup tiers, so making those same
     // words the control costs no new vocabulary. "What can I add without any setup right now?" is the
-    // first question a newcomer has and 37 cards in one scroll could not answer it; "which of these am
+    // first question a newcomer has and 39 cards in one scroll could not answer it; "which of these am
     // I already on?" was equally unanswerable without reading every card.
     const secCatalog =
       '<div class="cc-filters" id="cc-filters" role="group" aria-label="Filter connectors by setup type">' +
@@ -920,6 +920,9 @@
       // Commander typing "google drive" reaches the Google Workspace card even though those words are only in
       // its blurb by luck. Off-screen matching text only — never rendered.
       const alias = (Array.isArray(e.aliases) && e.aliases.length) ? ' data-search="' + esc(e.aliases.join(' ')) + '"' : '';
+      const presets = (Array.isArray(e.presets) && e.presets.length)
+        ? '<div class="mc-hint">PRESETS · ' + e.presets.map(esc).join(' · ') + '</div>'
+        : '';
       // data-auth / data-installed drive the tier filter above. They mirror the chip the card already
       // shows, so the filter can never disagree with what is printed on the card.
       return '<div class="cc-card' + (e.installed ? ' cc-on' : '') + '" data-id="' + esc(e.id) + '"' + alias +
@@ -927,7 +930,7 @@
           ' style="--ci:' + (ci || 0) + '">' +
           '<div class="cc-head">' + ccSeal(e) + '<b>' + esc(e.name) + '</b> ' + origin +
             '<span class="cc-chip" style="color:' + chip[2] + '" title="' + esc(chip[1]) + '">' + (chip[0] ? chip[0] + ' ' : '') + esc(chip[1]) + '</span></div>' +
-          '<div class="cc-blurb dim">' + esc(e.blurb) + '</div>' + keyField +
+          '<div class="cc-blurb dim">' + esc(e.blurb) + '</div>' + presets + keyField +
           '<div class="cc-acts">' + action + home + '</div>' +
         '</div>';
     }
