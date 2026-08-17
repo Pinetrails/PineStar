@@ -6389,30 +6389,38 @@ const PropSprites = (() => {
   };
 
   F['booth:n'] = (x, y, w, h, f) => {
-    /* FROM BEHIND — a booth's back is a room divider, and this is the view you get standing on the
-       other side of it. No seat plane, no tufting: those are the side you sit on. What is left is the
-       outer shell — panelled, seamed at intervals, capped by the same chrome rail. */
+    /* FROM BEHIND — and this facing is a lesson in what OCCLUSION means (Andrew: "booth N doesn't
+       make any sense, the backboard would now allow the cushions to be seen").
+       ⛔ A FULL-HEIGHT BACK HIDES EVERYTHING BEHIND IT. Turned 180° the backboard stands on the NEAR
+          edge of the footprint and the cushions sit BEHIND it, so nothing of the seat can reach the
+          camera. The first draft simply dimmed the south view's cushion and left it under the back —
+          which draws a seat straight through a solid wall. A booth's back runs floor to crown; the
+          only things below it are its own kick and the deck.
+       ⛔ THE CHAIRS ARE NOT WRONG FOR THE SAME REASON. A chair's back stops at its seat, so its pad's
+          rear edge and underside genuinely do show from behind. The test is whether the near mass
+          reaches the FLOOR — a booth's does, a chair's does not. */
     const RED = '#a8382b', RED_LIT = '#c4513f', RED_DK = '#5e1f18';
     const CHR = '#b6c0c5', CHR_DK = '#5d666c', INK = '#20262a';
     shadow2(x + 1, y + h - 1, w - 2);
-    px(x + 1, y - 7, w - 2, 10, INK);
-    px(x + 2, y - 6, w - 4, 1, CHR); keyEdge(x + 2, y - 6, 8, 1, 0.22);
+    // ONE tall board: it stands nearer than it does facing south, so it reaches further down the
+    // screen — the whole box, plus the rise every other facing spends on the seat.
+    px(x + 1, y - 7, w - 2, 16, INK);
+    px(x + 2, y - 6, w - 4, 1, CHR); keyEdge(x + 2, y - 6, 8, 1, 0.22);      // the cap rail, from behind
     px(x + 2, y - 5, w - 4, 1, CHR_DK);
-    px(x + 2, y - 4, w - 4, 6, U.shade(RED, -0.14));                          // the outer shell, dimmer
-    px(x + 2, y - 4, w - 4, 1, U.shade(RED_LIT, -0.20));
-    px(x + 2, y - 3, 1, 5, U.shade(RED_LIT, -0.26)); px(x + w - 3, y - 3, 1, 5, RED_DK);
-    rimEdge(x + w - 3, y - 3, 1, 5, 0.20);
-    for (let sx = x + 8; sx < x + w - 6; sx += 8) {                           // PANEL SEAMS, not buttons
-      px(sx, y - 4, 1, 6, RED_DK); px(sx + 1, y - 4, 1, 6, U.shade(RED, 0.06));
+    px(x + 2, y - 4, w - 4, 12, U.shade(RED, -0.14));                        // the outer shell, dimmer
+    px(x + 2, y - 4, w - 4, 1, U.shade(RED_LIT, -0.18));                     // its lit top edge
+    px(x + 2, y - 3, 1, 11, U.shade(RED_LIT, -0.26));                        // lit west flank
+    px(x + w - 3, y - 3, 1, 11, RED_DK); rimEdge(x + w - 3, y - 3, 1, 11, 0.20);
+    for (let sx = x + 7; sx < x + w - 5; sx += 8) {                          // PANEL SEAMS, not buttons
+      px(sx, y - 4, 1, 12, RED_DK); px(sx + 1, y - 4, 1, 12, U.shade(RED, 0.04));
     }
-    px(x + 2, y + 2, w - 4, 1, RED_DK);
-    px(x, y + 3, w, 5, INK);                                                  // the seat, from behind
-    px(x + 1, y + 4, w - 2, 2, U.shade(RED, -0.30));
-    px(x + 1, y + 4, w - 2, 1, U.shade(RED, -0.22));
-    px(x + 1, y + 6, w - 2, 1, RED_DK);
-    px(x + 1, y + 7, w - 2, 1, CHR_DK);
-    px(x + 2, y + 8, w - 4, 3, INK);
-    px(x + 3, y + 8, w - 6, 1, U.shade(CHR_DK, -0.30));
+    px(x + 2, y + 2, w - 4, 1, RED_DK);                                      // the seam behind the cushion line
+    px(x + 2, y + 3, w - 4, 1, U.shade(RED, -0.04));
+    px(x + 2, y + 7, w - 4, 1, RED_DK);                                      // the board's lower rail
+    // THE KICK — recessed under the board, the one thing that IS visible below it
+    px(x + 3, y + 8, w - 6, 3, INK);
+    px(x + 4, y + 8, w - 8, 1, U.shade(CHR_DK, -0.30));
+    px(x + 4, y + 9, w - 8, 1, U.shade(INK, 0.10));
     ctx.globalAlpha = 0.34; px(x + 2, y + h - 1, w - 4, 1, '#000'); ctx.globalAlpha = 1;
   };
 
