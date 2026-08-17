@@ -536,6 +536,7 @@ test/prop-flat-decal.test.js
 test/bed-sleep.test.js
 test/prop-render-smoke.test.js
 test/recliner-side-seat.test.js
+test/sprite-sit-facing.test.js
 test/prop-search.test.js
 test/waitanchor.test.js
 test/harness.integration.test.js
