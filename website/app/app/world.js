@@ -3847,12 +3847,12 @@ const World = (() => {
   let stationBusyAt = -1e9;                // last instant the station had work or a present Commander
 
   const GATHER_QUIET_MS = 30 * 60 * 1000;  // the station must have been unattended this long ("if the station is quiet")
-  const GATHER_ROLL_EVERY_MS = 60 * 60 * 1000;  // roll at most hourly
-  const GATHER_CHANCE = 0.35;              // ...and even then it usually does not happen
+  const GATHER_ROLL_EVERY_MS = 15 * 60 * 1000;  // roll every 15 min while quiet — hourly made it near-unseeable (~3h expected wait)
+  const GATHER_CHANCE = 0.25;              // ...and even then it usually does not happen (~1 quiet hour expected to first assembly)
   const GATHER_MIN_BODIES = 3;             // two agents standing together is a huddle, not an assembly
   const GATHER_CONVERGE_MS = 45000;        // walking-in budget; late bodies simply hold where they got to
-  const GATHER_HOLD_MIN = 120000, GATHER_HOLD_MAX = 240000;   // "may last a few minutes or so"
-  const GATHER_HARD_MS = 420000;           // whole-beat hard timeout — the slot ALWAYS frees (mirrors SOCIAL_HARD_MS)
+  const GATHER_HOLD_MIN = 300000, GATHER_HOLD_MAX = 600000;   // 5-10 min — long enough to be CAUGHT; the return-scatter is the payoff
+  const GATHER_HARD_MS = 720000;           // whole-beat hard timeout — the slot ALWAYS frees; must exceed converge + max hold
   const GATHER_AFTER_CD = 90 * 60 * 1000;  // it must stay rare even on a station left running for days
   const GATHER_SPEAK_MS = 2600, GATHER_GAP_MS = 1500;         // the overseer's line, then a real beat of silence
   const OVERSEER_BREAK_MS = 900;           // ⛔ the overseer holds AFTER everyone else bolts — see endGathering
