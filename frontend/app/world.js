@@ -1692,7 +1692,7 @@ const World = (() => {
      Non-blocking props (bays, inbox/outbox chutes, filters, dropped decor) stay WALKABLE — bodies
      dock on bay tiles, airlocks are doors — but a body with prop awareness steps AROUND the
      machinery when any other route exists. Rugs and airlocks are meant to be crossed; skip them. */
-  const SOFT_CROSS = new Set(['rug', 'airlock']);
+  const SOFT_CROSS = new Set(['rug', 'rug_small', 'rug_large', 'airlock']);
   function beltUnion() {
     const s = new Set(blocked);
     const belts = (geo && geo.belts) || [];
@@ -8886,6 +8886,10 @@ const World = (() => {
         cooldownsMs: allBodies().filter(b => b && !b.unplaced).map(b => ({ id: b.id, ms: Math.max(0, Math.round((b.beltWatchCd || 0) - now)) })),
       };
     },
+    // TEST/DEBUG ONLY — is this prop type freely crossable, or does prop awareness route bodies around
+    // it? A rug missing from SOFT_CROSS still places, renders and stays walkable — the ONLY visible
+    // symptom is bodies stepping around it — so this is the one seam that needs a live readout.
+    _dbgSoftCross: (t) => SOFT_CROSS.has(String(t)),
     // TEST/DEBUG ONLY — containment harness: raw-place a body (bypassing every walkable-checked picker)
     // so the per-tick containment backstop (containBody / hero ensureAgentValid) is provable live.
     _dbgTeleport: (aid, px, py) => { const b = bodyForAgent(aid); if (!b) return false; b.pathPts = null; b.target = null; b.sitting = false; b.seated = false; b.px = +px; b.py = +py; return true; },

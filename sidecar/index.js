@@ -2594,11 +2594,14 @@ async function runBackgroundSkillReview(o) {
       if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });
       return registry.dispatch(c, ctx);
     };
+    const reviewNotebook = notebookStore.get('notebook:' + agentId);
     const prompt = skillReview.buildPrompt({
       agentId, runId, messages,
       loadedSkills: loadedSkills || [],
       managedSkills: managedSkills || [],
-      memories: Array.isArray(notebookStore.get('notebook:' + agentId)) ? notebookStore.get('notebook:' + agentId).slice(-12) : [],
+      // top-12 by rank() against the run's directive (was: last 12 in raw store order) — the reviewer sees the
+      // memories RELEVANT to what this run did; on a queryless run rank degrades to recency+trust, still 12.
+      memories: rank(Array.isArray(reviewNotebook) ? reviewNotebook : [], latestUserText(messages), { now: Date.now(), k: 12 }),
       skills: skillStore.list(agentId, { includeArchived: true })
     });
     result = await runAgentLoop({
@@ -13215,21 +13218,42 @@ async function handleRun(req, res) {
    message, the task brief was prepared from the older text, memory recall ranked against the older query, and
    the study pass studied the older directive. Flatten the parts instead (same rule attachments.textOf uses).
    Returns '' only when the turn genuinely carries no text (an image-only send) — an honest empty, not a lie. */
+function userMsgText(m) {
+  if (!m || m.role !== 'user') return null;
+  if (typeof m.content === 'string') return m.content;
+  if (!Array.isArray(m.content)) return null;     // an unknown shape is not a user turn we can read — keep walking
+  const parts = [];
+  for (const p of m.content) {
+    if (typeof p === 'string') parts.push(p);
+    else if (p && typeof p.text === 'string') parts.push(p.text);
+  }
+  return parts.join('');                          // '' for an image-only turn: honest, and it IS a real turn
+}
 function latestUserText(list) {
   const msgs = Array.isArray(list) ? list : [];
   for (let i = msgs.length - 1; i >= 0; i--) {
-    const m = msgs[i];
-    if (!m || m.role !== 'user') continue;
-    if (typeof m.content === 'string') return m.content;
-    if (!Array.isArray(m.content)) continue;      // an unknown shape is not a user turn we can read — keep walking
-    const parts = [];
-    for (const p of m.content) {
-      if (typeof p === 'string') parts.push(p);
-      else if (p && typeof p.text === 'string') parts.push(p.text);
-    }
-    return parts.join('');                        // '' for an image-only turn: honest, and it IS the latest turn
+    const t = userMsgText(msgs[i]);
+    if (t != null) return t;
   }
   return '';
+}
+/* recentUserText — the WIDENED recall query: the last up-to-3 user turns' text, oldest→newest, joined. A
+   follow-up like "yes, do that" carries no significant tokens of its own; ranking recall against the prior
+   asks too keeps the memory fence on-topic instead of empty (rank()'s relevance floor drops zero-overlap
+   records under a real query). Capped ~2000 chars keeping the NEWEST text (trim from the front — the current
+   ask always outranks history). Recall-seam only; compaction keeps its own transcript query. */
+function recentUserText(list) {
+  const msgs = Array.isArray(list) ? list : [];
+  const texts = [];
+  let turns = 0;
+  for (let i = msgs.length - 1; i >= 0 && turns < 3; i--) {
+    const t = userMsgText(msgs[i]);
+    if (t == null) continue;
+    turns++;
+    if (t) texts.unshift(t);
+  }
+  const joined = texts.join('\n');
+  return joined.length > 2000 ? joined.slice(joined.length - 2000) : joined;
 }
 
 /* runOnce — the reusable RUN HOST. Assembles the proven seams (fresh tool registry + the office-workstation
@@ -15029,6 +15053,9 @@ async function runOnce(o) {
         budget: 6000,
         platform: process.platform,
         canManage: resolved.tools.indexOf('skill.manage') >= 0,
+        // Relevance-first ordering under the budget: the skill this ask needs must never be the row the
+        // 6000-char cap skips. Same widened query as memory recall; no query -> store order, as before.
+        query: recentUserText(messages),
         // The guard's verdict, enforced at the one seam where the index enters the system prompt.
         // Metadata-only decision (no bodies here) — the strict re-digest happens in skill.view.
         gate: (s) => skillGate.decide(s)
@@ -15185,7 +15212,7 @@ async function runOnce(o) {
   if (!internal) try {
     const stored = notebookStore.get('notebook:' + agentId);
     const recs = o.recovery ? [] : (Array.isArray(stored) ? stored : []);
-    const q = latestUserText(messages);   // an attachment turn must rank recall against ITS text, not the previous turn's
+    const q = recentUserText(messages);   // last up-to-3 user turns (attachment turns flattened to THEIR text) — a bare "yes, do that" still ranks against the ask it answers
     const ranked = rank(recs, q, { now: Date.now(), streamId });   // M-mem.2b: boost the active workstream's working memory
     const recall = renderRecall(ranked, { limit: 1500 });
     if (recall.text) {

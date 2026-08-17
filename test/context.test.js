@@ -1,7 +1,7 @@
 /* node test/context.test.js — pure context-transform tests (zero IO). */
 'use strict';
 const A = require('./_assert.js');
-const { makeContext, redact, renderRecall, injectRecall, rank, flagInjection, stripRecallFence, compactionMemoryBlock, compactionSummaryPrompt, COMPACTION_SECTIONS } = require('../sidecar/context.js');
+const { makeContext, redact, renderRecall, injectRecall, rank, bm25, flagInjection, stripRecallFence, compactionMemoryBlock, compactionSummaryPrompt, COMPACTION_SECTIONS } = require('../sidecar/context.js');
 
 const ctx = makeContext({ contextLimit: 1000, compactAt: 0.65, keepTail: 2 });
 const m = (role, content) => ({ role, content });
@@ -209,23 +209,47 @@ const corpus = [recA, recB, recC];
 A.eq(rank(corpus, 'how do I deploy and publish a release', { now: 1000 })[0].id, 'm1', 'query-relevant record ranks first');
 A.eq(rank(corpus, 'where is the postgres backup', { now: 1000 })[0].id, 'm3', 'relevance picks the matching record');
 
+// RELEVANCE FLOOR: under a query with significant tokens, zero-overlap non-pinned records are DROPPED —
+// slice(0, k) alone used to inject every record into every run even at relevance 0.
+A.eq(rank(corpus, 'how do I deploy and publish a release', { now: 1000 }).length, 1, 'relevance floor: zero-relevance records drop under a real query');
+A.eq(rank(corpus, 'where is the postgres backup', { now: 1000 }).length, 1, 'floor again: only the matching record survives');
+
+// 2-char tokens are significant (the reflect.js floorTokens precedent): "go"/"ai"-class identifiers match
+const recGo = { id: 'go', kind: 'note', title: 'go toolchain', body: 'use go modules and ai codegen', createdAt: 1000, trust: 0 };
+A.eq(rank([recB, recGo], 'go ai', { now: 1000 })[0].id, 'go', '2-char query tokens (go, ai) match a record');
+A.eq(rank([recB, recGo], 'go', { now: 1000 }).length, 1, 'a 2-char token counts as significant: the floor drops the non-match');
+
+// a TYPED record's title is indexed too (content-only indexing made the title invisible to search)
+const typed = { id: 'ty', kind: 'profile', title: 'deploy ritual', content: 'user ships on fridays', createdAt: 1000, trust: 0 };
+A.eq(rank([recB, typed], 'deploy ritual', { now: 1000 })[0].id, 'ty', "a typed record's title is searchable");
+A.eq(rank([recB, typed], 'deploy ritual', { now: 1000 }).length, 1, '...and its zero-relevance peer drops');
+
+// the shared bm25 core is exposed (skills/runtime.js ranks the skill index with the same brain)
+{
+  const b = bm25([{ kind: 'note', title: 'deploy', body: 'ship it' }, { kind: 'note', title: 'other', body: 'misc' }], 'deploy');
+  A.ok(b.queried && b.scores[0] > 0 && b.scores[1] === 0, 'bm25: aligned scores + queried flag');
+  A.eq(bm25([{ kind: 'note', title: 'x', body: 'y' }], 'the of and').queried, false, 'stopword-only query -> queried:false (no floor)');
+}
+
 // empty inputs are safe
 A.eq(rank([], 'anything', { now: 0 }).length, 0, 'no records -> empty ranking');
 A.eq(rank(corpus, '', { now: 1000 }).length, 3, 'empty query still returns records (recency floor, no regression vs M-mem.1)');
 
-// recency floor: with an off-topic query, the NEWER record still ranks above an older one
+// recency floor: with a QUERYLESS turn, the NEWER record still ranks above an older one (legacy fallback intact)
 const older = { id: 'old', kind: 'note', title: 'misc', body: 'unrelated jotting', createdAt: 0 };
 const newer = { id: 'new', kind: 'note', title: 'misc', body: 'unrelated jotting', createdAt: 6048e5 };
-A.eq(rank([older, newer], 'zzz nomatch', { now: 6048e5 })[0].id, 'new', 'newer record wins on the recency floor when nothing is relevant');
+A.eq(rank([older, newer], '', { now: 6048e5 })[0].id, 'new', 'newer record wins on the recency floor when the turn has no significant tokens');
 
-// pinned is a hard top, beating an otherwise more-relevant record
+// pinned is a hard top, beating an otherwise more-relevant record — and exempt from the relevance floor
 const pinned = { id: 'pin', kind: 'note', title: 'pinned', body: 'totally unrelated', createdAt: 0, pinned: true };
 A.eq(rank([recA, pinned], 'deploy publish release', { now: 1e9 })[0].id, 'pin', 'pinned record is a hard top');
+A.eq(JSON.stringify(rank([recB, pinned], 'deploy publish release', { now: 1e9 }).map(r => r.id)), JSON.stringify(['pin']),
+     'floor exemption: a zero-relevance PINNED record survives a real query while its non-pinned peer drops');
 
-// trust breaks ties between equally (ir)relevant, equally recent records
+// trust breaks ties between equally (ir)relevant, equally recent records (queryless turn -> no floor)
 const lo = { id: 'lo', kind: 'note', title: 'a', body: 'b', createdAt: 1000, trust: 0 };
 const hi = { id: 'hi', kind: 'note', title: 'a', body: 'b', createdAt: 1000, trust: 0.9 };
-A.eq(rank([lo, hi], 'zzz', { now: 1000 })[0].id, 'hi', 'higher trust ranks higher among equals');
+A.eq(rank([lo, hi], '', { now: 1000 })[0].id, 'hi', 'higher trust ranks higher among equals');
 
 // trust DECAY: a stale, never-reinforced endorsement loses its edge over time (parity with the reference harness).
 // freshHi was just endorsed (lastFeedbackAt == now); staleHi earned the same trust long ago. Same recency
@@ -233,31 +257,34 @@ A.eq(rank([lo, hi], 'zzz', { now: 1000 })[0].id, 'hi', 'higher trust ranks highe
 const TRUST_HL = 2592e6;   // 30d, mirrors memcore.TRUST_HALFLIFE_MS
 const staleHi = { id: 'stale', kind: 'note', title: 'a', body: 'b', createdAt: 1000, trust: 0.9, lastFeedbackAt: 1000 };
 const freshHi = { id: 'fresh', kind: 'note', title: 'a', body: 'b', createdAt: 1000, trust: 0.9, lastFeedbackAt: 1000 + 4 * TRUST_HL };
-A.eq(rank([staleHi, freshHi], 'zzz', { now: 1000 + 4 * TRUST_HL })[0].id, 'fresh', 'a freshly-reinforced belief outranks an equal one whose endorsement went stale');
+A.eq(rank([staleHi, freshHi], '', { now: 1000 + 4 * TRUST_HL })[0].id, 'fresh', 'a freshly-reinforced belief outranks an equal one whose endorsement went stale');
 // and a re-endorsement RESETS the fade: same record, recent lastFeedbackAt beats its own old-feedback self.
 const oldFb = { id: 'x', kind: 'note', title: 'a', body: 'b', createdAt: 1000, trust: 0.9, lastFeedbackAt: 1000 };
-A.eq(rank([lo, oldFb], 'zzz', { now: 1000 + 6 * TRUST_HL })[0].id, 'x', 'even fully decayed, trust never goes negative — a decayed endorsement is still >= a zero-trust peer');
+A.eq(rank([lo, oldFb], '', { now: 1000 + 6 * TRUST_HL })[0].id, 'x', 'even fully decayed, trust never goes negative — a decayed endorsement is still >= a zero-trust peer');
 // trustHalfLifeMs is configurable: a very long half-life keeps an old endorsement strong (negligible decay),
 // so the aged-but-endorsed belief still beats a zero-trust peer even far in the future.
-A.eq(rank([lo, staleHi], 'zzz', { now: 1000 + 4 * TRUST_HL, trustHalfLifeMs: 1e15 })[0].id, 'stale', 'a long custom trust half-life barely decays — the old endorsement still beats a zero-trust peer');
+A.eq(rank([lo, staleHi], '', { now: 1000 + 4 * TRUST_HL, trustHalfLifeMs: 1e15 })[0].id, 'stale', 'a long custom trust half-life barely decays — the old endorsement still beats a zero-trust peer');
 
 // M-mem.2b: same-stream working memory gets a recall boost; global always competes; other streams stay searchable
 const gA = { id: 'gA', kind: 'note', title: 'a', body: 'b', createdAt: 1000, scope: 'global', streamId: null };
 const sX = { id: 'sX', kind: 'note', title: 'a', body: 'b', createdAt: 1000, scope: 'stream', streamId: 'ws_x' };
 const sY = { id: 'sY', kind: 'note', title: 'a', body: 'b', createdAt: 1000, scope: 'stream', streamId: 'ws_y' };
-A.eq(rank([gA, sX, sY], 'zzz', { now: 1000, streamId: 'ws_x' })[0].id, 'sX', 'a same-stream record floats above an equal global/other-stream one');
-A.eq(rank([gA, sX], 'zzz', { now: 1000 })[0].id, 'gA', 'no streamId passed -> no boost, store order holds (byte-identical to pre-2b)');
-A.eq(rank([gA, sY], 'zzz', { now: 1000, streamId: 'ws_x' }).length, 2, 'an other-stream record is still ranked (searchable, not filtered)');
-A.eq(rank([sX], 'totally unrelated zzz', { now: 1000, streamId: 'ws_x' }).length, 1, 'a same-stream record with no relevance is still returnable');
+A.eq(rank([gA, sX, sY], '', { now: 1000, streamId: 'ws_x' })[0].id, 'sX', 'a same-stream record floats above an equal global/other-stream one');
+A.eq(rank([gA, sX], '', { now: 1000 })[0].id, 'gA', 'no streamId passed -> no boost, store order holds (byte-identical to pre-2b)');
+A.eq(rank([gA, sY], '', { now: 1000, streamId: 'ws_x' }).length, 2, 'an other-stream record is still ranked (searchable, not filtered)');
+A.eq(rank([sX], 'totally unrelated zzz', { now: 1000, streamId: 'ws_x' }).length, 0, 'the stream boost never overrides the relevance floor: a zero-overlap record drops under a real query');
+
+// floor:false opts out (notebook.read reorders substring-admitted matches — must never truncate them)
+A.eq(rank([sX], 'totally unrelated zzz', { now: 1000, streamId: 'ws_x', floor: false }).length, 1, 'floor:false keeps a zero-relevance record (explicit-read reorder contract)');
 
 // k limit + determinism
-A.ok(rank(corpus, 'deploy', { now: 1000, k: 2 }).length === 2, 'k caps the returned count');
+A.ok(rank(corpus, '', { now: 1000, k: 2 }).length === 2, 'k caps the returned count');
 A.eq(JSON.stringify(rank(corpus, 'deploy release', { now: 1000 }).map(r => r.id)),
      JSON.stringify(rank(corpus, 'deploy release', { now: 1000 }).map(r => r.id)), 'rank is deterministic for the same inputs + now');
 
 // ranked output flows through renderRecall unchanged (composition: rank -> renderRecall)
 const rr = renderRecall(rank(corpus, 'deploy release', { now: 1000 }), { limit: 1500 });
-A.ok(rr.count === 3 && rr.text.indexOf('deploy steps') >= 0, 'rank feeds renderRecall; relevant note surfaces');
+A.ok(rr.count === 1 && rr.text.indexOf('deploy steps') >= 0, 'rank feeds renderRecall; only the relevant note surfaces (floor drops the rest)');
 
 // ---- stripRecallFence: the model can't forge a recall fence into persisted/reflected text (parity with the reference harness) ----
 A.eq(stripRecallFence('hello world'), 'hello world', 'ordinary prose is untouched');
@@ -278,7 +305,8 @@ const block = compactionMemoryBlock(memRecs, 'remind me how the user likes repli
 A.ok(block.indexOf('user prefers terse replies') >= 0, 'compaction block surfaces the query-relevant belief to preserve');
 A.ok(block.indexOf('preserve') >= 0, 'compaction block is labeled so the summarizer keeps the facts');
 A.eq(compactionMemoryBlock([], 'anything', { now: 0 }), '', 'no records -> empty block (caller prepends nothing, byte-identical compaction)');
-A.ok(compactionMemoryBlock(memRecs, 'zzz totally unrelated', { now: 1000 }).length > 0, 'with no query overlap it still preserves top memory (recency floor) rather than dropping everything');
+A.eq(compactionMemoryBlock(memRecs, 'zzz totally unrelated', { now: 1000 }), '', 'shared floor: a real query with no overlap preserves NOTHING (no zero-relevance padding in the summary)');
+A.ok(compactionMemoryBlock(memRecs, '', { now: 1000 }).length > 0, 'a queryless compaction still preserves top memory (recency fallback, legacy behavior)');
 A.eq(JSON.stringify(compactionMemoryBlock(memRecs, 'replies', { now: 1000 })), JSON.stringify(compactionMemoryBlock(memRecs, 'replies', { now: 1000 })), 'deterministic for the same inputs + now');
 
 // ---- (H5.1) the compaction summary prompt is a structured section template, not free prose ----

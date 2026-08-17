@@ -5133,6 +5133,138 @@ const PropSprites = (() => {
     for (let jy = 2; jy < h - 2; jy++) if (((jy * 2654435761) >>> 0) & 1) { px(x - 1, y + jy, 1, 1, RUG_RIM); px(x + w, y + jy, 1, 1, RUG_RIM); }
   };
 
+  /* SMALL RUG (3x3) — the RUG's discipline at a different loom.
+     It keeps the three laws that stopped the 4x3's v4 reading as a patch of dirty floor — ZERO RISE (no
+     oblique body, no front face, no contact shadow), ONE narrow value band (nothing past +8% / -14% of
+     its own base), no white and no second hue — and changes everything that identifies it:
+
+     - MATERIAL: a FLATWEAVE, not a pile. So the weave runs down the WARP (vertical ribs every 3px) where
+       the 4x3 runs across the weft, and the surface carries slubs — 2px thread catches — instead of the
+       4x3's 1-in-12 fleck. Two rugs beside each other must not share a grain.
+     - MOTIF: a BANDED kilim (two chevron end-bands + a hooked centre diamond) where the 4x3 is one open
+       field around a single lozenge medallion. A 36px square has no room for an open field.
+     - HUE: tobacco ochre against the 4x3's oxblood. ⛔ The chroma dial caps EVERY warm hue at the same
+       0.52 saturation (chromaOf, top of file), so authored saturation is not a lever between two warm
+       props — HUE and VALUE are the only two that separate them, and this one is a stop lighter.
+     Traffic runs the SHORT way across a mat, so the walked path is a vertical strip, not the 4x3's belt. */
+  const RUGS_BASE = '#5a4526', RUGS_RIM = '#4b381f';
+  F.rug_small = (x, y, w, h, f) => {
+    const INK = U.shade(RUGS_BASE, -0.13), PALE = U.shade(RUGS_BASE, 0.08);
+    // the bound rim: soft corners, and a tint of the wool itself — never a black outline. A rug has no
+    // lip to cast one, and a near-black edge is what makes a decal read as a hole cut in the deck.
+    px(x + 2, y, w - 4, h, RUGS_RIM); px(x, y + 2, w, h - 4, RUGS_RIM);
+    px(x + 1, y + 1, 1, 1, RUGS_RIM); px(x + w - 2, y + 1, 1, 1, RUGS_RIM);
+    px(x + 1, y + h - 2, 1, 1, RUGS_RIM); px(x + w - 2, y + h - 2, 1, 1, RUGS_RIM);
+    rr(x + 2, y + 2, w - 4, h - 4, RUGS_BASE);
+    for (let ix = 4; ix < w - 3; ix += 3) px(x + ix, y + 3, 1, h - 6, U.shade(RUGS_BASE, -0.03));   // the warp it was beaten onto
+    for (let jy = 4; jy < h - 4; jy++) {                                    // slubs: thread catches, so it is cloth and not corduroy
+      const n = ((jy * 2654435761) ^ 0x9e3779b9) >>> 0;
+      if (n & 3) continue;
+      px(x + 3 + (n % Math.max(1, w - 9)), y + jy, 2, 1, U.shade(RUGS_BASE, 0.04));
+    }
+    px(x + 3, y + 2, w - 6, 1, U.shade(RUGS_BASE, 0.05));                  // the ceiling strips, at a quarter of the
+    px(x + 3, y + h - 3, w - 6, 1, U.shade(RUGS_BASE, -0.07));             // contrast a lit slab would take — on a
+    ctx.globalAlpha = 0.5;                                                 // decal this is the ONLY depth cue there is
+    px(x + 2, y + 3, 1, h - 6, U.shade(RUGS_BASE, 0.04)); px(x + w - 3, y + 3, 1, h - 6, U.shade(RUGS_BASE, -0.05));
+    ctx.globalAlpha = 1;
+    /* the two end bands. A chevron chain, PALE over INK, interlocked: one zigzag climbing the band and its
+       mirror falling through it, which is the flatweave motif that costs the fewest pixels to read. */
+    const chev = (by) => {
+      for (let ix = 4; ix < w - 4; ix++) {
+        const t = (ix - 4) % 6, d = t < 3 ? t : 6 - t;
+        px(x + ix, by + d, 1, 1, PALE);
+        px(x + ix, by + 4 - d, 1, 1, INK);
+      }
+    };
+    chev(y + 4); chev(y + h - 9);
+    const cx = x + (w >> 1), cy = y + (h >> 1);
+    ctx.globalAlpha = 0.55; px(cx - 5, cy - 3, 11, 7, U.shade(RUGS_BASE, 0.035)); ctx.globalAlpha = 1;   // the diamond's washed field
+    for (let d = 0; d <= 5; d++) {                                         // ...and the diamond, OUTLINE only
+      const ww = 11 - d * 2, lx = cx - (ww >> 1), rx = cx + (ww >> 1);
+      if (d === 5) { px(lx, cy - d, Math.max(1, ww), 1, PALE); px(lx, cy + d, Math.max(1, ww), 1, PALE); continue; }
+      px(lx, cy - d, 1, 1, PALE); px(rx, cy - d, 1, 1, PALE);
+      px(lx, cy + d, 1, 1, PALE); px(rx, cy + d, 1, 1, PALE);
+    }
+    px(cx - 7, cy, 2, 1, PALE); px(cx + 6, cy, 2, 1, PALE);                // the hooks that make it a kilim diamond
+    px(cx, cy - 7, 1, 2, PALE); px(cx, cy + 6, 1, 2, PALE);
+    px(cx - 1, cy - 1, 3, 3, INK);
+    // WEAR — what makes a rug read as lived-on, and here it half-erases the motif on purpose.
+    ctx.globalAlpha = 0.12; px(cx - 4, y + 3, 9, h - 6, '#0f1113'); ctx.globalAlpha = 1;                 // crossed the short way
+    ctx.globalAlpha = 0.08; px(x + 4, y + h - 13, 8, 7, '#d8cec0'); ctx.globalAlpha = 1;                 // a bleached corner
+    wear(x + 3, y + 3, w - 6, h - 6, 10, U.shade(RUGS_BASE, -0.14));
+    // the frayed ends on the N/S edges (the 4x3 frays E/W), dithered IN the floor plane so they read as
+    // threads and never as a lip.
+    for (let ix = 2; ix < w - 2; ix++) if (((ix * 2654435761) >>> 0) & 1) { px(x + ix, y - 1, 1, 1, RUGS_RIM); px(x + ix, y + h, 1, 1, RUGS_RIM); }
+  };
+
+  /* LARGE RUG (5x5) — the biggest floor decal in the catalog, 60x60px, and the only prop an agent can be
+     standing entirely inside. Same three laws as the other two rugs (zero rise, one narrow value band, no
+     white / no second hue). What is its own:
+
+     - MOTIF: CONCENTRIC FRAMES with corner brackets and an eight-point star, not a single medallion. At
+       this size an open field is 3600px of flat wool, so the structure has to be the borders; the star is
+       a lozenge outline crossed by a square outline, which is what a kilim star actually is.
+     - EDGE: BOUND, not frayed. A rug this big is selvedged — a rolled 1px inner edge all the way round —
+       where the small mat frays. No fringe anywhere on it.
+     - GRAIN: pile fleck on a 4px stride against the 4x3's 3px, so no two rugs share a weave.
+     - HUE: plum/aubergine (~336°, still inside chromaOf's warm band, so it grades like wool and not like
+       cool machinery) — a stop DARKER than the oxblood 4x3, which is how a big rug stays ground.
+     Two traffic paths cross it, not one: a rug you can walk around is a rug you walk over both ways. */
+  const RUGL_BASE = '#3e2430', RUGL_RIM = '#331d28';
+  F.rug_large = (x, y, w, h, f) => {
+    const INK = U.shade(RUGL_BASE, -0.13), PALE = U.shade(RUGL_BASE, 0.08);
+    px(x + 2, y, w - 4, h, RUGL_RIM); px(x, y + 2, w, h - 4, RUGL_RIM);
+    px(x + 1, y + 1, 1, 1, RUGL_RIM); px(x + w - 2, y + 1, 1, 1, RUGL_RIM);
+    px(x + 1, y + h - 2, 1, 1, RUGL_RIM); px(x + w - 2, y + h - 2, 1, 1, RUGL_RIM);
+    rr(x + 2, y + 2, w - 4, h - 4, RUGL_BASE);
+    const lit = U.shade(RUGL_BASE, 0.035), dk = U.shade(RUGL_BASE, -0.045);
+    for (let jy = 3; jy < h - 3; jy++) {                                   // PILE — 4px stride, phase hashed per ROW:
+      const phase = ((jy * 19349663) >>> 0) % 4;                           // a regular stride lines the fleck into
+      for (let ix = 3 + phase; ix < w - 3; ix += 4) {                      // courses and the wool reads as brickwork
+        const n = ((ix * 73856093) ^ (jy * 2654435761)) >>> 0;
+        if ((n & 7) > 2) continue;
+        px(x + ix, y + jy, 1, 1, (n & 8) ? lit : dk);
+      }
+    }
+    px(x + 3, y + 3, w - 6, 1, U.shade(RUGL_BASE, -0.09));                 // the SELVEDGE: a rolled bound edge, the
+    px(x + 3, y + h - 4, w - 6, 1, U.shade(RUGL_BASE, -0.09));             // one thing a big rug has that a mat doesn't
+    px(x + 3, y + 4, 1, h - 8, U.shade(RUGL_BASE, -0.09)); px(x + w - 4, y + 4, 1, h - 8, U.shade(RUGL_BASE, -0.09));
+    px(x + 4, y + 2, w - 8, 1, U.shade(RUGL_BASE, 0.05));                  // ceiling strips, quarter contrast
+    px(x + 4, y + h - 3, w - 8, 1, U.shade(RUGL_BASE, -0.07));
+    ctx.globalAlpha = 0.5;
+    px(x + 2, y + 4, 1, h - 8, U.shade(RUGL_BASE, 0.04)); px(x + w - 3, y + 4, 1, h - 8, U.shade(RUGL_BASE, -0.05));
+    ctx.globalAlpha = 1;
+    const frame = (o, c) => {
+      px(x + o, y + o, w - o * 2, 1, c); px(x + o, y + h - o - 1, w - o * 2, 1, c);
+      px(x + o, y + o, 1, h - o * 2, c); px(x + w - o - 1, y + o, 1, h - o * 2, c);
+    };
+    frame(6, INK); frame(8, PALE); frame(14, INK);                         // the three quiet borders
+    /* corner brackets, outline only — each is two 5px arms and a dark eye. They are what stops the space
+       between the outer frames and the star reading as empty wool. */
+    const bracket = (bx, by, dx, dy) => {
+      for (let k = 0; k < 5; k++) { px(bx + dx * k, by, 1, 1, PALE); px(bx, by + dy * k, 1, 1, PALE); }
+      px(bx + dx * 2, by + dy * 2, 1, 1, INK);
+    };
+    bracket(x + 16, y + 16, 1, 1); bracket(x + w - 17, y + 16, -1, 1);
+    bracket(x + 16, y + h - 17, 1, -1); bracket(x + w - 17, y + h - 17, -1, -1);
+    const cx = x + (w >> 1), cy = y + (h >> 1);
+    ctx.globalAlpha = 0.55; px(cx - 9, cy - 9, 19, 19, U.shade(RUGL_BASE, 0.035)); ctx.globalAlpha = 1;  // the star's washed field
+    for (let d = 0; d <= 8; d++) {                                         // the lozenge...
+      const ww = 17 - d * 2, lx = cx - (ww >> 1), rx = cx + (ww >> 1);
+      if (d === 8) { px(lx, cy - d, Math.max(1, ww), 1, PALE); px(lx, cy + d, Math.max(1, ww), 1, PALE); continue; }
+      px(lx, cy - d, 1, 1, PALE); px(rx, cy - d, 1, 1, PALE);
+      px(lx, cy + d, 1, 1, PALE); px(rx, cy + d, 1, 1, PALE);
+    }
+    px(cx - 6, cy - 6, 13, 1, INK); px(cx - 6, cy + 6, 13, 1, INK);        // ...crossed by the square: eight points
+    px(cx - 6, cy - 6, 1, 13, INK); px(cx + 6, cy - 6, 1, 13, INK);
+    px(cx - 2, cy - 2, 5, 5, U.shade(RUGL_BASE, 0.05)); px(cx - 1, cy - 1, 3, 3, INK);
+    // WEAR — two crossing paths, and the star sits under both on purpose.
+    ctx.globalAlpha = 0.12; px(x + 4, cy - 5, w - 8, 11, '#0f1113'); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.08; px(cx - 4, y + 4, 9, h - 8, '#0f1113'); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.09; px(x + w - 21, y + 7, 14, 8, '#d8cec0'); ctx.globalAlpha = 1;                // a bleached corner
+    wear(x + 5, y + 5, w - 10, h - 10, 22, U.shade(RUGL_BASE, -0.14));
+  };
+
   F.seatchair = (x, y, w, h, f) => {
     /* SEAT CHAIR (1x1) — the chair world.js draws at a workstation seat. NOT in the CATALOG, so the
        PLACEABLE chair prop (F.chair) keeps its shipped art untouched.
@@ -8728,6 +8860,11 @@ const PropSprites = (() => {
     // worldmodel checkProp) and it renders in the floor pass BENEATH every body and prop (world.js),
     // so an agent crossing a rug walks on top of it instead of vanishing behind it.
     { id: "rug", label: "RUG", cat: "decor", tier: "cosmetic", w: 4, h: 3, animated: true, blocks: false, flat: true },
+    // three rugs, three looms: the 4x3 oxblood pile above, a 3x3 tobacco flatweave mat, and a 5x5 plum
+    // pile with a bound selvedge. Sharing a hue OR a grain between two of them would make the pair read
+    // as one prop stretched, which is the whole reason each carries its own weave (see the art notes).
+    { id: "rug_small", label: "SMALL RUG", cat: "decor", tier: "cosmetic", w: 3, h: 3, animated: true, blocks: false, flat: true },
+    { id: "rug_large", label: "LARGE RUG", cat: "decor", tier: "cosmetic", w: 5, h: 5, animated: true, blocks: false, flat: true },
     { id: "treasury_pnl_holo", label: "PNL HOLO", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_floorlight", label: "FLOOR LIGHT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_ladder", label: "LADDER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
