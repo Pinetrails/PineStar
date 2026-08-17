@@ -5717,147 +5717,155 @@ const PropSprites = (() => {
      they must all survive at 12px — a CHROME RIM round a pale speckled laminate, a RED apron under
      it, and slim chrome legs. Cream is the point: this catalog's furniture all lives in the bottom
      half of the value range, so a genuinely pale top is the thing you see across the room. */
-  F.dinertable = (x, y, w, h, f) => {
-    /* ⛔ A BIG PALE PLANE IS A MATTRESS. The first pass was a clean speckled slab on chrome legs and
-       it read as a BED — nothing on this station is that empty and that light. What makes it a diner
-       table is the SETTING: a napkin caddy, a ketchup bottle and two mugs standing on it. That is the
-       claw-machine rule in another form — a bright field needs CONTENTS, or the eye has no scale for
-       it. The speckle also came back as crumbs at full strength; it is now barely there, which is all
-       a laminate needs.
-       Rows: chrome rim -> pale speckled laminate -> chrome rim -> RED apron -> legs. */
+  /* THE DINER TABLE'S PALETTE IS A PARAMETER while the look is being chosen. `dinerTop` draws the
+     whole table; the variant only decides the timber and what the edge BAND is made of.
+     ⛔ A COOL ACCENT MUST BE AUTHORED ABOVE THE CHROMA SKIP (0.45) OR THE DIAL GREYS IT. The dial
+        multiplies authored saturation by 2.6 but caps COOL hues at 0.20 — the anti-teal guard — so a
+        green or teal picked at a natural 0.35 comes out MORE grey than it was authored. Warm hues
+        (wood, brass, terracotta) cap at 0.52 and want authoring flat. */
+  const DINER_PAL = {
+    brass:  { WD: '#6f5433', WD_LIT: '#8a6a42', WD_DK: '#40301d', INK: '#241a10',
+              BAND: '#7a5c1e', BAND_LIT: '#a8862f', BAND_DK: '#3d2c0e' },
+    plain:  { WD: '#6f5433', WD_LIT: '#8a6a42', WD_DK: '#40301d', INK: '#241a10', BAND: null },
+    teal:   { WD: '#6f5433', WD_LIT: '#8a6a42', WD_DK: '#40301d', INK: '#241a10',
+              BAND: '#16665d', BAND_LIT: '#1f978a', BAND_DK: '#0b3a34' },
+    chrome: { WD: '#4e3a2a', WD_LIT: '#6b5138', WD_DK: '#2b1f16', INK: '#1a120c',
+              BAND: '#9aa0a3', BAND_LIT: '#dfe3e5', BAND_DK: '#4e5457' },
+    green:  { WD: '#6f5433', WD_LIT: '#8a6a42', WD_DK: '#40301d', INK: '#241a10',
+              BAND: '#1e5c2a', BAND_LIT: '#2d8a3f', BAND_DK: '#0f3317' },
+  };
+
+  const dinerTop = (x, y, w, h, f, pal) => {
+    const WD = pal.WD, WD_LIT = pal.WD_LIT, WD_DK = pal.WD_DK, INK = pal.INK;
+    const CHR = '#bcbec0', CHR_HI = '#eaecee', CHR_DK = '#63676a';
     const top = y + h - 1 - SURFACE_RISE;
-    /* ⛔ THESE ARE AUTHORED NEUTRAL ON PURPOSE. The CHROMA dial multiplies authored saturation by
-       2.6 (warm hues cap at 0.52), so a cream picked to LOOK like cream in the source renders as
-       BUTTER, and a blue-grey chrome renders frankly blue. Author the laminate and the chrome flat
-       and let the dial put the warmth back — the shipped screen is the only place the colour is
-       real. The RED is already past the skip threshold (0.45) and is passed through untouched. */
-    const LAM = '#b4b0a9', LAM_LIT = '#d5d1ca', LAM_DK = '#87837c';   // reads cream ONCE graded
-    const CHR = '#bcbec0', CHR_HI = '#eaecee', CHR_DK = '#63676a';    // chrome
-    const RED = '#a8382b', RED_LIT = '#cb5340', RED_DK = '#5e1f18';   // the apron band
-    const INK = '#20262a';
-    const D = 11;                                                     // the top plane's depth in rows
+    const D = 11;
     shadow2(x + 2, y + h - 1, w - 4);
-    // FOUR CHROME LEGS. The rear pair reads as a dark stub behind the top; the front pair carries
-    // the light and a foot glide, which is what stops a pale table from floating.
+    // FOUR LEGS — turned timber to match the top, with a metal foot so it does not smear into the deck
     for (const lx of [x + 4, x + w - 7]) {
-      px(lx, top + 2, 3, 6, CHR_DK); rimEdge(lx + 2, top + 2, 1, 5, 0.14);
+      px(lx, top + 2, 3, 6, U.shade(WD, -0.34)); rimEdge(lx + 2, top + 2, 1, 5, 0.14);
     }
     for (const lx of [x + 3, x + w - 6]) {
       px(lx, top + 5, 3, 5, INK);
-      px(lx, top + 5, 1, 5, CHR); px(lx + 1, top + 5, 2, 5, CHR_DK);
-      keyEdge(lx, top + 5, 1, 4, 0.28);
-      px(lx - 1, y + h - 2, 5, 2, INK); px(lx, y + h - 2, 3, 1, CHR);      // the foot glide
+      px(lx, top + 5, 1, 5, WD_LIT); px(lx + 1, top + 5, 2, 5, WD_DK);
+      keyEdge(lx, top + 5, 1, 4, 0.22);
+      px(lx - 1, y + h - 2, 5, 2, INK); px(lx, y + h - 2, 3, 1, CHR_DK);
       ctx.globalAlpha = 0.32; px(lx - 2, y + h - 1, 7, 1, '#000'); ctx.globalAlpha = 1;
     }
-    px(x + 8, top + 6, w - 16, 1, CHR_DK);                                  // the stretcher between them
-    // THE TOP — a rounded diner slab. Chamfered 3px so the corners genuinely round off at this size.
+    px(x + 8, top + 6, w - 16, 1, U.shade(WD, -0.40));                      // the stretcher
+    // THE TOP — a rounded BUTCHER BLOCK: boards of unequal width running across, each with its own
+    // value, seamed dark with a lit lip. Unequal is the whole trick — even stripes read as corrugation.
     chamf(x - 1, top - D - 1, w + 2, D + 6, INK, 3);
-    chamf(x, top - D, w, D + 4, CHR_DK, 3);                                 // the rim's dark seat
-    chamf(x + 1, top - D + 1, w - 2, D, LAM, 2);                            // the laminate field
-    for (let j = 1; j < D - 1; j++) for (let i = 3; i < w - 3; i++) {        // the faintest confetti
-      const n = Math.sin((x + i) * 12.9898 + (top - D + j) * 78.233) * 43758.5453, t = n - Math.floor(n);
-      if (t > 0.972) px(x + i, top - D + j, 1, 1, U.shade(LAM, -0.14));
-      else if (t < 0.012) px(x + i, top - D + j, 1, 1, U.shade(LAM, 0.12));
+    chamf(x, top - D, w, D + 4, U.shade(WD, -0.30), 3);
+    chamf(x + 1, top - D + 1, w - 2, D, WD, 2);
+    const boards = [3, 2, 3, 2];
+    let by = top - D + 1;
+    for (let b = 0; b < boards.length; b++) {
+      const bh = boards[b];
+      px(x + 1, by, w - 2, bh, U.shade(WD, b % 2 ? 0.07 : -0.05));          // the board's own value
+      px(x + 1, by, w - 2, 1, U.shade(WD, b % 2 ? 0.18 : 0.10));            // its lit lip
+      for (let g = 0; g < 5; g++) {                                        // ring grain, sparse
+        const gx = x + 3 + ((b * 7 + g * 6) % (w - 8));
+        px(gx, by + (bh > 2 ? 1 : 0), 3, 1, U.shade(WD, b % 2 ? -0.10 : -0.16));
+      }
+      by += bh;
+      if (by < top) px(x + 1, by - 1, w - 2, 1, U.shade(WD, -0.34));        // the seam between boards
     }
-    px(x + 2, top - D + 1, w - 4, 1, LAM_LIT); keyEdge(x + 2, top - D + 1, 9, 1, 0.28);   // lit far edge
-    px(x + 1, top - D + 2, 1, D - 2, LAM_LIT); px(x + w - 2, top - D + 2, 1, D - 2, LAM_DK);
+    px(x + 2, top - D + 1, w - 4, 1, U.shade(WD_LIT, 0.06)); keyEdge(x + 2, top - D + 1, 9, 1, 0.26);
+    px(x + 1, top - D + 2, 1, D - 2, WD_LIT); px(x + w - 2, top - D + 2, 1, D - 2, WD_DK);
     rimEdge(x + w - 2, top - D + 3, 1, D - 4, 0.20);
-    px(x + 2, top - 1, w - 4, 1, U.shade(LAM, -0.12));                      // the near half falls off
-    /* THE SETTING — what turns a pale slab into a diner table. ⛔ ON A LIGHT GROUND AN OBJECT IS A
-       SHADOW, NOT AN OUTLINE: ringing each mug in ink punched four dark WINDOWS in the laminate and
-       the top read as a control panel. Each piece here is a soft alpha shadow, a body, and one lit
-       pixel. They are also grouped and set at DIFFERENT depths — four objects on one line is a row
-       of buttons; a caddy and a bottle together with mugs scattered near them is a laid table. */
-    const cx0 = x + Math.round(w / 2);
-    const setting = (sx2, sy2, sw2, sh2) => {                               // the shadow every piece casts
-      ctx.globalAlpha = 0.26; px(sx2 + 1, sy2 + sh2, sw2, 1, '#000'); px(sx2 + sw2, sy2 + 1, 1, sh2 - 1, '#000'); ctx.globalAlpha = 1;
-    };
-    setting(cx0 + 2, top - D + 2, 4, 5);                                    // napkin caddy — chrome box
-    px(cx0 + 2, top - D + 2, 4, 5, CHR_DK);
-    px(cx0 + 2, top - D + 2, 4, 1, CHR_HI); px(cx0 + 2, top - D + 3, 3, 3, CHR);
-    px(cx0 + 3, top - D + 4, 1, 2, '#f4f7f8');                              // the napkins standing in it
-    setting(cx0 + 7, top - D + 1, 2, 6);                                    // ketchup bottle
-    px(cx0 + 7, top - D + 2, 2, 5, RED); px(cx0 + 7, top - D + 2, 1, 5, RED_LIT);
-    px(cx0 + 7, top - D + 1, 2, 1, CHR_DK);                                 // its cap
-    px(cx0 + 8, top - D + 4, 1, 2, RED_DK);
-    for (const m of [[cx0 - 12, top - D + 5], [cx0 - 4, top - D + 2], [cx0 + 12, top - D + 6]]) {
-      setting(m[0], m[1], 3, 3);                                            // three mugs, scattered
-      px(m[0], m[1], 3, 3, '#cfd4d6');
-      px(m[0], m[1], 3, 1, '#f2f5f6'); px(m[0] + 1, m[1] + 1, 2, 1, '#e6eaeb');
-      px(m[0] + 1, m[1] + 2, 2, 1, '#8c9599');                              // the coffee shadow inside
-      px(m[0] + 3, m[1] + 1, 1, 1, '#aab3b7');                              // the handle
+    px(x + 2, top - 1, w - 4, 1, U.shade(WD, -0.14));
+    /* THE PLANT, dead centre — the one living thing, and the reason this top needs no other dressing.
+       Terracotta and leaf are both authored PAST the chroma skip so the dial hands them through. */
+    const cx0 = x + Math.round(w / 2) - 2;
+    const py0 = top - D + 3;
+    ctx.globalAlpha = 0.26; px(cx0 + 1, py0 + 8, 4, 1, '#000'); px(cx0 + 5, py0 + 4, 1, 4, '#000'); ctx.globalAlpha = 1;
+    for (const l of [[cx0, py0 + 1, 2, 2], [cx0 + 3, py0, 2, 3], [cx0 + 1, py0 - 1, 2, 3], [cx0 + 4, py0 + 2, 1, 2]])
+      px(l[0], l[1], l[2], l[3], '#2f7a24');                                // the mass of leaves
+    px(cx0 + 1, py0 - 1, 1, 2, '#49a336'); px(cx0 + 3, py0, 1, 2, '#49a336');   // lit leaf faces
+    px(cx0 + 2, py0 + 2, 1, 2, '#1c4d17');                                  // its own shade
+    px(cx0, py0 + 4, 5, 4, INK);                                            // the pot
+    px(cx0 + 1, py0 + 4, 3, 3, '#a8552f'); px(cx0 + 1, py0 + 4, 3, 1, '#c96f42');
+    keyEdge(cx0 + 1, py0 + 4, 2, 1, 0.24);
+    px(cx0 + 3, py0 + 5, 1, 2, '#6d3419');
+    // THE EDGE BAND — the one variable under test. `plain` leaves it as the slab's own timber.
+    if (pal.BAND) {
+      px(x + 1, top, w - 2, 1, pal.BAND_LIT); keyEdge(x + 2, top, 10, 1, 0.28);
+      px(x + 1, top + 1, w - 2, 2, pal.BAND);
+      px(x + 2, top + 3, w - 4, 1, pal.BAND_DK);
+      px(x, top - 2, 1, 6, pal.BAND_DK); px(x + w - 1, top - 2, 1, 6, pal.BAND_DK);
+    } else {
+      px(x + 1, top, w - 2, 1, U.shade(WD, 0.04)); keyEdge(x + 2, top, 10, 1, 0.22);
+      px(x + 1, top + 1, w - 2, 2, WD_DK);
+      px(x + 2, top + 3, w - 4, 1, U.shade(WD_DK, -0.40));
+      px(x, top - 2, 1, 6, WD_DK); px(x + w - 1, top - 2, 1, 6, WD_DK);
     }
-    // THE CHROME RIM — a bright band wrapping the top's near edge, and the RED apron under it
-    px(x + 1, top, w - 2, 1, CHR_HI); keyEdge(x + 2, top, 10, 1, 0.30);
-    px(x + 1, top + 1, w - 2, 1, CHR);
-    px(x + 1, top + 2, w - 2, 3, RED);
-    px(x + 2, top + 2, w - 4, 1, RED_LIT); keyEdge(x + 2, top + 2, 8, 1, 0.20);
-    px(x + 2, top + 4, w - 4, 1, RED_DK);
-    px(x, top - 2, 1, 6, CHR_DK); px(x + w - 1, top - 2, 1, 6, CHR_DK);     // the rim turning the corners
   };
+  /* THE SHIPPED LOOK IS ONE WORD. Andrew rejected the red apron and asked for wood; `plain` is
+     the quiet answer — the edge is the slab's own timber and the PLANT is the only saturated thing
+     on the prop. `teal` is the same table with the catalog's own accent under the lip, and it is the
+     one to reach for if this table ever needs to carry colour in a room. */
+  F.dinertable = (x, y, w, h, f) => dinerTop(x, y, w, h, f, DINER_PAL.plain);
 
   F['dinertable:e'] = (x, y, w, h, f) => {
-    /* 2x3 deep DINER TABLE — the same slab running away from you, which is how it sits along a wall
-       with chairs down both long sides. Every receding cue the wooden tables earned applies to a
-       pale top too: the WEST RAIL carries the key end to end, the ends are eased, and a contact
-       shadow runs down the east flank. The setting is re-scattered down the LENGTH rather than
-       across, because four objects strung along the far edge is a shelf, not a laid table. */
+    /* 2x3 deep DINER TABLE — the same butcher block running away from you, which is how it sits
+       along a wall with chairs down both long sides. The boards turn with it: across the width when
+       it faces you, down the LENGTH when it is turned, because a board's direction is the one thing
+       a turned tabletop cannot fake. Receding cues are the family's: the west rail lit end to end,
+       eased ends, and a contact shadow down the east flank. */
+    const pal = DINER_PAL.plain;
+    const WD = pal.WD, WD_LIT = pal.WD_LIT, WD_DK = pal.WD_DK, INK = pal.INK;
+    const CHR_DK = '#63676a';
     const top = y + h - 1 - SURFACE_RISE;
-    const LAM = '#b4b0a9', LAM_LIT = '#d5d1ca', LAM_DK = '#87837c';
-    const CHR = '#bcbec0', CHR_HI = '#eaecee', CHR_DK = '#63676a';
-    const RED = '#a8382b', RED_LIT = '#cb5340', RED_DK = '#5e1f18';
-    const INK = '#20262a';
-    const D = top - (y + 1);                                                // the top plane's depth in rows
+    const D = top - (y + 1);
     shadow2(x + 2, y + h - 1, w - 4);
     ctx.globalAlpha = 0.22; px(x + w, y + 4, 2, D + 5, '#000'); ctx.globalAlpha = 1;
-    for (const lx of [x + 3, x + w - 6]) {                                  // THE NEAR PAIR of chrome legs
+    for (const lx of [x + 3, x + w - 6]) {                                  // THE NEAR PAIR of legs
       px(lx, top + 5, 3, 5, INK);
-      px(lx, top + 5, 1, 5, CHR); px(lx + 1, top + 5, 2, 5, CHR_DK);
-      keyEdge(lx, top + 5, 1, 4, 0.28);
-      px(lx - 1, y + h - 2, 5, 2, INK); px(lx, y + h - 2, 3, 1, CHR);       // the foot glide
+      px(lx, top + 5, 1, 5, WD_LIT); px(lx + 1, top + 5, 2, 5, WD_DK);
+      keyEdge(lx, top + 5, 1, 4, 0.22);
+      px(lx - 1, y + h - 2, 5, 2, INK); px(lx, y + h - 2, 3, 1, CHR_DK);    // the metal foot
       ctx.globalAlpha = 0.32; px(lx - 2, y + h - 1, 7, 1, '#000'); ctx.globalAlpha = 1;
     }
-    px(x + 6, top + 6, w - 12, 1, CHR_DK);                                  // the end stretcher
-    // THE TOP — rounded, rim-seated, laminate field
+    px(x + 6, top + 6, w - 12, 1, U.shade(WD, -0.40));                      // the end stretcher
     chamf(x - 1, top - D - 1, w + 2, D + 6, INK, 3);
-    chamf(x, top - D, w, D + 4, CHR_DK, 3);
-    chamf(x + 1, top - D + 1, w - 2, D, LAM, 2);
-    for (let j = 1; j < D - 1; j++) for (let i = 3; i < w - 3; i++) {        // the faintest confetti
-      const n = Math.sin((x + i) * 12.9898 + (top - D + j) * 78.233) * 43758.5453, t = n - Math.floor(n);
-      if (t > 0.972) px(x + i, top - D + j, 1, 1, U.shade(LAM, -0.14));
-      else if (t < 0.012) px(x + i, top - D + j, 1, 1, U.shade(LAM, 0.12));
+    chamf(x, top - D, w, D + 4, U.shade(WD, -0.30), 3);
+    chamf(x + 1, top - D + 1, w - 2, D, WD, 2);
+    const boards = [5, 4, 5, 4, 5];                                         // unequal boards, down the length
+    let bx = x + 1;
+    for (let b = 0; b < boards.length && bx < x + w - 1; b++) {
+      const bw = Math.min(boards[b], x + w - 1 - bx);
+      px(bx, top - D + 1, bw, D, U.shade(WD, b % 2 ? 0.07 : -0.05));
+      px(bx, top - D + 1, 1, D, U.shade(WD, b % 2 ? 0.18 : 0.10));          // each board's lit west lip
+      for (let g = 0; g < 4; g++) {                                         // ring grain, sparse
+        const gy = top - D + 3 + ((b * 5 + g * 7) % (D - 4));
+        px(bx + (bw > 4 ? 1 : 0), gy, 1, 3, U.shade(WD, b % 2 ? -0.10 : -0.16));
+      }
+      bx += bw;
+      if (bx < x + w - 1) px(bx - 1, top - D + 1, 1, D, U.shade(WD, -0.34));   // the seam
     }
-    px(x + 2, top - D + 1, w - 4, 1, U.shade(LAM_LIT, -0.16));              // far end, quiet
-    px(x + 1, top - D + 2, 1, D - 2, LAM_LIT);                              // THE WEST RAIL — lit end to end
+    px(x + 2, top - D + 1, w - 4, 1, U.shade(WD_LIT, -0.10));               // far end, quiet
+    px(x + 1, top - D + 2, 1, D - 2, WD_LIT);                               // THE WEST RAIL
     keyEdge(x + 1, top - D + 2, 1, Math.min(10, D - 2), 0.26);
-    px(x + w - 2, top - D + 2, 1, D - 2, LAM_DK);
+    px(x + w - 2, top - D + 2, 1, D - 2, WD_DK);
     rimEdge(x + w - 2, top - D + 4, 1, D - 5, 0.20);
-    px(x + 2, top - 1, w - 4, 1, U.shade(LAM, -0.12));
-    /* THE SETTING, strung down the length — same shadow-not-outline rule as the south view */
-    const setting = (sx2, sy2, sw2, sh2) => {
-      ctx.globalAlpha = 0.26; px(sx2 + 1, sy2 + sh2, sw2, 1, '#000'); px(sx2 + sw2, sy2 + 1, 1, sh2 - 1, '#000'); ctx.globalAlpha = 1;
-    };
-    setting(x + 4, top - D + 4, 4, 5);                                      // napkin caddy
-    px(x + 4, top - D + 4, 4, 5, CHR_DK);
-    px(x + 4, top - D + 4, 4, 1, CHR_HI); px(x + 4, top - D + 5, 3, 3, CHR);
-    px(x + 5, top - D + 6, 1, 2, '#f4f7f8');
-    setting(x + 10, top - D + 3, 2, 6);                                     // ketchup bottle
-    px(x + 10, top - D + 4, 2, 5, RED); px(x + 10, top - D + 4, 1, 5, RED_LIT);
-    px(x + 10, top - D + 3, 2, 1, CHR_DK); px(x + 11, top - D + 6, 1, 2, RED_DK);
-    for (const m of [[x + 5, top - D + 12], [x + 14, top - D + 8], [x + 7, top - 6]]) {
-      setting(m[0], m[1], 3, 3);                                            // three mugs down the table
-      px(m[0], m[1], 3, 3, '#cfd4d6');
-      px(m[0], m[1], 3, 1, '#f2f5f6'); px(m[0] + 1, m[1] + 1, 2, 1, '#e6eaeb');
-      px(m[0] + 1, m[1] + 2, 2, 1, '#8c9599');
-      px(m[0] + 3, m[1] + 1, 1, 1, '#aab3b7');
-    }
-    // THE CHROME RIM wrapping the near edge, and the RED apron under it
-    px(x + 1, top, w - 2, 1, CHR_HI); keyEdge(x + 2, top, 8, 1, 0.30);
-    px(x + 1, top + 1, w - 2, 1, CHR);
-    px(x + 1, top + 2, w - 2, 3, RED);
-    px(x + 2, top + 2, w - 4, 1, RED_LIT); keyEdge(x + 2, top + 2, 7, 1, 0.20);
-    px(x + 2, top + 4, w - 4, 1, RED_DK);
-    px(x, top - 2, 1, 6, CHR_DK); px(x + w - 1, top - 2, 1, 6, CHR_DK);
+    px(x + 2, top - 1, w - 4, 1, U.shade(WD, -0.14));
+    /* THE PLANT, dead centre of the turned top too */
+    const cx0 = x + Math.round(w / 2) - 2, py0 = top - Math.round(D / 2) - 2;
+    ctx.globalAlpha = 0.26; px(cx0 + 1, py0 + 8, 4, 1, '#000'); px(cx0 + 5, py0 + 4, 1, 4, '#000'); ctx.globalAlpha = 1;
+    for (const l of [[cx0, py0 + 1, 2, 2], [cx0 + 3, py0, 2, 3], [cx0 + 1, py0 - 1, 2, 3], [cx0 + 4, py0 + 2, 1, 2]])
+      px(l[0], l[1], l[2], l[3], '#2f7a24');
+    px(cx0 + 1, py0 - 1, 1, 2, '#49a336'); px(cx0 + 3, py0, 1, 2, '#49a336');
+    px(cx0 + 2, py0 + 2, 1, 2, '#1c4d17');
+    px(cx0, py0 + 4, 5, 4, INK);
+    px(cx0 + 1, py0 + 4, 3, 3, '#a8552f'); px(cx0 + 1, py0 + 4, 3, 1, '#c96f42');
+    keyEdge(cx0 + 1, py0 + 4, 2, 1, 0.24);
+    px(cx0 + 3, py0 + 5, 1, 2, '#6d3419');
+    // the near edge — the slab's own timber, matching the shipped south view
+    px(x + 1, top, w - 2, 1, U.shade(WD, 0.04)); keyEdge(x + 2, top, 8, 1, 0.22);
+    px(x + 1, top + 1, w - 2, 2, WD_DK);
+    px(x + 2, top + 3, w - 4, 1, U.shade(WD_DK, -0.40));
+    px(x, top - 2, 1, 6, WD_DK); px(x + w - 1, top - 2, 1, 6, WD_DK);
   };
 
   /* ---- THE DINER CHAIR, on three authored facings. A seat that only exists facing the camera is
