@@ -322,7 +322,30 @@ const PropSprites = (() => {
   const keyEdge = (x, y, w, h, a) => { ctx.globalAlpha = a == null ? 0.22 : a; px(x, y, w, h, KEY); ctx.globalAlpha = 1; };
   const rimEdge = (x, y, w, h, a) => { ctx.globalAlpha = a == null ? 0.24 : a; px(x, y, w, h, SKY); ctx.globalAlpha = 1; };
 
-  /* 
+  /* ============ ORIENTATION ============
+     Props were authored facing ONE way — south — because that is what the v3/v4 law bakes in: a
+     foreshortened TOP face over a south-facing FRONT face, under ONE fixed light (warm KEY high and
+     west, cool SKY rim east). So a facing is NOT a canvas transform in the general case: turning a
+     chair 90° would swing its backrest (drawn at y-4, real vertical ELEVATION) out sideways and
+     rotate the light with it. Turned views are AUTHORED, one fn per facing (see AUTHORED TURNED
+     VIEWS near viewAt).
+
+     Two things ARE derived, and only these:
+       DECAL TURN — a prop with no elevation at all (rug, cable run, hazard pad) IS its own top face,
+                    so turning its footprint is the correct picture. Exact 90° integer affines keep
+                    it pixel-exact.
+       MIRROR     — a horizontal flip never changes which way a prop FACES; it swaps handedness,
+                    which is what fixes "the lamp is on the wrong side", and it is how a WEST view is
+                    derived from an authored EAST one. Geometry mirrors for free; the LIGHT does not,
+                    so px() re-maps directional tones through LSWAP.
+
+     LSWAP holds only tones whose meaning is genuinely east/west: each ramp's lit (west) <-> dk
+     (east) column, and the warm west KEY <-> the cool east SKY. `sheen` (a NORTH back-edge catch),
+     `ao` (downward), `top` and `face` are axis-neutral under a horizontal flip and stay put.
+     KNOWN LIMIT: a facet painted as U.shade(r.face, +k) rather than r.lit is a runtime colour with
+     no table entry, so it keeps its original hand — the dominant read (silhouette, top face, front
+     face, emissives) is unaffected. Props drawing through raw ctx path ops set fillStyle directly,
+     which px() never sees; those are excluded from mirroring (NO_MIRROR) until authored. */
   let MIRROR = false;
   const LSWAP = (() => {
     const m = {};
