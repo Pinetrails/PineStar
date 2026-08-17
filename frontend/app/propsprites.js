@@ -4660,72 +4660,6 @@ const PropSprites = (() => {
     try { F.recliner(x, y, w, h, f); } finally { MIRROR = was; ctx.restore(); }
   };
 
-  F['couch:w'] = (x, y, w, h, f) => {
-    /* THE SOFA, TURNED TO FACE WEST (Andrew, 2026-08-17: "a couch that faces left side instead of
-       backside and right side"). The shipped couch is drawn from BEHIND — it faces north at the TV —
-       so a room with two of them has two identical grey backs in it. Turned, the sofa runs
-       NORTH-SOUTH: its footprint really is 1x5, and everything the camera sees changes.
-       ⛔ THE ART IS WIDER THAN THE FOOTPRINT, ON PURPOSE. A sofa is about 1.6 tiles deep; drawn
-          inside a 12px column it came out as a girder. Tall props already overhang their box upward
-          — this one overhangs it sideways by 4px, and the tiles it BLOCKS are still the honest 1x5.
-       ⛔ WHAT IS VISIBLE IS TOPS AND SOUTH FACES. A west-facing surface is edge-on from this camera,
-          so the back reads as its CROWN — a lit band down the east side — with the seat's top planes
-          beside it. Drawing the back's inner face would be inventing a camera we do not have.
-       ⛔ THE NEAR ARM IS THE FRONT OF THE PROP: the only piece with a real south face, drawn LAST so
-          it wraps the seat, and the thing that tells you which end is closest.
-       ⛔ Written against h, so any sofa length works — the art must not care that this one is 5. */
-    const EDGE = '#161d22';
-    const r = RAMP.fabric;
-    const ax = x - 4, aw = w + 8;                                // the drawn box: 4px proud each side
-    const NA = y + h - 11;                                       // where the NEAR (south) arm starts
-    shadow2(ax + 1, y + h - 1, aw - 2);
-    /* (1) the silhouette: body + both arms, in ONE ink pass (per-panel outlines make a cabinet) */
-    rr(ax + 1, y - 5, aw - 2, h + 4, EDGE);
-    rr(ax, y - 3, aw, 8, EDGE);                                  // far arm, north end
-    rr(ax, NA, aw, 12, EDGE);                                    // near arm, south end
-    /* (2) THE BACK — its crown, running the full length down the east side */
-    px(ax + 12, y - 4, 5, h + 2, r.lit);                         // the roll's top surface
-    keyEdge(ax + 12, y - 4, 5, 12, 0.20);
-    px(ax + 12, y - 4, 1, h + 2, U.shade(r.lit, 0.08));
-    px(ax + 17, y - 4, 1, h + 2, U.shade(r.lit, -0.30));         // piping where the crown rolls over
-    px(ax + 18, y - 4, 1, h + 2, r.face);
-    px(ax + 19, y - 3, 1, h, r.dk); rimEdge(ax + 19, y - 3, 1, h, 0.22);
-    /* (3) THE SEAT — cushion tops in a row, marked by SEAMS, never by gaps */
-    px(ax + 1, y - 2, 11, h - 1, r.face);
-    px(ax + 1, y - 2, 1, h - 1, U.shade(r.face, 0.12));          // the west lip catches the strip
-    px(ax + 2, y - 2, 8, h - 1, U.shade(r.face, 0.05));          // each cushion's soft belly
-    px(ax + 10, y - 2, 2, h - 1, U.shade(r.face, -0.08));        // and falls off into the back's shade
-    for (let cy = y + 9; cy < y + h - 14; cy += 12) {
-      px(ax + 1, cy, 11, 1, r.dk);                               // cushion seam
-      px(ax + 1, cy + 1, 11, 1, U.shade(r.face, 0.09));          // the next cushion's lit lip
-      px(ax + 6, cy - 5, 1, 1, U.shade(r.face, -0.30));          // its tuft button
-      px(ax + 5, cy - 4, 1, 1, U.shade(r.face, -0.12)); px(ax + 7, cy - 4, 1, 1, U.shade(r.face, -0.12));
-    }
-    px(ax + 1, y - 2, 11, 1, U.shade(r.face, -0.16));            // the seat tucks under the far arm
-    wear(ax + 2, y + 2, 9, h - 18, 6, U.shade(r.face, -0.08));
-    /* (4) THROW PILLOWS propped against the back — the couch's own two colours, kept */
-    for (const [py0, c0, c1] of [[y + 5, '#2f6a62', '#4a8a82'], [y + h - 28, '#8a6a3a', '#caa84a']]) {
-      if (py0 < y - 1 || py0 + 7 > NA) continue;
-      px(ax + 6, py0, 6, 7, EDGE);
-      px(ax + 7, py0 + 1, 4, 5, c0); px(ax + 7, py0 + 1, 4, 1, c1);
-      px(ax + 7, py0 + 2, 1, 3, U.shade(c1, 0.16)); px(ax + 10, py0 + 2, 1, 3, U.shade(c0, -0.24));
-      px(ax + 7, py0 + 1, 1, 1, EDGE); px(ax + 10, py0 + 1, 1, 1, EDGE);   // rounded stuffed corners
-    }
-    /* (5) THE FAR ARM — a roll across the north end, catching the ceiling strip */
-    px(ax + 1, y - 2, aw - 2, 3, r.lit); keyEdge(ax + 1, y - 2, 8, 1, 0.26);
-    px(ax + 1, y + 1, aw - 2, 1, U.shade(r.lit, -0.24));
-    px(ax + 1, y + 2, aw - 2, 2, r.face);
-    px(ax + 1, y + 4, aw - 2, 1, U.shade(r.face, -0.26));        // its shadow onto the near cushion
-    /* (6) THE NEAR ARM last, so it wraps the seat: crown, piping, then a real south face */
-    px(ax + 1, NA + 1, aw - 2, 3, r.lit); keyEdge(ax + 1, NA + 1, 8, 1, 0.26);
-    px(ax + 1, NA + 4, aw - 2, 1, U.shade(r.lit, -0.24));        // piping under the crown
-    px(ax + 1, NA + 5, aw - 2, 4, r.face);                       // the arm's south face
-    px(ax + 1, NA + 5, 1, 4, U.shade(r.face, 0.10)); px(ax + aw - 2, NA + 5, 1, 4, r.dk);
-    rimEdge(ax + aw - 2, NA + 5, 1, 4, 0.22);
-    px(ax + 3, NA + 6, aw - 6, 2, U.shade(r.face, 0.05));        // the arm's own soft belly
-    px(ax + 1, NA + 9, aw - 2, 1, U.shade(r.face, -0.24));       // skirt band
-    px(ax + 1, NA + 10, aw - 2, 1, r.ao);                        // floor-line AO
-  };
   F.arcade = (x, y, w, h, f) => {
     /* v57 ARCADE (1x2) — built to Andrew's reference (2026-08-16), SHORTENED 2026-08-17. Read top to
          bottom: vent cap -> glowing MARQUEE -> screen flanked by MAGENTA SIDE STRIPS -> pale CONTROL
@@ -6071,127 +6005,12 @@ const PropSprites = (() => {
      in both silhouette and value structure:
        POD CHAIR   — ROUND. A deep moulded bucket on a swivel pedestal, opening toward whatever it
                      faces. Lounge furniture: soft, warm-cushioned, no hard edge on it anywhere.
-       CRASH SEAT  — ANGULAR. Squared shoulders, a harness, bolted to a floor plate. Utility: the
-                     seat you strap into, not the one you sink into.
-     ⛔ THE FIRST ATTEMPT AT THE SECOND SLOT WAS A BISTRO CHAIR AND IT WAS CUT ON SIGHT. A hooped
-        cafe chair of 1px brass members is both fragile at this size and furniture from the wrong
-        planet — this station's seating is MOULDED, a rigid shell with something soft set into it.
-        When one design in a pair lands and the other does not, the survivor is the brief. */
-  F.crashseat = (x, y, w, h, f) => {
-    /* THE CRASH SEAT — the second seat of the pair, replacing a BISTRO CHAIR that was cut on sight
-       (Andrew: "pod chair is amazing, remove the bistro chair and design a different kind of chair").
-       The survivor is the brief: this station's seating is MOULDED — a rigid shell with something
-       soft set into it — not delicate cafe metalwork of 1px brass members.
-       So this is a different OBJECT in the same language, built to be the pod's opposite:
-         POD   — round, deep, swivels on a pedestal. Lounge: you sink into it.
-         CRASH — angular, harnessed, BOLTED to a floor plate. Utility: you strap into it.
-       ⛔ THE FLOATING HEADREST IS THE SILHOUETTE. A single tapering shell — the first draft — read
-          as a BIN from behind, because an unbroken outline at this size is a cylinder no matter what
-          you paint inside it. Lifting the headrest onto two posts puts REAL DECK through the prop at
-          neck height, and that one break is what makes it a seat from every angle.
-       ⛔ Its other identity is the HARNESS: two pale straps meeting at a buckle say "this seat
-          expects the station to move" in four marks. */
-    const r = MAT.steel;
-    const PAD = '#4c5d20', PAD_LIT = '#72892b', PAD_DK = '#25300d';   // olive, authored past the chroma skip
-    const STRAP = '#c3bfb1', STRAP_DK = '#6b675c', INK = '#161c21';
-    shadow2(x + 2, y + 11, 8);
-    // THE FLOOR PLATE — bolted down, not standing on legs. Wide, low, its bolts countable.
-    px(x + 1, y + 9, 10, 3, INK);
-    px(x + 2, y + 9, 8, 1, r.mid); keyEdge(x + 2, y + 9, 4, 1, 0.26);
-    px(x + 2, y + 10, 8, 1, r.face); px(x + 2, y + 11, 8, 1, r.ao);
-    boltH(x + 2, y + 9, r); boltH(x + 9, y + 9, r);
-    px(x + 4, y + 7, 4, 2, r.dk); px(x + 4, y + 7, 1, 2, r.mid);      // the stem into the shell
-    // THE HEADREST — floating, on two posts, with deck showing between them
-    px(x + 3, y - 5, 6, 3, INK);
-    px(x + 4, y - 4, 4, 1, r.lit); keyEdge(x + 4, y - 4, 3, 1, 0.30);
-    px(x + 4, y - 3, 4, 1, PAD); px(x + 4, y - 3, 2, 1, PAD_LIT);     // padded on its front face
-    px(x + 4, y - 2, 1, 1, r.dk); px(x + 7, y - 2, 1, 1, r.dk);       // ITS TWO POSTS — the break
-    /* THE BACK — squared shoulders, wings proud of the padding. One silhouette, then the fills. */
-    px(x + 2, y - 1, 8, 8, INK);
-    px(x + 3, y - 1, 1, 7, r.lit); keyEdge(x + 3, y - 1, 1, 5, 0.24);  // west wing, lit
-    px(x + 8, y - 1, 1, 7, r.dk); rimEdge(x + 8, y - 1, 1, 6, 0.22);   // east wing, in shade
-    px(x + 4, y - 1, 4, 1, r.mid);                                     // the shoulder rail between them
-    px(x + 4, y + 0, 4, 4, PAD_DK);
-    px(x + 4, y + 0, 4, 1, PAD_LIT); px(x + 4, y + 1, 4, 2, PAD);
-    px(x + 4, y + 1, 1, 2, PAD_LIT); px(x + 7, y + 1, 1, 2, PAD_DK);
-    px(x + 5, y + 2, 2, 1, U.shade(PAD, -0.18));                       // one quilt seam, not three
-    /* THE HARNESS — from the shoulders to a buckle. Four marks, and half the identity. */
-    px(x + 4, y + 0, 1, 2, STRAP); px(x + 5, y + 2, 1, 1, STRAP);
-    px(x + 7, y + 0, 1, 2, STRAP); px(x + 6, y + 2, 1, 1, STRAP);
-    px(x + 4, y + 2, 1, 1, STRAP_DK); px(x + 7, y + 2, 1, 1, STRAP_DK);
-    px(x + 5, y + 3, 2, 1, r.hi); px(x + 5, y + 3, 1, 1, r.sheen);     // the buckle catches the strip
-    // THE SEAT CUSHION, in front of the back so the shell reads as holding it
-    px(x + 2, y + 4, 8, 4, INK);
-    px(x + 3, y + 4, 6, 1, PAD_LIT); keyEdge(x + 3, y + 4, 3, 1, 0.26);
-    px(x + 3, y + 5, 6, 2, PAD);
-    px(x + 3, y + 5, 1, 2, PAD_LIT); px(x + 8, y + 5, 1, 2, PAD_DK);
-    px(x + 5, y + 6, 2, 1, U.shade(PAD, -0.24));
-    px(x + 3, y + 7, 6, 1, r.dk);                                      // the pan under the cushion
-  };
+     ⛔ TWO EARLIER ATTEMPTS AT A SECOND SEAT WERE CUT ON SIGHT — a hooped brass cafe chair (fragile
+        at this size and furniture from the wrong planet) and a harnessed crash seat. This station's
+        seating is MOULDED: a rigid shell with something soft set into it. When one design in a pair
+        lands and the others do not, the survivor is the brief. */
 
-  F['crashseat:e'] = (x, y, w, h, f) => {
-    // TURNED RIGHT. Side-on a bucket seat is a raked back, a headrest floating clear of it, and the
-    // cushion running out east — three masses with real gaps, which is why this facing survives the
-    // turn where a single tapering shell would just become a slab.
-    const r = MAT.steel;
-    const PAD = '#4c5d20', PAD_LIT = '#72892b', PAD_DK = '#25300d';
-    const STRAP = '#c3bfb1', INK = '#161c21';
-    shadow2(x + 2, y + 11, 8);
-    px(x + 1, y + 9, 10, 3, INK);
-    px(x + 2, y + 9, 8, 1, r.mid); keyEdge(x + 2, y + 9, 4, 1, 0.26);
-    px(x + 2, y + 10, 8, 1, r.face); px(x + 2, y + 11, 8, 1, r.ao);
-    boltH(x + 2, y + 9, r); boltH(x + 9, y + 9, r);
-    px(x + 4, y + 7, 4, 2, r.dk); px(x + 4, y + 7, 1, 2, r.mid);
-    // the headrest, edge-on and floating on its post
-    px(x + 2, y - 5, 4, 3, INK);
-    px(x + 3, y - 4, 2, 1, r.lit); keyEdge(x + 3, y - 4, 2, 1, 0.30);
-    px(x + 5, y - 3, 1, 1, PAD);                                       // its padded face, edge-on
-    px(x + 4, y - 2, 1, 1, r.dk);                                      // the post
-    // THE BACK — raked, its lit west face carrying the light
-    px(x + 2, y - 1, 5, 8, INK);
-    px(x + 3, y - 1, 1, 7, r.lit); keyEdge(x + 3, y - 1, 1, 5, 0.24);
-    px(x + 4, y - 1, 2, 7, r.mid);
-    px(x + 6, y + 0, 1, 5, PAD_DK);                                    // the padding, edge-on
-    px(x + 4, y + 0, 1, 2, STRAP); px(x + 5, y + 2, 1, 1, STRAP);      // the harness over the shoulder
-    // THE CUSHION running east out of the shell, and the pan under it
-    px(x + 6, y + 4, 5, 4, INK);
-    px(x + 6, y + 4, 5, 1, PAD_LIT); keyEdge(x + 6, y + 4, 3, 1, 0.26);
-    px(x + 6, y + 5, 5, 2, PAD);
-    px(x + 6, y + 5, 1, 2, PAD_LIT); px(x + 10, y + 5, 1, 2, PAD_DK);
-    rimEdge(x + 10, y + 4, 1, 3, 0.22);
-    px(x + 8, y + 6, 2, 1, U.shade(PAD, -0.24));
-    px(x + 6, y + 7, 5, 1, r.dk);
-    px(x + 6, y + 3, 2, 1, r.mid); px(x + 6, y + 3, 1, 1, r.lit);      // the near wing's top edge
-  };
 
-  F['crashseat:n'] = (x, y, w, h, f) => {
-    // FROM BEHIND — no padding, no harness, no olive at all: just the shell's outer moulding with a
-    // spine, the headrest floating clear on its posts, and the bolted plate under. The deck showing
-    // through at neck height is what keeps this from being the cylinder the first draft was.
-    const r = MAT.steel;
-    const INK = '#161c21';
-    shadow2(x + 2, y + 11, 8);
-    px(x + 1, y + 9, 10, 3, INK);
-    px(x + 2, y + 9, 8, 1, r.face); px(x + 2, y + 10, 8, 1, r.dk); px(x + 2, y + 11, 8, 1, r.ao);
-    boltH(x + 2, y + 9, r); boltH(x + 9, y + 9, r);
-    px(x + 4, y + 7, 4, 2, r.dk);
-    px(x + 3, y - 5, 6, 3, INK);                                       // the headrest, from behind
-    px(x + 4, y - 4, 4, 1, r.face); keyEdge(x + 4, y - 4, 2, 1, 0.20);
-    px(x + 4, y - 3, 4, 1, r.dk);
-    px(x + 4, y - 2, 1, 1, r.dk); px(x + 7, y - 2, 1, 1, r.dk);        // its posts
-    px(x + 2, y - 1, 8, 8, INK);                                       // the back's outer moulding
-    px(x + 3, y - 1, 6, 7, r.face);
-    px(x + 3, y - 1, 1, 7, r.mid); px(x + 8, y - 1, 1, 7, r.dk);
-    rimEdge(x + 8, y - 1, 1, 6, 0.22);
-    px(x + 5, y - 1, 2, 7, r.dk); px(x + 5, y - 1, 1, 7, r.mid);       // ONE structural spine
-    px(x + 3, y + 2, 6, 1, U.shade(r.face, -0.24));                    // a moulding band across it
-    px(x + 3, y + 3, 6, 1, r.mid);
-    px(x + 3, y + 6, 6, 1, r.dk);
-    px(x + 2, y + 4, 8, 4, INK);                                       // the cushion pan, from behind
-    px(x + 3, y + 4, 6, 2, U.shade(r.face, -0.16));
-    px(x + 3, y + 4, 6, 1, r.dk);
-    px(x + 3, y + 6, 6, 1, U.shade(r.dk, -0.24)); px(x + 4, y + 7, 4, 1, U.shade(r.dk, -0.34));
-  };
 
   F.podchair = (x, y, w, h, f) => {
     /* THE POD CHAIR — one moulded shell on a swivel pedestal. It is the catalog's only seat with no
@@ -9521,51 +9340,6 @@ const PropSprites = (() => {
         differently from the room reads as a sticker.
      ⛔ ONE SILHOUETTE, THEN FILLS. Paint the whole outline first, then interiors over it. Outlining
         each panel separately is what turned an earlier batch into cabinets. */
-  F.clawmachine = (x, y, w, h, f) => {
-    /* 1x2 CLAW MACHINE — the loudest thing on the shelf, and deliberately so: a lit magenta marquee
-       over a CYAN glass box with prizes visibly piled in the bottom of it. The prizes are the point.
-       A claw machine with an empty box is a vending machine, and the catalog already has two. */
-    const INK = '#1d0e1c', BODY = '#5a2a55', BODY_LIT = '#7d3d75', BODY_DK = '#3a1a37';
-    const GLS = '#1b3a42', GLS_LIT = '#8fe8f5';
-    const on = 0.7 + 0.3 * Math.sin(now / 520 + x);
-    shadow2(x + 1, y + h - 1, w - 2);
-    /* (1) silhouette */
-    rr(x, y - 6, w, h + 6, INK);
-    /* (2) the MARQUEE — a lit sign, the prop's one emissive */
-    px(x + 1, y - 5, w - 2, 4, BODY);
-    px(x + 1, y - 5, w - 2, 1, BODY_LIT); keyEdge(x + 1, y - 5, 5, 1, 0.28);
-    px(x + 2, y - 4, w - 4, 2, '#ffd34a');
-    px(x + 2, y - 4, w - 4, 1, '#fff0a8');
-    for (let i = 0; i < 4; i++) px(x + 3 + i * 2, y - 3, 1, 1, U.shade('#e0762a', -0.2));   // lettering, unreadable by design
-    bloom(x + 2, y - 4, w - 4, 2, '#ffd34a', 0.16 + 0.14 * on);
-    px(x + 1, y - 2, w - 2, 1, BODY_DK);
-    /* (3) THE GLASS BOX — dark well, cyan pane over it, prizes heaped at the bottom */
-    px(x + 1, y - 1, w - 2, 14, '#0d1a1e');
-    px(x + 2, y, 1, 12, U.shade(GLS, 0.20)); px(x + w - 3, y, 1, 12, GLS);            // inner returns
-    for (const [px0, py0, c] of [[x + 2, y + 8, '#e05a8a'], [x + 5, y + 9, '#ffd34a'],
-                                 [x + 7, y + 7, '#5ad1a0'], [x + 4, y + 6, '#7b6ce0']]) {
-      px(px0, py0, 3, 3, U.shade(c, -0.34));                                          // a plush: body, crown, eye
-      px(px0, py0, 3, 1, c); px(px0 + 1, py0 + 1, 1, 1, '#0d1215');
-    }
-    px(x + 5, y, 2, 5, '#2a3138');                                                    // the claw's cable
-    px(x + 4, y + 4, 4, 1, '#8a949c'); px(x + 4, y + 5, 1, 2, '#6a747c'); px(x + 7, y + 5, 1, 2, '#6a747c');
-    px(x + 5, y + 6, 1, 1, '#4a545c'); px(x + 6, y + 6, 1, 1, '#4a545c');             // its two fingers
-    ctx.globalAlpha = 0.30; px(x + 2, y - 1, w - 4, 13, GLS_LIT); ctx.globalAlpha = 1;   // the pane
-    px(x + 2, y - 1, w - 4, 1, U.shade(GLS_LIT, -0.10));
-    for (let i = 0; i < 4; i++) px(x + 3 + i, y + 1 + i, 3 - (i > 1 ? 1 : 0), 1, U.shade(GLS_LIT, -0.30 - i * 0.08));   // raked specular
-    /* (4) CONTROL DESK + cabinet + plinth */
-    px(x + 1, y + 13, w - 2, 4, BODY);
-    px(x + 1, y + 13, w - 2, 1, BODY_LIT); keyEdge(x + 1, y + 13, 4, 1, 0.24);
-    px(x + 3, y + 14, 2, 2, '#8a949c'); px(x + 3, y + 14, 2, 1, '#c8331f');           // joystick
-    px(x + 7, y + 15, 1, 1, '#41ff8a'); px(x + 9, y + 15, 1, 1, '#ffd34a');           // two buttons
-    px(x + 1, y + 17, w - 2, 5, BODY_DK);
-    px(x + 1, y + 17, w - 2, 1, U.shade(BODY, -0.10));
-    px(x + 4, y + 19, 4, 1, '#0d1215'); px(x + 4, y + 19, 4, 1, U.shade(BODY_DK, -0.40));   // coin slot
-    px(x + 5, y + 20, 2, 1, '#c8a44a');
-    px(x + 1, y + 22, w - 2, 2, '#0f1418');
-    px(x + 1, y + 22, w - 2, 1, U.shade(BODY_DK, 0.10));
-    spill(x + 1, y - 1, w - 2, '#8fe8f5', 0.10, 3);
-  };
 
   /* ⛔⛔⛔ THE CLAW-MACHINE RECIPE (2026-08-17, the only one of the first four Andrew kept).
      Four props were shown; three were rejected and the CLAW MACHINE was kept, so what it does is
@@ -9578,166 +9352,9 @@ const PropSprites = (() => {
        3. ONE SATURATED BODY HUE + small saturated hardware. Not a grey box with a colour patch.
        4. UPRIGHT AND FLOOR-SIZED (1x2 minimum). The racing seat failed partly on size — one tile
           cannot carry an identity that has to compete with a 5-tile couch across the room. */
-  F.slushmachine = (x, y, w, h, f) => {
-    /* 1x2 SLUSH MACHINE — twin hoppers of red and blue slush turning over under a lit menu. The
-       CONTENTS are two colours of ice, and they are the whole prop: an opaque version of this is a
-       fridge. The paddles turn, so the ice moves. */
-    const INK = '#141a20', BODY = '#2a3138', BODY_LIT = '#3d464e', CHR = '#b9c2c9';
-    const RED = '#e0344a', RED_LIT = '#ff7a86', BLU = '#3a7ff0', BLU_LIT = '#8fc0ff';
-    const t = now / 900 + x;
-    shadow2(x + 1, y + h - 1, w - 2);
-    rr(x, y - 6, w, h + 6, INK);
-    /* the lit menu board */
-    px(x + 1, y - 5, w - 2, 4, BODY);
-    px(x + 1, y - 5, w - 2, 1, BODY_LIT); keyEdge(x + 1, y - 5, 5, 1, 0.26);
-    px(x + 2, y - 4, w - 4, 2, '#ffe9a8');
-    px(x + 3, y - 4, 3, 1, RED); px(x + 7, y - 4, 3, 1, BLU);                      // the two flavours, named in colour
-    bloom(x + 2, y - 4, w - 4, 2, '#ffe9a8', 0.18);
-    /* THE TWO HOPPERS — clear tanks, ice, and a paddle turning in each */
-    px(x + 1, y - 1, w - 2, 12, '#0e1418');
-    for (let i = 0; i < 2; i++) {
-      const hx = x + 1 + i * 5, C = i ? BLU : RED, L = i ? BLU_LIT : RED_LIT;
-      px(hx, y, 5, 10, U.shade(C, -0.42));                                          // the tank's shadowed glass
-      px(hx, y + 3, 5, 7, C);                                                       // the slush level
-      px(hx, y + 3, 5, 1, L);                                                       // its bright meniscus
-      const p = Math.sin(t + i * 2.1);
-      px(hx + 2 + ((p * 1.4) | 0), y + 4, 1, 5, U.shade(L, -0.10));                 // the paddle, turning
-      px(hx + 1, y + 6, 1, 1, L); px(hx + 3, y + 8, 1, 1, U.shade(L, -0.20));       // ice catching the light
-      px(hx, y, 1, 10, U.shade(L, -0.24)); px(hx + 4, y, 1, 10, U.shade(C, -0.30)); // the tank's own edges
-      bloom(hx, y + 3, 5, 7, C, 0.12);
-    }
-    ctx.globalAlpha = 0.22; px(x + 1, y - 1, w - 2, 11, '#cfe9ff'); ctx.globalAlpha = 1;
-    for (let i = 0; i < 3; i++) px(x + 2 + i, y + i, 2, 1, U.shade('#cfe9ff', -0.20 - i * 0.10));
-    /* dispense band: two chrome taps over a dark drip tray, then the cabinet and plinth */
-    px(x + 1, y + 11, w - 2, 5, BODY);
-    px(x + 1, y + 11, w - 2, 1, BODY_LIT);
-    for (let i = 0; i < 2; i++) { px(x + 3 + i * 5, y + 12, 2, 1, CHR); px(x + 3 + i * 5, y + 13, 1, 2, '#8a949c'); }
-    px(x + 2, y + 15, w - 4, 1, '#0f1418');
-    px(x + 1, y + 16, w - 2, 6, U.shade(BODY, -0.24));
-    px(x + 1, y + 16, w - 2, 1, U.shade(BODY, -0.06));
-    px(x + 3, y + 18, 6, 2, '#0e1418'); px(x + 3, y + 18, 6, 1, U.shade(BODY, -0.40));   // the cup shelf
-    px(x + 1, y + 22, w - 2, 2, '#0f1418');
-    spill(x + 1, y + 11, w - 2, '#8fc0ff', 0.10, 3);
-  };
 
-  F.reeftank = (x, y, w, h, f) => {
-    /* 1x2 REEF TANK — a tall aquarium on a dark stand. Everything above the stand is WATER, lit from
-       a hood, with fish crossing it and coral standing on the gravel. The catalog's wide fish tank
-       is a piece of furniture you look ACROSS; this one is a column you look INTO. */
-    const INK = '#0d1a1c', STAND = '#2b2118', STAND_LIT = '#41321f';
-    const WTR = '#1f6b6e', WTR_LIT = '#39a3a0', WTR_DK = '#123c42';
-    const t = now / 1100 + x;
-    shadow2(x + 1, y + h - 1, w - 2);
-    rr(x, y - 6, w, h + 6, INK);
-    /* the HOOD — the tank's light, and the only warm thing on the prop */
-    px(x + 1, y - 5, w - 2, 3, '#2f373d');
-    px(x + 1, y - 5, w - 2, 1, '#49535a'); keyEdge(x + 1, y - 5, 5, 1, 0.26);
-    px(x + 2, y - 3, w - 4, 1, '#d8f4ff'); bloom(x + 2, y - 3, w - 4, 1, '#9fe6ff', 0.26);
-    /* THE WATER COLUMN — bright under the hood, falling into dark at the gravel */
-    px(x + 1, y - 2, w - 2, 15, WTR);
-    px(x + 1, y - 2, w - 2, 2, WTR_LIT);
-    px(x + 1, y + 6, w - 2, 7, WTR_DK);
-    px(x + 1, y - 2, 1, 15, U.shade(WTR_LIT, -0.14)); px(x + w - 2, y - 2, 1, 15, U.shade(WTR_DK, 0.06));
-    rimEdge(x + w - 2, y - 1, 1, 13, 0.20);
-    for (let i = 0; i < 5; i++) {                                                   // the light raking down through it
-      const ry = y - 1 + i * 3;
-      px(x + 2 + ((Math.sin(t * 0.6 + i) * 1.2) | 0), ry, 2, 1, U.shade(WTR_LIT, 0.10));
-    }
-    /* CORAL on the gravel, then the fish crossing in front of it */
-    px(x + 1, y + 11, w - 2, 2, '#4a4033'); px(x + 1, y + 11, w - 2, 1, '#6b5c46');
-    px(x + 2, y + 8, 2, 3, '#e0762a'); px(x + 2, y + 8, 1, 1, '#ffa04a');           // orange coral fan
-    px(x + 7, y + 9, 3, 2, '#b44aff'); px(x + 8, y + 8, 1, 1, '#d68fff');           // violet coral
-    px(x + 5, y + 10, 1, 2, '#5ad1a0');
-    for (let i = 0; i < 3; i++) {                                                   // three fish, drifting
-      const fx = x + 2 + (((Math.sin(t + i * 2.3) + 1) * 3.4) | 0), fy = y + 1 + i * 3;
-      const c = ['#ffd34a', '#ff7a86', '#8fe8f5'][i];
-      px(fx, fy, 2, 1, c); px(fx + 2, fy, 1, 1, U.shade(c, -0.28));                 // body + tail
-      px(fx, fy - 1, 1, 1, U.shade(c, 0.20));
-    }
-    for (let i = 0; i < 3; i++) px(x + 3, y + 9 - i * 3 - ((now / 260 + i * 7) % 3 | 0), 1, 1, '#cfeeff');   // bubbles
-    ctx.globalAlpha = 0.20; px(x + 1, y - 2, w - 2, 14, '#cfeeff'); ctx.globalAlpha = 1;   // the glass itself
-    px(x + 1, y - 2, w - 2, 1, U.shade('#cfeeff', -0.10));
-    /* the STAND — dark, closed, with a doored cupboard: it must not compete with the water */
-    px(x + 1, y + 13, w - 2, 9, STAND);
-    px(x + 1, y + 13, w - 2, 1, STAND_LIT); keyEdge(x + 1, y + 13, 4, 1, 0.20);
-    px(x + 2, y + 15, 4, 6, U.shade(STAND, -0.22)); px(x + 7, y + 15, 4, 6, U.shade(STAND, -0.22));
-    px(x + 5, y + 17, 1, 2, '#c8a44a'); px(x + 7, y + 17, 1, 2, '#c8a44a');         // brass handles
-    px(x + 1, y + 22, w - 2, 2, '#0f1418');
-    spill(x + 1, y + 13, w - 2, WTR_LIT, 0.16, 4);
-  };
 
-  F.capsuletower = (x, y, w, h, f) => {
-    /* 1x2 CAPSULE TOWER — a red-and-cream gacha column: one big globe of capsules over a smaller
-       one, a coin knob, and a delivery door. The capsules are the contents and they are the ONLY
-       place the catalog gets four saturated hues in one prop. */
-    const INK = '#2a1014', BODY = '#c8331f', BODY_LIT = '#e2604a', BODY_DK = '#8a1f12';
-    const CRM = '#e6dcc4', GLS = '#cfe9ff';
-    shadow2(x + 1, y + h - 1, w - 2);
-    rr(x, y - 6, w, h + 6, INK);
-    /* the crown sign */
-    px(x + 1, y - 5, w - 2, 4, BODY);
-    px(x + 1, y - 5, w - 2, 1, BODY_LIT); keyEdge(x + 1, y - 5, 5, 1, 0.28);
-    px(x + 3, y - 4, 6, 2, CRM); px(x + 4, y - 3, 4, 1, BODY_DK);
-    bloom(x + 3, y - 4, 6, 2, '#ffe9c0', 0.14);
-    /* THE GLOBES — two, the upper one full, the lower one half-emptied (it has been used) */
-    const globe = (gy, gh, n) => {
-      px(x + 1, gy, w - 2, gh, '#101820');
-      ctx.globalAlpha = 0.26; px(x + 1, gy, w - 2, gh, GLS); ctx.globalAlpha = 1;
-      const cols = ['#ffd34a', '#ff7a86', '#5ad1a0', '#8fe8f5', '#b44aff', '#ffa04a'];
-      for (let i = 0; i < n; i++) {
-        const cx0 = x + 2 + (i * 3) % (w - 5), cy0 = gy + gh - 2 - ((i / 3) | 0) * 2;
-        const c = cols[i % cols.length];
-        px(cx0, cy0, 2, 2, U.shade(c, -0.30)); px(cx0, cy0, 2, 1, c); px(cx0, cy0, 1, 1, U.shade(c, 0.24));
-      }
-      px(x + 1, gy, w - 2, 1, U.shade(GLS, -0.06));
-      px(x + 2, gy + 1, 1, 2, U.shade(GLS, -0.22));
-      px(x + 1, gy + gh, w - 2, 1, BODY_DK);
-    };
-    globe(y - 1, 9, 9);
-    globe(y + 9, 6, 4);
-    /* the coin knob, the door, the plinth */
-    px(x + 1, y + 16, w - 2, 6, BODY);
-    px(x + 1, y + 16, w - 2, 1, BODY_LIT);
-    px(x + 3, y + 17, 3, 3, '#b9c2c9'); px(x + 3, y + 17, 3, 1, '#e2e8ec');         // chrome knob
-    px(x + 4, y + 18, 1, 1, '#2a3138');
-    px(x + 7, y + 18, 4, 3, '#1b2126'); px(x + 7, y + 18, 4, 1, CRM);               // the delivery flap
-    px(x + 1, y + 22, w - 2, 2, '#0f1418');
-  };
 
-  F.photobooth = (x, y, w, h, f) => {
-    /* 1x2 PHOTO BOOTH — a violet booth with a drawn CURTAIN instead of glass, a lit sign over it,
-       and a strip of finished photos glowing on its flank. The contents here are implied (someone
-       is behind that curtain), which is the eerier version of the same trick. */
-    const INK = '#1a0f24', BODY = '#4a2a6e', BODY_LIT = '#6b429a', BODY_DK = '#2e1a45';
-    const CUR = '#8a2f6a', CUR_LIT = '#c25a9a';
-    const on = 0.65 + 0.35 * Math.sin(now / 420 + x);
-    shadow2(x + 1, y + h - 1, w - 2);
-    rr(x, y - 6, w, h + 6, INK);
-    /* the lit sign */
-    px(x + 1, y - 5, w - 2, 4, BODY);
-    px(x + 1, y - 5, w - 2, 1, BODY_LIT); keyEdge(x + 1, y - 5, 5, 1, 0.26);
-    px(x + 2, y - 4, w - 4, 2, blink(900, x) ? '#fff0a8' : '#ffd34a');
-    px(x + 3, y - 3, 2, 1, BODY_DK); px(x + 7, y - 3, 2, 1, BODY_DK);
-    bloom(x + 2, y - 4, w - 4, 2, '#ffd34a', 0.14 + 0.12 * on);
-    /* THE CURTAIN — folds, and a gap at the bottom where the light gets out */
-    px(x + 1, y - 1, w - 2, 14, CUR);
-    for (let i = 0; i < 5; i++) {
-      px(x + 1 + i * 2, y - 1, 1, 14, U.shade(CUR, -0.26));                          // the fold's shadow
-      px(x + 2 + i * 2, y - 1, 1, 13, i < 2 ? CUR_LIT : U.shade(CUR_LIT, -0.14));    // its lit crown
-    }
-    px(x + 1, y - 1, w - 2, 1, U.shade(CUR_LIT, 0.10));
-    px(x + 1, y + 11, w - 2, 2, U.shade(CUR, -0.40));                                // the curtain's hem
-    px(x + 2, y + 13, w - 4, 1, '#ffd9a0'); glow(x + 2, y + 13, w - 4, 1, '#ffd9a0', 0.22 * on);   // light under it
-    /* the flank: a strip of three finished photos, and the coin box */
-    px(x + 1, y + 14, w - 2, 8, BODY_DK);
-    px(x + 1, y + 14, w - 2, 1, U.shade(BODY, 0.06));
-    px(x + 2, y + 16, 3, 5, '#0e1418');
-    for (let i = 0; i < 3; i++) px(x + 2, y + 16 + i * 2, 3, 1, ['#8fe8f5', '#ff7a86', '#ffd34a'][i]);
-    bloom(x + 2, y + 16, 3, 5, '#ffffff', 0.08);
-    px(x + 7, y + 17, 4, 2, '#1b2126'); px(x + 8, y + 18, 2, 1, '#c8a44a');          // coin box
-    px(x + 1, y + 22, w - 2, 2, '#0f1418');
-    spill(x + 1, y + 13, w - 2, '#ffd9a0', 0.12, 3);
-  };
 
 
 
@@ -10043,7 +9660,6 @@ const PropSprites = (() => {
     { id: "guitar", label: "GUITAR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true },
     { id: "booth", label: "BOOTH", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'south' } },
     { id: "dinerchair", label: "DINER CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
-    { id: "crashseat", label: "CRASH SEAT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
     { id: "podchair", label: "POD CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
     { id: "loungetable", label: "LOUNGE TABLE", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, surface: true },
     { id: "longtable", label: "LONG TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, surface: true },
@@ -10084,11 +9700,6 @@ const PropSprites = (() => {
        so the two can never drift apart. */
     { id: "recliner", label: "RECLINER ‹ LEFT", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'west' } },
     { id: "recliner_r", label: "RECLINER RIGHT ›", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'east' } },
-    { id: "clawmachine", label: "CLAW MACHINE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'claw', sit: false, approach: 'south' } },
-    { id: "slushmachine", label: "SLUSH MACHINE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'slush', sit: false, approach: 'south' } },
-    { id: "reeftank", label: "REEF TANK", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'reef', sit: false, approach: 'south' } },
-    { id: "capsuletower", label: "CAPSULE TOWER", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'capsule', sit: false, approach: 'south' } },
-    { id: "photobooth", label: "PHOTO BOOTH", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'photo', sit: false, approach: 'south' } },
   ];
   const BY_ID = {};
   for (const c of CATALOG) BY_ID[c.id] = c;
@@ -10222,7 +9833,7 @@ const PropSprites = (() => {
      a 5x1 sofa turned is a 1x5 sofa running along a wall. Decals and tables qualify by their catalog
      flags (`flat` / `surface`); soft furniture has no such flag and is listed here. Everything else
      keeps its box — the arcade's second tile is HEIGHT, not depth. */
-  const PLAN_FOOTPRINT = ['couch', 'dinertable', 'booth'];
+  const PLAN_FOOTPRINT = ['dinertable', 'booth'];
   const PLAN_SET = PLAN_FOOTPRINT.reduce((o, id) => (o[id] = 1, o), {});
   const reTiles = id => isDecal(id) || !!PLAN_SET[id] || !!(spec(id) || {}).surface;
   function footprintAt(id, r) {

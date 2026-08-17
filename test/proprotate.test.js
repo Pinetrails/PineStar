@@ -118,9 +118,20 @@ A.eq(PS.facings('longtable'), [0, 3], 'LONG TABLE offers ONE turn');
 A.eq(PS.footprintAt('longtable', 3), { w: 1, h: 3 }, 'a turned 3x1 table really is 1x3');
 A.eq(PS.footprintAt('chair', 3), { w: 1, h: 1 }, 'a turned chair keeps its box');
 A.eq(PS.facings('stool'), [0], 'the STOOL is round — it offers no turn at all');
-A.eq(PS.facings('couch'), [0, 1, 3], 'the COUCH faces left and right as well as away');
-A.eq(PS.footprintAt('couch', 1), { w: 1, h: 5 }, 'a turned 5x1 sofa really is 1x5');
 A.eq(PS.facings('desk'), [0], 'a WORKSTATION never turns (its front is load-bearing)');
+/* the COUCH deliberately does NOT turn: a west-facing sofa view was authored in an earlier lane and
+   is not part of what shipped here, so the couch keeps trunk's behaviour and offers south only. */
+A.eq(PS.facings('couch'), [0], 'the COUCH offers no turn (its turned view is not part of this lane)');
+/* the seats and tables THIS lane authored, named so a deletion is loud rather than silent */
+A.eq(PS.facings('podchair'), [0, 1, 2, 3], 'POD CHAIR turns to all four facings');
+A.eq(PS.facings('dinerchair'), [0, 1, 2, 3], 'DINER CHAIR turns to all four facings');
+A.eq(PS.facings('booth'), [0, 1, 3], 'the BOOTH turns to the sides but has NO back view');
+A.eq(PS.facings('lowtable'), [0, 3], 'LOW TABLE offers ONE turn');
+A.eq(PS.facings('glasstable'), [0, 3], 'GLASS TABLE offers ONE turn');
+A.eq(PS.facings('dinertable'), [0, 3], 'DINER TABLE offers ONE turn');
+A.eq(PS.footprintAt('dinertable', 3), { w: 2, h: 3 }, 'a turned 3x2 diner table really is 2x3');
+A.eq(PS.footprintAt('booth', 3), { w: 1, h: 2 }, 'a turned 2x1 booth really is 1x2');
+A.eq(PS.facings('guitar'), [0], 'the GUITAR offers no turn — it is one object on a stand');
 
 /* R must never dead-end: nextFacing walks the prop's own cycle in both directions */
 for (const id of ['chair', 'longtable', 'rug']) {
