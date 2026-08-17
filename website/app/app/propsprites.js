@@ -5614,6 +5614,365 @@ const PropSprites = (() => {
     px(x, top + 2, w, 1, U.shade(WD_DK, -0.44));
   };
 
+  /* ============ THE LOW TABLE + THE DINER SET (2026-08-17) ============
+     Andrew: "a new table thats 1x3, a bit shorter like a coffee table kind of vibe, then make a
+     diner style table thats 3x2 with new chairs as well."
+
+     ⛔ A TABLE'S TOP PLANE MAY NOT MOVE. Every table in this file pins its top surface to the
+        SURFACE_RISE plane so a mounted prop is lifted by ONE constant and lands on ANY of them
+        (draw() has no idea WHICH table it is over). So "shorter" cannot be bought by dropping the
+        top — that floats every mug placed on it. It is bought by EATING THE DAYLIGHT: the long
+        table stands on four slim legs over an 8-row band of open deck, and this one fills most of
+        that band with a thick slab edge, stub legs and a low shelf. Same top height, and the eye
+        reads it as low and heavy because there is no air under it. */
+  F.lowtable = (x, y, w, h, f) => {
+    // 3x1 LOW TABLE — a long lounge coffee table: one thick oak slab, four stubby legs and a
+    // magazine shelf slung between them. Its whole identity against the LONG TABLE is MASS: a
+    // 3px slab edge instead of 1, chunky blocks instead of posts, and a shelf where that one has
+    // open air. The TOP is left clear — things get placed on it, so built-in clutter belongs on
+    // the shelf below rather than on the surface the player is meant to use.
+    // ⛔ THE THICK EDGE IS A LIT PLANE, NOT A BLACK BAND. Painted flat dark it read as the shadow
+    //    under a crate; a slab edge takes the ceiling strip on its top row like everything else.
+    const WD = '#6f5433', WD_LIT = '#8a6a42', WD_DK = '#40301d', INK = '#241a10';
+    const top = y + h - 1 - SURFACE_RISE;                                  // = y+3 at h:1 — THE shared plane
+    shadow2(x + 1, y + h - 1, w - 2);
+    // FOUR STUB LEGS — 4px blocks at the corners. Short and wide is the whole read; a slim post
+    // under a thick slab reads as a dining table someone sawed the legs off.
+    for (const lx of [x + 3, x + w - 7]) {                                 // rear pair, behind the slab
+      px(lx, top + 5, 4, 4, U.shade(WD, -0.34)); rimEdge(lx + 3, top + 5, 1, 4, 0.14);
+    }
+    for (const lx of [x + 2, x + w - 6]) {                                 // front pair, under the near edge
+      px(lx, top + 5, 4, 4, INK);
+      px(lx + 1, top + 5, 1, 4, WD_LIT); px(lx + 2, top + 5, 2, 4, WD_DK);
+      keyEdge(lx + 1, top + 5, 1, 3, 0.18); rimEdge(lx + 3, top + 6, 1, 3, 0.18);
+      ctx.globalAlpha = 0.32; px(lx - 1, y + h - 1, 6, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    // THE SHELF between them, with two magazines lying on it — the one saturated thing on the prop,
+    // and the reason this table can afford to keep its top clear.
+    px(x + 6, top + 5, w - 12, 3, INK);
+    px(x + 7, top + 5, w - 14, 1, U.shade(WD, 0.06)); keyEdge(x + 7, top + 5, 6, 1, 0.18);
+    px(x + 7, top + 6, w - 14, 1, U.shade(WD, -0.26));
+    px(x + 8, top + 6, 8, 1, '#a8503a'); px(x + 8, top + 6, 4, 1, '#c96b4c');       // a red magazine
+    px(x + 18, top + 6, 7, 1, '#b09044'); px(x + 18, top + 6, 3, 1, '#cfae62');     // and a tan one
+    // THE SLAB — 8 rows of top plane over a 3-row edge. That edge IS the prop: it is the only
+    // table here whose thickness you can read at a glance.
+    chamf(x - 1, top - 8, w + 2, 13, INK, 2);
+    chamf(x, top - 7, w, 10, WD, 1);
+    px(x + 1, top - 7, w - 2, 1, WD_LIT); keyEdge(x + 1, top - 7, 8, 1, 0.26);      // lit far edge
+    px(x, top - 6, w, 1, U.shade(WD, 0.16));
+    px(x, top - 1, w, 1, U.shade(WD, -0.10));                                       // near half falls off
+    px(x, top - 7, 1, 9, WD_LIT); px(x + w - 1, top - 7, 1, 9, WD_DK);
+    rimEdge(x + w - 1, top - 6, 1, 8, 0.20);
+    px(x + 1, top - 4, w - 2, 1, U.shade(WD, -0.26));                                // ONE plank seam, quiet
+    px(x + 1, top - 3, w - 2, 1, U.shade(WD, 0.10));
+    for (let i = 0; i < 7; i++) {                                                   // grain, clamped to the top
+      const gx = x + 2 + i * 5; if (gx + 4 <= x + w - 1) px(gx, top - 6 + (i % 3) * 3, 4, 1, U.shade(WD, 0.07));
+    }
+    px(x, top + 1, w, 1, U.shade(WD, 0.02)); keyEdge(x + 1, top + 1, 8, 1, 0.20);    // THE EDGE, lit on top
+    px(x, top + 2, w, 1, WD_DK);
+    px(x + 1, top + 3, w - 2, 1, U.shade(WD_DK, -0.44));                            // its underside in shade
+  };
+
+  F['lowtable:e'] = (x, y, w, h, f) => {
+    // 1x3 deep LOW TABLE — the same slab running away from you. Same three receding cues as the
+    // long table: the west rail lit end to end, eased ends, and a contact shadow down the east
+    // flank; the difference stays MASS — a 3px edge under the board and stub legs at the corners.
+    // ⛔ A LOW TABLE TURNED IS ONE STEP FROM A DOOR. The first pass tied its two stub legs together
+    //    with a solid end rail and the whole prop became an upright panel. What saves it is DAYLIGHT
+    //    IN THE MIDDLE: the shelf recedes as a narrow plank with bare deck either side of it, so the
+    //    base is three marks with gaps, not one wall.
+    const WD = '#6f5433', WD_LIT = '#8a6a42', WD_DK = '#40301d', INK = '#241a10';
+    const top = y + h - 1 - SURFACE_RISE;
+    const D = top - (y + 1);
+    shadow2(x + 1, y + h - 1, w - 2);
+    ctx.globalAlpha = 0.22; px(x + w + 1, y + 3, 2, D + 5, '#000'); ctx.globalAlpha = 1;
+    px(x + 5, top + 5, 3, 4, INK);                                                  // the shelf, receding
+    px(x + 5, top + 5, 3, 1, U.shade(WD, -0.04)); px(x + 5, top + 6, 3, 1, '#a8503a');
+    px(x + 5, top + 7, 3, 1, U.shade(WD, -0.30));
+    for (const lx of [x + 1, x + w - 5]) {                                          // the NEAR pair of stubs
+      px(lx, top + 5, 4, 4, INK);
+      px(lx + 1, top + 5, 1, 4, WD_LIT); px(lx + 2, top + 5, 2, 4, WD_DK);
+      keyEdge(lx + 1, top + 5, 1, 3, 0.18); rimEdge(lx + 3, top + 6, 1, 3, 0.18);
+      ctx.globalAlpha = 0.32; px(lx - 1, y + h - 1, 6, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    chamf(x - 2, top - D - 1, w + 4, D + 5, INK, 2);
+    chamf(x - 1, top - D, w + 2, D + 3, WD, 1);
+    px(x, top - D, w, 1, U.shade(WD, 0.10));                                        // far end — a warm lift
+    px(x - 1, top - D + 1, 1, D - 1, WD_LIT);                                       // THE WEST RAIL
+    keyEdge(x - 1, top - D + 1, 1, Math.min(9, D - 1), 0.24);
+    px(x + w, top - D + 1, 1, D - 1, WD_DK);
+    rimEdge(x + w, top - D + 4, 1, D - 4, 0.20);
+    px(x, top - 1, w, 1, U.shade(WD, -0.10));
+    for (const sx of [x + 4]) {                                                     // ONE plank seam, quiet
+      px(sx, top - D + 1, 1, D, U.shade(WD, -0.26));
+      px(sx + 1, top - D + 1, 1, D, U.shade(WD, 0.08));
+    }
+    px(x - 1, top + 1, w + 2, 1, U.shade(WD, 0.02)); keyEdge(x, top + 1, 5, 1, 0.20);   // THE EDGE, lit on top
+    px(x - 1, top + 2, w + 2, 1, WD_DK);
+    px(x, top + 3, w, 1, U.shade(WD_DK, -0.44));
+  };
+
+  /* ---- THE DINER. A 3x2 six-seater with its own chair, built to the claw-machine recipe: stacked
+     BANDS and one saturated body hue rather than another grey box. The identity is three marks and
+     they must all survive at 12px — a CHROME RIM round a pale speckled laminate, a RED apron under
+     it, and slim chrome legs. Cream is the point: this catalog's furniture all lives in the bottom
+     half of the value range, so a genuinely pale top is the thing you see across the room. */
+  F.dinertable = (x, y, w, h, f) => {
+    /* ⛔ A BIG PALE PLANE IS A MATTRESS. The first pass was a clean speckled slab on chrome legs and
+       it read as a BED — nothing on this station is that empty and that light. What makes it a diner
+       table is the SETTING: a napkin caddy, a ketchup bottle and two mugs standing on it. That is the
+       claw-machine rule in another form — a bright field needs CONTENTS, or the eye has no scale for
+       it. The speckle also came back as crumbs at full strength; it is now barely there, which is all
+       a laminate needs.
+       Rows: chrome rim -> pale speckled laminate -> chrome rim -> RED apron -> legs. */
+    const top = y + h - 1 - SURFACE_RISE;
+    /* ⛔ THESE ARE AUTHORED NEUTRAL ON PURPOSE. The CHROMA dial multiplies authored saturation by
+       2.6 (warm hues cap at 0.52), so a cream picked to LOOK like cream in the source renders as
+       BUTTER, and a blue-grey chrome renders frankly blue. Author the laminate and the chrome flat
+       and let the dial put the warmth back — the shipped screen is the only place the colour is
+       real. The RED is already past the skip threshold (0.45) and is passed through untouched. */
+    const LAM = '#b4b0a9', LAM_LIT = '#d5d1ca', LAM_DK = '#87837c';   // reads cream ONCE graded
+    const CHR = '#bcbec0', CHR_HI = '#eaecee', CHR_DK = '#63676a';    // chrome
+    const RED = '#a8382b', RED_LIT = '#cb5340', RED_DK = '#5e1f18';   // the apron band
+    const INK = '#20262a';
+    const D = 11;                                                     // the top plane's depth in rows
+    shadow2(x + 2, y + h - 1, w - 4);
+    // FOUR CHROME LEGS. The rear pair reads as a dark stub behind the top; the front pair carries
+    // the light and a foot glide, which is what stops a pale table from floating.
+    for (const lx of [x + 4, x + w - 7]) {
+      px(lx, top + 2, 3, 6, CHR_DK); rimEdge(lx + 2, top + 2, 1, 5, 0.14);
+    }
+    for (const lx of [x + 3, x + w - 6]) {
+      px(lx, top + 5, 3, 5, INK);
+      px(lx, top + 5, 1, 5, CHR); px(lx + 1, top + 5, 2, 5, CHR_DK);
+      keyEdge(lx, top + 5, 1, 4, 0.28);
+      px(lx - 1, y + h - 2, 5, 2, INK); px(lx, y + h - 2, 3, 1, CHR);      // the foot glide
+      ctx.globalAlpha = 0.32; px(lx - 2, y + h - 1, 7, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    px(x + 8, top + 6, w - 16, 1, CHR_DK);                                  // the stretcher between them
+    // THE TOP — a rounded diner slab. Chamfered 3px so the corners genuinely round off at this size.
+    chamf(x - 1, top - D - 1, w + 2, D + 6, INK, 3);
+    chamf(x, top - D, w, D + 4, CHR_DK, 3);                                 // the rim's dark seat
+    chamf(x + 1, top - D + 1, w - 2, D, LAM, 2);                            // the laminate field
+    for (let j = 1; j < D - 1; j++) for (let i = 3; i < w - 3; i++) {        // the faintest confetti
+      const n = Math.sin((x + i) * 12.9898 + (top - D + j) * 78.233) * 43758.5453, t = n - Math.floor(n);
+      if (t > 0.972) px(x + i, top - D + j, 1, 1, U.shade(LAM, -0.14));
+      else if (t < 0.012) px(x + i, top - D + j, 1, 1, U.shade(LAM, 0.12));
+    }
+    px(x + 2, top - D + 1, w - 4, 1, LAM_LIT); keyEdge(x + 2, top - D + 1, 9, 1, 0.28);   // lit far edge
+    px(x + 1, top - D + 2, 1, D - 2, LAM_LIT); px(x + w - 2, top - D + 2, 1, D - 2, LAM_DK);
+    rimEdge(x + w - 2, top - D + 3, 1, D - 4, 0.20);
+    px(x + 2, top - 1, w - 4, 1, U.shade(LAM, -0.12));                      // the near half falls off
+    /* THE SETTING — what turns a pale slab into a diner table. ⛔ ON A LIGHT GROUND AN OBJECT IS A
+       SHADOW, NOT AN OUTLINE: ringing each mug in ink punched four dark WINDOWS in the laminate and
+       the top read as a control panel. Each piece here is a soft alpha shadow, a body, and one lit
+       pixel. They are also grouped and set at DIFFERENT depths — four objects on one line is a row
+       of buttons; a caddy and a bottle together with mugs scattered near them is a laid table. */
+    const cx0 = x + Math.round(w / 2);
+    const setting = (sx2, sy2, sw2, sh2) => {                               // the shadow every piece casts
+      ctx.globalAlpha = 0.26; px(sx2 + 1, sy2 + sh2, sw2, 1, '#000'); px(sx2 + sw2, sy2 + 1, 1, sh2 - 1, '#000'); ctx.globalAlpha = 1;
+    };
+    setting(cx0 + 2, top - D + 2, 4, 5);                                    // napkin caddy — chrome box
+    px(cx0 + 2, top - D + 2, 4, 5, CHR_DK);
+    px(cx0 + 2, top - D + 2, 4, 1, CHR_HI); px(cx0 + 2, top - D + 3, 3, 3, CHR);
+    px(cx0 + 3, top - D + 4, 1, 2, '#f4f7f8');                              // the napkins standing in it
+    setting(cx0 + 7, top - D + 1, 2, 6);                                    // ketchup bottle
+    px(cx0 + 7, top - D + 2, 2, 5, RED); px(cx0 + 7, top - D + 2, 1, 5, RED_LIT);
+    px(cx0 + 7, top - D + 1, 2, 1, CHR_DK);                                 // its cap
+    px(cx0 + 8, top - D + 4, 1, 2, RED_DK);
+    for (const m of [[cx0 - 12, top - D + 5], [cx0 - 4, top - D + 2], [cx0 + 12, top - D + 6]]) {
+      setting(m[0], m[1], 3, 3);                                            // three mugs, scattered
+      px(m[0], m[1], 3, 3, '#cfd4d6');
+      px(m[0], m[1], 3, 1, '#f2f5f6'); px(m[0] + 1, m[1] + 1, 2, 1, '#e6eaeb');
+      px(m[0] + 1, m[1] + 2, 2, 1, '#8c9599');                              // the coffee shadow inside
+      px(m[0] + 3, m[1] + 1, 1, 1, '#aab3b7');                              // the handle
+    }
+    // THE CHROME RIM — a bright band wrapping the top's near edge, and the RED apron under it
+    px(x + 1, top, w - 2, 1, CHR_HI); keyEdge(x + 2, top, 10, 1, 0.30);
+    px(x + 1, top + 1, w - 2, 1, CHR);
+    px(x + 1, top + 2, w - 2, 3, RED);
+    px(x + 2, top + 2, w - 4, 1, RED_LIT); keyEdge(x + 2, top + 2, 8, 1, 0.20);
+    px(x + 2, top + 4, w - 4, 1, RED_DK);
+    px(x, top - 2, 1, 6, CHR_DK); px(x + w - 1, top - 2, 1, 6, CHR_DK);     // the rim turning the corners
+  };
+
+  F['dinertable:e'] = (x, y, w, h, f) => {
+    /* 2x3 deep DINER TABLE — the same slab running away from you, which is how it sits along a wall
+       with chairs down both long sides. Every receding cue the wooden tables earned applies to a
+       pale top too: the WEST RAIL carries the key end to end, the ends are eased, and a contact
+       shadow runs down the east flank. The setting is re-scattered down the LENGTH rather than
+       across, because four objects strung along the far edge is a shelf, not a laid table. */
+    const top = y + h - 1 - SURFACE_RISE;
+    const LAM = '#b4b0a9', LAM_LIT = '#d5d1ca', LAM_DK = '#87837c';
+    const CHR = '#bcbec0', CHR_HI = '#eaecee', CHR_DK = '#63676a';
+    const RED = '#a8382b', RED_LIT = '#cb5340', RED_DK = '#5e1f18';
+    const INK = '#20262a';
+    const D = top - (y + 1);                                                // the top plane's depth in rows
+    shadow2(x + 2, y + h - 1, w - 4);
+    ctx.globalAlpha = 0.22; px(x + w, y + 4, 2, D + 5, '#000'); ctx.globalAlpha = 1;
+    for (const lx of [x + 3, x + w - 6]) {                                  // THE NEAR PAIR of chrome legs
+      px(lx, top + 5, 3, 5, INK);
+      px(lx, top + 5, 1, 5, CHR); px(lx + 1, top + 5, 2, 5, CHR_DK);
+      keyEdge(lx, top + 5, 1, 4, 0.28);
+      px(lx - 1, y + h - 2, 5, 2, INK); px(lx, y + h - 2, 3, 1, CHR);       // the foot glide
+      ctx.globalAlpha = 0.32; px(lx - 2, y + h - 1, 7, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    px(x + 6, top + 6, w - 12, 1, CHR_DK);                                  // the end stretcher
+    // THE TOP — rounded, rim-seated, laminate field
+    chamf(x - 1, top - D - 1, w + 2, D + 6, INK, 3);
+    chamf(x, top - D, w, D + 4, CHR_DK, 3);
+    chamf(x + 1, top - D + 1, w - 2, D, LAM, 2);
+    for (let j = 1; j < D - 1; j++) for (let i = 3; i < w - 3; i++) {        // the faintest confetti
+      const n = Math.sin((x + i) * 12.9898 + (top - D + j) * 78.233) * 43758.5453, t = n - Math.floor(n);
+      if (t > 0.972) px(x + i, top - D + j, 1, 1, U.shade(LAM, -0.14));
+      else if (t < 0.012) px(x + i, top - D + j, 1, 1, U.shade(LAM, 0.12));
+    }
+    px(x + 2, top - D + 1, w - 4, 1, U.shade(LAM_LIT, -0.16));              // far end, quiet
+    px(x + 1, top - D + 2, 1, D - 2, LAM_LIT);                              // THE WEST RAIL — lit end to end
+    keyEdge(x + 1, top - D + 2, 1, Math.min(10, D - 2), 0.26);
+    px(x + w - 2, top - D + 2, 1, D - 2, LAM_DK);
+    rimEdge(x + w - 2, top - D + 4, 1, D - 5, 0.20);
+    px(x + 2, top - 1, w - 4, 1, U.shade(LAM, -0.12));
+    /* THE SETTING, strung down the length — same shadow-not-outline rule as the south view */
+    const setting = (sx2, sy2, sw2, sh2) => {
+      ctx.globalAlpha = 0.26; px(sx2 + 1, sy2 + sh2, sw2, 1, '#000'); px(sx2 + sw2, sy2 + 1, 1, sh2 - 1, '#000'); ctx.globalAlpha = 1;
+    };
+    setting(x + 4, top - D + 4, 4, 5);                                      // napkin caddy
+    px(x + 4, top - D + 4, 4, 5, CHR_DK);
+    px(x + 4, top - D + 4, 4, 1, CHR_HI); px(x + 4, top - D + 5, 3, 3, CHR);
+    px(x + 5, top - D + 6, 1, 2, '#f4f7f8');
+    setting(x + 10, top - D + 3, 2, 6);                                     // ketchup bottle
+    px(x + 10, top - D + 4, 2, 5, RED); px(x + 10, top - D + 4, 1, 5, RED_LIT);
+    px(x + 10, top - D + 3, 2, 1, CHR_DK); px(x + 11, top - D + 6, 1, 2, RED_DK);
+    for (const m of [[x + 5, top - D + 12], [x + 14, top - D + 8], [x + 7, top - 6]]) {
+      setting(m[0], m[1], 3, 3);                                            // three mugs down the table
+      px(m[0], m[1], 3, 3, '#cfd4d6');
+      px(m[0], m[1], 3, 1, '#f2f5f6'); px(m[0] + 1, m[1] + 1, 2, 1, '#e6eaeb');
+      px(m[0] + 1, m[1] + 2, 2, 1, '#8c9599');
+      px(m[0] + 3, m[1] + 1, 1, 1, '#aab3b7');
+    }
+    // THE CHROME RIM wrapping the near edge, and the RED apron under it
+    px(x + 1, top, w - 2, 1, CHR_HI); keyEdge(x + 2, top, 8, 1, 0.30);
+    px(x + 1, top + 1, w - 2, 1, CHR);
+    px(x + 1, top + 2, w - 2, 3, RED);
+    px(x + 2, top + 2, w - 4, 1, RED_LIT); keyEdge(x + 2, top + 2, 7, 1, 0.20);
+    px(x + 2, top + 4, w - 4, 1, RED_DK);
+    px(x, top - 2, 1, 6, CHR_DK); px(x + w - 1, top - 2, 1, 6, CHR_DK);
+  };
+
+  /* ---- THE DINER CHAIR, on three authored facings. A seat that only exists facing the camera is
+     useless around a table — half the chairs at a six-top face AWAY from you. West comes free by
+     mirroring east. Rows are held in lockstep with F.chair (crown y-4, pad y+3..y+7, floor y+11) so
+     a diner chair and an office chair standing side by side are the same height.
+     ⛔ ITS SILHOUETTE IS THE GAP, not the padding: chrome legs splayed under a floating red pad,
+        with real deck visible between the back and the seat. Filled in solid it is a postbox. */
+  F.dinerchair = (x, y, w, h, f) => {
+    /* ⛔ A BACK THAT DOES NOT TOUCH ITS SEAT IS TWO OBJECTS. The first pass left one row of deck
+       between the pad and the backrest and the chair read as a red brick floating over a red brick.
+       The back's foot now lands ON the seat's top row and two chrome side posts carry the eye down
+       between them — a gap in a 12px chair is not "a chair's gap", it is a break in the object.
+       ⛔ THE SEAT IS THE LIGHT PLANE. It faces the ceiling strip; the backrest faces the camera and
+       must sit a stop or two darker, or the two masses read as one flat red card.
+       The silhouette steps: narrow chrome crown -> wide padded back -> WIDER seat -> splayed legs. */
+    const RED = '#a8382b', RED_LIT = '#c4513f', RED_HI = '#dd7460', RED_DK = '#5e1f18';
+    const CHR = '#b6c0c5', CHR_HI = '#e8eef1', CHR_DK = '#5d666c', INK = '#20262a';
+    shadow2(x + 2, y + 11, 8);
+    // FOUR SPLAYED LEGS — the near pair steps 1px outward at the floor, so the base widens
+    for (const lx of [x + 4, x + 7]) px(lx, y + 8, 1, 3, CHR_DK);            // rear pair, in shade
+    px(x + 3, y + 10, 6, 1, CHR_DK);                                         // the rail tying them
+    for (const s2 of [[x + 2, x + 1], [x + 9, x + 10]]) {                    // near pair: top x, foot x
+      px(s2[0], y + 8, 2, 2, INK); px(s2[1], y + 10, 2, 2, INK);
+      px(s2[0], y + 8, 1, 2, CHR); px(s2[1], y + 10, 1, 2, CHR);
+    }
+    keyEdge(x + 1, y + 10, 1, 2, 0.26); keyEdge(x + 2, y + 8, 1, 2, 0.26);
+    // THE BACKREST — narrower than the seat, its foot ON the seat, chrome crown across the top
+    px(x + 3, y - 4, 6, 1, INK);
+    px(x + 4, y - 4, 4, 1, CHR_HI); keyEdge(x + 4, y - 4, 2, 1, 0.30);       // the chrome crown rail
+    px(x + 2, y - 3, 8, 6, INK);
+    px(x + 3, y - 3, 6, 5, RED);
+    px(x + 3, y - 3, 6, 1, RED_LIT); px(x + 3, y - 3, 3, 1, RED_HI);
+    px(x + 3, y - 2, 1, 4, RED_LIT); px(x + 8, y - 2, 1, 4, RED_DK);
+    rimEdge(x + 8, y - 2, 1, 4, 0.20);
+    px(x + 4, y - 1, 4, 1, U.shade(RED, -0.18));                             // the pad's tuck seam
+    px(x + 3, y + 2, 6, 1, RED_DK);
+    px(x + 2, y - 2, 1, 5, CHR_DK); px(x + 9, y - 2, 1, 5, CHR_DK);          // THE SIDE POSTS, back to seat
+    px(x + 2, y - 2, 1, 2, CHR);
+    // THE SEAT — the light plane, drawn last so it reads in front of the back's foot
+    rr(x + 1, y + 3, 10, 5, INK);
+    px(x + 2, y + 4, 8, 1, RED_HI); keyEdge(x + 2, y + 4, 4, 1, 0.26);
+    px(x + 2, y + 5, 8, 1, RED_LIT);
+    px(x + 2, y + 6, 8, 1, RED);
+    px(x + 2, y + 4, 1, 3, RED_HI); px(x + 9, y + 4, 1, 3, RED_DK);
+    rimEdge(x + 9, y + 4, 1, 3, 0.20);
+    px(x + 3, y + 6, 1, 1, RED_DK); px(x + 8, y + 6, 1, 1, RED_DK);          // vinyl buttons
+    px(x + 2, y + 7, 8, 1, CHR); px(x + 2, y + 7, 3, 1, CHR_HI);             // the chrome lip
+  };
+
+  F['dinerchair:e'] = (x, y, w, h, f) => {
+    /* TURNED RIGHT. With no armrests to spend the profile on, the read is BACK -> SEAT -> LEGS as
+       three marks of different weight: a thin raked slab at the tail whose foot lands on the seat,
+       the seat's light plane running east off it, and daylight under both. Rows stay in lockstep
+       with F.chair so a diner chair and an office chair are the same height side by side. */
+    const RED = '#a8382b', RED_LIT = '#c4513f', RED_HI = '#dd7460', RED_DK = '#5e1f18';
+    const CHR = '#b6c0c5', CHR_HI = '#e8eef1', CHR_DK = '#5d666c', INK = '#20262a';
+    shadow2(x + 2, y + 11, 8);
+    for (const lx of [x + 4, x + 7]) px(lx, y + 8, 1, 3, CHR_DK);            // far pair
+    px(x + 3, y + 10, 7, 1, CHR_DK);
+    for (const s2 of [[x + 2, x + 1], [x + 9, x + 10]]) {                    // near pair, splayed fore and aft
+      px(s2[0], y + 8, 2, 2, INK); px(s2[1], y + 10, 2, 2, INK);
+      px(s2[0], y + 8, 1, 2, CHR); px(s2[1], y + 10, 1, 2, CHR);
+    }
+    keyEdge(x + 1, y + 10, 1, 2, 0.26); keyEdge(x + 2, y + 8, 1, 2, 0.26);
+    // THE BACK, edge-on: one raked slab, crown to seat, no gap at its foot
+    px(x + 2, y - 4, 3, 1, INK); px(x + 3, y - 4, 2, 1, CHR_HI);
+    px(x + 1, y - 3, 5, 6, INK);
+    px(x + 2, y - 3, 3, 5, RED);
+    px(x + 2, y - 3, 3, 1, RED_LIT); px(x + 2, y - 3, 1, 5, RED_LIT);
+    px(x + 4, y - 2, 1, 4, RED_DK); rimEdge(x + 4, y - 2, 1, 4, 0.20);
+    px(x + 2, y + 2, 3, 1, RED_DK);
+    px(x + 1, y - 2, 1, 5, CHR_DK);                                          // the frame post down its back
+    // THE SEAT — the light plane running east, its east end the chair's front
+    rr(x + 2, y + 3, 9, 5, INK);
+    px(x + 3, y + 4, 7, 1, RED_HI); keyEdge(x + 3, y + 4, 4, 1, 0.26);
+    px(x + 3, y + 5, 7, 1, RED_LIT);
+    px(x + 3, y + 6, 7, 1, RED);
+    px(x + 3, y + 4, 1, 3, RED_HI); px(x + 9, y + 4, 1, 3, RED_DK);
+    rimEdge(x + 9, y + 4, 1, 3, 0.20);
+    px(x + 5, y + 6, 1, 1, RED_DK); px(x + 8, y + 6, 1, 1, RED_DK);
+    px(x + 3, y + 7, 7, 1, CHR); px(x + 3, y + 7, 3, 1, CHR_HI);             // the chrome lip
+  };
+
+  F['dinerchair:n'] = (x, y, w, h, f) => {
+    /* FROM BEHIND — the facing every chair pushed up to a table actually shows. The seat's light
+       plane is gone (you are looking at its rear edge and underside), so the back's outer SHELL has
+       to carry it: one crowned red panel, dimmer than the side you sit on, in the same chrome hoop. */
+    const RED = '#a8382b', RED_LIT = '#c4513f', RED_DK = '#5e1f18';
+    const CHR = '#b6c0c5', CHR_HI = '#e8eef1', CHR_DK = '#5d666c', INK = '#20262a';
+    shadow2(x + 2, y + 11, 8);
+    for (const lx of [x + 4, x + 7]) px(lx, y + 8, 1, 3, CHR_DK);
+    px(x + 3, y + 10, 6, 1, CHR_DK);
+    for (const s2 of [[x + 2, x + 1], [x + 9, x + 10]]) {
+      px(s2[0], y + 8, 2, 2, INK); px(s2[1], y + 10, 2, 2, INK);
+      px(s2[0], y + 8, 1, 2, CHR_DK); px(s2[1], y + 10, 1, 2, CHR_DK);
+    }
+    // the pad from behind: its rear edge and underside only
+    rr(x + 1, y + 3, 10, 5, INK);
+    px(x + 2, y + 4, 8, 2, U.shade(RED, -0.26));
+    px(x + 2, y + 4, 8, 1, U.shade(RED_LIT, -0.32));
+    px(x + 2, y + 6, 8, 1, RED_DK); px(x + 3, y + 7, 6, 1, CHR_DK);
+    // THE SHELL — same outline as the front, one crowned surface, no buttons and no lip
+    px(x + 3, y - 4, 6, 1, INK); px(x + 4, y - 4, 4, 1, CHR);
+    keyEdge(x + 4, y - 4, 2, 1, 0.22);
+    px(x + 2, y - 3, 8, 6, INK);
+    px(x + 3, y - 3, 6, 5, U.shade(RED, -0.12));
+    px(x + 3, y - 3, 6, 1, U.shade(RED_LIT, -0.20));
+    px(x + 3, y - 2, 1, 4, U.shade(RED_LIT, -0.26)); px(x + 8, y - 2, 1, 4, RED_DK);
+    rimEdge(x + 8, y - 2, 1, 4, 0.20);
+    px(x + 5, y - 3, 2, 5, U.shade(RED, -0.02));                             // the shell's crowned spine
+    px(x + 3, y + 2, 6, 1, RED_DK);
+    px(x + 2, y - 2, 1, 5, CHR_DK); px(x + 9, y - 2, 1, 5, CHR_DK);          // the side posts
+  };
+
   /* ============ DETAIL-PASS PROPS (auto-generated) ============ */
   F.bridge_tacscreen = (x, y, w, h, f) => {   // v4 TAC SCREEN (2x1) — the bridge's HOODED wireframe monitor
     // The three bridge props share the room's red and must still be told apart in silhouette alone:
@@ -9167,6 +9526,17 @@ const PropSprites = (() => {
     // had to be parked on the deck. `surface: true` is what a mount:"surface" / stack:true prop may be
     // placed ON. See the MOUNT AXIS note above the catalog for what those two flags mean.
     { id: "sidetable", label: "SIDE TABLE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, surface: true },
+    /* THE LOW TABLE + THE DINER SET (2026-08-17). All three are `surface: true` tables or a seat —
+       nothing here moves the shared top plane, so a mug placed on any of them still lands. */
+    { id: "lowtable", label: "LOW TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, surface: true },
+    /* ⛔ THE DINER TABLE IS 3x2 AND THEREFORE NOT `surface: true`. A mounted prop is lifted by ONE
+       constant off its OWN footprint bottom, so on a table two tiles deep anything placed on the far
+       row would hang ~12px above the plane it is supposed to sit on. Every mount host in this catalog
+       is one tile deep and prop-mount.test.js holds that line. It still TURNS — its footprint is its
+       top plan — which is what PLAN_FOOTPRINT is for. Its setting (caddy, ketchup, mugs) is drawn in,
+       so it reads as a laid table rather than an empty one you are forbidden to use. */
+    { id: "dinertable", label: "DINER TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 2, animated: false, blocks: true },
+    { id: "dinerchair", label: "DINER CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
     { id: "loungetable", label: "LOUNGE TABLE", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, surface: true },
     { id: "longtable", label: "LONG TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, surface: true },
     // DECOR EXPANSION (2026-07-15) — theming set. Flat paint/looms walk-over; solid bodies block.
@@ -9293,7 +9663,7 @@ const PropSprites = (() => {
      offered. A table has no front: turned either way it is the same board, and offering both would
      put a step in the R cycle that changes nothing — which is the same lie as a facing that draws
      nothing. (A chair is not here: its two profiles genuinely face opposite ways.) */
-  const SIDE_SYMMETRIC = ['loungetable', 'longtable'];
+  const SIDE_SYMMETRIC = ['loungetable', 'longtable', 'lowtable', 'dinertable'];
   const SYM_SET = SIDE_SYMMETRIC.reduce((o, id) => (o[id] = 1, o), {});
 
   /* NO_MIRROR — props that must NOT be flipped, and why:
@@ -9344,7 +9714,7 @@ const PropSprites = (() => {
      a 5x1 sofa turned is a 1x5 sofa running along a wall. Decals and tables qualify by their catalog
      flags (`flat` / `surface`); soft furniture has no such flag and is listed here. Everything else
      keeps its box — the arcade's second tile is HEIGHT, not depth. */
-  const PLAN_FOOTPRINT = ['couch'];
+  const PLAN_FOOTPRINT = ['couch', 'dinertable'];
   const PLAN_SET = PLAN_FOOTPRINT.reduce((o, id) => (o[id] = 1, o), {});
   const reTiles = id => isDecal(id) || !!PLAN_SET[id] || !!(spec(id) || {}).surface;
   function footprintAt(id, r) {
