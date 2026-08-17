@@ -6064,6 +6064,204 @@ const PropSprites = (() => {
     px(x + 2, y - 2, 1, 5, CHR_DK); px(x + 9, y - 2, 1, 5, CHR_DK);          // the side posts
   };
 
+  /* ============ TWO MORE SEATS (2026-08-17, Andrew: "make 2 more chairs with multiple angles") ============
+     The catalog already had the OFFICE CHAIR (light silver, waisted mesh back, armrests, star base)
+     and the DINER CHAIR (red vinyl, chrome, splayed legs). A third and fourth seat only earn their
+     row if you can tell which is which at 12px ACROSS A ROOM, so these two are picked to be opposite
+     in both silhouette and value structure:
+       BISTRO CHAIR — AIRY. A dark hooped frame you can see the deck through, with two slats and one
+                      pale seat. Its silhouette is mostly HOLES.
+       POD CHAIR    — SOLID. One moulded shell on a pedestal, no legs and no gaps at all, opening
+                      toward whatever it faces. Its silhouette is one continuous MASS.
+     Dark-frame-pale-seat against pale-body-dark-accents is also the value inversion that keeps the
+     bistro chair from reading as the office chair's cousin. */
+  F.bistrochair = (x, y, w, h, f) => {
+    /* The cafe chair — a hooped back with two slats, a pale round seat, four thin splayed legs.
+       ⛔ ITS SILHOUETTE IS THE HOLES. Fill the gaps between the slats or between the legs and it
+          collapses into the diner chair. Every mark here is 1px and the deck shows between them. */
+    /* ⛔ AN AIRY CHAIR NEEDS A FRAME BRIGHTER THAN ITS GROUND. Drawn in charcoal on this deck the
+       hoop, the slats and the legs all fell into the dark and the back read as ONE SOLID BLOCK —
+       the holes only exist if the metal around them is lighter than the floor behind them. BRASS
+       also pairs it with the glass lounge table and keeps it off the office chair's silver. */
+    const b = MAT.brass;
+    const FR = b.mid, FR_LIT = b.hi, FR_DK = b.dk, INK = b.ink;
+    const PAD = '#b5b2ad', PAD_LIT = '#d5d2cb', PAD_DK = '#75726c';
+    shadow2(x + 2, y + 11, 8);
+    // FOUR THIN LEGS, splayed — 1px each, stepping outward at the floor
+    for (const s2 of [[x + 3, x + 2], [x + 8, x + 9]]) {
+      px(s2[0], y + 8, 1, 2, FR); px(s2[1], y + 10, 1, 2, FR);
+      px(s2[0], y + 8, 1, 1, FR_LIT);
+    }
+    px(x + 4, y + 8, 1, 3, FR_DK); px(x + 7, y + 8, 1, 3, FR_DK);          // the rear pair, in shade
+    px(x + 3, y + 10, 6, 1, FR_DK);                                        // a stretcher ring
+    // THE HOOP — a curved top rail on two posts, with two slats between them and deck showing through
+    px(x + 4, y - 4, 4, 1, INK); px(x + 4, y - 4, 3, 1, FR_LIT); keyEdge(x + 4, y - 4, 2, 1, 0.28);
+    px(x + 3, y - 3, 1, 1, FR_LIT); px(x + 8, y - 3, 1, 1, FR);            // the hoop's shoulders
+    px(x + 3, y - 2, 1, 5, FR); px(x + 8, y - 2, 1, 5, FR_DK);             // its two posts
+    keyEdge(x + 3, y - 2, 1, 4, 0.20); rimEdge(x + 8, y - 2, 1, 4, 0.18);
+    for (const sy of [y - 2, y + 0]) {                                     // TWO SLATS, deck between them
+      px(x + 4, sy, 4, 1, PAD_DK); px(x + 4, sy, 3, 1, U.shade(PAD, -0.18));
+    }
+    px(x + 4, y + 2, 4, 1, FR_DK);                                         // the back's foot, ON the seat
+    // THE SEAT — one pale round pad, the only light mass on the prop
+    rr(x + 1, y + 3, 10, 5, INK);
+    px(x + 2, y + 4, 8, 1, PAD_LIT); keyEdge(x + 2, y + 4, 4, 1, 0.26);
+    px(x + 2, y + 5, 8, 2, PAD);
+    px(x + 2, y + 5, 1, 2, PAD_LIT); px(x + 9, y + 5, 1, 2, PAD_DK);
+    rimEdge(x + 9, y + 4, 1, 3, 0.20);
+    px(x + 3, y + 6, 6, 1, U.shade(PAD, -0.10));
+    px(x + 2, y + 7, 8, 1, FR_DK); px(x + 2, y + 7, 3, 1, FR);             // the seat's frame rail
+  };
+
+  F['bistrochair:e'] = (x, y, w, h, f) => {
+    // TURNED RIGHT. Edge-on the hoop is ONE thin post — which is the whole risk: a 1px stick over a
+    // pad is a lollipop. What saves it is the top rail curling east off the post and the slats
+    // showing as short stubs behind it, so the back still reads as a frame rather than a stalk.
+    const b = MAT.brass;
+    const FR = b.mid, FR_LIT = b.hi, FR_DK = b.dk, INK = b.ink;
+    const PAD = '#b5b2ad', PAD_LIT = '#d5d2cb', PAD_DK = '#75726c';
+    shadow2(x + 2, y + 11, 8);
+    for (const s2 of [[x + 3, x + 2], [x + 8, x + 9]]) {
+      px(s2[0], y + 8, 1, 2, FR); px(s2[1], y + 10, 1, 2, FR);
+      px(s2[0], y + 8, 1, 1, FR_LIT);
+    }
+    px(x + 5, y + 8, 1, 3, FR_DK); px(x + 7, y + 8, 1, 3, FR_DK);
+    px(x + 3, y + 10, 7, 1, FR_DK);
+    px(x + 2, y - 4, 4, 1, INK); px(x + 3, y - 4, 3, 1, FR_LIT);           // the rail, curling east
+    keyEdge(x + 3, y - 4, 2, 1, 0.28);
+    px(x + 2, y - 3, 2, 6, INK);
+    px(x + 2, y - 3, 1, 6, FR_LIT); px(x + 3, y - 3, 1, 6, FR);            // the post, edge-on
+    for (const sy of [y - 2, y + 0]) px(x + 4, sy, 2, 1, PAD_DK);          // the slats, end-on
+    px(x + 2, y + 2, 3, 1, FR_DK);
+    rr(x + 2, y + 3, 9, 5, INK);
+    px(x + 3, y + 4, 7, 1, PAD_LIT); keyEdge(x + 3, y + 4, 4, 1, 0.26);
+    px(x + 3, y + 5, 7, 2, PAD);
+    px(x + 3, y + 5, 1, 2, PAD_LIT); px(x + 9, y + 5, 1, 2, PAD_DK);
+    rimEdge(x + 9, y + 4, 1, 3, 0.20);
+    px(x + 4, y + 6, 5, 1, U.shade(PAD, -0.10));
+    px(x + 3, y + 7, 7, 1, FR_DK); px(x + 3, y + 7, 3, 1, FR);
+  };
+
+  F['bistrochair:n'] = (x, y, w, h, f) => {
+    // FROM BEHIND. A cafe chair's back is nearly symmetrical, so what makes this an honest picture
+    // rather than the south view again is the SEAT: from here you get its rear edge and underside
+    // instead of the pale plane, and the slats sit on their shade side.
+    const b = MAT.brass;
+    const FR = b.mid, FR_LIT = b.hi, FR_DK = b.dk, INK = b.ink;
+    const PAD = '#b5b2ad', PAD_DK = '#75726c';
+    shadow2(x + 2, y + 11, 8);
+    for (const s2 of [[x + 3, x + 2], [x + 8, x + 9]]) {
+      px(s2[0], y + 8, 1, 2, FR_DK); px(s2[1], y + 10, 1, 2, FR_DK);
+    }
+    px(x + 4, y + 8, 1, 3, FR_DK); px(x + 7, y + 8, 1, 3, FR_DK);
+    px(x + 3, y + 10, 6, 1, FR_DK);
+    rr(x + 1, y + 3, 10, 5, INK);                                          // the pad, from behind
+    px(x + 2, y + 4, 8, 2, U.shade(PAD, -0.34));
+    px(x + 2, y + 4, 8, 1, U.shade(PAD, -0.24));
+    px(x + 2, y + 6, 8, 1, PAD_DK); px(x + 3, y + 7, 6, 1, FR_DK);
+    px(x + 4, y - 4, 4, 1, INK); px(x + 4, y - 4, 3, 1, FR);
+    px(x + 3, y - 3, 1, 1, FR); px(x + 8, y - 3, 1, 1, FR_DK);
+    px(x + 3, y - 2, 1, 5, U.shade(FR, -0.10)); px(x + 8, y - 2, 1, 5, FR_DK);
+    rimEdge(x + 8, y - 2, 1, 4, 0.18);
+    for (const sy of [y - 2, y + 0]) px(x + 4, sy, 4, 1, U.shade(PAD_DK, -0.26));
+    px(x + 4, y + 2, 4, 1, FR_DK);
+  };
+
+  F.podchair = (x, y, w, h, f) => {
+    /* THE POD CHAIR — one moulded shell on a swivel pedestal. It is the catalog's only seat with no
+       legs and no gaps, which is exactly why it belongs: at a glance it is a MASS where every other
+       chair is a frame.
+       ⛔ A SHELL IS ONLY A SHELL IF YOU SEE INSIDE IT. Drawn as a filled dome it is a helmet on a
+          stick. The opening — a lighter lining inset from the outer edge, with a cushion sitting in
+          the bottom of it — is the entire read, and it is what changes when the prop turns. */
+    const SH = '#39424a', SH_LIT = '#6c7883', SH_DK = '#222930', INK = '#151a1f';
+    const IN = '#66727c', IN_DK = '#414b54';
+    const CU = '#a8632a', CU_LIT = '#cd8541', CU_DK = '#5d3517';
+    shadow2(x + 2, y + 11, 8);
+    px(x + 4, y + 8, 4, 3, INK);                                           // the pedestal
+    px(x + 5, y + 8, 1, 3, SH_LIT); px(x + 6, y + 8, 1, 3, SH_DK);
+    keyEdge(x + 5, y + 8, 1, 2, 0.22);
+    px(x + 2, y + 10, 8, 2, INK);                                          // its disc foot
+    px(x + 3, y + 10, 6, 1, SH); px(x + 3, y + 10, 3, 1, SH_LIT);
+    px(x + 3, y + 11, 6, 1, SH_DK);
+    // THE SHELL — one silhouette, painted whole before anything goes inside it
+    px(x + 3, y - 5, 6, 1, INK); px(x + 2, y - 4, 8, 1, INK);
+    px(x + 1, y - 3, 10, 10, INK); px(x + 2, y + 7, 8, 1, INK);
+    px(x + 3, y - 4, 5, 1, SH_LIT); keyEdge(x + 3, y - 4, 3, 1, 0.30);     // its crown takes the strip
+    px(x + 2, y - 3, 8, 2, SH);
+    px(x + 2, y - 3, 1, 9, SH_LIT); px(x + 9, y - 3, 1, 9, SH_DK);         // west wall lit, east in shade
+    rimEdge(x + 9, y - 2, 1, 8, 0.22);
+    px(x + 2, y + 5, 8, 2, SH); px(x + 3, y + 6, 6, 1, SH_DK);             // the shell's lower belly
+    // THE OPENING — the lining, inset, so the mass reads as hollow
+    px(x + 3, y - 2, 6, 5, IN_DK);
+    px(x + 3, y - 2, 6, 1, IN); px(x + 4, y - 2, 4, 1, U.shade(IN, 0.10));
+    px(x + 3, y - 1, 1, 4, IN); px(x + 8, y - 1, 1, 4, U.shade(IN_DK, -0.18));
+    // THE CUSHION in the bottom of it — the prop's one saturated thing
+    px(x + 3, y + 2, 6, 3, CU);
+    px(x + 3, y + 2, 6, 1, CU_LIT); px(x + 4, y + 2, 3, 1, U.shade(CU_LIT, 0.10));
+    keyEdge(x + 4, y + 2, 3, 1, 0.24);
+    px(x + 3, y + 3, 1, 2, CU_LIT); px(x + 8, y + 3, 1, 2, CU_DK);
+    px(x + 5, y + 4, 2, 1, CU_DK);                                         // its tuck seam
+  };
+
+  F['podchair:e'] = (x, y, w, h, f) => {
+    // TURNED RIGHT — and this is the facing that proves the prop: the opening swings east, so the
+    // shell becomes a C. Its back is a thick mass at the tail, its crown curls forward over the
+    // cushion, and the lining is only visible on the inside of that curve.
+    const SH = '#39424a', SH_LIT = '#6c7883', SH_DK = '#222930', INK = '#151a1f';
+    const IN = '#66727c', IN_DK = '#414b54';
+    const CU = '#a8632a', CU_LIT = '#cd8541', CU_DK = '#5d3517';
+    shadow2(x + 2, y + 11, 8);
+    px(x + 4, y + 8, 4, 3, INK);
+    px(x + 5, y + 8, 1, 3, SH_LIT); px(x + 6, y + 8, 1, 3, SH_DK);
+    keyEdge(x + 5, y + 8, 1, 2, 0.22);
+    px(x + 2, y + 10, 8, 2, INK);
+    px(x + 3, y + 10, 6, 1, SH); px(x + 3, y + 10, 3, 1, SH_LIT);
+    px(x + 3, y + 11, 6, 1, SH_DK);
+    /* THE C — outline first: a tall back at the west, a floor running east, and a crown that reaches
+       back over the opening. The notch between crown and floor IS the chair. */
+    px(x + 2, y - 5, 5, 1, INK);
+    px(x + 1, y - 4, 7, 1, INK);
+    px(x + 1, y - 3, 5, 10, INK);                                          // the back mass + its foot
+    px(x + 6, y + 3, 6, 5, INK);                                           // the seat floor running east
+    px(x + 2, y - 4, 4, 1, SH_LIT); keyEdge(x + 2, y - 4, 3, 1, 0.30);     // the crown
+    px(x + 2, y - 3, 4, 2, SH);
+    px(x + 2, y - 3, 1, 9, SH_LIT); keyEdge(x + 2, y - 3, 1, 6, 0.20);     // the back's lit west wall
+    px(x + 5, y - 1, 1, 4, IN);                                            // the lining, inside the curve
+    px(x + 3, y - 1, 2, 4, IN_DK);
+    px(x + 2, y + 5, 9, 2, SH); px(x + 3, y + 6, 8, 1, SH_DK);             // the shell's belly, east
+    px(x + 10, y + 4, 1, 3, SH_DK); rimEdge(x + 10, y + 4, 1, 3, 0.22);
+    // THE CUSHION, running east out of the shell's mouth
+    px(x + 4, y + 3, 7, 3, CU);
+    px(x + 4, y + 3, 7, 1, CU_LIT); px(x + 5, y + 3, 3, 1, U.shade(CU_LIT, 0.10));
+    keyEdge(x + 5, y + 3, 3, 1, 0.24);
+    px(x + 4, y + 4, 1, 2, CU_LIT); px(x + 10, y + 4, 1, 2, CU_DK);
+    px(x + 7, y + 5, 2, 1, CU_DK);
+  };
+
+  F['podchair:n'] = (x, y, w, h, f) => {
+    // FROM BEHIND — the one seat in the catalog whose back view is genuinely dramatic: the opening
+    // is gone entirely and what is left is a bare moulded dome, seamed down the spine. No lining, no
+    // cushion, nothing warm. That total absence is what makes it read as turned away.
+    const SH = '#39424a', SH_LIT = '#6c7883', SH_DK = '#222930', INK = '#151a1f';
+    shadow2(x + 2, y + 11, 8);
+    px(x + 4, y + 8, 4, 3, INK);
+    px(x + 5, y + 8, 1, 3, SH_DK); px(x + 6, y + 8, 1, 3, SH_DK);
+    px(x + 2, y + 10, 8, 2, INK);
+    px(x + 3, y + 10, 6, 1, SH_DK); px(x + 3, y + 10, 3, 1, SH);
+    px(x + 3, y + 11, 6, 1, U.shade(SH_DK, -0.30));
+    px(x + 3, y - 5, 6, 1, INK); px(x + 2, y - 4, 8, 1, INK);
+    px(x + 1, y - 3, 10, 10, INK); px(x + 2, y + 7, 8, 1, INK);
+    px(x + 3, y - 4, 5, 1, SH); keyEdge(x + 3, y - 4, 3, 1, 0.22);
+    px(x + 2, y - 3, 8, 9, SH_DK);                                         // the dome, unbroken
+    px(x + 3, y - 3, 6, 8, U.shade(SH, -0.10));
+    px(x + 5, y - 3, 2, 9, SH);                                            // its crowned spine
+    px(x + 2, y - 3, 1, 9, U.shade(SH_LIT, -0.24)); px(x + 9, y - 3, 1, 9, U.shade(SH_DK, -0.18));
+    rimEdge(x + 9, y - 2, 1, 8, 0.22);
+    px(x + 2, y + 5, 8, 2, SH_DK); px(x + 3, y + 6, 6, 1, U.shade(SH_DK, -0.24));
+    px(x + 4, y + 7, 4, 1, U.shade(SH_DK, -0.34));                         // where it meets the pedestal
+  };
+
   /* ============ DETAIL-PASS PROPS (auto-generated) ============ */
   F.bridge_tacscreen = (x, y, w, h, f) => {   // v4 TAC SCREEN (2x1) — the bridge's HOODED wireframe monitor
     // The three bridge props share the room's red and must still be told apart in silhouette alone:
@@ -9629,6 +9827,8 @@ const PropSprites = (() => {
        so it reads as a laid table rather than an empty one you are forbidden to use. */
     { id: "dinertable", label: "DINER TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 2, animated: false, blocks: true },
     { id: "dinerchair", label: "DINER CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
+    { id: "bistrochair", label: "BISTRO CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
+    { id: "podchair", label: "POD CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
     { id: "loungetable", label: "LOUNGE TABLE", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, surface: true },
     { id: "longtable", label: "LONG TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, surface: true },
     // DECOR EXPANSION (2026-07-15) — theming set. Flat paint/looms walk-over; solid bodies block.

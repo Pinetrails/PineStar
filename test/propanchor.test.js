@@ -121,7 +121,7 @@ A.eq(PropSprites.spec('arcade').use.sit, false, 'arcade is stand-and-play (sit:f
    really under the body — the single-tile seats. Couch/bed/beanbag used to carry it and rendered a body
    parked bolt-upright on the furniture. This walks the WHOLE catalog so a future `sit: true` on some new
    sofa fails here rather than in the world. */
-const SITTABLE = new Set(['stool', 'chair', 'dinerchair']);   // dinerchair 2026-08-17: a 1x1 seat, same pose as chair
+const SITTABLE = new Set(['stool', 'chair', 'dinerchair', 'bistrochair', 'podchair']);   // 2026-08-17: three 1x1 seats, same pose as chair
 for (const sp of PropSprites.CATALOG) {
   if (!sp.use) continue;
   A.eq(!!sp.use.sit, SITTABLE.has(sp.id), 'SEAT LAW: ' + sp.id + '.use.sit === ' + SITTABLE.has(sp.id));
