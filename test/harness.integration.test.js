@@ -224,15 +224,16 @@ const fixture = {
     const convo = [{ role: 'system', content: 'SYS' }, { role: 'user', content: 'what is the api base url again?' }];
     const ranked = rank(notes, 'what is the api base url again?', { now: 100 });
     A.eq(ranked[0].id, 'note_1', 'M-mem.3: the query-relevant note ranks first');
+    A.eq(ranked.length, 1, 'relevance floor: the zero-overlap note is DROPPED under a real query (no off-topic padding)');
     const r = renderRecall(ranked, { limit: 1500 });
-    A.eq(r.count, 2, 'both notes recalled (recency floor keeps the off-topic one)');
-    A.ok(r.text.indexOf('User tz') >= 0 && r.text.indexOf('API base') >= 0, "recall surfaces the agent's own notes");
+    A.eq(r.count, 1, 'only the relevant note is recalled');
+    A.ok(r.text.indexOf('API base') >= 0 && r.text.indexOf('User tz') === -1, "recall surfaces the relevant note and withholds the off-topic one");
     const withMem = injectRecall(convo, r.text);
     A.eq(withMem.length, 3, 'recall adds exactly one system note');
     A.eq(withMem[2], convo[1], 'fence sits immediately before the newest user message');
     A.ok(withMem[1].role === 'system' && /recalled-memory/.test(withMem[1].content), 'fence is a system note');
     // index.js emits memory.used for the ids renderRecall actually SURFACED (excludes blocked/skipped) — mirror it
-    A.eq(JSON.stringify(r.usedIds), JSON.stringify(['note_1', 'note_2']),
+    A.eq(JSON.stringify(r.usedIds), JSON.stringify(['note_1']),
       'memory.used fires for each surfaced record (driven by renderRecall.usedIds, not positional ranked[i])');
     const empty = injectRecall(convo, renderRecall(rank([], 'q', { now: 0 }), {}).text);
     A.eq(JSON.stringify(empty), JSON.stringify(convo), 'empty notebook -> byte-identical messages (memoryless run unchanged)');
