@@ -25,8 +25,45 @@ const PropSprites = (() => {
   const SURFACE_RISE = 8;
   let ctx = null, now = 0;
 
+  /* ============ v13 LOCAL COLOUR — one knob over every pixel a prop paints ============
+     MEASURED, not guessed (gal/shot.mjs, 29 lounge/decor props on a live seeded station): the
+     catalog's MEAN AUTHORED CHROMA is 28/255, and the render pipeline (ambient plate + room cut +
+     CRT scan/fade/vig) delivers only **54%** of it to the screen — mean rendered chroma 15. The
+     plants are the extreme: monstera authors 44 and renders 8. That is why a room full of props
+     whose source really does carry warm oak, brass, deep red and teal still reads as grey-green mud.
+     Lifting the LIGHT is a real but bounded lever and it costs brightness that is already dialled
+     (ambient 0.82 → 0.55 only recovers 54% → 66%), so the rest has to come from the art's own chroma.
+
+     `CHROMA` scales the SATURATION of every colour a prop paints, holding hue and value exactly.
+     Hue and value are what the silhouette and the lighting logic are built on; saturation is the one
+     axis with no structural job, which is why it can be a knob at all.
+     ⛔ THE TEAL TRAP IS REAL (2026-08-16): amplifying the chroma of a hue that is merely a LITTLE
+     cool turns a grey casing green/teal on a warm deck. So the ceiling is hue-dependent — warm local
+     colour (wood, brass, terracotta, fabric) is allowed to go saturated, cool machinery is held near
+     grey. Machinery is *supposed* to be grey; the defect is a prop with no saturated element at all.
+     ⛔ Already-saturated colour is LEFT ALONE (emissives, ACC leds, screen phosphor): boosting a
+     colour that is already doing its job only clips it. */
+  let CHROMA = 2.6;                                 // 1 = shipped art, untouched · 2.6 = the LOCAL COLOUR candidate
+  const CHROMA_SKIP = 0.45;                         // authored saturation at/above this is already local colour
+  const _cboost = new Map();
+  const chromaOf = (c) => {
+    if (CHROMA === 1 || typeof c !== 'string' || c.length !== 7 || c[0] !== '#') return c;
+    const hit = _cboost.get(c); if (hit !== undefined) return hit;
+    const hsl = _toHsl(c), h = hsl[0], s = hsl[1], l = hsl[2];
+    let out = c;
+    // near-black is CONTOUR (LINE/ink) and near-white is a spec catch — both carry no local colour
+    if (s > 0.001 && s < CHROMA_SKIP && l > 0.055 && l < 0.93) {
+      const deg = h * 360;
+      const warm = deg < 62 || deg > 328;            // wood / brass / terracotta / warm fabric
+      const cap = warm ? 0.52 : 0.20;                // cool machinery stays honestly grey (no teal cast)
+      out = _toHex(h, Math.min(cap, s * CHROMA), l);
+    }
+    _cboost.set(c, out);
+    return out;
+  };
+
   /* ---- core primitives (verbatim from v7 sprites.js) ---- */
-  const px = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
+  const px = (x, y, w, h, c) => { ctx.fillStyle = chromaOf(c); ctx.fillRect(x, y, w, h); };
   const blink = (period, phase) => ((now / period + (phase || 0)) % 1) < 0.5;
   const flick = (period, phase) => Math.sin(now / period + (phase || 0) * 7);
   const scrCols = ['#62ff9e', '#3fd07c', '#7adfb0', '#2fa863'];
@@ -2617,9 +2654,18 @@ const PropSprites = (() => {
   };
 
   F.studio = (x, y, w, h, f) => {
-    /* v46 IMAGE STUDIO (2x2) — built to Andrew's reference (2026-08-16). It is not a camera, it is a
-       GENERATIVE PRINTER: a preview screen showing the output, CMY ink channels, a lens, and a slot
-       the finished print comes out of.
+    /* v48 IMAGE STUDIO (2x2) — built to Andrew's reference (2026-08-16), SHORTENED 2026-08-17. It is not
+       a camera, it is a GENERATIVE PRINTER: a preview screen showing the output, CMY ink channels, a
+       lens, and a slot the finished print comes out of.
+       ⛔ THE SCREEN IS INSET INTO THE BODY, NOT STACKED ON IT. v46 floated a full-width screen slab on a
+          neck 13px clear of the 2x2 footprint, making it the tallest 2x2 prop in the catalog at 37px
+          (the family runs 26-35). v47 shaved 10px off that stack and Andrew's verdict was still "WAY
+          too damn tall". The height was never in any one band — it was the SHAPE: a body with a second
+          body parked on its head reads as a tower no matter how thin you slice either half. Deleting
+          the neck and recessing the screen into the body's own upper face costs the hero picture
+          nothing (it is still 14x6, the exact size it was) and lands the prop at 30px / 6px rise.
+          ⛔ The BODY is therefore drawn FIRST and the screen painted into it — invert that order back
+             and the body's face wipes the picture out.
        ⛔ THE PREVIEW SCREEN IS THE HERO AND IT MUST SHOW A PICTURE, not a UI. Sky bands, a moon disc,
           two mountain silhouettes, a water line — five big shapes. Anything finer is mud at 20px wide
           and, worse, reads as text, which is the one thing this prop must not look like it makes.
@@ -2638,19 +2684,24 @@ const PropSprites = (() => {
     deckPlate(x + 1, base - 4, w - 2, 4);
     deckSocket(x + w + 1, base - 3, on);
 
-    /* ---- PREVIEW SCREEN: a wide panel on a short neck ---- */
-    const sT = y - 12, sW = w - 4, sX = x + 2, sH = 8;   // v47: 10px shorter — see note above
-    px(sX + 1, sT - 1, sW - 2, 1, r.ink);
-    px(sX, sT, sW, sH + 2, r.ink);
-    px(sX + 1, sT, sW - 2, 1, r.lit);                               // the bezel's lit crown
-    px(sX + 2, sT, 5, 1, r.hi);
-    px(sX + 1, sT + 1, sW - 2, sH, b.face);
-    px(sX + 1, sT + 1, 1, sH, b.top); px(sX + sW - 2, sT + 1, 1, sH, b.dk);
-    px(sX + 4, sT, sW - 8, 1, on ? P : U.shade(P, -0.66));          // magenta strip on the crown
+    /* ---- BODY, drawn FIRST: the screen is INSET into its upper face, not stacked on top of it ---- */
+    const bT = y - 6;
+    px(x + 1, bT, w - 2, base - bT - 2, r.ink);
+    px(x + 2, bT + 1, w - 4, base - bT - 4, r.face);
+    px(x + 2, bT + 1, w - 4, 1, r.lit);
+    px(x + 3, bT + 1, 5, 1, r.hi);
+    px(x + 2, bT + 2, 1, base - bT - 5, r.mid); px(x + w - 3, bT + 2, 1, base - bT - 5, r.dk);
+
+    /* ---- PREVIEW SCREEN: recessed into the body's upper face ---- */
+    const sT = y - 4, sW = w - 6, sX = x + 3, sH = 6;   // v48: the neck is GONE — see note above
+    px(sX, sT, sW, sH + 3, r.ink);
+    px(sX + 1, sT + 1, sW - 2, sH + 1, b.face);
+    px(sX + 1, sT + 1, 1, sH + 1, b.top); px(sX + sW - 2, sT + 1, 1, sH + 1, b.dk);
+    px(sX + 3, sT, sW - 6, 1, on ? P : U.shade(P, -0.66));          // magenta strip on the crown
     for (const bx2 of [sX + 1, sX + sW - 2]) {                      // magenta side bars
-      px(bx2, sT + 3, 1, 5, on ? U.shade(P, 0.10) : U.shade(P, -0.68));
+      px(bx2, sT + 2, 1, sH, on ? U.shade(P, 0.10) : U.shade(P, -0.68));
     }
-    const gx = sX + 3, gy = sT + 2, gw = sW - 6, gh = sH - 2;
+    const gx = sX + 2, gy = sT + 2, gw = sW - 4, gh = sH;
     px(gx - 1, gy - 1, gw + 2, gh + 2, '#0a0612');
     if (on) {
       /* the generated picture — five big shapes, nothing finer */
@@ -2668,49 +2719,41 @@ const PropSprites = (() => {
       px(gx + 2, gy + gh - 2, gw - 6, 1, '#4f8fd6');
       scanl(gx, gy, gw, gh, 0.14);
       bloom(gx, gy, gw, gh, P, 0.16);
-      spill(sX + 1, sT + sH + 2, sW - 2, P, 0.16, 4);
+      spill(sX + 1, sT + sH + 3, sW - 2, P, 0.16, 4);
     } else {
       px(gx, gy, gw, gh, '#120a16');
       px(gx, gy, 5, 1, '#241528'); px(gx + 1, gy + 1, 3, 1, '#1b1020');
     }
-    px(cx - 3, sT + sH + 2, 6, 2, b.ink);                            // the neck, shortened with it
-    px(cx - 2, sT + sH + 2, 4, 2, b.face);
 
-    /* ---- BODY ---- */
-    const bT = y - 1;
-    px(x + 1, bT, w - 2, base - bT - 2, r.ink);
-    px(x + 2, bT + 1, w - 4, base - bT - 4, r.face);
-    px(x + 2, bT + 1, w - 4, 1, r.lit);
-    px(x + 3, bT + 1, 5, 1, r.hi);
-    px(x + 2, bT + 2, 1, base - bT - 5, r.mid); px(x + w - 3, bT + 2, 1, base - bT - 5, r.dk);
-
-    /* ---- the projector eye under the neck ---- */
-    px(cx - 3, bT, 6, 4, b.ink);
-    px(cx - 2, bT + 1, 4, 2, on ? U.shade(P, -0.20) : U.shade(P, -0.66));
-    px(cx - 1, bT + 1, 2, 1, on ? '#ffd0f4' : U.shade(P, -0.50));
-    if (on) bloom(cx - 2, bT + 1, 4, 2, P, 0.26);
+    /* ---- the PROJECTOR SLIT in the screen's chin, where the neck used to be ---- */
+    px(cx - 3, sT + sH + 3, 6, 2, b.ink);
+    px(cx - 2, sT + sH + 3, 4, 1, on ? U.shade(P, -0.20) : U.shade(P, -0.66));
+    px(cx - 1, sT + sH + 3, 2, 1, on ? '#ffd0f4' : U.shade(P, -0.50));
+    if (on) bloom(cx - 2, sT + sH + 3, 4, 1, P, 0.26);
 
     /* ---- STATUS LEDS: magenta, cyan, yellow ---- */
     for (let i = 0; i < 3; i++)
-      px(x + 4 + i * 2, bT + 3, 1, 1, on ? [P, C, Y2][i] : U.shade([P, C, Y2][i], -0.70));
-    px(x + w - 6, bT + 3, 2, 2, on ? P : U.shade(P, -0.70));
+      px(x + 3 + i * 2, y + 6, 1, 1, on ? [P, C, Y2][i] : U.shade([P, C, Y2][i], -0.70));
+    px(x + w - 6, y + 6, 2, 1, on ? P : U.shade(P, -0.70));
 
     /* ---- CHECKER SWATCH PANEL + CMY INK CHANNELS ---- */
-    const pY = bT + 6;
-    px(x + 3, pY, 6, 6, r.ink);
-    px(x + 4, pY + 1, 4, 4, b.ao);
+    const pY = y + 8;
+    px(x + 2, pY, 6, 6, r.ink);
+    px(x + 3, pY + 1, 4, 4, b.ao);
     for (let ry = 0; ry < 4; ry++) for (let rx = 0; rx < 4; rx++)
-      if ((rx + ry) % 2 === 0) px(x + 4 + rx, pY + 1 + ry, 1, 1, r.mid);   // transparency checker
-    px(x + 10, pY, 6, 6, r.ink);
+      if ((rx + ry) % 2 === 0) px(x + 3 + rx, pY + 1 + ry, 1, 1, r.mid);   // transparency checker
+    px(x + 8, pY, 6, 6, r.ink);
     for (let i = 0; i < 3; i++) {                                    // CMY ink columns
-      const col = [C, P, Y2][i], ix = x + 11 + i * 2;
+      const col = [C, P, Y2][i], ix = x + 9 + i * 2;
       px(ix, pY + 1, 1, 4, b.ao);
       const lvl = 1 + Math.floor((1 + Math.sin(now / 900 + i * 2.1)) * (on ? 1.2 : 0.5));
       px(ix, pY + 5 - lvl, 1, lvl, on ? col : U.shade(col, -0.62));
     }
 
     /* ---- THE LENS: concentric rings around a hot core ---- */
-    const lx2 = x + w - 8, ly2 = pY + 3, R = 4.6;
+    // R is capped by the PRINT SLOT at y+14, not by taste: any bigger and the slot's ink band clips
+    // the bottom off the rings, which is the one part of the lens that has to stay circular.
+    const lx2 = x + w - 6, ly2 = y + 10, R = 4.0;
     for (let dy = -R - 1; dy <= R + 1; dy++) for (let dx = -R - 1; dx <= R + 1; dx++) {
       const d = Math.sqrt(dx * dx + dy * dy);
       if (d > R + 0.7) continue;
@@ -4506,9 +4549,16 @@ const PropSprites = (() => {
   };
 
   F.arcade = (x, y, w, h, f) => {
-    /* v56 ARCADE (1x2) — built to Andrew's reference (2026-08-16). Read top to bottom:
-         vent cap -> glowing MARQUEE -> screen flanked by MAGENTA SIDE STRIPS -> pale CONTROL PANEL
-         with a ball-top stick and four buttons -> lower cabinet with coin slot and vent -> plinth
+    /* v57 ARCADE (1x2) — built to Andrew's reference (2026-08-16), SHORTENED 2026-08-17. Read top to
+         bottom: vent cap -> glowing MARQUEE -> screen flanked by MAGENTA SIDE STRIPS -> pale CONTROL
+         PANEL with a ball-top stick and four buttons -> lower cabinet with coin slot and vent -> plinth
+       ⛔ IT STANDS INSIDE ITS OWN FOOTPRINT. v56 hung 12px above the 1x2 tile and measured 36px tall,
+          while its own sibling F.arcade2 — same footprint, same category, and usually placed right
+          beside it — measures 27px. Nine pixels taller than the identical machine next to it is not a
+          style, it is a bug you can see across the room. Every band below is anchored to
+          `T = base - 26`, exactly the way arcade2 is, so the whole cabinet lives in its two tiles.
+          ⛔ DO NOT re-express these offsets against `y`: `y` moves with the footprint but `T` is
+             pinned to the FLOOR, which is what keeps the two cabinets shoulder to shoulder.
        ⛔ THE SIDE STRIPS ARE THE THING I MISSED. Two magenta bars running the full height of the
           screen bay are what make the cabinet glow from within instead of just carrying a lit sign.
           They also frame the screen, which is why it reads as a cabinet and not a monitor.
@@ -4517,33 +4567,32 @@ const PropSprites = (() => {
        ⛔ COUNTABLE CONTROLS, 2px EACH: a ball-top stick, two magenta buttons, two amber. Four marks.
        ⛔ The screen is a GAME — rows of invaders and a ship — never text. Blocky sprites only. */
     const r = MAT.steel, b = MAT.slate, on = !!(f && f.work);
-    const P = ACC.lounge, G = ACC.work, A = ACC.flow;
+    const P = ACC.lounge, A = ACC.flow;
     const EDGE = '#161d22';
-    const base = y + h, cx = x + Math.round(w / 2);
+    const base = y + h, cx = x + Math.round(w / 2), T = base - 26;
     const BODY = '#2a3138', BODY_D = '#1b2126';
 
     shadow2(x + 1, base - 1, w - 2);
 
     /* ---- VENT CAP above the marquee ---- */
-    px(x + 2, y - 12, w - 4, 3, EDGE);
-    px(x + 3, y - 11, w - 6, 1, r.lit);
-    px(x + 3, y - 10, w - 6, 1, r.dk);
+    px(x + 2, T, w - 4, 2, EDGE);
+    px(x + 3, T, w - 6, 1, r.mid);   // one grey row, not r.lit — at 2px tall a highlight reads as a white slab
 
     /* ---- MARQUEE: the lit sign, proud of the cabinet, with brighter end caps ---- */
-    px(x, y - 9, w, 5, EDGE);
-    px(x + 1, y - 8, w - 2, 3, U.shade(P, -0.26));
-    px(x + 1, y - 8, w - 2, 1, U.shade(P, 0.30));                   // lit top edge
-    px(x + 1, y - 8, 1, 3, '#ffd0f4'); px(x + w - 2, y - 8, 1, 3, '#ffd0f4');   // end caps
-    px(x + 3, y - 7, 2, 1, '#ffe8f8'); px(x + 7, y - 7, 2, 1, '#ffe8f8');       // two glyph blocks
-    bloom(x + 1, y - 8, w - 2, 3, P, 0.26);
+    px(x, T + 2, w, 5, EDGE);
+    px(x + 1, T + 3, w - 2, 3, U.shade(P, -0.26));
+    px(x + 1, T + 3, w - 2, 1, U.shade(P, 0.30));                   // lit top edge
+    px(x + 1, T + 3, 1, 3, '#ffd0f4'); px(x + w - 2, T + 3, 1, 3, '#ffd0f4');   // end caps
+    px(x + 3, T + 4, 2, 1, '#ffe8f8'); px(x + 7, T + 4, 2, 1, '#ffe8f8');       // two glyph blocks
+    bloom(x + 1, T + 3, w - 2, 3, P, 0.26);
 
     /* ---- CABINET BODY ---- */
-    px(x, y - 4, w, base - y + 2, EDGE);
-    px(x + 1, y - 3, w - 2, base - y, BODY);
-    px(x + 1, y - 3, 1, base - y, r.mid); px(x + w - 2, y - 3, 1, base - y, BODY_D);
+    px(x, T + 6, w, base - T - 6, EDGE);
+    px(x + 1, T + 7, w - 2, base - T - 8, BODY);
+    px(x + 1, T + 7, 1, base - T - 8, r.mid); px(x + w - 2, T + 7, 1, base - T - 8, BODY_D);
 
     /* ---- SCREEN BAY: magenta strips flanking a green CRT ---- */
-    const sy = y - 2, sh = 8;
+    const sy = T + 8, sh = 7;
     px(x + 1, sy - 1, w - 2, sh + 2, EDGE);
     px(x + 1, sy, 1, sh, on ? P : U.shade(P, -0.50));               // WEST light strip
     px(x + w - 2, sy, 1, sh, on ? P : U.shade(P, -0.50));           // EAST light strip
@@ -4556,9 +4605,9 @@ const PropSprites = (() => {
       for (let ry = 0; ry < 2; ry++)                                // two rows of invaders
         for (let rx = 0; rx < 3; rx++)
           px(x + 3 + rx * 2 + drift, sy + 1 + ry * 2, 2, 1, U.shade(sc, 0.24));
-      px(cx - 1, sy + 6, 2, 1, '#eaffe8');                          // the ship
-      px(cx, sy + 5, 1, 1, '#eaffe8');
-      px(x + 3, sy + 7, 4, 1, U.shade(sc, 0.10));                   // a ground line
+      px(cx - 1, sy + 5, 2, 1, '#eaffe8');                          // the ship
+      px(cx, sy + 4, 1, 1, '#eaffe8');
+      px(x + 3, sy + 6, 4, 1, U.shade(sc, 0.10));                   // a ground line
       scanl(x + 2, sy, w - 4, sh, 0.20);
       bloom(x + 2, sy, w - 4, sh, sc, 0.16);
     } else {
@@ -4566,32 +4615,33 @@ const PropSprites = (() => {
     }
 
     /* ---- CONTROL PANEL: the pale plane, stepping OUT from the cabinet ---- */
-    px(x - 1, y + 7, w + 2, 4, EDGE);
-    px(x, y + 8, w, 2, '#9aa7ae');                                  // the pale deck
-    px(x, y + 8, w, 1, '#c2ccd2');
-    px(x + 1, y + 8, 2, 2, P);                                      // ball-top joystick
-    px(x + 1, y + 8, 2, 1, '#ffd0f4');
-    px(x + 5, y + 8, 2, 1, P); px(x + 8, y + 8, 2, 1, P);           // two magenta buttons
-    px(x + 5, y + 9, 2, 1, A); px(x + 8, y + 9, 2, 1, A);           // two amber buttons
-    px(x - 1, y + 11, w + 2, 1, r.ao);                              // the shade the panel throws
+    px(x - 1, T + 15, w + 2, 4, EDGE);
+    px(x, T + 16, w, 2, '#9aa7ae');                                 // the pale deck
+    px(x, T + 16, w, 1, '#c2ccd2');
+    px(x + 1, T + 16, 2, 2, P);                                     // ball-top joystick
+    px(x + 1, T + 16, 2, 1, '#ffd0f4');
+    px(x + 5, T + 16, 2, 1, P); px(x + 8, T + 16, 2, 1, P);         // two magenta buttons
+    px(x + 5, T + 17, 2, 1, A); px(x + 8, T + 17, 2, 1, A);         // two amber buttons
+    px(x - 1, T + 19, w + 2, 1, r.ao);                              // the shade the panel throws
 
     /* ---- LOWER CABINET: magenta lamp, coin slot, vent grille ---- */
-    px(x + 1, y + 12, w - 2, base - y - 15, BODY);
-    px(x + 1, y + 12, w - 2, 1, BODY_D);
-    px(x + 2, y + 14, 2, 2, on ? P : U.shade(P, -0.55));            // the lamp
-    if (on) bloom(x + 2, y + 14, 2, 2, P, 0.22);
-    px(x + 5, y + 14, 2, 3, b.ao);                                  // coin slot
-    px(x + 5, y + 14, 2, 1, r.mid);
-    px(x + 5, y + 15, 1, 1, A);
-    px(x + 8, y + 14, 3, 4, b.ao);                                  // vent grille
-    for (let k = 0; k < 2; k++) px(x + 8, y + 15 + k * 2, 3, 1, r.dk);
+    px(x + 1, T + 20, w - 2, 3, BODY);
+    px(x + 1, T + 20, w - 2, 1, BODY_D);
+    px(x + 2, T + 21, 2, 2, on ? P : U.shade(P, -0.55));            // the lamp
+    if (on) bloom(x + 2, T + 21, 2, 2, P, 0.22);
+    px(x + 5, T + 21, 2, 2, b.ao);                                  // coin slot
+    px(x + 5, T + 21, 2, 1, r.mid);
+    px(x + 5, T + 22, 1, 1, A);
+    px(x + 8, T + 20, 3, 3, b.ao);                                  // vent grille
+    for (let k = 0; k < 2; k++) px(x + 8, T + 20 + k * 2, 3, 1, r.dk);
 
     /* ---- PLINTH with magenta ticks ---- */
-    px(x, base - 4, w, 4, EDGE);
-    px(x + 1, base - 3, w - 2, 2, r.face);
-    px(x + 1, base - 3, w - 2, 1, r.mid);
+    px(x, base - 3, w, 3, EDGE);
+    px(x + 1, base - 2, w - 2, 1, r.mid);                           // the plinth's ONE lit row
     for (let k = 0; k < 3; k++) px(x + 6 + k, base - 2, 1, 1, on ? P : U.shade(P, -0.60));
     px(x + 2, base - 2, 3, 1, b.ao);
+    // base-1 stays EDGE: the cabinet needs a dark row ON the floor or it reads as standing on a
+    // pale kick and floats. A 2-row lit plinth was the first thing wrong with the shortened version.
   };
 
   F.arcade2 = (x, y, w, h, f) => {
@@ -8733,6 +8783,10 @@ const PropSprites = (() => {
   return {
     setCtx(c) { ctx = c; },
     setNow(t) { now = t; },
+    // v13 LOCAL COLOUR knob (see CHROMA above) — live-tunable like the CRT LAB's own dials, so the
+    // value is DIALLED on a real deck and copied back into the constant, never guessed.
+    setChroma(k) { CHROMA = (k == null ? 1 : +k) || 1; _cboost.clear(); },
+    getChroma: () => CHROMA,
     draw, drawOver, hasOver, drawSeatFront, CATALOG, CATS, spec, has, TILE,
     // live connector state (the world layer feeds these; the connector_portal sprite reads them)
     setConnectorState, pulseConnector,
