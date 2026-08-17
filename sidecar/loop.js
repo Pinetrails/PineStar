@@ -494,7 +494,8 @@
     let model = o.model || 'replay/model';
     const trigger = o.trigger || 'directive';
     const approxTokens = o.approxTokens || 0;   // initial rough estimate; feeds the error classifier's overflow ratio
-    const contextLimit = o.contextLimit || 0;   // 0 = unknown (cold catalog) -> the ratio heuristic is skipped
+    let contextLimit = o.contextLimit || 0;     // 0 = unknown (cold catalog) -> the ratio heuristic is skipped;
+                                                // re-resolved on a provider fallback (see the fallback branch)
     // OPTIONAL cross-run cost governor (sidecar/budget.js): consulted in the guards each turn; null = ungoverned
     // (every existing caller/test, byte-identical). The per-RUN ceiling stays maxCostUsd below.
     const budget = o.budget;
@@ -938,6 +939,20 @@
             if (fb.cost) cost = fb.cost;                          // cross-provider: price subsequent turns by the new provider's catalog
             provider = fb.provider;
             if (fb.model) model = fb.model;   // the next agent.cost carries the switched model — the visible failover signal
+            /* RE-RESOLVE THE CONTEXT WINDOW. Everything else about the failover swaps here (provider, model,
+               cost, credential) but the compaction threshold was frozen at the PRIMARY model's window: after a
+               200k→32k switch the manager kept waiting for ~130k prompt tokens that a 32k window can never
+               reach, so the run overflowed with proactive compaction still "not yet due". The classifier's
+               overflow ratio (contextLimit below) had the same stale denominator. Only a KNOWN (>0) limit
+               applies — a cold catalog on the new provider keeps the old number (stale beats none), matching
+               setContextLimit's own guard. */
+            if (typeof provider.contextLimit === 'function') {
+              const nl = Number(provider.contextLimit(model)) || 0;
+              if (nl > 0) {
+                contextLimit = nl;
+                if (context && typeof context.setContextLimit === 'function') context.setContextLimit(nl);
+              }
+            }
             recoveries++;
             noteRecovery({ stage: 'provider_stream', action: 'fallback', reason: decision.reason, attempt: recoveries, model, delayMs: 0, rotate: decision.rotate });
             continue;

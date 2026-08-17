@@ -66,7 +66,12 @@ function startProvider() {
       SKYNET_OPENROUTER_KEY: 'sk-or-v1-output-recovery-fake',
       STARNET_OPENROUTER_KEY: 'sk-or-v1-output-recovery-fake',
       SKYNET_DEFAULT_MODEL: 'test/output-recovery',
-      STARNET_DEFAULT_MODEL: 'test/output-recovery'
+      STARNET_DEFAULT_MODEL: 'test/output-recovery',
+      // Pin the per-run tool-output budget: the production cap scales with the model's context window
+      // (window-blind fake provider => 128k cold-catalog default => ~341KB), which the two 61KB floods
+      // could never cross. An explicit env value is absolute, restoring the deterministic 120KB seam.
+      SKYNET_MAX_TOOL_BYTES: '120000',
+      STARNET_MAX_TOOL_BYTES: '120000'
     }
   });
   try {

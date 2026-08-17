@@ -10,9 +10,10 @@
    granted passes, logging the deferrals) lives in sidecar/index.js.
 
    PRIORITY is LOCKED to the product's beat order (highest first):
-     reflection > study > threadmine > scout > skill-review > skill-curator
+     reflection > failure-review > study > threadmine > scout > skill-review > skill-curator
    so when the budget is scarce the station keeps the turn-in beat + belief updates the Commander actually sees,
-   and yields the quieter background passes to the NEXT qualifying run.
+   and yields the quieter background passes to the NEXT qualifying run. (failure-review fires only on FAILED
+   run-ends, where reflection never qualifies — the two are mutually exclusive per run, never rivals.)
 
    DEFERRED ≠ SUPPRESSED: a deferred pass simply is not fired this run-end; the caller arms NO cooldown for it,
    so its own gate re-qualifies and it retries on the next run. Truthful telemetry: the caller records the
@@ -32,7 +33,10 @@
   'use strict';
 
   // The LOCKED beat-order priority: earlier index = higher priority = wins a scarce budget slot.
-  const PRIORITY = ['reflection', 'study', 'threadmine', 'scout', 'skill-review', 'skill-curator'];
+  // 'failure-review' sits directly after 'reflection': a failed run's lesson is the most valuable thing that
+  // run can produce. The two never actually compete — reflection gates on reason 'done' and failure-review on
+  // a failure reason, so per run-end at most ONE of them is a candidate (asserted in test/failreview.test.js).
+  const PRIORITY = ['reflection', 'failure-review', 'study', 'threadmine', 'scout', 'skill-review', 'skill-curator'];
   // Default JOINT ceiling: at most this many aux passes may SPEND per run-end. 0 means "no ceiling"
   // (governor OFF / unlimited) — an explicit opt-out only; 0 is NEVER the default (see parseBudget).
   const DEFAULT_BUDGET = 2;

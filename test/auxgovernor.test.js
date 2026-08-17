@@ -13,9 +13,9 @@ const G = require('../sidecar/auxgovernor.js');
 
 (async () => {
   // ---- the locked priority + default budget are what we expect ----
-  A.eq(G.PRIORITY, ['reflection', 'study', 'threadmine', 'scout', 'skill-review', 'skill-curator'], 'locked beat priority');
+  A.eq(G.PRIORITY, ['reflection', 'failure-review', 'study', 'threadmine', 'scout', 'skill-review', 'skill-curator'], 'locked beat priority (failure-review directly after reflection)');
   A.eq(G.DEFAULT_BUDGET, 2, 'default budget is 2 (never 0)');
-  A.eq(G.PRIORITY.length, 6, 'exactly the six aux passes');
+  A.eq(G.PRIORITY.length, 7, 'exactly the seven aux passes');
 
   // ---- budget CAP + PRIORITY order: the top-`budget` passes by priority spend, the rest defer ----
   {
@@ -30,7 +30,7 @@ const G = require('../sidecar/auxgovernor.js');
   // ---- the JOINT BOUND: for ANY candidate set, spend count never exceeds the budget ----
   {
     const all = G.PRIORITY.slice();
-    for (let b = 0; b <= 6; b++) {
+    for (let b = 0; b <= all.length; b++) {
       for (let mask = 0; mask < (1 << all.length); mask++) {
         const cand = all.filter((_, i) => (mask >> i) & 1);
         const p = G.decide({ candidates: cand, budget: b });
@@ -39,7 +39,7 @@ const G = require('../sidecar/auxgovernor.js');
         A.ok(p.spend.length + p.deferred.length === cand.length, 'no candidate lost for mask ' + mask + ' budget ' + b);
       }
     }
-    A.ok(true, 'exhaustive: across all 64 candidate sets × budgets 0..6 the bound holds');
+    A.ok(true, 'exhaustive: across all ' + (1 << all.length) + ' candidate sets × budgets 0..' + all.length + ' the bound holds');
   }
 
   // ---- budget 0 = UNLIMITED (governor off): every candidate spends, nothing defers ----
@@ -109,7 +109,7 @@ const G = require('../sidecar/auxgovernor.js');
     const b = G.decide({ candidates: input, budget: 2 });
     A.eq(a, b, 'same inputs -> identical output (pure)');
     A.eq(input, ['scout', 'reflection', 'skill-curator'], 'decide does not mutate the caller\'s candidate array');
-    A.eq(G.PRIORITY, ['reflection', 'study', 'threadmine', 'scout', 'skill-review', 'skill-curator'], 'PRIORITY export is a copy — decide never mutates it');
+    A.eq(G.PRIORITY, ['reflection', 'failure-review', 'study', 'threadmine', 'scout', 'skill-review', 'skill-curator'], 'PRIORITY export is a copy — decide never mutates it');
   }
 
   A.report('auxgovernor.test');

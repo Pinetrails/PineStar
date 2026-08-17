@@ -144,6 +144,29 @@ const redact = (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.eq(out.ids.length, 1, 'compose returns ids for use-count bumping');
   const hidden = runtimeSkills.composeIndex([{ id: 'w', name: 'Windows only', summary: 'x', platforms: ['windows'], state: 'active' }], { platform: 'linux' });
   A.eq(hidden.text, '', 'platform filters hide incompatible skills from the prompt index');
+
+  // ---- relevance-ranked index: opts.query reorders by BM25 over {name, summary}; no query -> caller order ----
+  {
+    // caller (skillStore mine()) order: pinned first, then updatedAt desc — feed that shape in directly.
+    const idx = [
+      { id: 'p1', name: 'Pinned Ops', summary: 'unrelated ops runbook', state: 'active', pinned: true, updatedAt: 1000 },
+      { id: 'n1', name: 'Deploy Pipeline', summary: 'ship the app safely', state: 'active', updatedAt: 3000 },
+      { id: 'n2', name: 'Video Editing', summary: 'cut and caption clips', state: 'active', updatedAt: 2000 }
+    ];
+    const noQ = runtimeSkills.composeIndex(idx, {});
+    A.ok(noQ.text.indexOf('Pinned Ops') < noQ.text.indexOf('Deploy Pipeline') && noQ.text.indexOf('Deploy Pipeline') < noQ.text.indexOf('Video Editing'),
+      'no query -> exactly the caller order (byte-identical contract)');
+    const q = runtimeSkills.composeIndex(idx, { query: 'cut a video clip for the channel' });
+    A.ok(q.text.indexOf('Pinned Ops') < q.text.indexOf('Video Editing'), 'pinned skills stay first even when a non-pinned one is more relevant');
+    A.ok(q.text.indexOf('Video Editing') < q.text.indexOf('Deploy Pipeline'), 'the query-relevant skill outranks the more recently updated one');
+    A.ok(q.text.indexOf('Deploy Pipeline') >= 0, 'relevance ORDERS the index, never drops a skill (budget is the only omission path)');
+    A.eq(q.ids.length, 3, 'all ids still returned under a query');
+    const noOverlap = runtimeSkills.composeIndex(idx, { query: 'zzz nothing matches this' });
+    A.ok(noOverlap.text.indexOf('Pinned Ops') < noOverlap.text.indexOf('Deploy Pipeline') && noOverlap.text.indexOf('Deploy Pipeline') < noOverlap.text.indexOf('Video Editing'),
+      'a no-overlap query degrades to updatedAt-desc caller order (tiebreak law)');
+    const stopQ = runtimeSkills.composeIndex(idx, { query: 'the of and' });
+    A.ok(stopQ.text.indexOf('Deploy Pipeline') < stopQ.text.indexOf('Video Editing'), 'a stopword-only query is treated as no query');
+  }
   A.eq(runtimeSkills.extractInvocations([{ role: 'user', content: '/skill Deploy\ncontinue' }])[0], 'Deploy', 'slash /skill invocation is parsed');
   A.ok(/PRELOADED SKILLS/.test(runtimeSkills.composeLoaded([s.view('a', 'Deploy', { bump: false })])), 'explicit preload composes full skill bodies');
 }

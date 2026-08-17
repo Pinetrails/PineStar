@@ -11,6 +11,7 @@
      fit(messages, {maxTokens}) -> messages[],
      shouldCompact(usage) -> bool,
      compact(history, summarize) -> {summary, tail},             // pure given summarize
+     setContextLimit(n),                                         // live re-resolve (provider fallback)
      redact(x) -> x'                                             // never mutates input
    } */
 'use strict';
@@ -180,14 +181,46 @@
   // core-memory layer (M-mem.5) exists — preserving M-mem.1's behaviour — while query relevance dominates
   // when terms overlap. `pinned` is a hard top. Returns the top-K records; the caller renders + char-caps.
   const STOP = new Set(('a an the of to in on for and or but is are was were be been it its this that these those with as at by ' +
-    'from your you i we they he she them our their not no do does did has have had will would can could your you').split(/\s+/));
+    'from your you i we they he she them our their not no do does did has have had will would can could your you ' +
+    'me my so if up us am').split(/\s+/));   // 2-char filler admitted by the >=2 floor below must still be stopped
+  // ADMIT 2-CHAR TOKENS (the reflect.js floorTokens precedent): ">= 3" silently made "go", "ai", "ml", "v1" and
+  // every 2-char identifier unsearchable — a "prefers Go" belief could never match a "go" query. STOP still
+  // applies after the length floor (and grew the common 2-char filler the old length gate used to eat).
   function tokenize(s) {
-    return String(s == null ? '' : s).toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3 && !STOP.has(t));
+    return String(s == null ? '' : s).toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 2 && !STOP.has(t));
   }
   function recordText(r) {
     if (!r) return '';
-    if (r.content != null && r.kind && r.kind !== 'note') return String(r.content);   // profile/fact/skill
+    // a typed record's TITLE is searchable text too — content-only indexing made a fact titled "deploy ritual"
+    // invisible to a "deploy" query whenever the term lived only in the title.
+    if (r.content != null && r.kind && r.kind !== 'note') return String(r.title != null ? r.title : '') + ' ' + String(r.content);   // profile/fact/skill
     return String(r.title != null ? r.title : '') + ' ' + String(r.body != null ? r.body : (r.content != null ? r.content : ''));
+  }
+  // The shared BM25 core, EXPOSED: `scores[i]` is record i's pure lexical relevance to the query (0 = no term
+  // overlap), `queried` says whether the query carried at least one significant token. rank() builds on this,
+  // and the runtime skill index (skills/runtime.js) reuses it by shimming {name, summary} onto the record
+  // shape — one lexical brain, never two drifting copies. Pure + deterministic; scores align 1:1 with input.
+  function bm25(records, query) {
+    const recs = Array.isArray(records) ? records : [];
+    const qTerms = tokenize(query);
+    const scores = new Array(recs.length).fill(0);
+    if (!recs.length || !qTerms.length) return { scores, queried: qTerms.length > 0 };
+    const K1 = 1.2;
+    const docs = recs.map(r => tokenize(recordText(r)));
+    const df = {};
+    for (const toks of docs) { const seen = {}; for (const t of toks) { if (!seen[t]) { seen[t] = 1; df[t] = (df[t] || 0) + 1; } } }
+    const N = recs.length;
+    for (let i = 0; i < recs.length; i++) {
+      const tf = {}; for (const t of docs[i]) tf[t] = (tf[t] || 0) + 1;
+      let relevance = 0;
+      for (const qt of qTerms) {
+        const f = tf[qt]; if (!f) continue;
+        const idf = Math.log(1 + (N - df[qt] + 0.5) / (df[qt] + 0.5));
+        relevance += idf * (f * (K1 + 1)) / (f + K1);     // BM25 tf-saturation (no length norm — notes are short)
+      }
+      scores[i] = relevance;
+    }
+    return { scores, queried: true };
   }
   function rank(records, query, rankOpts) {
     rankOpts = rankOpts || {};
@@ -196,22 +229,11 @@
     const k = rankOpts.k || 8;
     const halfLife = rankOpts.halfLifeMs || 6048e5;   // 7 days (usage recency)
     const trustHalfLife = rankOpts.trustHalfLifeMs || 2592e6;   // 30 days (endorsement fade — mirrors memcore.TRUST_HALFLIFE_MS)
-    const K1 = 1.2;
     const recs = Array.isArray(records) ? records.filter(Boolean) : [];
     if (!recs.length) return [];
-    const docs = recs.map(r => tokenize(recordText(r)));
-    const df = {};
-    for (const toks of docs) { const seen = {}; for (const t of toks) { if (!seen[t]) { seen[t] = 1; df[t] = (df[t] || 0) + 1; } } }
-    const N = recs.length;
-    const qTerms = tokenize(query);
-    const scored = recs.map((r, i) => {
-      const tf = {}; for (const t of docs[i]) tf[t] = (tf[t] || 0) + 1;
-      let relevance = 0;
-      for (const qt of qTerms) {
-        const f = tf[qt]; if (!f) continue;
-        const idf = Math.log(1 + (N - df[qt] + 0.5) / (df[qt] + 0.5));
-        relevance += idf * (f * (K1 + 1)) / (f + K1);     // BM25 tf-saturation (no length norm — notes are short)
-      }
+    const rel = bm25(recs, query);   // shared lexical core — scores align with recs
+    let scored = recs.map((r, i) => {
+      const relevance = rel.scores[i];
       const age = Math.max(0, now - (r.lastUsedAt || r.createdAt || r.ts || 0));
       const recency = Math.pow(0.5, age / halfLife);        // 1 at age 0 → halves each half-life
       // time-decayed trust: an endorsement fades toward 0 the longer a belief goes un-reinforced (mirrors
@@ -224,8 +246,14 @@
       // searchable (no boost, not filtered) — "global always-on, workstream-scoped, cross-stream searchable".
       const sameStream = (streamId && r.scope === 'stream' && r.streamId === streamId) ? 0.5 : 0;
       const score = relevance + 0.5 * recency + 0.3 * trust + sameStream + (r.pinned ? 1000 : 0);   // pinned = hard top
-      return { r: r, i: i, score: score };
+      return { r: r, i: i, score: score, relevance: relevance };
     });
+    // RELEVANCE FLOOR: under a query with at least one significant token, a record with ZERO term overlap is
+    // dropped unless pinned — slice(0, k) alone injected 8 memories into EVERY run even at relevance 0. A
+    // queryless turn (empty / image-only) keeps the recency+trust fallback untouched: the floor must never
+    // empty recall for a legitimately generic turn. `floor:false` opts out for a caller whose own gate already
+    // admitted the records (notebook.read's substring match — reordering there must never truncate).
+    if (rel.queried && rankOpts.floor !== false) scored = scored.filter(s => s.relevance > 0 || s.r.pinned);
     scored.sort((a, b) => (b.score - a.score) || (a.i - b.i));   // deterministic: stable tiebreak by store order
     return scored.slice(0, k).map(s => s.r);
   }
@@ -264,7 +292,7 @@
 
   function makeContext(opts) {
     opts = opts || {};
-    const contextLimit = opts.contextLimit || 0;       // 0 = unknown (never auto-compact)
+    let contextLimit = opts.contextLimit || 0;         // 0 = unknown (never auto-compact); mutable — see setContextLimit
     const compactAt = opts.compactAt || 0.65;
     const keepTail = opts.keepTail || 6;
     const estimateTokens = opts.estimateTokens || defaultEstimate;
@@ -356,8 +384,23 @@
       return { older: history.slice(0, cut), tail: history.slice(cut) };
     }
 
-    return { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, planCompaction, redact, contextLimit, keepTail };
+    /* LIVE RE-RESOLVE (provider fallback). contextLimit was frozen at construction, but the loop can fail over
+       mid-run to a provider/model with a very different window: after a 200k→32k switch the 0.65 threshold was
+       still computed against 200k, so the run blew straight through the small window into a hard overflow that
+       only the reactive compress path could catch — and if the summarizer had already tripped its breaker the
+       run died 'error'. A fallback with an unknown (cold-catalog, 0) limit KEEPS the old limit rather than
+       disabling proactive compaction: the previous number is stale but strictly safer than none. The exposed
+       `contextLimit` property is kept in sync so host-side consumers (e.g. the tool-output cap) read the live
+       value. */
+    function setContextLimit(n) {
+      n = Math.max(0, Math.floor(Number(n) || 0));
+      if (n > 0) { contextLimit = n; api.contextLimit = n; }
+      return contextLimit;
+    }
+
+    const api = { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, planCompaction, setContextLimit, redact, contextLimit, keepTail };
+    return api;
   }
 
-  return { makeContext, redact, renderRecall, injectRecall, rank, flagInjection, stripRecallFence, compactionMemoryBlock, compactionSummaryPrompt, COMPACTION_SECTIONS };
+  return { makeContext, redact, renderRecall, injectRecall, rank, bm25, flagInjection, stripRecallFence, compactionMemoryBlock, compactionSummaryPrompt, COMPACTION_SECTIONS };
 });

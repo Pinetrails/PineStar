@@ -1,7 +1,7 @@
 'use strict';
 
 const A = require('./_assert.js');
-const { makeRunExecutionState } = require('../sidecar/run-execution-state.js');
+const { makeRunExecutionState, toolBytesCapFor } = require('../sidecar/run-execution-state.js');
 
 const observed = [];
 const state = makeRunExecutionState({
@@ -102,5 +102,19 @@ A.eq(completionEvents.map(x => x.callId), ['c'], 'run state owns completion evid
 A.eq(completionState.completionEvidence().effectVerdict, 'unverified_effects', 'run state exposes the collector snapshot');
 completionState.recordRecoveryAttempt({ sequence: 1, stage: 'provider_stream', action: 'retry', reason: 'timeout', attempt: 1, model: 'm', delayMs: 400 });
 A.eq(completionState.recoveryAttempts(), [{ sequence: 1, stage: 'provider_stream', action: 'retry', reason: 'timeout', attempt: 1, model: 'm', delayMs: 400 }], 'recovery attempts are bounded run-owned telemetry');
+
+// ---- toolBytesCapFor: the window-scaled per-run cap must sit ABOVE the compaction threshold in bytes, so the
+// fold (the one event that resets the budget via agent.compact) always fires before the cap blinds the run. The
+// flat 120KB cap deadlocked on big-context models: budget exhausted at ~30k tokens while compaction waited for
+// ~130k that could never arrive.
+for (const window of [32000, 131072, 200000, 1000000]) {
+  const cap = toolBytesCapFor(window, 120000);
+  const thresholdBytes = Math.ceil(0.65 * window) * 4;   // compactAt tokens ≈ bytes/4
+  A.ok(cap >= thresholdBytes, 'cap covers the 0.65 compaction threshold for a ' + window + '-token window (' + cap + ' >= ' + thresholdBytes + ')');
+}
+A.eq(toolBytesCapFor(0, 120000), 120000, 'unknown window -> the legacy 120KB floor binds');
+A.eq(toolBytesCapFor(10000, 120000), 120000, 'a tiny window keeps the floor — the cap never shrinks below legacy');
+A.eq(toolBytesCapFor(200000, 120000), 520000, 'a 200k window scales the budget to 520KB (2.6 bytes per context token)');
+A.eq(toolBytesCapFor(-5, -5), 0, 'garbage inputs clamp to zero instead of NaN');
 
 A.report('run-execution-state.test');

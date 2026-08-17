@@ -131,6 +131,10 @@ qa/installed/smoke-*/
 .qa_g3b/
 # G4 lane visual-proof screenshots (approval walk-and-wait + autojob pin + Meeseeks; same pattern)
 .qa_g4/
+# rug/bed lane visual proof (dev/rugbed-proof.mjs + dev/rug-sheet.mjs + dev/rug-sizes-proof.mjs write
+# their captures and their seed workspace here). Untracked and unignored, it blocks the claims relock
+# guard, which refuses to run over foreign untracked files.
+.rugbed-shots/
 .canary/
 
 # machine-local Claude Code dev-server config (regenerated per machine)
