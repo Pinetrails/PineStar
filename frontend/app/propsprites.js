@@ -4543,6 +4543,66 @@ const PropSprites = (() => {
     }
   };
 
+  F.recliner = (x, y, w, h, f) => {
+    /* 1x1 RECLINER — one seat of the couch, FACING LEFT (Andrew: "just a small couch bro like a 1
+       person recliner or side couch piece"). Built out of the sofa's own vocabulary — same fabric
+       ramp, same crown roll, same throw pillow — so it stands beside the couch as part of a set.
+       ⛔ IT FACES WEST AT r=0, which is the entire point: every other seat in the catalog faces the
+          camera. M flips it east, so one prop furnishes both sides of a room.
+       ⛔ THE OUTLINE MUST OPEN. Two drafts drew it as a filled rounded box and both read as an
+          appliance. A seat seen from the side is a C: the two ARMS reach further west than the
+          cushion between them, and the back stands PROUD of both. Those two notches — the open
+          front and the step up to the back — are the whole silhouette; the shading inside changes
+          nothing until they are there.
+       ⛔ THE ARMS STOP AT THE BACK. Run them the full width and they paint over the back's crown,
+          which leaves a stack of horizontal bands (that was draft one).
+       ⛔ THE ART OVERHANGS ITS TILE (like couch:w) — a seat is deeper than one tile. What it BLOCKS
+          is still the honest 1x1. */
+    const EDGE = '#161d22';
+    const r = RAMP.fabric;
+    const ax = x - 3, aw = w + 6;                                // drawn 3px proud each side
+    const BK = ax + 11, SW = ax + 4;                             // back's crown / the cushion's west edge
+    shadow2(ax + 1, y + h - 1, aw - 2);
+    /* (1) THE SILHOUETTE, opened: two arms reaching west, a cushion set back between them, and the
+       back standing a row above both. One ink pass — never one box per part. */
+    rr(BK - 1, y - 7, 7, h + 7, EDGE);                           // the back, tallest
+    rr(ax, y - 5, 13, 5, EDGE);                                  // far (north) arm, reaching west
+    rr(ax, y + 3, 13, 8, EDGE);                                  // near (south) arm
+    rr(SW - 1, y - 2, 8, 7, EDGE);                               // the cushion, set BACK between them
+    /* (2) THE CUSHION — inset, so the deck shows between the arms and the outline notches */
+    px(SW, y - 1, 7, 5, r.face);
+    px(SW, y - 1, 1, 5, U.shade(r.face, 0.14));                  // its west lip catches the strip
+    px(SW + 1, y - 1, 4, 5, U.shade(r.face, 0.07));              // the soft belly
+    px(SW + 5, y - 1, 2, 5, U.shade(r.face, -0.12));             // falling into the back's shade
+    px(SW + 3, y + 1, 1, 1, U.shade(r.face, -0.34));             // tuft button
+    px(SW + 2, y + 2, 1, 1, U.shade(r.face, -0.14)); px(SW + 4, y + 2, 1, 1, U.shade(r.face, -0.14));
+    px(SW, y + 3, 7, 1, U.shade(r.face, -0.30));                 // the cushion's own front shadow
+    /* (3) THE FAR ARM — a roll, lit on top, stopping at the back */
+    px(ax + 1, y - 4, 11, 2, r.lit); keyEdge(ax + 1, y - 4, 6, 1, 0.26);
+    px(ax + 1, y - 2, 11, 1, U.shade(r.lit, -0.30));             // piping under its crown
+    px(ax + 1, y - 1, 3, 1, r.face); px(ax + 1, y - 1, 1, 1, U.shade(r.face, 0.12));   // its west end wraps down
+    /* (4) ONE THROW PILLOW, propped where the back meets the cushion */
+    px(SW + 3, y - 3, 5, 6, EDGE);
+    px(SW + 4, y - 2, 3, 4, '#2f6a62'); px(SW + 4, y - 2, 3, 1, '#4a8a82');
+    px(SW + 4, y - 1, 1, 2, U.shade('#4a8a82', 0.18)); px(SW + 6, y - 1, 1, 2, U.shade('#2f6a62', -0.26));
+    px(SW + 4, y - 2, 1, 1, EDGE); px(SW + 6, y - 2, 1, 1, EDGE);   // stuffed corners, not a card
+    /* (5) THE BACK — an unbroken crown down the east side, a row above both arms */
+    px(BK, y - 6, 4, h + 6, r.lit);
+    keyEdge(BK, y - 6, 4, 8, 0.24);
+    px(BK, y - 6, 1, h + 6, U.shade(r.lit, 0.10));
+    px(BK + 4, y - 6, 1, h + 6, U.shade(r.lit, -0.32));          // piping where the crown rolls over
+    px(BK + 5, y - 5, 1, h + 4, r.dk); rimEdge(BK + 5, y - 5, 1, h + 4, 0.22);
+    px(BK + 1, y - 6, 2, 1, U.shade(r.lit, 0.16));               // the crown's own catch
+    /* (6) THE NEAR ARM last, so it wraps the cushion: crown, piping, then the south face + skirt */
+    px(ax + 1, y + 4, 11, 2, r.lit); keyEdge(ax + 1, y + 4, 6, 1, 0.28);
+    px(ax + 1, y + 6, 11, 1, U.shade(r.lit, -0.26));
+    px(ax + 1, y + 7, aw - 3, 3, r.face);
+    px(ax + 1, y + 7, 1, 3, U.shade(r.face, 0.12)); px(ax + aw - 3, y + 7, 1, 3, r.dk);
+    px(ax + 3, y + 8, aw - 7, 1, U.shade(r.face, 0.06));         // the arm's soft belly
+    px(ax + 1, y + 10, aw - 3, 1, U.shade(r.face, -0.28));       // skirt
+    px(ax + 1, y + 11, aw - 3, 1, r.ao);                         // floor-line AO
+  };
+
   F['couch:w'] = (x, y, w, h, f) => {
     /* THE SOFA, TURNED TO FACE WEST (Andrew, 2026-08-17: "a couch that faces left side instead of
        backside and right side"). The shipped couch is drawn from BEHIND — it faces north at the TV —
@@ -9048,6 +9108,7 @@ const PropSprites = (() => {
     { id: "pinball", label: "PINBALL", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'pinball', sit: false, approach: 'south' } },
     /* THE COLOUR SHELF (2026-08-17) — floor-sized props that each own a saturated hue, because a
        room furnished from a grey catalog cannot be made to look good by lighting alone. */
+    { id: "recliner", label: "RECLINER", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'west' } },
     { id: "clawmachine", label: "CLAW MACHINE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'claw', sit: false, approach: 'south' } },
     { id: "slushmachine", label: "SLUSH MACHINE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'slush', sit: false, approach: 'south' } },
     { id: "reeftank", label: "REEF TANK", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'reef', sit: false, approach: 'south' } },
