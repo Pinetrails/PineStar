@@ -8771,66 +8771,96 @@ const PropSprites = (() => {
     const STK = '#8a6538', STK_LIT = '#b98d51';
     const cell = 0.55 + 0.45 * Math.sin(now / 1700 + x);
     /* (1) standoff shadow, frame, and the near-black well the arms hang in */
-    ctx.globalAlpha = 0.30; px(x + 4, y - 10, w - 5, 19, '#000'); ctx.globalAlpha = 1;
-    chamf(x + 1, y - 14, w - 2, 21, FRM_DK, 2);
-    px(x + 2, y - 13, w - 4, 19, FRM);
-    px(x + 2, y - 13, w - 4, 1, FRM_LIT); keyEdge(x + 2, y - 13, 8, 1, 0.26);
-    px(x + 2, y - 13, 1, 19, U.shade(FRM_LIT, -0.16)); px(x + w - 3, y - 13, 1, 19, FRM_DK);
-    rimEdge(x + w - 3, y - 12, 1, 17, 0.18);
-    px(x + 3, y - 12, w - 6, 17, WELL);
-    px(x + 3, y - 12, w - 6, 1, U.shade(WELL, -0.44));
-    px(x + 4, y - 11, w - 8, 1, WELL_LIT);
-    for (const [bx, by] of [[x + 2, y - 13], [x + w - 3, y - 13], [x + 2, y + 4], [x + w - 3, y + 4]]) {
+    ctx.globalAlpha = 0.30; px(x + 4, y - 15, w - 5, 22, '#000'); ctx.globalAlpha = 1;
+    chamf(x + 1, y - 19, w - 2, 25, FRM_DK, 2);
+    px(x + 2, y - 18, w - 4, 23, FRM);
+    px(x + 2, y - 18, w - 4, 1, FRM_LIT); keyEdge(x + 2, y - 18, 8, 1, 0.26);
+    px(x + 2, y - 18, 1, 23, U.shade(FRM_LIT, -0.16)); px(x + w - 3, y - 18, 1, 23, FRM_DK);
+    rimEdge(x + w - 3, y - 17, 1, 21, 0.18);
+    px(x + 3, y - 17, w - 6, 21, WELL);
+    px(x + 3, y - 17, w - 6, 1, U.shade(WELL, -0.44));
+    px(x + 4, y - 16, w - 8, 1, WELL_LIT);
+    px(x + 3, y - 6, w - 6, 1, U.shade(FRM, -0.24));                               // the shelf between the two arms
+    for (const [bx, by] of [[x + 2, y - 18], [x + w - 3, y - 18], [x + 2, y + 3], [x + w - 3, y + 3]]) {
       px(bx, by, 1, 1, U.shade(FRM_LIT, 0.24)); px(bx, by + 1, 1, 1, FRM_DK);
     }
-    /* (2) ONE RIFLE, IN PROFILE — barrel, sight, receiver, magazine, grip, stock. `rake` tips the
-       whole weapon; `len` is the barrel, so a carbine is the same routine with a shorter one. */
-    const rifle = (rx, ry, len, rake, scope) => {
-      const yy = (i) => ry + Math.round(rake * i * 0.18);
-      for (let i = 0; i < len; i++) {                                              // the barrel
-        px(rx + i, yy(i) - 1, 1, 1, GUN_DK);
-        px(rx + i, yy(i), 1, 1, i > len - 3 ? '#cfd7dc' : GUN);
-        px(rx + i, yy(i) + 1, 1, 1, GUN_MID);
+    /* (2) ONE WEAPON, IN PROFILE, DEAD STRAIGHT. ⛔ THE BARREL CURVED UPWARD in v3 and Andrew caught
+       it: the barrel was drawn along a rake while the receiver and stock were drawn flat, so the
+       thing HINGED out of its own body — a straight line rounded per pixel also steps visibly at
+       this scale. Every part now shares one centre line and the variety comes from the two arms
+       being different WEAPONS at different heights, not from bending them.
+       Built butt-first so the parts chain: stock -> grip -> receiver -> magazine -> handguard ->
+       barrel -> muzzle, with an optic over the receiver and a sling drooping under it. */
+    const weapon = (x0, y0, len, opts) => {
+      const o = opts || {};
+      const bl = x0 + 24;                                                          // where the barrel starts
+      /* stock: timber or polymer, with a dark butt pad and a cheek line */
+      px(x0, y0 - 3, 8, 6, GUN_DK);
+      px(x0 + 1, y0 - 2, 6, 4, o.wood ? STK : U.shade(GUN_MID, -0.10));
+      px(x0 + 1, y0 - 2, 6, 1, o.wood ? STK_LIT : GUN_MID);
+      px(x0, y0 - 2, 1, 4, U.shade(GUN_DK, 0.20));                                 // butt pad
+      px(x0 + 2, y0, 4, 1, U.shade(o.wood ? STK : GUN_MID, -0.30));                // the cheek line
+      /* pistol grip, raking back under the receiver */
+      px(x0 + 8, y0 + 3, 3, 5, GUN_DK);
+      px(x0 + 9, y0 + 3, 1, 4, o.wood ? STK : U.shade(GUN_MID, -0.16));
+      px(x0 + 8, y0 + 7, 2, 1, U.shade(GUN_DK, 0.24));
+      /* receiver: the block that makes it a weapon, with a port and a charging handle */
+      px(x0 + 7, y0 - 3, 11, 6, GUN_DK);
+      px(x0 + 8, y0 - 2, 9, 1, GUN);
+      px(x0 + 8, y0 - 1, 9, 3, GUN_MID);
+      px(x0 + 12, y0 - 1, 3, 2, U.shade(GUN_DK, 0.30));                            // ejection port
+      px(x0 + 9, y0 - 2, 2, 1, '#cfd7dc');                                         // charging handle
+      px(x0 + 8, y0 + 2, 9, 1, U.shade(GUN_MID, -0.34));
+      /* magazine, curved — two steps forward as it drops */
+      px(x0 + 12, y0 + 3, 4, 2, GUN_DK); px(x0 + 13, y0 + 5, 4, 2, GUN_DK);
+      px(x0 + 13, y0 + 3, 2, 1, U.shade(GUN_MID, -0.06)); px(x0 + 14, y0 + 5, 2, 1, U.shade(GUN_MID, -0.20));
+      /* handguard with vent slots, then the barrel — ONE ROW, no rake */
+      px(x0 + 18, y0 - 2, 6, 4, GUN_DK);
+      px(x0 + 18, y0 - 1, 6, 2, GUN_MID);
+      for (let i = 0; i < 3; i++) px(x0 + 19 + i * 2, y0 - 1, 1, 2, U.shade(GUN_DK, 0.24));
+      px(x0 + 22, y0 - 4, 1, 2, GUN_MID);                                          // front sight post
+      for (let i = 0; i < len; i++) {
+        px(bl + i, y0 - 2, 1, 1, GUN_DK);
+        px(bl + i, y0 - 1, 1, 1, GUN);                                             // the lit crown, flat
+        px(bl + i, y0, 1, 1, GUN_MID);
+        px(bl + i, y0 + 1, 1, 1, GUN_DK);
       }
-      px(rx + len - 4, yy(len - 4) - 2, 1, 2, GUN_MID);                            // front sight
-      const bx = rx - 8, by = yy(0);
-      px(bx, by - 2, 9, 5, GUN_DK);                                                // the receiver
-      px(bx + 1, by - 1, 7, 1, GUN_MID); px(bx + 1, by, 7, 2, U.shade(GUN_MID, -0.24));
-      px(bx + 1, by - 1, 3, 1, GUN);
-      px(bx + 3, by + 3, 3, 4, GUN_DK);                                            // the magazine, hanging
-      px(bx + 4, by + 4, 1, 3, U.shade(GUN_MID, -0.10));
-      px(bx - 1, by + 3, 2, 3, GUN_DK); px(bx, by + 3, 1, 2, U.shade(STK, 0.10));  // pistol grip
-      px(bx - 7, by - 1, 7, 4, U.shade(STK, -0.34));                               // the stock, raking back
-      px(bx - 6, by, 5, 2, STK); px(bx - 6, by, 5, 1, STK_LIT);
-      px(bx - 7, by + 2, 3, 1, U.shade(STK, -0.20));
-      if (scope) {
-        px(bx + 1, by - 5, 7, 3, GUN_DK);
-        px(bx + 2, by - 4, 5, 1, GUN); px(bx + 2, by - 3, 5, 1, GUN_MID);
-        px(bx + 7, by - 4, 1, 1, '#7fd8ff');
+      px(bl + len, y0 - 2, 2, 4, GUN_DK);                                          // muzzle device
+      px(bl + len, y0 - 1, 2, 1, '#cfd7dc'); px(bl + len + 1, y0, 1, 1, GUN_MID);
+      /* optic on a pair of rings, and a sling drooping under the whole thing */
+      if (o.scope) {
+        px(x0 + 9, y0 - 7, 9, 3, GUN_DK);
+        px(x0 + 10, y0 - 6, 7, 1, GUN); px(x0 + 10, y0 - 5, 7, 1, GUN_MID);
+        px(x0 + 17, y0 - 6, 1, 1, '#7fd8ff');
+        px(x0 + 11, y0 - 4, 1, 1, GUN_MID); px(x0 + 16, y0 - 4, 1, 1, GUN_MID);    // the rings
+      }
+      if (o.sling) {
+        for (let i = 0; i < 14; i++) {
+          const sx = x0 + 5 + i, sy = y0 + 4 + Math.round(2.6 * Math.sin((i / 13) * Math.PI));
+          px(sx, sy, 1, 1, U.shade(GUN_DK, 0.10));
+        }
       }
     };
-    /* ⛔ THE ARMS MUST SIT INSIDE THE WELL. Drawn from a barrel origin, a rifle reaches 15px BACK
-       (receiver + grip + stock), so an origin that looks central puts the stock out through the
-       frame — which is what the first profile pass did. Origin = well's left edge + 15. */
-    rifle(x + 19, y - 7, 14, -1, 1);                                               // top: a scoped rifle
-    rifle(x + 19, y + 1, 11, 1, 0);                                                // middle: a carbine
+    weapon(x + 4, y - 11, 4, { scope: 1, wood: 0, sling: 1 });                     // top: a scoped rifle
+    weapon(x + 4, y - 1, 3, { scope: 0, wood: 1, sling: 0 });                      // below: a wood-stocked carbine
     /* (3) the CHARGE CELL on the top arm — the one live thing on the prop */
-    px(x + 13, y - 6, 2, 1, U.shade('#ffb347', -0.30 + 0.30 * cell));
-    bloom(x + 13, y - 6, 2, 1, '#ffb347', 0.12 + 0.18 * cell);
-    /* (4) a BLADE across the bottom, raked the other way — never a third parallel rifle */
-    for (let i = 0; i < 15; i++) {
-      const bx = x + 15 + i, by = y + 7 - Math.round(i * 0.34);
-      px(bx, by - 1, 1, 1, GUN_DK);
-      px(bx, by, 1, 1, i > 2 ? '#cfd7dc' : GUN_MID);
-      px(bx, by + 1, 1, 1, i > 2 ? '#79838b' : GUN_DK);
+    px(x + 17, y - 8, 2, 1, U.shade('#ffb347', -0.30 + 0.30 * cell));
+    bloom(x + 17, y - 8, 2, 1, '#ffb347', 0.12 + 0.18 * cell);
+    /* (4) a BLADE hung VERTICALLY at the east end — a third rifle would be a fence, and a blade
+       across the whole board (v4) crowded both arms out of their own space */
+    for (let i = 0; i < 11; i++) {
+      const by = y - 15 + i;
+      px(x + 30, by, 1, 1, GUN_DK);
+      px(x + 31, by, 1, 1, i > 1 ? '#cfd7dc' : GUN_MID);
+      px(x + 32, by, 1, 1, i > 1 ? '#79838b' : GUN_DK);
     }
-    px(x + 12, y + 7, 4, 3, GUN_DK); px(x + 13, y + 8, 3, 2, STK); px(x + 13, y + 8, 3, 1, STK_LIT);
+    px(x + 30, y - 4, 3, 3, GUN_DK); px(x + 31, y - 3, 1, 2, STK); px(x + 31, y - 3, 1, 1, STK_LIT);
     /* (5) HOOKS the arms rest on, and spare cells clipped at the end — a rack that is USED */
-    for (const hx of [x + 5, x + 31]) { px(hx, y - 5, 1, 2, FRM_LIT); px(hx, y + 2, 1, 2, FRM_LIT); }
+    for (const hx of [x + 6, x + 26]) { px(hx, y - 7, 1, 2, FRM_LIT); px(hx, y + 2, 1, 2, FRM_LIT); }
     for (let i = 0; i < 3; i++) {
       const mx = x + 5 + i * 3;
-      px(mx, y + 5, 2, 4, GUN_DK); px(mx, y + 5, 2, 1, GUN_MID);
-      px(mx, y + 8, 2, 1, i === 1 ? U.shade('#ffb347', -0.30) : U.shade(GUN_DK, 0.22));
+      px(mx, y + 1, 2, 3, GUN_DK); px(mx, y + 1, 2, 1, GUN_MID);
+      px(mx, y + 3, 2, 1, i === 1 ? U.shade('#ffb347', -0.30) : U.shade(GUN_DK, 0.22));
     }
   };
   F.weaponrack_r = mirrorV(F.weaponrack);
