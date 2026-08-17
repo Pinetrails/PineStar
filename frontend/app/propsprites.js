@@ -5475,25 +5475,29 @@ const PropSprites = (() => {
   };
 
   F.longtable = (x, y, w, h, f) => {
-    // 3x1 TRESTLE table — heavy warm timber on two A-frame trestles. Drawn top-down, so the subject
-    // is a broad PLANKED TABLETOP and the trestles read underneath it. The plank seams run the length
+    // 3x1 REFECTORY table — heavy warm timber on FOUR corner legs. Drawn top-down, so the subject is
+    // a broad PLANKED TABLETOP with the frame reading underneath it. The plank seams run the length
     // of the boards, which top-down means ACROSS the table — the clearest single tell that the
     // projection actually changed, since the edge-on version ran them the other way.
+    // ⛔ IT HAD TWO A-FRAME TRESTLES AND THEY DO NOT SURVIVE A TURN (Andrew, 2026-08-17: "awful side
+    //    angle"). Turned side-on, a pair of trestles stacks into ONE centred post and the table reads
+    //    as a pedestal monolith. Four legs at the corners are the one frame that reads the same from
+    //    every facing: two under the near edge, two behind the plane, daylight between them.
     const WD = '#5c4732', WD_LIT = '#7a6044', WD_DK = '#3a2c1e';
     const top = y + h - 1 - SURFACE_RISE;
     shadow2(x + 2, y + h - 1, w - 4);
-    // TRESTLES — splayed A-frames with a stretcher, in the clear band under the top
-    for (const tx of [x + 4, x + w - 8]) {
-      px(tx, top + 3, 4, 6, LINE);
-      px(tx + 1, top + 3, 1, 6, WD_LIT); px(tx + 2, top + 3, 1, 6, WD_DK);
-      keyEdge(tx + 1, top + 3, 1, 4, 0.16); rimEdge(tx + 2, top + 4, 1, 4, 0.18);
-      px(tx - 1, y + h - 3, 6, 2, LINE);
-      px(tx, y + h - 2, 4, 1, WD); keyEdge(tx, y + h - 2, 2, 1, 0.14);     // foot rail
-      px(tx - 1, y + h - 1, 6, 1, '#0a0d10');
+    for (const lx of [x + 3, x + w - 6]) {                                 // REAR pair, up behind the top
+      px(lx, top + 1, 3, 6, U.shade(WD, -0.30)); rimEdge(lx + 2, top + 1, 1, 5, 0.14);
     }
-    px(x + 8, top + 6, w - 16, 1, WD_DK);                                  // stretcher between them
-    px(x + 8, top + 6, 5, 1, U.shade(WD_DK, 0.16));
-    px(x + 8, top + 7, w - 16, 1, U.shade(WD_DK, -0.40));
+    for (const lx of [x + 2, x + w - 5]) {                                 // FRONT pair, under the near edge
+      px(lx, top + 3, 3, 6, LINE);
+      px(lx, top + 3, 1, 6, WD_LIT); px(lx + 1, top + 3, 2, 6, WD_DK);
+      keyEdge(lx, top + 3, 1, 4, 0.16); rimEdge(lx + 2, top + 4, 1, 4, 0.18);
+      ctx.globalAlpha = 0.30; px(lx - 1, y + h - 1, 5, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    px(x + 5, top + 6, w - 10, 1, WD_DK);                                  // stretcher down the length
+    px(x + 5, top + 6, 5, 1, U.shade(WD_DK, 0.16));
+    px(x + 5, top + 7, w - 10, 1, U.shade(WD_DK, -0.40));
     // THE TABLETOP as a foreshortened plane: 9 rows deep, back edge lit, near edge falling into shade
     px(x - 1, top - 9, w + 2, 11, LINE);
     px(x, top - 8, w, 9, WD);
@@ -5564,25 +5568,30 @@ const PropSprites = (() => {
   };
 
   F['longtable:e'] = (x, y, w, h, f) => {
-    // 1×3 deep TRESTLE table — one long PLANKED board running away from you, on the near trestle.
+    // 1×3 deep REFECTORY table — one long PLANKED board running away from you, on the near pair of legs.
     // Same law as the coffee table above: the first pass keyEdged the far end and the board read as
     // a PLANK LEANING ON THE WALL. The receding read is carried by three things — the west rail lit
     // end to end, chamfered board ENDS (a plank is square, a tabletop is eased), and the contact
     // shadow down the east flank. The board also sits 2px proud of its tile each side: a table is
     // wider than a walk lane, and the extra width is what keeps it from reading as a floorboard.
+    // ⛔ THIS FACING IS WHY THE TABLE HAS FOUR LEGS. Its two trestles projected onto each other into
+    //    a single fat centred post — a pedestal, not a table. The near pair stands at the CORNERS of
+    //    the near end and frames the daylight under the board; the far pair is honestly hidden behind
+    //    the plane, which is what a table looks like from here.
     const WD = '#5c4732', WD_LIT = '#7a6044', WD_DK = '#3a2c1e';
     const top = y + h - 1 - SURFACE_RISE;
     const D = top - (y + 1);                                               // the tabletop's depth in rows
     shadow2(x + 1, y + h - 1, w - 2);
     ctx.globalAlpha = 0.22; px(x + w + 1, y + 3, 2, D + 5, '#000'); ctx.globalAlpha = 1;
-    // the NEAR trestle: a splayed A-frame with its foot rail, in the clear band under the top
-    px(x + 3, top + 3, 6, 6, LINE);
-    px(x + 4, top + 3, 1, 6, WD_LIT); px(x + 7, top + 3, 1, 6, WD_DK);
-    px(x + 5, top + 3, 2, 6, WD);
-    keyEdge(x + 4, top + 3, 1, 4, 0.16); rimEdge(x + 7, top + 4, 1, 4, 0.18);
-    px(x + 2, y + h - 3, 8, 2, LINE);
-    px(x + 3, y + h - 2, 6, 1, WD); keyEdge(x + 3, y + h - 2, 3, 1, 0.14);   // foot rail
-    px(x + 2, y + h - 1, 8, 1, '#0a0d10');
+    px(x + 5, top + 3, 2, 5, U.shade(WD_DK, 0.10));                        // the length stretcher, running away
+    for (const lx of [x + 1, x + w - 4]) {                                 // THE NEAR PAIR, at the corners
+      px(lx, top + 3, 3, 6, LINE);
+      px(lx, top + 3, 1, 6, WD_LIT); px(lx + 1, top + 3, 2, 6, WD_DK);
+      keyEdge(lx, top + 3, 1, 4, 0.16); rimEdge(lx + 2, top + 4, 1, 4, 0.18);
+      ctx.globalAlpha = 0.30; px(lx - 1, y + h - 1, 5, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    px(x + 3, y + h - 4, w - 6, 1, WD_DK);                                 // end rail between the near legs
+    px(x + 3, y + h - 5, w - 6, 1, U.shade(WD_DK, 0.14));
     // THE BOARD as a long receding plane, its ends eased
     chamf(x - 2, top - D - 1, w + 4, D + 3, LINE, 2);
     chamf(x - 1, top - D, w + 2, D + 1, WD, 1);
