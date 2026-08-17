@@ -6388,40 +6388,69 @@ const PropSprites = (() => {
     ctx.globalAlpha = 0.34; px(x + 1, y + h - 1, w - 2, 1, '#000'); ctx.globalAlpha = 1;
   };
 
-  F['booth:n'] = (x, y, w, h, f) => {
-    /* FROM BEHIND — and this facing is a lesson in what OCCLUSION means (Andrew: "booth N doesn't
-       make any sense, the backboard would now allow the cushions to be seen").
-       ⛔ A FULL-HEIGHT BACK HIDES EVERYTHING BEHIND IT. Turned 180° the backboard stands on the NEAR
-          edge of the footprint and the cushions sit BEHIND it, so nothing of the seat can reach the
-          camera. The first draft simply dimmed the south view's cushion and left it under the back —
-          which draws a seat straight through a solid wall. A booth's back runs floor to crown; the
-          only things below it are its own kick and the deck.
-       ⛔ THE CHAIRS ARE NOT WRONG FOR THE SAME REASON. A chair's back stops at its seat, so its pad's
-          rear edge and underside genuinely do show from behind. The test is whether the near mass
-          reaches the FLOOR — a booth's does, a chair's does not. */
-    const RED = '#a8382b', RED_LIT = '#c4513f', RED_DK = '#5e1f18';
-    const CHR = '#b6c0c5', CHR_DK = '#5d666c', INK = '#20262a';
-    shadow2(x + 1, y + h - 1, w - 2);
-    // ONE tall board: it stands nearer than it does facing south, so it reaches further down the
-    // screen — the whole box, plus the rise every other facing spends on the seat.
-    px(x + 1, y - 7, w - 2, 16, INK);
-    px(x + 2, y - 6, w - 4, 1, CHR); keyEdge(x + 2, y - 6, 8, 1, 0.22);      // the cap rail, from behind
-    px(x + 2, y - 5, w - 4, 1, CHR_DK);
-    px(x + 2, y - 4, w - 4, 12, U.shade(RED, -0.14));                        // the outer shell, dimmer
-    px(x + 2, y - 4, w - 4, 1, U.shade(RED_LIT, -0.18));                     // its lit top edge
-    px(x + 2, y - 3, 1, 11, U.shade(RED_LIT, -0.26));                        // lit west flank
-    px(x + w - 3, y - 3, 1, 11, RED_DK); rimEdge(x + w - 3, y - 3, 1, 11, 0.20);
-    for (let sx = x + 7; sx < x + w - 5; sx += 8) {                          // PANEL SEAMS, not buttons
-      px(sx, y - 4, 1, 12, RED_DK); px(sx + 1, y - 4, 1, 12, U.shade(RED, 0.04));
+  /* ⛔ THE BOOTH HAS NO NORTH VIEW, AND THAT IS THE HONEST ANSWER (Andrew: "just remove booth N
+     entirely"). A back view was authored, corrected once for drawing cushions through a solid
+     backboard, and then cut: what it left was a featureless red board — a picture nobody would ever
+     deliberately place. `facings()` reads the F table directly, so deleting the function IS the
+     removal; R now cycles S -> W -> E and never stops on a wall. A facing that draws nothing worth
+     placing is the same lie as a facing that draws nothing at all. */
+
+  /* ---- THE GUITAR (2026-08-17) — the last casual prop. Everything else built today is FURNITURE:
+     things a room is arranged around. This is the opposite kind of object and that is its whole job —
+     one crew member's belonging left standing where they put it down, which is what makes a lounge read
+     as lived in rather than furnished. It sits with the speaker, the jukebox and the DJ booth the
+     station already has, so the music was already established; nobody owned an instrument.
+     ⛔ ITS SILHOUETTE IS FREE. A guitar is one of the few objects whose outline reads at ANY size —
+        a round body, a thin neck, a headstock cocked at the top — so this prop needs no invented
+        detail, only those three masses at the right proportions and one warm hue. Fretwork, tuners
+        and strings are 1px marks ON that shape, never breaks in it. */
+  F.guitar = (x, y, w, h, f) => {
+    /* ⛔ THE WAIST IS THE WHOLE OBJECT. A first pass drew the body as a 9x6 rounded box with a square
+       hole in it and the prop read as a PADLOCK on a stick. What says "guitar" is the outline alone:
+       a small upper bout, a pinch, a WIDER lower bout, and a round hole — get those proportions
+       right and no other detail is needed; get them wrong and no amount of shading rescues it.
+       Painted row by row here because at this size the silhouette IS the art. */
+    const WD = '#8a5a24', WD_LIT = '#b4823c', WD_DK = '#4a2f11', INK = '#241708';
+    const NECK = '#3b2a17', NECK_LIT = '#5c4526';
+    const r = MAT.steel;
+    shadow2(x + 3, y + 11, 6);
+    // THE STAND — a thin A-frame behind the instrument, feet apart
+    px(x + 3, y + 6, 1, 5, r.dk); px(x + 8, y + 6, 1, 5, r.dk);
+    px(x + 2, y + 10, 3, 1, r.face); px(x + 7, y + 10, 3, 1, r.face);
+    px(x + 4, y + 8, 4, 1, r.dk);
+    keyEdge(x + 3, y + 6, 1, 3, 0.18);
+    /* THE NECK — 2px, rising clear of the tile. Props may overhang upward, and the height is what
+       makes it readable across a room. Frets are sparse: a rung every three rows is a fretboard, a
+       rung every other row is a ladder. */
+    px(x + 5, y - 9, 4, 11, INK);
+    px(x + 6, y - 8, 2, 10, NECK);
+    px(x + 6, y - 8, 1, 10, NECK_LIT); keyEdge(x + 6, y - 8, 1, 6, 0.22);
+    px(x + 7, y - 8, 1, 10, U.shade(NECK, -0.26)); rimEdge(x + 7, y - 6, 1, 8, 0.18);
+    for (let fy = y - 6; fy < y - 1; fy += 3) px(x + 6, fy, 2, 1, U.shade(NECK_LIT, 0.06));   // frets, whispered
+    // THE HEADSTOCK, wider than the neck and cocked back — stops the neck reading as a pipe
+    px(x + 4, y - 12, 5, 4, INK);
+    px(x + 5, y - 11, 3, 2, WD_DK); px(x + 5, y - 11, 1, 2, WD);
+    px(x + 4, y - 11, 1, 1, r.lit); px(x + 8, y - 10, 1, 1, r.lit);          // two tuners
+    /* THE BODY — row by row: upper bout, WAIST, wider lower bout. */
+    const rows = [[4, 5], [3, 7], [3, 7], [4, 5], [3, 7], [2, 9], [2, 9], [3, 7], [4, 5]];
+    for (let k = 0; k < rows.length; k++) px(x + rows[k][0] - 1, y + k, rows[k][1] + 2, 1, INK);
+    for (let k = 0; k < rows.length; k++) {
+      const bx = x + rows[k][0], bw = rows[k][1], ry = y + k;
+      px(bx, ry, bw, 1, WD);
+      px(bx, ry, 1, 1, WD_LIT);                                             // the lit west rim
+      px(bx + bw - 1, ry, 1, 1, WD_DK);
+      if (k < 3) px(bx + 1, ry, bw - 2, 1, U.shade(WD, 0.08));              // the upper bout takes the key
+      if (k > 5) px(bx + 1, ry, bw - 2, 1, U.shade(WD, -0.12));             // the lower bout falls off
     }
-    px(x + 2, y + 2, w - 4, 1, RED_DK);                                      // the seam behind the cushion line
-    px(x + 2, y + 3, w - 4, 1, U.shade(RED, -0.04));
-    px(x + 2, y + 7, w - 4, 1, RED_DK);                                      // the board's lower rail
-    // THE KICK — recessed under the board, the one thing that IS visible below it
-    px(x + 3, y + 8, w - 6, 3, INK);
-    px(x + 4, y + 8, w - 8, 1, U.shade(CHR_DK, -0.30));
-    px(x + 4, y + 9, w - 8, 1, U.shade(INK, 0.10));
-    ctx.globalAlpha = 0.34; px(x + 2, y + h - 1, w - 4, 1, '#000'); ctx.globalAlpha = 1;
+    keyEdge(x + 3, y + 1, 2, 1, 0.24); rimEdge(x + 9, y + 5, 1, 2, 0.18);
+    /* THE SOUNDHOLE — ROUND. A five-wide middle row turned it into a SLOT and the body read as a
+       mailbox; a hole this size has to stay square in plan and be rounded by its CORNERS. */
+    px(x + 5, y + 2, 3, 3, '#1a1006');
+    for (const c of [[x + 5, y + 2], [x + 7, y + 2], [x + 5, y + 4], [x + 7, y + 4]])
+      px(c[0], c[1], 1, 1, WD_DK);                                          // the four corners, softened
+    px(x + 5, y + 1, 3, 1, U.shade(WD_DK, 0.06));                           // its rosette lip, lit above
+    px(x + 6, y + 6, 2, 1, U.shade(WD_LIT, -0.06));                         // the bridge
+    px(x + 6, y + 7, 2, 1, WD_DK);
   };
 
   /* ============ DETAIL-PASS PROPS (auto-generated) ============ */
@@ -9988,6 +10017,7 @@ const PropSprites = (() => {
        top plan — which is what PLAN_FOOTPRINT is for. Its setting (caddy, ketchup, mugs) is drawn in,
        so it reads as a laid table rather than an empty one you are forbidden to use. */
     { id: "dinertable", label: "DINER TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 2, animated: false, blocks: true },
+    { id: "guitar", label: "GUITAR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true },
     { id: "booth", label: "BOOTH", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'south' } },
     { id: "dinerchair", label: "DINER CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
     { id: "crashseat", label: "CRASH SEAT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'seat', sit: true, approach: 'auto' } },
