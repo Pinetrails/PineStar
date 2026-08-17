@@ -5286,43 +5286,51 @@ const PropSprites = (() => {
     px(x + 3, y + 10, 6, 1, '#2a343c'); keyEdge(x + 3, y + 10, 3, 1, 0.16);
     px(x + 2, y + 9, 1, 1, '#242e35'); px(x + 9, y + 9, 1, 1, '#242e35');
     for (const cw of [x + 2, x + 5, x + 8]) px(cw, y + 11, 2, 1, '#1a1e22');
-    // gas-lift column, centred under the pad rather than under the box
-    px(x + 5, y + 7, 4, 3, LINE);
-    px(x + 6, y + 7, 1, 3, '#54616a'); px(x + 7, y + 7, 1, 3, '#39434b');
-    keyEdge(x + 6, y + 7, 1, 2, 0.20); rimEdge(x + 7, y + 7, 1, 3, 0.22);
-    /* THE BACK — a slab seen edge-on. Its HEIGHT is F.chair's exactly (headrest y-4, foot y+2) and
-       the headrest block is drawn PROUD of the column, so the outline steps in on the way down. */
-    px(x, y - 4, 6, 2, LINE);                                   // headrest block, proud of the column
-    px(x + 1, y - 4, 4, 1, r.lit); keyEdge(x + 1, y - 4, 3, 1, 0.28);
-    px(x + 1, y - 3, 4, 1, U.shade(r.face, 0.04));
-    px(x + 1, y - 2, 5, 5, LINE);                               // the back column
-    px(x + 2, y - 2, 3, 5, U.shade(r.face, -0.08));
-    px(x + 2, y - 2, 1, 5, U.shade(r.face, 0.10)); px(x + 4, y - 2, 1, 5, r.dk);
-    rimEdge(x + 4, y - 2, 1, 5, 0.20);
-    px(x + 2, y + 1, 3, 1, U.shade(r.face, -0.30));             // lumbar pinch
-    /* THE FAR ARMREST, behind the seat plane. Seen from here the two arms are NOT one bar: the
-       camera looks down, so the far one rides high and the near one low, and the seat plane sits
-       between them. That pair of parallel rails IS the side view — without them a turned chair is a
-       teal box on a post. */
-    px(x + 4, y + 1, 8, 2, LINE);
-    px(x + 5, y + 1, 6, 1, U.shade(r.face, -0.18));             // in the seat's own shadow — the DARK band
-    px(x + 5, y + 2, 6, 1, U.shade(r.dk, -0.06));
-    /* THE SEAT — its top plane, foreshortened, running east off the back, and the biggest single
-       area of colour on the prop (the south view's read, kept). */
+    // gas-lift column, west of the seat's midpoint (the seat runs east off the back)
+    px(x + 4, y + 7, 4, 3, LINE);
+    px(x + 5, y + 7, 1, 3, '#54616a'); px(x + 6, y + 7, 1, 3, '#39434b');
+    keyEdge(x + 5, y + 7, 1, 2, 0.20); rimEdge(x + 6, y + 7, 1, 3, 0.22);
+    /* THE BACK — one RAKED mass from crown to seat, silhouette first, fills after. The first draft
+       stacked a proud headrest block on a thin straight post and the profile read as a CISTERN ON A
+       BOWL: what says "office chair" from the side is the RAKE — the crown hangs a step further
+       west every row up, and the foot tucks into the seat ink with no gap. Height stays in lockstep
+       with F.chair (crown y-4, foot at the pad). */
+    px(x + 3, y - 4, 4, 1, LINE);                               // crown, eased a px at each end
+    px(x + 2, y - 3, 6, 1, LINE);
+    px(x + 2, y - 2, 6, 2, LINE);
+    px(x + 3, y + 0, 5, 2, LINE);
+    px(x + 4, y + 2, 4, 1, LINE);                               // lumbar foot, tucked into the seat ink
+    px(x + 3, y - 3, 4, 1, r.lit); keyEdge(x + 3, y - 3, 3, 1, 0.28);   // the crown catches the strip
+    px(x + 3, y - 2, 4, 2, U.shade(r.face, -0.04));             // mesh, edge-on — a full slab, not a stalk
+    px(x + 3, y - 2, 1, 2, U.shade(r.face, 0.12)); keyEdge(x + 3, y - 2, 1, 2, 0.18);
+    px(x + 6, y - 2, 1, 2, r.dk); rimEdge(x + 6, y - 2, 1, 2, 0.20);
+    px(x + 4, y + 0, 3, 1, U.shade(r.face, -0.10));             // weave row
+    px(x + 4, y + 0, 1, 1, U.shade(r.face, 0.06)); px(x + 6, y + 0, 1, 1, U.shade(r.dk, 0.04));
+    px(x + 4, y + 1, 3, 1, U.shade(r.face, -0.26));             // lumbar pinch
+    /* THE FAR ARMREST, behind the seat plane. The camera looks down, so the far arm rides HIGH and
+       dark and the near arm LOW and lit, with the seat plane between them — that pair of offset
+       rails IS the side view. It stops a px short of the seat's front: arms never reach the knees. */
+    px(x + 5, y + 1, 6, 2, LINE);
+    px(x + 6, y + 1, 4, 1, U.shade(r.face, -0.18));
+    px(x + 6, y + 2, 4, 1, U.shade(r.dk, -0.06));
+    /* THE SEAT — its top plane running east off the back, still the biggest patch of colour, and
+       its east END is the seat's FRONT: below it the profile stays OPEN down to the base, because
+       the daylight under the knees is the thing that makes it furniture. */
     px(x + 3, y + 3, 9, 5, LINE);
-    px(x + 4, y + 3, 8, 1, '#4a8a82'); px(x + 4, y + 3, 5, 1, '#5aa89c');
-    keyEdge(x + 4, y + 3, 4, 1, 0.20);
-    px(x + 4, y + 4, 8, 2, '#2f6a62');
-    px(x + 4, y + 4, 1, 2, '#4a8a82'); px(x + 11, y + 4, 1, 2, '#26554e');
-    px(x + 6, y + 5, 1, 1, '#26554e'); px(x + 10, y + 5, 1, 1, '#26554e');   // seat stitches
-    px(x + 4, y + 6, 8, 1, r.face); px(x + 4, y + 6, 3, 1, r.lit);           // front lip
-    px(x + 5, y + 7, 6, 1, r.dk);                                            // rounded skirt
-    /* THE NEAR ARMREST last, so it reads in FRONT of the pad — the LIGHT band, and with the dark far
-       rail above it the two rails can never merge into one grey mass. */
-    px(x + 4, y + 5, 8, 2, LINE);
-    px(x + 5, y + 5, 6, 1, r.lit); keyEdge(x + 5, y + 5, 4, 1, 0.30);
-    px(x + 5, y + 6, 6, 1, U.shade(r.face, -0.10));
-    px(x + 10, y + 5, 1, 2, r.dk); rimEdge(x + 10, y + 5, 1, 2, 0.22);
+    px(x + 4, y + 3, 7, 1, '#4a8a82'); px(x + 4, y + 3, 4, 1, '#5aa89c');
+    keyEdge(x + 4, y + 3, 3, 1, 0.20);
+    px(x + 4, y + 4, 7, 2, '#2f6a62');
+    px(x + 4, y + 4, 1, 2, '#4a8a82'); px(x + 10, y + 4, 1, 2, '#26554e');
+    rimEdge(x + 10, y + 3, 1, 3, 0.22);
+    px(x + 6, y + 5, 1, 1, '#26554e'); px(x + 9, y + 5, 1, 1, '#26554e');   // seat stitches
+    px(x + 4, y + 6, 7, 1, r.face); px(x + 4, y + 6, 3, 1, r.lit);          // front lip
+    px(x + 5, y + 7, 5, 1, r.dk);                                           // rounded skirt
+    /* THE NEAR ARMREST last, so it reads in FRONT of the pad — the LIGHT rail against the far one's
+       dark, and with both drawn the profile can never collapse into one grey mass. */
+    px(x + 4, y + 5, 7, 2, LINE);
+    px(x + 5, y + 5, 5, 1, r.lit); keyEdge(x + 5, y + 5, 3, 1, 0.30);
+    px(x + 5, y + 6, 5, 1, U.shade(r.face, -0.10));
+    px(x + 9, y + 5, 1, 2, r.dk); rimEdge(x + 9, y + 5, 1, 2, 0.22);
   };
 
   /* ---- CHAIR FROM BEHIND. The one back view worth authoring in the whole catalog: a chair pushed
@@ -5515,14 +5523,17 @@ const PropSprites = (() => {
      only one is offered (SIDE_SYMMETRIC): an R key that changes nothing is the same lie as a view
      that draws nothing. */
   F['loungetable:e'] = (x, y, w, h, f) => {
-    // 1×2 deep COFFEE TABLE — the same glass-over-steel table, receding away from the camera.
+    // 1×2 deep COFFEE TABLE — the glass-over-steel table, receding. Two drafts failed the same way:
+    // lit at the far edge it was a NOTICEBOARD, and with the under-shelf drawn full-bleed the pane
+    // was a CABINET FRONT with the datapads for shelves. Glass only reads as glass when the DECK
+    // SURVIVES THROUGH IT: the shelf is an inset plate floating under the middle of the pane with
+    // clear margins all round, the pane itself is a half-alpha tint, and the west rail carries the
+    // key end to end the way every receding plane here is lit.
     const r = RAMP.steel, top = y + h - 1 - SURFACE_RISE;
     const GLS = '#4a5c6e', GLS_LIT = '#a8bccb';
     const D = top - (y + 1);                                               // the pane's depth in rows
     shadow2(x + 1, y + h - 1, w - 2);
-    for (const lx of [x + 1, x + w - 4]) {                                 // FAR pair, up behind the plane
-      px(lx + 1, y + 1, 2, 5, U.shade(r.face, -0.28)); rimEdge(lx + 1, y + 1, 1, 4, 0.14);
-    }
+    ctx.globalAlpha = 0.20; px(x + w + 1, y + 3, 2, D + 4, '#000'); ctx.globalAlpha = 1;
     for (const lx of [x + 1, x + w - 4]) {                                 // NEAR pair, under the near edge
       px(lx, top + 3, 3, 6, LINE);
       px(lx, top + 3, 1, 6, r.lit); px(lx + 1, top + 3, 2, 6, r.dk);
@@ -5530,32 +5541,40 @@ const PropSprites = (() => {
       px(lx, y + h - 2, 3, 1, r.ao);
       ctx.globalAlpha = 0.30; px(lx - 1, y + h - 1, 5, 1, '#000'); ctx.globalAlpha = 1;
     }
-    // UNDER-SHELF running the table's new length, seen through the glass
-    px(x + 3, top - D + 4, w - 6, D - 4, U.shade(r.face, -0.32));
-    px(x + 3, top - D + 4, w - 6, 1, U.shade(r.face, 0.10));
-    px(x + 4, top - 6, 5, 1, '#5d6b63'); px(x + 4, top - 6, 3, 1, '#7a8a80');   // two datapads on it
-    px(x + 5, top - 4, 4, 1, '#4a5a66'); px(x + 5, top - 4, 2, 1, '#647686');
-    // THE PANE — translucent, so the shelf survives underneath. That IS the glass.
-    ctx.globalAlpha = 0.58;
-    px(x + 1, top - D, w - 2, D + 1, GLS);
+    // UNDER-SHELF — an inset plate under the middle of the pane, never a full-bleed interior
+    px(x + 2, top - D + 6, w - 4, D - 10, U.shade(r.face, -0.30));
+    px(x + 2, top - D + 6, w - 4, 1, U.shade(r.face, 0.08));
+    px(x + 4, top - D + 8, 4, 2, '#5d6b63'); px(x + 4, top - D + 8, 2, 1, '#6d7d74');   // one datapad on it
+    // THE PANE — a half-alpha tint a px proud of its tile each side, so deck texture rides through
+    ctx.globalAlpha = 0.50;
+    px(x, top - D, w, D + 1, GLS);
     ctx.globalAlpha = 1;
-    px(x + 1, top - D - 1, w - 2, 1, LINE); px(x + 1, top + 1, w - 2, 1, LINE);
-    px(x, top - D, 1, D + 1, LINE); px(x + w - 1, top - D, 1, D + 1, LINE);
-    px(x + 1, top - D, w - 2, 1, GLS_LIT); keyEdge(x + 2, top - D, 6, 1, 0.30);   // bright far edge
+    px(x, top - D - 1, w, 1, LINE); px(x, top + 1, w, 1, LINE);            // eased corners for free:
+    px(x - 1, top - D, 1, D + 1, LINE); px(x + w, top - D, 1, D + 1, LINE); // the rows stop a px short
+    px(x + 1, top - D, w - 2, 1, U.shade(GLS_LIT, -0.18));                 // far edge, present but QUIET
+    px(x, top - D + 1, 1, D - 1, GLS_LIT);                                 // THE WEST RAIL — lit end to end
+    keyEdge(x, top - D + 1, 1, Math.min(8, D - 1), 0.30);
+    px(x + w - 1, top - D + 1, 1, D - 1, U.shade(GLS, -0.34));
+    rimEdge(x + w - 1, top - D + 3, 1, D - 3, 0.22);
     px(x + 1, top, w - 2, 1, U.shade(GLS_LIT, -0.40));                     // the near edge, dimmer
-    px(x + 1, top - D + 1, 1, D - 1, U.shade(GLS_LIT, -0.30));
-    px(x + w - 2, top - D + 1, 1, D - 1, U.shade(GLS, -0.34));
-    rimEdge(x + w - 2, top - D + 1, 1, D - 1, 0.22);
-    for (let i = 0; i < 5; i++) px(x + 2 + i, top - D + 3 + i * 2, 5 - i, 1, U.shade(GLS_LIT, -0.18 - i * 0.07));   // specular, raked down the length
-    px(x + 2, top + 2, w - 4, 1, U.shade(GLS, -0.44));                     // the pane's own thickness
+    for (let i = 0; i < 6; i++)                                            // the SPECULAR WEDGE — the south view's
+      px(x + 1, top - D + 2 + i, 7 - i, 1, U.shade(GLS_LIT, -0.16 - i * 0.06));   // glass cue, swept down the lit rail
+    px(x + 2, top - 5, 3, 1, U.shade(GLS_LIT, -0.34));                     // a second, smaller catch near the foot
+    px(x + 1, top + 2, w - 2, 1, U.shade(GLS, -0.44));                     // the pane's own thickness
   };
 
   F['longtable:e'] = (x, y, w, h, f) => {
     // 1×3 deep TRESTLE table — one long PLANKED board running away from you, on the near trestle.
+    // Same law as the coffee table above: the first pass keyEdged the far end and the board read as
+    // a PLANK LEANING ON THE WALL. The receding read is carried by three things — the west rail lit
+    // end to end, chamfered board ENDS (a plank is square, a tabletop is eased), and the contact
+    // shadow down the east flank. The board also sits 2px proud of its tile each side: a table is
+    // wider than a walk lane, and the extra width is what keeps it from reading as a floorboard.
     const WD = '#5c4732', WD_LIT = '#7a6044', WD_DK = '#3a2c1e';
     const top = y + h - 1 - SURFACE_RISE;
     const D = top - (y + 1);                                               // the tabletop's depth in rows
     shadow2(x + 1, y + h - 1, w - 2);
+    ctx.globalAlpha = 0.22; px(x + w + 1, y + 3, 2, D + 5, '#000'); ctx.globalAlpha = 1;
     // the NEAR trestle: a splayed A-frame with its foot rail, in the clear band under the top
     px(x + 3, top + 3, 6, 6, LINE);
     px(x + 4, top + 3, 1, 6, WD_LIT); px(x + 7, top + 3, 1, 6, WD_DK);
@@ -5564,24 +5583,26 @@ const PropSprites = (() => {
     px(x + 2, y + h - 3, 8, 2, LINE);
     px(x + 3, y + h - 2, 6, 1, WD); keyEdge(x + 3, y + h - 2, 3, 1, 0.14);   // foot rail
     px(x + 2, y + h - 1, 8, 1, '#0a0d10');
-    // THE TABLETOP as a long receding plane: far edge lit, near edge falling into shade
-    px(x - 1, top - D - 1, w + 2, D + 3, LINE);
-    px(x, top - D, w, D + 1, WD);
-    px(x, top - D, w, 1, WD_LIT); keyEdge(x + 1, top - D, 6, 1, 0.26);
-    px(x, top - D + 1, w, 1, U.shade(WD, 0.16));                           // the far end takes the key
+    // THE BOARD as a long receding plane, its ends eased
+    chamf(x - 2, top - D - 1, w + 4, D + 3, LINE, 2);
+    chamf(x - 1, top - D, w + 2, D + 1, WD, 1);
+    px(x, top - D, w, 1, U.shade(WD, 0.10));                               // far end — a warm lift, no key blast
+    px(x - 1, top - D + 1, 1, D - 1, WD_LIT);                              // THE WEST RAIL — lit end to end
+    keyEdge(x - 1, top - D + 1, 1, Math.min(9, D - 1), 0.24);
+    px(x, top - D + 1, 1, D - 1, U.shade(WD, 0.10));                       // its board already turning away
+    px(x + w, top - D + 1, 1, D - 1, WD_DK);                               // east rail in its own shade
+    rimEdge(x + w, top - D + 4, 1, D - 4, 0.20);
     px(x, top - 1, w, 1, U.shade(WD, -0.16));                              // the near end falls off
     px(x, top, w, 1, U.shade(WD, -0.30));
-    px(x, top - D, 1, D + 1, WD_LIT); px(x + w - 1, top - D, 1, D + 1, WD_DK);
-    rimEdge(x + w - 1, top - D + 1, 1, D, 0.20);
-    for (const sx of [x + 4, x + 8]) {                                     // plank seams, running the LENGTH
-      px(sx, top - D, 1, D + 1, U.shade(WD, -0.40));
-      px(sx + 1, top - D, 1, D + 1, U.shade(WD, 0.12));                    // the next board's lit lip
+    for (const sx of [x + 3, x + 7]) {                                     // plank seams, running the LENGTH, quiet
+      px(sx, top - D + 1, 1, D, U.shade(WD, -0.26));
+      px(sx + 1, top - D + 1, 1, D, U.shade(WD, 0.06));
     }
     for (let i = 0; i < 6; i++) {                                          // grain, clamped to the top
       const gy = top - D + 3 + i * 4; if (gy + 3 <= top) px(x + 1 + (i % 3) * 3, gy, 1, 3, U.shade(WD, 0.08));
     }
-    px(x, top + 1, w, 1, WD_DK);                                           // the top's THICKNESS, near edge
-    px(x + 1, top + 2, w - 2, 1, U.shade(WD_DK, -0.44));
+    px(x - 1, top + 1, w + 2, 1, WD_DK);                                   // the top's THICKNESS, near edge
+    px(x, top + 2, w, 1, U.shade(WD_DK, -0.44));
   };
 
   /* ============ DETAIL-PASS PROPS (auto-generated) ============ */
