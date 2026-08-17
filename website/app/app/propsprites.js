@@ -8567,86 +8567,167 @@ const PropSprites = (() => {
   F.telescope_r = mirrorV(F.telescope);
 
   F.camerarig = (x, y, w, h, f) => {
-    /* 1x1 CAMERA RIG — a broadcast body on a tripod, LENS OUT WEST with a matte hood, a red tally
-       burning on its back and the viewfinder standing proud on top. Small prop, but the lens and
-       hood break the outline hard enough to read.
-       ⛔ THE HOOD IS WHAT SAYS CAMERA. A bare barrel is a telescope at one tile; the squared hood
-          flaring at the end is the difference. */
+    /* 1x2 CAMERA RIG — v2, TALL (Andrew: "camera rig is too short"). The first pass put the body a
+       few px above the deck on a stubby tripod and read as a toy on a stool; a broadcast camera
+       stands at head height, so the legs now run the full tile and the body sits at the top of them.
+       ⛔ THE HOOD IS WHAT SAYS CAMERA. At this size a bare barrel is a small telescope; the squared
+          matte hood flaring at the lens is the difference.
+       ⛔ THE LEGS SPLAY AND CARRY A SPREADER. Three from one hub with daylight between them — the
+          spreader triangle halfway down is the detail that makes it a camera tripod and not a stand. */
     const INK = '#0e1114', BODY = '#1f242a', BODY_LIT = '#39424b', BODY_DK = '#12161a';
-    const MET = '#39434b', MET_LIT = '#5b6771';
+    const MET = '#39434b', MET_LIT = '#5b6771', MET_DK = '#222a31';
     const hot = blink(1500, x);
-    shadow2(x + 2, y + 10, 8);
-    /* (1) tripod: a splayed three-leg stand under a short column */
+    shadow2(x + 2, y + h - 1, 8);
+    /* (1) THE TRIPOD — full height, splayed, with a spreader and rubber feet */
     for (const [lx, dx] of [[x + 5, -1], [x + 6, 0], [x + 6, 1]]) {
-      for (let i = 0; i < 6; i++) px(lx + Math.round(dx * i * 0.6), y + 5 + i, 1, 1, dx < 0 ? MET_LIT : (dx > 0 ? '#242c33' : MET));
-      px(lx + Math.round(dx * 3), y + 11, 2, 1, '#0d1215');
+      for (let i = 0; i < 15; i++) {
+        const px0 = lx + Math.round(dx * i * 0.42);
+        px(px0, y + 8 + i, 1, 1, dx < 0 ? MET_LIT : (dx > 0 ? MET_DK : MET));
+        if (i === 7) px(px0, y + 15, 1, 1, U.shade(MET, -0.30));
+      }
+      px(lx + Math.round(dx * 6), y + 22, 2, 1, '#0d1215');
     }
-    px(x + 5, y + 3, 2, 3, MET); px(x + 5, y + 3, 1, 3, MET_LIT);
-    /* (2) the BODY — a squat block, tilted a touch so it is not a brick */
-    px(x + 3, y - 4, 8, 8, INK);
-    px(x + 4, y - 3, 6, 5, BODY);
-    px(x + 4, y - 3, 6, 1, BODY_LIT); keyEdge(x + 4, y - 3, 3, 1, 0.24);
-    px(x + 9, y - 2, 1, 4, BODY_DK); rimEdge(x + 9, y - 2, 1, 4, 0.20);
-    px(x + 5, y - 1, 3, 2, U.shade(BODY, 0.10));                                   // the cassette hatch
-    px(x + 9, y - 3, 1, 1, hot ? '#ff3b30' : '#5a1a16');                           // the TALLY, on its back
-    if (hot) bloom(x + 9, y - 3, 1, 1, '#ff3b30', 0.34);
-    /* (3) the VIEWFINDER standing proud, and the pan handle out the back */
-    px(x + 5, y - 6, 3, 2, INK); px(x + 6, y - 5, 2, 1, BODY_LIT);
-    px(x + 10, y + 1, 2, 1, MET); px(x + 11, y + 2, 1, 1, MET_LIT);
+    px(x + 3, y + 15, 6, 1, MET_DK); px(x + 3, y + 14, 6, 1, U.shade(MET, 0.10));   // the spreader
+    px(x + 5, y + 5, 2, 4, MET); px(x + 5, y + 5, 1, 4, MET_LIT);                   // the centre column
+    px(x + 4, y + 4, 4, 2, INK); px(x + 5, y + 4, 2, 1, MET_LIT);                   // the pan head
+    px(x + 9, y + 5, 3, 1, MET); px(x + 11, y + 6, 1, 2, MET_DK);                   // the pan handle, out east
+    /* (2) THE BODY — a proper block at the top of the legs */
+    px(x + 2, y - 4, 10, 9, INK);
+    px(x + 3, y - 3, 8, 7, BODY);
+    px(x + 3, y - 3, 8, 1, BODY_LIT); keyEdge(x + 3, y - 3, 4, 1, 0.24);
+    px(x + 10, y - 2, 1, 6, BODY_DK); rimEdge(x + 10, y - 2, 1, 6, 0.20);
+    px(x + 4, y - 1, 4, 3, U.shade(BODY, 0.10));                                    // the cassette hatch
+    px(x + 4, y - 1, 4, 1, U.shade(BODY_LIT, -0.20));
+    px(x + 10, y - 3, 1, 1, hot ? '#ff3b30' : '#5a1a16');                           // the TALLY on its back
+    if (hot) bloom(x + 10, y - 3, 1, 1, '#ff3b30', 0.34);
+    for (let i = 0; i < 3; i++) px(x + 8, y + 1 + i, 1, 1, U.shade(BODY_LIT, -0.10));   // vents
+    /* (3) VIEWFINDER + carry handle standing proud on top */
+    px(x + 4, y - 7, 4, 3, INK);
+    px(x + 5, y - 6, 2, 1, BODY_LIT); px(x + 5, y - 5, 2, 1, BODY);
+    px(x + 8, y - 6, 3, 2, INK); px(x + 9, y - 5, 2, 1, U.shade(BODY_LIT, -0.14));
     /* (4) THE LENS + HOOD, west — the outline break that makes it a camera */
-    px(x, y - 2, 4, 5, INK);
-    px(x + 1, y - 1, 3, 3, BODY);
-    px(x + 1, y - 1, 3, 1, U.shade(BODY_LIT, -0.10));
-    px(x, y - 2, 1, 5, BODY_DK);                                                   // the hood's flared mouth
-    px(x + 1, y, 1, 1, '#7fd8ff'); px(x + 2, y, 1, 1, U.shade('#7fd8ff', -0.34));   // glass catching the room
-    bloom(x + 1, y, 2, 1, '#7fd8ff', 0.16);
+    px(x - 1, y - 3, 4, 7, INK);
+    px(x, y - 2, 3, 5, BODY);
+    px(x, y - 2, 3, 1, U.shade(BODY_LIT, -0.06));
+    px(x - 1, y - 3, 1, 7, BODY_DK);                                                // the hood's flared mouth
+    px(x, y, 2, 2, '#7fd8ff'); px(x + 2, y, 1, 2, U.shade('#7fd8ff', -0.40));       // glass catching the room
+    bloom(x, y, 2, 2, '#7fd8ff', 0.20);
   };
   F.camerarig_r = mirrorV(F.camerarig);
 
+  F.punchbag = (x, y, w, h, f) => {
+    /* 1x2 HEAVY BAG on a floor stand — the mast stands at one side and the arm reaches OUT over the
+       deck, so the bag hangs clear of the base and swings on its chain. That overhang is the whole
+       silhouette: a bag hung directly over its own base is a bollard.
+       ⛔ IT SWINGS, AND THE CHAIN SWINGS WITH IT. A bag drawn dead vertical reads as a punchbag
+          nobody has ever hit; a 1px lean that reverses slowly is enough.
+       ⛔ LEATHER IS A VALUE STACK, NOT A TEXTURE. Lit crown, a bright band under the straps, then a
+          long fall to a near-black bottom where fists have worn it. */
+    const INK = '#1a0f0c';
+    const LTH = '#8a3a2a', LTH_LIT = '#c2604a', LTH_DK = '#4e1f16';
+    const MET = '#39434b', MET_LIT = '#5b6771', MET_DK = '#1d242a';
+    const sw = Math.round(Math.sin(now / 1500 + x) * 1.4);       // the bag's slow swing
+    shadow2(x + 3, y + h - 1, 7);
+    /* (1) THE STAND — a weighted base plate, a mast up the east side, an arm reaching west */
+    /* ⛔ THE STAND HAS TO LOOK LIKE IT COULD HOLD THE BAG. v1's mast was 2px of pipe on a matchbox
+       and the bag read as floating; this base is a WIDE weighted plate with a stack of ballast discs
+       on it, and the mast is a proper 3px column braced back to that plate. */
+    px(x + 5, y + 18, 7, 4, INK);
+    px(x + 6, y + 19, 5, 2, MET); px(x + 6, y + 19, 5, 1, MET_LIT);
+    px(x + 6, y + 21, 5, 1, '#0d1215');
+    px(x + 7, y + 16, 4, 3, INK); px(x + 8, y + 17, 2, 2, U.shade(MET, -0.16));     // ballast discs
+    px(x + 8, y + 16, 2, 1, U.shade(MET_LIT, -0.10));
+    px(x + 8, y - 7, 4, 25, INK);
+    px(x + 9, y - 6, 1, 24, MET_LIT); px(x + 10, y - 6, 2, 24, MET);                // the mast
+    for (let i = 0; i < 4; i++) px(x + 9, y + 2 + i * 5, 3, 1, MET_DK);             // its sleeve joints
+    for (let i = 0; i < 4; i++) px(x + 8 - i, y + 13 + i, 1, 1, MET);               // a brace down to the plate
+    px(x + 1, y - 8, 11, 4, INK);
+    px(x + 2, y - 7, 9, 1, MET_LIT); px(x + 2, y - 6, 9, 2, MET);                   // the arm
+    px(x + 2, y - 5, 9, 1, U.shade(MET, -0.30));
+    px(x + 9, y - 7, 3, 3, U.shade(MET_LIT, 0.10));                                 // the elbow gusset
+    /* (2) THE CHAIN + SWIVEL, leaning with the bag */
+    px(x + 5 + sw, y - 4, 1, 3, MET_DK);
+    px(x + 5 + sw, y - 4, 1, 1, MET_LIT);
+    px(x + 4 + sw, y - 1, 3, 1, MET);                                               // the ring the straps hang from
+    /* (3) THE BAG — a leather cylinder, lit at the crown, worn near-black at the bottom */
+    const bx = x + 1 + sw;
+    rr(bx, y - 2, 8, 18, INK);                                                      // rounded: a bag has no corners
+    px(bx + 1, y, 6, 2, LTH_LIT); keyEdge(bx + 1, y, 3, 1, 0.26);                   // crown
+    px(bx + 1, y + 2, 6, 1, U.shade(LTH_LIT, -0.20));
+    px(bx + 1, y + 3, 6, 7, LTH);
+    px(bx + 1, y + 3, 1, 7, U.shade(LTH_LIT, -0.14)); px(bx + 6, y + 3, 1, 7, LTH_DK);
+    rimEdge(bx + 6, y + 4, 1, 6, 0.18);
+    px(bx + 1, y + 10, 6, 3, LTH_DK);                                               // the fall into shade
+    px(bx + 1, y + 13, 6, 2, U.shade(LTH_DK, -0.34));                               // worn where the fists land
+    px(bx + 2, y + 15, 4, 1, '#100a08');
+    px(bx + 1, y + 6, 6, 1, U.shade(LTH, -0.26));                                   // a seam round its middle
+    px(bx + 1, y + 7, 6, 1, U.shade(LTH, 0.08));
+    px(bx + 3, y + 11, 2, 1, U.shade(LTH_DK, 0.18));                                // a scuff
+    /* (4) THE STRAPS — two, from the ring down onto the crown */
+    px(bx + 2, y - 1, 1, 2, MET_DK); px(bx + 5, y - 1, 1, 2, MET_DK);
+    px(bx + 2, y - 1, 1, 1, MET_LIT);
+  };
+  F.punchbag_r = mirrorV(F.punchbag);
+
   F.benchpress = (x, y, w, h, f) => {
-    /* 2x1 BENCH PRESS — pure side profile: a raked pad running east, the rack uprights at its WEST
-       head, and the loaded bar sitting in the hooks. The NEAR plate is a full disc and the far one
-       shows only its top edge behind the uprights, which is what gives the bar depth.
-       ⛔ THE PAD MUST RAKE. A flat slab on two legs is a bench; the 1px rise toward the head end and
-          the short back-rest step are what make it a PRESS bench.
-       ⛔ ONE SATURATED THING: the plate's rubber rim. Everything else is gym black and steel. */
-    const INK = '#0e1114', PAD = '#22262b', PAD_LIT = '#39424b';
-    const MET = '#48525b', MET_LIT = '#6b7883', MET_DK = '#252c33';
-    const RIM = '#b8332f', RIM_LIT = '#d8564a';
+    /* 2x1 BENCH PRESS — v2 (Andrew: "the benchpress sucks"). v1 spent its pixels on a long grey pad
+       with a thin pipe over it: a workbench. The RACK is the prop, so v2 gives it the height and the
+       WEIGHT — two big discs on the bar, the near one a full disc and the far one showing its crown
+       above and behind, which is what makes the bar read as loaded rather than as a rail.
+       ⛔ THE PAD MUST RAKE AND MUST BE SHORT. A slab as long as the footprint is a table; a press
+          bench is a narrow pad with a raised head and visible frame under it.
+       ⛔ ONE SATURATED THING: the plates' rubber rims. Everything else is gym black and steel. */
+    const INK = '#0e1114', PAD = '#22262b', PAD_LIT = '#3d4650';
+    const MET = '#48525b', MET_LIT = '#7a8794', MET_DK = '#252c33';
+    const RIM = '#b8332f', RIM_LIT = '#e0685a', DISC = '#181c20';
     shadow2(x + 3, y + h - 1, w - 6);
-    /* (1) THE FRAME — two A-legs with real deck between them, and a foot rail */
-    for (const lx of [x + 8, x + 18]) {
-      px(lx, y + 5, 3, 6, INK);
-      px(lx, y + 5, 1, 6, MET_LIT); px(lx + 1, y + 5, 1, 6, MET); px(lx + 2, y + 5, 1, 6, MET_DK);
+    /* (1) THE BENCH — a short raked pad on a real frame, east of the rack */
+    for (const lx of [x + 11, x + 20]) {
+      px(lx, y + 6, 3, 5, INK);
+      px(lx, y + 6, 1, 5, MET_LIT); px(lx + 1, y + 6, 1, 5, MET); px(lx + 2, y + 6, 1, 5, MET_DK);
       px(lx - 1, y + 11, 5, 1, '#0d1215');
     }
-    px(x + 10, y + 8, 8, 1, MET_DK); px(x + 10, y + 7, 8, 1, U.shade(MET, 0.12));
-    /* (2) THE PAD — raked: higher at the head (west), with a short back-rest step */
-    px(x + 5, y + 1, 18, 5, INK);
-    px(x + 6, y + 2, 16, 2, PAD_LIT); keyEdge(x + 6, y + 2, 6, 1, 0.24);
-    px(x + 6, y + 4, 16, 1, PAD);
-    px(x + 6, y + 5, 16, 1, U.shade(PAD, -0.30));                                  // its underside falling off
-    px(x + 5, y, 6, 3, INK);
-    px(x + 6, y + 1, 4, 1, U.shade(PAD_LIT, 0.10));                                // the head step, a row higher
-    px(x + 6, y + 2, 4, 1, PAD);
-    px(x + 12, y + 3, 1, 1, U.shade(PAD_LIT, -0.24)); px(x + 17, y + 3, 1, 1, U.shade(PAD_LIT, -0.24));   // stitching
-    /* (3) THE RACK — two uprights, the far one dimmer and offset so they read as a pair */
-    px(x + 3, y - 9, 3, 15, INK);
-    px(x + 4, y - 8, 1, 14, MET_LIT); px(x + 5, y - 8, 1, 14, MET);
-    px(x + 6, y - 7, 2, 12, INK);
-    px(x + 7, y - 6, 1, 11, U.shade(MET, -0.24));                                  // the far upright, behind
-    px(x + 3, y - 6, 3, 1, MET_DK); px(x + 3, y - 3, 3, 1, MET_DK);                // the rack's notches
-    /* (4) THE BAR + PLATES — near plate a full disc, far plate only its crown */
-    px(x + 6, y - 8, 3, 1, U.shade(MET, -0.20));                                   // the far plate's top edge
-    px(x + 1, y - 9, 7, 2, INK);
-    px(x + 2, y - 8, 5, 1, MET_LIT);                                               // the bar, spanning the rack
-    px(x + 8, y - 8, 6, 1, MET); px(x + 14, y - 8, 2, 1, MET_DK);
-    px(x, y - 11, 5, 7, INK);                                                      // THE NEAR PLATE
-    px(x + 1, y - 10, 3, 5, '#1a1e22');
-    px(x + 1, y - 10, 3, 1, RIM_LIT); px(x + 1, y - 6, 3, 1, RIM);                 // its rubber rim
-    px(x, y - 9, 1, 3, RIM); px(x + 4, y - 9, 1, 3, U.shade(RIM, -0.30));
-    px(x + 2, y - 8, 1, 1, MET_LIT);                                               // the collar in its middle
-    keyEdge(x + 1, y - 10, 2, 1, 0.26);
+    px(x + 13, y + 8, 8, 1, MET_DK); px(x + 13, y + 7, 8, 1, U.shade(MET, 0.14));   // the frame rail
+    px(x + 8, y + 1, 15, 6, INK);
+    px(x + 9, y + 2, 13, 2, PAD_LIT); keyEdge(x + 9, y + 2, 5, 1, 0.24);            // the pad's top plane
+    px(x + 9, y + 4, 13, 2, PAD);
+    px(x + 9, y + 6, 13, 1, U.shade(PAD, -0.34));                                   // its underside
+    px(x + 8, y - 1, 6, 4, INK);
+    px(x + 9, y, 4, 2, U.shade(PAD_LIT, 0.10));                                     // the HEAD, a row proud
+    px(x + 9, y + 2, 4, 1, PAD);
+    px(x + 15, y + 3, 1, 1, U.shade(PAD_LIT, -0.26)); px(x + 19, y + 3, 1, 1, U.shade(PAD_LIT, -0.26));
+    /* (2) THE RACK — two posts, the far one thinner and dimmer, with hook notches */
+    px(x + 4, y - 15, 4, 22, INK);
+    px(x + 5, y - 14, 1, 21, MET_LIT); px(x + 6, y - 14, 1, 21, MET);
+    px(x + 8, y - 13, 2, 19, INK); px(x + 8, y - 12, 1, 18, U.shade(MET, -0.28));   // the far post, behind
+    px(x + 4, y - 11, 4, 1, MET_DK); px(x + 4, y - 7, 4, 1, MET_DK);                // hook notches
+    px(x + 4, y + 7, 6, 4, INK); px(x + 5, y + 8, 4, 2, MET); px(x + 5, y + 8, 4, 1, MET_LIT);
+    px(x + 4, y + 11, 6, 1, '#0d1215');                                             // the rack's foot
+    /* (3) THE BAR — racked in the notches, running east over the pad */
+    px(x + 2, y - 13, 18, 2, INK);
+    px(x + 3, y - 12, 16, 1, MET_LIT);
+    px(x + 12, y - 12, 7, 1, MET);                                                  // it dims as it recedes
+    px(x + 18, y - 12, 1, 1, MET_DK);
+    /* ⛔ NO KNURLING DOTS. A row of ticks along the bar reads as a LADDER at this scale — the bar is
+       one clean 1px highlight and nothing else. */
+    /* (4) THE PLATES — near one a full disc, far one only its crown above and behind */
+    /* ⛔ A PLATE IS A DISC. Drawn as a square with a coloured border it is a picture frame — which is
+       exactly what v2 shipped. Round the corners (rr), keep the rim to the OUTER ring only, and let
+       the dark face carry a single lit facet so it reads as cast iron on edge. */
+    rr(x + 7, y - 17, 5, 6, INK);
+    rr(x + 8, y - 16, 3, 4, U.shade(DISC, 0.16));
+    px(x + 9, y - 16, 1, 1, U.shade(RIM, -0.10));                                   // the FAR plate, its crown only
+    rr(x, y - 17, 7, 10, INK);
+    rr(x + 1, y - 16, 5, 8, DISC);                                                  // the NEAR plate
+    px(x + 2, y - 16, 3, 1, RIM_LIT); px(x + 2, y - 9, 3, 1, RIM);                  // rubber rim, top and bottom
+    px(x + 1, y - 15, 1, 6, RIM); px(x + 5, y - 15, 1, 6, U.shade(RIM, -0.36));     // and down both flanks
+    keyEdge(x + 2, y - 16, 2, 1, 0.28); rimEdge(x + 5, y - 14, 1, 4, 0.20);
+    px(x + 2, y - 14, 1, 5, U.shade(DISC, 0.30));                                   // the lit facet across its face
+    px(x + 3, y - 13, 2, 2, MET_DK); px(x + 3, y - 13, 2, 1, MET_LIT);              // the collar at its hub
+    /* (5) a spare plate leaning at the far end — the detail that says GYM rather than machine shop */
+    px(x + 21, y + 4, 4, 7, INK);
+    px(x + 22, y + 5, 2, 5, DISC); px(x + 22, y + 5, 2, 1, U.shade(RIM, 0.10));
+    px(x + 21, y + 6, 1, 3, U.shade(RIM, -0.20));
   };
   F.benchpress_r = mirrorV(F.benchpress);
 
@@ -8977,8 +9058,10 @@ const PropSprites = (() => {
        a LEFT and a RIGHT entry; the right one is the left one mirrored at draw time. */
     { id: "telescope", label: "TELESCOPE ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "telescope_r", label: "TELESCOPE ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
-    { id: "camerarig", label: "CAMERA RIG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
-    { id: "camerarig_r", label: "CAMERA RIG ›", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "camerarig", label: "CAMERA RIG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
+    { id: "camerarig_r", label: "CAMERA RIG ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
+    { id: "punchbag", label: "HEAVY BAG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'bag', sit: false, approach: 'south' } },
+    { id: "punchbag_r", label: "HEAVY BAG ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'bag', sit: false, approach: 'south' } },
     { id: "benchpress", label: "BENCH PRESS ‹", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, use: { kind: 'bench', sit: false, approach: 'south' } },
     { id: "benchpress_r", label: "BENCH PRESS ›", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, use: { kind: 'bench', sit: false, approach: 'south' } },
     /* THE RECLINER PAIR (2026-08-17) — one seat of the couch, shipped as two props so aiming it is a
