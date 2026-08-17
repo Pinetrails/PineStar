@@ -199,6 +199,7 @@ test/recommendation-eval.test.js
 test/personalization-store.test.js
 test/recruiterstore-readiness.test.js
 test/auxgovernor.test.js
+test/failreview.test.js
 test/threadstore.test.js
 test/autopilot-threads.test.js
 test/autopilot-focus.test.js
