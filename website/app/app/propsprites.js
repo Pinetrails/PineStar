@@ -6410,58 +6410,70 @@ const PropSprites = (() => {
         it does more to say ELECTRIC than any amount of chrome — a limp line is the one thing a
         pixel-art prop can own that a rigid silhouette cannot. */
   F.guitar = (x, y, w, h, f) => {
-    /* ⛔ THE INK MUST FOLLOW THE ROWS, NOT BOX THEM. The first electric pass painted the body's
-       outline as one filled rectangle and then laid the shaped rows inside it — so the cutaways had
-       nothing to cut into and the prop came out a BLUE BLOCK, closer to a backpack than a guitar.
-       Every row here inks itself, one px proud each side, which is what lets the two horns exist. */
-    const BD = '#1f4fa8', BD_LIT = '#3f7ad6', BD_DK = '#0f2456', INK = '#0b1226';   // saturated past the skip
-    const GRD = '#c9c2ac', GRD_DK = '#7d7867';
-    const NECK = '#3b2a17', NECK_LIT = '#5c4526';
+    /* ⛔ A STAR BODY IS THE BEST GUITAR SILHOUETTE THIS SCALE CAN HAVE (Andrew's reference, 2026-08-17:
+       a scarlet five-point star guitar). The Strat draft before it spent its whole outline on subtle
+       curves that die at 12px — horns a px long, a waist a px deep — and read as a blue block. POINTS
+       SURVIVE PIXELS: two side spikes, a notch cut up the middle of the lower half, and a sharp
+       headstock give the eye four unmistakable angles at any size, and no shading is doing the work.
+       ⛔ THE NOTCH IS INK, NOT DECK. At two px wide the gap between the lower points closes as soon
+          as both sides ink themselves — which is fine and is the point: ink is this object's edge, so
+          a dark wedge driven up into the body reads as the cut. Fighting for real daylight there
+          would cost the points their width, and the points are the prop. */
+    const BD = '#c8302a', BD_LIT = '#e8584a', BD_DK = '#6d1410', INK = '#1c0806';   // scarlet, past the skip
+    const NECK = '#2a1c10', NECK_LIT = '#4a3520';
     const r = MAT.steel;
     shadow2(x + 3, y + 11, 6);
-    cable(x + 8, y + 5, x + 11, y + 11, 2.2, '#0d1116');                    // THE LEAD, sagging to the deck
-    // THE STAND — a thin A-frame behind the instrument, feet apart
+    cable(x + 8, y + 4, x + 11, y + 11, 2.2, '#0d1116');                    // THE LEAD, sagging to the deck
+    // THE STAND — a thin A-frame behind the instrument
     px(x + 3, y + 6, 1, 5, r.dk); px(x + 8, y + 6, 1, 5, r.dk);
     px(x + 2, y + 10, 3, 1, r.face); px(x + 7, y + 10, 3, 1, r.face);
     px(x + 4, y + 8, 4, 1, r.dk);
     keyEdge(x + 3, y + 6, 1, 3, 0.18);
-    /* THE BODY — solid, with TWO HORNS reaching up either side of the neck. The horn tips are their
-       own row; below them the bouts widen and then taper. */
-    px(x + 2, y - 2, 3, 1, INK); px(x + 7, y - 2, 3, 1, INK);               // the horn caps
-    const rows = [[3, 7], [2, 9], [2, 9], [2, 9], [3, 7], [4, 5]];
-    px(x + 3, y - 1, 2, 1, BD_LIT); px(x + 8, y - 1, 2, 1, BD);             // the horn tips themselves
-    px(x + 2, y - 1, 1, 1, INK); px(x + 5, y - 1, 3, 1, INK); px(x + 10, y - 1, 1, 1, INK);
-    for (let k = 0; k < rows.length; k++) {
-      const bx = x + rows[k][0], bw = rows[k][1], ry = y + k;
-      px(bx - 1, ry, bw + 2, 1, INK);                                       // this row's own ink
-      px(bx, ry, bw, 1, BD);
-      px(bx, ry, 1, 1, BD_LIT); px(bx + bw - 1, ry, 1, 1, BD_DK);
-      if (k < 2) px(bx + 1, ry, bw - 2, 1, U.shade(BD, 0.10));              // upper body takes the key
-      if (k > 3) px(bx + 1, ry, bw - 2, 1, U.shade(BD, -0.14));             // lower body falls off
+    /* THE STAR — each row inks ITSELF a px proud (a boxed outline has nothing for a point to cut
+       into), then fills. Row order is top spike, side spikes, the bar, then the split lower points. */
+    const body = [
+      [-2, [[5, 2]]],
+      [-1, [[4, 4]]],
+      [0, [[0, 2], [4, 4], [10, 2]]],
+      [1, [[1, 10]]],
+      [2, [[2, 8]]],
+      [3, [[2, 8]]],
+      [4, [[2, 3], [7, 3]]],
+      [5, [[1, 3], [8, 3]]],
+      [6, [[1, 2], [9, 2]]],
+    ];
+    for (const [dy, segs] of body) for (const [sx, sw] of segs) px(x + sx - 1, y + dy, sw + 2, 1, INK);
+    px(x + 4, y - 3, 4, 1, INK); px(x + 1, y + 7, 2, 1, INK); px(x + 9, y + 7, 2, 1, INK);
+    for (const [dy, segs] of body) for (const [sx, sw] of segs) {
+      const bx = x + sx, ry = y + dy;
+      px(bx, ry, sw, 1, BD);
+      px(bx, ry, 1, 1, BD_LIT); px(bx + sw - 1, ry, 1, 1, BD_DK);
+      if (dy <= 1) px(bx + 1, ry, Math.max(0, sw - 2), 1, U.shade(BD, 0.10));   // the upper half takes the key
+      if (dy >= 4) px(bx + 1, ry, Math.max(0, sw - 2), 1, U.shade(BD, -0.16));
     }
-    px(x + 4, y + 6, 5, 1, INK);                                            // the body's bottom edge
-    keyEdge(x + 2, y + 1, 2, 1, 0.26); rimEdge(x + 10, y + 2, 1, 2, 0.20);
-    /* THE HARDWARE — a pale pickguard with two pickups, a bridge and one knob. Four marks, all of
-       them ON the shape rather than breaks in it. */
-    px(x + 3, y + 1, 6, 4, GRD); px(x + 3, y + 1, 5, 1, U.shade(GRD, 0.10));
-    px(x + 3, y + 5, 6, 1, GRD_DK);
-    px(x + 4, y + 2, 4, 1, '#141a22'); px(x + 4, y + 4, 4, 1, '#141a22');   // two pickups
-    px(x + 5, y + 6, 3, 1, r.hi);                                           // the bridge
-    px(x + 9, y + 3, 1, 1, r.sheen); px(x + 9, y + 5, 1, 1, r.lit);          // two knobs
-    /* THE NECK — drawn OVER the body, 2px, rising well clear of the tile. Frets stay sparse: a rung
-       every three rows is a fretboard, a rung every other row is a ladder. */
-    /* ⛔ THE NECK STOPS AT THE JOINT. Run down to the bridge it splits the pickguard in half and the
-       fretboard bleeds through the body — a neck is BOLTED ON at the upper bout and ends there. */
-    px(x + 5, y - 10, 4, 11, INK);
-    px(x + 6, y - 9, 2, 9, NECK);
-    px(x + 6, y - 9, 1, 9, NECK_LIT); keyEdge(x + 6, y - 9, 1, 7, 0.22);
-    px(x + 7, y - 9, 1, 9, U.shade(NECK, -0.26)); rimEdge(x + 7, y - 7, 1, 7, 0.18);
-    px(x + 6, y + 0, 2, 1, r.mid);                                          // the neck plate at the joint
-    for (let fy = y - 7; fy < y - 1; fy += 3) px(x + 6, fy, 2, 1, U.shade(NECK_LIT, 0.06));
-    // THE HEADSTOCK — cocked to one side with its tuners in a single row: an electric's own tell
-    px(x + 3, y - 13, 6, 4, INK);
-    px(x + 5, y - 12, 3, 2, BD_DK); px(x + 5, y - 12, 1, 2, BD);
-    for (let t = 0; t < 3; t++) px(x + 4, y - 12 + t, 1, 1, t === 1 ? r.hi : r.lit);
+    keyEdge(x + 1, y + 1, 3, 1, 0.28); rimEdge(x + 10, y + 1, 1, 3, 0.20);
+    /* THE HARDWARE — two black pickups, a chrome bridge, and the white STAR decals off the reference.
+       Three marks and a spark; anything more at this size is litter. */
+    px(x + 4, y + 1, 4, 1, '#141a22');                                      // two humbuckers, with a
+    px(x + 4, y + 2, 4, 1, U.shade(BD, -0.20));                             // strip of body between them
+    px(x + 4, y + 3, 4, 1, '#141a22');
+    px(x + 4, y + 4, 3, 1, r.hi); px(x + 5, y + 4, 1, 1, r.sheen);          // the bridge, catching the strip
+    px(x + 2, y + 2, 1, 1, '#f2f4f5'); px(x + 9, y + 4, 1, 1, '#f2f4f5');   // two star decals
+    px(x + 8, y + 4, 1, 1, U.shade(BD_LIT, 0.14));                          // a knob
+    /* THE NECK — dark board, sparse inlays, ending AT the joint (run to the bridge it splits the
+       body in half). Props may overhang upward and that height is what carries across a room. */
+    px(x + 4, y - 12, 4, 11, INK);
+    px(x + 5, y - 11, 2, 10, NECK);
+    px(x + 5, y - 11, 1, 10, NECK_LIT); keyEdge(x + 5, y - 11, 1, 7, 0.22);
+    px(x + 6, y - 11, 1, 10, U.shade(NECK, -0.24)); rimEdge(x + 6, y - 9, 1, 8, 0.18);
+    for (let fy = y - 9; fy < y - 2; fy += 3) px(x + 5, fy, 1, 1, '#8e959a');   // dot inlays — ONE px each:
+    // two px of white every third row is a LADDER, not a fretboard.
+    px(x + 5, y - 2, 2, 1, r.mid);                                          // the neck plate at the joint
+    // THE HEADSTOCK — a hard point, angled, tuners down one edge. Same language as the body.
+    px(x + 3, y - 15, 6, 4, INK);
+    px(x + 5, y - 15, 2, 1, BD); px(x + 4, y - 14, 4, 2, BD_DK);
+    px(x + 4, y - 14, 1, 2, BD);
+    for (let t = 0; t < 3; t++) px(x + 8, y - 14 + t, 1, 1, t === 1 ? r.hi : r.lit);
   };
 
   /* ============ DETAIL-PASS PROPS (auto-generated) ============ */
