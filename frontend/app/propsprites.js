@@ -8360,6 +8360,152 @@ const PropSprites = (() => {
     if (blink(4200, ph + x)) px(x + 2, y + 3, 1, 1, U.shade(lit, 0.18));            // slow satin glint
   };
 
+  /* ============ THE COLD LAB (2026-08-17) ============
+     Two props on the one recipe Andrew has kept out of everything shown so far — the CLAW MACHINE's:
+       stacked BANDS (lit header -> window -> contents -> control band -> plinth),
+       a WINDOW WITH CONTENTS visible in it (the contents ARE the prop; the casing is packaging),
+       one saturated identity hue plus small saturated hardware,
+       floor-sized, 1x2 minimum, because a small prop cannot hold a room.
+     They are a deliberate pair: the pod holds something still and the incubator holds something
+     that moves, so a lab with both reads as a place where one thing is being kept and another is
+     being grown. */
+  F.cryopod = (x, y, w, h, f) => {
+    /* 1x2 CRYO POD — an upright tube with a FROSTED pane and a body-shaped shadow behind it. The
+       shadow is the whole prop: an empty pod is a shower cubicle.
+       ⛔ FROST IS NOT A WHITE WASH. It reads as a value gradient — clear at the middle where a hand
+          would wipe it, thickening to opaque at the corners — with the silhouette behind it
+          softening as the frost thickens. A flat translucent rectangle is a screen.
+       ⛔ THE VITALS LAMP IS SLOW. One breath every few seconds; a fast blink reads as an alarm, and
+          this pod is not in trouble. */
+    const INK = '#0b1620', SHELL = '#38434c', SHELL_LIT = '#55626c', SHELL_DK = '#212a31';
+    const ICE = '#8fd6f5', ICE_DK = '#3f7f9c', GLS = '#12303e';
+    const br = 0.55 + 0.45 * Math.sin(now / 2600 + x);           // the occupant's slow breath
+    shadow2(x + 1, y + h - 1, w - 2);
+    rr(x, y - 6, w, h + 6, INK);
+    /* (1) the HEADER — a lit strip and the pod's status, the only warm thing on it */
+    px(x + 1, y - 5, w - 2, 4, SHELL);
+    px(x + 1, y - 5, w - 2, 1, SHELL_LIT); keyEdge(x + 1, y - 5, 5, 1, 0.26);
+    px(x + 2, y - 4, w - 4, 2, '#0e1c24');
+    px(x + 3, y - 3, 5, 1, ICE); px(x + 9, y - 3, 1, 1, blink(2600, x) ? '#41ff8a' : '#1c4a30');
+    bloom(x + 3, y - 3, 5, 1, ICE, 0.12 + 0.10 * br);
+    px(x + 1, y - 1, w - 2, 1, SHELL_DK);
+    /* (2) THE WELL — cold glass, and the SLEEPER behind it */
+    px(x + 1, y, w - 2, 15, GLS);
+    px(x + 2, y, 1, 15, U.shade(GLS, 0.22)); px(x + w - 3, y, 1, 15, U.shade(GLS, -0.24));
+    px(x + 4, y + 1, 4, 4, '#1b3a48');                           // the head
+    px(x + 5, y + 1, 2, 1, U.shade('#1b3a48', 0.30));
+    px(x + 3, y + 5, 6, 8, '#17323e');                           // shoulders + torso, sinking into the dark
+    px(x + 3, y + 5, 1, 8, U.shade('#17323e', 0.26));            // the cold light catching one side
+    px(x + 8, y + 6, 1, 6, U.shade('#17323e', -0.30));
+    px(x + 4, y + 13, 5, 2, '#122a34');
+    /* (3) THE FROST — thickest at the corners, wiped clear across the middle */
+    for (let i = 0; i < 5; i++) {
+      ctx.globalAlpha = 0.20 - i * 0.03;
+      px(x + 1, y + i, w - 2, 1, '#dff3ff'); px(x + 1, y + 14 - i, w - 2, 1, '#dff3ff');
+      ctx.globalAlpha = 1;
+    }
+    ctx.globalAlpha = 0.16; px(x + 1, y + 5, 2, 6, '#dff3ff'); px(x + w - 3, y + 5, 2, 6, '#dff3ff'); ctx.globalAlpha = 1;
+    px(x + 2, y + 6, 1, 3, U.shade(ICE, -0.20)); px(x + w - 3, y + 8, 1, 2, U.shade(ICE, -0.30));   // crystals on the pane
+    px(x + 1, y, w - 2, 1, U.shade(ICE, -0.10));                 // the pane's own top edge
+    /* (4) the CONTROL BAND — a readout and two coolant valves */
+    px(x + 1, y + 15, w - 2, 4, SHELL);
+    px(x + 1, y + 15, w - 2, 1, SHELL_LIT);
+    px(x + 2, y + 16, 5, 2, '#0e1c24');
+    for (let i = 0; i < 3; i++) px(x + 3 + i, y + 17, 1, 1, i < 1 + ((now / 900 + x) % 3 | 0) ? ICE : '#1d3a46');
+    px(x + 8, y + 16, 2, 2, ICE_DK); px(x + 8, y + 16, 2, 1, U.shade(ICE_DK, 0.28));
+    /* (5) the PLINTH — pipes running into the deck, breathing cold */
+    px(x + 1, y + 19, w - 2, 3, SHELL_DK);
+    px(x + 1, y + 19, w - 2, 1, U.shade(SHELL, -0.06));
+    px(x + 2, y + 20, 2, 2, '#0e1418'); px(x + 8, y + 20, 2, 2, '#0e1418');
+    px(x + 1, y + 22, w - 2, 2, '#0f1418');
+    spill(x + 1, y + 15, w - 2, ICE, 0.14 + 0.06 * br, 4);
+    glow(x, y + 22, w, 1, ICE, 0.10);
+  };
+
+  F.incubator = (x, y, w, h, f) => {
+    /* 1x2 INCUBATOR — rebuilt to Andrew's reference (2026-08-17): a LIT COLUMN of green culture on a
+       heavy pedestal, with a specimen SUSPENDED in it. The first pass was a wide domed cabinet with
+       eggs on a tray — a countertop appliance, not the thing in the picture.
+       ⛔ THE LIGHT COMES FROM INSIDE THE LIQUID. Everything else on the prop is dark metal that the
+          tank LIGHTS: the cap's underside, the pedestal's crown and the deck around its foot all
+          take green spill. Paint the casing lit from the ceiling and the tank stops being a source.
+       ⛔ THE SPECIMEN IS THE READ. It hangs mid-column, dark against the glow with a rim of it
+          catching its edge, and it BOBS — a still shape in a lit tube is a lava lamp.
+       ⛔ MOTES, NOT NOISE. A dozen deterministic drifting flecks (hash-seeded, one column each) sell
+          "living culture"; random speckle over the whole tank just dirties the glass. */
+    const INK = '#0a1a14', MET = '#2a3138', MET_LIT = '#49535a', MET_DK = '#161b1f';
+    const GLS = '#123a2a', LIQ = '#1f7a4a', LIQ_LIT = '#3fe07a', HOT = '#b9ffcf', MOTE = '#e8ffd0';
+    const t = now / 1000 + x;
+    const bob = Math.round(Math.sin(t * 0.9) * 1.2);             // the specimen's slow drift
+    shadow2(x + 1, y + h - 1, w - 2);
+    /* (1) silhouette: feed pipe, cap, tube, pedestal */
+    px(x + 4, y - 9, 4, 3, INK);
+    rr(x, y - 7, w, 5, INK);
+    rr(x + 1, y - 3, w - 2, 19, INK);
+    rr(x - 1, y + 15, w + 2, 8, INK);
+    /* (2) the FEED PIPE + CAP — metal, and lit from BELOW by the tank */
+    px(x + 5, y - 9, 2, 3, MET); px(x + 5, y - 9, 1, 3, MET_LIT);
+    px(x + 1, y - 6, w - 2, 3, MET);
+    px(x + 1, y - 6, w - 2, 1, MET_LIT); keyEdge(x + 1, y - 6, 4, 1, 0.24);
+    px(x + 2, y - 5, 1, 1, MET_LIT); px(x + w - 3, y - 5, 1, 1, MET_DK);          // collar bolts
+    px(x + 1, y - 4, w - 2, 1, U.shade(LIQ, -0.10));                              // the cap's underside, lit green
+    /* (3) THE TANK — glass walls, liquid, and a brighter core column */
+    px(x + 1, y - 3, w - 2, 18, GLS);
+    /* the culture, BRIGHTEST AT ITS FLOOR — the reference's light pools in the sediment and fades
+       upward, which is what stops the tank reading as a backlit panel. A bright vertical core stripe
+       did exactly that, and it also competed with the specimen for the eye. */
+    px(x + 2, y - 1, w - 4, 16, LIQ);
+    for (let i = 0; i < 5; i++) px(x + 2, y + 10 - i * 2, w - 4, 2, U.shade(LIQ, 0.05 + i * 0.06));
+    px(x + 2, y - 1, w - 4, 1, HOT);                                              // the meniscus
+    px(x + 2, y + 11, w - 4, 4, U.shade(LIQ_LIT, 0.04));                          // the sediment bed, glowing
+    px(x + 3, y + 12, w - 6, 3, LIQ_LIT);
+    px(x + 4, y + 13, w - 8, 2, HOT);
+    bloom(x + 2, y + 11, w - 4, 4, HOT, 0.30);
+    /* (4) THE SPECIMEN — suspended, dark against the glow, rimmed by it */
+    const sy = y + 3 + bob, DARK = '#07231a';
+    px(x + 4, sy, 4, 2, DARK);                                                    // the curled body: head...
+    px(x + 3, sy + 2, 6, 3, DARK);                                                // ...shoulders...
+    px(x + 4, sy + 5, 4, 2, DARK);                                                // ...and the curl of its tail
+    px(x + 3, sy + 2, 1, 3, HOT); px(x + 4, sy, 1, 2, U.shade(HOT, -0.18));       // the glow rims its WEST edge
+    px(x + 4, sy, 3, 1, U.shade(LIQ_LIT, 0.10));                                  // and lands along its crown
+    px(x + 8, sy + 2, 1, 3, U.shade(LIQ, -0.30));                                 // its east side keeps the dark
+    px(x + 5, sy + 3, 1, 1, U.shade(HOT, -0.30));                                 // one lit fleck inside it
+    px(x + 5, sy + 7, 2, 1, U.shade(DARK, 0.30));                                 // a wisp trailing below
+    bloom(x + 3, sy - 1, 6, 9, LIQ_LIT, 0.10);                                    // it displaces the glow around it
+    /* (5) MOTES rising — one per column, each on its own loop, deterministic per station */
+    for (let i = 0; i < 9; i++) {
+      const k = U.hash('inc' + x + i);
+      const mx = x + 2 + (k % (w - 4));
+      const span = 14 + (k >>> 3) % 4;
+      const my = y + 13 - Math.floor((now / (900 + (k >>> 5) % 700) + i * 1.7) % span);
+      px(mx, my, 1, 1, (i % 3) ? MOTE : HOT);
+    }
+    /* (6) the GLASS itself — cylinder shading last, over the contents */
+    px(x + 1, y - 3, 1, 18, U.shade(HOT, -0.36));                                 // lit west wall
+    px(x + w - 2, y - 3, 1, 18, U.shade(GLS, 0.10));                              // shaded east wall
+    rimEdge(x + w - 2, y - 2, 1, 16, 0.18);
+    ctx.globalAlpha = 0.30; px(x + 3, y - 2, 1, 8, '#eafff4'); ctx.globalAlpha = 1;   // the specular streak
+    ctx.globalAlpha = 0.14; px(x + w - 4, y + 2, 1, 9, '#eafff4'); ctx.globalAlpha = 1;
+    bloom(x + 1, y - 3, w - 2, 18, LIQ_LIT, 0.16 + 0.05 * Math.sin(now / 620));
+    /* (7) THE PEDESTAL — heavy, stepped, and lit green from above rather than from the ceiling */
+    px(x + 1, y + 15, w - 2, 2, MET);
+    px(x + 1, y + 15, w - 2, 1, U.shade(LIQ_LIT, -0.30));                         // its crown takes the tank's light
+    px(x, y + 17, w, 4, MET);
+    px(x, y + 17, w, 1, MET_LIT);
+    px(x, y + 17, 1, 4, U.shade(MET_LIT, -0.10)); px(x + w - 1, y + 17, 1, 4, MET_DK);
+    for (let i = 0; i < 3; i++) {                                                 // three indicator lamps
+      const on = ((now / 700 + i) % 3 | 0) === i;
+      px(x + 3 + i * 3, y + 19, 1, 1, on ? '#ffb347' : '#4a3a1c');
+      if (on) bloom(x + 3 + i * 3, y + 19, 1, 1, '#ffb347', 0.30);
+    }
+    px(x - 1, y + 21, w + 2, 2, MET_DK);
+    px(x, y + 21, w, 1, U.shade(MET, 0.10));
+    px(x, y + 23, w, 1, '#0b0f12');
+    spill(x - 1, y + 15, w + 2, LIQ_LIT, 0.34, 5);
+    glow(x - 3, y + 21, w + 6, 3, LIQ_LIT, 0.20);                                 // the deck around its foot
+    glow(x - 5, y + 22, w + 10, 2, LIQ, 0.16);                                    // and the pool reaching past it
+  };
+
   F.pinball = (x, y, w, h, f) => {   // 1x2 — v6 REBUILD. A pinball machine IS its playfield ("a prop is its
     /* ⛔ EDGES SOFTENED, NOTHING ELSE — shipped geometry, shading and colour untouched. The
        universal near-black contour becomes a dark tint so the prop stops reading as a sticker
@@ -8679,6 +8825,10 @@ const PropSprites = (() => {
     { id: "bookshelf", label: "BOOKSHELF", cat: "lounge", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true, use: { kind: 'bookshelf', sit: false, approach: 'south' } },
     { id: "beanbag", label: "BEANBAG", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'beanbag', sit: false, approach: 'auto' } },
     { id: "pinball", label: "PINBALL", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'pinball', sit: false, approach: 'south' } },
+    /* THE COLD LAB (2026-08-17) — decor built on the claw-machine recipe: a window with CONTENTS in
+       it. One holds something still, the other something growing. */
+    { id: "cryopod", label: "CRYO POD", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
+    { id: "incubator", label: "INCUBATOR", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     /* THE RECLINER PAIR (2026-08-17) — one seat of the couch, shipped as two props so aiming it is a
        pick rather than a hidden gesture. The right-facing one is the left one MIRRORED at draw time,
        so the two can never drift apart. */
