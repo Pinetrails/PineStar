@@ -8754,6 +8754,87 @@ const PropSprites = (() => {
   };
   F.benchpress_r = mirrorV(F.benchpress);
 
+  F.weaponrack = (x, y, w, h, f) => {
+    /* 3x1 WEAPON RACK — WALL-HUNG, arms hanging ACROSS it. v1 was dark-on-dark (a crate with sticks);
+       v2 fixed the values but stood the arms upright, and a vertical barrel with its receiver tucked
+       at the bottom edge is a PIPE — three of them is a plumbing manifold.
+       ⛔ A WEAPON IS RECOGNISABLE IN PROFILE, NOT END-ON. Lying across the board, each one gets to
+          show the shape that identifies it: long barrel, blocky receiver, magazine hanging under,
+          stock raking down at the back. That is the entire difference between this and v2.
+       ⛔ WALL-HUNG MEANS NO LEGS AND A SHADOW ON THE WALL — ride high, drop a standoff shadow, bolt
+          at four corners, `blocks:false` so bodies walk in front of it (the chart-wall law).
+       ⛔ THEY HANG AT DIFFERENT RAKES, and the bottom one is a blade — three parallel rifles would be
+          a fence. ⛔ ONE LIVE THING: a charge cell breathing amber on the top arm. */
+    const FRM = '#49535c', FRM_LIT = '#6d7883', FRM_DK = '#232a30';
+    const WELL = '#141a1f', WELL_LIT = '#1e262c';
+    const GUN = '#98a2aa', GUN_MID = '#5b656d', GUN_DK = '#262d34';
+    const STK = '#8a6538', STK_LIT = '#b98d51';
+    const cell = 0.55 + 0.45 * Math.sin(now / 1700 + x);
+    /* (1) standoff shadow, frame, and the near-black well the arms hang in */
+    ctx.globalAlpha = 0.30; px(x + 4, y - 10, w - 5, 19, '#000'); ctx.globalAlpha = 1;
+    chamf(x + 1, y - 14, w - 2, 21, FRM_DK, 2);
+    px(x + 2, y - 13, w - 4, 19, FRM);
+    px(x + 2, y - 13, w - 4, 1, FRM_LIT); keyEdge(x + 2, y - 13, 8, 1, 0.26);
+    px(x + 2, y - 13, 1, 19, U.shade(FRM_LIT, -0.16)); px(x + w - 3, y - 13, 1, 19, FRM_DK);
+    rimEdge(x + w - 3, y - 12, 1, 17, 0.18);
+    px(x + 3, y - 12, w - 6, 17, WELL);
+    px(x + 3, y - 12, w - 6, 1, U.shade(WELL, -0.44));
+    px(x + 4, y - 11, w - 8, 1, WELL_LIT);
+    for (const [bx, by] of [[x + 2, y - 13], [x + w - 3, y - 13], [x + 2, y + 4], [x + w - 3, y + 4]]) {
+      px(bx, by, 1, 1, U.shade(FRM_LIT, 0.24)); px(bx, by + 1, 1, 1, FRM_DK);
+    }
+    /* (2) ONE RIFLE, IN PROFILE — barrel, sight, receiver, magazine, grip, stock. `rake` tips the
+       whole weapon; `len` is the barrel, so a carbine is the same routine with a shorter one. */
+    const rifle = (rx, ry, len, rake, scope) => {
+      const yy = (i) => ry + Math.round(rake * i * 0.18);
+      for (let i = 0; i < len; i++) {                                              // the barrel
+        px(rx + i, yy(i) - 1, 1, 1, GUN_DK);
+        px(rx + i, yy(i), 1, 1, i > len - 3 ? '#cfd7dc' : GUN);
+        px(rx + i, yy(i) + 1, 1, 1, GUN_MID);
+      }
+      px(rx + len - 4, yy(len - 4) - 2, 1, 2, GUN_MID);                            // front sight
+      const bx = rx - 8, by = yy(0);
+      px(bx, by - 2, 9, 5, GUN_DK);                                                // the receiver
+      px(bx + 1, by - 1, 7, 1, GUN_MID); px(bx + 1, by, 7, 2, U.shade(GUN_MID, -0.24));
+      px(bx + 1, by - 1, 3, 1, GUN);
+      px(bx + 3, by + 3, 3, 4, GUN_DK);                                            // the magazine, hanging
+      px(bx + 4, by + 4, 1, 3, U.shade(GUN_MID, -0.10));
+      px(bx - 1, by + 3, 2, 3, GUN_DK); px(bx, by + 3, 1, 2, U.shade(STK, 0.10));  // pistol grip
+      px(bx - 7, by - 1, 7, 4, U.shade(STK, -0.34));                               // the stock, raking back
+      px(bx - 6, by, 5, 2, STK); px(bx - 6, by, 5, 1, STK_LIT);
+      px(bx - 7, by + 2, 3, 1, U.shade(STK, -0.20));
+      if (scope) {
+        px(bx + 1, by - 5, 7, 3, GUN_DK);
+        px(bx + 2, by - 4, 5, 1, GUN); px(bx + 2, by - 3, 5, 1, GUN_MID);
+        px(bx + 7, by - 4, 1, 1, '#7fd8ff');
+      }
+    };
+    /* ⛔ THE ARMS MUST SIT INSIDE THE WELL. Drawn from a barrel origin, a rifle reaches 15px BACK
+       (receiver + grip + stock), so an origin that looks central puts the stock out through the
+       frame — which is what the first profile pass did. Origin = well's left edge + 15. */
+    rifle(x + 19, y - 7, 14, -1, 1);                                               // top: a scoped rifle
+    rifle(x + 19, y + 1, 11, 1, 0);                                                // middle: a carbine
+    /* (3) the CHARGE CELL on the top arm — the one live thing on the prop */
+    px(x + 13, y - 6, 2, 1, U.shade('#ffb347', -0.30 + 0.30 * cell));
+    bloom(x + 13, y - 6, 2, 1, '#ffb347', 0.12 + 0.18 * cell);
+    /* (4) a BLADE across the bottom, raked the other way — never a third parallel rifle */
+    for (let i = 0; i < 15; i++) {
+      const bx = x + 15 + i, by = y + 7 - Math.round(i * 0.34);
+      px(bx, by - 1, 1, 1, GUN_DK);
+      px(bx, by, 1, 1, i > 2 ? '#cfd7dc' : GUN_MID);
+      px(bx, by + 1, 1, 1, i > 2 ? '#79838b' : GUN_DK);
+    }
+    px(x + 12, y + 7, 4, 3, GUN_DK); px(x + 13, y + 8, 3, 2, STK); px(x + 13, y + 8, 3, 1, STK_LIT);
+    /* (5) HOOKS the arms rest on, and spare cells clipped at the end — a rack that is USED */
+    for (const hx of [x + 5, x + 31]) { px(hx, y - 5, 1, 2, FRM_LIT); px(hx, y + 2, 1, 2, FRM_LIT); }
+    for (let i = 0; i < 3; i++) {
+      const mx = x + 5 + i * 3;
+      px(mx, y + 5, 2, 4, GUN_DK); px(mx, y + 5, 2, 1, GUN_MID);
+      px(mx, y + 8, 2, 1, i === 1 ? U.shade('#ffb347', -0.30) : U.shade(GUN_DK, 0.22));
+    }
+  };
+  F.weaponrack_r = mirrorV(F.weaponrack);
+
   F.pinball = (x, y, w, h, f) => {   // 1x2 — v6 REBUILD. A pinball machine IS its playfield ("a prop is its
     /* ⛔ EDGES SOFTENED, NOTHING ELSE — shipped geometry, shading and colour untouched. The
        universal near-black contour becomes a dark tint so the prop stops reading as a sticker
@@ -9083,6 +9164,8 @@ const PropSprites = (() => {
     { id: "telescope_r", label: "TELESCOPE ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "camerarig", label: "CAMERA RIG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "camerarig_r", label: "CAMERA RIG ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
+    { id: "weaponrack", label: "WEAPON RACK ‹", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: false },
+    { id: "weaponrack_r", label: "WEAPON RACK ›", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: false },
     { id: "punchbag", label: "HEAVY BAG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'bag', sit: false, approach: 'south' } },
     { id: "punchbag_r", label: "HEAVY BAG ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'bag', sit: false, approach: 'south' } },
     { id: "benchpress", label: "BENCH PRESS ‹", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, use: { kind: 'bench', sit: false, approach: 'south' } },
