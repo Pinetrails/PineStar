@@ -6202,7 +6202,11 @@ const PropSprites = (() => {
           the bottom of it — is the entire read, and it is what changes when the prop turns. */
     const SH = '#39424a', SH_LIT = '#6c7883', SH_DK = '#222930', INK = '#151a1f';
     const IN = '#66727c', IN_DK = '#414b54';
-    const CU = '#a8632a', CU_LIT = '#cd8541', CU_DK = '#5d3517';
+    /* RED, not the amber it shipped with (Andrew, 2026-08-17). This is the catalog's established
+       red — the diner chair's vinyl — so the two read as one accent family rather than two
+       one-off hues, and it is authored past the chroma skip (s .59) so the dial hands it
+       through untouched instead of grading it. */
+    const CU = '#a8382b', CU_LIT = '#c4513f', CU_DK = '#5e1f18';
     shadow2(x + 2, y + 11, 8);
     px(x + 4, y + 8, 4, 3, INK);                                           // the pedestal
     px(x + 5, y + 8, 1, 3, SH_LIT); px(x + 6, y + 8, 1, 3, SH_DK);
@@ -6236,7 +6240,11 @@ const PropSprites = (() => {
     // cushion, and the lining is only visible on the inside of that curve.
     const SH = '#39424a', SH_LIT = '#6c7883', SH_DK = '#222930', INK = '#151a1f';
     const IN = '#66727c', IN_DK = '#414b54';
-    const CU = '#a8632a', CU_LIT = '#cd8541', CU_DK = '#5d3517';
+    /* RED, not the amber it shipped with (Andrew, 2026-08-17). This is the catalog's established
+       red — the diner chair's vinyl — so the two read as one accent family rather than two
+       one-off hues, and it is authored past the chroma skip (s .59) so the dial hands it
+       through untouched instead of grading it. */
+    const CU = '#a8382b', CU_LIT = '#c4513f', CU_DK = '#5e1f18';
     shadow2(x + 2, y + 11, 8);
     px(x + 4, y + 8, 4, 3, INK);
     px(x + 5, y + 8, 1, 3, SH_LIT); px(x + 6, y + 8, 1, 3, SH_DK);
