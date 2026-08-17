@@ -4603,6 +4603,18 @@ const PropSprites = (() => {
     px(ax + 1, y + 11, aw - 3, 1, r.ao);                         // floor-line AO
   };
 
+  /* THE SAME SEAT, FACING RIGHT — shipped as its OWN catalog entry rather than as a flip you have to
+     know about (Andrew: "ship them as 2 separate props to keep it easy"). It is not a second drawing:
+     it is F.recliner under the same integer mirror the orientation system uses, so the two can never
+     drift apart, and px()'s LSWAP re-lights it — the warm key stays high-west where the ceiling strip
+     actually is, instead of riding the furniture round. */
+  F.recliner_r = (x, y, w, h, f) => {
+    ctx.save();
+    ctx.translate(x, y); ctx.translate(w, 0); ctx.scale(-1, 1); ctx.translate(-x, -y);
+    const was = MIRROR; MIRROR = true;
+    try { F.recliner(x, y, w, h, f); } finally { MIRROR = was; ctx.restore(); }
+  };
+
   F['couch:w'] = (x, y, w, h, f) => {
     /* THE SOFA, TURNED TO FACE WEST (Andrew, 2026-08-17: "a couch that faces left side instead of
        backside and right side"). The shipped couch is drawn from BEHIND — it faces north at the TV —
@@ -9108,7 +9120,8 @@ const PropSprites = (() => {
     { id: "pinball", label: "PINBALL", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'pinball', sit: false, approach: 'south' } },
     /* THE COLOUR SHELF (2026-08-17) — floor-sized props that each own a saturated hue, because a
        room furnished from a grey catalog cannot be made to look good by lighting alone. */
-    { id: "recliner", label: "RECLINER", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'west' } },
+    { id: "recliner", label: "RECLINER ‹ LEFT", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'west' } },
+    { id: "recliner_r", label: "RECLINER RIGHT ›", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'east' } },
     { id: "clawmachine", label: "CLAW MACHINE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'claw', sit: false, approach: 'south' } },
     { id: "slushmachine", label: "SLUSH MACHINE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'slush', sit: false, approach: 'south' } },
     { id: "reeftank", label: "REEF TANK", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'reef', sit: false, approach: 'south' } },
