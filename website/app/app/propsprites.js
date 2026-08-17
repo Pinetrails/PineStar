@@ -8780,82 +8780,88 @@ const PropSprites = (() => {
     px(x + 3, y - 14, w - 6, 18, WELL);
     px(x + 3, y - 14, w - 6, 1, U.shade(WELL, -0.44));
     px(x + 4, y - 13, w - 8, 1, WELL_LIT);
-    px(x + 3, y - 4, w - 6, 1, U.shade(FRM, -0.24));                               // the shelf between the two arms
+    px(x + 3, y - 1, w - 6, 1, U.shade(FRM, -0.26));                               // the shelf between the two arms
     for (const [bx, by] of [[x + 2, y - 15], [x + w - 3, y - 15], [x + 2, y + 3], [x + w - 3, y + 3]]) {
       px(bx, by, 1, 1, U.shade(FRM_LIT, 0.24)); px(bx, by + 1, 1, 1, FRM_DK);
     }
-    /* (2) ONE WEAPON, IN PROFILE, DEAD STRAIGHT, AND AT THE RIGHT SIZE. Two scale corrections live
-       here, both caught by Andrew and both checkable with arithmetic rather than a render:
-       ⛔ THE BARREL CURVED UPWARD (v3) because the barrel followed a rake while the receiver and
-          stock were drawn flat, so the weapon HINGED out of its own body. Every part now shares one
-          centre line; variety comes from the two arms being different WEAPONS, never from bending.
-       ⛔ THEY WERE 1.6x TOO BIG (v5). An agent is ~35px for ~1.7m, so the station runs at ~20px per
-          metre: a 0.9m rifle is ~18px END TO END, and v5 drew 30px — 86% of a person's height, which
-          is why the rack read as a display of oars. At 18px the previous ornament pass no longer
-          fits, and that is the trade: correct scale costs detail. What survives is what still reads
-          at size — receiver, port, magazine, handguard, muzzle, and a compact optic. */
-    const weapon = (x0, y0, len, opts) => {
-      const o = opts || {};
-      const bl = x0 + 13;                                                          // where the barrel starts
-      px(x0, y0 - 2, 6, 4, GUN_DK);                                                // stock
-      px(x0 + 1, y0 - 1, 4, 2, o.wood ? STK : U.shade(GUN_MID, -0.10));
-      px(x0 + 1, y0 - 1, 4, 1, o.wood ? STK_LIT : GUN_MID);
-      px(x0, y0 - 1, 1, 2, U.shade(GUN_DK, 0.22));                                 // butt pad
-      px(x0 + 5, y0 + 2, 2, 3, GUN_DK);                                            // pistol grip
-      px(x0 + 5, y0 + 2, 1, 2, o.wood ? STK : U.shade(GUN_MID, -0.16));
-      px(x0 + 4, y0 - 2, 7, 5, GUN_DK);                                            // receiver
-      px(x0 + 5, y0 - 1, 5, 1, GUN);
-      px(x0 + 5, y0, 5, 1, GUN_MID);
-      px(x0 + 8, y0 - 1, 2, 1, U.shade(GUN_DK, 0.34));                             // ejection port
-      px(x0 + 5, y0 - 2, 1, 1, '#cfd7dc');                                         // charging handle
-      px(x0 + 6, y0 + 1, 1, 1, U.shade('#ffb347', -0.44));                         // selector switch
-      px(x0 + 8, y0 + 2, 3, 2, GUN_DK); px(x0 + 9, y0 + 4, 3, 2, GUN_DK);          // magazine, curving forward
-      px(x0 + 9, y0 + 2, 1, 1, U.shade(GUN_MID, -0.06)); px(x0 + 10, y0 + 4, 1, 1, U.shade(GUN_MID, -0.20));
-      px(x0 + 11, y0 - 2, 3, 4, GUN_DK);                                           // handguard
-      px(x0 + 11, y0 - 1, 3, 2, GUN_MID);
-      px(x0 + 12, y0 - 1, 1, 2, U.shade(GUN_DK, 0.24));                            // its vent
-      px(x0 + 13, y0 - 3, 1, 1, GUN_MID);                                          // front sight post
-      for (let i = 0; i < len; i++) {                                              // the barrel — ONE row, no rake
+    /* (2) THE ARMS. This prop has now failed in both directions and the useful part is WHY:
+       ⛔ v5 was 1.6x oversize (a 30px rifle against a 35px body — "too big for the agents").
+       ⛔ v6 was measured EXACTLY right at 18px and Andrew could no longer tell what he was looking
+          at. Both are true: a 0.9m rifle at the station's ~20px/metre IS 18px, and 18px cannot hold
+          the silhouette that identifies a rifle. That is the RESOLUTION CEILING this catalog keeps
+          hitting, not an art failure.
+       So the answer is not a third size, it is FEWER THINGS WITH MORE ROOM: one rifle and one blade
+       instead of two rifles and a blade, the rifle drawn at 22px (~1.1m — a hero scale a hair over
+       true, the way a game prop is allowed to be) with every part given a pixel it can be read by,
+       and the parts separated by DARK so the eye can find each one against the well.
+       ⛔ THE RULE THAT COMES OUT OF THIS: when a prop cannot be both true-scale and legible, cut the
+          COUNT, not the size. Two objects at 22px read; three at 18px are a texture. */
+    const weapon = (x0, y0) => {
+      const bl = x0 + 15;                                                          // where the barrel starts
+      /* stock — a solid block with a dark comb line, then daylight before the grip */
+      px(x0, y0 - 3, 7, 6, GUN_DK);
+      px(x0 + 1, y0 - 2, 5, 4, U.shade(GUN_MID, -0.06));
+      px(x0 + 1, y0 - 2, 5, 1, GUN);
+      px(x0 + 1, y0, 4, 1, U.shade(GUN_DK, 0.30));                                 // the comb
+      px(x0, y0 - 2, 1, 4, U.shade(GUN_DK, 0.26));                                 // butt pad
+      /* pistol grip, hanging clear below the receiver */
+      px(x0 + 6, y0 + 3, 3, 4, GUN_DK);
+      px(x0 + 7, y0 + 3, 1, 3, U.shade(GUN_MID, 0.06));
+      /* receiver — the widest, lightest block on the weapon: this is what says "gun" */
+      px(x0 + 5, y0 - 3, 9, 6, GUN_DK);
+      px(x0 + 6, y0 - 2, 7, 2, GUN);
+      px(x0 + 6, y0, 7, 2, GUN_MID);
+      px(x0 + 9, y0 - 2, 3, 2, U.shade(GUN_DK, 0.40));                             // ejection port, a real hole
+      px(x0 + 6, y0 - 3, 2, 1, '#cfd7dc');                                         // charging handle
+      px(x0 + 7, y0 + 2, 1, 1, '#ffb347');                                         // selector
+      /* magazine — long enough to read, curving forward as it drops */
+      px(x0 + 9, y0 + 3, 4, 3, GUN_DK); px(x0 + 10, y0 + 6, 4, 2, GUN_DK);
+      px(x0 + 10, y0 + 3, 2, 2, U.shade(GUN_MID, 0.04)); px(x0 + 11, y0 + 6, 2, 1, U.shade(GUN_MID, -0.20));
+      /* handguard, then the barrel — one row, with a front sight standing off it */
+      px(x0 + 13, y0 - 2, 4, 4, GUN_DK);
+      px(x0 + 13, y0 - 1, 4, 2, GUN_MID);
+      px(x0 + 14, y0 - 1, 1, 2, U.shade(GUN_DK, 0.30)); px(x0 + 16, y0 - 1, 1, 2, U.shade(GUN_DK, 0.30));
+      px(x0 + 15, y0 - 4, 1, 2, GUN_MID);                                          // front sight post
+      for (let i = 0; i < 4; i++) {
         px(bl + i, y0 - 2, 1, 1, GUN_DK);
         px(bl + i, y0 - 1, 1, 1, GUN);
         px(bl + i, y0, 1, 1, GUN_MID);
         px(bl + i, y0 + 1, 1, 1, GUN_DK);
       }
-      px(bl + len, y0 - 2, 2, 4, GUN_DK);                                          // muzzle device
-      px(bl + len, y0 - 1, 2, 1, '#cfd7dc');
-      if (o.scope) {                                                               // a compact optic
-        px(x0 + 5, y0 - 5, 6, 3, GUN_DK);
-        px(x0 + 6, y0 - 4, 4, 1, GUN); px(x0 + 6, y0 - 3, 4, 1, GUN_MID);
-        px(x0 + 10, y0 - 4, 1, 1, '#7fd8ff');
-      }
-      if (o.sling) {                                                               // a strap drooping under it
-        for (let i = 0; i < 9; i++) {
-          const sx = x0 + 3 + i, sy = y0 + 3 + Math.round(1.8 * Math.sin((i / 8) * Math.PI));
-          px(sx, sy, 1, 1, U.shade(GUN_DK, 0.12));
-        }
+      px(bl + 4, y0 - 2, 3, 4, GUN_DK);                                            // muzzle device
+      px(bl + 4, y0 - 1, 3, 1, '#cfd7dc'); px(bl + 5, y0, 2, 1, GUN_MID);
+      /* the optic sits ABOVE the receiver with dark under it, so it is not read as more receiver */
+      px(x0 + 6, y0 - 7, 8, 3, GUN_DK);
+      px(x0 + 7, y0 - 6, 6, 1, GUN); px(x0 + 7, y0 - 5, 6, 1, GUN_MID);
+      px(x0 + 13, y0 - 6, 1, 2, '#7fd8ff'); px(x0 + 13, y0 - 6, 1, 1, '#cfefff');
+      px(x0 + 8, y0 - 4, 1, 1, GUN_MID); px(x0 + 12, y0 - 4, 1, 1, GUN_MID);       // its two rings
+      /* the sling, drooping under the whole thing — the one curve on the prop */
+      for (let i = 0; i < 11; i++) {
+        const sx = x0 + 3 + i, sy = y0 + 4 + Math.round(2.2 * Math.sin((i / 10) * Math.PI));
+        px(sx, sy, 1, 1, U.shade(GUN_DK, 0.14));
       }
     };
-    weapon(x + 3, y - 9, 3, { scope: 1, wood: 0, sling: 1 });                      // top: a scoped rifle, ~18px
-    weapon(x + 3, y - 1, 2, { scope: 0, wood: 1, sling: 0 });                      // below: a wood-stocked carbine
+    /* ⛔ A 22px RIFLE NEEDS THREE TILES OF BOARD, NOT TWO. At 2x1 the muzzle came out through the
+       frame — the board has to be sized from the LONGEST thing on it plus margin, not the other way
+       round. 36px of board holds a 22px arm with a hand's width either side. */
+    weapon(x + 7, y - 8);                                                          // ONE rifle, 22px, with room
     /* (3) the CHARGE CELL on the top arm — the one live thing on the prop */
-    px(x + 14, y - 7, 2, 1, U.shade('#ffb347', -0.30 + 0.30 * cell));
-    bloom(x + 14, y - 7, 2, 1, '#ffb347', 0.12 + 0.18 * cell);
+    px(x + 27, y - 9, 2, 1, U.shade('#ffb347', -0.30 + 0.30 * cell));
+    bloom(x + 27, y - 9, 2, 1, '#ffb347', 0.12 + 0.18 * cell);
     /* (4) a BLADE hung VERTICALLY at the east end — a third rifle would be a fence, and a blade
        across the whole board (v4) crowded both arms out of their own space */
-    for (let i = 0; i < 8; i++) {                                                   // ~0.4m of blade = 8px
-      const by = y - 13 + i;
-      px(x + 19, by, 1, 1, GUN_DK);
-      px(x + 20, by, 1, 1, i > 1 ? '#cfd7dc' : GUN_MID);
-      px(x + 21, by, 1, 1, i > 1 ? '#79838b' : GUN_DK);
+    for (let i = 0; i < 14; i++) {                                                  // a blade, hung flat
+      const bx = x + 10 + i;
+      px(bx, y + 1, 1, 1, GUN_DK);
+      px(bx, y + 2, 1, 1, i > 1 ? '#cfd7dc' : GUN_MID);
+      px(bx, y + 3, 1, 1, i > 1 ? '#79838b' : GUN_DK);
+      px(bx, y + 4, 1, 1, GUN_DK);
     }
-    px(x + 19, y - 5, 3, 3, GUN_DK); px(x + 20, y - 4, 1, 2, STK); px(x + 20, y - 4, 1, 1, STK_LIT);
+    px(x + 24, y + 1, 2, 4, GUN_DK); px(x + 24, y + 2, 2, 1, U.shade('#cfd7dc', -0.20));   // its point
+    px(x + 6, y + 1, 4, 4, GUN_DK); px(x + 7, y + 2, 3, 2, STK); px(x + 7, y + 2, 3, 1, STK_LIT);
+    px(x + 9, y, 1, 5, U.shade(GUN_MID, 0.10));                                    // the guard between grip and blade
     /* (5) HOOKS the arms rest on, and spare cells clipped at the end — a rack that is USED */
-    for (const hx of [x + 4, x + 17]) { px(hx, y - 6, 1, 2, FRM_LIT); px(hx, y + 2, 1, 2, FRM_LIT); }
-    for (let i = 0; i < 2; i++) {
-      const mx = x + 4 + i * 3;
-      px(mx, y + 2, 2, 3, GUN_DK); px(mx, y + 2, 2, 1, GUN_MID);
-      px(mx, y + 4, 2, 1, i === 1 ? U.shade('#ffb347', -0.30) : U.shade(GUN_DK, 0.22));
-    }
+    for (const hx of [x + 5, x + 30]) { px(hx, y - 6, 1, 2, FRM_LIT); px(hx, y + 1, 1, 2, FRM_LIT); }
   };
   F.weaponrack_r = mirrorV(F.weaponrack);
 
@@ -9188,8 +9194,8 @@ const PropSprites = (() => {
     { id: "telescope_r", label: "TELESCOPE ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "camerarig", label: "CAMERA RIG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "camerarig_r", label: "CAMERA RIG ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
-    { id: "weaponrack", label: "WEAPON RACK ‹", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false, mount: 'wall' },
-    { id: "weaponrack_r", label: "WEAPON RACK ›", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false, mount: 'wall' },
+    { id: "weaponrack", label: "WEAPON RACK ‹", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: false, mount: 'wall' },
+    { id: "weaponrack_r", label: "WEAPON RACK ›", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: false, mount: 'wall' },
     { id: "punchbag", label: "HEAVY BAG ‹", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'bag', sit: false, approach: 'south' } },
     { id: "punchbag_r", label: "HEAVY BAG ›", cat: "decor", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'bag', sit: false, approach: 'south' } },
     { id: "benchpress", label: "BENCH PRESS ‹", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, use: { kind: 'bench', sit: false, approach: 'south' } },
