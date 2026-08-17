@@ -2291,6 +2291,29 @@ const World = (() => {
      as standing on the stool (Andrew, skeleton). At 4/2 the butt still reaches the pad while the
      drawSeatFront sliver swallows the planted feet/ankles — the legs read as dropping behind the seat. */
   const SEAT_LIFT = { stool: 4, chair: 2 };
+  /* ---------- SIDE SEATS (2026-08-17) ----------
+     The RECLINER pair is the first seat in the catalog drawn in PROFILE, and the couch's sit render —
+     the whole prop sorted IN FRONT of the sitter, so a tall sofa back occludes the legs — hid it
+     completely. A sofa is 5 tiles of low back behind a body; a recliner is 19px of chair over a 20px
+     seated body, so all that reached the screen was the crown of the head above the backrest (Andrew:
+     "the agents do not even sit in it ... they sit behind it").
+     A profile seat inverts the sandwich instead: back + cushion UNDER the body, the near arm OVER its
+     shins (PropSprites.drawSeatFront), which is what a person in a side-on armchair actually looks
+     like. Two things follow from the art (propsprites F.recliner — cushion x+1..x+7, back x+8..x+13,
+     near arm rows y+3..y+11) and nothing here is guessed:
+       face — a chair points ONE way. The planner's guessed facing ('north' for a lone couch, or at
+              whatever TV it paired with) would sit the body sideways in its own seat.
+       dx   — px off tile centre toward the cushion, so the body's back rests against the crown
+              instead of straddling it.
+       lift — the SAME perch mechanism SEAT_LIFT gives a stool, and it is not optional here. A couch
+              shows only a head, so nobody could see that a `lift` of 0 makes drawBody anchor a seated
+              body by its STANDING foot pad; a profile seat shows the whole body, and every set whose
+              sit master carries extra empty rows below the tucked legs (pikachu, xenomorph) then
+              floated up onto the backrest. A non-zero lift is what switches drawBody to getTrackPad —
+              the sit frame's OWN bottom padding — so all 36 skins land on the cushion. 2px, the
+              chair's value, because the cushion sits barely above the near arm's crown. */
+  const SIDE_SEAT = { recliner: { face: 'west', dx: -2, lift: 2 }, recliner_r: { face: 'east', dx: 2, lift: 2 } };
+  const sideSeat = p => (p && SIDE_SEAT[p.t]) || null;
   function planCouchSit(now, couch, tvId, faceDir, zone) {
     /* STALE-CLAIM RULE: drop whatever seat this body still holds BEFORE claiming a new one. Committing to a
        new destination means it is leaving the old seat regardless, and an inherited `pendSeat` is worse than
@@ -2315,9 +2338,10 @@ const World = (() => {
         if (!geo.walkable(ax, ay, blocked)) continue;
         if (!setPathTo({ x: ax, y: ay })) continue;
         occupiedSeats.add(couch.id + ':' + slot); self.seatKey = couch.id + ':' + slot;
-        self.pendSeat = { px: (sx + 0.5) * T, py: (couch.y + h) * T - 2 };   // render foot at the cushion front
+        const side = sideSeat(couch);
+        self.pendSeat = { px: (sx + 0.5) * T + (side ? side.dx : 0), py: (couch.y + h) * T - 2, lift: side ? side.lift : 0 };   // render foot at the cushion front
         self.goal = tvId ? 'lounge' : 'use'; self.usingProp = couch.id; self.watchProp = tvId || null;
-        self.useSit = true; self.useFace = faceDir || 'south';
+        self.useSit = true; self.useFace = side ? side.face : (faceDir || 'south');   // a profile chair points ONE way — see SIDE_SEAT
         if (!self.target) arrive(now);                       // already adjacent → settle immediately
         return true;
       }
@@ -2465,6 +2489,13 @@ const World = (() => {
       for (const tv of tvs) { const d = Math.hypot(tv.cx - cx, tv.cy - cy); if (d <= LOUNGE_MAXT && (!best || d < best.d)) best = { tv, d }; }
       if (!best) continue;
       if (zone && !tileInZone(zone, couch.x, couch.y)) continue;
+      /* A PROFILE SEAT CANNOT SWIVEL. Every other couch is drawn face-on, so its sitter can be turned
+         toward whichever TV the pairing found; a recliner points the ONE way its art points (SIDE_SEAT),
+         so pairing it with a TV behind it would light that TV and claim a body was watching it while the
+         body sat with its back to the screen. Truthful-telemetry, applied to furniture: it is only a
+         lounge seat when the screen is actually on the side it faces. */
+      const side = sideSeat(couch);
+      if (side && dirToward(cx, cy, best.tv.cx, best.tv.cy) !== side.face) continue;
       return { couch, tvId: best.tv.p.id, face: dirToward(cx, cy, best.tv.cx, best.tv.cy) };
     }
     return null;
@@ -5601,7 +5632,11 @@ const World = (() => {
         const sitter = (agent && agent.seated && !agent.lying && agent.usingProp === p.id) ? agent
           : crew.find(b => b.seated && !b.lying && b.usingProp === p.id);
         const sitterUse = sitter ? propUse(p) : null;
-        let sy = sitter ? sitter.seatPy + (sitterUse && sitterUse.kind === 'couch' ? 1 : -1) : (p.y + (p.h || 1)) * T;
+        // a SIDE SEAT sorts BEHIND its sitter like a stool, not in front like a sofa: its near arm
+        // comes back over the body as the seat-front overlay below, so the sitter shows through the
+        // middle of the chair instead of being buried under all 19px of it (SIDE_SEAT).
+        const sitterSide = sitter ? sideSeat(p) : null;
+        let sy = sitter ? sitter.seatPy + (sitterUse && sitterUse.kind === 'couch' && !sitterSide ? 1 : -1) : (p.y + (p.h || 1)) * T;
         // MOUNT LIFT, resolved per FRAME rather than stored on the prop: a table-top prop only rides the
         // table while the table is actually under it. Reclaim the table and the prop drops back to the
         // deck instead of floating — which is why no saved station ever needs migrating for this.
@@ -5623,7 +5658,7 @@ const World = (() => {
         // SEAT-FRONT SLIVER: a stool/chair's pad front rim redraws just IN FRONT of its (lifted) sitter,
         // so the body's lap tucks INTO the pad — the couch trick, at single-seat scale. Sorted a hair
         // past the body's own key (sitter.seatPy) and well short of the next tile row.
-        if (sitter && sitterUse && sitterUse.kind === 'seat' && PropSprites.drawSeatFront)
+        if (sitter && PropSprites.drawSeatFront && ((sitterUse && sitterUse.kind === 'seat') || sitterSide))
           items.push({ y: sitter.seatPy + 0.5, draw: () => PropSprites.drawSeatFront(dp) });
         // the COVERS, after the body (bodySortY puts a sleeper at sy + 0.5). Keyed off the same live
         // `sleeper` read as the base pass, so the quilt is never held back with nobody under it.
@@ -8972,6 +9007,21 @@ const World = (() => {
       }
       const keep = self; self = b;
       try { return planSeat(performance.now(), p, zoneFor(b)); }
+      finally { self = keep; }
+    },
+    // TEST/DEBUG ONLY — the same deterministic seating for a COUCH-kind prop (sofa, recliner) through the
+    // REAL planCouchSit path (cushion claim + pendSeat + the side-seat perch), so the cushion render is
+    // provable live. Separate from _dbgSit because the two planners are separate: a couch claims a numbered
+    // cushion slot and can carry a TV to watch, a stool claims the whole prop.
+    _dbgCouchSit: (aid, propId, tvId, face) => {
+      const b = bodyForAgent(aid); if (!b || !geo || !geo.props) return false;
+      const p = geo.props.find(q => q.id === propId); if (!p) return false;
+      for (const [dx, dy] of SEAT_NB) {                     // park adjacent first — same reason as _dbgSit
+        const ax = p.x + dx, ay = p.y + dy;
+        if (geo.walkable(ax, ay, blocked)) { b.pathPts = null; b.target = null; b.sitting = false; b.seated = false; b.px = (ax + 0.5) * T; b.py = (ay + 0.5) * T; break; }
+      }
+      const keep = self; self = b;
+      try { return planCouchSit(performance.now(), p, tvId || null, face || 'north', zoneFor(b)); }
       finally { self = keep; }
     },
     // read-only body snapshot for the DEV test harness (window.__SKYNET_TEST__) — the Tier A/B/C substrate.

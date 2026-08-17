@@ -1706,14 +1706,23 @@ const PropSprites = (() => {
        universal near-black contour becomes a dark tint so the prop stops reading as a sticker
        cut out and laid on the deck. Same EDGE the couch uses, so the lounge reads as one room. */
     const EDGE = '#161d22';
-    // v4 LOUNGE AQUARIUM (2x1) — the point of this prop is WATER LIGHT. v3 painted the tank as one flat
-    // alpha rect of cyan, which is exactly the translucent-sticker failure v4 exists to kill. Now: a depth
-    // ramp from a lit surface down to a dark floor, a caustic band that actually wavers per column, and
-    // ONE cold tube up in the hood whose light blooms, falls through the water and pools on the cabinet.
+    // v5 LOUNGE AQUARIUM (2x1) — PROJECTION FIXED (2026-08-17). v4's water light was right and is kept
+    // (one cold tube, caustics on two beat frequencies, bubbler off the castle, cold wash on the deck),
+    // but the tank was drawn as a FRONT ELEVATION: a 12-row pane of water seen dead-on, which is the
+    // view you get crouching in front of an aquarium. The camera looks DOWN, so:
+    //   ⛔ THE WATER SURFACE IS THE SUBJECT. Six rows of plan-view water — gravel, planting and the
+    //      castle read THROUGH it, and the fish are DORSAL lozenges drifting in two axes. A fish that
+    //      can only travel left-right is the elevation talking.
+    //   ⛔ THE FRONT GLASS IS THE MINOR FACE. Four rows of water column under the meniscus, not twelve.
+    //   ⛔ GLASS IS THE WEDGE, NOT THE ALPHA. Over a near-black deck a translucent tint is just a dark
+    //      panel; the pane reads because of one bold diagonal specular wedge.
+    //   ⛔ THE HOOD IS A BAR ALONG THE NORTH RIM, not a lid over the whole tank — otherwise it hides
+    //      the one plane this projection exists to show. Its top is keyed down its WEST rail.
     // Its sibling backlit prop (quarters_vending) is flat cold fluorescent behind rows — this one moves.
     const r = RAMP.steel, ph = (f && f.x) || 0;
     const mid = '#12384a', lit = '#2a6f88', cold = '#7ad9ff';
-    const tt = y - 9;                                          // hood tt..tt+1, tube tt+2, water tt+3..tt+14
+    const tt = y - 11;                     // hood tt..tt+1, tube tt+2, water plane tt+3..tt+8, glass tt+11..tt+14
+    const SURF = tt + 3, SURFH = 6, WLINE = tt + 9, GLASS = tt + 11, GLASSH = 4;
     shadow2(x + 2, y + h - 1, w - 4);
     // freestanding cabinet stand — lounge tier, so stub feet on the deck, nothing bolted
     for (const lx of [x + 2, x + w - 5]) {
@@ -1721,65 +1730,108 @@ const PropSprites = (() => {
       rimEdge(lx + 2, y + 10, 1, 2, 0.16);
     }
     underAO(x + 5, y + 10, w - 10, 1);
-    chamf(x + 1, y + 6, w - 2, 5, EDGE, 1);
-    px(x + 2, y + 7, w - 4, 3, r.face);
-    px(x + 2, y + 7, w - 4, 1, r.lit); keyEdge(x + 3, y + 7, w - 9, 1, 0.14);
-    px(x + 2, y + 8, 1, 2, U.shade(r.face, 0.08)); px(x + w - 3, y + 8, 1, 2, r.dk);
-    rimEdge(x + w - 3, y + 8, 1, 2, 0.20);
+    chamf(x + 1, y + 5, w - 2, 6, EDGE, 1);
+    // ⛔ the stand must stay UNDER the tank in value. A cabinet that out-lights the water turns the
+    //    prop into two stacked boxes instead of an aquarium standing on something.
+    px(x + 2, y + 5, w - 4, 2, U.shade(r.face, -0.26));        // cabinet TOP plane, proud of the tank
+    px(x + 2, y + 5, 1, 2, U.shade(r.face, 0.04)); keyEdge(x + 2, y + 5, 1, 2, 0.14);   // keyed down its west rail
+    px(x + w - 3, y + 5, 1, 2, r.ao);
+    px(x + 2, y + 7, w - 4, 3, U.shade(r.face, -0.40));        // and the short front face beneath it
+    px(x + 2, y + 7, w - 4, 1, U.shade(r.face, -0.24));
+    px(x + 2, y + 7, 1, 3, U.shade(r.face, -0.30)); px(x + w - 3, y + 7, 1, 3, r.ao);
+    rimEdge(x + w - 3, y + 7, 1, 3, 0.20);
     px(x + (w >> 1) - 1, y + 7, 1, 3, '#141a1e');              // cabinet door seam
     px(x + (w >> 1) + 1, y + 8, 2, 1, U.shade(r.face, 0.26));  // door pull
     px(x + 2, y + 9, w - 4, 1, r.ao);
     // GLASS BOX, overdrawing north of the tile
     chamf(x - 1, tt - 1, w + 2, 17, EDGE, 1);
-    // water depth ramp — surface is lit by the tube, the floor of the tank stays genuinely dark
-    for (let j = 0; j < 12; j++) px(x + 1, tt + 3 + j, w - 2, 1, U.shade(mid, 0.34 - j * 0.058));
-    // CAUSTICS: a per-column shimmer under the surface, two beat frequencies so it never reads as a loop
+
+    /* ================= THE WATER SURFACE, IN PLAN ================= */
+    // Base water: brightest under the tube along the north rim, falling off to genuinely dark at the
+    // near edge. ⛔ It must stay DARK — a mid-grey plane between a mid-grey hood and a mid-grey
+    // cabinet is three stripes, not an object. The caustics and the tube carry all the brightness.
+    for (let j = 0; j < SURFH; j++) px(x + 1, SURF + j, w - 2, 1, U.shade(mid, 0.20 - j * 0.11));
+    px(x + 1, SURF, 1, SURFH, U.shade(mid, 0.16));             // west rail catch — this plane is HORIZONTAL
+    /* ⛔ THE TANK FLOOR IS ONE SHAPE, NOT SCATTER. A mottle of little gravel dashes strewn over the
+       plan reads as dirt on the water (the recipe's oldest note), and with the caustics, the ripple
+       net, three fish and the bubbler all firing at once the whole surface became confetti. The bed
+       is a single band along the NEAR edge — where the floor of a tank slopes up toward the viewer —
+       and everything that moves gets to be legible against it. */
+    px(x + 1, SURF + SURFH - 2, w - 2, 2, '#332e22');
+    px(x + 1, SURF + SURFH - 2, w - 2, 1, '#443d2b');
+    px(x + 3, SURF + SURFH - 2, 4, 1, '#544a33'); px(x + w - 9, SURF + SURFH - 2, 3, 1, '#282316');
+    // planting: one clump seen from above, swaying on the tube's clock
+    for (let j = 0; j < 4; j++) {
+      const sw = Math.round(Math.sin(now / 1100 + j * 0.7 + ph) * 1.1);
+      const gx = x + 3 + j + sw, gy = SURF + 1 + (j & 1);
+      px(gx, gy, 1, 3, j & 1 ? '#20603a' : '#144a2c');
+      px(gx, gy, 1, 1, j & 1 ? '#39864a' : '#20603a');         // the leaf tips catch the tube
+    }
+    // the castle every crew aquarium is legally required to contain — a mass with a visible TOP
+    px(x + w - 9, SURF + 1, 5, 4, '#2b333b');
+    px(x + w - 9, SURF + 1, 5, 1, '#48545f'); px(x + w - 9, SURF + 1, 1, 4, '#3b454e');   // top + west rail
+    px(x + w - 5, SURF + 2, 1, 3, '#1c2228');
+    px(x + w - 8, SURF, 2, 2, '#333c45'); px(x + w - 8, SURF, 2, 1, '#54616d');           // the turret, taller
+    px(x + w - 7, SURF + 4, 1, 1, '#0e1216');                  // the gate, facing us
+    // CAUSTICS: a per-column shimmer ON the surface, two beat frequencies so it never reads as a loop.
+    // Held to the two rows under the tube — spread over the whole plan it stopped being light and
+    // became texture, and the ripple net that used to run across the middle is gone for the same reason.
     for (let i = 0; i < w - 2; i++) {
       const s = Math.sin(now / 620 + i * 0.55 + ph) + 0.7 * Math.sin(now / 410 + i * 0.31);
-      const d = 1 + Math.max(0, Math.round(s));
-      px(x + 1 + i, tt + 3, 1, d, U.shade(lit, 0.24 - d * 0.06));
+      const d = Math.max(0, Math.round(s));
+      if (d) px(x + 1 + i, SURF, 1, d, U.shade(lit, 0.22 - d * 0.10));
     }
-    for (let i = 0; i < w - 4; i += 3) {                       // ripple net thrown down onto the gravel
-      const a = Math.sin(now / 780 + i * 0.42 + ph);
-      px(x + 2 + i + (a > 0 ? 1 : 0), tt + 11 + Math.round(a), 2, 1, U.shade(mid, 0.30));
-    }
-    // gravel bed + planting + the castle every crew aquarium is legally required to contain
-    px(x + 1, tt + 12, w - 2, 3, '#332e22'); px(x + 1, tt + 12, w - 2, 1, '#463f2c');
-    px(x + 3, tt + 12, 3, 1, '#514830'); px(x + w - 7, tt + 13, 3, 1, '#282316');
-    px(x + w - 8, tt + 8, 4, 5, '#46525f'); px(x + w - 8, tt + 8, 4, 1, '#5d6b79');
-    px(x + w - 7, tt + 6, 2, 3, '#46525f'); px(x + w - 7, tt + 6, 2, 1, '#5d6b79');   // turret
-    px(x + w - 6, tt + 10, 1, 2, '#0e1216');                   // castle door
-    for (let j = 0; j < 6; j++) {                              // waterweed swaying on the tube's clock
-      const sw = Math.round(Math.sin(now / 1100 + j * 0.5 + ph) * 1.2);
-      px(x + 3 + (j > 3 ? 2 : 0) + sw, tt + 13 - j, 1, 1, j > 3 ? '#2e7a3e' : '#1d5c34');
-    }
-    // FISH — silhouetted dark against the lit water up top, catching the tube on their backs
-    for (const spec of [[0, 2600, tt + 5, '#ffd34a'], [3, 3400, tt + 9, '#ff6ad5'], [1.4, 4200, tt + 7, '#7fd0c0']]) {
+    // FISH from ABOVE — a dorsal lozenge with a lit back-line and a flicking tail, drifting in TWO axes
+    for (const spec of [[0, 2600, 0.0, '#ffd34a'], [3, 3400, 1.7, '#ff6ad5'], [1.4, 4200, 3.1, '#7fd0c0']]) {
       const t = ((now / spec[1]) + spec[0] + ph) % 2, flip = t < 1;
       const fx = x + 2 + Math.round((flip ? t : 2 - t) * (w - 7)), c = spec[3];
-      px(fx, spec[2], 2, 1, c); px(fx, spec[2], 1, 1, U.shade(c, 0.30));   // lit back
-      px(fx + (flip ? -1 : 2), spec[2], 1, 1, U.shade(c, -0.38));          // tail behind
-      px(fx + (flip ? 1 : 0), spec[2] + 1, 1, 1, U.shade(c, -0.55));       // belly in shade
+      const fy = SURF + 1 + Math.round(1.6 + 1.5 * Math.sin(now / 1900 + spec[2] + ph));
+      px(fx, fy, 2, 1, c); px(fx, fy, 2, 1, U.shade(c, 0.26));             // the back, up in the light
+      px(fx, fy + 1, 2, 1, U.shade(c, -0.42));                             // flanks falling away
+      px(fx + (flip ? -1 : 2), fy + ((now / 190 + spec[0]) % 2 < 1 ? 0 : 1), 1, 1, U.shade(c, -0.30));   // tail flick
     }
-    // bubbler column off the castle, drifting and widening as it rises
+    // bubbler off the castle: from above the bubbles drift and pop at the surface
     for (let b = 0; b < 3; b++) {
-      const bh = Math.floor((now / 260 + b * 3) % 11);
-      px(x + w - 6 + (bh > 5 ? 1 : 0), tt + 12 - bh, 1, 1, U.shade(cold, -0.10 - bh * 0.03));
+      const bt = (now / 260 + b * 3.6) % 11;
+      px(x + w - 7 + (bt > 5 ? 1 : 0), SURF + 4 - Math.floor(bt / 3), 1, 1, U.shade(cold, -0.06 - bt * 0.02));
     }
-    // glass: west glint, cool east rim, and the waterline meniscus
-    px(x + 1, tt + 3, 1, 12, U.shade(lit, 0.18)); px(x + w - 2, tt + 3, 1, 12, U.shade(mid, -0.30));
-    rimEdge(x + w - 2, tt + 3, 1, 12, 0.18);
-    px(x + 1, tt + 4, w - 2, 1, U.shade(lit, 0.34));           // meniscus
-    ctx.globalAlpha = 0.10; px(x + 2, tt + 5, 2, 7, '#dff4ff'); px(x + 5, tt + 5, 1, 4, '#dff4ff'); ctx.globalAlpha = 1;
-    px(x + 1, tt + 15, w - 2, 1, U.shade(r.face, -0.30));      // tank base frame sitting on the cabinet
-    // HOOD + the single cold tube — the tank's only emitter, with real falloff both ways
+    /* ⛔ THE NEAR RIM MUST NOT BE A BRIGHT BAR. A lit line here splits the tank into two stacked
+       windows — the surface plane and the front pane stop being one body of water. It is a thin dark
+       frame with a BROKEN meniscus catch, and the two water zones carry across it. */
+    px(x + 1, WLINE, w - 2, 1, U.shade(mid, -0.06));           // the surface's own near edge, turning over
+    px(x + 1, WLINE + 1, w - 2, 1, U.shade(r.face, -0.14));    // the tank's near top rail — a frame, not a gap
+    px(x + 1, WLINE + 1, 1, 1, U.shade(r.face, 0.06));
+
+    /* ================= THE FRONT GLASS — the minor face, held under the surface's value ============ */
+    for (let j = 0; j < GLASSH; j++) px(x + 1, GLASS + j, w - 2, 1, U.shade(mid, 0.16 - j * 0.10));
+    px(x + 2, GLASS + GLASSH - 1, w - 4, 1, '#3a3327');        // the gravel bed, seen edge-on through the pane
+    px(x + 4, GLASS + GLASSH - 1, 3, 1, '#4a422f'); px(x + w - 8, GLASS + GLASSH - 1, 3, 1, '#2b271c');
+    for (let j = 0; j < 3; j++)                                // weed rising behind the pane
+      px(x + 4 + Math.round(Math.sin(now / 1100 + j + ph)), GLASS + GLASSH - 2 - j, 1, 1, j > 1 ? '#20603a' : '#144a2c');
+    px(x + 1, GLASS, 1, GLASSH, U.shade(mid, 0.06)); px(x + w - 2, GLASS, 1, GLASSH, U.shade(mid, -0.40));
+    rimEdge(x + w - 2, GLASS, 1, GLASSH, 0.18);
+    // THE WEDGE — one bold diagonal specular is what makes a pane read as glass over a dark deck
+    for (let j = 0; j < GLASSH; j++) {
+      ctx.globalAlpha = 0.26 - j * 0.05;
+      px(x + 2 + j * 2, GLASS + j, 6 - j, 1, '#dff4ff');
+      ctx.globalAlpha = 1;
+    }
+    px(x + 1, GLASS + GLASSH, w - 2, 1, U.shade(r.face, -0.34));   // tank base frame sitting on the cabinet
+
+    /* ================= HOOD: a bar along the NORTH rim, and the one cold tube ================= */
     chamf(x - 1, tt - 1, w + 2, 4, EDGE, 1);
-    px(x, tt, w, 2, r.top); px(x, tt, w, 1, r.sheen); keyEdge(x + 1, tt, 7, 1, 0.24);
-    px(x, tt + 1, 1, 1, r.lit); px(x + w - 1, tt + 1, 1, 1, r.dk);
+    px(x, tt + 1, w, 1, U.shade(r.face, 0.04));                      // shell
+    px(x + 1, tt, w - 2, 1, U.shade(r.face, -0.20));                 // far edge tucked back, inset past the chamfer
+    px(x, tt + 1, w, 1, r.top);                                      // ...near edge turning toward us
+    // ⛔ NO warm keyEdge on this rail. One hot pixel on the cold end of a cold prop is not a west rail,
+    //    it is a speck — the hood's plane cue is the two-row value split, the rail just seats it.
+    px(x + 1, tt + 1, 1, 1, U.shade(r.face, 0.20));                  // WEST RAIL, on the lit row only — a rail
+    px(x + w - 2, tt + 1, 1, 1, r.dk); rimEdge(x + w - 2, tt + 1, 1, 1, 0.20);   //   dropped into the dark far
+    px(x + 2, tt, 1, 1, U.shade(r.face, -0.06));                     //   row is a speck, not a plane cue
     px(x + 2, tt + 2, w - 4, 1, '#d6f2ff');                    // the tube under the hood lip
     bloom(x + 2, tt + 2, w - 4, 1, cold, 0.32);
-    spill(x + 1, tt + 3, w - 2, cold, 0.24, 5);                // light falling DOWN through the water
-    spill(x + 2, y + 6, w - 4, cold, 0.18, 3);                 // and pooling out onto the cabinet top
+    spill(x + 1, SURF, w - 2, cold, 0.20, 4);                  // light falling ACROSS the water plane
+    spill(x + 3, y + 5, w - 6, cold, 0.09, 2);                 // and pooling out onto the cabinet top
     glow(x + 3, y + 10, w - 6, 2, cold, 0.07 + 0.03 * Math.sin(now / 900 + ph));  // faint cold wash on the deck
   };
 
@@ -4622,7 +4674,10 @@ const PropSprites = (() => {
     px(BK + 4, y - 6, 1, h + 6, U.shade(r.lit, -0.32));          // piping where the crown rolls over
     px(BK + 5, y - 5, 1, h + 4, r.dk); rimEdge(BK + 5, y - 5, 1, h + 4, 0.22);
     px(BK + 1, y - 6, 2, 1, U.shade(r.lit, 0.16));               // the crown's own catch
-    /* (6) THE NEAR ARM last, so it wraps the cushion: crown, piping, then the south face + skirt */
+    /* (6) THE NEAR ARM last, so it wraps the cushion: crown, piping, then the south face + skirt.
+       ⛔ ROW y+3 IS THE SEAT LINE. Everything from here down is what a sitting body disappears
+          BEHIND — see RECLINER_FRONT_Y / drawSeatFront. Move this band and the sitter's shins
+          either float in front of the arm or get swallowed to the waist. */
     px(ax + 1, y + 4, 11, 2, r.lit); keyEdge(ax + 1, y + 4, 6, 1, 0.28);
     px(ax + 1, y + 6, 11, 1, U.shade(r.lit, -0.26));
     px(ax + 1, y + 7, aw - 3, 3, r.face);
@@ -4637,12 +4692,18 @@ const PropSprites = (() => {
      it is F.recliner under the same integer mirror the orientation system uses, so the two can never
      drift apart, and px()'s LSWAP re-lights it — the warm key stays high-west where the ceiling strip
      actually is, instead of riding the furniture round. */
-  F.recliner_r = (x, y, w, h, f) => {
+  const mirrorTile = (x, y, w, fn) => {
     ctx.save();
     ctx.translate(x, y); ctx.translate(w, 0); ctx.scale(-1, 1); ctx.translate(-x, -y);
     const was = MIRROR; MIRROR = true;
-    try { F.recliner(x, y, w, h, f); } finally { MIRROR = was; ctx.restore(); }
+    try { fn(); } finally { MIRROR = was; ctx.restore(); }
   };
+  F.recliner_r = (x, y, w, h, f) => mirrorTile(x, y, w, () => F.recliner(x, y, w, h, f));
+
+  /* THE SEAT LINE, per profile seat: px below the tile's top row where the near arm starts, i.e. the
+     row a body sitting in this chair has to be BEHIND. drawSeatFront clips to it. Both entries are the
+     same drawing, so both are step (6)'s `y + 3` — a horizontal mirror cannot move a horizontal band. */
+  const RECLINER_FRONT_Y = { recliner: 3, recliner_r: 3 };
 
   F.arcade = (x, y, w, h, f) => {
     /* v57 ARCADE (1x2) — built to Andrew's reference (2026-08-16), SHORTENED 2026-08-17. Read top to
@@ -8239,82 +8300,114 @@ const PropSprites = (() => {
      almost none of it was a destination. */
 
   F.bookshelf = (x, y, w, h, f) => {
-    /* v63 BOOKSHELF (2x1) — rebuilt to Andrew's reference (2026-08-16). NO LAMP, he asked for it off.
-       ⛔ THE WELL IS A BOX, NOT A BLACK RECTANGLE. A warm back panel that falls off toward the floor,
-          a lit west inner return and a shaded east one, and a ceiling occlusion under each board.
-          Three walls is the whole difference between depth and a sticker.
-       ⛔ THE FRAME MUST NOT EAT THE CASE. 24x19px total: two rows of top rail, two of plinth, two per
-          board. v62 spent five rows on timber and the books had nothing left to stand in.
-       ⛔ SPINES NEED A DARK GAP. Butted 3px blocks read as one painted strip; 2px spines with a 1px
-          void between groups read as books a reader could pull.
-       ⛔ GILT IS AN ACCENT, NOT A UNIFORM. Two banded books a shelf, in dim bronze — a band on every
-          spine turned the whole case gold. */
+    /* v64 BOOKSHELF (2x1) — PROJECTION FIXED (2026-08-17). v63's art was good and is kept almost
+       tone for tone; what was wrong is that it was drawn as a FRONT ELEVATION — the picture you get
+       standing at eye level in front of a bookcase. This station is top-down 3/4, and the tell is
+       always the same: at eye level every horizontal is a 1px LINE, from above every horizontal is
+       a PLANE. v63 had a 2px "crown", 1px shelf boards and books with 1px tops. So:
+       ⛔ THE CASE TOP IS A PLANE, NOT A CROWN LINE. 5 rows of timber we look down onto, keyed down
+          its WEST rail end to end (a receding surface takes the key on its west rail — put it on the
+          far edge and the board reads as a plank STANDING against the wall). Same law the turned
+          tables were rebuilt under.
+       ⛔ EVERY SHELF BOARD SHOWS ITS TOP. 2 rows of lit board with the books' feet on its FAR edge,
+          so the empty front strip of each board is visible in front of the row. That strip is what
+          says "we are above this", and it costs two rows.
+       ⛔ EVERY BOOK GETS A TOP CAP. A spine is now a short face under a 1px block of page/board seen
+          from above — head-edge cream on the leaning ones, cover colour on the upright ones.
+       ⛔ THINGS LYING FLAT ARE PLANES TOO. The stack shows its top COVER as a 3-row surface with the
+          page edges stepping down in front of it; the plant is a splayed crown around a pot RIM.
+       Kept from v63: warm back panel that falls off toward the floor, lit west / shaded east inner
+       returns, 2px spines with dark voids between groups, gilt on two books a shelf only, no lamp. */
     const EDGE = '#161d22';
     const cw = w;
     const WD = '#6b4a2c', WD_LIT = '#8a6540', WD_DK = '#3a2614', WD_SHN = '#a37e52';
-    const top = y + h - 19;                    // w/h are PIXELS here, never tiles
-    const U0 = top + 2, BRD = top + 8, L0 = top + 10, PL = top + 15;
+    const top = y + h - 20;                    // w/h are PIXELS here, never tiles
+    /* the row budget, floor line at y+h-1:
+       top+0..3  case top plane · +4 rail lit face · +5 rail underside
+       +6..10    upper bay · +11..12 middle board top · +13 board front edge
+       +14..17   lower bay · +18..19 plinth + toe */
+    const TP = top, RAIL = top + 4, U0 = top + 6, BRD = top + 11, L0 = top + 14, PL = top + 18;
 
     shadow2(x + 1, y + h - 1, cw - 2);
 
     /* ---- CARCASS ---- */
-    chamf(x - 1, top - 1, cw + 2, 19, '#3a2614', 2);   // contour is TIMBER, not a black ring
-    px(x, top, cw, 1, WD_SHN); keyEdge(x + 1, top, 9, 1, 0.26);          // the crown we look down onto
-    px(x, top + 1, cw, 1, WD_LIT);                                       // lit front of the top rail
-    for (let i = 0; i < 3; i++) px(x + 3 + i * 7, top, 4, 1, U.shade(WD_SHN, 0.09));   // grain along it
-    px(x, top + 1, 1, 1, WD_DK); px(x + cw - 1, top, 1, 2, WD_DK);       // corner mitres
-    px(x, U0, 2, 13, WD); px(x + 1, U0, 1, 13, WD_LIT);                  // west stile, inner face lit
-    px(x + cw - 2, U0, 2, 13, WD_DK);                                    // east stile, falling away
-    px(x + cw - 1, U0, 1, 13, U.shade(WD_DK, -0.32));
-    rimEdge(x + cw - 1, U0 + 1, 1, 11, 0.18);
+    chamf(x - 1, top - 1, cw + 2, 21, '#3a2614', 2);   // contour is TIMBER, not a black ring
+
+    /* ---- THE TOP PLANE we look down onto: 4 rows ramping far->near, keyed down the WEST rail ---- */
+    // ⛔ the far row is INSET 1px to sit inside the carcass chamfer — a full-width row here leaves a
+    //    bare lit corner outside the contour and the whole plane reads as a lid laid on top.
+    for (let j = 0; j < 4; j++) { const i = j ? 0 : 1; px(x + i, TP + j, cw - i * 2, 1, U.shade(WD, -0.20 + j * 0.11)); }
+    px(x + 1, TP + 1, 1, 3, WD_LIT); keyEdge(x + 1, TP + 1, 1, 3, 0.20);   // WEST RAIL — end to end, the plane cue
+    px(x + cw - 2, TP + 1, 1, 3, WD_DK); rimEdge(x + cw - 2, TP + 1, 1, 3, 0.18);
+    px(x + 3, TP + 2, cw - 8, 1, U.shade(WD, 0.02));                     // ONE long seam, not a dashed grain
+    px(x + 2, TP + 3, cw - 4, 1, WD_SHN);                                // the front nosing takes the strip
+    keyEdge(x + 2, TP + 3, 8, 1, 0.22);
+    /* the top rail's own FACE — short, because height reads and depth does not */
+    px(x, RAIL, cw, 1, WD_LIT);
+    px(x, RAIL + 1, cw, 1, WD_DK);
+    px(x, TP + 3, 1, 3, WD_DK); px(x + cw - 1, TP + 3, 1, 3, U.shade(WD_DK, -0.30));   // corner mitres
+
+    px(x, U0, 2, 12, WD); px(x + 1, U0, 1, 12, WD_LIT);                  // west stile, inner face lit
+    px(x + cw - 2, U0, 2, 12, WD_DK);                                    // east stile, falling away
+    px(x + cw - 1, U0, 1, 12, U.shade(WD_DK, -0.32));
+    rimEdge(x + cw - 1, U0 + 1, 1, 10, 0.18);
 
     /* ---- THE WELL, given three walls ---- */
-    px(x + 2, U0, cw - 4, 13, '#241708');                                // warm back panel, never black
-    px(x + 2, U0 + 7, cw - 4, 6, '#1a1006');                             // it falls off toward the floor
-    px(x + 2, U0, cw - 4, 1, '#0c0703');                                 // the rail's ceiling occlusion
-    px(x + 2, U0, 1, 13, '#40290f');                                     // west inner return, lit
-    px(x + cw - 3, U0, 1, 13, '#140c05');                                // east inner return, in shade
+    px(x + 2, U0, cw - 4, 12, '#241708');                                // warm back panel, never black
+    px(x + 2, U0 + 7, cw - 4, 5, '#1a1006');                             // it falls off toward the floor
+    px(x + 2, U0, cw - 4, 1, '#0c0703');                                 // the rail's underside, occluding
+    px(x + 2, U0, 1, 12, '#40290f');                                     // west inner return, lit
+    px(x + cw - 3, U0, 1, 12, '#140c05');                                // east inner return, in shade
 
-    /* one spine: body, a top that catches the key, a shaded east flank, sometimes a bronze band */
+    /* ONE BOOK, seen from above: a top cap (the plane), a short spine face under it, a shaded east
+       flank. `base` is the board's FAR edge — books are pushed to the back of the shelf. */
     const spine = (bx, bw, c, bh, gilt, base) => {
-      px(bx, base - bh + 1, bw, bh, c);
-      px(bx, base - bh + 1, bw, 1, U.shade(c, 0.32));
-      px(bx + bw - 1, base - bh + 2, 1, bh - 1, U.shade(c, -0.36));
-      if (gilt) px(bx, base - bh + 3, bw, 1, '#8a6a2e');
+      px(bx, base - bh, bw, bh, c);                                      // spine face
+      px(bx, base - bh, bw, 1, U.shade(c, 0.34));                        // where the face turns over
+      px(bx, base - bh - 1, bw, 1, U.shade(c, 0.16));                    // THE TOP CAP — the plane from above
+      px(bx + bw - 1, base - bh, 1, bh, U.shade(c, -0.36));
+      if (gilt) px(bx, base - bh + 2, bw, 1, '#8a6a2e');
     };
     const row = (bx, base, list) => { for (const e of list) { if (e[0]) spine(bx, e[0], e[1], e[2], e[3], base); bx += e[0] || 1; } };
 
-    /* ---- UPPER SHELF: a potted plant, then five books ---- */
-    px(x + 3, U0 + 4, 4, 2, '#3c4349');                                  // the pot
-    px(x + 3, U0 + 4, 4, 1, '#59626a'); px(x + 4, U0 + 4, 2, 1, '#6e7982');
-    px(x + 6, U0 + 5, 1, 1, '#262b30');
-    px(x + 4, U0 + 1, 1, 3, '#4e7a34'); px(x + 4, U0 + 1, 1, 1, '#79a84c');   // blades: two lit, two flanking
-    px(x + 5, U0 + 2, 1, 2, '#79a84c');
-    px(x + 3, U0 + 2, 1, 2, '#31552a'); px(x + 6, U0 + 2, 1, 2, '#31552a');
-    row(x + 8, U0 + 5, [[2, '#4a6b34', 6, 0], [0], [2, '#8a3038', 5, 1], [3, '#7d6a2a', 6, 0],
-                        [0], [2, '#33518a', 5, 0], [2, '#6b4a2a', 6, 1]]);
+    /* ---- UPPER SHELF (rows U0..U0+4): a potted plant, then five books ---- */
+    px(x + 3, U0 + 3, 4, 2, '#3c4349');                                  // pot: the body...
+    px(x + 3, U0 + 2, 4, 1, '#6e7982'); px(x + 4, U0 + 2, 2, 1, '#8b959d');   // ...and its RIM, seen from above
+    px(x + 6, U0 + 4, 1, 1, '#262b30');
+    px(x + 4, U0 + 1, 2, 1, '#79a84c');                                  // the crown splayed round the rim
+    px(x + 3, U0 + 2, 1, 1, '#31552a'); px(x + 6, U0 + 2, 1, 1, '#4e7a34');
+    px(x + 4, U0, 1, 1, '#4e7a34'); px(x + 6, U0 + 1, 1, 1, '#31552a');
+    row(x + 8, U0 + 5, [[2, '#4a6b34', 4, 0], [0], [2, '#8a3038', 3, 1], [3, '#7d6a2a', 4, 0],
+                        [0], [2, '#33518a', 3, 0], [2, '#6b4a2a', 4, 1]]);
 
-    /* ---- SHELF BOARD: a lit top over its own cast, so it has thickness ---- */
-    px(x + 2, BRD, cw - 4, 1, WD_LIT); px(x + 2, BRD, 7, 1, WD_SHN);
-    px(x + 2, BRD + 1, cw - 4, 1, '#0a0602');
+    /* ---- MIDDLE BOARD: 2 rows of TOP SURFACE (the books stand on its far edge) + a front edge ---- */
+    px(x + 2, BRD, cw - 4, 2, WD);
+    px(x + 2, BRD, cw - 4, 1, U.shade(WD, 0.14));
+    px(x + 2, BRD + 1, cw - 4, 1, WD_LIT);                               // the strip we see IN FRONT of the books
+    px(x + 2, BRD, 1, 2, WD_LIT);                                        // keyed down the west rail again
+    px(x + cw - 3, BRD, 1, 2, WD_DK);
+    px(x + 2, BRD + 2, cw - 4, 1, '#0a0602');                            // the board's own thickness
 
-    /* ---- LOWER SHELF: three books, a framed plate on a box, a lying stack ---- */
-    row(x + 3, L0 + 4, [[2, '#2f4a7a', 5, 1], [0], [2, '#a8863c', 5, 0], [2, '#3f6b3a', 4, 0]]);
-    px(x + 11, L0 + 3, 4, 2, '#463d34'); px(x + 11, L0 + 3, 4, 1, '#635a4e');   // the box it stands on
-    px(x + 11, L0 + 1, 4, 2, '#4e565c'); px(x + 11, L0 + 1, 4, 1, '#6d767c');   // the plate in its frame
-    px(x + 12, L0 + 2, 2, 1, '#222a30'); px(x + 12, L0 + 2, 1, 1, '#8e9aa0');
-    for (let s = 0; s < 4; s++) {                                               // the lying stack
-      const c = ['#6b2a32', '#2f4a7a', '#3f6b3a', '#b8b2a0'][s], sw2 = 5 - (s === 3 ? 1 : 0);
-      px(x + 16, L0 + 4 - s, sw2, 1, c);
-      px(x + 16, L0 + 4 - s, 1, 1, U.shade(c, 0.30));
-      px(x + 16 + sw2 - 1, L0 + 4 - s, 1, 1, U.shade(c, -0.34));
+    /* ---- LOWER SHELF (rows L0..L0+3): three books, a framed plate on a box, a stack lying flat ---- */
+    row(x + 3, L0 + 4, [[2, '#2f4a7a', 3, 1], [0], [2, '#a8863c', 3, 0], [2, '#3f6b3a', 2, 0]]);
+    px(x + 11, L0 + 3, 4, 1, '#463d34'); px(x + 11, L0 + 2, 4, 1, '#635a4e');   // the box it stands on, top lit
+    px(x + 11, L0 + 1, 4, 1, '#4e565c'); px(x + 11, L0, 4, 1, '#6d767c');       // the plate, its frame's top edge
+    px(x + 12, L0 + 1, 2, 1, '#222a30'); px(x + 12, L0 + 1, 1, 1, '#8e9aa0');
+    /* the stack: a TOP COVER plane, then the page edges stepping down in front of it */
+    px(x + 16, L0 + 1, 5, 2, '#6b2a32');
+    px(x + 16, L0 + 1, 5, 1, '#8d3c46'); px(x + 16, L0 + 1, 1, 2, '#8d3c46');   // lit far edge + west rail
+    px(x + 20, L0 + 2, 1, 1, '#4a1b21');
+    for (let s = 0; s < 2; s++) {                                               // the books beneath, edges only
+      const c = ['#2f4a7a', '#b8b2a0'][s];
+      px(x + 16 - s, L0 + 3 + s, 5, 1, c);
+      px(x + 16 - s, L0 + 3 + s, 1, 1, U.shade(c, 0.30));
     }
 
     /* ---- PLINTH ---- */
     px(x, PL, cw, 1, WD_LIT); keyEdge(x + 1, PL, 8, 1, 0.18);
     px(x, PL + 1, cw, 1, WD);
     px(x + 1, PL + 2, cw - 2, 1, WD_DK);
-    wear(x, top, cw, 2, 3, U.shade(WD, -0.12));
+    wear(x, TP + 1, cw, 2, 3, U.shade(WD, -0.12));
     wear(x, PL, cw, 2, 3, U.shade(WD, -0.12));
     px(x + 1, y + h - 1, cw - 2, 1, '#0b0704');                          // toe shadow on the deck
   };
@@ -8682,6 +8775,10 @@ const PropSprites = (() => {
     /* THE RECLINER PAIR (2026-08-17) — one seat of the couch, shipped as two props so aiming it is a
        pick rather than a hidden gesture. The right-facing one is the left one MIRRORED at draw time,
        so the two can never drift apart. */
+    /* A body DOES sit in these — but `sit` stays false, because that flag means one narrow thing: "the
+       GENERIC prop path (PropAnchor.deriveAnchor) may put a sit pose here", and that is the path the
+       SEAT LAW above closed on sofas and beds. A profile seat never reaches it. Its sit is owned by
+       planCouchSit + world.js SIDE_SEAT, which supply a real cushion anchor and a real occlusion order. */
     { id: "recliner", label: "RECLINER ‹ LEFT", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'west' } },
     { id: "recliner_r", label: "RECLINER RIGHT ›", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, use: { kind: 'couch', sit: false, approach: 'east' } },
   ];
@@ -8825,6 +8922,19 @@ const PropSprites = (() => {
       px(x + 3, y + 6, 1, 1, '#26554e'); px(x + 8, y + 6, 1, 1, '#26554e');   // seat stitches
       px(x + 2, y + 7, 8, 1, r.face); px(x + 2, y + 7, 3, 1, r.lit);          // front lip
       px(x + 3, y + 8, 6, 1, r.dk);                               // rounded skirt
+    } else if (F[f.t] && RECLINER_FRONT_Y[f.t] != null) {
+      /* A PROFILE SEAT covers its sitter with the whole near arm, not a pad rim: at this scale that arm
+         IS what a person's shins disappear behind (the stool's 2-row sliver would leave the legs
+         hanging in front of the chair). Rather than copy those rows — the drift the lockstep note above
+         warns about — CLIP the seat's own drawing function to the band at and below its seat line and
+         run it again. Same code, so the overlay can never disagree with the base about what the chair
+         looks like, and a future edit to F.recliner is carried automatically.
+         Known and accepted cost: the arm-crown keyEdge is a 0.28-alpha 6x1px line, so on an OCCUPIED
+         seat it lands twice and reads a shade brighter. The unoccupied art is untouched. */
+      const w = (f.w || 1) * TILE, h = (f.h || 1) * TILE;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(x - TILE, y + RECLINER_FRONT_Y[f.t], w + 2 * TILE, h + TILE); ctx.clip();
+      try { F[f.t](x, y, w, h, f); } finally { ctx.restore(); }
     }
   }
 
