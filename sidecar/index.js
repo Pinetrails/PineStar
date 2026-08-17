@@ -549,7 +549,11 @@ function resolveKnob(envSuffix, savedKey, def) {
 function knobEnvLocked(envSuffix) { const e = envSuffix ? ENV(envSuffix) : null; return e != null && String(e).trim() !== '' && Number(e) >= 0; }
 
 // maxIters: optional per-run tool-turn ceiling. Default OFF (0); users/deploys may opt into one.
-const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 0), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
+// maxToolBytes: the per-run tool-output FLOOR — the effective cap scales with the model's context window
+// (toolBytesCapFor at the run seam) UNLESS SKYNET_MAX_TOOL_BYTES is explicitly set, which pins the cap
+// absolutely (deterministic tests + locked-down deploys).
+const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 0), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: resolveKnob('MAX_TOOL_BYTES', 'maxToolBytes', 120000) };
+const MAX_TOOL_BYTES_PINNED = knobEnvLocked('MAX_TOOL_BYTES');
 // Optional spend governance: per-run, per-agent, per-day, and global ceilings all default OFF.
 // num() passes a parsed value through (including 0 -> UNGOVERNED via budget.js capOf, e.g. SKYNET_BUDGET_PER_DAY=0
 // disables the day pool); only an empty/missing/negative/non-numeric value falls back to the default.
@@ -14247,8 +14251,9 @@ async function runOnce(o) {
   // tool returned "[tool output omitted]" — while the loop kept paying for turns. toolBytesCapFor keeps the cap
   // ABOVE the threshold in bytes (invariant + rationale at its definition), guaranteeing the fold-and-reset
   // fires first. The 120KB floor still binds tiny/unknown windows; reads the LIVE ctxMgr.contextLimit so a
-  // mid-run provider fallback (loop.js re-resolve) rescales it.
-  const runToolBytesCap = () => toolBytesCapFor(ctxMgr.contextLimit, CAPS.maxToolBytes);
+  // mid-run provider fallback (loop.js re-resolve) rescales it. An explicit SKYNET_MAX_TOOL_BYTES pins the
+  // cap absolutely (no scaling) — deterministic budget e2es and locked-down deploys depend on that.
+  const runToolBytesCap = () => MAX_TOOL_BYTES_PINNED ? CAPS.maxToolBytes : toolBytesCapFor(ctxMgr.contextLimit, CAPS.maxToolBytes);
   // The summarizer is itself a paid model call. It RETURNS its reconciled {usd,tokens} so the loop folds the
   // spend into the run's running tally IN THE SAME TURN — so the per-run ceiling + cross-run pool guards (and the
   // run total -> ledger) all see it, not just at run end. It also surfaces a display-only agent.cost so live
