@@ -592,15 +592,26 @@ const SpaceBG = (() => {
       gc.drawImage(scratch, 0, 0);
 
       /* ---- 3. HOT KNOTS — small, very bright, additive. Young stars still inside their gas.
-              These carry the top of the value range and give the eye somewhere to land. */
+              These carry the top of the value range and give the eye somewhere to land.
+
+              DIMMED 2026-08-16 (Andrew, pointing at two of them: "i dont like how bright these
+              stars are can we dim them a bit"). They read as STARS rather than as ionized cores
+              because the placement gate below (shape >= 0.46) is looser than the gas envelope
+              (shape >= 0.54 in the density pass), so a knot can land on bare black with no cloud
+              around it — and a big additive halo on black is a star, whatever it was meant to be.
+              The halo and its white centre are scaled to ~0.6x together, AS A SET: dimming the
+              wide halo while leaving the white centre hot would keep the pop-out and just shrink
+              the glow, which is the same read at a smaller size. The 1px core stays near-full —
+              it is a point of light, and points of light are allowed to be bright (law 3 of this
+              backdrop still wants near-white somewhere in the frame). */
       gc.globalCompositeOperation = 'lighter';
       for (let i = 0, n = 5 + Math.floor(rnd() * 5); i < n; i++) {
         const sx = rnd() * w, sy = rnd() * h;
         if (shape(sx / w, sy / h) < 0.46) continue;        // only where the cloud actually is
         const R = Math.min(w, h) * (0.03 + 0.055 * rnd());
-        puff9(gc, w, h, sx, sy, R, rnd() < 0.5 ? [190, 110, 130] : [120, 150, 220], 0.16 + 0.10 * rnd());
-        puff9(gc, w, h, sx, sy, R * 0.28, [255, 246, 250], 0.22);
-        gc.fillStyle = 'rgba(255,250,255,0.95)';
+        puff9(gc, w, h, sx, sy, R, rnd() < 0.5 ? [190, 110, 130] : [120, 150, 220], 0.10 + 0.06 * rnd());
+        puff9(gc, w, h, sx, sy, R * 0.28, [255, 246, 250], 0.13);
+        gc.fillStyle = 'rgba(255,250,255,0.88)';
         gc.fillRect(sx | 0, sy | 0, 1, 1);
       }
       gc.globalCompositeOperation = 'source-over';
