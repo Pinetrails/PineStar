@@ -171,10 +171,13 @@ seven interactive Windows lifecycle cases were not run because the same installe
 is owned by the healthy 48-hour provider soak; macOS runtime remains unverified without a Mac. This evidence is
 explicitly baseline-only and cannot authorize the eventual 0.10 candidate.
 
-The remaining parity lanes are cross-surface session handoff plus authenticated relay/webhooks (G5), live
-subagent steering and structured result contracts (G6), config-blocked/hash-suppressed autonomous monitors
+The remaining parity lanes are cross-surface session handoff plus authenticated relay/webhooks (G5),
+config-blocked/hash-suppressed autonomous monitors
 (G7), remote execution continuity/checkpoints/conflict-aware sync (G8), and recoverable full-output plus verified
-workspace-mutation receipts (G9). Serverless backend breadth, additional push channels, enterprise-native
+workspace-mutation receipts (G9). G6 (live subagent steering and structured result contracts) is CLOSED —
+shipped 2026-08-08 in `3979605b4` (durable worker orchestration): generation-bound steering in
+`sidecar/subagents.js` plus the `team.steer` tool, structured result contracts in
+`sidecar/tools/builtin/orchestration.js`, proven by `test/orchestration.test.js` and `test/subagents.test.js`. Serverless backend breadth, additional push channels, enterprise-native
 provider auth, A2A/MoA, wake word, bulk-corpus learning, and portable profiles require explicit build/defer/
 do-not-claim decisions; they are not automatic 0.10 blockers.
 
