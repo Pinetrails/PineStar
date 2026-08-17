@@ -503,19 +503,6 @@ const PropSprites = (() => {
     px(x + 22, y, 6, 2, b.ink); px(x + 22, y, 6, 1, b.lit);
     knurl(x + 3, y + 3, 18, 1, r.top);
 
-    /* ---- THE CHAIR ---- */
-    const cW = 11, cX = x + ((w - cW) >> 1), cC = cX + (cW >> 1), cT = y + 3;
-    px(cX + 3, cT, 5, 1, s.ink); px(cX + 4, cT, 3, 1, s.lit);
-    px(cX + 2, cT + 1, 7, 6, s.ink);
-    px(cX + 3, cT + 2, 5, 4, s.face); px(cX + 3, cT + 2, 5, 1, s.mid); px(cX + 4, cT + 2, 3, 1, s.hi);
-    px(cX + 3, cT + 3, 1, 3, s.lit); px(cX + 7, cT + 3, 1, 3, s.dk); px(cX + 4, cT + 4, 3, 1, s.dk);
-    px(cX, cT + 3, 2, 4, s.ink); px(cX + 9, cT + 3, 2, 4, s.ink);
-    px(cX, cT + 3, 2, 1, r.lit); px(cX + 9, cT + 3, 2, 1, r.mid);
-    px(cX + 1, cT + 4, 1, 2, s.mid); px(cX + 9, cT + 4, 1, 2, s.dk);
-    px(cX + 1, cT + 7, 9, 2, s.ink); px(cX + 2, cT + 7, 7, 1, s.lit); px(cX + 2, cT + 8, 7, 1, s.face);
-    px(cC, cT + 9, 2, 2, r.ink); px(cC, cT + 9, 1, 2, r.lit);
-    px(cX + 2, cT + 11, 7, 1, r.ink); px(cX + 1, cT + 12, 9, 1, r.ink);
-    px(cX + 3, cT + 11, 5, 1, r.mid); px(cX + 2, cT + 12, 7, 1, r.face); px(cX + 2, cT + 12, 2, 1, r.lit);
   };
 
   F.holotable = (x, y, w, h, f) => {
@@ -977,20 +964,6 @@ const PropSprites = (() => {
     if (on) { bloom(tX + 2, tT + 5, tW - 4, 3, G, 0.18); spill(tX + 1, y - 2, tW - 2, G, 0.14, 4); }
     px(tX + 2, y - 1, 3, 1, blink(700) ? ACC.flow : U.shade(ACC.flow, -0.66));
 
-    /* ---- TWO CHAIRS, one per station ---- */
-    for (const cXb of [x + 2, x + 33]) {
-      const cW = 11, cX = cXb, cC = cX + (cW >> 1), cT = y + 3;
-      px(cX + 3, cT, 5, 1, s.ink); px(cX + 4, cT, 3, 1, s.lit);
-      px(cX + 2, cT + 1, 7, 6, s.ink);
-      px(cX + 3, cT + 2, 5, 4, s.face); px(cX + 3, cT + 2, 5, 1, s.mid); px(cX + 4, cT + 2, 3, 1, s.hi);
-      px(cX + 3, cT + 3, 1, 3, s.lit); px(cX + 7, cT + 3, 1, 3, s.dk); px(cX + 4, cT + 4, 3, 1, s.dk);
-      px(cX, cT + 3, 2, 4, s.ink); px(cX + 9, cT + 3, 2, 4, s.ink);
-      px(cX, cT + 3, 2, 1, r.lit); px(cX + 9, cT + 3, 2, 1, r.mid);
-      px(cX + 1, cT + 7, 9, 2, s.ink); px(cX + 2, cT + 7, 7, 1, s.lit); px(cX + 2, cT + 8, 7, 1, s.face);
-      px(cC, cT + 9, 2, 2, r.ink); px(cC, cT + 9, 1, 2, r.lit);
-      px(cX + 2, cT + 11, 7, 1, r.ink); px(cX + 1, cT + 12, 9, 1, r.ink);
-      px(cX + 3, cT + 11, 5, 1, r.mid); px(cX + 2, cT + 12, 7, 1, r.face);
-    }
   };
 
   F.desk = (x, y, w, h, f) => {
@@ -1083,31 +1056,6 @@ const PropSprites = (() => {
           read as one moulded lump; a pale cap on each says "padding sitting in a metal cradle".
        ⛔ AN OCTAGONAL FOOT BEATS A STAR BASE AT THIS SIZE — a splayed star is three thin legs that
           dissolve, a stepped octagon is a solid shape the eye can hold. ---- */
-    const cW = 11, cX = x + ((w - cW) >> 1), cC = cX + (cW >> 1), cT = y + 3;
-    px(cX + 3, cT, 5, 1, s.ink);                                  // headrest, cut top
-    px(cX + 4, cT, 3, 1, s.lit);
-    px(cX + 2, cT + 1, 7, 6, s.ink);                              // back
-    px(cX + 3, cT + 2, 5, 4, s.face);
-    px(cX + 3, cT + 2, 5, 1, s.mid);
-    px(cX + 4, cT + 2, 3, 1, s.hi);                               // one specular chip
-    px(cX + 3, cT + 3, 1, 3, s.lit); px(cX + 7, cT + 3, 1, 3, s.dk);
-    px(cX + 4, cT + 4, 3, 1, s.dk);                               // lumbar seam
-    px(cX, cT + 3, 2, 4, s.ink); px(cX + 9, cT + 3, 2, 4, s.ink);  // ARMRESTS
-    px(cX, cT + 3, 2, 1, r.lit); px(cX + 9, cT + 3, 2, 1, r.mid);  // pale steel caps
-    px(cX + 1, cT + 4, 1, 2, s.mid); px(cX + 9, cT + 4, 1, 2, s.dk);
-    px(cX + 1, cT + 7, 9, 2, s.ink);                              // seat pad
-    px(cX + 2, cT + 7, 7, 1, s.lit);
-    px(cX + 2, cT + 8, 7, 1, s.face);
-    /* ⛔ THE COLUMN IS 2px ON AN ODD-CENTRED CHAIR. Seat pad (cX+1..cX+9) and pedestal foot both
-       centre on cX+5, so a 2px column at cC-1 straddles cX+4/5 and hangs one pixel LEFT of the
-       stack. At cC it straddles cX+5/6 and drops out of the seat's centre where it belongs —
-       Andrew caught this by eye. Do not "fix" it back to cC-1 by symmetry argument. */
-    px(cC, cT + 9, 2, 2, r.ink); px(cC, cT + 9, 1, 2, r.lit);           // column
-    px(cX + 2, cT + 11, 7, 1, r.ink);                             // OCTAGONAL pedestal foot
-    px(cX + 1, cT + 12, 9, 1, r.ink);
-    px(cX + 3, cT + 11, 5, 1, r.mid);
-    px(cX + 2, cT + 12, 7, 1, r.face);
-    px(cX + 2, cT + 12, 2, 1, r.lit);
   };
 
   F.desk2 = (x, y, w, h, f) => {
@@ -1172,19 +1120,6 @@ const PropSprites = (() => {
     px(kX, y + 2, 9, 2, b.ao);
     for (let i = 0; i < 9; i += 2) { px(kX + i, y + 2, 1, 1, b.lit); px(kX + i + 1, y + 3, 1, 1, b.top); }
 
-    /* ---- THE CHAIR (same as the desk's) ---- */
-    const cW = 11, cX = x + ((w - cW) >> 1), cC = cX + (cW >> 1), cT = y + 3;
-    px(cX + 3, cT, 5, 1, s.ink); px(cX + 4, cT, 3, 1, s.lit);
-    px(cX + 2, cT + 1, 7, 6, s.ink);
-    px(cX + 3, cT + 2, 5, 4, s.face); px(cX + 3, cT + 2, 5, 1, s.mid); px(cX + 4, cT + 2, 3, 1, s.hi);
-    px(cX + 3, cT + 3, 1, 3, s.lit); px(cX + 7, cT + 3, 1, 3, s.dk); px(cX + 4, cT + 4, 3, 1, s.dk);
-    px(cX, cT + 3, 2, 4, s.ink); px(cX + 9, cT + 3, 2, 4, s.ink);
-    px(cX, cT + 3, 2, 1, r.lit); px(cX + 9, cT + 3, 2, 1, r.mid);
-    px(cX + 1, cT + 4, 1, 2, s.mid); px(cX + 9, cT + 4, 1, 2, s.dk);
-    px(cX + 1, cT + 7, 9, 2, s.ink); px(cX + 2, cT + 7, 7, 1, s.lit); px(cX + 2, cT + 8, 7, 1, s.face);
-    px(cC, cT + 9, 2, 2, r.ink); px(cC, cT + 9, 1, 2, r.lit);
-    px(cX + 2, cT + 11, 7, 1, r.ink); px(cX + 1, cT + 12, 9, 1, r.ink);
-    px(cX + 3, cT + 11, 5, 1, r.mid); px(cX + 2, cT + 12, 7, 1, r.face); px(cX + 2, cT + 12, 2, 1, r.lit);
   };
 
   F.pixelrig = (x, y, w, h, f) => {
@@ -1264,19 +1199,6 @@ const PropSprites = (() => {
     px(x + w - 6, y + 1, 4, 1, b.ink);                              // stylus in its cradle
     px(x + w - 5, y + 1, 2, 1, r.lit);
 
-    /* ---- THE CHAIR ---- */
-    const cW = 11, cX = x + ((w - cW) >> 1), cC = cX + (cW >> 1), cT = y + 3;
-    px(cX + 3, cT, 5, 1, s.ink); px(cX + 4, cT, 3, 1, s.lit);
-    px(cX + 2, cT + 1, 7, 6, s.ink);
-    px(cX + 3, cT + 2, 5, 4, s.face); px(cX + 3, cT + 2, 5, 1, s.mid); px(cX + 4, cT + 2, 3, 1, s.hi);
-    px(cX + 3, cT + 3, 1, 3, s.lit); px(cX + 7, cT + 3, 1, 3, s.dk); px(cX + 4, cT + 4, 3, 1, s.dk);
-    px(cX, cT + 3, 2, 4, s.ink); px(cX + 9, cT + 3, 2, 4, s.ink);
-    px(cX, cT + 3, 2, 1, r.lit); px(cX + 9, cT + 3, 2, 1, r.mid);
-    px(cX + 1, cT + 4, 1, 2, s.mid); px(cX + 9, cT + 4, 1, 2, s.dk);
-    px(cX + 1, cT + 7, 9, 2, s.ink); px(cX + 2, cT + 7, 7, 1, s.lit); px(cX + 2, cT + 8, 7, 1, s.face);
-    px(cC, cT + 9, 2, 2, r.ink); px(cC, cT + 9, 1, 2, r.lit);
-    px(cX + 2, cT + 11, 7, 1, r.ink); px(cX + 1, cT + 12, 9, 1, r.ink);
-    px(cX + 3, cT + 11, 5, 1, r.mid); px(cX + 2, cT + 12, 7, 1, r.face); px(cX + 2, cT + 12, 2, 1, r.lit);
   };
 
   F.coffee = (x, y, w, h, f) => {   // v4 brewer — ONE chamfered column, the hot alcove is the only lit thing
@@ -2131,19 +2053,6 @@ const PropSprites = (() => {
     px(x + 18, y, 4, 2, b.ink); px(x + 18, y, 4, 1, b.lit);        // a small keypad block
     knurl(x + 3, y + 3, 12, 1, r.top);                             // machined grip along the front
 
-    /* ---- THE CHAIR ---- */
-    const cW = 11, cX = x + ((w - cW) >> 1), cC = cX + (cW >> 1), cT = y + 3;
-    px(cX + 3, cT, 5, 1, s.ink); px(cX + 4, cT, 3, 1, s.lit);
-    px(cX + 2, cT + 1, 7, 6, s.ink);
-    px(cX + 3, cT + 2, 5, 4, s.face); px(cX + 3, cT + 2, 5, 1, s.mid); px(cX + 4, cT + 2, 3, 1, s.hi);
-    px(cX + 3, cT + 3, 1, 3, s.lit); px(cX + 7, cT + 3, 1, 3, s.dk); px(cX + 4, cT + 4, 3, 1, s.dk);
-    px(cX, cT + 3, 2, 4, s.ink); px(cX + 9, cT + 3, 2, 4, s.ink);
-    px(cX, cT + 3, 2, 1, r.lit); px(cX + 9, cT + 3, 2, 1, r.mid);
-    px(cX + 1, cT + 4, 1, 2, s.mid); px(cX + 9, cT + 4, 1, 2, s.dk);
-    px(cX + 1, cT + 7, 9, 2, s.ink); px(cX + 2, cT + 7, 7, 1, s.lit); px(cX + 2, cT + 8, 7, 1, s.face);
-    px(cC, cT + 9, 2, 2, r.ink); px(cC, cT + 9, 1, 2, r.lit);
-    px(cX + 2, cT + 11, 7, 1, r.ink); px(cX + 1, cT + 12, 9, 1, r.ink);
-    px(cX + 3, cT + 11, 5, 1, r.mid); px(cX + 2, cT + 12, 7, 1, r.face); px(cX + 2, cT + 12, 2, 1, r.lit);
   };
 
   F.crate = (x, y, w, h) => {
@@ -5011,6 +4920,54 @@ const PropSprites = (() => {
     wear(x + 4, y + 4, w - 8, h - 8, 14, U.shade(RUG_BASE, -0.14));
     // the frayed short ends, dithered IN the floor plane so they read as threads and never as a lip
     for (let jy = 2; jy < h - 2; jy++) if (((jy * 2654435761) >>> 0) & 1) { px(x - 1, y + jy, 1, 1, RUG_RIM); px(x + w, y + jy, 1, 1, RUG_RIM); }
+  };
+
+  F.seatchair = (x, y, w, h, f) => {
+    /* SEAT CHAIR (1x1) — the chair world.js draws at a workstation seat. NOT in the CATALOG, so the
+       PLACEABLE chair prop (F.chair) keeps its shipped art untouched.
+       ⛔ THIS IS F.chair's SILHOUETTE, PIXEL FOR PIXEL. Only the MATERIAL changed. Two rewrites failed
+          before this: one baked the chair into the desk sprite (the sitter sorts a tile south, so the
+          agent floated in front of a chair it could not sit in), and one gave it a solid 8x6 slab back
+          that SWALLOWED THE SEATED AGENT'S HEAD. The shipped back is deliberately WAISTED — a narrow
+          headrest bar clear of the shoulders, pinched at the lumbar — precisely so a body sitting in
+          front of it still reads. That profile is load-bearing; do not 'improve' it into a slab.
+       ⛔ Rows are F.chair's rows (pad y+3..y+7, column y+7..y+9, base y+10, casters y+11) because the
+          sitter anchor is calibrated to them. */
+    const r = RAMP.steel, s = MAT.seat;
+    shadow2(x + 3, y + 10, 7);
+    px(x + 2, y + 10, 8, 1, '#10161a');                          // star base — low and dark, hides under a body
+    px(x + 3, y + 10, 6, 1, '#2a343c'); keyEdge(x + 3, y + 10, 3, 1, 0.16);
+    px(x + 2, y + 9, 1, 1, '#242e35'); px(x + 9, y + 9, 1, 1, '#242e35');
+    for (const cw of [x + 2, x + 5, x + 8]) px(cw, y + 11, 2, 1, '#1a1e22');   // casters
+    px(x + 4, y + 7, 4, 3, s.ink);                               // gas-lift column
+    px(x + 5, y + 7, 1, 3, '#8b959c'); px(x + 6, y + 7, 1, 3, '#5c666e');
+    keyEdge(x + 5, y + 7, 1, 2, 0.20); rimEdge(x + 6, y + 7, 1, 3, 0.22);
+    /* WAISTED BACK — the silhouette that lets a seated head read. */
+    px(x + 4, y - 4, 4, 1, s.ink); px(x + 3, y - 3, 6, 1, s.ink);
+    px(x + 2, y - 2, 8, 4, s.ink); px(x + 3, y + 2, 6, 1, s.ink);
+    px(x + 4, y - 3, 4, 1, s.hi);                                // headrest bar
+    keyEdge(x + 4, y - 3, 2, 1, 0.26);
+    px(x + 3, y - 2, 6, 3, s.face);                              // shoulders
+    px(x + 3, y - 2, 1, 3, s.lit); px(x + 8, y - 2, 1, 3, s.dk);
+    rimEdge(x + 8, y - 2, 1, 3, 0.20);
+    for (let j = 0; j < 3; j++) px(x + 4, y - 2 + j, 4, 1, U.shade(s.face, j % 2 ? -0.13 : 0.03));
+    px(x + 4, y + 1, 4, 1, U.shade(s.face, -0.26));              // pinched lumbar
+    /* SEAT PAD — silver where the shipped chair is teal. */
+    px(x + 1, y + 3, 10, 5, s.ink);
+    px(x + 2, y + 4, 8, 1, s.hi); px(x + 2, y + 4, 4, 1, s.sheen);
+    keyEdge(x + 2, y + 4, 4, 1, 0.20);
+    px(x + 2, y + 5, 8, 2, s.face);
+    px(x + 2, y + 5, 1, 2, s.lit); px(x + 9, y + 5, 1, 2, s.dk);
+    rimEdge(x + 9, y + 5, 1, 2, 0.18);
+    px(x + 3, y + 6, 1, 1, s.dk); px(x + 8, y + 6, 1, 1, s.dk);  // seat stitches
+    px(x + 2, y + 7, 8, 1, r.face); px(x + 2, y + 7, 3, 1, r.lit);
+    px(x + 3, y + 8, 6, 1, r.dk);
+    /* ARMRESTS last, so they read in FRONT of the pad. */
+    px(x, y + 2, 2, 4, s.ink); px(x + 10, y + 2, 2, 4, s.ink);
+    px(x, y + 3, 2, 1, U.shade(s.face, 0.14)); keyEdge(x, y + 3, 1, 1, 0.26);
+    px(x, y + 4, 2, 1, U.shade(s.face, -0.18));
+    px(x + 10, y + 3, 2, 1, U.shade(s.face, -0.04));
+    px(x + 10, y + 4, 2, 1, s.dk); rimEdge(x + 10, y + 3, 1, 2, 0.22);
   };
 
   F.chair = (x, y, w, h, f) => {

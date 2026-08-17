@@ -5411,18 +5411,20 @@ const World = (() => {
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
         // to assigned PCs so a decorative/unmanned console keeps its existing look and the chair only ever
         // appears where an agent will actually sit (chair + sitter stay in lockstep — see stepCrewToSeat).
-        /* ⛔ NO SEPARATE SEAT CHAIR AT A WORKSTATION ANY MORE. Every workstation prop now DRAWS ITS OWN
-           chair as part of its art (prop glow-up, 2026-08-16), so pushing the canonical F.chair here
-           stacked a second chair behind the built-in one. Deleting the push is the fix; the sitter
-           anchor is unchanged (deskSeat/stepCrewToSeat still place the body on the same tile). */
+        if (p.agentId && isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => drawSeatChair(s.tx, s.ty, s.cx) }); }
       }
     }
     // one chair art everywhere: seats route through the canonical prop renderer (old F_chair = fallback)
     function drawSeatChair(tx, ty, cx) {
       const sx = (cx == null ? tx : cx);   // fractional x centres the chair on an even-width desk
-      if (typeof PropSprites !== 'undefined' && PropSprites.has('chair')) {
+      /* A WORKSTATION SEAT USES ITS OWN ART. 'seatchair' is the glow-up chair; it is not in the CATALOG,
+         so the PLACEABLE chair prop keeps its shipped art. Falls back to 'chair' if absent, which is what
+         every station saved before this existed still renders. */
+      const seatT = (typeof PropSprites !== 'undefined' && PropSprites.has('seatchair')) ? 'seatchair'
+                  : (typeof PropSprites !== 'undefined' && PropSprites.has('chair')) ? 'chair' : null;
+      if (seatT) {
         PropSprites.setCtx(ctx); PropSprites.setNow(now);
-        PropSprites.draw({ t: 'chair', x: sx, y: ty, w: 1, h: 1 }, false);
+        PropSprites.draw({ t: seatT, x: sx, y: ty, w: 1, h: 1 }, false);
       } else F_chair(sx * T, ty * T);
     }
     if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => {   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
@@ -5435,9 +5437,8 @@ const World = (() => {
         PropSprites.draw({ t: 'desk', x: desk.tx, y: desk.ty, w: desk.w, h: desk.h }, work, live);
       } else F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work, heat: live ? live.heat : 0, prog: live ? live.prog : null });
     } });
-  /* ⛔ THE SYNTHETIC AUTO-DESK DOUBLE-DREW TOO. It renders through the SAME F.desk art as a placed
-     workstation, and that art now carries its own chair — so this push stacked the canonical F.chair
-     behind it exactly like the placed-prop path did. Both call sites had to go, not just the loop. */
+    if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty, seat.cx) });
+  // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     /* a body dormant IN a bed sorts INSIDE its bed — after the frame + pillow, before the quilt — which
        is the whole two-pass trick. Everything else keeps the old key exactly (cushion pos when seated,
        feet otherwise). Drawn through drawSleeper so the sprite is clipped to the mattress. */
