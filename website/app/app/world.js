@@ -5411,7 +5411,10 @@ const World = (() => {
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
         // to assigned PCs so a decorative/unmanned console keeps its existing look and the chair only ever
         // appears where an agent will actually sit (chair + sitter stay in lockstep — see stepCrewToSeat).
-        if (p.agentId && isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => drawSeatChair(s.tx, s.ty, s.cx) }); }
+        /* ⛔ NO SEPARATE SEAT CHAIR AT A WORKSTATION ANY MORE. Every workstation prop now DRAWS ITS OWN
+           chair as part of its art (prop glow-up, 2026-08-16), so pushing the canonical F.chair here
+           stacked a second chair behind the built-in one. Deleting the push is the fix; the sitter
+           anchor is unchanged (deskSeat/stepCrewToSeat still place the body on the same tile). */
       }
     }
     // one chair art everywhere: seats route through the canonical prop renderer (old F_chair = fallback)
@@ -5432,8 +5435,9 @@ const World = (() => {
         PropSprites.draw({ t: 'desk', x: desk.tx, y: desk.ty, w: desk.w, h: desk.h }, work, live);
       } else F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work, heat: live ? live.heat : 0, prog: live ? live.prog : null });
     } });
-    if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty, seat.cx) });
-  // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
+  /* ⛔ THE SYNTHETIC AUTO-DESK DOUBLE-DREW TOO. It renders through the SAME F.desk art as a placed
+     workstation, and that art now carries its own chair — so this push stacked the canonical F.chair
+     behind it exactly like the placed-prop path did. Both call sites had to go, not just the loop. */
     /* a body dormant IN a bed sorts INSIDE its bed — after the frame + pillow, before the quilt — which
        is the whole two-pass trick. Everything else keeps the old key exactly (cushion pos when seated,
        feet otherwise). Drawn through drawSleeper so the sprite is clipped to the mattress. */
