@@ -64,6 +64,7 @@ test/eval-acp-client.test.js
 test/eval-fixture-host.test.js
 test/eval-installed-performance.test.js
 test/eval-installed-provider-soak.test.js
+test/eval-parity-offline.test.js
 test/overnight-reliability-runner.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js
