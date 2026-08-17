@@ -5712,6 +5712,110 @@ const PropSprites = (() => {
     px(x, top + 3, w, 1, U.shade(WD_DK, -0.44));
   };
 
+  /* ---- THE GLASS LOUNGE TABLE (2026-08-17, Andrew: "one more low table thats more of the lounge
+     style, like a glass lounge table"). The catalog's other glass table — LOUNGE TABLE, 2x1 — is an
+     office coffee table: steel legs, datapads on the shelf, a table you put a laptop on. This one is
+     the living-room piece: three tiles wide, a BRASS frame instead of steel, and a shelf carrying
+     magazines and a bowl rather than hardware.
+     ⛔ WHAT MAKES IT LOUNGE IS THE AIR. The wooden LOW TABLE next to it reads low by MASS — a thick
+        slab that eats the daylight. Glass cannot do that: a thin pane over a solid base is a display
+        cabinet. It reads low by being SEEN THROUGH — the shelf and its clutter sit inside the pane's
+        own rows, the frame under it is four thin posts and nothing else, and the deck runs clean
+        between them.
+     ⛔ GLASS IS THE WEDGE, NOT THE ALPHA (earned on the turned lounge table): over a near-black deck
+        a translucent tint is just a dark panel. The diagonal specular sweep IS the glass. */
+  F.glasstable = (x, y, w, h, f) => {
+    const b = MAT.brass;
+    const GLS = '#4a5c6e', GLS_LIT = '#a8bccb';
+    const top = y + h - 1 - SURFACE_RISE;                                  // = y+3 at h:1 — the shared plane
+    const WD = '#5a4430', WD_LIT = '#7a5f42';
+    shadow2(x + 1, y + h - 1, w - 2);
+    for (const lx of [x + 4, x + w - 6]) {                                 // REAR posts, up behind the pane
+      px(lx, top + 1, 2, 6, b.dk); rimEdge(lx + 1, top + 1, 1, 5, 0.14);
+    }
+    for (const lx of [x + 2, x + w - 5]) {                                 // FRONT posts — thin, brass, lit
+      px(lx, top + 3, 3, 6, b.ink);
+      px(lx, top + 3, 1, 6, b.lit); px(lx + 1, top + 3, 2, 6, b.dk);
+      keyEdge(lx, top + 3, 1, 4, 0.24); rimEdge(lx + 2, top + 4, 1, 4, 0.18);
+      px(lx, y + h - 2, 3, 1, b.ao);
+      ctx.globalAlpha = 0.30; px(lx - 1, y + h - 1, 5, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    px(x + 6, top + 6, w - 12, 1, b.dk);                                   // the frame's low cross rail
+    /* THE SHELF, inside the pane's own rows so the glass has something to be seen THROUGH */
+    px(x + 5, top - 2, w - 10, 4, '#2a2018');
+    px(x + 6, top - 2, w - 12, 1, WD_LIT); keyEdge(x + 6, top - 2, 6, 1, 0.18);
+    px(x + 6, top - 1, w - 12, 2, WD);
+    px(x + 8, top - 1, 8, 1, '#a8503a'); px(x + 8, top - 1, 4, 1, '#c96b4c');   // magazines, stacked askew
+    px(x + 9, top, 7, 1, '#b09044'); px(x + 9, top, 3, 1, '#cfae62');
+    px(x + w - 13, top - 1, 5, 3, '#2f6a62');                                   // a bowl on the shelf
+    px(x + w - 12, top - 1, 3, 1, '#57a89c'); px(x + w - 12, top, 3, 1, '#245852');
+    /* THE PANE — translucent, so every mark above survives underneath. That IS the glass. */
+    ctx.globalAlpha = 0.52;
+    px(x + 1, top - 8, w - 2, 9, GLS);
+    ctx.globalAlpha = 1;
+    px(x + 1, top - 9, w - 2, 1, b.ink); px(x + 1, top + 1, w - 2, 1, b.ink);
+    px(x, top - 8, 1, 9, b.ink); px(x + w - 1, top - 8, 1, 9, b.ink);
+    px(x + 1, top - 8, w - 2, 1, GLS_LIT); keyEdge(x + 2, top - 8, 10, 1, 0.30);   // bright far edge
+    px(x + 1, top - 7, 1, 7, U.shade(GLS_LIT, -0.28)); px(x + w - 2, top - 7, 1, 7, U.shade(GLS, -0.34));
+    rimEdge(x + w - 2, top - 7, 1, 7, 0.22);
+    for (let i = 0; i < 7; i++)                                            // THE SPECULAR WEDGE — the glass
+      px(x + 3 + i, top - 7 + i, 9 - i, 1, U.shade(GLS_LIT, -0.14 - i * 0.06));
+    px(x + w - 9, top - 4, 3, 1, U.shade(GLS_LIT, -0.34));                 // a second, smaller catch
+    px(x + 1, top, w - 2, 1, U.shade(GLS_LIT, -0.42));                     // the near edge, dimmer
+    px(x + 1, top + 2, w - 2, 1, b.mid);                                   // the pane's BRASS rim below it
+    px(x + 2, top + 3, w - 4, 1, b.ao);
+  };
+
+  F['glasstable:e'] = (x, y, w, h, f) => {
+    // 1x3 deep GLASS LOUNGE TABLE — the same pane receding. Every cue the wooden tables earned holds
+    // for glass too: the WEST RAIL lit end to end (a far-edge key would stand it up like a pane of
+    // glass leaning on the wall), eased ends, and a contact shadow down the east flank. The shelf
+    // stays an INSET plate with clear margins — drawn full-bleed inside the pane it becomes a
+    // cabinet front, which is exactly how the first turned lounge table failed.
+    const b = MAT.brass;
+    const GLS = '#4a5c6e', GLS_LIT = '#a8bccb';
+    const WD = '#5a4430', WD_LIT = '#7a5f42';
+    const top = y + h - 1 - SURFACE_RISE;
+    const D = top - (y + 1);                                               // the pane's depth in rows
+    shadow2(x + 1, y + h - 1, w - 2);
+    ctx.globalAlpha = 0.22; px(x + w + 1, y + 3, 2, D + 5, '#000'); ctx.globalAlpha = 1;
+    for (const lx of [x + 1, x + w - 4]) {                                 // the NEAR posts
+      px(lx, top + 3, 3, 6, b.ink);
+      px(lx, top + 3, 1, 6, b.lit); px(lx + 1, top + 3, 2, 6, b.dk);
+      keyEdge(lx, top + 3, 1, 4, 0.24); rimEdge(lx + 2, top + 4, 1, 4, 0.18);
+      px(lx, y + h - 2, 3, 1, b.ao);
+      ctx.globalAlpha = 0.30; px(lx - 1, y + h - 1, 5, 1, '#000'); ctx.globalAlpha = 1;
+    }
+    px(x + 4, top + 6, w - 8, 1, b.dk);                                    // the cross rail, end-on
+    /* ⛔ A FULL BRASS SURROUND TURNS A TURNED GLASS TABLE INTO A DISPLAY CABINET. Ink all four
+       sides of a tall pane and the eye reads a framed case standing against the wall. The frame
+       here is only where a frame really shows from above — the NEAR edge — and the pane is held a
+       px inside its tile so deck runs down both flanks. */
+    px(x + 3, top - D + 8, w - 6, D - 13, '#2a2018');                      // THE SHELF as a small inset plate
+    px(x + 3, top - D + 8, w - 6, 1, WD_LIT); keyEdge(x + 3, top - D + 8, 4, 1, 0.18);
+    px(x + 3, top - D + 9, w - 6, 2, WD);
+    px(x + 4, top - D + 10, 4, 1, '#a8503a'); px(x + 4, top - D + 10, 2, 1, '#c96b4c');   // magazines
+    px(x + 4, top - 9, 4, 3, '#2f6a62');                                                  // the bowl
+    px(x + 5, top - 9, 2, 1, '#57a89c'); px(x + 5, top - 8, 2, 1, '#245852');
+    ctx.globalAlpha = 0.52;
+    px(x + 1, top - D, w - 2, D + 1, GLS);
+    ctx.globalAlpha = 1;
+    px(x + 1, top - D - 1, w - 2, 1, U.shade(GLS, -0.40));                 // the far end: glass, not frame
+    px(x + 1, top - D, w - 2, 1, U.shade(GLS_LIT, -0.22));
+    px(x, top - D + 1, 1, D, U.shade(GLS_LIT, -0.10));                     // THE WEST RAIL — lit end to end
+    keyEdge(x, top - D + 1, 1, Math.min(9, D), 0.30);
+    px(x + w - 1, top - D + 1, 1, D, U.shade(GLS, -0.38));
+    rimEdge(x + w - 1, top - D + 3, 1, D - 3, 0.22);
+    for (let i = 0; i < 6; i++)                                            // the wedge, swept down the rail
+      px(x + 1, top - D + 2 + i, 7 - i, 1, U.shade(GLS_LIT, -0.16 - i * 0.06));
+    px(x + 2, top - 6, 3, 1, U.shade(GLS_LIT, -0.34));
+    // THE NEAR EDGE — the one place a frame reads: brass rim, its own shadow, then bare deck
+    px(x + 1, top, w - 2, 1, U.shade(GLS_LIT, -0.42));
+    px(x, top + 1, w, 1, b.mid); keyEdge(x + 1, top + 1, 5, 1, 0.24);
+    px(x, top + 2, w, 1, b.dk);
+    px(x + 1, top + 3, w - 2, 1, b.ao);
+  };
+
   /* ---- THE DINER. A 3x2 six-seater with its own chair. It began as cream diner laminate with a
      chrome rim and a RED apron; Andrew rejected the red outright — "dinnertable_v2 is the only way
      to go" — against four other edge treatments (brass, teal, bistro green, walnut-and-chrome) all
@@ -9516,6 +9620,7 @@ const PropSprites = (() => {
     /* THE LOW TABLE + THE DINER SET (2026-08-17). All three are `surface: true` tables or a seat —
        nothing here moves the shared top plane, so a mug placed on any of them still lands. */
     { id: "lowtable", label: "LOW TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, surface: true },
+    { id: "glasstable", label: "GLASS TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, surface: true },
     /* ⛔ THE DINER TABLE IS 3x2 AND THEREFORE NOT `surface: true`. A mounted prop is lifted by ONE
        constant off its OWN footprint bottom, so on a table two tiles deep anything placed on the far
        row would hang ~12px above the plane it is supposed to sit on. Every mount host in this catalog
@@ -9650,7 +9755,7 @@ const PropSprites = (() => {
      offered. A table has no front: turned either way it is the same board, and offering both would
      put a step in the R cycle that changes nothing — which is the same lie as a facing that draws
      nothing. (A chair is not here: its two profiles genuinely face opposite ways.) */
-  const SIDE_SYMMETRIC = ['loungetable', 'longtable', 'lowtable', 'dinertable'];
+  const SIDE_SYMMETRIC = ['loungetable', 'longtable', 'lowtable', 'glasstable', 'dinertable'];
   const SYM_SET = SIDE_SYMMETRIC.reduce((o, id) => (o[id] = 1, o), {});
 
   /* NO_MIRROR — props that must NOT be flipped, and why:
