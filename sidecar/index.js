@@ -134,6 +134,7 @@ const { json: respondJson, readJsonBody, isAgentId } = require('./respond.js'); 
 const { readBody, readBodyBuffer } = require('./http-body.js');
 const { MIME, CHANNEL_UPLOAD_MAX_BYTES, mimeForPath, safeDownloadName, isActiveDeliverable, parseRange } = require('./file-response.js');
 const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } = require('./reflect.js');
+const Failreview = require('./failreview.js');   // failure-review aux pass: PURE lesson producer for FAILED runs (reflect.js mold)
 // GROWTH Tier 1 — the pure STUDY ENGINE (the dossier's Phase B). A UMD frontend module that also exports under
 // node, so the sidecar reuses the SAME parse/salience/dedup the browser consent path uses. Fail-open: if it can't
 // load, study just never fires (a run stays byte-identical). No new npm dep — it's a first-party file.
@@ -2078,6 +2079,9 @@ const STUDY_COOLDOWN_MS = 1800000;     // GROWTH Tier 1: the STUDY (dossier Phas
                                        // (default 30m; was 10m — beat-fat trim 2026-07-03). Still user-tunable
                                        // live via memoryConfig.studyCooldownMs (P1-10 MEMORY controls).
 const STUDY_TIMEOUT_MS = 30000;
+const FAILREVIEW_TIMEOUT_MS = 30000;           // failure-review aux call ceiling — same envelope as reflection
+const FAILREVIEW_COOLDOWN_MS = 300000;         // per-agent: at most one failure lesson pass per 5 minutes (a crash-looping
+                                               // run must not narrate its own loop into the notebook every retry)
 /* ---- P1-10 MEMORY controls: user-facing knobs on the reflection ("turn-in") loop, persisted + HONORED live at
    the reflect gate below (not decorative). `reflectEnabled` (default on) master-switches whether a completed run
    proposes memories at all; `reflectCooldownMs` (default 180s) is the min gap between turn-in beats per agent.
@@ -2087,13 +2091,18 @@ function normalizeMemoryConfig(value) {
     const c = (value && typeof value === 'object') ? value : {};
     const cd = Number(c.reflectCooldownMs);
     const sd = Number(c.studyCooldownMs);
+    const fd = Number(c.failureReviewCooldownMs);
     return {
       reflectEnabled: c.reflectEnabled !== false,   // default ON
       reflectCooldownMs: (isFinite(cd) && cd >= 0) ? Math.floor(cd) : REFLECT_COOLDOWN_MS,
       // GROWTH Tier 1: study (dossier Phase B) is RARER than memory reflection by construction — its own longer
       // cooldown so the station doesn't propose belief updates every few minutes (default 10m). Master-switch too.
       studyEnabled: c.studyEnabled !== false,       // default ON
-      studyCooldownMs: (isFinite(sd) && sd >= 0) ? Math.floor(sd) : STUDY_COOLDOWN_MS
+      studyCooldownMs: (isFinite(sd) && sd >= 0) ? Math.floor(sd) : STUDY_COOLDOWN_MS,
+      // failure-review: the station learns from FAILED runs too (reflect's mirror on the failure side). Same
+      // end-to-end pattern as reflectEnabled: default ON, persisted, honored LIVE at the gate, own cooldown.
+      failureReviewEnabled: c.failureReviewEnabled !== false,   // default ON
+      failureReviewCooldownMs: (isFinite(fd) && fd >= 0) ? Math.floor(fd) : FAILREVIEW_COOLDOWN_MS
     };
 }
 const memoryConfigStore = makeDomainStore({
@@ -2113,6 +2122,8 @@ const proposalsByRun = new Map();      // runId -> { agentId, runId, createdAt, 
 const latestProposalRun = new Map();   // agentId -> newest pending runId (fetch fallback when the runId is unknown)
 const lastReflectAt = new Map();       // agentId -> ts of the last reflection we fired (the cooldown gate)
 const reflectingNow = new Set();       // agentIds with a reflection in flight — closes the gap before lastReflectAt is armed
+const lastFailReviewAt = new Map();    // agentId -> ts of the last failure review we fired (its own cooldown gate)
+const failReviewingNow = new Set();    // agentIds with a failure review in flight — same gap-closer as reflectingNow
 function stashProposals(agentId, runId, proposals) {
   proposalsByRun.set(runId, { agentId, runId, createdAt: Date.now(), proposals });
   latestProposalRun.set(agentId, runId);
@@ -2293,6 +2304,83 @@ async function runReflection(o) {
     clearTimeout(timer);
     // book the reflection's own spend into the append-only ledger so the day/global pools stay honest (the run
     // already booked the loop's spend before this fired). A second entry for the same runId just sums.
+    if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens, model: model || '', unmetered }); } catch (_) {} }
+  }
+}
+
+/* ---- FAILURE REVIEW — the station finally learns from FAILED runs ----------------------------------------
+   Every existing post-run learning pass gates on reason 'done', so a run ending error/max_iters/budget/refusal
+   taught nothing despite the rich failure record runStore already persists. runFailureReview mirrors
+   runReflection's whole envelope: fire-and-forget (a failure-review failure must NEVER touch the run), its OWN
+   abort signal + timeout, ONE streamed aux-model completion, cost reconciled + booked to the ledger, proposals
+   filtered through the shared declined index, then the highStakes() split — normal lessons auto-save with
+   trustDelta 0 (silent-save UX) and origin 'failure-review'; high-stakes lessons stash + queue durably and emit
+   memory.proposed for the confirm deck. PAUSE is server authority here exactly as in runScoutCycle: a paused
+   station learns nothing new, whatever the caller gated. */
+async function runFailureReview(o) {
+  if (!personalizationStore.read().enabled) return;   // personalization PAUSE: no extraction, no model spend (same authority as the scout)
+  const { agentId, runId, messages, provider, model, cost } = o;
+  const unmetered = !!(o && o.unmetered);
+  const ac = new AbortController();
+  const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, FAILREVIEW_TIMEOUT_MS);
+  let usd = 0, tokens = 0;
+  const auxEffort = (o && o.reasoningEffort) || null;   // aux-tier: pre-gated by auxReasoningEffort at the call site
+  const propose = async (prompt) => {
+    const req = { model, stream: true, signal: ac.signal, messages: [
+      { role: 'system', content: 'You are an agent reviewing a task run of yours that FAILED. Extract at most ' + Failreview.MAX_LESSONS + ' DURABLE, reusable lessons: what failed, why, and what to do differently next time — concrete enough to change a future run. Never blame anyone; never restate the failure without a correction; skip one-off transient noise (a single network blip) unless a recovery pattern is visible. One per line, each tagged LESSON:. If nothing durable can be learned, reply NONE.' },
+      { role: 'user', content: prompt }
+    ] };
+    if (auxEffort) req.reasoningEffort = auxEffort;
+    let out = '', usage = null;
+    for await (const ev of provider.stream(req)) {
+      if (ev && ev.type === 'text') out += ev.delta;
+      else if (ev && ev.type === 'usage') usage = ev.usage;
+    }
+    const c = cost.reconcile(usage, model);
+    usd += c.usd || 0; tokens += (c.tokensIn || 0) + (c.tokensOut || 0);
+    return out;
+  };
+  try {
+    const stored = notebookStore.get('notebook:' + agentId);
+    const existing = Array.isArray(stored) ? stored : [];
+    // §5.6 "discard = never again": permanently-declined proposals join the dedup corpus, exactly as reflection does.
+    const declined = notebookStore.get('declined:' + agentId);
+    const declinedRecs = Array.isArray(declined) ? declined.map(t => ({ content: String(t) })) : [];
+    const out = await Failreview.review(
+      { agentId, runId, reason: o.reason, failureStage: o.failureStage, failureCode: o.failureCode,
+        toolTrace: o.toolTrace, recoveryAttempts: o.recoveryAttempts, uncertainMutations: o.uncertainMutations,
+        messages },
+      { propose, redact, existing: existing.concat(declinedRecs), clock: { now: () => Date.now() }, max: Failreview.MAX_LESSONS });
+    let proposals = (out && out.proposals) || [];
+    // CROSS-WIRE: any NEW proposal source routes through the shared declined-suppression index (NS-8 lite law).
+    if (proposals.length) { const dIdx = buildDeclinedIndex(agentId); proposals = proposals.filter(p => p && !dIdx.has(p.content)); }
+    if (proposals.length) {
+      // arm the cooldown ONLY when a beat actually fires (zero surviving lessons never spend the window) —
+      // the same arming rule as reflection.
+      lastFailReviewAt.set(agentId, Date.now());
+      const highStakesProps = [], normalProps = [];
+      for (const p of proposals) (highStakes(p.content) ? highStakesProps : normalProps).push(p);
+      // auto-save the normal lessons — silent save = NEUTRAL trust (trustDelta 0); origin 'failure-review' is
+      // the deterministic provenance tag on every record this pass writes.
+      const saved = [];
+      for (const p of normalProps) {
+        try {
+          const w = await writeMemoryRecord(agentId, p, { runId, trustDelta: 0, source: 'failure-review', origin: Failreview.ORIGIN });
+          if (w.ok) saved.push({ id: w.id, kind: w.kind, content: p.content, scope: p.scope || 'global', origin: Failreview.ORIGIN, saved: true });
+        } catch (_) {}   // one failed write never sinks the batch
+      }
+      // ONE stash per runId (a failed run never reflected, so this slot is free) + the durable pending queue for
+      // the high-stakes half; only those emit memory.proposed (existing event — no new event minted).
+      const pending = highStakesProps.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global', origin: Failreview.ORIGIN }));
+      const combined = saved.concat(pending);
+      if (combined.length) stashProposals(agentId, runId, combined);
+      if (pending.length) await queuePending(agentId, runId, pending);
+      for (const p of highStakesProps) chanEmit('memory.proposed', { agentId, runId, id: p.id, kind: p.kind, scope: p.scope || 'global' });
+    }
+  } catch (e) { console.warn('[cortex] failure review failed:', (e && e.message) || e); }
+  finally {
+    clearTimeout(timer);
+    // book the review's own spend into the append-only ledger (a second entry for the same runId just sums).
     if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens, model: model || '', unmetered }); } catch (_) {} }
   }
 }
@@ -12287,6 +12375,7 @@ async function handleAgentDelete(req, res) {
   try {
     for (const [rid, b] of proposalsByRun) { if (b && b.agentId === agentId) proposalsByRun.delete(rid); }
     latestProposalRun.delete(agentId); lastReflectAt.delete(agentId); reflectingNow.delete(agentId);
+    lastFailReviewAt.delete(agentId); failReviewingNow.delete(agentId);
     for (const [rid, b] of studyByRun) { if (b && b.agentId === agentId) studyByRun.delete(rid); }
     latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
     persistStudyState();
@@ -15429,11 +15518,20 @@ async function runOnce(o) {
   // reflection/study/scout/skill auxiliary model calls; those are separate work, complicate auditability, and
   // could outlive the one-shot continuation response.
   const _auxDone = !!(!o.recovery && result && result.reason === 'done' && !taskQuestionAsked && _qualifies && !signal.aborted);   // a clarification learns nothing and ships nothing
+  // FAILURE REVIEW's mirror gate: fires ONLY on the failure reasons worth a lesson (error · max_iters · budget ·
+  // refusal — never done/cancelled/empty/clarifying), on real TASK work (isTask, never internal self-talk), never
+  // on a recovery continuation or an aborted stream. Mutually exclusive with _auxDone BY CONSTRUCTION (a run's
+  // reason is either 'done' or it isn't), so the governor never arbitrates between reflection and failure-review
+  // on one run. _qualifies (truncation) is a 'done'-side concern — a truncated FAILED run still failed for real.
+  const _auxFail = !!(!o.recovery && result && Failreview.reviewableReason(result.reason) && isTask && !internal && !signal.aborted);
   const _auxNow = Date.now();       // one clock read for the scout cadence fold + curator-due check below
   const _auxModel = _auxDone ? (reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL })) : '';
   // per-request effort for the single-shot aux streams — null unless the aux tier is engaged AND the provider
   // verifiably offers the effort for _auxModel (auxReasoningEffort); null = no override, byte-identical requests.
   const _auxEffort = _auxDone ? auxReasoningEffort(provider, _auxModel) : null;
+  // failure-review resolves its model/effort through the SAME single resolution (aux tier first, else the run's own).
+  const _auxFailModel = _auxFail ? (reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL })) : '';
+  const _auxFailEffort = _auxFail ? auxReasoningEffort(provider, _auxFailModel) : null;
   // the skill review/curator forks are nested TOOL loops: they take the cheap aux model only when it is
   // VERIFIABLY tool-capable on this run's provider (supportsTools === true), else the run's own model as today.
   const _auxSkillModel = auxSkillModel(provider, model);
@@ -15444,6 +15542,14 @@ async function runOnce(o) {
   // never eats a slot. Cortex M-mem.5b reflection · GROWTH Tier 1 study · NS-6 thread-mine — all ride isTask/done/salience.
   const _gateReflect = !!(o.reflect && memoryConfig.reflectEnabled && isTask && _auxDone && reflectSalient(result.messages, o.recurring)
       && !reflectingNow.has(agentId) && (Date.now() - (lastReflectAt.get(agentId) || 0) >= memoryConfig.reflectCooldownMs));
+  // failure-review: reflection's exact gate shape on the FAILURE side — o.reflect (real-work hosts only; delegated
+  // workers stay off), the live config master-switch, the personalization PAUSE (checked here so a paused station
+  // never even offers the candidate — runFailureReview re-checks the same authority), a salience floor (≥1 tool
+  // call or ≥2 turns: an instant stub teaches nothing), the in-flight guard, and its own per-agent cooldown.
+  const _gateFailReview = !!(o.reflect && memoryConfig.failureReviewEnabled && _auxFail
+      && Failreview.failureSalient({ toolTrace: execution.toolTraceList(), turns: (result && result.turns) || 0 })
+      && personalizationStore.read().enabled
+      && !failReviewingNow.has(agentId) && (Date.now() - (lastFailReviewAt.get(agentId) || 0) >= memoryConfig.failureReviewCooldownMs));
   const _gateStudy = !!(Study && o.reflect && memoryConfig.studyEnabled && isTask && _auxDone && Study.studySalient(result.messages, o.recurring)
       && !studyingNow.has(agentId) && (Date.now() - (lastStudyAt.get(agentId) || 0) >= memoryConfig.studyCooldownMs));
   const _gateThreadmine = !!(process.env.SKYNET_THREAD_MINE !== '0' && o.reflect && isTask && _auxDone && threadmine.mineSalient(result.messages)
@@ -15459,6 +15565,7 @@ async function runOnce(o) {
   // The JOINT decision: rank the candidates by locked priority and grant up to SKYNET_AUX_BUDGET this run-end.
   const _auxCandidates = [];
   if (_gateReflect) _auxCandidates.push('reflection');
+  if (_gateFailReview) _auxCandidates.push('failure-review');   // never co-present with 'reflection' (done vs failed)
   if (_gateStudy) _auxCandidates.push('study');
   if (_gateThreadmine) _auxCandidates.push('threadmine');
   if (_gateScout) _auxCandidates.push('scout');
@@ -15484,6 +15591,16 @@ async function runOnce(o) {
   if (_auxSpend.has('reflection')) {
     reflectingNow.add(agentId);
     runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered, origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }) }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
+  }
+  if (_auxSpend.has('failure-review')) {
+    failReviewingNow.add(agentId);
+    runFailureReview({
+      agentId, runId, messages: result.messages.slice(), reason: result.reason,
+      failureStage: execution.failureStage(), failureCode: execution.failureCode(),
+      toolTrace: execution.toolTraceList(), recoveryAttempts: execution.recoveryAttempts(),
+      uncertainMutations: execution.uncertainMutations(),
+      provider, model: _auxFailModel, reasoningEffort: _auxFailEffort, cost, unmetered: providerUnmetered
+    }).catch(() => {}).finally(() => { failReviewingNow.delete(agentId); });
   }
   if (_auxSpend.has('study')) {
     studyingNow.add(agentId);
@@ -18384,6 +18501,7 @@ async function handleMemoryReset(req, res) {
   // also drop any in-memory pending proposals for this agent so a stale turn-in can't land on the new hero
   for (const [rid, b] of proposalsByRun) { if (b && b.agentId === agentId) proposalsByRun.delete(rid); }
   latestProposalRun.delete(agentId); lastReflectAt.delete(agentId); reflectingNow.delete(agentId);
+  lastFailReviewAt.delete(agentId); failReviewingNow.delete(agentId);
   // GROWTH Tier 1: also drop any pending STUDY proposals so a fresh Commander never inherits a stranger's belief-update queue.
   for (const [rid, b] of studyByRun) { if (b && b.agentId === agentId) studyByRun.delete(rid); }
   latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
@@ -18533,6 +18651,10 @@ function handleMemoryConfigGet(req, res) {
     reflectEnabled: memoryConfig.reflectEnabled,
     reflectCooldownMs: memoryConfig.reflectCooldownMs,
     defaultCooldownMs: REFLECT_COOLDOWN_MS,
+    // failure-review controls (additive): the FAILED-run mirror of the reflection knobs, same live semantics.
+    failureReviewEnabled: memoryConfig.failureReviewEnabled,
+    failureReviewCooldownMs: memoryConfig.failureReviewCooldownMs,
+    defaultFailureReviewCooldownMs: FAILREVIEW_COOLDOWN_MS,
     scopeNote: memoryScopeNote()
   }));
 }
@@ -18544,6 +18666,12 @@ async function handleMemoryConfigSet(req, res) {
     const n = Number(body.reflectCooldownMs);
     if (!isFinite(n) || n < 0 || n > 3600000) return json(400, { error: 'reflectCooldownMs must be 0–3600000 (up to 1 hour)' });
     memoryConfig.reflectCooldownMs = Math.floor(n);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'failureReviewEnabled')) memoryConfig.failureReviewEnabled = !!body.failureReviewEnabled;
+  if (Object.prototype.hasOwnProperty.call(body, 'failureReviewCooldownMs')) {
+    const n = Number(body.failureReviewCooldownMs);
+    if (!isFinite(n) || n < 0 || n > 3600000) return json(400, { error: 'failureReviewCooldownMs must be 0–3600000 (up to 1 hour)' });
+    memoryConfig.failureReviewCooldownMs = Math.floor(n);
   }
   saveMemoryConfig();
   return handleMemoryConfigGet(req, res);
