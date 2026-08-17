@@ -1326,6 +1326,14 @@ const Build = (() => {
     if (tool === 'paint') verb = paintTarget === 'hull' ? 'click a room to re-clad its outside'
       : paintTarget === 'walls' ? 'click a room to clad its walls'
       : 'click a room to lay this deck · drag to paint tiles';
+    // the PROP hint carries the orientation the next stamp will use, and only advertises the keys
+    // this prop actually honours — a prop with one authored facing never mentions R.
+    if (tool === 'prop' && !msg) {
+      const bits = [];
+      if (canTurn(propType)) bits.push('R turn (facing ' + FACE_WORD[propFacing(propType)] + ')');
+      if (canFlip(propType)) bits.push('M flip' + (propFlipOn(propType) ? ' ✓' : ''));
+      if (bits.length) verb += ' · ' + bits.join(' · ');
+    }
     hintEl.innerHTML = '<span class="refit-hint-verb">' + esc(msg || verb) + '</span>'
       + '<span class="refit-hint-keys">' + esc(CAMERA_KEYS) + '</span>';
   }
@@ -2999,6 +3007,65 @@ const Build = (() => {
     feedback(station.moveRoom(d.roomId, s.dx, s.dy), ev, 'relocated');
   }
   function propSpec(id) { return (typeof PropSprites !== 'undefined' && PropSprites.spec(id)) || { w: 1, h: 1 }; }
+  /* ---------- PROP ORIENTATION (R / shift+R turn · M flip) ----------
+     `propRot`/`propMir` are the PENDING orientation the next stamp carries. Both are asked of
+     PropSprites first: a prop only offers a turn where its art is genuinely DRAWN turned, and only
+     offers a flip where the light correction can reach it — R on a prop with one authored facing
+     does nothing and says why, rather than stamping a footprint the picture does not fill. */
+  let propRot = 0, propMir = 0;
+  const PS = () => (typeof PropSprites !== 'undefined' ? PropSprites : null);
+  const canTurn = t => { const P = PS(); return !!(P && P.canRotate && P.canRotate(t)); };
+  const canFlip = t => { const P = PS(); return !!(P && P.canMirror && P.canMirror(t)); };
+  // the tile box a prop TYPE covers at a facing — only a decal or a table re-tiles (PropSprites owns
+  // that rule). Ghost, placement validation and the stored record all size from this ONE helper, so
+  // they cannot disagree about how many tiles a turned prop eats.
+  function propBox(t, r) {
+    const P = PS();
+    if (P && P.footprintAt) { const b = P.footprintAt(t, r | 0); if (b) return b; }
+    const s = propSpec(t); return { w: s.w || 1, h: s.h || 1 };
+  }
+  const nextFace = (t, r, dir) => { const P = PS(); return (P && P.nextFacing) ? P.nextFacing(t, r, dir) : ((r + dir) & 3); };
+  const propFacing = t => (canTurn(t) ? (propRot & 3) : 0);   // pending rot, clamped to what the art can do
+  const propFlipOn = t => (canFlip(t) ? (propMir ? 1 : 0) : 0);
+  // r counts quarter turns CLOCKWISE from the shipped south-facing art (worldmodel + PropAnchor agree)
+  const FACE_WORD = ['south', 'west', 'north', 'east'];
+  // keyboard events carry no cursor position; the tip anchors to the last place the pointer was.
+  const orientEv = () => ({ clientX: lastClient.x, clientY: lastClient.y });
+  // a turn/flip acts on the prop UNDER THE CURSOR when there is one, else on the pending placement
+  const orientTarget = () => (!drag && hoverPropId) ? station.propById(hoverPropId) : null;
+  const propLabel = t => String(propSpec(t).label || t).toUpperCase();
+
+  function turnUnderCursor(dir) {
+    const ev = orientEv(), p = orientTarget();
+    if (p) {
+      if (!canTurn(p.t)) { sfx('bad'); flashTip(ev, propLabel(p.t) + ' only faces one way — its turned art is not drawn'); return; }
+      const nr = nextFace(p.t, p.r | 0, dir);
+      const res = station.faceProp(p.id, nr, propBox(p.t, nr));
+      if (res && res.ok) pushFlash([{ x1: p.x, y1: p.y, x2: p.x + p.w - 1, y2: p.y + p.h - 1 }], false);   // p is mutated in place → the NEW box
+      feedback(res, ev, 'turned · facing ' + FACE_WORD[(p.r | 0) & 3]);
+      return;
+    }
+    if (tool !== 'prop') { sfx('bad'); flashTip(ev, 'hover a placed prop to turn it, or pick the PROP tool (6)'); return; }
+    if (!canTurn(propType)) { sfx('bad'); flashTip(ev, propLabel(propType) + ' only faces one way — its turned art is not drawn'); return; }
+    propRot = nextFace(propType, propRot, dir) & 3;
+    const b = propBox(propType, propRot);
+    sfx('click'); flashTip(ev, 'facing ' + FACE_WORD[propRot] + ' · ' + b.w + '×' + b.h, true); setHint();
+  }
+
+  function flipUnderCursor() {
+    const ev = orientEv(), p = orientTarget();
+    if (p) {
+      if (!canFlip(p.t)) { sfx('bad'); flashTip(ev, propLabel(p.t) + ' cannot be flipped — its light is painted in, not derived'); return; }
+      const res = station.mirrorProp(p.id);
+      if (res && res.ok) pushFlash([{ x1: p.x, y1: p.y, x2: p.x + p.w - 1, y2: p.y + p.h - 1 }], false);
+      feedback(res, ev, (res && res.m) ? 'flipped' : 'unflipped');
+      return;
+    }
+    if (tool !== 'prop') { sfx('bad'); flashTip(ev, 'hover a placed prop to flip it, or pick the PROP tool (6)'); return; }
+    if (!canFlip(propType)) { sfx('bad'); flashTip(ev, propLabel(propType) + ' cannot be flipped — its light is painted in, not derived'); return; }
+    propMir = propMir ? 0 : 1;
+    sfx('click'); flashTip(ev, propMir ? 'flipped' : 'unflipped', true); setHint();
+  }
   // open the right editor for a logistics prop that carries config (BAY = agent, FILTER/MERGER = routing, AIRLOCK = seal)
   // a workstation (PC/desk) opens the dedicated WORKSTATION picker; bays/junctions/etc. keep their editors.
   // (Trunk's PC-binding via the BAY picker is unified into the workstation picker — same agentId field, richer UX.)
@@ -3033,7 +3100,7 @@ const Build = (() => {
       const ep = exist && station.propById(exist);
       if (ep) { onInspect(ep, ev); return; }
     }
-    const s = propSpec(propType);
+    const s = propBox(propType, propFacing(propType));   // the TURNED box, not the catalog's
     let px = d.cur.tx, py = d.cur.ty;
     // JUNCTION SNAP (connect-mode UX): a filter/splitter/merger only works ON a line — if it's dropped
     // NEXT to one, snap it onto the nearest belt tile instead of leaving an inert junction (the exact
@@ -3045,7 +3112,10 @@ const Build = (() => {
       }
       if (snapped) { px = snapped.x; py = snapped.y; flashTip(ev, 'snapped onto the line', true); }
     }
-    const placement = { t: propType, x: px, y: py, w: s.w, h: s.h, block: s.blocks !== false };
+    const placement = { t: propType, x: px, y: py, w: s.w, h: s.h, block: propSpec(propType).blocks !== false };
+    const pr = propFacing(propType), pm = propFlipOn(propType);
+    if (pr) placement.r = pr;                            // orientation rides the placement (omitted when south)
+    if (pm) placement.m = 1;
     if (propType === 'airlock') placement.door = 'closed';   // a fresh airlock seals its room (then click to cycle)
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(propType) : null;
     const res = station.addProp(placement);
@@ -3165,6 +3235,10 @@ const Build = (() => {
       const s = propSpec(p.t);
       dupe = { type: 'prop', t: p.t, w: p.w || 1, h: p.h || 1, block: s.blocks !== false, cfg: {},
                rects: [{ x1: 0, y1: 0, x2: (p.w || 1) - 1, y2: (p.h || 1) - 1 }], label: (s.label || p.t).toUpperCase() };
+      // orientation copies with the prop (dupe.w/h above are already its effective box) — stamping a
+      // row of chairs all aimed the same way is the whole point of the symmetry workflow.
+      if (p.r) dupe.cfg.r = p.r;
+      if (p.m) dupe.cfg.m = 1;
       if (p.routes && typeof p.routes === 'object') dupe.cfg.routes = Object.assign({}, p.routes);
       if (p.def) dupe.cfg.def = p.def;
       if (p.door) dupe.cfg.door = p.door;   // (a merger's legacy bufferSize is NOT copied — it configures nothing)
@@ -3332,6 +3406,11 @@ const Build = (() => {
     }
     if ((ev.ctrlKey || ev.metaKey) && (ev.key === 'y' || ev.key === 'Y')) { ev.preventDefault(); sfx(station.redo().ok ? 'click' : 'bad'); return; }
     if (ev.key === 'f' || ev.key === 'F') { fitCamera(); return; }
+    // R turns · shift+R turns back · M flips. Acts on the prop UNDER THE CURSOR when there is one
+    // (so a furnished room can be re-aimed without tearing anything down), otherwise on the pending
+    // placement. Both are no-ops with a spoken reason on art that cannot honestly turn/flip.
+    if (ev.key === 'r' || ev.key === 'R') { ev.preventDefault(); turnUnderCursor(ev.shiftKey ? -1 : 1); return; }
+    if (ev.key === 'm' || ev.key === 'M') { ev.preventDefault(); flipUnderCursor(); return; }
     const map = { '0': 'select', '1': 'room', '2': 'hall', '3': 'paint', '4': 'move', '5': 'reclaim', '6': 'prop', '7': 'belt', '8': 'dupe', '9': 'line' };
     if (map[ev.key]) selectTool(map[ev.key]);
   }
@@ -3509,7 +3588,7 @@ const Build = (() => {
       return { rects: [br.rect], v: station.canPlaceBeltRun(drag.start, drag.cur), belt: true, dir: br.dir };
     }
     if (drag.mode === 'propstamp') {
-      const s = propSpec(propType), tx = drag.cur.tx, ty = drag.cur.ty;
+      const s = propBox(propType, propFacing(propType)), tx = drag.cur.tx, ty = drag.cur.ty;   // ghost shows the TURNED box
       const rect = { x1: tx, y1: ty, x2: tx + s.w - 1, y2: ty + s.h - 1 };
       return { rects: [rect], v: station.canPlaceProp(propType, tx, ty, s.w, s.h), kind: 'prop' };
     }

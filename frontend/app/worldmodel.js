@@ -39,6 +39,18 @@ const WorldModel = (() => {
     return n ? out : null;
   }
   const cleanBuf = b => { const n = b | 0; return n >= 2 ? n : null; };
+
+  /* PROP ORIENTATION (additive, like block/agentId/door). The model stays PURE — it does not know the
+     catalog, so it does not police WHICH props may turn; that is the renderer's call
+     (PropSprites.canRotate / facings) and the builder only ever offers a facing the art can honestly
+     draw. Here we store intent and keep it well-formed: `r` = quarter turns clockwise 0..3, `m` =
+     mirrored. Both are omitted at their defaults so an unturned prop serializes byte-identical to
+     before. NOTE the footprint w/h on the record are already the EFFECTIVE (turned) dims — the
+     builder swaps them at placement when, and only when, the art re-tiles. That is deliberate: every
+     consumer of a prop rect (canPlaceProp, blockedTiles, propFootprint, PropAnchor.sideTiles,
+     hit-testing, DUPE) keeps reading w/h and needs no knowledge of r at all, so orientation stays
+     contained to the renderer and the builder. */
+  const cleanRot = v => ((v | 0) & 3);
   const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;   // notebook/fs-jail agentId grammar (mirrors the sidecar hub)
   const WHEN_RE = /^[A-Za-z0-9_.:-]{1,40}$/;
   function cleanPipelineEdge(e) {
@@ -908,11 +920,57 @@ const WorldModel = (() => {
       const prop = { id, t, x, y, w, h };
       if (opts.block === false) prop.block = false;
       if (typeof opts.agentId === 'string' && opts.agentId) prop.agentId = opts.agentId;   // a BAY binds a belt endpoint to an agent
+      const r0 = cleanRot(opts.r); if (r0) prop.r = r0;    // orientation: omitted when facing south (the default)
+      if (opts.m) prop.m = 1;                              // mirrored handedness
       applyJunctionCfg(prop, opts);   // a FILTER/MERGER carries its routes/def/bufferSize (inert on other props)
       if (cleanDoor(opts.door)) prop.door = opts.door;   // an AIRLOCK carries its seal state (inert on other props)
       doc.props.push(prop);
       emit([{ x1: x, y1: y, x2: x + w - 1, y2: y + h - 1 }]);
       return { ok: true, id };
+    }
+
+    /* turn a PLACED prop a quarter turn (default clockwise). Whether a turn RESIZES the prop is the
+       renderer's knowledge, not the model's — a floor decal and a table genuinely re-tile (their
+       footprint IS their picture), while an upright cabinet keeps its box (its second tile is
+       vertical drawing room, not depth). So the caller passes the effective box it wants; omitted,
+       the footprint is left alone. A turn that re-tiles can genuinely FAIL — turning a 3x1 table
+       with a wall one tile north of it has nowhere to go — and the caller shows that reason rather
+       than silently clipping. Snapshot-based like every other mutation, so UNDO restores the facing. */
+    function rotateProp(id, turns, box) {
+      const p = propById(id);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      const t = cleanRot(turns == null ? 1 : turns);
+      if (!t) return { ok: true };                       // a full turn is a no-op: don't burn an undo slot
+      const nw = Math.max(1, (box && box.w | 0) || p.w), nh = Math.max(1, (box && box.h | 0) || p.h);
+      if (nw !== p.w || nh !== p.h) {
+        const v = checkProp({ x1: p.x, y1: p.y, x2: p.x + nw - 1, y2: p.y + nh - 1 }, id, p.t);
+        if (!v.ok) return v;
+      }
+      snapshot();
+      const before = propFootprint(p);
+      const nr = cleanRot((p.r | 0) + t);
+      p.w = nw; p.h = nh;
+      if (nr) p.r = nr; else delete p.r;                 // back to south = back to the default shape on disk
+      emit([before, propFootprint(p)]);
+      return { ok: true, r: nr };
+    }
+
+    /* set a PLACED prop's facing outright (the builder walks the prop's OWN honest facing list, so it
+       computes the next facing and hands it here rather than blind-adding 1). */
+    function faceProp(id, r, box) {
+      const p = propById(id);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      return rotateProp(id, cleanRot(cleanRot(r) - (p.r | 0)), box);
+    }
+
+    /* flip a PLACED prop's handedness. Never changes the footprint, so unlike a turn it cannot fail. */
+    function mirrorProp(id) {
+      const p = propById(id);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      snapshot();
+      if (p.m) delete p.m; else p.m = 1;
+      emit([propFootprint(p)]);
+      return { ok: true, m: p.m ? 1 : 0 };
     }
 
     function removeProp(id) {
@@ -1302,6 +1360,7 @@ const WorldModel = (() => {
       for (const p of doc.props) {
         const lx = p.x - ox, ly = p.y - oy, w = p.w || 1, h = p.h || 1;
         const lp = { id: p.id, t: p.t, x: lx, y: ly, w, h, block: p.block !== false, agentId: p.agentId || null };
+        if (p.r) lp.r = p.r; if (p.m) lp.m = 1;   // orientation -> PropSprites.draw (turned/flipped art) + PropAnchor (which side is its front); w,h above are already the effective box
         if (p.role) lp.role = p.role;   // a role-carrying dock's placard/nag copy (guided workflows)
         if (p.brief) lp.brief = p.brief;   // a dock's standing job brief -> the compiled plan (step editor; prompt text only)
         if (p.label) lp.label = p.label;   // an INTAKE's line name (step editor; legibility only, never routing)
@@ -1707,7 +1766,7 @@ const WorldModel = (() => {
       },
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, setWalls, setHull, paintTiles, renameRoom,
-      addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState, setPropBrief, setPropLabel,
+      addProp, removeProp, moveProp, rotateProp, faceProp, mirrorProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState, setPropBrief, setPropLabel,
       setBelt, removeBelt, removeBelts, placeBeltRun, connectBelt, stampBlueprint,
       // agent-bay binding queries
       propsByType, propsByAgent, pipelineEdges, setPipelineEdges, addPipelineEdge, removePipelineEdge, agentRoomId, bayObjects,
@@ -1761,7 +1820,7 @@ const WorldModel = (() => {
     // lookup is installed (i.e. a real client with the catalog); plain node tests keep every prop.
     if (propRules) doc.props = doc.props.filter(p => !(p && typeof p.t === 'string') || !!propRules(p.t));
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
-      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; if (typeof p.role === 'string' && p.role) o.role = p.role.slice(0, 24); if (typeof p.brief === 'string' && p.brief.trim()) o.brief = p.brief.slice(0, 2000); if (typeof p.label === 'string' && p.label.trim()) o.label = p.label.slice(0, 48); applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
+      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; const r0 = cleanRot(p.r); if (r0) o.r = r0; if (p.m) o.m = 1; if (typeof p.role === 'string' && p.role) o.role = p.role.slice(0, 24); if (typeof p.brief === 'string' && p.brief.trim()) o.brief = p.brief.slice(0, 2000); if (typeof p.label === 'string' && p.label.trim()) o.label = p.label.slice(0, 48); applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
     // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
     if (!doc.belts || typeof doc.belts !== 'object' || Array.isArray(doc.belts)) doc.belts = {};
     else { const clean = {}; for (const k in doc.belts) { const d = doc.belts[k]; if (/^-?\d+,-?\d+$/.test(k) && (d === 'E' || d === 'W' || d === 'N' || d === 'S')) clean[k] = d; } doc.belts = clean; }

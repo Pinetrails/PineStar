@@ -534,6 +534,7 @@ test/prop-mount.test.js
 test/prop-flat-decal.test.js
 test/bed-sleep.test.js
 test/prop-render-smoke.test.js
+test/proprotate.test.js
 test/prop-search.test.js
 test/waitanchor.test.js
 test/harness.integration.test.js
