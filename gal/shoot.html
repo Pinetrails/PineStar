@@ -80,11 +80,14 @@ function finish() {
     g.fillStyle = 'rgba(255,255,255,0.22)'; g.fillRect(HALF * TILE, 0, 1, base.height);
   }
 
-  /* ---- present: camera scale 2, then magnify ---- */
+  /* ---- present: camera scale 2, then magnify. ?crop=1 trims the empty deck away so a tall zoom
+         still fits in a reviewable image — the props keep their real scale, nothing is resampled. ---- */
+  const CROP = Q.get('crop') === '1';
+  const sy = CROP ? (PAD_T - 3) * TILE : 0, sh = CROP ? 8 * TILE : base.height;
   const c = document.getElementById('c');
-  c.width = base.width * CAM * ZOOM / 2; c.height = base.height * CAM * ZOOM / 2;
+  c.width = base.width * CAM * ZOOM / 2; c.height = sh * CAM * ZOOM / 2;
   const o = c.getContext('2d'); o.imageSmoothingEnabled = false;
-  o.drawImage(base, 0, 0, c.width, c.height);
+  o.drawImage(base, 0, sy, base.width, sh, 0, 0, c.width, c.height);
 
   if (BEFORE) {                                 // label each half, drawn at presentation scale
     o.font = `${Math.max(11, ZOOM * 2)}px monospace`; o.textBaseline = 'top';
