@@ -3028,11 +3028,28 @@ const channelTokenDurable = Object.create(null);
 for (const id of channelSecretsMod.CHANNEL_IDS) {
   if (!CHANNEL_TOKEN_ENV[id]) continue;   // a tokenless channel (signal) has no env var to read
   const v = String(ENV(CHANNEL_TOKEN_ENV[id]) || '').trim();
-  if (v) { channelTokenRuntime[id] = v; channelTokenDurable[id] = true; }   // spawn env == keychain-backed == durable
+  if (v) { channelTokenRuntime[id] = v; channelTokenDurable[id] = v; }   // spawn env == keychain-backed == durable
 }
+// Additional Telegram bots are dynamic, so the shell injects their keychain values as one JSON object rather than
+// inventing unbounded environment-variable names. Keys are stable numeric Bot API ids; malformed entries are
+// ignored and never gain access to the keychain namespace.
+try {
+  const raw = String(ENV('TELEGRAM_BOT_TOKENS') || '').trim();
+  const parsed = raw ? JSON.parse(raw) : {};
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    for (const botId of Object.keys(parsed).slice(0, 200)) {
+      const id = channelSecretsMod.telegramBotSecretId(botId);
+      const v = String(parsed[botId] || '').trim();
+      if (id && v) { channelTokenRuntime[id] = v; channelTokenDurable[id] = v; }
+    }
+  }
+} catch (e) { console.warn('[channels] ignored malformed Telegram bot keychain payload:', (e && e.message) || e); }
 // Is this channel's token durable elsewhere (keychain/spawn-env)? Used by saveChannelSecrets to decide whether the
 // plaintext token may be stripped. Defaults false — a token with no proven durable home keeps its plaintext copy.
-function isChannelTokenDurable(id) { return !!channelTokenDurable[id]; }
+function isChannelTokenDurable(id, expectedToken) {
+  const held = String(channelTokenDurable[id] || '');
+  return expectedToken === undefined ? !!held : held === String(expectedToken || '');
+}
 // Per-channel durable WARNING line (truthful telemetry for a state the panel must not hide): today's only writer
 // is a failed owner-binding persist (see persistOwnerClaim). Surfaced by channelStatusPayload as `warning` and
 // self-heals — the status poll re-attempts the save while the warning stands and clears it once the disk agrees.
@@ -3155,7 +3172,7 @@ let channelSecrets = loadChannelSecrets();
   try {
     const res = channelSecretsMod.migratePlaintext(channelSecrets, {
       keychainMode: DESKTOP_SHELL,
-      hasChannelToken: (id) => !!String(ENV(CHANNEL_TOKEN_ENV[id]) || '').trim()
+      hasChannelToken: (id, token) => isChannelTokenDurable(id, token)
     });
     // Adopt every imported token into the runtime layer so this session stays live. Do NOT mark it durable here: a
     // token reported by migratePlaintext came off the plaintext file, which by construction means the keychain did
@@ -7394,9 +7411,9 @@ function stopTelegram() {
 /* ---- MULTI-BOT TELEGRAM: agent-bound bot profiles ------------------------------------------------------
    Each additional bot is a SEPARATE BotFather token bound to ONE roster agent — its own Telegram contact.
    Keyed by the bot's stable numeric id (from getMe, learned at connect; usernames can be renamed). Records
-   persist in channelSecrets.telegramBots = { <botId>: { token, username, botName, agentId, system, name,
-   provider, key, model, baseUrl, reasoningEffort, enabled, ownerId } } — a NESTED collection, deliberately
-   NOT a top-level channel id, so stripTokens/CHANNEL_IDS-driven code never touches it (additive to old saves).
+   persist in channelSecrets.telegramBots = { <botId>: { username, botName, agentId, system, name,
+   provider, model, baseUrl, reasoningEffort, enabled, ownerId } }. On desktop each token lives in the OS
+   keychain under channel:telegram:<botId>; the bare sidecar retains its plaintext fallback.
    Each instance runs the SAME adapter+hub pipeline as the station bot, with three differences:
      • HARD-LOCK: resolveAgent always answers the bound agentId (top of the hub's resolution order), and the
        roster/setModel control surface is absent — a bound bot IS its agent; belts//talk never reroute it.
@@ -7450,7 +7467,7 @@ function startTelegramBot(botId) {
   stopTelegramBot(botId);
   const recOf = () => telegramBotRecords()[botId] || {};
   const rec = recOf();
-  const token = String(rec.token || '');
+  const token = channelToken('telegram:' + botId, '', rec);
   if (!token) throw new Error('bot ' + botId + ' has no saved token');
   let adapterRef = null;
   const entry = { adapter: null, hub: null, status: { connected: false, state: 'connecting', detail: '', delivery: { state: 'unknown', detail: '', at: 0 } } };
@@ -8557,7 +8574,7 @@ server.listen(PORT, '127.0.0.1', () => {
   for (const bid of Object.keys(telegramBotRecords())) {
     try {
       const r = telegramBotRecords()[bid];
-      if (r && r.enabled !== false && r.token) { startTelegramBot(bid); console.log('  · telegram bot ' + (r.username ? '@' + r.username : bid) + ' auto-started from saved config'); }
+      if (r && r.enabled !== false && channelToken('telegram:' + bid, '', r)) { startTelegramBot(bid); console.log('  · telegram bot ' + (r.username ? '@' + r.username : bid) + ' auto-started from saved config'); }
     } catch (e) { console.warn('[channels] telegram bot ' + bid + ' auto-start failed:', (e && e.message) || e); }
   }
   // H6.2: same auto-start for Discord (saved config else env), through the generic registry path.
@@ -9521,18 +9538,23 @@ async function handleSetChannelToken(req, res) {
   if (!ipcTokenOk(req)) { res.writeHead(403); return res.end('forbidden'); }
   let body; try { body = JSON.parse(String(await readBody(req, 1 << 16) || '') || '{}') || {}; } catch (_) { return json(400, { error: 'bad json' }); }
   const channel = String(body.channel || body.id || '').trim().toLowerCase();
-  if (channelSecretsMod.CHANNEL_IDS.indexOf(channel) < 0) return json(400, { error: 'unknown channel' });
+  const dynamicTelegram = channel.indexOf('telegram:') === 0
+    && channelSecretsMod.telegramBotSecretId(channel.slice('telegram:'.length)) === channel;
+  if (channelSecretsMod.CHANNEL_IDS.indexOf(channel) < 0 && !dynamicTelegram) return json(400, { error: 'unknown channel' });
   const tok = String(body.token || '').trim();
   if (tok) {
     channelTokenRuntime[channel] = tok;
     // The shell only reaches this endpoint AFTER a successful keychain set_password, so a pushed token IS durable.
     // This lets saveChannelSecrets strip it from the plaintext file (its durable home is now the keychain), and
     // upgrades a token that first arrived non-durably (connect body) once the shell manages to store it.
-    channelTokenDurable[channel] = true;
+    channelTokenDurable[channel] = tok;
   } else {
     delete channelTokenRuntime[channel];
     delete channelTokenDurable[channel];   // cleared token -> durability irrelevant
   }
+  // A successful keychain push upgrades any temporary plaintext fallback. Rewrite immediately so additional
+  // Telegram tokens do not linger on disk until a restart; failure stays visible through the normal persist log.
+  if (dynamicTelegram) saveChannelSecrets(channelSecrets);
   return json(200, { ok: true, channel: channel, configured: !!channelTokenRuntime[channel] });
 }
 
@@ -16746,7 +16768,7 @@ async function handleLiveDoctor(req, res) {
       const saved = telegramBotRecords()[bot.botId] || {};
       if (saved.enabled === false) return { state: LiveDoctor.STATES.REFUSED, detail: 'configured but disabled by operator' };
       try {
-        const me = await makeTelegramTransport({ fetch: telegramTransportFetch(), token: String(saved.token || ''), apiBase: TELEGRAM_API_BASE }).getMe();
+        const me = await makeTelegramTransport({ fetch: telegramTransportFetch(), token: channelToken('telegram:' + bot.botId, '', saved), apiBase: TELEGRAM_API_BASE }).getMe();
         if (!me || !me.ok) return { state: LiveDoctor.STATES.REFUSED, detail: 'Telegram rejected the configured bot credential' };
         if (!bot.ownerLocked) return { state: LiveDoctor.STATES.REFUSED, detail: 'polling may be available, but owner DMs are blocked until /pair is completed' };
         if (!bot.connected || bot.state !== 'up') return { state: LiveDoctor.failureState(bot.detail || bot.state), detail: bot.detail || ('poll adapter state is ' + bot.state) };
@@ -17008,6 +17030,7 @@ async function handleTelegramBotAdd(req, res) {
   // the station bot's token can't double as an agent bot: one poller per token (Telegram hard rule).
   if (channelToken('telegram', '', main) === token) return json(400, { error: '@' + (me.username || 'that bot') + ' is already the station bot — create a fresh bot with @BotFather for this agent' });
   const prev = telegramBotRecords()[botId] || {};
+  const wasConfigured = !!channelToken('telegram:' + botId, '', prev);
   const pairingRequired = !prev.ownerId;
   const pairing = pairingRequired ? telegramOwnerPairing.issue({ now: Date.now() }) : null;
   const persisted = saveTelegramBotRecord(botId, {
@@ -17029,6 +17052,9 @@ async function handleTelegramBotAdd(req, res) {
     ownerPairing: pairingRequired ? pairing.state : (prev.ownerPairing || undefined)
   });
   if (!persisted) return json(500, { error: 'could not prove the agent bot configuration was saved; nothing was started' });
+  // A rotated token keeps the same bot id. Use the freshly getMe-proven value immediately, but do not call it
+  // durable until the shell pushes it back after an exact keychain write; the plaintext record remains its fallback.
+  channelTokenRuntime['telegram:' + botId] = token;
   try { startTelegramBot(botId); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   const live = telegramBots.get(botId);
   // Adding a bot must not strand the Commander at a healthy-but-deaf poller. Mint the required owner challenge
@@ -17036,7 +17062,7 @@ async function handleTelegramBotAdd(req, res) {
   // this, the UI told people to wait for a green row that could never become green until they found and clicked
   // a separate PAIR control — a circular setup path that looked like silent Telegram failure.
   const out = {
-    botId: botId, username: me.username || '', rebound: !!prev.token,
+    botId: botId, username: me.username || '', rebound: wasConfigured,
     state: (live && live.status && live.status.state) || 'connecting',
     persisted: true,
     pairingRequired
@@ -17055,7 +17081,7 @@ async function handleTelegramBotAction(req, res, botId, verb) {
   const rec = telegramBotRecords()[botId];
   if (!rec) return json(404, { error: 'unknown bot' });
   if (verb === 'connect') {
-    if (!rec.token) return json(400, { error: 'no saved token for this bot — paste it again to reconnect' });
+    if (!channelToken('telegram:' + botId, '', rec)) return json(400, { error: 'no saved token for this bot — paste it again to reconnect' });
     const persisted = saveTelegramBotRecord(botId, { enabled: true });
     if (!persisted) return json(500, { error: 'could not prove reconnect was saved; the bot was not started' });
     try { startTelegramBot(botId); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
@@ -17197,7 +17223,9 @@ function telegramBotsStatusList() {
     return {
       botId: bid, username: String(r.username || ''), agentId: String(r.agentId || ''), agentName: String(r.name || ''),
       connected: !!st.connected, state: st.state || 'down', detail: st.detail || '', delivery: st.delivery || { state: 'unknown', detail: '', at: 0 },
-      configured: !!r.token, enabled: r.enabled !== false, ownerLocked, acceptingDms,
+      configured: !!channelToken('telegram:' + bid, '', r),
+      durable: !!channelToken('telegram:' + bid, '', r) && (isChannelTokenDurable('telegram:' + bid) || !!r.token),
+      enabled: r.enabled !== false, ownerLocked, acceptingDms,
       ownerPairingActive: ownerPairingStatus(r).active, warning: String(telegramBotWarn[bid] || '')
     };
   });

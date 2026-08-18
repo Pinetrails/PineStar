@@ -39,8 +39,8 @@ use credentials::{
     keychain_entry, keychain_entry_for, keychain_pool_entry_for,
     migrate_channel_tokens_from_plaintext, migrate_credits_token_from_plaintext,
     normalize_provider, read_channel_token, read_credits_token, read_key, read_key_for,
-    read_key_pool_for, restore_credential, rollback_error, KEYCHAIN_PROVIDERS,
-    SIDECAR_CHANNEL_TOKEN_ENVS, SIDECAR_PROVIDER_KEY_ENVS,
+    read_key_pool_for, read_telegram_bot_tokens, restore_credential, rollback_error,
+    KEYCHAIN_PROVIDERS, SIDECAR_CHANNEL_TOKEN_ENVS, SIDECAR_PROVIDER_KEY_ENVS,
 };
 use lifecycle_preferences::{
     load as load_lifecycle_preferences, save_verified as save_lifecycle_preferences,
@@ -1723,6 +1723,12 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
     for (channel, env_name) in SIDECAR_CHANNEL_TOKEN_ENVS {
         if let Some(token) = read_channel_token(channel) {
             set_sidecar_branded_env(&mut cmd, env_name, token);
+        }
+    }
+    let telegram_bot_tokens = read_telegram_bot_tokens(&state.workspaces);
+    if !telegram_bot_tokens.is_empty() {
+        if let Ok(encoded) = serde_json::to_string(&telegram_bot_tokens) {
+            set_sidecar_branded_env(&mut cmd, "SKYNET_TELEGRAM_BOT_TOKENS", encoded);
         }
     }
     // StarNet Cloud device token, same path. Because EVERY sidecar spawn goes through this builder,

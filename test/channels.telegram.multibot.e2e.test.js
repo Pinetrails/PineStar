@@ -285,6 +285,35 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
     const onDisk = JSON.parse(fs.readFileSync(path.join(ws, 'channels', 'secrets.json'), 'utf8'));
     A.ok(!(onDisk.telegramBots && onDisk.telegramBots['222']), 'bot B record is GONE from disk');
     A.ok(onDisk.telegramBots && onDisk.telegramBots['111'] && onDisk.telegramBots['111'].token === TOK_A, 'bot A record (disconnected, not forgotten) still on disk with its token');
+
+    // ---- 9. desktop restart: a token-free agent-bot record resolves from the per-bot keychain env payload ----
+    const ws2 = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-tg-keychain-restart-'));
+    let child2 = null;
+    try {
+      fs.mkdirSync(path.join(ws2, 'channels'), { recursive: true });
+      fs.writeFileSync(path.join(ws2, 'channels', 'secrets.json'), JSON.stringify({
+        telegramBots: { '111': { username: 'NovaBot', agentId: 'agent', name: 'NOVA', model: 'test/model', provider: 'openrouter', enabled: true, ownerId: '77' } }
+      }));
+      const beforeRestartPolls = tg.perToken[TOK_A].calls.filter(c => c.method === 'getUpdates').length;
+      const keychainEnv = Object.assign({}, env, {
+        SKYNET_WORKSPACES: ws2, STARNET_WORKSPACES: ws2,
+        STARNET_DESKTOP_SHELL: '1', SKYNET_DESKTOP_SHELL: '1',
+        SKYNET_TELEGRAM_BOT_TOKENS: JSON.stringify({ '111': TOK_A }),
+        STARNET_TELEGRAM_BOT_TOKENS: JSON.stringify({ '111': TOK_A })
+      });
+      const second = await boot(port + 30, keychainEnv, 20); child2 = second.child;
+      const B2 = 'http://' + HOST + ':' + second.port;
+      const token2 = await bootToken(B2, B2);
+      await waitUntil(() => tg.perToken[TOK_A].calls.filter(c => c.method === 'getUpdates').length > beforeRestartPolls, 5000, 'keychain-backed bot polls after restart');
+      const status2 = await fetch(B2 + '/api/channels/telegram/status', { headers: { 'X-StarNet-Token': token2, Origin: B2 } }).then(r => r.json());
+      const restarted = (status2.bots || []).find(b => b.botId === '111');
+      A.ok(restarted && restarted.configured && restarted.durable, 'token-free saved bot is configured durably from the keychain spawn payload');
+      const disk2 = JSON.parse(fs.readFileSync(path.join(ws2, 'channels', 'secrets.json'), 'utf8'));
+      A.ok(!('token' in disk2.telegramBots['111']), 'desktop restart does not recreate a plaintext agent-bot token');
+    } finally {
+      try { if (child2) child2.kill(); } catch (_) {}
+      try { fs.rmSync(ws2, { recursive: true, force: true }); } catch (_) {}
+    }
   } finally {
     try { child.kill(); } catch (_) {}
     await new Promise(resolve => tg.close(resolve));
