@@ -619,6 +619,7 @@ test/terminal-tools.test.js
 test/terminal-output-boundary.test.js
 test/release-bump.test.js
 test/release-cut.test.js
+test/release-installer-selection.test.mjs
 test/opensource-readiness.test.js
 test/source-release-mirror.test.js
 test/release-train-provenance.test.js

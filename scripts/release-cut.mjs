@@ -44,6 +44,7 @@ import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runBoundedCommand } from './lib/run-command.mjs';
+import { findVersionedNsisInstaller } from './lib/release-installer.mjs';
 import { resolvePubkeyText, verifySignature } from './minisign-verify.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -102,13 +103,6 @@ function updaterEndpoint() {
 function createUpdaterArtifacts() {
   const conf = readJson(join(ROOT, 'src-tauri', 'tauri.conf.json'));
   return !!(conf.bundle && conf.bundle.createUpdaterArtifacts);
-}
-
-function findInstaller(nsisDir, version) {
-  const expected = join(nsisDir, 'StarNet_' + version + '_x64-setup.exe');
-  try {
-    return statSync(expected).isFile() ? expected : '';
-  } catch (_) { return ''; }
 }
 
 async function preflight() {
@@ -183,7 +177,7 @@ async function main() {
   const nsisDir = join(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
   const installer = DRY_RUN
     ? join(nsisDir, 'StarNet_' + version + '_x64-setup.exe')
-    : findInstaller(nsisDir, version);
+    : findVersionedNsisInstaller(nsisDir, version);
   if (!DRY_RUN && !installer) {
     fail('expected installer not found: ' + join(nsisDir, 'StarNet_' + version + '_x64-setup.exe')
       + ' (refusing to select a stale installer for another version)');
