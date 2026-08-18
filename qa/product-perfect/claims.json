@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b9dae9ecccb97b5c8d43399691c8c84b6782aa34",
+    "sourceCommit": "4f8d20601d0cef034edcc2be012d7f3f74cef479",
     "pathSetSha256": "92160ff9edb3cc6cd7deb0d0e0b35e6e60cf470af43886963164d96bbfaccd50",
     "files": [
       {
@@ -148,8 +148,8 @@
       },
       {
         "path": "frontend/app/classicons.js",
-        "bytes": 57021,
-        "sha256": "a3235c85f893f2fa2d89db7368ec9b5ceff70ecf492ce3ade37a251d2b5775a5"
+        "bytes": 57075,
+        "sha256": "8f98b7fbd012e5913a46e8505e5a19a20134d5d96d7c4f1244144bde804286f0"
       },
       {
         "path": "frontend/app/classify.js",
@@ -873,8 +873,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 103709,
-        "sha256": "19e7b25df29635f19739049635024407b9ec7cf167061eeee022b64989f1e785"
+        "bytes": 103892,
+        "sha256": "8bdcf249c840cd9312e995d656eb65bbe311944790b7ae8df6869ec293a69eac"
       },
       {
         "path": "frontend/app/windows/logbook.js",
