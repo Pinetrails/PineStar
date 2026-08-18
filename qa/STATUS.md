@@ -1511,7 +1511,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-18 02:12Z @ 2caa69c8 | RED | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-18 03:14Z @ 19d3476f | GREEN | 0 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-17T13:01:43.053Z · ui-only · 100408ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
