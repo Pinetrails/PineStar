@@ -1,6 +1,6 @@
 {
   "name": "starnet-harness",
-  "version": "0.10.3",
+  "version": "0.10.5",
   "private": true,
   "description": "A local-first, gamified desktop harness for building and running real AI-agent teams.",
   "license": "MIT",
@@ -106,6 +106,8 @@
     "eval:fault": "node scripts/eval/runner.mjs fault",
     "eval:fault:capture": "node scripts/eval/runner.mjs capture-fault",
     "eval:parity": "node scripts/eval/runner.mjs compare",
+    "eval:parity:offline": "node scripts/eval/adapters/parity-offline.mjs",
+    "eval:gate": "node scripts/eval/write-gate-receipt.mjs",
     "eval:baseline": "node scripts/eval/runner.mjs baseline",
     "qa:model": "node scripts/qa/model-conformance.mjs",
     "qa:beginner": "node scripts/qa/beginner-run.mjs",

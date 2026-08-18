@@ -35,7 +35,22 @@ const PropAnchor = (() => {
     return out;
   }
 
-  const ORDER = ['south', 'north', 'east', 'west'];   // south = the visible/usable front, tried first
+  const ORDER = ['south', 'north', 'east', 'west'];   // front, back, then the two flanks — in the UNTURNED frame
+
+  /* ---- orientation: which way is this prop's FRONT? ----
+     A prop carries `r` = quarter turns CLOCKWISE (worldmodel; 0 = the shipped south-facing art).
+     Turning the prop turns the side an agent is meant to walk up to, so the approach order has to
+     turn with it — otherwise an armchair aimed west would still be approached from the south and
+     its user would stand at its flank. That is what makes rotation gameplay-real rather than a paint
+     job. `m` (mirror) is deliberately ignored: a flip swaps handedness, never facing.
+     One CW turn maps a side's outward normal (x,y) -> (-y,x): south(0,1)->west, west->north, etc. */
+  const CW = { south: 'west', west: 'north', north: 'east', east: 'south' };
+  function turnSide(side, r) {
+    let s = side;
+    for (let i = (r | 0) & 3; i > 0; i--) s = CW[s] || s;
+    return s;
+  }
+  const frontOf = prop => turnSide('south', prop && prop.r);
 
   /* CENTRE-OUT ordering of one edge's tiles. deriveAnchor used to take sideTiles' first walkable tile,
      which is always the WEST-most one — so on a 2-wide workstation the chair (and the body sitting in
@@ -52,17 +67,24 @@ const PropAnchor = (() => {
   }
 
   /* deriveAnchor(prop, geo, opts) -> {tx,ty,face,sit} | null
-       prop : { x, y, w, h } in the geo's LOCAL tile frame (a geo.props entry)
+       prop : { x, y, w, h, r? } in the geo's LOCAL tile frame (a geo.props entry)
        geo  : { walkable(lx,ly,extra) }
-       opts : { approach:'south'|'north'|'east'|'west'|'auto', sit:bool, extra:Set }
+       opts : { approach:'south'|'north'|'east'|'west'|'auto'|'front', sit:bool, extra:Set }
      Returns the first walkable tile adjacent to the footprint (preferred side first),
-     or null when the prop is walled in with no reachable approach tile. */
+     or null when the prop is walled in with no reachable approach tile.
+     A named compass side is an ABSOLUTE world direction and is NOT turned; only the prop's own
+     notion of "front" turns, and the fallback chain turns with it, so "then try the back, then the
+     flanks" keeps meaning the same thing relative to the furniture. With r absent/0 every result
+     here is identical to the pre-rotation behaviour. */
   function deriveAnchor(prop, geo, opts) {
     opts = opts || {};
-    const extra = opts.extra || null, sit = !!opts.sit, approach = opts.approach || 'south';
+    const extra = opts.extra || null, sit = !!opts.sit;
+    const req = opts.approach || 'south';
+    const approach = (req === 'front') ? frontOf(prop) : req;
+    const turned = (prop && prop.r) ? ORDER.map(s => turnSide(s, prop.r)) : ORDER;
     const sides = approach === 'auto'
-      ? ORDER.slice()
-      : [approach].concat(ORDER.filter(s => s !== approach));
+      ? turned.slice()
+      : [approach].concat(turned.filter(s => s !== approach));
     for (const side of sides) {
       for (const t of centreOut(sideTiles(prop, side))) {
         if (geo.walkable(t.tx, t.ty, extra)) {
@@ -73,7 +95,7 @@ const PropAnchor = (() => {
     return null;
   }
 
-  return { deriveAnchor, facingToward, sideTiles, centreOut };
+  return { deriveAnchor, facingToward, sideTiles, centreOut, frontOf, turnSide };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PropAnchor;

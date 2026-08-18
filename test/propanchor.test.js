@@ -120,8 +120,13 @@ A.eq(PropSprites.spec('arcade').use.sit, false, 'arcade is stand-and-play (sit:f
 /* SEAT LAW (2026-08-04): the sit sprite is a CHAIR pose, so `use.sit` may only be true where a seat is
    really under the body — the single-tile seats. Couch/bed/beanbag used to carry it and rendered a body
    parked bolt-upright on the furniture. This walks the WHOLE catalog so a future `sit: true` on some new
-   sofa fails here rather than in the world. */
-const SITTABLE = new Set(['stool', 'chair']);
+   sofa fails here rather than in the world.
+   ⛔ NOT a list of everything a body sits on. The RECLINER pair (2026-08-17) is genuinely sat IN and is
+      still false here, because this flag governs one route only — the generic PropAnchor path. A profile
+      seat is couch-kind, so planCouchSit + world.js SIDE_SEAT own its anchor, facing and occlusion, and
+      test/recliner-side-seat.test.js is what locks that. Flipping a recliner true would reopen exactly
+      the bed/sofa route this law closed and change nothing on screen. */
+const SITTABLE = new Set(['stool', 'chair', 'dinerchair', 'podchair']);   // 2026-08-17: two more 1x1 seats, same pose as chair
 for (const sp of PropSprites.CATALOG) {
   if (!sp.use) continue;
   A.eq(!!sp.use.sit, SITTABLE.has(sp.id), 'SEAT LAW: ' + sp.id + '.use.sit === ' + SITTABLE.has(sp.id));

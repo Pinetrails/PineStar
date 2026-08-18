@@ -76,7 +76,7 @@ const { makeGrowthRatings, deriveRating: deriveGrowthRating } = require('./growt
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
 const { makeCompletionEvidence } = require('./completion-evidence.js'); // structured effect proof; never guesses task completion
-const { makeRunExecutionState } = require('./run-execution-state.js'); // one lifecycle for per-run latches/counters/artifacts
+const { makeRunExecutionState, toolBytesCapFor } = require('./run-execution-state.js'); // one lifecycle for per-run latches/counters/artifacts
 const { recoverToolResult } = require('./tool-recovery.js'); // bounded retry for host-trusted transient reads only
 const transcriptStoreModule = require('./transcriptstore.js');
 const { makeTranscriptStore } = transcriptStoreModule;
@@ -134,6 +134,7 @@ const { json: respondJson, readJsonBody, isAgentId } = require('./respond.js'); 
 const { readBody, readBodyBuffer } = require('./http-body.js');
 const { MIME, CHANNEL_UPLOAD_MAX_BYTES, mimeForPath, safeDownloadName, isActiveDeliverable, parseRange } = require('./file-response.js');
 const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } = require('./reflect.js');
+const Failreview = require('./failreview.js');   // failure-review aux pass: PURE lesson producer for FAILED runs (reflect.js mold)
 // GROWTH Tier 1 — the pure STUDY ENGINE (the dossier's Phase B). A UMD frontend module that also exports under
 // node, so the sidecar reuses the SAME parse/salience/dedup the browser consent path uses. Fail-open: if it can't
 // load, study just never fires (a run stays byte-identical). No new npm dep — it's a first-party file.
@@ -549,7 +550,11 @@ function resolveKnob(envSuffix, savedKey, def) {
 function knobEnvLocked(envSuffix) { const e = envSuffix ? ENV(envSuffix) : null; return e != null && String(e).trim() !== '' && Number(e) >= 0; }
 
 // maxIters: optional per-run tool-turn ceiling. Default OFF (0); users/deploys may opt into one.
-const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 0), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: 120000 };
+// maxToolBytes: the per-run tool-output FLOOR — the effective cap scales with the model's context window
+// (toolBytesCapFor at the run seam) UNLESS SKYNET_MAX_TOOL_BYTES is explicitly set, which pins the cap
+// absolutely (deterministic tests + locked-down deploys).
+const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 0), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: resolveKnob('MAX_TOOL_BYTES', 'maxToolBytes', 120000) };
+const MAX_TOOL_BYTES_PINNED = knobEnvLocked('MAX_TOOL_BYTES');
 // Optional spend governance: per-run, per-agent, per-day, and global ceilings all default OFF.
 // num() passes a parsed value through (including 0 -> UNGOVERNED via budget.js capOf, e.g. SKYNET_BUDGET_PER_DAY=0
 // disables the day pool); only an empty/missing/negative/non-numeric value falls back to the default.
@@ -2074,6 +2079,9 @@ const STUDY_COOLDOWN_MS = 1800000;     // GROWTH Tier 1: the STUDY (dossier Phas
                                        // (default 30m; was 10m — beat-fat trim 2026-07-03). Still user-tunable
                                        // live via memoryConfig.studyCooldownMs (P1-10 MEMORY controls).
 const STUDY_TIMEOUT_MS = 30000;
+const FAILREVIEW_TIMEOUT_MS = 30000;           // failure-review aux call ceiling — same envelope as reflection
+const FAILREVIEW_COOLDOWN_MS = 300000;         // per-agent: at most one failure lesson pass per 5 minutes (a crash-looping
+                                               // run must not narrate its own loop into the notebook every retry)
 /* ---- P1-10 MEMORY controls: user-facing knobs on the reflection ("turn-in") loop, persisted + HONORED live at
    the reflect gate below (not decorative). `reflectEnabled` (default on) master-switches whether a completed run
    proposes memories at all; `reflectCooldownMs` (default 180s) is the min gap between turn-in beats per agent.
@@ -2083,13 +2091,18 @@ function normalizeMemoryConfig(value) {
     const c = (value && typeof value === 'object') ? value : {};
     const cd = Number(c.reflectCooldownMs);
     const sd = Number(c.studyCooldownMs);
+    const fd = Number(c.failureReviewCooldownMs);
     return {
       reflectEnabled: c.reflectEnabled !== false,   // default ON
       reflectCooldownMs: (isFinite(cd) && cd >= 0) ? Math.floor(cd) : REFLECT_COOLDOWN_MS,
       // GROWTH Tier 1: study (dossier Phase B) is RARER than memory reflection by construction — its own longer
       // cooldown so the station doesn't propose belief updates every few minutes (default 10m). Master-switch too.
       studyEnabled: c.studyEnabled !== false,       // default ON
-      studyCooldownMs: (isFinite(sd) && sd >= 0) ? Math.floor(sd) : STUDY_COOLDOWN_MS
+      studyCooldownMs: (isFinite(sd) && sd >= 0) ? Math.floor(sd) : STUDY_COOLDOWN_MS,
+      // failure-review: the station learns from FAILED runs too (reflect's mirror on the failure side). Same
+      // end-to-end pattern as reflectEnabled: default ON, persisted, honored LIVE at the gate, own cooldown.
+      failureReviewEnabled: c.failureReviewEnabled !== false,   // default ON
+      failureReviewCooldownMs: (isFinite(fd) && fd >= 0) ? Math.floor(fd) : FAILREVIEW_COOLDOWN_MS
     };
 }
 const memoryConfigStore = makeDomainStore({
@@ -2109,6 +2122,8 @@ const proposalsByRun = new Map();      // runId -> { agentId, runId, createdAt, 
 const latestProposalRun = new Map();   // agentId -> newest pending runId (fetch fallback when the runId is unknown)
 const lastReflectAt = new Map();       // agentId -> ts of the last reflection we fired (the cooldown gate)
 const reflectingNow = new Set();       // agentIds with a reflection in flight — closes the gap before lastReflectAt is armed
+const lastFailReviewAt = new Map();    // agentId -> ts of the last failure review we fired (its own cooldown gate)
+const failReviewingNow = new Set();    // agentIds with a failure review in flight — same gap-closer as reflectingNow
 function stashProposals(agentId, runId, proposals) {
   proposalsByRun.set(runId, { agentId, runId, createdAt: Date.now(), proposals });
   latestProposalRun.set(agentId, runId);
@@ -2172,6 +2187,40 @@ function nightshiftUndeclined(agentId, candidates) {
   return list.filter(c => c && !dIdx.has(c.title));
 }
 
+/* ---- AUX MODEL TIER (composition root — the ONE place the cheap aux-work model/effort is resolved) ----------
+   resolveAuxModel: STARNET_AUX_MODEL (SKYNET_ fallback via ENV) names the model for auxiliary LLM work —
+   reflection · study · thread-mine · scout · quest-refresh · context compaction · the skill review/curator
+   forks. The legacy REFLECT_MODEL pair is still honored so existing deploys keep working unchanged. null =
+   no aux tier configured -> every consumer uses the run's own model, byte-identical to before this tier. */
+function resolveAuxModel() {
+  return String(ENV('AUX_MODEL') || ENV('REFLECT_MODEL') || '').trim() || null;
+}
+/* auxSkillModel — which model a nested SKILL loop (review/curator) may run on. Same family as
+   fallbackchain.promoteToolCapable but STRICTER in direction: promoting a task onto a fallback entry tolerates
+   unknown support (a cold catalog must never refuse a run), while swapping a working TOOL loop down to a cheap
+   model demands affirmative proof — supportsTools(aux) === true — because a toolless model here doesn't fail
+   loudly, it just silently maintains nothing. Unknown/false/no-aux-model -> the run model, exactly as today. */
+function auxSkillModel(provider, runModel) {
+  const aux = resolveAuxModel();
+  if (!aux || aux === runModel) return runModel;
+  try { return (provider && typeof provider.supportsTools === 'function' && provider.supportsTools(aux) === true) ? aux : runModel; }
+  catch (_) { return runModel; }
+}
+/* auxReasoningEffort — the per-request reasoning effort for the SINGLE-SHOT aux streams (reflection/study/
+   thread-mine/scout/compaction). Engaged only when the aux tier is configured (an aux model, or an explicit
+   STARNET_AUX_EFFORT): an unconfigured install keeps today's requests byte-identical. Default 'low' — aux work
+   is extraction/summarization, where thinking depth buys little — overridable via STARNET_AUX_EFFORT. Returns
+   null unless the provider VERIFIABLY offers that effort for this model (provider.reasoningEfforts); null rides
+   as "no per-request override", so an adapter that can't select effort never sees a value it might reject. */
+function auxReasoningEffort(provider, model) {
+  const effortEnv = String(ENV('AUX_EFFORT') || '').trim();
+  if (!effortEnv && !resolveAuxModel()) return null;
+  if (!provider || typeof provider.reasoningEfforts !== 'function') return null;
+  const want = normalizeReasoningEffort(effortEnv || 'low');
+  let allowed; try { allowed = provider.reasoningEfforts(model); } catch (_) { return null; }
+  return (Array.isArray(allowed) && allowed.indexOf(want) >= 0) ? want : null;
+}
+
 // fire-and-forget; never throws. Uses its OWN abort signal (+ timeout) so the closing run stream can't kill it.
 async function runReflection(o) {
   const { agentId, runId, messages, provider, model, cost } = o;
@@ -2182,11 +2231,13 @@ async function runReflection(o) {
   let usd = 0, tokens = 0;
   // the aux-model call: mirrors summarize() — ONE streamed completion, reconciled for cost. reflect() builds
   // the prompt (recent user/agent exchange) and parses the tagged reply; here we only supply the model.
+  const auxEffort = (o && o.reasoningEffort) || null;   // aux-tier: pre-gated by auxReasoningEffort at the call site
   const propose = async (prompt) => {
     const req = { model, stream: true, signal: ac.signal, messages: [
       { role: 'system', content: 'You are an agent reflecting right after finishing a task. Extract only DURABLE, reusable memories worth keeping for future runs — stable user preferences or learned facts (state the gist, not the whole result). These are beliefs about the user or the world, never instructions, procedures, or advice you gave during the run. One per line, each tagged FACT: or PREFERENCE:. Skip anything transient, run-specific, or already obvious. If nothing is worth keeping, reply NONE.' },
       { role: 'user', content: prompt }
     ] };
+    if (auxEffort) req.reasoningEffort = auxEffort;
     let out = '', usage = null;
     for await (const ev of provider.stream(req)) {
       if (ev && ev.type === 'text') out += ev.delta;
@@ -2196,7 +2247,11 @@ async function runReflection(o) {
     usd += c.usd || 0; tokens += (c.tokensIn || 0) + (c.tokensOut || 0);
     return out;
   };
-  let finalCompletionEvidence = execution.completionEvidence();
+  /* (aux-tier repair, 2026-08-17) A typed-postconditions line — `let finalCompletionEvidence =
+     execution.completionEvidence()` — landed HERE instead of in runOnce (890855829 merge damage). `execution`
+     only exists inside runOnce, so that stray read threw a ReferenceError before this try/catch and the
+     caller's .catch(()=>{}) swallowed it: EVERY reflection pass died silently before its model call. The
+     local was never used in this function; removing it restores the reflection beat. */
   try {
     const stored = notebookStore.get('notebook:' + agentId);
     const existing = Array.isArray(stored) ? stored : [];
@@ -2253,6 +2308,83 @@ async function runReflection(o) {
   }
 }
 
+/* ---- FAILURE REVIEW — the station finally learns from FAILED runs ----------------------------------------
+   Every existing post-run learning pass gates on reason 'done', so a run ending error/max_iters/budget/refusal
+   taught nothing despite the rich failure record runStore already persists. runFailureReview mirrors
+   runReflection's whole envelope: fire-and-forget (a failure-review failure must NEVER touch the run), its OWN
+   abort signal + timeout, ONE streamed aux-model completion, cost reconciled + booked to the ledger, proposals
+   filtered through the shared declined index, then the highStakes() split — normal lessons auto-save with
+   trustDelta 0 (silent-save UX) and origin 'failure-review'; high-stakes lessons stash + queue durably and emit
+   memory.proposed for the confirm deck. PAUSE is server authority here exactly as in runScoutCycle: a paused
+   station learns nothing new, whatever the caller gated. */
+async function runFailureReview(o) {
+  if (!personalizationStore.read().enabled) return;   // personalization PAUSE: no extraction, no model spend (same authority as the scout)
+  const { agentId, runId, messages, provider, model, cost } = o;
+  const unmetered = !!(o && o.unmetered);
+  const ac = new AbortController();
+  const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, FAILREVIEW_TIMEOUT_MS);
+  let usd = 0, tokens = 0;
+  const auxEffort = (o && o.reasoningEffort) || null;   // aux-tier: pre-gated by auxReasoningEffort at the call site
+  const propose = async (prompt) => {
+    const req = { model, stream: true, signal: ac.signal, messages: [
+      { role: 'system', content: 'You are an agent reviewing a task run of yours that FAILED. Extract at most ' + Failreview.MAX_LESSONS + ' DURABLE, reusable lessons: what failed, why, and what to do differently next time — concrete enough to change a future run. Never blame anyone; never restate the failure without a correction; skip one-off transient noise (a single network blip) unless a recovery pattern is visible. One per line, each tagged LESSON:. If nothing durable can be learned, reply NONE.' },
+      { role: 'user', content: prompt }
+    ] };
+    if (auxEffort) req.reasoningEffort = auxEffort;
+    let out = '', usage = null;
+    for await (const ev of provider.stream(req)) {
+      if (ev && ev.type === 'text') out += ev.delta;
+      else if (ev && ev.type === 'usage') usage = ev.usage;
+    }
+    const c = cost.reconcile(usage, model);
+    usd += c.usd || 0; tokens += (c.tokensIn || 0) + (c.tokensOut || 0);
+    return out;
+  };
+  try {
+    const stored = notebookStore.get('notebook:' + agentId);
+    const existing = Array.isArray(stored) ? stored : [];
+    // §5.6 "discard = never again": permanently-declined proposals join the dedup corpus, exactly as reflection does.
+    const declined = notebookStore.get('declined:' + agentId);
+    const declinedRecs = Array.isArray(declined) ? declined.map(t => ({ content: String(t) })) : [];
+    const out = await Failreview.review(
+      { agentId, runId, reason: o.reason, failureStage: o.failureStage, failureCode: o.failureCode,
+        toolTrace: o.toolTrace, recoveryAttempts: o.recoveryAttempts, uncertainMutations: o.uncertainMutations,
+        messages },
+      { propose, redact, existing: existing.concat(declinedRecs), clock: { now: () => Date.now() }, max: Failreview.MAX_LESSONS });
+    let proposals = (out && out.proposals) || [];
+    // CROSS-WIRE: any NEW proposal source routes through the shared declined-suppression index (NS-8 lite law).
+    if (proposals.length) { const dIdx = buildDeclinedIndex(agentId); proposals = proposals.filter(p => p && !dIdx.has(p.content)); }
+    if (proposals.length) {
+      // arm the cooldown ONLY when a beat actually fires (zero surviving lessons never spend the window) —
+      // the same arming rule as reflection.
+      lastFailReviewAt.set(agentId, Date.now());
+      const highStakesProps = [], normalProps = [];
+      for (const p of proposals) (highStakes(p.content) ? highStakesProps : normalProps).push(p);
+      // auto-save the normal lessons — silent save = NEUTRAL trust (trustDelta 0); origin 'failure-review' is
+      // the deterministic provenance tag on every record this pass writes.
+      const saved = [];
+      for (const p of normalProps) {
+        try {
+          const w = await writeMemoryRecord(agentId, p, { runId, trustDelta: 0, source: 'failure-review', origin: Failreview.ORIGIN });
+          if (w.ok) saved.push({ id: w.id, kind: w.kind, content: p.content, scope: p.scope || 'global', origin: Failreview.ORIGIN, saved: true });
+        } catch (_) {}   // one failed write never sinks the batch
+      }
+      // ONE stash per runId (a failed run never reflected, so this slot is free) + the durable pending queue for
+      // the high-stakes half; only those emit memory.proposed (existing event — no new event minted).
+      const pending = highStakesProps.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global', origin: Failreview.ORIGIN }));
+      const combined = saved.concat(pending);
+      if (combined.length) stashProposals(agentId, runId, combined);
+      if (pending.length) await queuePending(agentId, runId, pending);
+      for (const p of highStakesProps) chanEmit('memory.proposed', { agentId, runId, id: p.id, kind: p.kind, scope: p.scope || 'global' });
+    }
+  } catch (e) { console.warn('[cortex] failure review failed:', (e && e.message) || e); }
+  finally {
+    clearTimeout(timer);
+    // book the review's own spend into the append-only ledger (a second entry for the same runId just sums).
+    if (usd) { try { ledger.record({ runId, agentId, turns: 0, usd, tokens, model: model || '', unmetered }); } catch (_) {} }
+  }
+}
+
 /* ---- GROWTH Tier 1: the STUDY loop (dossier Phase B — work → understanding) ----
    Alongside reflection, a salient completed run also earns a STUDY pass: a SEPARATE aux call (same model
    plumbing) reads the run's directive + transcript + the Commander-dossier block and proposes DOSSIER belief
@@ -2299,11 +2431,13 @@ async function runStudy(o) {
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, STUDY_TIMEOUT_MS);
   let usd = 0, tokens = 0;
+  const auxEffort = (o && o.reasoningEffort) || null;   // aux-tier: pre-gated by auxReasoningEffort at the call site
   const propose = async (prompt) => {
     const req = { model, stream: true, signal: ac.signal, messages: [
       { role: 'system', content: 'You update a durable profile of your Commander from finished work. Propose ONLY evidenced, durable belief changes, one per line, each tagged with a dimension and ADD or RETIRE. Skip anything transient, guessed, or already known. If nothing changed, reply NONE.' },
       { role: 'user', content: prompt }
     ] };
+    if (auxEffort) req.reasoningEffort = auxEffort;
     let out = '', usage = null;
     for await (const ev of provider.stream(req)) {
       if (ev && ev.type === 'text') out += ev.delta;
@@ -2365,11 +2499,13 @@ async function runThreadMine(o) {
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, THREAD_MINE_TIMEOUT_MS);
   let usd = 0, tokens = 0;
+  const auxEffort = (o && o.reasoningEffort) || null;   // aux-tier: pre-gated by auxReasoningEffort at the call site
   const propose = async (prompt) => {
     const req = { model, stream: true, signal: ac.signal, messages: [
       { role: 'system', content: 'You surface ideas the Commander raised but never acted on, each with a VERBATIM quote copied word-for-word from the conversation. Never paraphrase or invent. If none, reply NONE.' },
       { role: 'user', content: prompt }
     ] };
+    if (auxEffort) req.reasoningEffort = auxEffort;
     let out = '', usage = null;
     for await (const ev of provider.stream(req)) {
       if (ev && ev.type === 'text') out += ev.delta;
@@ -2458,11 +2594,14 @@ async function runBackgroundSkillReview(o) {
       if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });
       return registry.dispatch(c, ctx);
     };
+    const reviewNotebook = notebookStore.get('notebook:' + agentId);
     const prompt = skillReview.buildPrompt({
       agentId, runId, messages,
       loadedSkills: loadedSkills || [],
       managedSkills: managedSkills || [],
-      memories: Array.isArray(notebookStore.get('notebook:' + agentId)) ? notebookStore.get('notebook:' + agentId).slice(-12) : [],
+      // top-12 by rank() against the run's directive (was: last 12 in raw store order) — the reviewer sees the
+      // memories RELEVANT to what this run did; on a queryless run rank degrades to recency+trust, still 12.
+      memories: rank(Array.isArray(reviewNotebook) ? reviewNotebook : [], latestUserText(messages), { now: Date.now(), k: 12 }),
       skills: skillStore.list(agentId, { includeArchived: true })
     });
     result = await runAgentLoop({
@@ -4822,8 +4961,10 @@ async function runScoutCycle(o) {
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, SCOUT_TIMEOUT_MS);
   let usd = 0, tokens = 0;
+  const auxEffort = (o && o.reasoningEffort) || null;   // aux-tier: pre-gated by auxReasoningEffort at the call site
   const propose = async (system, prompt) => {
     const req = { model, stream: true, signal: ac.signal, messages: [{ role: 'system', content: system }, { role: 'user', content: prompt }] };
+    if (auxEffort) req.reasoningEffort = auxEffort;
     let out = '', usage = null;
     for await (const ev of provider.stream(req)) {
       if (ev && ev.type === 'text') out += ev.delta;
@@ -6746,7 +6887,7 @@ async function runQuestRefreshCycle(why) {
   const baseUrl = providerRuntimeBaseUrl(providerId, '');
   const key = cronKeyFor(providerId);
   if (!cronHasCredential(providerId, key)) { questRefreshNote({ outcome: 'skipped', reason: 'no provider credential — ' + cronCredentialError(providerId, 'the quest refresh') }); return; }
-  const model = String(ENV('REFLECT_MODEL') || '').trim() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);
+  const model = resolveAuxModel() || (usingCodex ? CODEX_DEFAULT_MODEL : CRON_DEFAULT_MODEL);   // aux-tier: the ONE aux-model resolution (STARNET_AUX_MODEL, legacy REFLECT_MODEL)
   if (!model) { questRefreshNote({ outcome: 'skipped', reason: 'no default model configured (set DEFAULT_MODEL)' }); return; }
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, QUESTREFRESH_TIMEOUT_MS);
@@ -12237,6 +12378,7 @@ async function handleAgentDelete(req, res) {
   try {
     for (const [rid, b] of proposalsByRun) { if (b && b.agentId === agentId) proposalsByRun.delete(rid); }
     latestProposalRun.delete(agentId); lastReflectAt.delete(agentId); reflectingNow.delete(agentId);
+    lastFailReviewAt.delete(agentId); failReviewingNow.delete(agentId);
     for (const [rid, b] of studyByRun) { if (b && b.agentId === agentId) studyByRun.delete(rid); }
     latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
     persistStudyState();
@@ -13076,21 +13218,42 @@ async function handleRun(req, res) {
    message, the task brief was prepared from the older text, memory recall ranked against the older query, and
    the study pass studied the older directive. Flatten the parts instead (same rule attachments.textOf uses).
    Returns '' only when the turn genuinely carries no text (an image-only send) — an honest empty, not a lie. */
+function userMsgText(m) {
+  if (!m || m.role !== 'user') return null;
+  if (typeof m.content === 'string') return m.content;
+  if (!Array.isArray(m.content)) return null;     // an unknown shape is not a user turn we can read — keep walking
+  const parts = [];
+  for (const p of m.content) {
+    if (typeof p === 'string') parts.push(p);
+    else if (p && typeof p.text === 'string') parts.push(p.text);
+  }
+  return parts.join('');                          // '' for an image-only turn: honest, and it IS a real turn
+}
 function latestUserText(list) {
   const msgs = Array.isArray(list) ? list : [];
   for (let i = msgs.length - 1; i >= 0; i--) {
-    const m = msgs[i];
-    if (!m || m.role !== 'user') continue;
-    if (typeof m.content === 'string') return m.content;
-    if (!Array.isArray(m.content)) continue;      // an unknown shape is not a user turn we can read — keep walking
-    const parts = [];
-    for (const p of m.content) {
-      if (typeof p === 'string') parts.push(p);
-      else if (p && typeof p.text === 'string') parts.push(p.text);
-    }
-    return parts.join('');                        // '' for an image-only turn: honest, and it IS the latest turn
+    const t = userMsgText(msgs[i]);
+    if (t != null) return t;
   }
   return '';
+}
+/* recentUserText — the WIDENED recall query: the last up-to-3 user turns' text, oldest→newest, joined. A
+   follow-up like "yes, do that" carries no significant tokens of its own; ranking recall against the prior
+   asks too keeps the memory fence on-topic instead of empty (rank()'s relevance floor drops zero-overlap
+   records under a real query). Capped ~2000 chars keeping the NEWEST text (trim from the front — the current
+   ask always outranks history). Recall-seam only; compaction keeps its own transcript query. */
+function recentUserText(list) {
+  const msgs = Array.isArray(list) ? list : [];
+  const texts = [];
+  let turns = 0;
+  for (let i = msgs.length - 1; i >= 0 && turns < 3; i--) {
+    const t = userMsgText(msgs[i]);
+    if (t == null) continue;
+    turns++;
+    if (t) texts.unshift(t);
+  }
+  const joined = texts.join('\n');
+  return joined.length > 2000 ? joined.slice(joined.length - 2000) : joined;
 }
 
 /* runOnce — the reusable RUN HOST. Assembles the proven seams (fresh tool registry + the office-workstation
@@ -14230,10 +14393,28 @@ async function runOnce(o) {
     .concat(providerFallbacks);
 
   // ---- context auto-compaction: fold older turns into a summary once the live prompt passes 65% of the model's
-  //      window, so a long run shrinks instead of overflowing. contextLimit is 0 until the catalog warms (then the
-  //      loop never compacts — safe). The summarizer is ONE cheap model call over the older slice; on any failure
-  //      the loop keeps the full history (never a silent drop). ----
-  const ctxMgr = makeContext({ contextLimit: provider.contextLimit(model), compactAt: 0.65, keepTail: 6 });
+  //      window, so a long run shrinks instead of overflowing. The summarizer is ONE model call over the older
+  //      slice — on the RUN'S OWN (full-price) model unless the aux tier (STARNET_AUX_MODEL / legacy
+  //      REFLECT_MODEL) names a cheaper one; an aux-model failure retries ONCE on the run model, and on any
+  //      remaining failure the loop keeps the full history (never a silent drop). ----
+  // COLD CATALOG ≠ NO COMPACTION. contextLimit is 0 until /models warms; that used to flow into makeContext and
+  // silently disable proactive compaction for the WHOLE run (shouldCompact returns false on 0), leaving only the
+  // reactive overflow path — which is a no-op once the summarizer's breaker trips. shouldCompact measures against
+  // the provider's REAL prompt_tokens, so assuming a modest 128k window is safe in both directions: a bigger real
+  // window just compacts a little early; a smaller one overflows into the reactive path exactly as before, but
+  // now with the proactive fold still armed. The error classifier deliberately still receives the RAW 0 (see the
+  // runAgentLoop call) so a bare 400 is never mislabelled as overflow — that design is unchanged.
+  const COLD_CATALOG_CONTEXT_TOKENS = 131072;
+  const ctxMgr = makeContext({ contextLimit: provider.contextLimit(model) || COLD_CATALOG_CONTEXT_TOKENS, compactAt: 0.65, keepTail: 6 });
+  // PER-RUN TOOL-OUTPUT CAP, scaled to the window. The flat 120KB cap (~30k tokens) sat far BELOW the compaction
+  // threshold (0.65 × window — ~130k tokens on a 200k model), so the one event that resets the budget
+  // (agent.compact, see loopEmit) could never fire: after ~120KB of reads the agent went blind — every later
+  // tool returned "[tool output omitted]" — while the loop kept paying for turns. toolBytesCapFor keeps the cap
+  // ABOVE the threshold in bytes (invariant + rationale at its definition), guaranteeing the fold-and-reset
+  // fires first. The 120KB floor still binds tiny/unknown windows; reads the LIVE ctxMgr.contextLimit so a
+  // mid-run provider fallback (loop.js re-resolve) rescales it. An explicit SKYNET_MAX_TOOL_BYTES pins the
+  // cap absolutely (no scaling) — deterministic budget e2es and locked-down deploys depend on that.
+  const runToolBytesCap = () => MAX_TOOL_BYTES_PINNED ? CAPS.maxToolBytes : toolBytesCapFor(ctxMgr.contextLimit, CAPS.maxToolBytes);
   // The summarizer is itself a paid model call. It RETURNS its reconciled {usd,tokens} so the loop folds the
   // spend into the run's running tally IN THE SAME TURN — so the per-run ceiling + cross-run pool guards (and the
   // run total -> ledger) all see it, not just at run end. It also surfaces a display-only agent.cost so live
@@ -14250,8 +14431,12 @@ async function runOnce(o) {
      (every existing test's fake summarizer) behaves exactly as before. */
   async function summarize(older, prevSummary, live) {
     const sProvider = (live && live.provider) || provider;
-    const sModel = (live && live.model) || model;
     const sCost = (live && live.cost) || cost;
+    // aux tier: a configured cheap model serves the fold, riding the loop's LIVE provider/credential (so the
+    // rotation/fallback fix above still holds). No aux model -> the run's live model, byte-identical to before.
+    const runModel = (live && live.model) || model;
+    const auxModel = resolveAuxModel();
+    const sModel = auxModel || runModel;
     // TRANSCRIPT DRAIN (before the fold): `older` is the exact slice compaction is about to delete from the live
     // messages array. Turns THIS run produced that land in the fold would otherwise never reach the durable
     // transcript at all — the run-end append can only see what SURVIVED the fold. The drain is STRICT: if fsync or
@@ -14275,20 +14460,31 @@ async function runOnce(o) {
     const prev = (typeof prevSummary === 'string' && prevSummary.trim()) ? prevSummary.trim() : '';   // H5.2: a prior fold's running summary to merge into
     const prevBlock = prev ? 'PREVIOUS SUMMARY (update this — merge the new turns in, drop anything now obsolete):\n' + prev + '\n\n' : '';
     const userMsg = (memBlock ? memBlock + '\n\n' : '') + prevBlock + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
-    const req = { model: sModel, stream: true, signal, messages: [
-      { role: 'system', content: compactionSummaryPrompt({ prevSummary: !!prev }) },   // H5.1 structured template; H5.2 merge-update variant when a prior summary exists
-      { role: 'user', content: userMsg }
-    ] };
-    let out = '', usage = null;
-    for await (const ev of sProvider.stream(req)) {
-      if (ev && ev.type === 'text') out += ev.delta;
-      else if (ev && ev.type === 'usage') usage = ev.usage;
+    async function attempt(useModel) {
+      const req = { model: useModel, stream: true, signal, messages: [
+        { role: 'system', content: compactionSummaryPrompt({ prevSummary: !!prev }) },   // H5.1 structured template; H5.2 merge-update variant when a prior summary exists
+        { role: 'user', content: userMsg }
+      ] };
+      const effort = auxReasoningEffort(sProvider, useModel);   // per-request 'low' (or STARNET_AUX_EFFORT) only when the aux tier is engaged AND the provider verifiably offers it
+      if (effort) req.reasoningEffort = effort;
+      let out = '', usage = null;
+      for await (const ev of sProvider.stream(req)) {
+        if (ev && ev.type === 'text') out += ev.delta;
+        else if (ev && ev.type === 'usage') usage = ev.usage;
+      }
+      const c = sCost.reconcile(usage, useModel);
+      emit('agent.cost', { agentId, runId, usd: c.usd || 0, model: useModel, reconciled: true });   // display-only; no token fields (gauge-safe)
+      const r = { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
+      if (c.unpriced) r.unpricedUsage = [{ model: useModel, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 }];
+      return r;
     }
-    const c = sCost.reconcile(usage, sModel);
-    emit('agent.cost', { agentId, runId, usd: c.usd || 0, model: sModel, reconciled: true });   // display-only; no token fields (gauge-safe)
-    const r = { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
-    if (c.unpriced) r.unpricedUsage = [{ model, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 }];
-    return r;
+    /* AUX-TIER RELIABILITY FLOOR: a configured cheap model must never make compaction LESS reliable than
+       today. The loop's contract (loop.js maybeCompact: a throw counts a compactionFail; two flip
+       compactionOff, after which a context_overflow can kill the run) is preserved by retrying the fold ONCE
+       on the run's own live model before any failure surfaces. An abort is a cancel, never retried. */
+    if (sModel === runModel) return attempt(sModel);
+    try { return await attempt(sModel); }
+    catch (e) { if (signal.aborted) throw e; return attempt(runModel); }
   }
   // per-run adapter onto the shared cross-run budget: the loop calls check(spentThisRun) each turn; the budget
   // emits any threshold crossing down THIS run's bus and returns a block when a soft pool cap is hit.
@@ -14626,15 +14822,16 @@ async function runOnce(o) {
     // The registry parks a result only when that ONE result crosses its cap. The run-wide cap can still clip a
     // perfectly ordinary later command after earlier calls used the allowance, so preserve that result here too.
     // This happens before clipping and the parker returns a path only after byte-identical read-back.
-    if (execution.willBoundToolResult(r, CAPS.maxToolBytes) && r && typeof r.content === 'string' && !r.parkedPath) {
+    if (execution.willBoundToolResult(r, runToolBytesCap()) && r && typeof r.content === 'string' && !r.parkedPath) {
       const parked = await capCtx.parkOutput(r.content, { tool: c.name, reason: 'run-output-budget' });
       if (parked && parked.path) r = Object.assign({}, r, { parkedPath: parked.path, outputChars: r.content.length });
     }
     // Bound the TOTAL model-visible tool output across a run so a few big fetches/reads cannot blow context.
     // A clipped result still carries its durable path and authoritative tool summary (for example `exit 0` or
     // `verify passed`), so the model can report the outcome instead of exposing a mysterious internal cap.
-    r = execution.boundToolResult(r, CAPS.maxToolBytes, {
-      omitted: '[tool output omitted — this run hit its ' + Math.round(CAPS.maxToolBytes / 1000) + 'KB tool-output budget; finish with what you already have]'
+    // The cap is window-scaled and read live per call (see runToolBytesCap above the ctxMgr).
+    r = execution.boundToolResult(r, runToolBytesCap(), {
+      omitted: '[tool output omitted — this run hit its ' + Math.round(runToolBytesCap() / 1000) + 'KB tool-output budget; finish with what you already have]'
     });
     // loop-guard bookkeeping: a FAILING result advances this signature's streak; ANY success clears it (so an
     // intermittently-failing call that eventually works never trips the guard). Matches loop.js's reset-on-success.
@@ -14856,6 +15053,9 @@ async function runOnce(o) {
         budget: 6000,
         platform: process.platform,
         canManage: resolved.tools.indexOf('skill.manage') >= 0,
+        // Relevance-first ordering under the budget: the skill this ask needs must never be the row the
+        // 6000-char cap skips. Same widened query as memory recall; no query -> store order, as before.
+        query: recentUserText(messages),
         // The guard's verdict, enforced at the one seam where the index enters the system prompt.
         // Metadata-only decision (no bodies here) — the strict re-digest happens in skill.view.
         gate: (s) => skillGate.decide(s)
@@ -15012,7 +15212,7 @@ async function runOnce(o) {
   if (!internal) try {
     const stored = notebookStore.get('notebook:' + agentId);
     const recs = o.recovery ? [] : (Array.isArray(stored) ? stored : []);
-    const q = latestUserText(messages);   // an attachment turn must rank recall against ITS text, not the previous turn's
+    const q = recentUserText(messages);   // last up-to-3 user turns (attachment turns flattened to THEIR text) — a bare "yes, do that" still ranks against the ask it answers
     const ranked = rank(recs, q, { now: Date.now(), streamId });   // M-mem.2b: boost the active workstream's working memory
     const recall = renderRecall(ranked, { limit: 1500 });
     if (recall.text) {
@@ -15326,13 +15526,15 @@ async function runOnce(o) {
 
   // ---- AUX GOVERNOR: bound the AGGREGATE post-run model spend (aux-budget lane) ----------------------------------
   // Up to SIX aux passes can fire after one hot run — reflection · study · thread-mine · scout-cycle · skill-review
-  // · skill-curator. Each still owns its full gate (salience + cooldown + cost cap), UNCHANGED below. What was
+  // · skill-curator — plus failure-review on a FAILED run (failure reasons and 'done' are mutually exclusive, so it
+  // never competes with the six). Each still owns its full gate (salience + cooldown + cost cap), UNCHANGED below. What was
   // missing is a JOINT ceiling: one substantive run could touch off five or six billable calls back-to-back. The
   // governor caps how many may SPEND this run-end (SKYNET_AUX_BUDGET, default 2; a literal 0 = unlimited/off), in
   // the LOCKED beat priority (reflection > study > threadmine > scout > skill-review > skill-curator). DEFERRED ≠
   // SUPPRESSED: a deferred pass fires NOTHING and arms NO cooldown here, so its own gate re-qualifies and it retries
-  // on the next run. REFLECT_MODEL optionally points the aux passes at a cheaper model; it defaults to the run's own.
-  const reflectModel = String(ENV('REFLECT_MODEL') || '').trim();
+  // on the next run. STARNET_AUX_MODEL (legacy REFLECT_MODEL) optionally points the aux passes at a cheaper
+  // model — resolveAuxModel is the single resolution; it defaults to the run's own model.
+  const reflectModel = resolveAuxModel() || '';
   // finishReason gate (Lane A plumbs result.finishReason from loop.js): a run TRUNCATED by the provider ('length'
   // = hit max_tokens mid-thought; 'content_filter' = the model's output was cut) produced INCOMPLETE work — its
   // dialogue shouldn't seed memory/study/skills as if it were a clean finish. Guarded so it's a NO-OP when the
@@ -15344,8 +15546,23 @@ async function runOnce(o) {
   // reflection/study/scout/skill auxiliary model calls; those are separate work, complicate auditability, and
   // could outlive the one-shot continuation response.
   const _auxDone = !!(!o.recovery && result && result.reason === 'done' && !taskQuestionAsked && _qualifies && !signal.aborted);   // a clarification learns nothing and ships nothing
+  // FAILURE REVIEW's mirror gate: fires ONLY on the failure reasons worth a lesson (error · max_iters · budget ·
+  // refusal — never done/cancelled/empty/clarifying), on real TASK work (isTask, never internal self-talk), never
+  // on a recovery continuation or an aborted stream. Mutually exclusive with _auxDone BY CONSTRUCTION (a run's
+  // reason is either 'done' or it isn't), so the governor never arbitrates between reflection and failure-review
+  // on one run. _qualifies (truncation) is a 'done'-side concern — a truncated FAILED run still failed for real.
+  const _auxFail = !!(!o.recovery && result && Failreview.reviewableReason(result.reason) && isTask && !internal && !signal.aborted);
   const _auxNow = Date.now();       // one clock read for the scout cadence fold + curator-due check below
   const _auxModel = _auxDone ? (reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL })) : '';
+  // per-request effort for the single-shot aux streams — null unless the aux tier is engaged AND the provider
+  // verifiably offers the effort for _auxModel (auxReasoningEffort); null = no override, byte-identical requests.
+  const _auxEffort = _auxDone ? auxReasoningEffort(provider, _auxModel) : null;
+  // failure-review resolves its model/effort through the SAME single resolution (aux tier first, else the run's own).
+  const _auxFailModel = _auxFail ? (reflectModel || resolveEffectiveModel({ result, requestedModel: o.model, usingCodex, codexDefaultModel: CODEX_DEFAULT_MODEL, defaultModel: CRON_DEFAULT_MODEL })) : '';
+  const _auxFailEffort = _auxFail ? auxReasoningEffort(provider, _auxFailModel) : null;
+  // the skill review/curator forks are nested TOOL loops: they take the cheap aux model only when it is
+  // VERIFIABLY tool-capable on this run's provider (supportsTools === true), else the run's own model as today.
+  const _auxSkillModel = auxSkillModel(provider, model);
 
   // Each pass's OWN gate, computed WITHOUT firing (the EXACT predicates from before — the reflect/study/threadmine
   // cooldown comparisons are byte-for-byte the originals, so the settings-P1 source-locks still hold). A pass
@@ -15353,6 +15570,14 @@ async function runOnce(o) {
   // never eats a slot. Cortex M-mem.5b reflection · GROWTH Tier 1 study · NS-6 thread-mine — all ride isTask/done/salience.
   const _gateReflect = !!(o.reflect && memoryConfig.reflectEnabled && isTask && _auxDone && reflectSalient(result.messages, o.recurring)
       && !reflectingNow.has(agentId) && (Date.now() - (lastReflectAt.get(agentId) || 0) >= memoryConfig.reflectCooldownMs));
+  // failure-review: reflection's exact gate shape on the FAILURE side — o.reflect (real-work hosts only; delegated
+  // workers stay off), the live config master-switch, the personalization PAUSE (checked here so a paused station
+  // never even offers the candidate — runFailureReview re-checks the same authority), a salience floor (≥1 tool
+  // call or ≥2 turns: an instant stub teaches nothing), the in-flight guard, and its own per-agent cooldown.
+  const _gateFailReview = !!(o.reflect && memoryConfig.failureReviewEnabled && _auxFail
+      && Failreview.failureSalient({ toolTrace: execution.toolTraceList(), turns: (result && result.turns) || 0 })
+      && personalizationStore.read().enabled
+      && !failReviewingNow.has(agentId) && (Date.now() - (lastFailReviewAt.get(agentId) || 0) >= memoryConfig.failureReviewCooldownMs));
   const _gateStudy = !!(Study && o.reflect && memoryConfig.studyEnabled && isTask && _auxDone && Study.studySalient(result.messages, o.recurring)
       && !studyingNow.has(agentId) && (Date.now() - (lastStudyAt.get(agentId) || 0) >= memoryConfig.studyCooldownMs));
   const _gateThreadmine = !!(process.env.SKYNET_THREAD_MINE !== '0' && o.reflect && isTask && _auxDone && threadmine.mineSalient(result.messages)
@@ -15368,6 +15593,7 @@ async function runOnce(o) {
   // The JOINT decision: rank the candidates by locked priority and grant up to SKYNET_AUX_BUDGET this run-end.
   const _auxCandidates = [];
   if (_gateReflect) _auxCandidates.push('reflection');
+  if (_gateFailReview) _auxCandidates.push('failure-review');   // never co-present with 'reflection' (done vs failed)
   if (_gateStudy) _auxCandidates.push('study');
   if (_gateThreadmine) _auxCandidates.push('threadmine');
   if (_gateScout) _auxCandidates.push('scout');
@@ -15392,26 +15618,36 @@ async function runOnce(o) {
   // so it re-qualifies next run.
   if (_auxSpend.has('reflection')) {
     reflectingNow.add(agentId);
-    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, cost, unmetered: providerUnmetered, origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }) }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
+    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered, origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }) }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
+  }
+  if (_auxSpend.has('failure-review')) {
+    failReviewingNow.add(agentId);
+    runFailureReview({
+      agentId, runId, messages: result.messages.slice(), reason: result.reason,
+      failureStage: execution.failureStage(), failureCode: execution.failureCode(),
+      toolTrace: execution.toolTraceList(), recoveryAttempts: execution.recoveryAttempts(),
+      uncertainMutations: execution.uncertainMutations(),
+      provider, model: _auxFailModel, reasoningEffort: _auxFailEffort, cost, unmetered: providerUnmetered
+    }).catch(() => {}).finally(() => { failReviewingNow.delete(agentId); });
   }
   if (_auxSpend.has('study')) {
     studyingNow.add(agentId);
     const studyDirective = latestUserText(result.messages);   // study the turn that actually ran, attachment or not
-    runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
+    runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
   if (_auxSpend.has('threadmine')) {
     threadMiningNow.add(agentId);
-    runThreadMine({ agentId, runId, streamId: o.streamId || '', messages: result.messages.slice(), provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { threadMiningNow.delete(agentId); });
+    runThreadMine({ agentId, runId, streamId: o.streamId || '', messages: result.messages.slice(), provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { threadMiningNow.delete(agentId); });
   }
   if (_auxSpend.has('scout')) {
     scoutingNow = true;
-    runScoutCycle({ runId, agentId, provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { scoutingNow = false; });
+    runScoutCycle({ runId, agentId, provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { scoutingNow = false; });
   }
   if (_auxSpend.has('skill-review')) {
-    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(() => {});
+    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model: _auxSkillModel, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(() => {});
   }
   if (_auxSpend.has('skill-curator')) {
-    runSkillCurator({ agentId, runId, provider, model, cost, unmetered: providerUnmetered }).catch(() => {});
+    runSkillCurator({ agentId, runId, provider, model: _auxSkillModel, cost, unmetered: providerUnmetered }).catch(() => {});
   }
 
   // TRUTHFUL TELEMETRY: when the governor holds the ceiling, record WHICH passes yielded. A deferral is NOT an
@@ -18293,6 +18529,7 @@ async function handleMemoryReset(req, res) {
   // also drop any in-memory pending proposals for this agent so a stale turn-in can't land on the new hero
   for (const [rid, b] of proposalsByRun) { if (b && b.agentId === agentId) proposalsByRun.delete(rid); }
   latestProposalRun.delete(agentId); lastReflectAt.delete(agentId); reflectingNow.delete(agentId);
+  lastFailReviewAt.delete(agentId); failReviewingNow.delete(agentId);
   // GROWTH Tier 1: also drop any pending STUDY proposals so a fresh Commander never inherits a stranger's belief-update queue.
   for (const [rid, b] of studyByRun) { if (b && b.agentId === agentId) studyByRun.delete(rid); }
   latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
@@ -18442,6 +18679,10 @@ function handleMemoryConfigGet(req, res) {
     reflectEnabled: memoryConfig.reflectEnabled,
     reflectCooldownMs: memoryConfig.reflectCooldownMs,
     defaultCooldownMs: REFLECT_COOLDOWN_MS,
+    // failure-review controls (additive): the FAILED-run mirror of the reflection knobs, same live semantics.
+    failureReviewEnabled: memoryConfig.failureReviewEnabled,
+    failureReviewCooldownMs: memoryConfig.failureReviewCooldownMs,
+    defaultFailureReviewCooldownMs: FAILREVIEW_COOLDOWN_MS,
     scopeNote: memoryScopeNote()
   }));
 }
@@ -18453,6 +18694,12 @@ async function handleMemoryConfigSet(req, res) {
     const n = Number(body.reflectCooldownMs);
     if (!isFinite(n) || n < 0 || n > 3600000) return json(400, { error: 'reflectCooldownMs must be 0–3600000 (up to 1 hour)' });
     memoryConfig.reflectCooldownMs = Math.floor(n);
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'failureReviewEnabled')) memoryConfig.failureReviewEnabled = !!body.failureReviewEnabled;
+  if (Object.prototype.hasOwnProperty.call(body, 'failureReviewCooldownMs')) {
+    const n = Number(body.failureReviewCooldownMs);
+    if (!isFinite(n) || n < 0 || n > 3600000) return json(400, { error: 'failureReviewCooldownMs must be 0–3600000 (up to 1 hour)' });
+    memoryConfig.failureReviewCooldownMs = Math.floor(n);
   }
   saveMemoryConfig();
   return handleMemoryConfigGet(req, res);

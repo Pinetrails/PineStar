@@ -64,6 +64,7 @@ test/eval-acp-client.test.js
 test/eval-fixture-host.test.js
 test/eval-installed-performance.test.js
 test/eval-installed-provider-soak.test.js
+test/eval-parity-offline.test.js
 test/overnight-reliability-runner.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js
@@ -198,6 +199,7 @@ test/recommendation-eval.test.js
 test/personalization-store.test.js
 test/recruiterstore-readiness.test.js
 test/auxgovernor.test.js
+test/failreview.test.js
 test/threadstore.test.js
 test/autopilot-threads.test.js
 test/autopilot-focus.test.js
@@ -535,6 +537,9 @@ test/prop-mount.test.js
 test/prop-flat-decal.test.js
 test/bed-sleep.test.js
 test/prop-render-smoke.test.js
+test/proprotate.test.js
+test/recliner-side-seat.test.js
+test/sprite-sit-facing.test.js
 test/prop-search.test.js
 test/waitanchor.test.js
 test/harness.integration.test.js
@@ -614,6 +619,7 @@ test/terminal-tools.test.js
 test/terminal-output-boundary.test.js
 test/release-bump.test.js
 test/release-cut.test.js
+test/release-installer-selection.test.mjs
 test/opensource-readiness.test.js
 test/source-release-mirror.test.js
 test/release-train-provenance.test.js
