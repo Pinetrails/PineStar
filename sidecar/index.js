@@ -2003,21 +2003,63 @@ function providerCredentialError(provider) {
   if (providerRequiresKey(id)) return 'connect a ' + label + ' API key';
   return 'provider is not configured';
 }
-function channelRunConfigFor(agentId) {
+function channelRunConfigFor(agentId, candidate) {
   const id = String(agentId || '').trim();
   const ident = id ? agentRoster.get(id) : null;
   if (!ident) return { ok: false, error: 'target agent ' + (id || '(missing)') + ' is not in the live roster' };
   const provider = normalizeProvider(ident.provider);
   const model = String(ident.model || '').trim();
   if (!model) return { ok: false, error: 'target agent ' + id + ' has no roster model' };
-  const key = providerRuntimeKey(provider, '');
-  const baseUrl = providerRuntimeBaseUrl(provider, '');
+  /* A browser build may hand the channel route a candidate key/base URL that has not entered the desktop
+     runtime store. Accept it ONLY when the caller says it belongs to the SAME provider as the roster. This is
+     the seam that used to validate the globally focused provider during bot setup, then silently switch to the
+     bound agent's provider on its first DM. A credential must never cross that provider boundary. */
+  const offered = candidate && typeof candidate === 'object' ? candidate : null;
+  const offeredProvider = offered && offered.provider ? normalizeProvider(offered.provider) : provider;
+  const sameProvider = offeredProvider === provider;
+  const key = providerRuntimeKey(provider, sameProvider && offered ? String(offered.key || '') : '');
+  const baseUrl = providerRuntimeBaseUrl(provider, sameProvider && offered ? String(offered.baseUrl || offered.base_url || '') : '');
   if (!providerHasCredential(provider, key, baseUrl)) return { ok: false, error: providerCredentialError(provider) + ' for target agent ' + id };
   return {
     ok: true, key, model, provider, baseUrl,
     reasoningEffort: resolveReasoningEffort(provider, ident.reasoningEffort),
     system: ident.system || ''
   };
+}
+
+/* Prove the exact provider/model/credential tuple a channel bot will use BEFORE its Telegram token is persisted
+   or its poller is announced as usable. Catalog probes are insufficient (OpenRouter's catalog is public), so the
+   proof is one bounded tiny inference through the same adapter and OAuth-refresh seams as a real run. The result
+   contains no credential and is safe to surface in the authenticated setup response. */
+async function probeChannelRunConfig(config, timeoutMs) {
+  const c = config || {};
+  if (!c.ok) return { ok: false, error: String(c.error || 'agent provider is not configured') };
+  const providerId = normalizeProvider(c.provider);
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), Number.isFinite(timeoutMs) ? Math.max(1000, timeoutMs) : 30000);
+  if (timer && timer.unref) timer.unref();
+  try {
+    let provider;
+    if (providerUsesCodex(providerId)) {
+      provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: await ensureCodexAccessToken(), renewToken: forceRefreshCodexAccessToken, baseUrl: c.baseUrl, reasoningEffort: 'none' });
+    } else if (providerUsesDeviceOAuth(providerId)) {
+      provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: await ensureOAuthAccessToken(providerId), headers: oauthInferenceHeaders(providerId), baseUrl: c.baseUrl, reasoningEffort: 'none' });
+    } else {
+      provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key: c.key, baseUrl: c.baseUrl, reasoningEffort: 'none' });
+    }
+    let answered = false;
+    for await (const ev of provider.stream({ model: c.model, messages: [{ role: 'user', content: 'Reply exactly OK.' }], reasoningEffort: 'none', signal: ctrl.signal })) {
+      if (ev && ((ev.type === 'text' && ev.delta) || ev.type === 'done')) answered = true;
+    }
+    if (!answered) return { ok: false, error: 'the selected model accepted the request but returned no response' };
+    return { ok: true, provider: providerId, model: c.model };
+  } catch (e) {
+    return {
+      ok: false,
+      error: ctrl.signal.aborted ? 'selected-model authentication check timed out' : String(redact((e && e.message) || 'selected-model authentication check failed')),
+      code: String((e && e.code) || '')
+    };
+  } finally { clearTimeout(timer); }
 }
 /* A cron/Run-Now HOP's run config: the TARGET dock's own roster provider/model/credential, exactly like a
    channel hop resolves it (channelRunConfigFor above). The 2026-08-10 audit finding was the same drawn floor
@@ -3160,6 +3202,43 @@ function scrubChannelSecretsBak() {
     writeFileDurable({ fs: fs, path: path }, bak, JSON.stringify(stripped));
     console.warn('[channels] scrubbed a plaintext secret out of secrets.json.bak (last-known-good rewritten clean).');
   } catch (e) { console.warn('[channels] .bak scrub failed:', (e && e.message) || e); }
+}
+// A successful FORGET must also update the last-known-good snapshot. saveResilient intentionally puts the
+// previous main file in .bak before replacing it, which otherwise leaves the just-forgotten token recoverable.
+// Mirror only the explicitly purged record from the verified current state; every unrelated recovery record is
+// preserved byte-for-byte at the object level. Return a proof bit so callers never claim full destruction when
+// the backup was unreadable, corrupt, or could not be durably rewritten and read back.
+function mirrorPurgedChannelRecordToBak(id, botId) {
+  const bak = CHANNEL_SECRETS_FILE + '.bak';
+  let parsed;
+  try { parsed = JSON.parse(fs.readFileSync(bak, 'utf8')); }
+  catch (e) {
+    if (e && e.code === 'ENOENT') return true;
+    console.warn('[channels] could not prove forgotten channel was removed from secrets.json.bak:', (e && e.message) || e);
+    return false;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+  const next = Object.assign({}, parsed);
+  if (id === 'telegramBots') {
+    const bots = Object.assign({}, (next.telegramBots && typeof next.telegramBots === 'object') ? next.telegramBots : {});
+    const current = telegramBotRecords()[botId];
+    if (current) bots[botId] = current;
+    else delete bots[botId];
+    next.telegramBots = bots;
+  } else {
+    const current = channelSecrets && channelSecrets[id];
+    if (current) next[id] = current;
+    else delete next[id];
+  }
+  try {
+    writeFileDurable({ fs: fs, path: path }, bak, JSON.stringify(next));
+    const proved = JSON.parse(fs.readFileSync(bak, 'utf8'));
+    if (id === 'telegramBots') return !(proved.telegramBots && proved.telegramBots[botId]);
+    return JSON.stringify(proved[id]) === JSON.stringify(channelSecrets && channelSecrets[id]);
+  } catch (e) {
+    console.warn('[channels] could not durably remove forgotten channel from secrets.json.bak:', (e && e.message) || e);
+    return false;
+  }
 }
 let channelSecrets = loadChannelSecrets();
 // First desktop boot after upgrading from a plaintext secrets.json: adopt any file token into the runtime layer
@@ -7237,6 +7316,10 @@ function startTelegram(token, key, model, agentCfg) {
     // editMessage + deleteMessage TOGETHER are what let the hub stream a reply in place: one to grow it, one to
     // clear a partial it can no longer finish. Wiring only one would arm streaming with no way to clean up.
     deleteMessage: (chatId, msgId) => adapterRef ? adapterRef.deleteMessage(chatId, msgId) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // Telegram's edit-in-place token stream exposed unstable partial prose (and could replace it after a tool
+    // call reset the model buffer). Keep the durable typing/reaction acknowledgements, but publish only the final
+    // assembled answer. The hub's final delivery/outbox path remains durable and retryable.
+    streamReplies: false,
     canReadAllGroupMessages: () => stationBotSeesAll,
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent,
     secrets: () => {
@@ -7491,12 +7574,9 @@ function startTelegramBot(botId) {
     // so a bot added on a keychain desktop needs no plaintext key of its own.
     secrets: () => {
       const r = recOf();
-      const ra = (typeof agentRoster !== 'undefined' && agentRoster.get) ? agentRoster.get(String(r.agentId || '')) : null;
-      const main = (channelSecrets && channelSecrets.telegram) || {};
-      const provider = normalizeProvider((ra && ra.provider) || r.provider || main.provider);
-      const key = providerRuntimeKey(provider, r.key || main.key || '');
-      const baseUrl = providerRuntimeBaseUrl(provider, r.baseUrl || '');
-      return { key, model: (ra && ra.model) || r.model || main.model, provider, baseUrl, configured: providerHasCredential(provider, key, baseUrl), reasoningEffort: resolveReasoningEffort(provider, r.reasoningEffort), agentId: r.agentId, system: (ra && ra.system) || r.system };
+      const cfg = channelRunConfigFor(r.agentId, { provider: r.provider, key: r.key, baseUrl: r.baseUrl || r.base_url || '' });
+      if (!cfg.ok) return { configured: false, agentId: r.agentId, error: cfg.error };
+      return Object.assign({}, cfg, { configured: true, agentId: r.agentId });
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),
@@ -7533,6 +7613,9 @@ function startTelegramBot(botId) {
     // editMessage + deleteMessage TOGETHER are what let the hub stream a reply in place: one to grow it, one to
     // clear a partial it can no longer finish. Wiring only one would arm streaming with no way to clean up.
     deleteMessage: (chatId, msgId) => adapterRef ? adapterRef.deleteMessage(chatId, msgId) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // Agent bots use the same final-only Telegram policy as the station bot. Typing + reaction prove liveness;
+    // raw token deltas never become user-visible, so a tool call cannot rewrite half-formed prose underneath them.
+    streamReplies: false,
     canReadAllGroupMessages: () => { const v = (recOf() || {}).seesAllGroupMessages; return (typeof v === 'boolean') ? v : null; },
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent
   });
@@ -16943,7 +17026,7 @@ async function handleChannelDisconnect(req, res) {
     if (purge) { next.token = undefined; delete channelTokenRuntime.telegram; delete channelTokenDurable.telegram; }
     channelSecrets = Object.assign({}, channelSecrets, { telegram: next });
     persisted = saveChannelSecrets(channelSecrets);
-    if (purge) { try { scrubChannelSecretsBak(); } catch (_) {} }
+    if (purge && persisted) persisted = mirrorPurgedChannelRecordToBak('telegram') && persisted;
   }
   // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the token left the disk.
   res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false, purged: purge && persisted, persisted }));
@@ -17014,13 +17097,22 @@ async function handleTelegramBotAdd(req, res) {
   const agentId = String(body.agentId || '').trim();
   if (!token) return json(400, { error: 'missing bot token — create one with @BotFather and paste it here' });
   if (!agentId) return json(400, { error: 'pick which agent this bot should be' });
-  const main = (channelSecrets && channelSecrets.telegram) || {};
-  const provider = normalizeProvider(body.provider || main.provider);
-  const key = providerRuntimeKey(provider, String(body.key || '').trim() || String(main.key || ''));
-  const baseUrl = providerRuntimeBaseUrl(provider, body.baseUrl || body.base_url || '');
-  const model = String(body.model || '').trim() || String(main.model || '');
-  if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
-  if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
+  // Model/provider are roster properties, never properties of whichever agent happened to be focused when this
+  // button was clicked. Resolve the exact bound agent now and carry that same proven tuple into persistence and
+  // runtime. A browser-supplied key is eligible only when body.provider matches the roster provider (enforced by
+  // channelRunConfigFor); desktop keychain/runtime credentials need not ride this request at all.
+  const ident = agentRoster.get(agentId);
+  if (!ident) return json(409, { error: 'that agent is not synchronized with the harness yet — reopen Messaging and try again' });
+  const runConfig = channelRunConfigFor(agentId, {
+    provider: body.provider,
+    key: String(body.key || '').trim(),
+    baseUrl: body.baseUrl || body.base_url || ''
+  });
+  if (!runConfig.ok) return json(400, { error: runConfig.error });
+  const provider = runConfig.provider;
+  const key = runConfig.key;
+  const baseUrl = runConfig.baseUrl;
+  const model = runConfig.model;
   // getMe probe: proves the token AND names the bot before anything is saved or started.
   let me;
   try { me = await makeTelegramTransport({ fetch: telegramTransportFetch(), token, apiBase: TELEGRAM_API_BASE }).getMe(); }
@@ -17028,11 +17120,22 @@ async function handleTelegramBotAdd(req, res) {
   if (!me || !me.ok) return json(400, { error: 'Telegram rejected that token — ' + ((me && me.error) || 'check it against @BotFather') });
   const botId = String(me.id);
   // the station bot's token can't double as an agent bot: one poller per token (Telegram hard rule).
+  const main = (channelSecrets && channelSecrets.telegram) || {};
   if (channelToken('telegram', '', main) === token) return json(400, { error: '@' + (me.username || 'that bot') + ' is already the station bot — create a fresh bot with @BotFather for this agent' });
   const prev = telegramBotRecords()[botId] || {};
   const wasConfigured = !!channelToken('telegram:' + botId, '', prev);
+  // Telegram auth proves only the BotFather token. Before saving anything, prove the selected agent's exact
+  // provider/model/OAuth path too. This turns the old first-DM surprise into an immediate setup refusal.
+  const runProbe = await probeChannelRunConfig(runConfig, 30000);
+  if (!runProbe.ok) return json(400, {
+    error: 'agent provider/model check failed for ' + (ident.name || agentId) + ': ' + runProbe.error,
+    code: runProbe.code || 'AGENT_PROVIDER_PROBE_FAILED'
+  });
   const pairingRequired = !prev.ownerId;
   const pairing = pairingRequired ? telegramOwnerPairing.issue({ now: Date.now() }) : null;
+  const bodyProviderMatches = !body.provider || normalizeProvider(body.provider) === provider;
+  const candidateKey = bodyProviderMatches ? String(body.key || '').trim() : '';
+  const priorKey = normalizeProvider(prev.provider) === provider ? String(prev.key || '').trim() : '';
   const persisted = saveTelegramBotRecord(botId, {
     token: token, username: me.username || '', botName: me.name || '',
     // privacy mode, learned once at connect — /mention reads it to tell the truth about what it can hear
@@ -17040,12 +17143,12 @@ async function handleTelegramBotAdd(req, res) {
     // persist the provider KEY on the record (like the station/generic channels do) — without it the bot only
     // works while a runtime/station key happens to exist and dies on restart with "no provider configured"
     // even though the add-flow validated a key. Codex/OAuth providers carry no key by design.
-    key: providerUsesCodex(provider) ? undefined : (String(body.key || '').trim() || prev.key || undefined),
+    key: (providerUsesCodex(provider) || providerUsesDeviceOAuth(provider)) ? undefined : (candidateKey || priorKey || undefined),
     agentId: agentId,
-    system: (typeof body.system === 'string' && body.system) ? body.system : (prev.system || ''),
-    name: String(body.agentName || '').trim() || prev.name || '',
+    system: runConfig.system || '',
+    name: ident.name || agentId,
     provider: provider, model: model, baseUrl: baseUrl || undefined,
-    reasoningEffort: resolveReasoningEffort(provider, body.reasoningEffort || body.reasoning_effort || prev.reasoningEffort),
+    reasoningEffort: runConfig.reasoningEffort,
     enabled: true, ownerId: prev.ownerId || undefined,
     // Token/binding/pairing verifier are ONE durable commit. A 200 can never leave a configured bot whose
     // enrollment challenge existed only in memory (or a polling bot that comes back differently after restart).
@@ -17064,7 +17167,7 @@ async function handleTelegramBotAdd(req, res) {
   const out = {
     botId: botId, username: me.username || '', rebound: wasConfigured,
     state: (live && live.status && live.status.state) || 'connecting',
-    persisted: true,
+    persisted: true, providerVerified: true, provider: provider, model: model,
     pairingRequired
   };
   if (pairingRequired) {
@@ -17090,10 +17193,16 @@ async function handleTelegramBotAction(req, res, botId, verb) {
   const body = await readJsonBody(req, readBody, 4096, res);
   if (body === null) return json(400, { error: 'bad json' });
   const purge = !!body.purge;
-  const persisted = purge ? saveTelegramBotRecord(botId, null) : saveTelegramBotRecord(botId, { enabled: false });
+  let persisted = purge ? saveTelegramBotRecord(botId, null) : saveTelegramBotRecord(botId, { enabled: false });
   if (!persisted) return json(500, { error: purge ? 'could not prove the bot token was removed; the bot remains connected' : 'could not prove disconnect was saved; the bot remains connected' });
+  if (purge) {
+    delete channelTokenRuntime['telegram:' + botId];
+    delete channelTokenDurable['telegram:' + botId];
+  }
   stopTelegramBot(botId);
+  if (purge) persisted = mirrorPurgedChannelRecordToBak('telegramBots', botId) && persisted;
   // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the record left the disk.
+  if (!persisted) return json(500, { error: 'bot was removed from active configuration, but its recovery backup could not be purged', connected: false, purged: false, persisted: true });
   json(200, { connected: false, purged: purge, persisted: true });
 }
 
@@ -17215,6 +17324,7 @@ function telegramBotsStatusList() {
     const r = bots[bid] || {};
     const live = telegramBots.get(bid);
     const st = (live && live.status) || { connected: false, state: 'down', detail: '' };
+    const runConfig = channelRunConfigFor(r.agentId, { provider: r.provider, key: r.key, baseUrl: r.baseUrl || r.base_url || '' });
     const ownerLocked = !!r.ownerId;
     const acceptingDms = !!st.connected && ownerLocked;
     // Match the station bot's self-healing durability warning: a transient disk failure stays visible and every
@@ -17226,6 +17336,8 @@ function telegramBotsStatusList() {
       configured: !!channelToken('telegram:' + bid, '', r),
       durable: !!channelToken('telegram:' + bid, '', r) && (isChannelTokenDurable('telegram:' + bid) || !!r.token),
       enabled: r.enabled !== false, ownerLocked, acceptingDms,
+      runReady: !!runConfig.ok, runDetail: runConfig.ok ? '' : String(runConfig.error || 'agent provider/model is unavailable'),
+      provider: runConfig.ok ? runConfig.provider : normalizeProvider(r.provider), model: runConfig.ok ? runConfig.model : String(r.model || ''),
       ownerPairingActive: ownerPairingStatus(r).active, warning: String(telegramBotWarn[bid] || '')
     };
   });
@@ -17364,7 +17476,7 @@ async function handleGenericChannelDisconnect(req, res, id) {
       channelSecrets = Object.assign({}, channelSecrets, p);
     }
     persisted = saveChannelSecrets(channelSecrets);
-    if (purge) { try { scrubChannelSecretsBak(); } catch (_) {} }
+    if (purge && persisted) persisted = mirrorPurgedChannelRecordToBak(id) && persisted;
     removedConfiguration = id === 'signal' && purge && persisted && !channelSecrets[id];
   }
   // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the token left the disk.

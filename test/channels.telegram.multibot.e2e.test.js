@@ -29,6 +29,7 @@ function readJsonBody(req) {
 
 function startMockOpenRouter() {
   return new Promise(resolve => {
+    const calls = [];
     const server = http.createServer((req, res) => {
       if (req.url.indexOf('/models') >= 0) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -39,24 +40,34 @@ function startMockOpenRouter() {
         let body = '';
         req.on('data', d => { body += d; });
         req.on('end', () => {
+          let parsed = {}; try { parsed = JSON.parse(body || '{}'); } catch (_) {}
+          calls.push({ model: parsed.model || '', authorization: String(req.headers.authorization || '') });
+          if (parsed.model === 'reject/model') {
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: { message: 'Provided OAuth credential is invalid', code: 'invalid_api_key' } }));
+            return;
+          }
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-          res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Bound answer' } }] }) + '\n\n');
-          res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
-          res.write('data: [DONE]\n\n');
-          res.end();
+          res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'Bound answer begins with enough unstable partial text to exceed the old streaming threshold. ' } }] }) + '\n\n');
+          setTimeout(() => {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'This final sentence must arrive in the same completed Telegram message.' } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
+            res.write('data: [DONE]\n\n');
+            res.end();
+          }, 80);
         });
         return;
       }
       res.writeHead(404); res.end();
     });
-    server.listen(0, HOST, () => resolve({ server, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
+    server.listen(0, HOST, () => resolve({ server, calls, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
   });
 }
 
 // token-aware fake Bot API: bots = { TOKEN: { id, username } }. Unknown token -> 401 (like real Telegram).
 function startMockTelegramMulti(bots) {
-  const perToken = {};   // TOKEN -> { calls, sends, actions, queued, waiters }
-  for (const t of Object.keys(bots)) perToken[t] = { calls: [], sends: [], actions: [], queued: [], waiters: [] };
+  const perToken = {};   // TOKEN -> { calls, sends, edits, actions, queued, waiters }
+  for (const t of Object.keys(bots)) perToken[t] = { calls: [], sends: [], edits: [], actions: [], queued: [], waiters: [] };
   let updateId = 1000, messageId = 2000;
   function respond(res, obj) { try { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); } catch (_) {} }
   function flush(st) {
@@ -76,6 +87,8 @@ function startMockTelegramMulti(bots) {
       if (method === 'deleteWebhook') { respond(res, { ok: true, result: true }); return; }
       if (method === 'sendChatAction') { st.actions.push(body); respond(res, { ok: true, result: true }); return; }
       if (method === 'sendMessage') { st.sends.push(body); respond(res, { ok: true, result: { message_id: ++messageId } }); return; }
+      if (method === 'editMessageText') { st.edits.push(body); respond(res, { ok: true, result: { message_id: body.message_id } }); return; }
+      if (method === 'deleteMessage' || method === 'setMessageReaction') { respond(res, { ok: true, result: true }); return; }
       if (method === 'getUpdates') {
         if (body.offset === -1) { respond(res, { ok: true, result: [] }); return; }
         if (st.queued.length) { respond(res, { ok: true, result: [st.queued.shift()] }); return; }
@@ -164,6 +177,15 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
       body: body === undefined ? undefined : JSON.stringify(body)
     }).then(async r => ({ status: r.status, j: await r.json().catch(() => ({})) }));
 
+    // Agent bots are roster identities. Give the sidecar two runnable agents plus one deliberately rejected model;
+    // setup must use these records even when the caller submits a different globally focused provider/model.
+    const roster = await api('POST', '/api/roster', { updatedAt: Date.now(), agents: [
+      { agentId: 'agent', name: 'NOVA', system: 'nova system', model: 'test/model', provider: 'openrouter' },
+      { agentId: 'scout_1', name: 'SCOUT', system: 'scout system', model: 'test/model', provider: 'openrouter' },
+      { agentId: 'bad_agent', name: 'BROKEN', system: 'broken system', model: 'reject/model', provider: 'openrouter' }
+    ] });
+    A.eq(roster.status, 200, 'test roster synchronized before agent-bot setup');
+
     // station bot polling (auto-started from env)
     await waitUntil(() => tg.perToken[STATION].calls.some(c => c.method === 'getUpdates'), 5000, 'station bot polls');
 
@@ -177,13 +199,23 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
     A.eq(dupe.status, 400, 'station token as agent bot -> 400');
     A.ok(/station bot/.test(dupe.j.error || ''), 'refusal explains it IS the station bot');
 
+    // ---- 2b. a valid Telegram token with a broken bound-agent credential/model fails BEFORE persistence ----
+    const badProvider = await api('POST', '/api/channels/telegram/bots/connect', { token: TOK_A, agentId: 'bad_agent', provider: 'openrouter', model: 'wrong/global-model' });
+    A.eq(badProvider.status, 400, 'agent provider/model authentication failure is a setup error');
+    A.ok(/agent provider\/model check failed.*Provided OAuth credential is invalid/i.test(badProvider.j.error || ''), 'setup names the bound-agent authentication failure immediately');
+    const afterBadProvider = (await api('GET', '/api/channels/telegram/status')).j;
+    A.eq((afterBadProvider.bots || []).length, 0, 'failed agent-model proof persists no bot record and starts no poller');
+
     // ---- 3. add TWO agent bots; each starts polling with its OWN token ----
-    const addA = await api('POST', '/api/channels/telegram/bots/connect', { token: TOK_A, agentId: 'agent', agentName: 'NOVA', model: 'test/model' });
+    const addA = await api('POST', '/api/channels/telegram/bots/connect', {
+      token: TOK_A, agentId: 'agent', agentName: 'WRONG CLIENT NAME', provider: 'codex', model: 'wrong/global-model'
+    });
     A.eq(addA.status, 200, 'bot A added');
     A.eq(addA.j.botId, '111', 'bot A keyed by its getMe id');
     A.eq(addA.j.username, 'NovaBot', 'bot A username surfaced');
     A.eq(addA.j.pairingRequired, true, 'bot A add response says owner pairing is still required');
     A.ok(/^[-A-Z0-9]{11}$/.test(String(addA.j.pairingCode || '')), 'bot A add response immediately carries its pairing command');
+    A.ok(addA.j.providerVerified === true && addA.j.provider === 'openrouter' && addA.j.model === 'test/model', 'backend ignores stale focused config and proves the bound roster agent tuple');
     const addB = await api('POST', '/api/channels/telegram/bots/connect', { token: TOK_B, agentId: 'scout_1', agentName: 'SCOUT', model: 'test/model' });
     A.eq(addB.status, 200, 'bot B added');
     A.eq(addB.j.botId, '222', 'bot B keyed by its getMe id');
@@ -225,6 +257,8 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
     await waitUntil(() => tg.perToken[TOK_A].sends.some(s => String(s.chat_id) === '900' && String(s.text || '').indexOf('Bound answer') >= 0), 8000, 'bot A replies');
     const botAReply = tg.perToken[TOK_A].sends.find(s => String(s.chat_id) === '900' && String(s.text || '').indexOf('Bound answer') >= 0);
     A.ok(String(botAReply.text || '').indexOf('Bound answer') >= 0, 'bot A reply came from the provider');
+    A.ok(String(botAReply.text || '').indexOf('This final sentence') >= 0, 'the first visible provider reply is already complete');
+    A.eq(tg.perToken[TOK_A].edits.length, 0, 'agent bot exposes no token-by-token edit stream');
     A.eq(String(botAReply.chat_id), '900', 'bot A replied to its own chat');
     A.ok(tg.perToken[TOK_A].actions.some(a => a.action === 'typing' && String(a.chat_id) === '900'), 'bot A showed the typing indicator during the run');
     A.eq(tg.perToken[TOK_B].sends.length, botBSendsBeforeA, 'bot B sent NOTHING for bot A\'s chat (no cross-talk)');
@@ -285,6 +319,9 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
     const onDisk = JSON.parse(fs.readFileSync(path.join(ws, 'channels', 'secrets.json'), 'utf8'));
     A.ok(!(onDisk.telegramBots && onDisk.telegramBots['222']), 'bot B record is GONE from disk');
     A.ok(onDisk.telegramBots && onDisk.telegramBots['111'] && onDisk.telegramBots['111'].token === TOK_A, 'bot A record (disconnected, not forgotten) still on disk with its token');
+    const backup = JSON.parse(fs.readFileSync(path.join(ws, 'channels', 'secrets.json.bak'), 'utf8'));
+    A.ok(!(backup.telegramBots && backup.telegramBots['222']), 'bot B record is GONE from the last-known-good backup too');
+    A.ok(backup.telegramBots && backup.telegramBots['111'] && backup.telegramBots['111'].token === TOK_A, 'forget preserves the unrelated bot record in the recovery backup');
 
     // ---- 9. desktop restart: a token-free agent-bot record resolves from the per-bot keychain env payload ----
     const ws2 = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-tg-keychain-restart-'));
@@ -293,6 +330,9 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
       fs.mkdirSync(path.join(ws2, 'channels'), { recursive: true });
       fs.writeFileSync(path.join(ws2, 'channels', 'secrets.json'), JSON.stringify({
         telegramBots: { '111': { username: 'NovaBot', agentId: 'agent', name: 'NOVA', model: 'test/model', provider: 'openrouter', enabled: true, ownerId: '77' } }
+      }));
+      fs.writeFileSync(path.join(ws2, 'agent.roster.json'), JSON.stringify({
+        version: 1, updatedAt: Date.now(), agents: [{ agentId: 'agent', name: 'NOVA', system: 'nova system', model: 'test/model', provider: 'openrouter' }]
       }));
       const beforeRestartPolls = tg.perToken[TOK_A].calls.filter(c => c.method === 'getUpdates').length;
       const keychainEnv = Object.assign({}, env, {
@@ -307,7 +347,7 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
       await waitUntil(() => tg.perToken[TOK_A].calls.filter(c => c.method === 'getUpdates').length > beforeRestartPolls, 5000, 'keychain-backed bot polls after restart');
       const status2 = await fetch(B2 + '/api/channels/telegram/status', { headers: { 'X-StarNet-Token': token2, Origin: B2 } }).then(r => r.json());
       const restarted = (status2.bots || []).find(b => b.botId === '111');
-      A.ok(restarted && restarted.configured && restarted.durable, 'token-free saved bot is configured durably from the keychain spawn payload');
+      A.ok(restarted && restarted.configured && restarted.durable && restarted.runReady, 'token-free saved bot is configured durably and its roster provider remains runnable after restart');
       const disk2 = JSON.parse(fs.readFileSync(path.join(ws2, 'channels', 'secrets.json'), 'utf8'));
       A.ok(!('token' in disk2.telegramBots['111']), 'desktop restart does not recreate a plaintext agent-bot token');
     } finally {
