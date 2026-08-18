@@ -43,6 +43,14 @@ assert.match(source, /TAURI_SIGNING_PRIVATE_KEY_PASSWORD:\s*null/,
   'explicit password signing must remove a legacy password variable from the child environment');
 assert.match(source, /Object\.entries\(versions\).*value !== version/,
   'the release cutter fails closed when any of the five release pins disagree');
+assert.match(source, /findInstaller\(nsisDir, version\)/,
+  'artifact discovery is explicitly bound to the release version');
+assert.ok(source.includes("const expected = join(nsisDir, 'StarNet_' + version + '_x64-setup.exe')"),
+  'artifact discovery requires the exact versioned installer name');
+assert.ok(!source.includes("filter(n => /-setup\\.exe$/i.test(n)).sort()"),
+  'artifact discovery must never choose the lexicographically-last stale installer');
+assert.match(source, /refusing to select a stale installer for another version/,
+  'a missing exact-version artifact fails the cut loudly');
 
 
 /* ---- THE CUT MUST CRYPTOGRAPHICALLY VERIFY ITS OWN SIGNATURE -------------------------------------

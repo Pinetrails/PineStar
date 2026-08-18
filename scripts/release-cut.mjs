@@ -36,7 +36,7 @@
  */
 
 import {
-  copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync,
+  copyFileSync, existsSync, mkdirSync, readFileSync,
   statSync, writeFileSync, rmSync
 } from 'node:fs';
 import { createHash } from 'node:crypto';
@@ -104,10 +104,10 @@ function createUpdaterArtifacts() {
   return !!(conf.bundle && conf.bundle.createUpdaterArtifacts);
 }
 
-function findInstaller(nsisDir) {
+function findInstaller(nsisDir, version) {
+  const expected = join(nsisDir, 'StarNet_' + version + '_x64-setup.exe');
   try {
-    const names = readdirSync(nsisDir).filter(n => /-setup\.exe$/i.test(n)).sort();
-    return names.length ? join(nsisDir, names[names.length - 1]) : '';
+    return statSync(expected).isFile() ? expected : '';
   } catch (_) { return ''; }
 }
 
@@ -183,8 +183,11 @@ async function main() {
   const nsisDir = join(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
   const installer = DRY_RUN
     ? join(nsisDir, 'StarNet_' + version + '_x64-setup.exe')
-    : findInstaller(nsisDir);
-  if (!DRY_RUN && !installer) fail('no *-setup.exe found in ' + nsisDir + ' (build did not produce an installer)');
+    : findInstaller(nsisDir, version);
+  if (!DRY_RUN && !installer) {
+    fail('expected installer not found: ' + join(nsisDir, 'StarNet_' + version + '_x64-setup.exe')
+      + ' (refusing to select a stale installer for another version)');
+  }
 
   if (!SKIP_BUILD) {
     const tauriCli = join(ROOT, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
