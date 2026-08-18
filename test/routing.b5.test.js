@@ -182,9 +182,9 @@ A.eq(makeRouter().stationFor('coder'), null, 'no posted plan -> stationFor null'
   A.ok(!!conn.instanceId, 'every room object still gets an instanceId');
   const res = resolveTools('coder', st);
   A.ok(res.hasCompute, 'the workstation still grants compute alongside the connector');
-  // the computer contributes the quest.update freebie (QUEST V2 §B); the CONNECTOR itself adds no static tool
-  // (its MCP tools are projected dynamically at run time). So the only static tool here is the computer's quest.update.
-  A.eq(res.tools.slice().sort(), ['code.run', 'deliverable_note', 'quest.update', 'routine.notepad', 'station.inspect', 'tool.search'], 'a connector adds NO static tool beyond the computer primitives (its MCP tools project dynamically at run time)');
+  // the computer contributes the quest.update freebie (QUEST V2 §B) and the todo taskplan freebie (2026-08-17);
+  // the CONNECTOR itself adds no static tool (its MCP tools are projected dynamically at run time).
+  A.eq(res.tools.slice().sort(), ['code.run', 'deliverable_note', 'quest.update', 'routine.notepad', 'station.inspect', 'todo', 'tool.search'], 'a connector adds NO static tool beyond the computer primitives (its MCP tools project dynamically at run time)');
 }
 
 // the router round-robins SPLITTER dispatch across both bound agents (stateful, matches the engine's spread)
