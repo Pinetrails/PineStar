@@ -130,8 +130,9 @@ async function run() {
     await a.connect();
     for (let i = 0; i < 8 && !inbox.length; i++) await tick();
     A.eq(claims, ['owner'], 'only a valid local enrollment can claim an unclaimed bot');
-    A.eq(inbox.map(m => m.text), ['run this'], 'the pairing exchange never reaches the agent transcript');
-    A.eq(t.sends.map(s => s.text), ['Owner paired.'], 'the owner receives a direct enrollment acknowledgement');
+    A.eq(inbox.filter(m => !m.directReply).map(m => m.text), ['run this'], 'the pairing exchange never reaches the agent transcript');
+    A.eq(inbox.filter(m => m.directReply).map(m => m.directReply), ['Owner paired.'], 'the owner acknowledgement enters the durable direct-reply path');
+    A.eq(t.sends, [], 'the adapter never bypasses the hub/outbox for enrollment acknowledgements');
     await a.disconnect();
   }
 

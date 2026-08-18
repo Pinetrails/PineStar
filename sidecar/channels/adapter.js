@@ -311,10 +311,17 @@
         if (m.chatType === 'dm') {
           own = ownerDecision(m.userId, m);
           if (!own.ok) { acknowledge(); return; }   // a non-owner DM never reaches the run host
-          // Enrollment is an authentication exchange, not an agent instruction. Keep its code out of the
-          // transcript/model prompt and acknowledge success directly on the transport.
-          if (own.claimed && own.consume) {
-            if (own.reply) Promise.resolve(transport.send(String(m.chatId), own.reply, {})).catch(() => {});
+          // Enrollment is an authentication exchange, not an agent instruction. Route its acknowledgement through
+          // the hub as a direct reply: it gets the same durable inbox/outbox guarantees as a model answer while the
+          // pairing code stays out of transcript/history. A repeated /pair from the owner is consumed too, so a
+          // crash after owner persistence but before acknowledgement can never leak the code into the model.
+          const pairCommand = /^\/pair(?:\s|$)/i.test(String(m.text || ''));
+          if ((own.claimed && own.consume) || pairCommand) {
+            onInbound({
+              channel: name, chatId: String(m.chatId), chatType: 'dm', userId: String(m.userId || ''),
+              userName: m.userName, text: '', messageId: m.messageId == null ? '' : String(m.messageId),
+              ts: clock.now(), directReply: own.reply || 'Owner is already paired. Send a normal message to run the agent.'
+            });
             acknowledge();
             return;
           }

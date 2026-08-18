@@ -753,17 +753,24 @@
       if (!ok && unreachable) {
         try { console.error('[' + channel + '] reply for chat ' + chatId + ' NOT queued — this chat has blocked or removed the bot'); } catch (_) {}
       }
-      if (!ok && !unreachable && reason !== 'command' && reason !== 'prompt' && typeof store.pushOutbox === 'function') {
+      const mustPersistFailure = !ok && !unreachable && reason !== 'command' && reason !== 'prompt' && typeof store.pushOutbox === 'function';
+      let failurePersisted = false;
+      let failurePersistError = null;
+      if (mustPersistFailure) {
         try {
           const remainder = '⌛ delayed reply — the channel was unreachable when this was first sent:\n' + chunks.slice(failedAt).join('');
           store.pushOutbox({ channel: channel, chatId: String(chatId), text: remainder, runId: runId || '', agentId: agentId ? String(agentId) : '', reason: reason || '' });
+          failurePersisted = true;
           scheduleOutboxRetry();
-        } catch (_) {}
+        } catch (e) { failurePersistError = e; }
       }
       const ev = { channel, chatId: String(chatId), runId: runId || '', ok, chunks: chunks.length, reason: reason || '' };
       if (agentId) ev.agentId = String(agentId);   // additive/optional — attribute the dish to the acting agent
       try { emit('channel.delivery', ev); } catch (_) {}
       if (ok) { try { kickOutbox(); } catch (_) {} }   // a proven-healthy send is the cue to drain any backlog
+      // The adapter acknowledged this message only after its durable INBOX receipt existed. If the failed answer
+      // cannot enter the outbox, reject processing so that receipt remains and replays once capacity returns.
+      if (mustPersistFailure && !failurePersisted) throw new Error('failed reply could not be persisted: ' + ((failurePersistError && failurePersistError.message) || 'outbox unavailable'));
       // `text` is the FINAL chunk's text — the one a keyboard was attached to, and therefore the exact string a
       // later editMessage must rebuild on top of when it stamps the chosen answer in place.
       return { ok: ok, messageId: messageId, text: chunks.length ? chunks[chunks.length - 1] : '' };
@@ -773,8 +780,9 @@
     // Triggered by (a) the adapter reporting 'up' (reconnect/restart recovery) and (b) any successful deliver
     // (covers a mid-session send failure while the poll status never dropped). One pass at a time; a failed
     // redelivery bumps the item's try-count and STOPS the pass (transport clearly still shaky) — the item is
-    // dropped with an honest event only after MAX_OUTBOX_TRIES failed attempts, never silently.
-    const MAX_OUTBOX_TRIES = 5;
+    // Retained until delivery succeeds or Telegram proves the chat unreachable. At five failures we emit one
+    // escalation event, but keep retrying at the capped cadence — a two-minute outage must not become message loss.
+    const OUTBOX_ESCALATE_TRIES = 5;
     let flushing = false;
     let outboxTimer = null;
     let closed = false;
@@ -829,16 +837,19 @@
           }
           let bumped = null;
           try { bumped = (typeof store.bumpOutboxTry === 'function') ? store.bumpOutboxTry(it.id) : null; } catch (_) {}
-          if (bumped && bumped.tries >= MAX_OUTBOX_TRIES) {
-            try { store.removeOutbox(it.id); } catch (_) {}
-            try { emit('channel.delivery', { channel, chatId: String(it.chatId), runId: it.runId || '', ok: false, chunks: 0, reason: 'redelivery-gave-up' }); } catch (_) {}
-            try { console.error('[' + channel + '] outbox item for chat ' + it.chatId + ' dropped after ' + MAX_OUTBOX_TRIES + ' failed redeliveries'); } catch (_) {}
+          if (bumped && bumped.tries === OUTBOX_ESCALATE_TRIES) {
+            try { emit('channel.delivery', { channel, chatId: String(it.chatId), runId: it.runId || '', ok: false, chunks: 0, reason: 'redelivery-delayed' }); } catch (_) {}
+            try { console.error('[' + channel + '] outbox item for chat ' + it.chatId + ' still delayed after ' + OUTBOX_ESCALATE_TRIES + ' attempts; retained for retry'); } catch (_) {}
           }
           break;   // transport still unhealthy — end this pass; the next healthy cue retries
         }
       } finally {
         flushing = false;
         if (pendingOutbox().length) scheduleOutboxRetry();
+        else {
+          // Capacity is back. Replay intake deliberately held when a saturated outbox could not accept its reply.
+          try { const p = recoverInbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {}
+        }
       }
     }
 
@@ -1294,6 +1305,12 @@
     }
 
     async function processInbound(msg, intake) {
+      if (msg && msg.directReply) {
+        const directChatId = String(msg.chatId);
+        noteRoute(msg);
+        await deliver(directChatId, String(msg.directReply), '', 'admission');
+        return;
+      }
       const hasMedia = !!(msg && Array.isArray(msg.media) && msg.media.length);
       if (!msg || (!msg.text && !hasMedia)) return;   // empty update; media-only messages ARE admitted
       const chatId = String(msg.chatId);
@@ -1948,7 +1965,7 @@
 
     return {
       onInbound, onCallback, onStatus, onMembership, close,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, scheduleOutboxRetry, recoverInbox, activeInbox, inboxId, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn, startStream, streamOk, notModified }
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, scheduleOutboxRetry, recoverInbox, activeInbox, inboxId, OUTBOX_ESCALATE_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn, startStream, streamOk, notModified }
     };
   }
 

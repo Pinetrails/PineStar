@@ -11,7 +11,7 @@
        getChatRecord(chatId)           -> record | undefined
        saveChatRecord(chatId, patch)   -> record                 // merge-and-persist one chat's mapping/config
        loadOutbox(channel?)            -> [{id,channel,chatId,text,runId,agentId,reason,ts,tries}]
-       pushOutbox(entry)               -> item                   // queue an UNDELIVERED reply (bounded, oldest drops)
+       pushOutbox(entry)               -> item                   // queue an UNDELIVERED reply (bounded, full refuses loss)
        removeOutbox(id)                -> bool                   // delivered (or given up) — drop it
        bumpOutboxTry(id)               -> item | undefined       // count one failed redelivery attempt
        loadInbox(channel?)             -> [{id,channel,message,ts}] // admitted work not yet completed/queued
@@ -195,8 +195,10 @@
           ts: clock.now(), tries: 0
         };
         const items = this.loadOutbox();
+        // Never evict somebody else's undelivered answer to make room. The hub leaves the corresponding durable
+        // inbox receipt pending when this throws, so intake backpressures and retries after the outbox drains.
+        if (items.length >= outboxLimits.maxOutbox) throw new Error('channel outbox is full; refusing to discard an undelivered reply');
         items.push(item);
-        while (items.length > outboxLimits.maxOutbox) items.shift();   // bounded: oldest undelivered drops first
         writeJsonAtomic(outboxFile(), { version: 1, items: items });
         return item;
       },
@@ -213,7 +215,7 @@
         const items = this.loadOutbox();
         const it = items.find(x => x.id === String(id));
         if (!it) return undefined;
-        it.tries = (it.tries | 0) + 1;
+        it.tries = Math.min(1000000, Math.max(0, Number(it.tries) || 0) + 1);
         writeJsonAtomic(outboxFile(), { version: 1, items: items });
         return it;
       },
