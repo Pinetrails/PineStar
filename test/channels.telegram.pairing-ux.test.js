@@ -31,6 +31,15 @@ A.ok(/finish setup now/.test(ui.slice(ui.indexOf('function wireTelegramBots'))) 
   'adding an agent bot immediately renders the exact owner pairing command instead of waiting for impossible green');
 A.ok(/issueTelegramBotOwnerPairing/.test(sidecar) && /out\.pairingCode = pairing\.code/.test(sidecar.slice(sidecar.indexOf('async function handleTelegramBotAdd'))),
   'the agent-bot add route issues the owner challenge in its authenticated response');
+A.ok(/deliveryDown[\s\S]*?replies blocked · polling/.test(ui),
+  'agent-bot outbound failure is visible text, never a connected-looking tooltip only');
+A.ok(/bItem\.warning[\s\S]*?state\.textContent \+=/.test(ui),
+  'agent-bot durability warnings render on the row');
+A.ok(/telegramBotWarn\[botId\][\s\S]*?owner binding not saved/.test(sidecar),
+  'a failed agent-bot owner persist becomes status truth instead of a console-only warning');
+A.ok(/could not prove reconnect was saved; the bot was not started/.test(sidecar)
+  && /could not prove disconnect was saved; the bot remains connected/.test(sidecar),
+  'agent-bot lifecycle actions fail closed when their durable state cannot be proven');
 
 const mirror = fs.readFileSync(path.join(root, 'website', 'app', 'app', 'windows', 'messaging.js'), 'utf8');
 A.ok(mirror.includes('POLLING — DMs BLOCKED: PAIR OWNER') && /j\.pairingCode/.test(mirror),

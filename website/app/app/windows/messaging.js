@@ -263,11 +263,13 @@
         name.textContent = (bItem.username ? '@' + bItem.username : 'bot ' + bItem.botId) + ' → ' + (bItem.agentName || bItem.agentId || '?');
         const state = document.createElement('span');
         const inFlight = !bItem.connected && (bItem.state === 'connecting' || bItem.state === 'reconnecting');
-        state.className = 'ch-state ' + (pairingBlocked ? 'st-wait' : stateClass(bItem.connected, inFlight, bItem.state, bItem.configured));
-        state.textContent = pairingBlocked ? '◐ polling · pair owner' : acceptingDms ? '● connected' : inFlight ? '◐ connecting…'
+        const deliveryDown = !!(bItem.delivery && bItem.delivery.state === 'down');
+        state.className = 'ch-state ' + (deliveryDown ? 'st-err' : pairingBlocked ? 'st-wait' : stateClass(bItem.connected, inFlight, bItem.state, bItem.configured));
+        state.textContent = deliveryDown ? '✕ replies blocked · polling' : pairingBlocked ? '◐ polling · pair owner' : acceptingDms ? '● connected' : inFlight ? '◐ connecting…'
           : bItem.state === 'error' ? ('✕ ' + (bItem.detail || 'error')) : (bItem.enabled === false ? '○ off' : '○ offline');
         if (bItem.ownerLocked) state.title = 'owner-locked';
         if (bItem.delivery && bItem.delivery.state === 'down') state.title = 'outbound delivery degraded' + (bItem.delivery.detail ? ': ' + bItem.delivery.detail : '');
+        if (bItem.warning) state.textContent += ' ⚠ ' + bItem.warning;
         row.appendChild(name); row.appendChild(state);
         const btn = (label, act, danger) => {
           const b = document.createElement('button');

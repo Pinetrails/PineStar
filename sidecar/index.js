@@ -7405,13 +7405,17 @@ function stopTelegram() {
      • Chat records are namespaced (same numeric chatId exists on EVERY bot a user DMs) — the wrapped store
        keys them '<botId>|<chatId>' while stamping the REAL chatId on the record for the notifier. */
 const telegramBots = new Map();   // botId -> { adapter, hub, status }
+const telegramBotWarn = Object.create(null);   // per-bot durable-state warnings, surfaced in every status row
 function telegramBotRecords() { return (channelSecrets && channelSecrets.telegramBots) || {}; }
 function saveTelegramBotRecord(botId, patch) {   // merge-persist ONE bot's record; null patch = delete the record
+  const before = channelSecrets;
   const all = Object.assign({}, telegramBotRecords());
   if (patch === null) delete all[botId];
   else all[botId] = Object.assign({}, all[botId] || {}, patch);
   channelSecrets = Object.assign({}, channelSecrets, { telegramBots: all });
-  return saveChannelSecrets(channelSecrets);
+  const ok = saveChannelSecrets(channelSecrets);
+  if (!ok) channelSecrets = before;   // API mutations commit in memory only after durable read-back agrees
+  return ok;
 }
 function persistTelegramBotOwnerClaim(botId, uid) {
   const all = Object.assign({}, telegramBotRecords());
@@ -7419,7 +7423,9 @@ function persistTelegramBotOwnerClaim(botId, uid) {
   delete next.ownerPairing;
   all[botId] = next;
   channelSecrets = Object.assign({}, channelSecrets, { telegramBots: all });
-  return saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
+  const persisted = saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
+  telegramBotWarn[botId] = persisted ? '' : 'owner binding not saved to disk — it will reset on restart';
+  return persisted;
 }
 // Agent-bound bots use the same explicit local enrollment as the station bot. Keep this in one helper so the
 // add flow and the recovery PAIR action cannot drift: a code is returned only after its salted verifier was
@@ -16996,6 +17002,8 @@ async function handleTelegramBotAdd(req, res) {
   // the station bot's token can't double as an agent bot: one poller per token (Telegram hard rule).
   if (channelToken('telegram', '', main) === token) return json(400, { error: '@' + (me.username || 'that bot') + ' is already the station bot — create a fresh bot with @BotFather for this agent' });
   const prev = telegramBotRecords()[botId] || {};
+  const pairingRequired = !prev.ownerId;
+  const pairing = pairingRequired ? telegramOwnerPairing.issue({ now: Date.now() }) : null;
   const persisted = saveTelegramBotRecord(botId, {
     token: token, username: me.username || '', botName: me.name || '',
     // privacy mode, learned once at connect — /mention reads it to tell the truth about what it can hear
@@ -17009,27 +17017,28 @@ async function handleTelegramBotAdd(req, res) {
     name: String(body.agentName || '').trim() || prev.name || '',
     provider: provider, model: model, baseUrl: baseUrl || undefined,
     reasoningEffort: resolveReasoningEffort(provider, body.reasoningEffort || body.reasoning_effort || prev.reasoningEffort),
-    enabled: true, ownerId: prev.ownerId || undefined, ownerPairing: prev.ownerPairing || undefined
+    enabled: true, ownerId: prev.ownerId || undefined,
+    // Token/binding/pairing verifier are ONE durable commit. A 200 can never leave a configured bot whose
+    // enrollment challenge existed only in memory (or a polling bot that comes back differently after restart).
+    ownerPairing: pairingRequired ? pairing.state : (prev.ownerPairing || undefined)
   });
+  if (!persisted) return json(500, { error: 'could not prove the agent bot configuration was saved; nothing was started' });
   try { startTelegramBot(botId); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   const live = telegramBots.get(botId);
   // Adding a bot must not strand the Commander at a healthy-but-deaf poller. Mint the required owner challenge
   // in the SAME response that confirms the token/binding, exactly as the station-bot connect flow does. Before
   // this, the UI told people to wait for a green row that could never become green until they found and clicked
   // a separate PAIR control — a circular setup path that looked like silent Telegram failure.
-  const current = telegramBotRecords()[botId] || {};
-  const pairingRequired = !current.ownerId;
-  const pairing = pairingRequired ? issueTelegramBotOwnerPairing(botId) : { ok: true, persisted: !!persisted };
   const out = {
     botId: botId, username: me.username || '', rebound: !!prev.token,
     state: (live && live.status && live.status.state) || 'connecting',
-    persisted: pairingRequired ? !!pairing.persisted : !!persisted,
+    persisted: true,
     pairingRequired
   };
-  if (pairingRequired && pairing.ok) {
+  if (pairingRequired) {
     out.pairingCode = pairing.code;
-    out.pairingExpiresAt = pairing.expiresAt;
-  } else if (pairingRequired) out.pairingError = pairing.error || 'could not issue an owner pairing code';
+    out.pairingExpiresAt = pairing.state.expiresAt;
+  }
   json(200, out);
 }
 
@@ -17042,16 +17051,18 @@ async function handleTelegramBotAction(req, res, botId, verb) {
   if (verb === 'connect') {
     if (!rec.token) return json(400, { error: 'no saved token for this bot — paste it again to reconnect' });
     const persisted = saveTelegramBotRecord(botId, { enabled: true });
+    if (!persisted) return json(500, { error: 'could not prove reconnect was saved; the bot was not started' });
     try { startTelegramBot(botId); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
-    return json(200, { botId: botId, state: 'connecting', persisted: !!persisted });
+    return json(200, { botId: botId, state: 'connecting', persisted: true });
   }
   const body = await readJsonBody(req, readBody, 4096, res);
   if (body === null) return json(400, { error: 'bad json' });
   const purge = !!body.purge;
-  stopTelegramBot(botId);
   const persisted = purge ? saveTelegramBotRecord(botId, null) : saveTelegramBotRecord(botId, { enabled: false });
+  if (!persisted) return json(500, { error: purge ? 'could not prove the bot token was removed; the bot remains connected' : 'could not prove disconnect was saved; the bot remains connected' });
+  stopTelegramBot(botId);
   // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the record left the disk.
-  json(200, { connected: false, purged: purge && persisted, persisted: !!persisted });
+  json(200, { connected: false, purged: purge, persisted: true });
 }
 
 async function handleTelegramBotOwner(req, res, botId, verb) {
@@ -17069,9 +17080,10 @@ async function handleTelegramBotOwner(req, res, botId, verb) {
   delete next.ownerId;
   delete next.ownerPairing;
   all[botId] = next;
+  const before = channelSecrets;
   channelSecrets = Object.assign({}, channelSecrets, { telegramBots: all });
   const persisted = saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
-  if (!persisted) return json(500, { error: 'could not prove the owner revocation was saved' });
+  if (!persisted) { channelSecrets = before; return json(500, { error: 'could not prove the owner revocation was saved' }); }
   if (telegramBots.has(botId)) {
     try { startTelegramBot(botId); } catch (e) { return json(500, { error: 'owner was revoked but adapter restart failed: ' + ((e && e.message) || 'unknown error') }); }
   }
@@ -17173,11 +17185,14 @@ function telegramBotsStatusList() {
     const st = (live && live.status) || { connected: false, state: 'down', detail: '' };
     const ownerLocked = !!r.ownerId;
     const acceptingDms = !!st.connected && ownerLocked;
+    // Match the station bot's self-healing durability warning: a transient disk failure stays visible and every
+    // status poll retries it until the exact in-memory owner binding is proven on disk.
+    if (telegramBotWarn[bid]) { try { if (saveChannelSecrets(channelSecrets)) telegramBotWarn[bid] = ''; } catch (_) {} }
     return {
       botId: bid, username: String(r.username || ''), agentId: String(r.agentId || ''), agentName: String(r.name || ''),
       connected: !!st.connected, state: st.state || 'down', detail: st.detail || '', delivery: st.delivery || { state: 'unknown', detail: '', at: 0 },
       configured: !!r.token, enabled: r.enabled !== false, ownerLocked, acceptingDms,
-      ownerPairingActive: ownerPairingStatus(r).active
+      ownerPairingActive: ownerPairingStatus(r).active, warning: String(telegramBotWarn[bid] || '')
     };
   });
 }
