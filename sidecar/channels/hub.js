@@ -1201,12 +1201,51 @@
     const TEXT_BATCH_WAIT_MS = Number.isFinite(o.textBatchWaitMs) ? Math.max(0, o.textBatchWaitMs) : 0;
     const textBatches = new Map();
 
-    async function onInbound(msg, intake) {
+    const activeInbox = new Map();   // durable inbox id -> the one live processing promise (dedupes restart races)
+    function inboxId(msg) {
+      if (!msg || msg.messageId == null || String(msg.messageId) === '') return '';
+      return channel + '|' + String(msg.chatId) + '|' + String(msg.messageId) + (msg.edited ? '|edited' : '');
+    }
+    function onInbound(msg, intake) {
+      const id = inboxId(msg);
+      // Older/test stores retain the original behavior. Production's store claim is synchronous and durable,
+      // so returning from this function is the exact point the adapter may safely advance Telegram's offset.
+      if (!id || typeof store.pushInbox !== 'function' || typeof store.removeInbox !== 'function') return routeInbound(msg, intake);
+      const live = activeInbox.get(id);
+      if (live) {
+        if (intake && typeof intake.onAccepted === 'function') { try { intake.onAccepted({ id, durable: true, duplicate: true }); } catch (_) {} }
+        return live;
+      }
+      store.pushInbox({ id: id, channel: channel, message: msg });   // throws synchronously -> adapter does NOT ack
+      if (intake && typeof intake.onAccepted === 'function') { try { intake.onAccepted({ id, durable: true }); } catch (_) {} }
+      const running = Promise.resolve().then(() => routeInbound(msg, intake)).then((value) => {
+        store.removeInbox(id);   // reply delivered OR its undelivered remainder is now durable in the outbox
+        return value;
+      }).finally(() => { activeInbox.delete(id); });
+      activeInbox.set(id, running);
+      return running;
+    }
+
+    async function routeInbound(msg, intake) {
       const gid = (msg && msg.mediaGroupId != null && String(msg.mediaGroupId))
         ? (String(msg.chatId) + '|' + String(msg.mediaGroupId)) : '';
       if (gid) return albumInbound(msg, gid, intake);
       if (TEXT_BATCH_WAIT_MS > 0 && textBatchable(msg)) return textInbound(msg, intake);
       return processInbound(msg, intake);
+    }
+
+    let recoveringInbox = false;
+    async function recoverInbox() {
+      if (closed || recoveringInbox || typeof store.loadInbox !== 'function') return;
+      recoveringInbox = true;
+      try {
+        const items = store.loadInbox(channel) || [];
+        for (const it of items) {
+          if (closed || !it || !it.message) break;
+          try { await onInbound(it.message, { recovered: true }); }
+          catch (e) { try { console.error('[' + channel + '] durable inbox recovery failed for ' + String(it.id || '') + ':', (e && e.message) || e); } catch (_) {} break; }
+        }
+      } finally { recoveringInbox = false; }
     }
 
     function textBatchable(msg) {
@@ -1870,7 +1909,10 @@
     // queued while it was down (or while the sidecar was off — the outbox survives restarts) redelivers now.
     function onStatus(s) {
       try { emit('channel.connect', { channel, state: (s && s.state) || 'down', detail: (s && s.detail) || '' }); } catch (_) {}
-      if (s && s.state === 'up') { try { kickOutbox(); } catch (_) {} }
+      if (s && s.state === 'up') {
+        try { kickOutbox(); } catch (_) {}
+        try { const p = recoverInbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {}
+      }
     }
 
     /* OUR OWN MEMBERSHIP CHANGED — we were blocked, kicked, or let back in.
@@ -1906,7 +1948,7 @@
 
     return {
       onInbound, onCallback, onStatus, onMembership, close,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, scheduleOutboxRetry, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn, startStream, streamOk, notModified }
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, scheduleOutboxRetry, recoverInbox, activeInbox, inboxId, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn, startStream, streamOk, notModified }
     };
   }
 

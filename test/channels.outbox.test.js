@@ -67,6 +67,43 @@ function mkHub(store, sendImpl, events) {
     A.ok(big.text.length < 100 && /truncated/.test(big.text), 'oversized reply is truncated with an honest marker');
   }
 
+  // ---- B2. durable inbox is idempotent, bounded, and survives a new store instance ----
+  {
+    const fs = memFs();
+    const s = makeChannelStore({ fs, pathMod, root: ROOT, clock, inboxLimits: { maxInbox: 2 } });
+    const msg = { chatId: '77', chatType: 'dm', userId: 'u', text: 'work', messageId: '9' };
+    s.pushInbox({ id: 'telegram|77|9', channel: 'telegram', message: msg });
+    s.pushInbox({ id: 'telegram|77|9', channel: 'telegram', message: msg });
+    A.eq(s.loadInbox('telegram').length, 1, 'duplicate delivery creates one durable intake receipt');
+    const restarted = makeChannelStore({ fs, pathMod, root: ROOT, clock, inboxLimits: { maxInbox: 2 } });
+    A.eq(restarted.loadInbox('telegram')[0].message.text, 'work', 'unfinished intake survives a store restart');
+    restarted.pushInbox({ id: 'telegram|78|10', channel: 'telegram', message: Object.assign({}, msg, { chatId: '78', messageId: '10' }) });
+    A.throws(() => restarted.pushInbox({ id: 'telegram|79|11', channel: 'telegram', message: Object.assign({}, msg, { chatId: '79', messageId: '11' }) }), 'a full inbox refuses acknowledgement instead of dropping oldest work');
+    A.eq(restarted.removeInbox('telegram|77|9'), true, 'completion removes exactly its receipt');
+  }
+
+  // ---- B3. hub claims before returning, clears after completion, and replays a crash survivor on poll-up ----
+  {
+    const store = mkStore();
+    const sends = [], events = [];
+    const hub = mkHub(store, async (chatId, text) => { sends.push({ chatId, text }); return { ok: true }; }, events);
+    const msg = { chatId: '80', chatType: 'dm', userId: 'u', text: 'normal work', messageId: '30', ts: 1 };
+    const running = hub.onInbound(msg);
+    A.eq(store.loadInbox('telegram').length, 1, 'admitted message is durable synchronously before processing runs');
+    await running;
+    A.eq(store.loadInbox('telegram'), [], 'completed reply removes its durable intake receipt');
+    hub.close();
+
+    const crashed = { chatId: '81', chatType: 'dm', userId: 'u', text: 'survived crash', messageId: '31', ts: 2 };
+    store.pushInbox({ id: 'telegram|81|31', channel: 'telegram', message: crashed });
+    const restartedHub = mkHub(store, async (chatId, text) => { sends.push({ chatId, text }); return { ok: true }; }, events);
+    restartedHub.onStatus({ state: 'up' });
+    for (let i = 0; i < 10 && store.loadInbox('telegram').length; i++) await new Promise(r => setTimeout(r, 0));
+    A.eq(store.loadInbox('telegram'), [], 'poll-up replays and completes unfinished durable intake');
+    A.ok(sends.some(s => s.chatId === '81' && /the result/.test(s.text)), 'recovered intake produces its real reply');
+    restartedHub.close();
+  }
+
   // ---- C. hub queues ONLY the undelivered remainder of a failed reply ----
   {
     const events = [];

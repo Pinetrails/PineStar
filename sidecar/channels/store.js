@@ -14,6 +14,9 @@
        pushOutbox(entry)               -> item                   // queue an UNDELIVERED reply (bounded, oldest drops)
        removeOutbox(id)                -> bool                   // delivered (or given up) — drop it
        bumpOutboxTry(id)               -> item | undefined       // count one failed redelivery attempt
+       loadInbox(channel?)             -> [{id,channel,message,ts}] // admitted work not yet completed/queued
+       pushInbox(entry)                -> item                   // idempotent durable intake receipt
+       removeInbox(id)                 -> bool                   // completed (or durably queued)
      }
 
    Files live under WORKSPACES/channels/ — SIBLINGS of the notebook store, OUTSIDE the agent's fs jail
@@ -38,6 +41,7 @@
   // outbox bounds: a small, bounded queue of UNDELIVERED replies (durable send-retry, not a message archive).
   // Oldest drops first past maxOutbox; a single reply's stored text is capped so the file can't balloon.
   const OUTBOX_DEFAULTS = { maxOutbox: 50, maxOutboxChars: 16000 };
+  const INBOX_DEFAULTS = { maxInbox: 200 };
 
   // A Set, not an object literal: `({user:1})['constructor']` is truthy, so an object-literal allowlist
   // silently admits every Object.prototype key. A hand-corrupted history claiming role:'constructor' or
@@ -84,7 +88,9 @@
     }
     const chatMapFile = () => pathMod.join(root, 'chatmap.json');
     const outboxFile = () => pathMod.join(root, 'outbox.json');
+    const inboxFile = () => pathMod.join(root, 'inbox.json');
     const outboxLimits = Object.assign({}, OUTBOX_DEFAULTS, d.outboxLimits || {});
+    const inboxLimits = Object.assign({}, INBOX_DEFAULTS, d.inboxLimits || {});
     let outboxSeq = 0;   // deterministic per-process id tail (clock.now() alone can collide within one ms)
 
     function readRaw(file) {   // parse-or-undefined for ONE file (missing / zero-length / corrupt -> undefined)
@@ -212,9 +218,40 @@
         return it;
       },
 
-      _internals: { trimTail, historyFile, chatMapFile, outboxFile, AID_RE, limits, outboxLimits }
+      // ---- durable inbox: admitted messages survive a crash between offset confirmation and reply ----
+      loadInbox(channel) {
+        const raw = readJson(inboxFile());
+        const items = raw && Array.isArray(raw.items) ? raw.items : [];
+        const good = items.filter(it => it && typeof it.id === 'string' && typeof it.channel === 'string'
+          && it.message && typeof it.message === 'object' && typeof it.message.chatId === 'string');
+        return channel ? good.filter(it => it.channel === String(channel)) : good;
+      },
+
+      pushInbox(entry) {
+        const e = entry || {};
+        const id = String(e.id || '');
+        if (!id || !e.message || typeof e.message !== 'object') throw new Error('bad channel inbox entry');
+        const items = this.loadInbox();
+        const existing = items.find(it => it.id === id);
+        if (existing) return existing;   // Telegram redelivery/recovery is idempotent at the durable intake edge
+        if (items.length >= inboxLimits.maxInbox) throw new Error('channel inbox is full; refusing to acknowledge more work');
+        const item = { id: id, channel: String(e.channel || ''), message: JSON.parse(JSON.stringify(e.message)), ts: clock.now() };
+        items.push(item);
+        writeJsonAtomic(inboxFile(), { version: 1, items: items });
+        return item;
+      },
+
+      removeInbox(id) {
+        const items = this.loadInbox();
+        const next = items.filter(it => it.id !== String(id));
+        if (next.length === items.length) return false;
+        writeJsonAtomic(inboxFile(), { version: 1, items: next });
+        return true;
+      },
+
+      _internals: { trimTail, historyFile, chatMapFile, outboxFile, inboxFile, AID_RE, limits, outboxLimits, inboxLimits }
     };
   }
 
-  return { makeChannelStore, trimTail, _internals: { AID_RE, DEFAULTS } };
+  return { makeChannelStore, trimTail, _internals: { AID_RE, DEFAULTS, OUTBOX_DEFAULTS, INBOX_DEFAULTS } };
 });

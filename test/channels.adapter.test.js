@@ -285,6 +285,22 @@ async function run() {
     await a.disconnect();
   }
 
+  // ---- C2. a synchronous durable-intake failure is never acknowledged to the transport ----
+  {
+    const inbox = [];
+    const update = [{ id: 20, chat: 'c', type: 'dm', user: 'u', text: 'must survive', mid: '20' }];
+    const t = fakeTransport([update, update]);   // Telegram redelivers because the first offset was not advanced
+    let claims = 0;
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',
+      onInbound: m => { claims++; if (claims === 1) throw new Error('disk unavailable'); inbox.push(m); },
+      clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 8 && !inbox.length; i++) await tick();
+    A.eq(t.pollOffsets.slice(0, 3), [0, 0, 21], 'failed durable claim keeps offset 0; successful retry advances to 21');
+    A.eq(inbox.map(m => m.text), ['must survive'], 'the redelivered update reaches the handler exactly once after storage recovers');
+    await a.disconnect();
+  }
+
   // ---- D. send sends ONE message; a retryable failure gets exactly one resend; non-retryable does not ----
   {
     const t = fakeTransport([[]], [

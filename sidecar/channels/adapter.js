@@ -299,19 +299,23 @@
         return;
       }
       if (!n) return;                                       // non-text / uninteresting update
-      if (Number.isFinite(n.offset)) offset = Math.max(offset, n.offset + 1);   // advance so each update is processed once
+      // Offset acknowledgement happens only AFTER an admitted message has synchronously reached the hub's
+      // durable inbox seam. If that write throws, dispatch throws and the poll loop retries this exact update;
+      // Telegram is never told we consumed work that exists only in RAM.
+      const acknowledge = () => { if (Number.isFinite(n.offset)) offset = Math.max(offset, n.offset + 1); };
       if (n.message) {
         const m = n.message;
         const verdict = admission(m);
-        if (verdict === 'drop') return;
+        if (verdict === 'drop') { acknowledge(); return; }
         let own = null;
         if (m.chatType === 'dm') {
           own = ownerDecision(m.userId, m);
-          if (!own.ok) return;   // a non-owner DM never reaches the run host
+          if (!own.ok) { acknowledge(); return; }   // a non-owner DM never reaches the run host
           // Enrollment is an authentication exchange, not an agent instruction. Keep its code out of the
           // transcript/model prompt and acknowledge success directly on the transport.
           if (own.claimed && own.consume) {
             if (own.reply) Promise.resolve(transport.send(String(m.chatId), own.reply, {})).catch(() => {});
+            acknowledge();
             return;
           }
         }
@@ -355,7 +359,8 @@
         // before a single model call. Additive — a platform that never observes sends the exact old shape.
         if (verdict === 'observe') im.observeOnly = true;
         if (Array.isArray(m.mentions) && m.mentions.length) im.mentions = m.mentions.slice();
-        onInbound(im);
+        onInbound(im);   // production hub durably claims synchronously; a failed claim throws before acknowledgement
+        acknowledge();
       } else if (n.callback && onCallback) {
         /* Only the owner's taps act — and an UNCLAIMED owner is not a licence, it is the absence of one.
            `!owner ||` made this fail OPEN, and ownership is claimed on the DM path alone (a group message
@@ -364,6 +369,7 @@
            never be the trust-on-first-use moment either: the keyboard is on a message WE sent, so it proves
            nothing about who is talking. Fail closed, exactly like the empty-userId DM case. */
         if (owner && String(n.callback.userId) === owner) onCallback(n.callback);
+        acknowledge();
       } else if (n.membership && onMembership) {
         /* OUR OWN membership changed. Not admission-gated and not owner-gated: "you were kicked out of chat X"
            is true regardless of who did it, and a chat that has just removed us can hardly prove it is allowed
@@ -376,7 +382,8 @@
           byUserId: String(n.membership.byUserId || ''),
           ts: clock.now()
         });
-      }
+        acknowledge();
+      } else acknowledge();
     }
 
     // Client-side long-poll deadline: getUpdates parks server-side for pollTimeoutSec; a half-open socket can leave
@@ -420,9 +427,17 @@
         attempt = 0;
         statusUp();
         const updates = Array.isArray(raw) ? raw : (raw && Array.isArray(raw.updates) ? raw.updates : []);
+        let intakeFailed = null;
         for (let i = 0; i < updates.length; i++) {
           if (stopped) break;
-          dispatch(updates[i]);
+          try { dispatch(updates[i]); }
+          catch (e) { intakeFailed = e; break; }
+        }
+        if (intakeFailed && !stopped) {
+          statusDown('durable intake failed: ' + ((intakeFailed && intakeFailed.message) || 'storage error'));
+          try { console.error('[' + name + '] update was NOT acknowledged because durable intake failed:', (intakeFailed && intakeFailed.message) || intakeFailed); } catch (_) {}
+          await sleep(backoff[Math.min(attempt, backoff.length - 1)]);
+          attempt++;
         }
       }
     }
