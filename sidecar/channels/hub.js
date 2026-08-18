@@ -284,6 +284,13 @@
     // root doesn't inject one. It is a wall-time WAIT, not a clock READ — the determinism gate bans Date.now/random
     // here, not setTimeout (see adapter.js:70, discord.transport.js:33 for the identical fallback).
     const sleep = typeof o.sleep === 'function' ? o.sleep : (ms => new Promise(r => setTimeout(r, ms)));
+    // Durable replies must recover even when polling never drops. A separate outbound-only outage used to leave
+    // the outbox parked forever unless another message happened to send successfully. The timer is injected for
+    // deterministic tests, unref'd in production, and explicitly closed with the hub lifecycle.
+    const setTimer = typeof o.setTimeout === 'function' ? o.setTimeout : setTimeout;
+    const clearTimer = typeof o.clearTimeout === 'function' ? o.clearTimeout : clearTimeout;
+    const outboxRetryMs = Number.isFinite(o.outboxRetryMs) ? Math.max(1, Number(o.outboxRetryMs)) : 5000;
+    const outboxRetryMaxMs = Number.isFinite(o.outboxRetryMaxMs) ? Math.max(outboxRetryMs, Number(o.outboxRetryMaxMs)) : 60000;
     // Supersede-retry knobs (tunable for tests; the defaults give ~0.3s+0.6s+1.2s ≈ a couple seconds of grace). When a
     // second message aborts this chat's in-flight run, the fresh run can momentarily lose the same-agent workspace
     // mutex race in the host and get a TRANSIENT "already running a task" refusal — retry exactly that class a few
@@ -750,12 +757,13 @@
         try {
           const remainder = '⌛ delayed reply — the channel was unreachable when this was first sent:\n' + chunks.slice(failedAt).join('');
           store.pushOutbox({ channel: channel, chatId: String(chatId), text: remainder, runId: runId || '', agentId: agentId ? String(agentId) : '', reason: reason || '' });
+          scheduleOutboxRetry();
         } catch (_) {}
       }
       const ev = { channel, chatId: String(chatId), runId: runId || '', ok, chunks: chunks.length, reason: reason || '' };
       if (agentId) ev.agentId = String(agentId);   // additive/optional — attribute the dish to the acting agent
       try { emit('channel.delivery', ev); } catch (_) {}
-      if (ok) { try { const p = flushOutbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {} }   // a proven-healthy send is the cue to drain any backlog
+      if (ok) { try { kickOutbox(); } catch (_) {} }   // a proven-healthy send is the cue to drain any backlog
       // `text` is the FINAL chunk's text — the one a keyboard was attached to, and therefore the exact string a
       // later editMessage must rebuild on top of when it stamps the chosen answer in place.
       return { ok: ok, messageId: messageId, text: chunks.length ? chunks[chunks.length - 1] : '' };
@@ -768,8 +776,32 @@
     // dropped with an honest event only after MAX_OUTBOX_TRIES failed attempts, never silently.
     const MAX_OUTBOX_TRIES = 5;
     let flushing = false;
+    let outboxTimer = null;
+    let closed = false;
+    function pendingOutbox() {
+      try { return typeof store.loadOutbox === 'function' ? (store.loadOutbox(channel) || []) : []; }
+      catch (_) { return []; }
+    }
+    function scheduleOutboxRetry() {
+      if (closed || outboxTimer || typeof store.loadOutbox !== 'function') return;
+      const items = pendingOutbox();
+      if (!items.length) return;
+      const tries = Math.max(0, Number(items[0] && items[0].tries) || 0);
+      const delay = Math.min(outboxRetryMs * Math.pow(2, Math.min(tries, 8)), outboxRetryMaxMs);
+      outboxTimer = setTimer(() => {
+        outboxTimer = null;
+        Promise.resolve(flushOutbox()).catch(function () {});
+      }, delay);
+      if (outboxTimer && typeof outboxTimer.unref === 'function') outboxTimer.unref();
+    }
+    function kickOutbox() {
+      if (closed) return;
+      if (outboxTimer) { try { clearTimer(outboxTimer); } catch (_) {} outboxTimer = null; }
+      const p = flushOutbox();
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    }
     async function flushOutbox() {
-      if (flushing || typeof store.loadOutbox !== 'function') return;
+      if (closed || flushing || typeof store.loadOutbox !== 'function') return;
       flushing = true;
       try {
         const items = store.loadOutbox(channel);
@@ -804,7 +836,15 @@
           }
           break;   // transport still unhealthy — end this pass; the next healthy cue retries
         }
-      } finally { flushing = false; }
+      } finally {
+        flushing = false;
+        if (pendingOutbox().length) scheduleOutboxRetry();
+      }
+    }
+
+    function close() {
+      closed = true;
+      if (outboxTimer) { try { clearTimer(outboxTimer); } catch (_) {} outboxTimer = null; }
     }
 
     // Resolve which agent a chat is currently bound to, from the SAME precedence run resolution uses (minus the
@@ -1830,7 +1870,7 @@
     // queued while it was down (or while the sidecar was off — the outbox survives restarts) redelivers now.
     function onStatus(s) {
       try { emit('channel.connect', { channel, state: (s && s.state) || 'down', detail: (s && s.detail) || '' }); } catch (_) {}
-      if (s && s.state === 'up') { try { const p = flushOutbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {} }
+      if (s && s.state === 'up') { try { kickOutbox(); } catch (_) {} }
     }
 
     /* OUR OWN MEMBERSHIP CHANGED — we were blocked, kicked, or let back in.
@@ -1865,8 +1905,8 @@
     }
 
     return {
-      onInbound, onCallback, onStatus, onMembership,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn, startStream, streamOk, notModified }
+      onInbound, onCallback, onStatus, onMembership, close,
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, scheduleOutboxRetry, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn, startStream, streamOk, notModified }
     };
   }
 

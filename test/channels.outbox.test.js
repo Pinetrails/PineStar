@@ -34,7 +34,7 @@ function mkHub(store, sendImpl, events) {
     secrets: () => ({ key: 'k', model: 'm', configured: true }),
     emit: (name, payload) => events.push([name, payload]),
     newId: (() => { let n = 0; return () => 'run-' + (++n); })(),
-    sleep: () => Promise.resolve()
+    sleep: () => Promise.resolve(), outboxRetryMs: 5
   });
 }
 
@@ -113,6 +113,21 @@ function mkHub(store, sendImpl, events) {
     const hub = mkHub(store, async () => ({ ok: false, error: 'down' }), events);
     await hub.onInbound({ chatId: '11', chatType: 'dm', userId: 'u1', text: '/help', messageId: 'm3', ts: 3 });
     A.eq(store.loadOutbox('telegram'), [], 'a failed /command reply is not queued');
+  }
+
+  // ---- F2. outbound-only recovery retries itself; no new inbound or poll reconnect is required ----
+  {
+    const events = [];
+    const store = mkStore();
+    let sendOk = false;
+    const hub = mkHub(store, async () => (sendOk ? { ok: true } : { ok: false, error: 'outbound only' }), events);
+    await hub.onInbound({ chatId: '12', chatType: 'dm', userId: 'u1', text: 'finish this', messageId: 'm4', ts: 4 });
+    A.eq(store.loadOutbox('telegram').length, 1, 'outbound-only failure is queued');
+    sendOk = true;
+    await new Promise(r => setTimeout(r, 20));
+    A.eq(store.loadOutbox('telegram'), [], 'scheduled retry drains it without a new message or poll transition');
+    A.ok(events.some(e => e[0] === 'channel.delivery' && e[1].reason === 'redelivered'), 'scheduled recovery emits the proven redelivery');
+    hub.close();
   }
 
   // ---- G. give-up honesty: after MAX_OUTBOX_TRIES failed flushes the item drops with an ok:false event ----

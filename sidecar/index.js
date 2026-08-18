@@ -7385,6 +7385,7 @@ function publishCommandMenu(adapter, label) {
 function stopTelegram() {
   // Say we are going BEFORE the transport is torn down — after disconnect there is nothing left to say it with.
   if (telegram && telegram.adapter) telegramStatusLine(telegram.adapter, false);
+  if (telegram && telegram.hub && typeof telegram.hub.close === 'function') { try { telegram.hub.close(); } catch (_) {} }
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
   telegram = null;
   telegramStatus = { connected: false, state: 'down', detail: '', delivery: { state: 'unknown', detail: '', at: 0 } };
@@ -7562,6 +7563,7 @@ function startTelegramBot(botId) {
 }
 function stopTelegramBot(botId) {
   const e = telegramBots.get(botId);
+  if (e && e.hub && typeof e.hub.close === 'function') { try { e.hub.close(); } catch (_) {} }
   if (e && e.adapter) { try { e.adapter.disconnect(); } catch (_) {} }
   telegramBots.delete(botId);
 }
