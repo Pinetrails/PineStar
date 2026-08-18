@@ -16729,6 +16729,9 @@ async function handleLiveDoctor(req, res) {
           const token = channelToken('telegram', '', saved);
           const me = await makeTelegramTransport({ fetch: telegramTransportFetch(), token, apiBase: TELEGRAM_API_BASE }).getMe();
           if (!me || !me.ok) return { state: LiveDoctor.STATES.REFUSED, detail: 'Telegram rejected the configured bot credential' };
+          if (!status.ownerLocked) return { state: LiveDoctor.STATES.REFUSED, detail: 'polling may be available, but owner DMs are blocked until /pair is completed' };
+          if (!status.connected || status.state !== 'up') return { state: LiveDoctor.failureState(status.detail || status.state), detail: status.detail || ('poll adapter state is ' + status.state) };
+          if (status.delivery && status.delivery.state === 'down') return { state: LiveDoctor.STATES.UNREACHABLE, detail: 'polling is up, but outbound replies are degraded: ' + (status.delivery.detail || 'send failed') };
           if (status.delivery && status.delivery.state === 'up') return { state: LiveDoctor.STATES.ROUND_TRIP, detail: 'authentication answered; prior delivery receipt is successful' };
           return { state: LiveDoctor.STATES.AUTHENTICATED, detail: 'authentication answered; message delivery was not exercised' };
         } catch (e) { return { state: LiveDoctor.failureState(e), detail: (e && e.message) || 'Telegram probe failed' }; }
@@ -16745,6 +16748,9 @@ async function handleLiveDoctor(req, res) {
       try {
         const me = await makeTelegramTransport({ fetch: telegramTransportFetch(), token: String(saved.token || ''), apiBase: TELEGRAM_API_BASE }).getMe();
         if (!me || !me.ok) return { state: LiveDoctor.STATES.REFUSED, detail: 'Telegram rejected the configured bot credential' };
+        if (!bot.ownerLocked) return { state: LiveDoctor.STATES.REFUSED, detail: 'polling may be available, but owner DMs are blocked until /pair is completed' };
+        if (!bot.connected || bot.state !== 'up') return { state: LiveDoctor.failureState(bot.detail || bot.state), detail: bot.detail || ('poll adapter state is ' + bot.state) };
+        if (bot.delivery && bot.delivery.state === 'down') return { state: LiveDoctor.STATES.UNREACHABLE, detail: 'polling is up, but outbound replies are degraded: ' + (bot.delivery.detail || 'send failed') };
         if (bot.delivery && bot.delivery.state === 'up') return { state: LiveDoctor.STATES.ROUND_TRIP, detail: 'authentication answered; prior delivery receipt is successful' };
         return { state: LiveDoctor.STATES.AUTHENTICATED, detail: 'authentication answered; message delivery was not exercised' };
       } catch (e) { return { state: LiveDoctor.failureState(e), detail: (e && e.message) || 'Telegram probe failed' }; }
