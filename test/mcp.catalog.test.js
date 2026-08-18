@@ -6,6 +6,7 @@
 'use strict';
 const A = require('./_assert.js');
 const C = require('../sidecar/mcp/catalog.js');
+const ClassIcons = require('../frontend/app/classicons.js');
 
 const AUTH = { none: 1, apikey: 1, oauth: 1 };
 // the exact id shape POST /api/connectors accepts (index.js handleConnectorUpsert) — a catalog id that
@@ -135,6 +136,22 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
   A.eq(C.get('composio').keyHeader, 'x-consumer-api-key', 'Composio public metadata carries the required header name, never its value');
   A.ok(C.categories().indexOf('Social') >= 0, 'Social category is present (home for X)');
   A.eq(C.get('x-twitter').category, 'Social', 'X is filed under Social');
+}
+
+// ---- H2. Zernio: one direct first-party OAuth card for the multi-network social surface ----
+{
+  const zernio = C.get('zernio');
+  A.ok(zernio, 'Zernio is in the catalog');
+  A.eq(zernio.category, 'Social', 'Zernio is filed under Social');
+  A.eq(zernio.authType, 'oauth', 'Zernio uses its recommended browser OAuth flow');
+  A.eq(zernio.url, 'https://mcp.zernio.com/mcp', 'Zernio uses its official hosted Streamable-HTTP endpoint');
+  A.eq(zernio.official, true, 'Zernio is marked first-party');
+  A.eq(zernio.installable, false, 'Zernio is stood up by OAuth rather than direct token upsert');
+  A.eq(C.installConfig('zernio'), null, 'the OAuth start/callback flow owns Zernio setup');
+  A.ok(zernio.aliases.indexOf('instagram') >= 0 && zernio.aliases.indexOf('tiktok') >= 0 && zernio.aliases.indexOf('linkedin') >= 0,
+    'common downstream social-network searches find the single Zernio card');
+  A.ok(!!ClassIcons.platformIcon(zernio), 'Zernio inherits the established Social category seal');
+  A.eq(C.list().filter(e => e.id === 'zernio' || /^zernio$/i.test(e.name)).length, 1, 'Zernio appears exactly once');
 }
 
 // ---- I. wave-2 additions: present, correctly tiered, and the Design category exists ----
