@@ -146,12 +146,20 @@ async function main() {
         return { r, ink, hash: hsh };
       };
       const rows = {};
-      for (const id of ['chair', 'longtable', 'loungetable', 'armchair', 'chaise', 'sectional']) {
+      /* Read the live catalog instead of maintaining a second prop list here. Retired props keep
+         neither a catalog row nor a footprint, while newly-authored facings become eligible through
+         PropSprites.facings(). The proof therefore follows exactly what REFIT can currently offer. */
+      const ids = PropSprites.CATALOG.map(p => p.id).filter(id => PropSprites.facings(id).length > 1);
+      for (const id of ids) {
         const fs = PropSprites.facings(id).map(r => sig(id, r));
         rows[id] = { facings: fs, distinct: new Set(fs.map(s => s.hash)).size === fs.length };
       }
       return rows;
     })()`);
+
+    const badPixels = Object.entries(out.pixels).filter(([, row]) =>
+      !row.distinct || row.facings.some(f => !f.ink));
+    if (badPixels.length) throw new Error('orientation pixel proof failed: ' + badPixels.map(([id]) => id).join(', '));
 
     out.consoleErrors = await evalJS(cdp, `(() => (window.__errs || []).slice(0, 5))()`);
     console.log(JSON.stringify(out, null, 2));
