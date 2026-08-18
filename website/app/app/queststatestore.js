@@ -50,11 +50,11 @@ const QuestStateStore = (() => {
     return r.completions;
   }
 
-  // sound + toast + flourish. Direct calls only — no bus, no beat slot, no XP.
+  // sound + flourish + COMMS line. Direct calls only — no bus, no beat slot, no XP. NO StationUI.notify
+  // (notification diet, 2026-08-18): the sting + gold row flash + broadcast carry the moment; the bell doesn't.
   function celebrate(q) {
     flourish[q.id] = Date.now() + FLOURISH_MS;
     try { if (typeof SFX === 'object' && SFX.quest) SFX.quest(); } catch (_) {}
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('⚑ quest complete — ' + (q.title || q.id), 'gold');
     if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests', false);   // if the log is open, the row flashes gold NOW (rerender is a no-op when closed)
     // COMMS: the terse quest-complete broadcast — an ambient system line, not a beat-slot card (coalesced +
     // in-game-gated inside Chat.broadcast, so it never competes with the post-run ask chain).

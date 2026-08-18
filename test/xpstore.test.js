@@ -22,6 +22,9 @@ global.StationUI = {
   notify: (text, kind) => notices.push({ text, kind }),
   setRoster: list => rosterSnapshots.push(list.map(a => ({ id: a.id, level: a.stats && a.stats.level })))
 };
+// Notification diet (2026-08-18): XP flavor announces over COMMS broadcast only — the bell stays quiet.
+const broadcasts = [];
+global.Chat = { broadcast: (text, opts) => broadcasts.push({ text, opts }) };
 let sfx = 0;
 global.SFX = { level: () => { sfx++; } };
 global.Tutorial = { onLevelUp: () => {} };
@@ -72,8 +75,9 @@ A.eq(researcher.stats.level, 2, 'researcher owns its feedback-driven level-up st
 A.eq(researcher.stats.counters.positiveFeedback, 3, 'researcher records positive feedback receipts');
 A.eq(world.pulse, [{ agentId: 'researcher', level: 2 }], 'level-up pulse is addressed to the researcher');
 A.ok(!world.pulse.some(p => p.agentId === 'agent'), 'no overseer pulse fires for a researcher level-up');
-A.ok(notices.some(n => /RESEARCHER reached Level 2/.test(n.text)), 'toast names the researcher');
-A.ok(!notices.some(n => /OVERSEER reached Level 2/.test(n.text)), 'toast does not name the overseer');
+A.eq(notices.length, 0, 'notification diet: a level-up never toasts (COMMS + pulse + sting carry it)');
+A.ok(broadcasts.some(b => /RESEARCHER REACHED LEVEL 2/.test(b.text)), 'the COMMS broadcast names the researcher');
+A.ok(!broadcasts.some(b => /OVERSEER REACHED LEVEL 2/.test(b.text)), 'the broadcast does not name the overseer');
 A.ok(world.setXp.some(x => x.agentId === 'researcher' && x.xp && x.xp.level === 2), 'world XP snapshot is stored under researcher');
 A.ok(!world.setXp.some(x => x.agentId === 'agent' && x.xp && x.xp.level === 2), 'researcher XP snapshot is not stored under overseer');
 A.ok(rosterSnapshots.some(list => list.some(a => a.id === 'researcher' && a.level === 2)), 'the left crew manifest receives the new researcher level immediately');
@@ -118,15 +122,12 @@ A.eq((XpStore.stationStats().counters || {}).positiveFeedback, 6, 'station rollu
    already met — the app contradicting its own state. It must run for EVERY agent (a specialist's case is not
    the hero's), it must reach the station rollup, and it must stay SILENT: these are past facts being
    recognized, not moments happening now. */
-const broadcasts = [];
-global.Chat = { broadcast: (text, opts) => broadcasts.push({ text, opts }) };
-
 // two mid-curve saves that predate S4's badges: 8 shipped tasks + 30 successful tool calls, nothing lit.
 const mkLegacy = (id, name) => ({ id, name, stats: { xp: 0, level: 1, lifetimeXp: 0, confidence: 50, samples: 0, counters: { tasksDone: 8, runs: 9, toolsOk: 30 }, milestones: [] } });
 const oldHero = mkLegacy('agent', 'OVERSEER');
 const oldSpec = mkLegacy('scribe', 'SCRIBE');
 const oldRoster = new Map([['agent', oldHero], ['scribe', oldSpec]]);
-const noticesBefore = notices.length, sfxBefore = sfx;
+const noticesBefore = notices.length, broadcastsBefore = broadcasts.length, sfxBefore = sfx;
 
 XpStore.init({
   getAgent: (id) => oldRoster.get(id || 'agent') || null,
@@ -142,16 +143,16 @@ A.ok(oldSpec.stats.milestones.indexOf('still_here') !== -1, 'a SPECIALIST case i
 A.ok((XpStore.stationStats().milestones || []).indexOf('workhorse') !== -1, 'the station rollup is reconciled off its own record (40 tasks)');
 A.eq(oldHero.stats.xp, 0, 'the backfill mints no XP');
 A.eq(notices.length, noticesBefore, 'the backfill is SILENT — no gold toast for work done weeks ago');
-A.eq(broadcasts.length, 0, '…and no TROPHY EARNED broadcast burst at boot');
+A.eq(broadcasts.length, broadcastsBefore, '…and no TROPHY EARNED broadcast burst at boot');
 A.eq(sfx, sfxBefore, '…and no sting');
 
-// a badge earned LIVE still announces — and now as a sentence + its real trophy-case label, never a raw slug.
-// (ARCHIVIST/WORKHORSE/NIGHT SHIFT/VETERAN used to fall through to "Milestone — night_shift".)
+// a badge earned LIVE still announces — over COMMS only (notification diet: no bell entry), with its real
+// trophy-case label, never a raw slug.
 bus.emit('workitem.delivered', { agentId: 'agent', workitemId: 'w1', finalQueueId: 'q1' });
 A.ok(oldHero.stats.milestones.indexOf('night_shift') !== -1, 'a real delivery still earns NIGHT SHIFT live');
-A.ok(notices.some(n => n.text === 'Milestone — first external delivery'), 'the live toast reads as a sentence, not a slug');
+A.eq(notices.length, noticesBefore, 'notification diet: a live milestone never toasts (sting + broadcast carry it)');
 A.ok(broadcasts.some(b => b.text === 'TROPHY EARNED · NIGHT SHIFT'), 'the broadcast shouts the trophy-case label');
-A.ok(!notices.some(n => /night_shift/.test(n.text)) && !broadcasts.some(b => /night_shift/.test(b.text)), 'no raw slug reaches the Commander');
+A.ok(!broadcasts.some(b => /night_shift/.test(b.text)), 'no raw slug reaches the Commander');
 // the label comes from the xp.js catalogue, so a badge added there can never announce as an id.
 A.ok(Xp.MILESTONES.every(m => broadcasts.every(b => !b.text.includes('_'))), 'every announced name is a real label');
 

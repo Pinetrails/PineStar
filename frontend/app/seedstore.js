@@ -72,7 +72,7 @@ const SeedStore = (() => {
       Recipes.saveCustom(draft);
       if (typeof MintStore !== 'undefined' && MintStore.markMinted) MintStore.markMinted(s.key);
       if (typeof SFX !== 'undefined' && SFX.seed) { try { SFX.seed(); } catch (_) {} }   // G3a: saving a seed gets its planting chime (was mute)
-      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('Saved a seed to your shelf — find it under RECIPES', 'gold');
+      // NO StationUI.notify (notification diet): the chime is the moment; the seed is findable under RECIPES.
     } catch (_) {}
   }
 

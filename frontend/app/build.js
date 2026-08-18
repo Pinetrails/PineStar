@@ -299,7 +299,7 @@ const Build = (() => {
     window.removeEventListener('blur', onBlur);
     if (typeof SFX !== 'undefined') SFX.close();
     if (opts.persist) opts.persist();
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('Station layout saved', 'good');
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('Station layout saved', 'good', undefined, { transient: true });
     if (opts.world && opts.world.refit) opts.world.refit();     // recenter the live world on the new build
     if (opts.world && opts.world.start) opts.world.start();     // resume the live sim with the new build
     if (opts.onClose) opts.onClose();
@@ -3371,7 +3371,7 @@ const Build = (() => {
     const el = root.querySelector('.refit-tier');
     const el2 = root.querySelector('.refit-title');
     [el, el2].forEach(n => { if (!n) return; n.classList.remove('refit-levelup'); void n.offsetWidth; n.classList.add('refit-levelup'); });
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('Your station is now a ' + tier, 'gold');
+    // NO StationUI.notify (notification diet): the REFIT title flash + the new tier word ARE the announcement.
   }
 
   function onKey(ev) {

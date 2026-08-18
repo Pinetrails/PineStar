@@ -85,12 +85,12 @@ const QuestLedgerStore = (() => {
       announceNewQuest(q);
     }
   }
-  // ONE glance per new quest: a persistent NOTIFICATIONS record + gold toast (StationUI.notify) and a terse ambient
-  // COMMS line (Chat.broadcast — Lane 1's queue means it is never dropped by the celebration coalesce). All guarded:
-  // in a headless/test context (no StationUI/Chat) this is a silent no-op, never a throw.
+  // ONE glance per new quest: a terse ambient COMMS line (Chat.broadcast — Lane 1's queue means it is never
+  // dropped by the celebration coalesce). NO StationUI.notify (notification diet, 2026-08-18): the quest log
+  // is the quest surface — the bell is reserved for things that need the Commander. Guarded: in a headless/test
+  // context (no Chat) this is a silent no-op, never a throw.
   function announceNewQuest(q) {
     const title = String((q && q.title) || (q && q.id) || 'a quest').replace(/\s+/g, ' ').trim() || 'a quest';
-    if (typeof StationUI !== 'undefined' && typeof StationUI.notify === 'function') { try { StationUI.notify('⚑ new quest — ' + title, 'gold'); } catch (_) {} }
     if (typeof Chat !== 'undefined' && typeof Chat.broadcast === 'function') { try { Chat.broadcast('NEW QUEST · ' + title.toUpperCase(), { highlight: title.toUpperCase(), tone: 'gold' }); } catch (_) {} }
   }
 

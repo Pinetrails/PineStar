@@ -3540,7 +3540,7 @@ const App = (() => {
   function exportSession(id, format) {
     const w = Workstreams.get(id), bundle = w && Workstreams.exportConversation(id, format);
     const ok = sessionDownload(bundle); if (ok) SFX.click(); else SFX.bad();
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? ('exported “' + ((w && w.title) || 'General') + '” — hidden data and secrets excluded') : 'nothing to export in “' + ((w && w.title) || 'General') + '”', ok ? '' : 'warn');
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? ('exported “' + ((w && w.title) || 'General') + '” — hidden data and secrets excluded') : 'nothing to export in “' + ((w && w.title) || 'General') + '”', ok ? '' : 'warn', undefined, { transient: true });
   }
   function renderSessionSearch() {
     const input = el('ws-search'), out = el('ws-search-results'), sessions = el('workstreams'); if (!input || !out) return;
@@ -3686,7 +3686,7 @@ const App = (() => {
       SFX.close();
       if (wasActive && Workstreams.activeId() !== id) loadActiveStream();   // archiving the OPEN stream falls back to General
       renderRail(); persist();
-      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((nowArchived ? 'archived ' : 'restored ') + '“' + label + '”', '');
+      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((nowArchived ? 'archived ' : 'restored ') + '“' + label + '”', '', undefined, { transient: true });
     }
   }
   function deleteWorkstream(id) {
@@ -3709,7 +3709,7 @@ const App = (() => {
     if (String(id).indexOf('workshop-') === 0 && typeof WorkshopStore !== 'undefined' && WorkshopStore.discardIfPending) {
       WorkshopStore.discardIfPending(agentId, String(id).slice('workshop-'.length)).catch(() => {});
     }
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('deleted “' + label + '”', 'warn');
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('deleted “' + label + '”', 'warn', undefined, { transient: true });
     return true;
   }
   // re-open whatever the store now treats as active (after archive/delete bumps the open stream to General)
@@ -4153,7 +4153,7 @@ const App = (() => {
       fetch('/api/projects/bless', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ path: p }) })
         .then(res => res.json().then(j => ({ ok: res.ok, j })).catch(() => ({ ok: false, j: null })))
         .then(({ ok, j }) => {
-          if (ok && j && j.ok) { SFX.open(); if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('added “' + (j.root || p) + '”', ''); renderProjects(); }
+          if (ok && j && j.ok) { SFX.open(); if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('added “' + (j.root || p) + '”', '', undefined, { transient: true }); renderProjects(); }
           else { showHint((j && j.reason) || 'could not add that folder', true); SFX.bad(); }
         })
         .catch(() => { showHint('could not reach the station', true); SFX.bad(); });

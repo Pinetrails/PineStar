@@ -55,7 +55,7 @@ A.eq(saved[0].name, 'Draft notes for …', 'the saved recipe is named from the s
 A.eq(saved[0].task, 'draft notes for {input}', 'the saved recipe keeps the {input} gap token');
 A.ok(saved[0].params.some(p => p.required), 'the saved recipe has a REQUIRED gap param (Recipes derives it)');
 A.eq(minted[0], 'k1', 'the minted shape is marked so it never re-proposes');
-A.ok(notes.length >= 1, 'a confirmation toast fires');
+A.eq(notes.length, 0, 'notification diet (2026-08-18): the save confirms with its chime, never a bell entry');
 
 /* ---------- LOOP CLOSURE (Slice 8 #16): a SAVED seed becomes PITCHABLE — it lands on Recipes.list(), the exact
    shelf the First Pitch / ongoing-suggestion engine offers from. usage → mint → seed → save → Recipes.list →
