@@ -37,13 +37,15 @@ function station(objsByRoom, assignedRoom) {
   A.eq(empty.tools.length, 0, 'empty room -> no tools');
 
   // capability follows the ASSIGNED room, not objects elsewhere
+  // `todo` is ABSENT from notebook-only rooms since 2026-08-17: it rides the COMPUTER (taskplan freebie), so
+  // any agent that can RUN has a task list — a notebook-less station no longer silently loses planning.
   const split = resolveTools('ag', station({ quarters: ['notebook'], lab: ['computer'] }, 'quarters'));
-  A.eq(split.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'only assigned-room objects grant tools');
+  A.eq(split.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'widget.set'], 'only assigned-room objects grant tools');
   A.ok(!split.hasCompute, 'a computer in a DIFFERENT room does not grant compute');
 
   // de-dupe duplicate objects
   const dup = resolveTools('ag', station({ quarters: ['notebook', 'notebook'] }, 'quarters'));
-  A.eq(dup.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'widget.set'], 'duplicate objects de-duped');
+  A.eq(dup.tools.slice().sort(), ['notebook.feedback', 'notebook.read', 'notebook.write', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'widget.set'], 'duplicate objects de-duped');
 
   // QUEST V2 §B fix: quest.update rides the COMPUTER (the compute freebie), not the notebook. A computer-only room
   // therefore grants quest.update while granting NO notebook tool — the exact reach a bare interactive agent gets.
@@ -53,8 +55,9 @@ function station(objsByRoom, assignedRoom) {
   // is inert unless the host also minted a cronJobId for this exact scheduled run.
   // deliverable_note rides COMPUTER for the same reason quest.update/tool.search do: it must exist on the
   // compute-only interactive office, which is exactly the surface most likely to produce an unnamed file.
-  A.eq(compOnly.tools.slice().sort(), ['code.run', 'deliverable_note', 'quest.update', 'routine.notepad', 'station.inspect', 'tool.search'], 'computer-only room grants the host-scoped routine scratch tool + the deliverable naming freebie, no general notebook tools');
+  A.eq(compOnly.tools.slice().sort(), ['code.run', 'deliverable_note', 'quest.update', 'routine.notepad', 'station.inspect', 'todo', 'tool.search'], 'computer-only room grants the host-scoped routine scratch tool + the deliverable naming and task-plan freebies, no general notebook tools');
   A.eq(compOnly.approvalRules['quest.update'].requiresConsent, false, 'quest.update is consent-free (freebie trust class)');
+  A.eq(compOnly.approvalRules['todo'].requiresConsent, false, 'todo is consent-free (taskplan freebie — a runnable agent always has a task list)');
 
   // unknown agent -> nothing
   A.eq(resolveTools('ghost', station({ quarters: ['computer'] }, 'quarters')).tools.length, 0, 'unknown agent -> no tools');

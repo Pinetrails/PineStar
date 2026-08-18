@@ -32,7 +32,7 @@ const CAPS = [
   // NOT "control the desktop computer": computer.use/desktop.open carry no capability grant at all and are
   // stripped unconditionally by enforceSyntheticOnly, so claiming desktop control here was a standing lie.
   { id: 'workbench',    probe: 'shell.exec',      have: 'run shell commands and verify code', object: 'a WORKBENCH' },
-  { id: 'memory',       probe: 'notebook.write',  have: 'keep long-term memory, task plans, reusable skills, and recall conversation history', object: 'a NOTEBOOK' },
+  { id: 'memory',       probe: 'notebook.write',  have: 'keep long-term memory, reusable skills, and recall conversation history', object: 'a NOTEBOOK' },   // task plans ride the computer now (taskplan freebie, 2026-08-17)
   { id: 'studio',       probe: 'image_generate',  have: 'generate and analyze images', object: 'a STUDIO' },
   { id: 'jukebox',      probe: 'spotify_play',    have: 'search and control Spotify', object: 'a JUKEBOX' }
 ];

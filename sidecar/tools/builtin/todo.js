@@ -112,7 +112,9 @@
     const todoTool = {
       // NO consent gate: the plan is the agent's OWN working memory — no filesystem reach, no network,
       // no outward effect — exactly like notebook.write. Approval is reserved for outward mutations.
-      name: 'todo', capability: 'memory', scope: 'write', requiresConsent: false, timeoutMs: 5000,
+      // capability 'taskplan' (not 'memory') since 2026-08-17: the grant rides the COMPUTER object so every
+      // runnable agent has a task list — see the CAP_REGISTRY note. The plan still persists via the notebook STORE.
+      name: 'todo', capability: 'taskplan', scope: 'write', requiresConsent: false, timeoutMs: 5000,
       description: 'Manage your task list for this session — use it for any job with 3+ steps or multiple requests, to plan and keep track of progress. Call with NO arguments to read the current list. To write, pass "todos": an array of { id, content, status } items where status is pending | in_progress | completed | cancelled. merge=false (default) replaces the whole list with a fresh plan; merge=true updates existing items by id and appends new ones. List order is priority; keep only ONE item in_progress at a time; mark an item completed the moment it is done, and cancel + re-add if something has to change. Always returns the full updated list. Your active plan is preserved across context compaction.',
       schema: { type: 'object', properties: {
         todos: { type: 'array', items: { type: 'object', required: ['id', 'content', 'status'], properties: {

@@ -55,13 +55,25 @@
       { capId: 'stationinfo', tool: 'station.inspect', scope: 'read', requiresConsent: false, network: false },
       // Host-scoped scheduled scratchpad: the computer is present on every runnable station, while the tool
       // itself refuses any run without a host-minted cronJobId. This does not grant general notebook access.
-      { capId: 'routinescratch', tool: 'routine.notepad', scope: 'write', requiresConsent: false, network: false }
+      { capId: 'routinescratch', tool: 'routine.notepad', scope: 'write', requiresConsent: false, network: false },
+      // TASK PLAN: the agent's in-session todo list — MOVED here from `notebook` (memory) 2026-08-17. Tracking
+      // your own multi-step plan is part of being able to think at all, the same freebie class as quest.update
+      // directly above and for the same mechanical reason: `computer` is the ONE object in BOTH the
+      // compute-only interactive office and fullOffice, so a station without a placed NOTEBOOK no longer
+      // silently has NO task-list mechanism (and loop.js's post-compaction todo re-injection was dead on
+      // exactly those stations). capId is 'taskplan', NOT 'compute' (resolve.js treats a 'compute' grant as
+      // the COMPUTE GATE and never emits it as a callable tool — the trap quest.update documents). No
+      // TOOLSETS_META row (never a toggleable family), no capsummary CAPS row (never advertised or nagged).
+      // The plan itself still persists through the notebook STORE — this grant is about tool AVAILABILITY,
+      // not where the bytes live. (see tools/builtin/todo.js)
+      { capId: 'taskplan', tool: 'todo', scope: 'write', requiresConsent: false, network: false }
     ],
     notebook: [
       { capId: 'memory', tool: 'notebook.write', scope: 'write', requiresConsent: false, network: false },   // private sandboxed memory — no consent gate (see notebook.js)
       { capId: 'memory', tool: 'notebook.read', scope: 'read', requiresConsent: false, network: false },
       { capId: 'memory', tool: 'notebook.feedback', scope: 'write', requiresConsent: false, network: false }, // rate a recalled memory helpful/unhelpful — trust nudge only (see notebook.js)
-      { capId: 'memory', tool: 'todo', scope: 'write', requiresConsent: false, network: false },             // in-session task plan — the agent's working memory (see todo.js)
+      // `todo` was MOVED to the `computer` object (above, capId 'taskplan') 2026-08-17 — a station without a
+      // placed notebook had no task-list mechanism at all, silently. See the note there.
       { capId: 'memory', tool: 'recall_conversation', scope: 'read', requiresConsent: false, network: false }, // H1.3: search your own past dialogue (transcriptstore) — read-only, no consent (see recall.js)
       { capId: 'memory', tool: 'skill.write', scope: 'write', requiresConsent: false, network: false },        // H4: save/edit a reusable procedure (see skills.js)
       { capId: 'memory', tool: 'skill.manage', scope: 'write', requiresConsent: false, network: false },       // H4: create/patch/archive saved skills

@@ -7,8 +7,7 @@
      fs.*                                        -> 'cabinet'   (files)
      web_search / web_fetch / public browser.*   -> 'dish'      (web)
      channel.*                                   -> 'dish'      (outbound comms — the dish transmits too)
-     notebook.* / skill.* / recall_conversation
-       / todo                                    -> 'notebook'  (memory)
+     notebook.* / skill.* / recall_conversation  -> 'notebook'  (memory; todo moved to `computer` 2026-08-17)
      image_*                                     -> 'studio'    (media)
      spotify_*                                   -> 'jukebox'   (spotify)
 
@@ -34,12 +33,13 @@ const ToolProps = (() => {
     // this particular read never leaves the machine.
     'connectors.list': 'dish',
     voice_generate: 'studio',   // the studio makes audio as well as images — same prop, same pulse
-    todo: 'notebook',
     recall_conversation: 'notebook',
     'widget.set': 'notebook'   // WIDGET RAILS Phase 2: agent-fed rail readout — a notebook-object (memory) grant
     // QUEST V2 §B: quest.update is DELIBERATELY absent here → null. It moved from the notebook object to the `computer`
     // object (the 'quest' freebie capId), and the compute gate has no cap-prop pulse (model.chat is null for the same
     // reason). So updating a quest lights no placed-cap prop — correct: it rides compute, not a placeable object.
+    // TASK PLAN (2026-08-17): `todo` is absent for the same reason — it moved to the `computer` object (the
+    // 'taskplan' freebie capId) so a station without a placed notebook still has a task list. Same rule as quest.
   };
   // family prefix -> prop type (checked after EXACT; first match wins)
   const PREFIX = [

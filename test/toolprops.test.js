@@ -30,7 +30,7 @@ A.eq(map('web_fetch'), 'dish', 'web_fetch -> dish');
 A.eq(map('notebook.write'), 'notebook', 'notebook.write -> notebook');
 A.eq(map('skill.view'), 'notebook', 'skill.view -> notebook');
 A.eq(map('recall_conversation'), 'notebook', 'recall_conversation -> notebook');
-A.eq(map('todo'), 'notebook', 'todo -> notebook');
+A.eq(map('todo'), null, 'todo rides the computer (taskplan freebie, 2026-08-17) — no cap-prop pulse, same rule as quest.update');
 A.eq(map('image_generate'), 'studio', 'image_generate -> studio');
 A.eq(map('spotify_play'), 'jukebox', 'spotify_play -> jukebox');
 
