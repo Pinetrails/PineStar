@@ -9,5 +9,7 @@ This update improves long-running agent work, makes memory and skills more relev
 - Reflection, study, scouting, compaction, and skill maintenance can use a configurable lower-cost auxiliary model and effort tier, with safe fallback to the active run model where required.
 - REFIT now supports honest authored furniture facings and footprint-aware rotation for eligible decor, including chairs, tables, booths, rugs, and floor decals.
 - The furniture catalog adds distinct 3x3 and 5x5 rugs, improves several top-down prop projections, and corrects seating behavior for profile chairs.
+- New station props include cryo pods, incubators, telescopes, camera rigs, heavy bags, bench presses, and wall-mounted weapon racks, with paired left/right variants where direction matters.
+- The abilities catalog adds Parallel Search and local Unreal Engine MCP connections, Brave Search and Firecrawl API-key entries, and Gmail/Outlook presets through the existing Composio connector.
 - Idle crews gather more naturally while retaining wall, visibility, pathing, and personal-space constraints.
 - Existing stations, orientation-free props, memory settings, and saved agent configuration continue to load with backward-compatible defaults.
