@@ -139,6 +139,30 @@ async function run() {
     A.ok(e && /fetch failed \(ENOTFOUND api\.telegram\.org\)/.test(e.message), 'undici cause is surfaced for an actionable outage diagnosis');
   }
 
+  // ---- C2. every non-poll Bot API call has a hard deadline; getUpdates keeps its dedicated signal ----
+  {
+    const hold = setInterval(() => {}, 1000);   // AbortSignal.timeout is unref'd by Node; keep this proof alive
+    const parked = fakeFetch(() => ({ __park: true }));
+    const bounded = makeTelegramTransport({ fetch: parked, token: 'TKN', requestTimeoutMs: 15 });
+    const me = await bounded.getMe();
+    A.ok(me.ok === false && /abort/i.test(me.error), 'a half-open getMe settles at the request deadline');
+    const sent = await bounded.send('1', 'hello');
+    A.ok(sent.ok === false && sent.retryable === false && /abort/i.test(sent.error), 'a half-open send settles instead of stranding the reply');
+    const file = await bounded.getFile('f1');
+    A.ok(file.ok === false && /abort/i.test(file.error), 'a half-open media lookup settles too');
+
+    let pollSettled = false;
+    const pollAbort = new AbortController();
+    const poll = bounded.getUpdates({ offset: 0, timeoutSec: 50, signal: pollAbort.signal }).then(
+      () => { pollSettled = true; }, () => { pollSettled = true; }
+    );
+    await new Promise(r => setTimeout(r, 30));
+    A.eq(pollSettled, false, 'getUpdates is not incorrectly capped by the shorter ordinary-request deadline');
+    pollAbort.abort();
+    await poll;
+    clearInterval(hold);
+  }
+
   // ---- D. send: URL/body correct, message_id mapped, `signal` stripped from the wire body ----
   {
     const f = fakeFetch(() => resp(200, { ok: true, result: { message_id: 42 } }));

@@ -282,7 +282,7 @@
 
   function makeTelegramAdapter(opts) {
     const o = opts || {};
-    const transport = makeTelegramTransport({ fetch: o.fetch, token: o.token, apiBase: o.apiBase });
+    const transport = makeTelegramTransport({ fetch: o.fetch, token: o.token, apiBase: o.apiBase, requestTimeoutMs: o.requestTimeoutMs });
     return makeChannelAdapter({
       transport: transport,
       normalize: normalize,

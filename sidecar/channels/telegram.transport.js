@@ -36,6 +36,10 @@
      'poll'/'poll_answer', 'chat_member', 'chat_join_request' — each would be traffic with no consumer. */
   const ALLOWED_UPDATES = ['message', 'edited_message', 'channel_post', 'edited_channel_post', 'callback_query', 'my_chat_member'];
   const DEFAULT_API_BASE = 'https://api.telegram.org';
+  // Every Bot API request except getUpdates has a bounded wall-clock. A half-open outbound socket used to
+  // leave getMe/connect or a completed reply pending forever while the independent poller still showed green.
+  // getUpdates supplies its own longer poll deadline from adapter.js and explicitly opts out below.
+  const DEFAULT_REQUEST_TIMEOUT_MS = 15000;
 
   // ---- outbound media limits + method table (Bot API facts, not our policy) ----
   const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;   // Bot API upload ceiling for a bot (photos are lower; Telegram re-encodes)
@@ -55,6 +59,7 @@
     const o = opts || {};
     const fetchImpl = o.fetch;
     const token = o.token;
+    const requestTimeoutMs = Number(o.requestTimeoutMs) > 0 ? Number(o.requestTimeoutMs) : DEFAULT_REQUEST_TIMEOUT_MS;
     if (typeof fetchImpl !== 'function') throw new Error('makeTelegramTransport: an injected fetch is required');
     if (!token || typeof token !== 'string') throw new Error('makeTelegramTransport: a bot token is required');
     const BASE = (o.apiBase || DEFAULT_API_BASE).replace(/\/+$/, '') + '/bot' + token;   // token only ever here
@@ -125,14 +130,22 @@
     }
 
     // one Bot API call -> { res, data }. data.ok distinguishes success ({result}) from error ({error_code,description}).
-    async function call(method, payload, signal) {
+    function requestSignal(signal, deadlineMs) {
+      const ms = deadlineMs === 0 ? 0 : (Number(deadlineMs) > 0 ? Number(deadlineMs) : requestTimeoutMs);
+      if (!ms || typeof AbortSignal === 'undefined' || typeof AbortSignal.timeout !== 'function') return signal;
+      const deadline = AbortSignal.timeout(ms);
+      const composable = signal && typeof signal.addEventListener === 'function';
+      return composable && typeof AbortSignal.any === 'function' ? AbortSignal.any([signal, deadline]) : (signal || deadline);
+    }
+
+    async function call(method, payload, signal, deadlineMs) {
       let res;
       try {
         res = await fetchImpl(BASE + '/' + method, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify(payload || {}),
-          signal: signal
+          signal: requestSignal(signal, deadlineMs)
         });
       } catch (e) {
         const safe = new Error(errOf(e, 'network error'));
@@ -181,13 +194,13 @@
     }
 
     // one multipart Bot API call. Same { res, data } contract as call(), so every caller reads results identically.
-    async function callMultipart(method, fields, files, signal) {
+    async function callMultipart(method, fields, files, signal, deadlineMs) {
       const { boundary, body } = encodeMultipart(fields, files);
       const res = await fetchImpl(BASE + '/' + method, {
         method: 'POST',
         headers: { 'content-type': 'multipart/form-data; boundary=' + boundary },
         body: body,
-        signal: signal
+        signal: requestSignal(signal, deadlineMs)
       });
       let data;
       try { data = await res.json(); }
@@ -256,7 +269,7 @@
         const a = args || {};
         const { data, res } = await call('getUpdates', {
           offset: a.offset, timeout: a.timeoutSec, allowed_updates: ALLOWED_UPDATES
-        }, a.signal);
+        }, a.signal, 0);   // the adapter owns the long-poll deadline (poll timeout + slack)
         if (data && data.ok) return Array.isArray(data.result) ? data.result : [];
         const code = (data && data.error_code) || (res && res.status) || 0;
         const desc = redact((data && data.description) || '');
@@ -288,7 +301,7 @@
             return { ok: false, error: redact((data && data.description) || 'getFile failed') };
           }
           const url = (o.apiBase || DEFAULT_API_BASE).replace(/\/+$/, '') + '/file/bot' + token + '/' + String(data.result.file_path);
-          const res = await fetchImpl(url, { method: 'GET', signal: o3.signal });
+          const res = await fetchImpl(url, { method: 'GET', signal: requestSignal(o3.signal) });
           if (!res || !res.ok) return { ok: false, error: 'file download failed: http ' + ((res && res.status) || 0) };
           const max = Number(o3.maxBytes) > 0 ? Number(o3.maxBytes) : Infinity;
           const len = Number(res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-length') : 0);
@@ -619,5 +632,5 @@
     };
   }
 
-  return { makeTelegramTransport, ALLOWED_UPDATES, DEFAULT_API_BASE, MAX_UPLOAD_BYTES, MAX_CAPTION_LENGTH, MAX_ALBUM_ITEMS, MEDIA_METHODS };
+  return { makeTelegramTransport, ALLOWED_UPDATES, DEFAULT_API_BASE, DEFAULT_REQUEST_TIMEOUT_MS, MAX_UPLOAD_BYTES, MAX_CAPTION_LENGTH, MAX_ALBUM_ITEMS, MEDIA_METHODS };
 });
