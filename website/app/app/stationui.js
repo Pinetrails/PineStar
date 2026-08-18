@@ -6307,7 +6307,44 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               })
               .catch(() => { label.textContent = title + ' — could not reach the sidecar'; sfx('bad'); stop.disabled = false; });
           });
-          row.appendChild(label); row.appendChild(stop);
+          // STEER — redirect a RUNNING helper mid-flight instead of killing it (G6: previously STOP was the
+          // Commander's only control). Inline station input (never window.prompt — OS-modal law); posts the
+          // exact generation this row painted, so a helper that finished/restarted meanwhile is refused by the
+          // server's generation gate rather than steered blind. The note lands in the worker's next turn as a
+          // [from the Commander] steering note.
+          const steerBtn = document.createElement('button');
+          steerBtn.className = 'bb xs';
+          steerBtn.textContent = 'STEER';
+          steerBtn.title = 'send this running helper a mid-flight instruction (it keeps working; your note is read before its next model turn)';
+          let steerRow = null;
+          steerBtn.addEventListener('click', () => {
+            if (steerRow) { steerRow.remove(); steerRow = null; return; }   // second click folds the input away
+            steerRow = document.createElement('div');
+            steerRow.className = 'set-row';
+            const input = document.createElement('input');
+            input.type = 'text'; input.className = 'key-input'; input.maxLength = 2000;
+            input.placeholder = 'new instruction for this helper…';
+            const send = document.createElement('button');
+            send.className = 'bb xs';
+            send.textContent = 'SEND';
+            const submit = () => {
+              const text = input.value.trim();
+              if (!text) return;
+              send.disabled = true; input.disabled = true;
+              Harness.api.post('/api/subagents/steer', { id: r.id, generation: r.generation, text })
+                .then(({ ok, j }) => {
+                  if (!ok || !j || j.ok === false) { label.textContent = title + ' — could not steer: ' + ((j && j.error) || 'error'); sfx('bad'); send.disabled = false; input.disabled = false; return; }
+                  sfx('click'); if (steerRow) { steerRow.remove(); steerRow = null; } refreshHelpers();   // repaint: the queued note shows from the ledger's own steerHistory
+                })
+                .catch(() => { label.textContent = title + ' — could not reach the sidecar'; sfx('bad'); send.disabled = false; input.disabled = false; });
+            };
+            send.addEventListener('click', submit);
+            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+            steerRow.appendChild(input); steerRow.appendChild(send);
+            row.after(steerRow);
+            input.focus();
+          });
+          row.appendChild(label); row.appendChild(steerBtn); row.appendChild(stop);
           list.appendChild(row);
         }
       };

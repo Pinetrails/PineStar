@@ -95,7 +95,7 @@
       if (!r) return null;
       return {
         id: r.id, leadId: r.leadId, agentId: r.agentId, runId: r.runId, status: r.status, destination: r.destination || '',
-        prompt: r.prompt, result: r.result || '', reason: r.reason || '', usd: r.usd || 0,
+        prompt: r.prompt, context: r.context || '', result: r.result || '', reason: r.reason || '', usd: r.usd || 0,
         generation: Math.max(1, Math.floor(Number(r.generation) || 1)),
         resultSchema: r.resultSchema || null, structuredResult: r.structuredResult == null ? null : r.structuredResult,
         validation: r.validation || null, repairRunId: r.repairRunId || '',
@@ -195,6 +195,9 @@
         agentId: safeId(meta.agentId || 'agent', 'agentId'),
         runId: safeId(meta.runId || newId(), 'runId'),
         prompt: String(meta.prompt || ''),
+        // the lead's handoff block (G6): kept on the durable record so resume rebuilds the same opening
+        // message a fresh dispatch composed — absent on pre-context records, which read back as ''.
+        context: String(meta.context != null ? meta.context : ((old && old.context) || '')).slice(0, 8000),
         status: 'running',
         reason: '',
         result: old && old.result ? old.result : '',
@@ -301,8 +304,11 @@
 
     /* A steer is accepted only for the exact live generation the caller inspected. Persisting the pending row
        before returning closes the restart gap; draining marks it applied before the loop receives the text, so a
-       later generation can never inherit an old follow-up. */
-    function steer(id, leadId, generation, text) {
+       later generation can never inherit an old follow-up. `leadId` is optional exactly like interrupt's: a
+       lead-tool caller passes its own id (ownership enforced), the authenticated local HTTP route passes none
+       (the Commander outranks ownership). `origin` keeps the history truthful about WHO steered — 'commander'
+       rows are also prefixed at drain time so the worker knows the instruction's source. */
+    function steer(id, leadId, generation, text, origin) {
       id = safeId(id, 'subagent id');
       const rec = get(id);
       if (!rec) return { ok: false, error: 'no such subagent' };
@@ -314,7 +320,8 @@
       const note = String(text == null ? '' : text).trim().slice(0, 4000);
       if (!note) return { ok: false, error: 'steering text is required' };
       const at = now();
-      const history = (Array.isArray(rec.steerHistory) ? rec.steerHistory : []).concat([{ generation: rec.generation, text: note, queuedAt: at, status: 'pending' }]).slice(-40);
+      const row = { generation: rec.generation, text: note, queuedAt: at, status: 'pending', origin: origin === 'commander' ? 'commander' : 'lead' };
+      const history = (Array.isArray(rec.steerHistory) ? rec.steerHistory : []).concat([row]).slice(-40);
       patch(id, { steerHistory: history }, true);
       return { ok: true, id: id, generation: rec.generation, queuedAt: at };
     }
@@ -331,7 +338,8 @@
       for (let n = 0; n < history.length; n++) {
         const row = history[n];
         if (!row || row.generation !== generation || row.status !== 'pending') continue;
-        notes.push(String(row.text || ''));
+        // A Commander-origin note names its source so the worker weighs it as the Commander's word, not the lead's.
+        notes.push((row.origin === 'commander' ? '[from the Commander] ' : '') + String(row.text || ''));
         history[n] = Object.assign({}, row, { status: 'applied', appliedAt: at });
         changed = true;
       }

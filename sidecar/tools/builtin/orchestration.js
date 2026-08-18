@@ -187,6 +187,25 @@
       return identity + '\n\n' + taskContext
         + '\n\n[DELEGATED EXECUTION] Treat the task context above as settled input from the Commander. Do not ask the Commander another discovery question. If a truly blocking gap remains, report that gap to the lead agent.';
     }
+    /* LEAD CONTEXT HANDOFF (G6 closure). A worker's opening message was ONLY the prompt string: whatever the
+       lead had already established — discovered file paths, findings, constraints, decisions — was lost unless
+       hand-woven into the prompt prose, and the worker re-derived it at full cost (or worse, guessed). `context`
+       is an explicit, bounded handoff block. It rides FIRST in the worker's opening user message so the ask
+       itself stays last (recency); the structured-result REPAIR run replays the same opening message verbatim
+       (it reuses this composed string), and restart-resume rebuilds it from the durable record's own `context`
+       field — a resumed worker never silently loses its handoff. Distinct from `taskContext` above: that block
+       is the HOST-assembled Commander evidence in the system prompt; this one is the LEAD-authored, per-worker
+       working state. */
+    const HANDOFF_CONTEXT_MAX = 8000;
+    function handoffContext(raw) { return String(raw == null ? '' : raw).trim().slice(0, HANDOFF_CONTEXT_MAX); }
+    function openingMessage(prompt, context, resultSchema) {
+      const ask = resultSchema
+        ? String(prompt || '') + '\n\n[STRUCTURED RESULT CONTRACT] Return ONLY strict JSON matching this schema: ' + JSON.stringify(resultSchema)
+        : String(prompt || '');
+      if (!context) return ask;
+      return '[LEAD CONTEXT — what your lead already established for this task. Treat it as settled starting knowledge; do not re-derive it, and re-verify it only where it contradicts what you observe.]\n'
+        + context + '\n\n[YOUR SUBTASK]\n' + ask;
+    }
     const perWorker = (typeof deps.perWorker === 'number' && isFinite(deps.perWorker) && deps.perWorker > 0) ? deps.perWorker : 0;
     // Zero means no user-work quota. Narrow task contracts and structured-output repair
     // still impose their own local ceilings below; those are correctness safeguards.
@@ -350,6 +369,7 @@
               properties: {
                 agentId: { type: 'string' }, prompt: { type: 'string' },
                 resultSchema: { type: 'object', description: 'Optional strict JSON result contract. The host validates the final result and allows one bounded repair; invalid output is never accepted as done.' },
+                context: { type: 'string', description: 'Optional handoff of what YOU already established that this worker needs: discovered file paths, findings, constraints, decisions. It is placed before the prompt as settled starting knowledge, so the worker does not re-derive it. Do not restate the subtask here.' },
                 // WHERE the work lands. A session NAME (what the Commander calls it) or its exact id. Omit to run
                 // in the current session — see resolveSessions for why an unmatched name never falls back to that.
                 session: { type: 'string' }
@@ -392,7 +412,7 @@
           if (!crew.has(aid)) return { agentId: aid, error: 'no such live worker — summon them first, or check the agentId against YOUR TEAM' };
           const contract = resultSchemaOf(w && w.resultSchema);
           if (!contract.ok) return { agentId: aid, error: 'invalid result contract: ' + contract.error };
-          return { agentId: aid, prompt: String((w && w.prompt) || ''), ident: crew.get(aid), session: session, resultSchema: contract.schema };
+          return { agentId: aid, prompt: String((w && w.prompt) || ''), context: handoffContext(w && w.context), ident: crew.get(aid), session: session, resultSchema: contract.schema };
         });
         markBatchQuality(jobs);
         // WHERE before WHO does the work: an unresolvable session marks its job failed here, so that worker is
@@ -438,9 +458,7 @@
             };
           };
           let result;
-          const contractedPrompt = job.resultSchema
-            ? job.prompt + '\n\n[STRUCTURED RESULT CONTRACT] Return ONLY strict JSON matching this schema: ' + JSON.stringify(job.resultSchema)
-            : job.prompt;
+          const contractedPrompt = openingMessage(job.prompt, job.context, job.resultSchema);
           noteSessionActivity('station.dispatch_start', job, workerRunId);
           try {
             result = await runOnce({
@@ -555,7 +573,7 @@
           if (!subagents || typeof subagents.start !== 'function') return { content: 'background subagents unavailable (no subagent manager)', summary: 'error' };
           const started = jobs.map(job => {
             if (job.error) return { agentId: job.agentId, reason: 'error', result: job.error };
-            return subagents.start({ leadId, agentId: job.agentId, prompt: job.prompt, runId: newId(), resultSchema: job.resultSchema }, async (h) => {
+            return subagents.start({ leadId, agentId: job.agentId, prompt: job.prompt, context: job.context, runId: newId(), resultSchema: job.resultSchema }, async (h) => {
               const r = await runWorker(job, { runId: h.runId, signal: h.signal, emit: h.emit, steer: h.steer });
               return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd || 0,
                 structuredResult: r.structuredResult, validation: r.validation, repairRunId: r.repairRunId, artifacts: r.artifacts };
@@ -644,7 +662,8 @@
               type: 'object', required: ['prompt'],
               properties: {
                 prompt: { type: 'string' }, label: { type: 'string' },
-                resultSchema: { type: 'object', description: 'Optional strict JSON result contract. Invalid output gets one bounded repair and is never accepted as done.' }
+                resultSchema: { type: 'object', description: 'Optional strict JSON result contract. Invalid output gets one bounded repair and is never accepted as done.' },
+                context: { type: 'string', description: 'Optional handoff of what YOU already established that this clone needs: discovered file paths, findings, constraints, decisions. Placed before the prompt as settled starting knowledge. Do not restate the subtask here.' }
               }
             }
           },
@@ -662,6 +681,7 @@
           const contract = resultSchemaOf(task && task.resultSchema);
           return {
             prompt: String((task && task.prompt) || ''),
+            context: handoffContext(task && task.context),
             label: String((task && task.label) || ('subagent ' + (i + 1))).slice(0, 60),
             resultSchema: contract.ok ? contract.schema : null,
             error: contract.ok ? '' : 'invalid result contract: ' + contract.error
@@ -694,9 +714,7 @@
           const runner = async (h) => {
             let result;
             const bounded = boundedDomainTask(prompt);
-            const contractedPrompt = task.resultSchema
-              ? prompt + '\n\n[STRUCTURED RESULT CONTRACT] Return ONLY strict JSON matching this schema: ' + JSON.stringify(task.resultSchema)
-              : prompt;
+            const contractedPrompt = openingMessage(prompt, task.context, task.resultSchema);
             try {
               result = await runOnce({
                 key, provider, baseUrl, reasoningEffort, model,      // the lead's OWN model - a clone of self
@@ -760,7 +778,7 @@
             return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd,
               structuredResult: r.structuredResult, validation: r.validation, repairRunId: r.repairRunId, artifacts: r.artifacts };
           };
-          const view = subagents.start({ leadId, agentId: ephemeralId, prompt: prompt, runId: newId(), resultSchema: task.resultSchema }, runner);
+          const view = subagents.start({ leadId, agentId: ephemeralId, prompt: prompt, context: task.context, runId: newId(), resultSchema: task.resultSchema }, runner);
           return { label, view, done, started: true };
         };
 
@@ -873,9 +891,9 @@
         const wire = workerWire(ident);   // same cross-provider resolution as a fresh dispatch
         let result;
         const bounded = boundedDomainTask(rec.prompt || '');
-        const contractedPrompt = rec.resultSchema
-          ? (rec.prompt || '') + '\n\n[STRUCTURED RESULT CONTRACT] Return ONLY strict JSON matching this schema: ' + JSON.stringify(rec.resultSchema)
-          : (rec.prompt || '');
+        // The durable record carries the lead's handoff `context`, so a resumed worker rebuilds the SAME
+        // opening message a fresh dispatch would have — a restart never silently drops the handoff.
+        const contractedPrompt = openingMessage(rec.prompt || '', handoffContext(rec.context), rec.resultSchema);
         try {
           result = await runOnce({
             key: wire.key, provider: wire.provider, baseUrl: wire.baseUrl,

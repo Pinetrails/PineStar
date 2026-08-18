@@ -1002,6 +1002,58 @@ const leadCtx = () => ({ agentId: 'agent', emit: () => {} });
   A.ok(steer && steer.scope === 'write' && steer.requiresConsent === false, 'capability registry exposes generation-bound steering without a spend grant');
 }
 
+// ============================ lead context handoff (G6) ============================
+// A worker's opening message used to be ONLY the prompt string — whatever the lead had already established
+// was lost unless hand-woven into prose, and the worker re-derived it at full cost. `context` rides FIRST in
+// the opening user message, the ask stays last, and the structured-repair replay reuses the same opening.
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([['researcher', { system: 'R-SYS', name: 'RESEARCHER', model: 'm1' }]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'lead-model', newId: counter() });
+  const ctx = { agentId: 'lead', signal: { aborted: false }, emit: () => {}, consent: {} };
+  await dispatchTool.run({ workers: [
+    { agentId: 'researcher', prompt: 'summarize the config', context: 'config lives at /srv/app/config.yaml; the db block is already validated' },
+    { agentId: 'researcher', prompt: 'no-context control' }
+  ] }, ctx);
+  A.eq(ro.calls.length, 2, 'both workers dispatched');
+  const opening = String(ro.calls[0].messages[0].content);
+  A.ok(opening.indexOf('[LEAD CONTEXT') === 0, 'the handoff block leads the opening message');
+  A.ok(opening.indexOf('config lives at /srv/app/config.yaml') > 0, 'the lead-authored context rides to the worker verbatim');
+  A.ok(opening.indexOf('[YOUR SUBTASK]') > 0 && opening.indexOf('summarize the config') > opening.indexOf('[YOUR SUBTASK]'), 'the ask itself stays LAST, under its own header');
+  A.eq(String(ro.calls[1].messages[0].content), 'no-context control', 'a worker without context gets the exact pre-G6 opening message (byte-identical)');
+
+  // context composes with a result contract: context first, prompt, then the JSON contract suffix.
+  const ro2 = fakeRunOnce(async () => ({ reason: 'done', messages: [{ role: 'assistant', content: '{"ok":true}' }], usd: 0.1 }));
+  const { dispatchTool: d2 } = makeOrchestrationTools({ runOnce: ro2, roster: () => roster, key: 'k', model: 'm', newId: counter() });
+  await d2.run({ workers: [{ agentId: 'researcher', prompt: 'check it', context: 'the port is 8787',
+    resultSchema: { type: 'object', required: ['ok'], properties: { ok: { type: 'boolean' } } } }] }, ctx);
+  const contracted = String(ro2.calls[0].messages[0].content);
+  A.ok(contracted.indexOf('[LEAD CONTEXT') === 0 && contracted.indexOf('the port is 8787') > 0
+    && contracted.indexOf('[STRUCTURED RESULT CONTRACT]') > contracted.indexOf('check it'), 'context + prompt + result contract compose in that order');
+
+  // an oversized handoff is clamped, never rejected — the worker still runs.
+  const ro3 = fakeRunOnce();
+  const { dispatchTool: d3 } = makeOrchestrationTools({ runOnce: ro3, roster: () => roster, key: 'k', model: 'm', newId: counter() });
+  await d3.run({ workers: [{ agentId: 'researcher', prompt: 'p', context: 'x'.repeat(9000) }] }, ctx);
+  const clamped = String(ro3.calls[0].messages[0].content);
+  A.ok(clamped.indexOf('x'.repeat(8000)) > 0 && clamped.indexOf('x'.repeat(8001)) < 0, 'the handoff block is clamped to its 8000-char bound');
+}
+
+// team.spawn carries the same handoff, and the durable record keeps it for resume.
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-spawn-ctx-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'sub.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    const ro = fakeRunOnce();
+    const { spawnTool } = makeOrchestrationTools({ runOnce: ro, roster: () => new Map(), key: 'k', model: 'm', selfSystem: 'S', newId: counter(), subagents });
+    await spawnTool.run({ tasks: [{ prompt: 'sub with context', context: 'the answer format is CSV' }] }, { agentId: 'lead', emit: () => {}, consent: {} });
+    const opening = String(ro.calls[0].messages[0].content);
+    A.ok(opening.indexOf('[LEAD CONTEXT') === 0 && opening.indexOf('the answer format is CSV') > 0, 'a spawned clone receives the handoff block first');
+    const rec = subagents.list({})[0];
+    A.eq(rec.context, 'the answer format is CSV', 'the handoff context is durable on the subagent record (resume rebuilds the same opening)');
+  } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
 A.report('orchestration.test');
 
 })();

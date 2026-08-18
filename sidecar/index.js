@@ -8343,6 +8343,7 @@ const ROUTES = [
   { m: 'GET', exact: '/api/execution', h: (req, res) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(executionEnvironment.describe())); } },
   { m: 'GET', prefix: '/api/subagents', h: handleSubagentsList },
   { m: 'POST', exact: '/api/subagents/interrupt', h: handleSubagentInterrupt },
+  { m: 'POST', exact: '/api/subagents/steer', h: handleSubagentSteer },
   // honest concurrency surface: how many distinct agents can RUN at once (the gate that silently 'refuses'
   // excess parallel workers). The summon bay reads this so the ceiling is visible BEFORE a fan-out, not only
   // inside the model's tool result. (WIRING_AUDIT P4: lie #7.)
@@ -12276,6 +12277,19 @@ async function handleSubagentInterrupt(req, res) {
   catch (e) { json(400, { ok: false, error: (e && e.message) || String(e) }); }
 }
 
+/* POST /api/subagents/steer { id, generation, text } — the Commander redirects a RUNNING background worker
+   mid-flight (G6 closure: previously only a lead could steer, via team.steer, and the panel offered STOP alone —
+   the Commander's sole way to correct a wrong 20-minute worker was to kill it). Same auth surface and body
+   ceiling as interrupt directly above; no leadId is passed because the Commander outranks lead ownership, and
+   subagents.steer still enforces the exact-generation + running gates, records origin:'commander' in the durable
+   steerHistory, and drain prefixes the note so the worker knows whose word it carries. */
+async function handleSubagentSteer(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 8192)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  try { json(200, subagents.steer(String(body.id || ''), undefined, body.generation, String(body.text || ''), 'commander')); }
+  catch (e) { json(400, { ok: false, error: (e && e.message) || String(e) }); }
+}
+
 async function handleRoster(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body;
@@ -14992,7 +15006,8 @@ async function runOnce(o) {
         + 'Commander rated and runs the harness watched finish. Use it to pick the right worker; it is evidence, not a '
         + 'permission level, and an agent without one is simply new, not worse.' : '');
     teamNote += '\n• SPAWN temporary same-identity subagents with team.spawn for one-off parallel subtasks when no named specialist is needed. '
-      + 'Use background:true for watchable long-running spawned workers, then inspect/control them with team.subagents, team.interrupt, and team.resume.';
+      + 'Use background:true for watchable long-running spawned workers, then inspect/control them with team.subagents, team.interrupt, and team.resume. '
+      + 'When a running background worker needs a mid-flight correction or new information, use team.steer (pass the id and generation from team.subagents) instead of interrupting and restarting it.';
     // Class Loadouts S1: the class list here is composed from the SHARED catalog (id + tagline), never hardcoded,
     // so the summon prose can't drift from the Recruitment Bay's actual classes as new ones are added.
     const classListLine = SPECIALIST_CLASSES.map(c => c.id + (c.tagline ? ' — ' + c.tagline : '')).join('; ');
