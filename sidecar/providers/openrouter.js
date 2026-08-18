@@ -54,8 +54,8 @@
   //      the saving surfaces as `cached_tokens` in usage, which cost.js already reconciles). A pure NO-OP for
   //      models without explicit caching — their plain-string content is returned untouched, so the wire body is
   //      byte-identical to before and other providers are unaffected. Returns a new array; never mutates the
-  //      loop's messages. (Caching the growing conversation prefix + the tool list is a planned follow-up; this
-  //      ships the single system breakpoint — the largest stable chunk — as the safe first win.)
+  //      loop's messages. (The growing conversation tail is covered by the sliding anchors below — the
+  //      "planned follow-up" from the first win shipped 2026-08-17.)
   //      NOTE (verified vs the OpenRouter + Anthropic docs, 2026): this is the exact accepted wire shape and never
   //      errors, but Anthropic only caches a prefix at/above a per-model MINIMUM (~1024 tokens for Opus 4.8 /
   //      Sonnet 4.6; up to 4096 for Opus 4.6/4.5 + Haiku 4.5) — below that it runs UNCACHED with no error. So a
@@ -70,9 +70,38 @@
     for (let i = 0; i < messages.length; i++) {
       if (messages[i] && messages[i].role === 'system') idx = i; else break;   // last of the LEADING system block
     }
-    if (idx < 0 || typeof messages[idx].content !== 'string') return messages;  // nothing to cache / already structured
     const out = messages.slice();
-    out[idx] = { role: 'system', content: [{ type: 'text', text: messages[idx].content, cache_control: { type: 'ephemeral' } }] };
+    if (idx >= 0 && typeof messages[idx].content === 'string') {
+      out[idx] = { role: 'system', content: [{ type: 'text', text: messages[idx].content, cache_control: { type: 'ephemeral' } }] };
+    }
+    /* SLIDING TAIL ANCHORS (ported from the anthropic adapter's Hermes-parity pass). The single system anchor
+       caches the static prefix, but the bytes migrate into the CONVERSATION as a run grows — tool results
+       re-billed as uncached input on every turn. Mark the last three stampable messages too: with the system
+       anchor that is exactly Anthropic's 4-breakpoint maximum. Three (not one) because a breakpoint only looks
+       BACK 20 content blocks for its predecessor, and one wide parallel-tool turn can append more than 20
+       blocks — a single trailing anchor then misses the old one and the whole tail re-bills as a cold write.
+       Anchors slid off remain valid READ points. Conservative stamping: user/assistant/tool roles only (the
+       leading system block already has its anchor; OpenRouter's translation of a MID-array system note is
+       undocumented), non-blank text only (Anthropic 400s an empty text block), and copies — never stamps a
+       caller's message or part in place. Anthropic-through-OpenRouter only (supportsExplicitCache above);
+       every other upstream sees the exact prior wire shape. */
+    let stamped = 0;
+    for (let i = out.length - 1; i > idx && stamped < 3; i--) {
+      const m = out[i];
+      if (!m || m.role === 'system') continue;
+      if (typeof m.content === 'string' && m.content.trim()) {
+        out[i] = Object.assign({}, m, { content: [{ type: 'text', text: m.content, cache_control: { type: 'ephemeral' } }] });
+        stamped++;
+      } else if (Array.isArray(m.content) && m.content.length) {
+        const parts = m.content.slice();
+        const last = parts[parts.length - 1];
+        if (last && last.type === 'text' && typeof last.text === 'string' && last.text.trim()) {
+          parts[parts.length - 1] = Object.assign({}, last, { cache_control: { type: 'ephemeral' } });
+          out[i] = Object.assign({}, m, { content: parts });
+          stamped++;
+        }
+      }
+    }
     return out;
   }
   function normalizeReasoningEffort(value) {

@@ -225,12 +225,46 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(Array.isArray(cached[0].content), true, 'anthropic: system content becomes a block array');
     A.eq(cached[0].content[0].text, 'SYS PREFIX', 'system text preserved in the block');
     A.eq(cached[0].content[0].cache_control.type, 'ephemeral', 'ephemeral cache_control breakpoint set on the system block');
-    A.eq(cached[1], msgs[1], 'non-system messages untouched');
+    // the tail message now ALSO carries a sliding anchor (see L1b) — text preserved, source not mutated
+    A.eq(cached[1].content[0].text, 'hi', 'tail message text preserved in its anchored block');
+    A.ok(cached[1].content[0].cache_control, 'the conversation tail carries a sliding anchor');
     A.eq(msgs[0].content, 'SYS PREFIX', 'pure: input is NOT mutated');
+    A.eq(msgs[1].content, 'hi', 'pure: tail input is NOT mutated either');
 
     A.eq(applyCacheControl(msgs, 'openai/gpt-4o')[0].content, 'SYS PREFIX', 'non-anthropic model: system left as a plain string (no-op)');
-    A.eq(applyCacheControl([{ role: 'user', content: 'hi' }], 'anthropic/claude-3.5')[0].content, 'hi', 'no leading system message -> unchanged');
+    A.eq(applyCacheControl(msgs, 'openai/gpt-4o')[1].content, 'hi', 'non-anthropic model: tail left as a plain string too');
+    A.ok(Array.isArray(applyCacheControl([{ role: 'user', content: 'hi' }], 'anthropic/claude-3.5')[0].content), 'no leading system -> the tail anchor still caches the conversation');
     A.eq(applyCacheControl([], 'anthropic/claude-3.5').length, 0, 'empty messages -> unchanged');
+  }
+
+  // L1b. SLIDING TAIL ANCHORS (ported from the anthropic adapter): the LAST THREE stampable non-system
+  //      messages each carry a breakpoint — with the system anchor, exactly the API's 4-breakpoint maximum.
+  //      One trailing anchor is fragile: a breakpoint only looks back 20 content blocks, and one wide
+  //      parallel-tool turn can append more — three sliding anchors keep every gap under the window.
+  {
+    const { applyCacheControl } = require('../sidecar/providers/openrouter.js');
+    const msgs = [
+      { role: 'system', content: 'SYS' },
+      { role: 'user', content: 'q1' },
+      { role: 'assistant', content: 'a1' },
+      { role: 'tool', content: 'tool result', tool_call_id: 't1' },
+      { role: 'assistant', content: 'a2' },
+      { role: 'user', content: 'q2' }
+    ];
+    const cached = applyCacheControl(msgs, 'anthropic/claude-sonnet-4.6');
+    const anchored = cached.map((m, i) => Array.isArray(m.content) && m.content.some(p => p && p.cache_control) ? i : -1).filter(i => i >= 0);
+    A.eq(anchored, [0, 3, 4, 5], 'system anchor + the LAST THREE messages = the 4-breakpoint maximum; older tail untouched');
+    A.eq(cached[3].content[0].text, 'tool result', 'a tool-result message keeps its exact text inside the anchored block');
+    A.eq(cached[3].tool_call_id, 't1', 'tool_call_id survives the stamp');
+    A.eq(cached[1], msgs[1], 'messages beyond the three tail anchors are passed through by reference');
+    A.eq(msgs[3].content, 'tool result', 'pure: no input message is mutated');
+    // A blank message is never stamped (Anthropic 400s an empty text block); the anchor slides past it.
+    const blank = applyCacheControl([
+      { role: 'system', content: 'S' }, { role: 'user', content: 'u1' },
+      { role: 'user', content: 'u2' }, { role: 'assistant', content: '' }, { role: 'user', content: 'u3' }
+    ], 'anthropic/claude-3.5');
+    A.eq(blank[3].content, '', 'a blank message is skipped, not stamped');
+    A.ok(Array.isArray(blank[1].content) && blank[1].content[0].cache_control, 'the third anchor slides past the blank onto the next stampable message');
   }
 
   // L2. caching is actually WIRED into the request body for Anthropic models (and absent for others)
