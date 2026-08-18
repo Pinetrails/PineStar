@@ -617,14 +617,32 @@
     const continuationParts = [];
     const continuationPrompts = [];
 
+    /* dedupeKeepFull distinguishes the two callers of the dedupe machinery. A LENGTH-CONTINUATION's previous
+       partial is already in `messages`, so stripping the overlap from acc.text is correct — the parts join back
+       into one turn. A RECOVERY RETRY's failed partial was never pushed: the retried stream is a full
+       replacement, so the durable text must stay WHOLE and only the live emit dedupes — stripping there would
+       corrupt the transcript by exactly the bytes the Commander already saw. */
+    let dedupeKeepFull = false;
     function emitContinuationText(acc, chunks) {
       if (dedupeAgainst == null) return;
       const novel = continuation.novelText(dedupeAgainst, acc.text);
-      acc.text = novel.text;
+      if (!dedupeKeepFull) acc.text = novel.text;
       for (const delta of continuation.novelChunks(chunks, novel.removed)) {
         emit('agent.token', { agentId, runId, delta });
       }
       dedupeAgainst = null;
+      dedupeKeepFull = false;
+    }
+
+    /* STREAM-RETRY DEDUPE. Deltas from a failed attempt already reached COMMS live (they stream as they
+       arrive); the durable transcript was fine but the retried attempt re-emitted from the top, so any
+       mid-stream retry/compress/fallback double-printed the answer. Arm the same buffered-overlap machinery
+       the length-continuation path uses: the retried stream buffers, then emits only the suffix novel beyond
+       what was already shown. A regeneration that diverges entirely still emits in full — identical to the
+       old behavior, never worse. No-op when a continuation already armed the dedupe (those deltas were
+       buffered, not emitted) and when the failed attempt produced no text. */
+    function armRetryDedupe(acc) {
+      if (dedupeAgainst == null && acc.text) { dedupeAgainst = acc.text; dedupeKeepFull = true; }
     }
 
     // Only called when no further model call will consume the messages. It turns a multi-call text continuation
@@ -896,6 +914,7 @@
           if (!sawTruncation) break;                 // clean, properly-terminated stream
           if (truncRetries < MAX_TRUNC_RETRIES && !signal.aborted) {
             truncRetries++;                          // a truncation is transient — re-run the turn once
+            armRetryDedupe(acc);                     // half an answer already streamed; don't print it twice
             noteRecovery({ stage: 'provider_stream', action: 'retry', reason: 'truncated', attempt: truncRetries, model, delayMs: STREAM_RETRY_DELAYS[0] });
             if (sleep) { try { await sleep(STREAM_RETRY_DELAYS[0]); } catch (_) {} }
             if (signal.aborted) break;
@@ -918,6 +937,7 @@
         if (decision.action === 'compress') {
           // context_overflow: fold older turns away, then retry the turn. Only counts as recovery if it shrank.
           if (await maybeCompact(true)) {
+            armRetryDedupe(acc);
             recoveries++;
             noteRecovery({ stage: 'provider_stream', action: 'compress', reason: decision.reason, attempt: recoveries, model, delayMs: 0 });
             continue;
@@ -953,6 +973,7 @@
                 if (context && typeof context.setContextLimit === 'function') context.setContextLimit(nl);
               }
             }
+            armRetryDedupe(acc);
             recoveries++;
             noteRecovery({ stage: 'provider_stream', action: 'fallback', reason: decision.reason, attempt: recoveries, model, delayMs: 0, rotate: decision.rotate });
             continue;
@@ -975,6 +996,7 @@
         // into 15 requests; only errors from a stream that actually started belong to this recovery budget.
         if (decision.action === 'retry') {
           retriesUsed++;
+          armRetryDedupe(acc);
           // NOTE: no provider.fallback emit here — a same-provider retry is NOT a failover; emitting it would
           // inflate the floor's failover counter and lie about a model/credential switch that didn't happen
           // (truthful-telemetry law). The retry is bounded and its outcome (success or the final error) is what

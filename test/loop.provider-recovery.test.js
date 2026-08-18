@@ -331,5 +331,43 @@ const openCtx = () => ({ canRun: () => true, canUse: () => ({ ok: true }), agent
     A.eq(ctx.contextLimit, 200000, 'an unknown fallback window keeps the last known limit — stale beats none');
   }
 
+  // (retry-dedupe) deltas from a FAILED attempt already reached COMMS live; the retried stream must not
+  //     re-print them. The retried attempt buffers, then emits only the suffix novel beyond what was shown —
+  //     while the DURABLE assistant turn keeps the FULL retried text (stripping it would corrupt the
+  //     transcript by exactly the bytes the Commander already saw).
+  {
+    const { seq, emit } = setup();
+    let attempt = 0;
+    const provider = scriptedProvider(async function* () {
+      attempt++;
+      if (attempt === 1) { yield { type: 'text', delta: 'Hello wor' }; throw timeoutErr(); }
+      yield { type: 'text', delta: 'Hello world!' };
+      yield { type: 'usage', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } };
+      yield { type: 'done', finishReason: 'stop' };
+    });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r', sleep: async () => {} });
+    A.eq(res.reason, 'done', 'the retried turn completed');
+    const streamed = seq.filter(e => e.name === 'agent.token').map(e => e.payload.delta).join('');
+    A.eq(streamed, 'Hello world!', "the live stream carries the answer ONCE — the failed attempt's prefix is not re-printed");
+    A.ok(res.messages.some(m => m.role === 'assistant' && m.content === 'Hello world!'), 'the durable turn keeps the FULL retried text, not the stripped suffix');
+  }
+
+  // (retry-dedupe, divergent) a regeneration that shares no prefix falls back to emitting in full —
+  //     identical to the old behavior, never worse — and the transcript still holds only the final text.
+  {
+    const { seq, emit } = setup();
+    let attempt = 0;
+    const provider = scriptedProvider(async function* () {
+      attempt++;
+      if (attempt === 1) { yield { type: 'text', delta: 'First take…' }; throw timeoutErr(); }
+      yield { type: 'text', delta: 'Completely different answer.' };
+      yield { type: 'done', finishReason: 'stop' };
+    });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r', sleep: async () => {} });
+    const streamed = seq.filter(e => e.name === 'agent.token').map(e => e.payload.delta).join('');
+    A.eq(streamed, 'First take…Completely different answer.', 'a divergent regeneration emits in full after the shown partial (never worse than before)');
+    A.ok(res.messages.some(m => m.role === 'assistant' && m.content === 'Completely different answer.'), 'the transcript holds ONLY the final retried text');
+  }
+
   A.report('loop.provider-recovery.test');
 })();
