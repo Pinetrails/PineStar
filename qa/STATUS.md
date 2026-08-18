@@ -2484,6 +2484,8 @@ GATE: two runs, two DIFFERENT reds, each passing standalone — `boot-security` 
 
 **2026-08-17 merge digest:** `agent/audit-post-0104-ee0659` -> trunk merge `dfd241796`; the post-v0.10.4 orientation proof now derives coverage from the live prop catalog, exact post-merge `test:fast` is **649/649 GREEN**, and the live rotation proof passed every offered facing with distinct pixels and zero console errors. Dev/QA-only; no shipped runtime, shared contract, package, credential, push, tag, or deployment change.
 
+**2026-08-17 release-prep digest:** `agent/release-cut-exact-artifact` -> trunk merge `b72c42251`; a v0.10.5 cut exposed that lexicographic artifact discovery could select a stale lower-version installer from `target/`, so the cutter now requires `StarNet_<current-version>_x64-setup.exe` exactly and fails closed otherwise. The wrong staged output was never published. Branch `test:fast` **649/649 GREEN** with a regression locking exact-version selection.
+
 ## 2026-08-11 - crate-lifecycle repairs (conveyor-audit-2026-08-10 #4 #5 #14)
 - agent/crate-lifecycle -> trunk 3d5ffadca (pure FF, gate 612/612 green FROM THE LOG on the exact merged tree; claims PASS 208).
 - Riding crates + queued work now ride an origin shift (Conveyor.shiftFrame) instead of sinking as orphans; dock latches survive overlapping runs (per-run runWork tallies, FIFO dockLineWork + deferredShip queues - no more cancelled/double crates at one dock); a hallway commit flashes 'hallway run', never 'room placed'.
