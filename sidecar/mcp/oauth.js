@@ -246,6 +246,13 @@
     if (o.resource) q.set('resource', o.resource);               // RFC 8707 — bind the token to this MCP server
     const scope = Array.isArray(o.scope) ? o.scope.join(' ') : (o.scope || '');
     if (scope) q.set('scope', scope);
+    // provider-specific authorize params from catalog staticOauth (e.g. Google's access_type=offline +
+    // prompt=consent, without which no refresh token is ever issued). Reserved params can't be overridden.
+    if (o.extraParams && typeof o.extraParams === 'object') {
+      for (const k of Object.keys(o.extraParams)) {
+        if (!q.has(k)) q.set(k, String(o.extraParams[k]));
+      }
+    }
     const sep = o.authorizationEndpoint.indexOf('?') >= 0 ? '&' : '?';
     return o.authorizationEndpoint + sep + q.toString();
   }

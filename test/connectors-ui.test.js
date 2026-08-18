@@ -182,6 +182,9 @@ function fakeStack(tools) {
   A.ok(/data-cc-act="key"/.test(station) && /data-cc-key=/.test(station), 'apikey connectors reveal an inline key field');
   A.ok(/data-cc-act="signin"/.test(station) && /function ccSignIn/.test(station), 'oauth connectors get a live SIGN IN button + handler');
   A.ok(/action = e\.url/.test(station), 'an oauth entry with no endpoint is NOT shown as sign-in-able (no dead button — truthful telemetry)');
+  A.ok(/data-cc-act="oclient"/.test(station) && /data-cc-oclientid/.test(station) && /data-cc-oclientsecret/.test(station), 'static OAuth cards expose the one-time client setup fields');
+  A.ok(/clientSecretRequired/.test(station) && /paste the client secret too/.test(station), 'required static OAuth client secrets fail closed in the UI');
+  A.ok(/\/api\/connectors\/oauth\/client/.test(station), 'static OAuth setup saves through the protected sidecar route');
   // url-less oauth entries with an aggregator route get a LIVE "VIA <name>" jump, never a mute disabled button
   A.ok(/data-cc-act="via"/.test(station) && /data-via=/.test(station), 'url-less oauth entries with `via` get a live VIA jump button');
   A.ok(/scrollIntoView/.test(station) && /cc-jump/.test(station), 'the VIA jump scrolls to + flashes the aggregator card');

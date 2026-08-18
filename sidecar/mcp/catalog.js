@@ -50,6 +50,24 @@
     'Payments & Finance', 'CRM & Sales', 'Marketing'
   ];
 
+  /* staticOauth factory for Google rows — one authorization server (accounts.google.com), so the
+     pre-registered client is stored ONCE and every Google product row shares it. Pure data. */
+  function GOOGLE_OAUTH(scopes) {
+    return {
+      authorizationServer: 'https://accounts.google.com',
+      authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+      tokenEndpoint: 'https://oauth2.googleapis.com/token',
+      scopes: scopes.slice(),
+      // Without these Google issues NO refresh token and the connector dies in ~1h.
+      extraAuthParams: { access_type: 'offline', prompt: 'consent' },
+      clientSecretRequired: true,
+      developerPreview: true,
+      setupUrl: 'https://developers.google.com/workspace/guides/configure-mcp-servers',
+      setupName: 'Google Workspace setup guide',
+      setupNote: 'Developer Preview: enable the product API and MCP API in your Google Cloud project, then create an OAuth Web application client.'
+    };
+  }
+
   /* The seed. Every endpoint below is a Streamable-HTTP `/mcp`-style URL. The `none` tier is verified to
      connect with no credentials; `apikey` uses the manager's bearer `token` field; `oauth` is listed-but-
      gated until the OAuth flow ships. Grow this list by adding rows — that is the whole extension model. */
@@ -120,10 +138,38 @@
     // ── OAuth tier — LISTED but not installable until the OAuth slice ships (honest, not a dead click) ──
     /* `via` (url-less oauth entries only): the catalog id of the AGGREGATOR that reaches this platform today.
        The panel renders it as a live "VIA <name>" jump to that card instead of a mute disabled button. */
-    { id: 'google-workspace', name: 'Google Workspace', category: 'Productivity', authType: 'oauth', transport: 'http',
-      url: '', official: true, homepage: 'https://workspace.google.com', via: 'zapier',
-      aliases: ['google', 'google drive', 'gdrive', 'drive', 'gmail', 'google docs', 'google sheets', 'google calendar', 'gsuite', 'g suite', 'google workspace'],
-      blurb: 'Gmail, Calendar, Drive, Docs, and Sheets. Google ships no public MCP endpoint yet — reach it today through the Zapier connector (one API key).' },
+    /* ── Google Workspace (2026-08-14): Google now SHIPS official per-product remote MCP endpoints
+       (rolled out May 2026 — developers.google.com/workspace/guides/configure-mcp-servers). Their AS
+       (accounts.google.com) has NO dynamic client registration, so these rows carry `staticOauth`:
+       fixed authorization/token endpoints + per-product scopes. The sign-in route uses a PRE-REGISTERED
+       OAuth client (a Google Cloud "Web application" client with our loopback redirect) stored once per
+       authorization server — pasted by the Commander, or shipped app-wide via env. `access_type=offline`
+       + `prompt=consent` are REQUIRED extra authorize params or Google never returns a refresh token. */
+    { id: 'gmail', name: 'Gmail', category: 'Productivity', authType: 'oauth', transport: 'http',
+      url: 'https://gmailmcp.googleapis.com/mcp/v1', official: true, homepage: 'https://mail.google.com',
+      aliases: ['google', 'gmail', 'google mail', 'email', 'gsuite', 'g suite', 'google workspace'],
+      staticOauth: GOOGLE_OAUTH(['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose']),
+      blurb: 'Read, search, and draft Gmail through Google\'s Developer Preview MCP server. Requires one-time Google Cloud setup and sign-in.' },
+    { id: 'google-drive', name: 'Google Drive', category: 'Productivity', authType: 'oauth', transport: 'http',
+      url: 'https://drivemcp.googleapis.com/mcp/v1', official: true, homepage: 'https://drive.google.com',
+      aliases: ['google', 'google drive', 'gdrive', 'drive', 'gsuite', 'g suite', 'google workspace'],
+      staticOauth: GOOGLE_OAUTH(['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']),
+      blurb: 'Search, read, and manage Drive files through Google\'s Developer Preview MCP server. Requires one-time Google Cloud setup and sign-in.' },
+    { id: 'google-calendar', name: 'Google Calendar', category: 'Productivity', authType: 'oauth', transport: 'http',
+      url: 'https://calendarmcp.googleapis.com/mcp/v1', official: true, homepage: 'https://calendar.google.com',
+      aliases: ['google', 'google calendar', 'gcal', 'calendar', 'gsuite', 'g suite', 'google workspace'],
+      staticOauth: GOOGLE_OAUTH(['https://www.googleapis.com/auth/calendar.calendarlist.readonly', 'https://www.googleapis.com/auth/calendar.events.readonly', 'https://www.googleapis.com/auth/calendar.events.freebusy']),
+      blurb: 'Read calendars, events, and free/busy through Google\'s Developer Preview MCP server. Requires one-time Google Cloud setup and sign-in.' },
+    { id: 'google-docs', name: 'Google Docs', category: 'Productivity', authType: 'oauth', transport: 'http',
+      url: 'https://docsmcp.googleapis.com/mcp/v1', official: true, homepage: 'https://docs.google.com',
+      aliases: ['google', 'google docs', 'docs', 'gsuite', 'g suite', 'google workspace'],
+      staticOauth: GOOGLE_OAUTH(['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive.readonly']),
+      blurb: 'Read and write Docs through Google\'s Developer Preview MCP server. Requires one-time Google Cloud setup and sign-in.' },
+    { id: 'google-sheets', name: 'Google Sheets', category: 'Productivity', authType: 'oauth', transport: 'http',
+      url: 'https://sheetsmcp.googleapis.com/mcp/v1', official: true, homepage: 'https://sheets.google.com',
+      aliases: ['google', 'google sheets', 'sheets', 'spreadsheet', 'gsuite', 'g suite', 'google workspace'],
+      staticOauth: GOOGLE_OAUTH(['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive.readonly']),
+      blurb: 'Read and write Sheets through Google\'s Developer Preview MCP server. Requires one-time Google Cloud setup and sign-in.' },
     { id: 'notion', name: 'Notion', category: 'Productivity', authType: 'oauth', transport: 'http',
       url: 'https://mcp.notion.com/mcp', official: true, homepage: 'https://notion.so',
       blurb: 'Search, read, and create Notion pages and databases. Needs Notion sign-in (OAuth).' },
@@ -223,6 +269,18 @@
       id: e.id, name: e.name, category: e.category, authType: e.authType, transport: e.transport,
       url: e.url || '', official: !!e.official, homepage: e.homepage || '', blurb: e.blurb || '',
       via: e.via || '', keyHeader: e.keyHeader || '', local: !!e.local, installable: isInstallable(e),
+      // staticOauth: fixed OAuth endpoints for an AS with no dynamic registration (Google). Deep-cloned.
+      staticOauth: e.staticOauth ? {
+        authorizationServer: e.staticOauth.authorizationServer,
+        authorizationEndpoint: e.staticOauth.authorizationEndpoint,
+        tokenEndpoint: e.staticOauth.tokenEndpoint,
+        scopes: (e.staticOauth.scopes || []).slice(),
+        extraAuthParams: Object.assign({}, e.staticOauth.extraAuthParams || {}),
+        clientSecretRequired: !!e.staticOauth.clientSecretRequired,
+        developerPreview: !!e.staticOauth.developerPreview,
+        setupUrl: e.staticOauth.setupUrl || '', setupName: e.staticOauth.setupName || '',
+        setupNote: e.staticOauth.setupNote || ''
+      } : null,
       // ALIASES — the names a Commander actually TYPES, which are frequently not the row's name and not in
       // its blurb. "google drive" found nothing while a Google Workspace card sat on screen (2026-07-28);
       // relying on a term happening to appear in marketing copy is not a search. Ride into the card's
