@@ -120,10 +120,14 @@
       presets: ['Gmail', 'Outlook'],
       blurb: 'One key bridges 500+ apps — including managed Gmail and Outlook email connections, plus X, Slack, Google Drive, Notion, GitHub, and more.' },
 
-    // ── Social — paste an API key (read access); posting needs OAuth ───────────────────────────────────
+    // ── Social — direct first-party surfaces for reading, publishing, and campaign operations ─────────
     { id: 'x-twitter', name: 'X (Twitter)', category: 'Social', authType: 'apikey', transport: 'http',
       url: 'https://api.x.com/mcp', official: true, homepage: 'https://x.com',
       blurb: "X's official server — search and read posts, profiles, and timelines with your X API Bearer token. This read-only token connector does not grant posting (that needs X's write OAuth scope)." },
+    { id: 'zernio', name: 'Zernio', category: 'Social', authType: 'oauth', transport: 'http',
+      url: 'https://mcp.zernio.com/mcp', official: true, homepage: 'https://zernio.com',
+      aliases: ['zernio', 'social media', 'social publishing', 'instagram', 'tiktok', 'linkedin', 'facebook', 'youtube', 'threads', 'reddit', 'pinterest', 'bluesky', 'whatsapp', 'social ads', 'social analytics', 'direct messages'],
+      blurb: 'Publish and schedule across 16 social platforms, manage inboxes, ads, automations, and analytics through Zernio. Needs Zernio sign-in (OAuth).' },
 
     // ── Payments & Finance — one API key ──────────────────────────────────────────────────────────────
     { id: 'stripe', name: 'Stripe', category: 'Payments & Finance', authType: 'apikey', transport: 'http',
