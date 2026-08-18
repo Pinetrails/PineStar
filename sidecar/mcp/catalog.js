@@ -60,8 +60,11 @@
       scopes: scopes.slice(),
       // Without these Google issues NO refresh token and the connector dies in ~1h.
       extraAuthParams: { access_type: 'offline', prompt: 'consent' },
-      setupUrl: 'https://console.cloud.google.com/auth/clients',
-      setupName: 'Google Cloud Console'
+      clientSecretRequired: true,
+      developerPreview: true,
+      setupUrl: 'https://developers.google.com/workspace/guides/configure-mcp-servers',
+      setupName: 'Google Workspace setup guide',
+      setupNote: 'Developer Preview: enable the product API and MCP API in your Google Cloud project, then create an OAuth Web application client.'
     };
   }
 
@@ -146,27 +149,27 @@
       url: 'https://gmailmcp.googleapis.com/mcp/v1', official: true, homepage: 'https://mail.google.com',
       aliases: ['google', 'gmail', 'google mail', 'email', 'gsuite', 'g suite', 'google workspace'],
       staticOauth: GOOGLE_OAUTH(['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose']),
-      blurb: 'Read, search, and draft Gmail — Google\'s official Gmail MCP server. Needs a one-time Google sign-in.' },
+      blurb: 'Read, search, and draft Gmail through Google\'s Developer Preview MCP server. Requires one-time Google Cloud setup and sign-in.' },
     { id: 'google-drive', name: 'Google Drive', category: 'Productivity', authType: 'oauth', transport: 'http',
       url: 'https://drivemcp.googleapis.com/mcp/v1', official: true, homepage: 'https://drive.google.com',
       aliases: ['google', 'google drive', 'gdrive', 'drive', 'gsuite', 'g suite', 'google workspace'],
       staticOauth: GOOGLE_OAUTH(['https://www.googleapis.com/auth/drive.readonly', 'https://www.googleapis.com/auth/drive.file']),
-      blurb: 'Search, read, and manage Google Drive files — Google\'s official Drive MCP server. Needs a one-time Google sign-in.' },
+      blurb: 'Search, read, and manage Drive files through Google\'s Developer Preview MCP server. Requires one-time Google Cloud setup and sign-in.' },
     { id: 'google-calendar', name: 'Google Calendar', category: 'Productivity', authType: 'oauth', transport: 'http',
       url: 'https://calendarmcp.googleapis.com/mcp/v1', official: true, homepage: 'https://calendar.google.com',
       aliases: ['google', 'google calendar', 'gcal', 'calendar', 'gsuite', 'g suite', 'google workspace'],
       staticOauth: GOOGLE_OAUTH(['https://www.googleapis.com/auth/calendar.calendarlist.readonly', 'https://www.googleapis.com/auth/calendar.events.readonly', 'https://www.googleapis.com/auth/calendar.events.freebusy']),
-      blurb: 'Read calendars, events, and free/busy — Google\'s official Calendar MCP server. Needs a one-time Google sign-in.' },
+      blurb: 'Read calendars, events, and free/busy through Google\'s Developer Preview MCP server. Requires one-time Google Cloud setup and sign-in.' },
     { id: 'google-docs', name: 'Google Docs', category: 'Productivity', authType: 'oauth', transport: 'http',
       url: 'https://docsmcp.googleapis.com/mcp/v1', official: true, homepage: 'https://docs.google.com',
       aliases: ['google', 'google docs', 'docs', 'gsuite', 'g suite', 'google workspace'],
       staticOauth: GOOGLE_OAUTH(['https://www.googleapis.com/auth/documents', 'https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive.readonly']),
-      blurb: 'Read and write Google Docs — Google\'s official Docs MCP server. Needs a one-time Google sign-in.' },
+      blurb: 'Read and write Docs through Google\'s Developer Preview MCP server. Requires one-time Google Cloud setup and sign-in.' },
     { id: 'google-sheets', name: 'Google Sheets', category: 'Productivity', authType: 'oauth', transport: 'http',
       url: 'https://sheetsmcp.googleapis.com/mcp/v1', official: true, homepage: 'https://sheets.google.com',
       aliases: ['google', 'google sheets', 'sheets', 'spreadsheet', 'gsuite', 'g suite', 'google workspace'],
       staticOauth: GOOGLE_OAUTH(['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/drive.readonly']),
-      blurb: 'Read and write Google Sheets — Google\'s official Sheets MCP server. Needs a one-time Google sign-in.' },
+      blurb: 'Read and write Sheets through Google\'s Developer Preview MCP server. Requires one-time Google Cloud setup and sign-in.' },
     { id: 'notion', name: 'Notion', category: 'Productivity', authType: 'oauth', transport: 'http',
       url: 'https://mcp.notion.com/mcp', official: true, homepage: 'https://notion.so',
       blurb: 'Search, read, and create Notion pages and databases. Needs Notion sign-in (OAuth).' },
@@ -273,7 +276,10 @@
         tokenEndpoint: e.staticOauth.tokenEndpoint,
         scopes: (e.staticOauth.scopes || []).slice(),
         extraAuthParams: Object.assign({}, e.staticOauth.extraAuthParams || {}),
-        setupUrl: e.staticOauth.setupUrl || '', setupName: e.staticOauth.setupName || ''
+        clientSecretRequired: !!e.staticOauth.clientSecretRequired,
+        developerPreview: !!e.staticOauth.developerPreview,
+        setupUrl: e.staticOauth.setupUrl || '', setupName: e.staticOauth.setupName || '',
+        setupNote: e.staticOauth.setupNote || ''
       } : null,
       // ALIASES — the names a Commander actually TYPES, which are frequently not the row's name and not in
       // its blurb. "google drive" found nothing while a Google Workspace card sat on screen (2026-07-28);

@@ -925,8 +925,8 @@
       const redirectUri = 'http://127.0.0.1:' + (location.port || '8787') + '/api/connectors/oauth/callback';
       const clientField = (e.authType === 'oauth' && e.staticOauth && e.needsClient)
         ? '<div class="cc-key cc-oclient" style="display:none">' +
-            '<div class="mc-hint">One-time setup (shared by every ' + esc(e.staticOauth.setupName || 'vendor') + ' card): ' +
-              '1&#41; open <a href="' + esc(e.staticOauth.setupUrl) + '" target="_blank" rel="noopener">' + esc(e.staticOauth.setupName || 'the vendor console') + ' ↗</a> and create an OAuth <b>Web application</b> client &middot; ' +
+            '<div class="mc-hint">One-time setup shared by every Google card. ' + esc(e.staticOauth.setupNote || '') + ' ' +
+              '1&#41; follow the <a href="' + esc(e.staticOauth.setupUrl) + '" target="_blank" rel="noopener">' + esc(e.staticOauth.setupName || 'vendor setup guide') + ' ↗</a> &middot; ' +
               '2&#41; add this redirect URI exactly: <code>' + esc(redirectUri) + '</code> &middot; ' +
               '3&#41; paste the client ID and secret here.</div>' +
             '<input type="text" class="key-input" data-cc-oclientid="' + esc(e.id) + '" placeholder="client ID" autocomplete="off" spellcheck="false">' +
@@ -1141,10 +1141,13 @@
         const secIn = wrap && wrap.querySelector('input[data-cc-oclientsecret]');
         if (wrap && wrap.style.display === 'none') { wrap.style.display = ''; btn.textContent = '▶ SAVE & SIGN IN'; if (idIn) idIn.focus(); sfx('tick'); return; }
         const cid = ((idIn && idIn.value) || '').trim();
+        const secret = ((secIn && secIn.value) || '').trim();
         if (!cid) { sfx('bad'); ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'paste the client ID first'; return; }
+        const entry = ccCache.find(x => x.id === id);
+        if (entry && entry.staticOauth && entry.staticOauth.clientSecretRequired && !secret) { sfx('bad'); ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'paste the client secret too'; return; }
         btn.disabled = true;
         try {
-          const j = await (await postJSON('/api/connectors/oauth/client', { id: id, clientId: cid, clientSecret: ((secIn && secIn.value) || '').trim() })).json().catch(() => ({}));
+          const j = await (await postJSON('/api/connectors/oauth/client', { id: id, clientId: cid, clientSecret: secret })).json().catch(() => ({}));
           if (j.error) { ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = '✕ ' + j.error; sfx('bad'); btn.disabled = false; return; }
           // update the local cache so ccSignIn sees the flipped state, then sign in right away.
           ccCache.forEach(x => { if (x.staticOauth && x.staticOauth.authorizationServer === j.authorizationServer) x.needsClient = false; });
@@ -1155,7 +1158,7 @@
       }
       else if (act === 'signin-cancel') { ccCancelSignIn(id); }
       else if (act === 'via') {
-        // Jump to the aggregator card that actually reaches this platform (e.g. Google Workspace -> Zapier).
+        // Jump to the aggregator card that actually reaches this platform (e.g. Atlassian -> Zapier).
         const viaId = btn.dataset.via;
         const target = ccListEl.querySelector('.cc-card[data-id="' + (window.CSS && CSS.escape ? CSS.escape(viaId) : viaId) + '"]');
         const e = ccCache.find(x => x.id === id), v = ccCache.find(x => x.id === viaId);

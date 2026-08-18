@@ -329,10 +329,62 @@ async function readNdjson(res) {
     A.ok(Array.isArray(cat.connectors) && cat.connectors.length >= 10, 'catalog returns the seed connectors');
     const dw = cat.connectors.find(c => c.id === 'deepwiki');
     const notion = cat.connectors.find(c => c.id === 'notion');
+    const gmail = cat.connectors.find(c => c.id === 'gmail');
     A.ok(dw && dw.installable === true, 'a no-auth connector (deepwiki) is installable today');
     A.ok(notion && notion.installable === false, 'an oauth connector (notion) is listed but NOT installable yet');
+    A.ok(gmail && gmail.url === 'https://gmailmcp.googleapis.com/mcp/v1' && gmail.needsClient === true, 'direct Gmail is listed and truthfully needs one-time OAuth client setup');
     A.ok(cat.connectors.every(c => !('token' in c)), 'catalog entries never carry a token');
     A.ok(cat.connectors.every(c => c.installed === false), 'nothing marked installed before we add a catalog id');
+
+    // Google has fixed OAuth endpoints but no dynamic client registration. Before setup the start route must
+    // fail fast and truthfully; saving the ONE shared Web client then unlocks every Google product card.
+    const googleBeforeSetup = await fetch(B + '/api/connectors/oauth/start', {
+      method: 'POST', headers, body: JSON.stringify({ id: 'gmail', attemptId: 'google-before-setup' })
+    });
+    A.eq(googleBeforeSetup.status, 428, 'direct Google sign-in refuses before the one-time app client exists');
+    const googleBeforeBody = await googleBeforeSetup.json();
+    A.ok(googleBeforeBody.needsClient === true && googleBeforeBody.redirectUri === B + '/api/connectors/oauth/callback', 'Google setup response returns the exact loopback redirect without probing the remote server');
+
+    const googleMissingSecret = await fetch(B + '/api/connectors/oauth/client', {
+      method: 'POST', headers, body: JSON.stringify({ id: 'gmail', clientId: 'fake-client.apps.googleusercontent.com' })
+    });
+    A.eq(googleMissingSecret.status, 400, 'Google Web client setup requires its client secret');
+    A.ok(/client secret/i.test((await googleMissingSecret.json()).error || ''), 'missing Google secret receives actionable guidance');
+    const googleWrongEntry = await fetch(B + '/api/connectors/oauth/client', {
+      method: 'POST', headers, body: JSON.stringify({ id: 'notion', clientId: 'fake-client.apps.googleusercontent.com', clientSecret: 'fake-google-secret' })
+    });
+    A.eq(googleWrongEntry.status, 400, 'the static-client route cannot overwrite a DCR connector client');
+
+    const googleClientId = 'fake-client.apps.googleusercontent.com';
+    const googleClientSecret = 'fake-google-client-secret';
+    const googleSave = await fetch(B + '/api/connectors/oauth/client', {
+      method: 'POST', headers, body: JSON.stringify({ id: 'gmail', clientId: googleClientId, clientSecret: googleClientSecret })
+    });
+    A.eq(googleSave.status, 200, 'Google Web client saves through the protected connector state');
+    const googleSaveBody = await googleSave.json();
+    A.ok(googleSaveBody.ok === true && googleSaveBody.saved === true && googleSaveBody.authorizationServer === 'https://accounts.google.com', 'Google client save returns only non-secret state');
+    A.ok(JSON.stringify(googleSaveBody).indexOf(googleClientId) < 0 && JSON.stringify(googleSaveBody).indexOf(googleClientSecret) < 0, 'Google client save never echoes either credential');
+
+    const catWithGoogle = await (await fetch(B + '/api/connectors/catalog', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    const googleCards = catWithGoogle.connectors.filter(c => ['gmail', 'google-drive', 'google-calendar', 'google-docs', 'google-sheets'].indexOf(c.id) >= 0);
+    A.eq(googleCards.length, 5, 'catalog exposes the five direct Google product cards exactly once');
+    A.ok(googleCards.every(c => c.needsClient === false), 'one saved Google client unlocks SIGN IN for every Google card');
+    A.ok(JSON.stringify(catWithGoogle).indexOf(googleClientId) < 0 && JSON.stringify(catWithGoogle).indexOf(googleClientSecret) < 0, 'catalog never leaks the saved Google OAuth client');
+
+    const googleStart = await fetch(B + '/api/connectors/oauth/start', {
+      method: 'POST', headers, body: JSON.stringify({ id: 'gmail', attemptId: 'google-ready-start' })
+    });
+    A.eq(googleStart.status, 200, 'direct Gmail OAuth starts after client setup without a Zapier detour');
+    const googleStartBody = await googleStart.json();
+    const googleAuth = new URL(googleStartBody.url);
+    A.eq(googleAuth.origin + googleAuth.pathname, 'https://accounts.google.com/o/oauth2/v2/auth', 'direct Gmail opens Google authorization');
+    A.eq(googleAuth.searchParams.get('client_id'), googleClientId, 'Google authorization uses the saved client id');
+    A.eq(googleAuth.searchParams.get('redirect_uri'), B + '/api/connectors/oauth/callback', 'Google authorization uses the exact live sidecar callback');
+    A.eq(googleAuth.searchParams.get('access_type'), 'offline', 'Google authorization requests durable offline access');
+    A.eq(googleAuth.searchParams.get('prompt'), 'consent', 'Google authorization requests a refresh-token-bearing consent');
+    A.ok(/gmail\.readonly/.test(googleAuth.searchParams.get('scope') || '') && /gmail\.compose/.test(googleAuth.searchParams.get('scope') || ''), 'Google authorization requests the Gmail read + draft scopes');
+    A.ok(!googleAuth.searchParams.has('resource'), 'Google authorization omits the RFC 8707 resource parameter its endpoint does not use');
+    A.ok(googleAuth.searchParams.get('state') && googleAuth.searchParams.get('code_challenge_method') === 'S256', 'Google authorization carries CSRF state and PKCE S256');
     // installing a connector whose id AND url match a catalog entry flips `installed`. Use the entry's REAL url +
     // enabled:false so no network connect happens; the config still records id+url for the cross-ref.
     const dwUrl = (cat.connectors.find(c => c.id === 'deepwiki') || {}).url;
@@ -376,6 +428,11 @@ async function readNdjson(res) {
     A.ok(JSON.stringify(afterRestart).indexOf(invalidSecret) === -1, 'restart projection never contains the rejected secret');
     const restartDisk = fs.existsSync(connectorFile) ? fs.readFileSync(connectorFile, 'utf8') : '';
     A.ok(restartDisk.indexOf('invalid-scheme') < 0 && restartDisk.indexOf(invalidSecret) < 0, 'restart readback proves invalid connector and token were never persisted');
+    const restartCatalog = await (await fetch(B + '/api/connectors/catalog', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    const restartedGoogle = restartCatalog.connectors.filter(c => ['gmail', 'google-drive', 'google-calendar', 'google-docs', 'google-sheets'].indexOf(c.id) >= 0);
+    A.ok(restartedGoogle.length === 5 && restartedGoogle.every(c => c.needsClient === false), 'Google OAuth client survives sidecar restart and keeps every direct card sign-in-able');
+    A.ok(restartDisk.indexOf(googleClientId) >= 0 && restartDisk.indexOf(googleClientSecret) >= 0, 'restart reads the exact protected Google client credentials from durable connector state');
+    A.ok(JSON.stringify(restartCatalog).indexOf(googleClientId) < 0 && JSON.stringify(restartCatalog).indexOf(googleClientSecret) < 0, 'restart catalog still exposes no Google client credential');
 
     sse = await startSseCollector(B + '/api/channels/events?token=' + encodeURIComponent(token));
     const create = await fetch(B + '/api/cron', {
@@ -541,6 +598,45 @@ async function readNdjson(res) {
     try { llm.server.close(); } catch (_) {}
     await sleep(150);
     try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+  }
+
+  // An app-shipped Google client is an environment credential, not user connector state. Prove that using it
+  // unlocks direct sign-in but an unrelated durable connector save cannot copy either value onto disk.
+  const envWs = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-google-env-e2e-'));
+  const envClientId = 'env-client.apps.googleusercontent.com';
+  const envClientSecret = 'env-google-client-secret';
+  let envChild = null;
+  try {
+    const envBoot = await boot(9080 + (process.pid % 50), {
+      SKYNET_WORKSPACES: envWs,
+      STARNET_WORKSPACES: envWs,
+      STARNET_GOOGLE_OAUTH_CLIENT_ID: envClientId,
+      STARNET_GOOGLE_OAUTH_CLIENT_SECRET: envClientSecret
+    }, 20);
+    envChild = envBoot.child;
+    const envBase = 'http://' + HOST + ':' + envBoot.port;
+    const envToken = await bootToken(envBase, envBase);
+    const envHeaders = { 'Content-Type': 'application/json', 'X-StarNet-Token': envToken, Origin: envBase };
+    const envCatalog = await (await fetch(envBase + '/api/connectors/catalog', { headers: { 'X-StarNet-Token': envToken, Origin: envBase } })).json();
+    A.eq((envCatalog.connectors.find(c => c.id === 'gmail') || {}).needsClient, false, 'complete app-provided Google credentials unlock direct sign-in');
+    const envStart = await fetch(envBase + '/api/connectors/oauth/start', {
+      method: 'POST', headers: envHeaders, body: JSON.stringify({ id: 'gmail', attemptId: 'google-env-start' })
+    });
+    A.eq(envStart.status, 200, 'app-provided Google credentials start the direct OAuth flow');
+    A.eq(new URL((await envStart.json()).url).searchParams.get('client_id'), envClientId, 'direct OAuth uses the app-provided client id');
+    const unrelatedSave = await fetch(envBase + '/api/connectors', {
+      method: 'POST', headers: envHeaders,
+      body: JSON.stringify({ id: 'env-proof', label: 'Env proof', transport: 'http', url: 'https://example.com/mcp', enabled: false })
+    });
+    A.eq(unrelatedSave.status, 200, 'unrelated disabled connector save completes while app Google credentials are active');
+    const envDiskPath = path.join(envWs, 'connectors', 'state.json');
+    const envDisk = fs.existsSync(envDiskPath) ? fs.readFileSync(envDiskPath, 'utf8') : '';
+    A.ok(envDisk.indexOf(envClientId) < 0 && envDisk.indexOf(envClientSecret) < 0, 'app-provided Google credentials are never copied into durable user connector state');
+    A.ok(JSON.stringify(envCatalog).indexOf(envClientId) < 0 && JSON.stringify(envCatalog).indexOf(envClientSecret) < 0, 'catalog never exposes app-provided Google credentials');
+  } finally {
+    try { if (envChild) envChild.kill(); } catch (_) {}
+    await sleep(150);
+    try { fs.rmSync(envWs, { recursive: true, force: true }); } catch (_) {}
   }
   A.report('e2e.mcp-connector.test');
 })().catch(e => { console.log('FAIL: e2e.mcp-connector.test threw - ' + (e && e.stack || e)); process.exit(1); });

@@ -3748,17 +3748,23 @@ function loadConnectorState() {
 let connectorState = loadConnectorState();
 let connectorConfigs = connectorState.configs;
 let connectorOauth = connectorState.oauth;
-/* App-shipped Google OAuth client (optional): when the packaged build carries STARNET_GOOGLE_OAUTH_CLIENT_ID
-   (+_SECRET), seed it as the pre-registered client for accounts.google.com so Google Workspace sign-in is
-   one click with zero setup. A client the Commander already pasted always wins (never overwritten). It lands
-   in the same protected connector state as DCR-issued clients (it may persist alongside them on a later save). */
-if (process.env.STARNET_GOOGLE_OAUTH_CLIENT_ID && !(connectorOauth.clients['https://accounts.google.com'] || {}).clientId) {
-  connectorOauth.clients['https://accounts.google.com'] = {
-    clientId: String(process.env.STARNET_GOOGLE_OAUTH_CLIENT_ID).trim(),
-    clientSecret: String(process.env.STARNET_GOOGLE_OAUTH_CLIENT_SECRET || '').trim(),
-    tokenEndpointAuthMethod: process.env.STARNET_GOOGLE_OAUTH_CLIENT_SECRET ? 'client_secret_post' : 'none',
-    at: 0, fromEnv: true
-  };
+/* Optional app-shipped Google client. Keep it OUT of connectorOauth so an environment secret can never be
+   copied into the user's durable connector file by an unrelated later save. A Commander-pasted client wins. */
+const GOOGLE_OAUTH_AS = 'https://accounts.google.com';
+const GOOGLE_OAUTH_ENV_CLIENT = (() => {
+  const clientId = String(process.env.STARNET_GOOGLE_OAUTH_CLIENT_ID || '').trim();
+  const clientSecret = String(process.env.STARNET_GOOGLE_OAUTH_CLIENT_SECRET || '').trim();
+  if ((clientId || clientSecret) && !(clientId && clientSecret)) {
+    console.warn('[connectors] Google OAuth env client is incomplete; both client id and secret are required');
+  }
+  return clientId && clientSecret
+    ? { clientId, clientSecret, tokenEndpointAuthMethod: 'client_secret_post', at: 0, fromEnv: true }
+    : null;
+})();
+function connectorOauthClient(authServer) {
+  const saved = connectorOauth.clients[String(authServer || '')] || {};
+  if (saved.clientId) return saved;
+  return authServer === GOOGLE_OAUTH_AS && GOOGLE_OAUTH_ENV_CLIENT ? GOOGLE_OAUTH_ENV_CLIENT : {};
 }
 function persistConnectorState(nextConfigs, nextOauth) {
   const intended = connectorStateMod.envelope(nextConfigs, nextOauth);
@@ -9639,17 +9645,16 @@ function handleConnectorCatalog(req, res) {
   // staticOauth entries: annotate whether their pre-registered client exists yet, so the card can honestly
   // render SET UP (no client) vs SIGN IN (client present). Only a boolean crosses the wire — never the client.
   const markNeedsClient = (e) => {
-    if (e.staticOauth) e.needsClient = !((connectorOauth.clients[e.staticOauth.authorizationServer] || {}).clientId);
+    if (e.staticOauth) e.needsClient = !connectorOauthClient(e.staticOauth.authorizationServer).clientId;
   };
   payload.connectors.forEach(markNeedsClient);
   payload.groups.forEach(g => g.connectors.forEach(markNeedsClient));
   res.end(JSON.stringify(payload));
 }
-/* POST /api/connectors/oauth/client {id, clientId, clientSecret?} — store the ONE-TIME pre-registered OAuth
+/* POST /api/connectors/oauth/client {id, clientId, clientSecret} — store the ONE-TIME pre-registered OAuth
    client for a staticOauth connector's authorization server (Google has no dynamic registration, so the
    Commander creates a client in the vendor console once and pastes it here). Shared across every catalog row
-   on the same AS. clientId:'' forgets the stored client. Secrets land in the protected connector state
-   exactly like DCR-issued secrets; never echoed back. */
+   on the same AS. Secrets land in the protected connector state exactly like DCR-issued secrets; never echoed. */
 async function handleConnectorOauthClient(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 8192)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
@@ -9658,12 +9663,14 @@ async function handleConnectorOauthClient(req, res) {
   const as = entry.staticOauth.authorizationServer;
   const clientId = String(body.clientId || '').trim();
   const clientSecret = String(body.clientSecret || '').trim();
-  if (clientId && !/^[\x21-\x7e]{6,256}$/.test(clientId)) return json(400, { error: 'that does not look like a client ID' });
-  const client = clientId ? { clientId, clientSecret, tokenEndpointAuthMethod: clientSecret ? 'client_secret_post' : 'none', at: Date.now() } : null;
+  if (!/^[\x21-\x7e]{6,256}$/.test(clientId)) return json(400, { error: 'that does not look like a client ID' });
+  if (entry.staticOauth.clientSecretRequired && !clientSecret) return json(400, { error: 'paste the client secret too' });
+  if (clientSecret && !/^[\x21-\x7e]{6,512}$/.test(clientSecret)) return json(400, { error: 'that does not look like a client secret' });
+  const client = { clientId, clientSecret, tokenEndpointAuthMethod: clientSecret ? 'client_secret_post' : 'none', at: Date.now() };
   const next = connectorStateMod.withOauthClient(connectorStateMod.envelope(connectorConfigs, connectorOauth), as, client);
   if (!persistConnectorState(next.configs, next.oauth)) return json(500, { error: 'could not save the client to disk — check the sidecar console' });
   adoptConnectorState(next);
-  return json(200, { ok: true, saved: !!clientId, cleared: !clientId, authorizationServer: as });
+  return json(200, { ok: true, saved: true, authorizationServer: as });
 }
 async function handleConnectorUpsert(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -9832,7 +9839,7 @@ async function handleConnectorOauthStart(req, res) {
     if (entry.staticOauth && entry.staticOauth.authorizationEndpoint) {
       const so = entry.staticOauth;
       const as = so.authorizationServer || new URL(so.authorizationEndpoint).origin;
-      const cached = connectorOauth.clients[as] || {};
+      const cached = connectorOauthClient(as);
       if (!cached.clientId) {
         completed = true;
         return json(428, { error: 'this connector needs a one-time app setup before sign-in', needsClient: true,

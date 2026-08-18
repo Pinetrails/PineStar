@@ -186,7 +186,10 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
     // Google never issues a refresh token without these — a connector that dies in an hour is a lie.
     A.eq(e.staticOauth.extraAuthParams.access_type, 'offline', id + ' requests offline access (refresh token)');
     A.eq(e.staticOauth.extraAuthParams.prompt, 'consent', id + ' forces the consent prompt (refresh token on re-grant)');
-    A.ok(e.staticOauth.setupUrl, id + ' names where the one-time app client is created');
+    A.eq(e.staticOauth.clientSecretRequired, true, id + ' requires the Web application client secret Google issues');
+    A.eq(e.staticOauth.developerPreview, true, id + ' is honestly marked as Google Developer Preview');
+    A.ok(/^https:\/\/developers\.google\.com\/workspace\//.test(e.staticOauth.setupUrl), id + ' links the official complete setup guide');
+    A.ok(/enable the product API and MCP API/i.test(e.staticOauth.setupNote), id + ' states the required Google Cloud enablement step');
     A.eq(C.installConfig(id), null, id + ' is not one-click-upsert installable (sign-in flow owns it)');
     A.ok(e.aliases.indexOf('google') >= 0 && e.aliases.indexOf('google workspace') >= 0, id + ' is findable by the google names');
   }
@@ -213,7 +216,8 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
   const composio = C.get('composio');
   A.eq(composio.presets, ['Gmail', 'Outlook'], 'one existing connector exposes the Gmail + Outlook presets');
   A.ok(composio.aliases.indexOf('email') >= 0 && composio.aliases.indexOf('microsoft outlook') >= 0, 'email searches resolve to the preset-bearing connector');
-  A.eq(C.list().filter(e => /^(gmail|outlook|email)$/i.test(e.name)).length, 0, 'email presets do not create duplicate connector cards');
+  A.eq(C.list().filter(e => /^gmail$/i.test(e.name)).length, 1, 'Gmail has exactly one direct connector card');
+  A.eq(C.list().filter(e => /^(outlook|email)$/i.test(e.name)).length, 0, 'Composio presets do not create duplicate Outlook/Email connector cards');
 
   A.eq(C.list().filter(e => /duckduckgo/i.test(e.id + ' ' + e.name)).length, 0, 'DuckDuckGo is not duplicated as a connector (it is built into web_search)');
   A.eq(C.get('atlassian').via, 'zapier', 'Atlassian stays on the proven route until an authenticated direct tool call exists');
