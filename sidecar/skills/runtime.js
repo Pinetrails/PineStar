@@ -7,10 +7,12 @@
 */
 'use strict';
 (function (root, factory) {
-  const api = factory();
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else { (root.SK = root.SK || {}).runtimeSkills = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  // context.js supplies the ONE lexical scorer (bm25) so the skill index ranks by the same brain memory
+  // recall uses — never a second drifting copy of the algorithm. Node requires it; the (vestigial) browser
+  // path picks it off root.SK, degrading to unordered if absent — composeIndex guards for that.
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('../context.js'));
+  else { (root.SK = root.SK || {}).runtimeSkills = factory((root.SK || {}).context); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (context) {
   'use strict';
 
   function str(v) { return v == null ? '' : String(v); }
@@ -31,17 +33,40 @@
     catch (_) { return { visible: true, reason: '' };  /* a gate hiccup must never empty the index */ }
   }
 
+  /* RELEVANCE-ORDERED INDEX: with opts.query, the index leads with the skills lexically relevant to THIS ask —
+     under the 6000-char budget the relevant skill must never be the one skipped for a stale-but-recent one.
+     Pinned skills keep the existing contract (always first, in caller order). The rest sort by context.js's
+     bm25 over {name, summary} (skills shim onto the record shape as title/body), tiebreak updatedAt desc then
+     name then caller order — the caller (skillStore mine()) already sorts that way, so a no-overlap query
+     degrades to today's order. No query at all (or no scorer in the vestigial browser path) → exactly the
+     caller's order, byte-identical to before. Nothing is ever DROPPED by relevance: the budget's own
+     skip-and-count is the only omission path, unchanged. */
+  function orderByQuery(live, query, ctx) {
+    if (!query || !ctx || typeof ctx.bm25 !== 'function') return live;
+    const rel = ctx.bm25(live.map(s => ({ kind: 'note', title: str(s && s.name), body: str(s && s.summary) })), query);
+    if (!rel.queried) return live;   // no significant tokens (image-only turn) -> today's order
+    const rows = live.map((s, i) => ({ s: s, i: i, score: rel.scores[i] || 0 }));
+    const cmp = (a, b) => (b.score - a.score)
+      || (((b.s && b.s.updatedAt) || 0) - ((a.s && a.s.updatedAt) || 0))
+      || str(a.s && a.s.name).localeCompare(str(b.s && b.s.name))
+      || (a.i - b.i);
+    const pinned = rows.filter(x => x.s && x.s.pinned);
+    const rest = rows.filter(x => !(x.s && x.s.pinned)).sort(cmp);
+    return pinned.concat(rest).map(x => x.s);
+  }
+
   function composeIndex(skills, opts) {
     opts = opts || {};
     const budget = opts.budget > 0 ? opts.budget : 6000;
     const live = (Array.isArray(skills) ? skills : []).filter(s => isLive(s, opts.platform));
     if (!live.length) return { text: '', ids: [], omitted: 0, withheld: 0 };
+    const ordered = orderByQuery(live, opts.query == null ? '' : String(opts.query), context);
 
     const canManage = opts.canManage !== false;
     const parts = [];
     const ids = [];
     let used = 0, omitted = 0, withheld = 0;
-    for (const s of live) {
+    for (const s of ordered) {
       const bits = [];
       bits.push('- ' + cleanLine(s.name || s.id || 'Skill'));
       /* A WITHHELD SKILL IS NAMED, NEVER SUMMARIZED, AND NEVER PROMISED. The row exists so the

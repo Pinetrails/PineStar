@@ -5,6 +5,49 @@ UI, release, and workload gates; it does not replace them or make a release-read
 The fixed suite identifier is `starnet-0.9.0-agent-quality-v1`. Its first baseline was captured on
 the pre-version-bump 0.9.0 integration candidate while `package.json` still reported 0.8.5.
 
+## What is gated where (2026-08-17)
+
+| Surface | What runs | Trigger |
+| --- | --- | --- |
+| `test/fast.list` (release gate) | 8 eval unit suites incl. `test/agent-eval.test.js` (spawns the real runner) and `test/eval-parity-offline.test.js` (offline-driver guards + full 32+4 run) | `npm run test:fast`; release train on `v*` tag/dispatch |
+| `.github/workflows/eval-gates.yml` (NEW) | `npm run eval:gate` — the whole credential-free slice below | every PR + every push to `feat/harness-backend` |
+| `npm run eval:gate` | `eval:contract` → `eval:agent-quality` → fault capture ×100 (1000 rows) → fault gauntlet grade → `eval:parity:offline` (32 scenarios + 4 violation probes), then writes ONE durable receipt | local + CI (~30 s total measured; fault capture ~15 s at the frozen 100 repeats — the runner refuses any other repeat count, so there is no reduced CI mode) |
+| Live campaigns (`campaign-runner.mjs`, soak, installed performance) | provider-backed, installed-candidate, Hermes-referenced | manual only; never CI |
+
+**Durable receipts:** `npm run eval:gate` writes `qa/eval-receipts/last-gate-receipt.json`
+(committed home — see `qa/eval-receipts/README.md` for exactly what it does and does NOT
+prove). `.dogfood/` stays gitignored; full campaign evidence lives there with only hash
+indexes committed under `docs/baselines/`.
+
+**Offline parity driver:** `npm run eval:parity:offline`
+(`adapters/parity-offline.mjs`, modeled on the scripted-provider pattern of
+`adapters/quality.mjs`; the campaign runner's live drivers spawn full installed
+harnesses and stay out of CI). It drives all 32 scenarios of `packs/parity-v0.9.0.jsonl`
+through the REAL `runAgentLoop` + the real fixture MCP host over loopback + the real
+independent grader — with a scripted in-process provider and NO keys. Coverage is
+asserted in code (`assertScriptCoverage`): a pack scenario without a script fails the
+run, so coverage can never shrink silently. Four deliberate-violation probes prove the
+grader flags each zero-tolerance class (falseDone, wrongDestination, duplicateMutation,
+authorityEscape). **This measures harness plumbing, never model quality**: receipts carry
+`liveModel:false` and can never satisfy the frozen v0.9.0 contract gates — enforced by
+`assertPlumbingReceipt` in code, not by convention. Do not misread a green offline run
+the way a green `eval-campaign-preflight` test can be misread: it proves the rails and
+the refusals work, not that any model passes the scenarios.
+
+## OPEN DECISIONS (Andrew) — documented, not decided
+
+1. **The frozen contract is pinned to a superseded Hermes.** `contracts/v0.9.0.json`
+   freezes Hermes Agent 0.19.1 @ `cc4cab2f592e60a197e796506de9168f74baf3ea`, which
+   `docs/NEXT.md` already calls stale. Options: re-pin the reference (a new frozen
+   contract version) or drop the Hermes leg from recurring gates and keep it
+   campaign-only. The recurring gate above deliberately runs only the Hermes-free
+   surface (contract validation, quality, fault, offline parity) so it does not front-run
+   this decision.
+2. **The Aug 3–6 campaign's 2 falseDone zero-tolerance reds remain undecided.** The last
+   real live campaign FAILED closed on two falseDone events. Nothing in this recurring
+   gate re-adjudicates or supersedes that result; the campaign verdict stands until
+   Andrew rules on those two events (fix + rerun, or accept + document).
+
 ## v0.9 reliability and parity contract
 
 The frozen comparison contract is `contracts/v0.9.0.json`. It binds the comparison to Hermes Agent

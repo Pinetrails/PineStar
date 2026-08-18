@@ -78,6 +78,36 @@ compared them against WORLD-tile tables, so on any station whose origin wasn't (
 never lifted anything at all. A mounted prop also sorts **+0.5** after its host (same tiles = equal sort
 keys, so array order would otherwise decide). Locked by `test/prop-mount.test.js`.
 
+## Orientation — `r` / `m`, and why a facing has to be DRAWN
+
+A prop doc may carry `r` (quarter turns clockwise, 0..3, 0 = the shipped south-facing art) and `m`
+(mirrored). Both are omitted at their defaults, so an unturned prop serializes byte-identical to a
+pre-rotation save. In REFIT: **R turns, shift+R turns back, M flips** — acting on the prop under the
+cursor if there is one, otherwise on the pending placement (and DUPE carries the orientation).
+
+Turning is **not** a canvas transform in the general case. The v3/v4 art law bakes a south-facing
+FRONT face and one fixed light (warm KEY high-west, cool SKY rim east) into every draw fn, so a
+rotated desk would swing its monitor — real vertical elevation drawn at `y-12` — out sideways and
+rotate the light with it. Turned views are therefore **authored**, one fn per facing, keyed in the
+same `F` table under a `:` suffix (`F['chair:e']`, `F['chair:n']`, `F['longtable:e']`). `viewAt(id,r)`
+is the only place that decides what a facing may draw, and `facings(id)` reads the `F` table
+directly, so adding `F['bench:e']` gives the bench that facing with no list to update.
+
+| rule | where |
+| --- | --- |
+| only `tier:'cosmetic'` props turn (a functional prop's front is load-bearing) | `viewAt` |
+| a WEST view is the authored EAST one mirrored, re-lit through `px()`'s LSWAP | `viewAt` |
+| a prop whose two sides are one picture offers ONE turn (`SIDE_SYMMETRIC`) | `viewAt` |
+| a turn NEVER resizes an upright prop; only a decal or a table re-tiles | `footprintAt` |
+| the approach side turns with the prop | `propanchor.js` `frontOf`/`turnSide` |
+| a seat the user aimed decides which way its occupant faces | `world.js` `planSeat` |
+
+`arcade` is authored 1×2 because it is TALL, not deep — reading that 2 as depth is what made a
+turned cabinet twice as wide as itself in the earlier lane. A table is the opposite: its footprint
+IS its top surface, so a turned 3×1 trestle really is 1×3 and its deep view is drawn for that box.
+Eligibility is measured, not asserted: `test/proprotate.test.js` draws every facing every prop
+offers through a recording context and fails if one is not a different picture from its south view.
+
 ## Leisure — `use` makes a prop a DESTINATION
 
 A catalog row may carry `use: {kind, sit, approach}`. That is what makes an idle agent walk to a prop
@@ -141,5 +171,7 @@ belts are walkable floor machinery by contract. `airlock` (a door) and `missionb
   and all 95 entries are checked headlessly; the original 84-prop browser pass remains historical
   evidence rather than a claim that the later additions were part of that older run.
 - **Stage 4 (later):** conveyor system — `beltH` belt segments + `boxes` that ride them (motion).
-- **Possible polish:** rotate/flip (R key), prop-aware footprint hints, an auto-desk-as-real-prop
-  unification with the live-world workstation FSM.
+- **Orientation (done 2026-08-17):** `r`/`m` on the doc, R/shift+R/M in REFIT, authored turned views
+  for the chair (all four facings) and the two rectangular tables (see the ORIENTATION section).
+- **Possible polish:** turned views for more of the lounge, prop-aware footprint hints, an
+  auto-desk-as-real-prop unification with the live-world workstation FSM.

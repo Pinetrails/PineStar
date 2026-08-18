@@ -26,8 +26,9 @@ A.ok(/const\s+execution\s*=\s*makeRunExecutionState\(\{[\s\S]*?artifacts:\s*make
 A.ok(/execution\.observeArtifact\(\{\s*toolName:\s*c\.name,\s*args:\s*c\.args,\s*result:\s*r\s*\}\)/.test(idx),
   'every dispatched tool result is observed (toolName/args/result)');
 // the observe sits BEFORE the tool-output budget clip, so parses see the real result text
+// (the clip now reads the window-scaled cap via runToolBytesCap(), not CAPS.maxToolBytes directly)
 const obsAt = idx.indexOf('execution.observeArtifact');
-const clipAt = idx.indexOf('maxToolBytes', obsAt >= 0 ? obsAt : 0);
+const clipAt = idx.indexOf('execution.boundToolResult(r, runToolBytesCap()', obsAt >= 0 ? obsAt : 0);
 A.ok(obsAt >= 0 && clipAt > obsAt, 'observe happens before the tool-output budget clip');
 A.ok(/runStore\.record\(\{[^\n]*artifacts:\s*execution\.artifactList\(\)/.test(idx),
   'the recorded run entry carries artifacts from the execution state');

@@ -5,6 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync,
 import { createHash } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findCurrentNsisInstaller } from './lib/release-installer.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const rawArgs = process.argv.slice(2);
@@ -60,18 +61,9 @@ function tauriVersion() {
   const conf = readJson(join(ROOT, 'src-tauri', 'tauri.conf.json'), {});
   return conf && conf.version || '';
 }
-function findInstaller(nsisDir) {
-  try {
-    const names = readdirSync(nsisDir).filter(n => /-setup\.exe$/i.test(n)).sort();
-    return names.length ? join(nsisDir, names[names.length - 1]) : '';
-  } catch (_) {
-    return '';
-  }
-}
 function artifactPaths() {
   const release = join(ROOT, 'src-tauri', 'target', 'release');
-  const nsis = join(release, 'bundle', 'nsis');
-  const installer = process.env.STARNET_T0_INSTALLER_EXE || findInstaller(nsis);
+  const installer = process.env.STARNET_T0_INSTALLER_EXE || findCurrentNsisInstaller(ROOT);
   return {
     installer: installer ? resolve(installer) : '',
     version: tauriVersion()

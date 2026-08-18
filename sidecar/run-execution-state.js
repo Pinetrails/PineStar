@@ -7,6 +7,20 @@
 
 const { makeToolProgressGuard } = require('./tool-progress-guard.js');
 
+/* WINDOW-SCALED PER-RUN TOOL-OUTPUT CAP. The cap exists so a few big reads can't blow the context window, but
+   it must sit ABOVE the compaction threshold in bytes: compaction (0.65 × window tokens) is the one event that
+   folds those bytes out of the prompt and re-arms this budget (resetToolBytes rides agent.compact). A flat cap
+   below the threshold deadlocks — the budget exhausts, every later tool returns a receipt, and the fold that
+   would free it can never fire because the prompt stops growing. 2.6 bytes per context token = 0.65 × 4
+   (tokens ≈ bytes/4), i.e. exactly the threshold in bytes; system prompt + assistant turns push the real prompt
+   over the threshold before tool bytes alone reach the cap. `floorBytes` (the legacy 120KB) still binds when
+   the window is tiny or unknown. Pure so the invariant is unit-testable. */
+function toolBytesCapFor(contextLimit, floorBytes) {
+  const floor = Math.max(0, Math.floor(Number(floorBytes) || 0));
+  const limit = Math.max(0, Math.floor(Number(contextLimit) || 0));
+  return Math.max(floor, Math.ceil(limit * 2.6));
+}
+
 function makeRunExecutionState(options) {
   const opts = options || {};
   const artifacts = opts.artifacts;
@@ -255,4 +269,4 @@ function makeRunExecutionState(options) {
   };
 }
 
-module.exports = { makeRunExecutionState };
+module.exports = { makeRunExecutionState, toolBytesCapFor };

@@ -18,6 +18,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import * as pathMod from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findCurrentNsisInstaller } from './lib/release-installer.mjs';
 import vm from 'node:vm';
 
 const require = createRequire(import.meta.url);
@@ -97,18 +98,10 @@ function argValue(name) {
   const idx = rawArgs.indexOf(name);
   return idx >= 0 ? rawArgs[idx + 1] : '';
 }
-function findInstaller(nsisDir) {
-  try {
-    const names = readdirSync(nsisDir).filter(n => /-setup\.exe$/i.test(n)).sort();
-    return names.length ? join(nsisDir, names[names.length - 1]) : '';
-  } catch (_) {
-    return '';
-  }
-}
 function installerPath() {
   const raw = process.env.STARNET_T4_INSTALLER_EXE || process.env.STARNET_T3_INSTALLER_EXE || process.env.STARNET_T0_INSTALLER_EXE || '';
   if (raw) return resolve(raw);
-  return findInstaller(join(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'nsis'));
+  return findCurrentNsisInstaller(ROOT);
 }
 function updateProofPath() {
   const raw = process.env.STARNET_T4_UPDATE_PROOF || argValue('--update-proof') || '';
