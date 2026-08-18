@@ -182,9 +182,13 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
     A.eq(addA.status, 200, 'bot A added');
     A.eq(addA.j.botId, '111', 'bot A keyed by its getMe id');
     A.eq(addA.j.username, 'NovaBot', 'bot A username surfaced');
+    A.eq(addA.j.pairingRequired, true, 'bot A add response says owner pairing is still required');
+    A.ok(/^[-A-Z0-9]{11}$/.test(String(addA.j.pairingCode || '')), 'bot A add response immediately carries its pairing command');
     const addB = await api('POST', '/api/channels/telegram/bots/connect', { token: TOK_B, agentId: 'scout_1', agentName: 'SCOUT', model: 'test/model' });
     A.eq(addB.status, 200, 'bot B added');
     A.eq(addB.j.botId, '222', 'bot B keyed by its getMe id');
+    A.eq(addB.j.pairingRequired, true, 'bot B add response says owner pairing is still required');
+    A.ok(/^[-A-Z0-9]{11}$/.test(String(addB.j.pairingCode || '')), 'bot B add response immediately carries its pairing command');
     await waitUntil(() => tg.perToken[TOK_A].calls.some(c => c.method === 'getUpdates'), 5000, 'bot A polls');
     await waitUntil(() => tg.perToken[TOK_B].calls.some(c => c.method === 'getUpdates'), 5000, 'bot B polls');
 
@@ -195,16 +199,24 @@ const STATION = 'STATIONTOKEN', TOK_A = 'TOKAAA', TOK_B = 'TOKBBB';
       return bots.length === 2 && bots.every(b => b.connected === true);
     }, 5000, 'both bots CONNECTED in status');
 
+    // Polling is not DM readiness: an ordinary pre-pair DM is intentionally silent, but the add response already
+    // gave the Commander the exact enrollment command instead of leaving them to discover a second control.
+    const prePairSends = tg.perToken[TOK_A].sends.length;
+    tg.pushText(TOK_A, 900, 77, 'why are you not answering?');
+    await sleep(1200);
+    A.eq(tg.perToken[TOK_A].sends.length, prePairSends, 'ordinary pre-pair DM is refused before model work or delivery');
+
     // Each bot has its own explicit local-to-Telegram owner enrollment. First DM is not authority.
-    const pairBot = async (botId, botToken) => {
-      const pair = await api('POST', '/api/channels/telegram/bots/' + botId + '/owner/pair', {});
-      A.eq(pair.status, 200, 'bot ' + botId + ' issued an owner pairing code');
-      A.ok(/^[-A-Z0-9]{11}$/.test(String(pair.j.code || '')), 'bot ' + botId + ' pairing code shape');
-      tg.pushText(botToken, 900, 77, '/pair ' + pair.j.code);
+    const pairBot = async (botId, botToken, pairingCode) => {
+      tg.pushText(botToken, 900, 77, '/pair ' + pairingCode);
       await waitUntil(() => tg.perToken[botToken].sends.some(s => String(s.chat_id) === '900' && /Owner paired/i.test(String(s.text || ''))), 8000, 'bot ' + botId + ' pairing acknowledgement');
     };
-    await pairBot('111', TOK_A);
-    await pairBot('222', TOK_B);
+    await pairBot('111', TOK_A, addA.j.pairingCode);
+    // The explicit PAIR button remains the recovery path for an expired/lost command and rotates it safely.
+    const repairB = await api('POST', '/api/channels/telegram/bots/222/owner/pair', {});
+    A.eq(repairB.status, 200, 'bot B can rotate its automatically issued code through the recovery route');
+    A.ok(/^[-A-Z0-9]{11}$/.test(String(repairB.j.code || '')), 'bot B recovery pairing code shape');
+    await pairBot('222', TOK_B, repairB.j.code);
     const botBSendsBeforeA = tg.perToken[TOK_B].sends.length;
     const stationSendsBeforeA = tg.perToken[STATION].sends.length;
 

@@ -27,6 +27,10 @@ A.ok(/out\.pairingCode = pairing\.code/.test(sidecar),
   'the authenticated connect route returns the freshly issued one-time pairing code');
 A.ok(/ownerLocked, acceptingDms/.test(sidecar),
   'channel status exposes the operational DM-admission truth separately from poll health');
+A.ok(/finish setup now/.test(ui.slice(ui.indexOf('function wireTelegramBots'))) && /j\.pairingCode/.test(ui.slice(ui.indexOf('function wireTelegramBots'))),
+  'adding an agent bot immediately renders the exact owner pairing command instead of waiting for impossible green');
+A.ok(/issueTelegramBotOwnerPairing/.test(sidecar) && /out\.pairingCode = pairing\.code/.test(sidecar.slice(sidecar.indexOf('async function handleTelegramBotAdd'))),
+  'the agent-bot add route issues the owner challenge in its authenticated response');
 
 const mirror = fs.readFileSync(path.join(root, 'website', 'app', 'app', 'windows', 'messaging.js'), 'utf8');
 A.ok(mirror.includes('POLLING — DMs BLOCKED: PAIR OWNER') && /j\.pairingCode/.test(mirror),

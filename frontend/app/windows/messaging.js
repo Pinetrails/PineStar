@@ -670,9 +670,16 @@
           if (!r.ok || j.error) { sfx('bad'); setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); }
           else {
             sfx('click'); tokInp.value = '';
-            // the CONNECTED claim stays with the list row (painted from proven per-instance status) — this line
-            // only asserts what getMe proved: the token is real and the bot is bound.
-            setMsg(msgEl, '✓ @' + (j.username || 'bot') + (j.rebound ? ' re-bound' : ' added') + ' — connecting; DM it on Telegram once the row shows ●', 'ok');
+            // A new agent bot is deliberately deaf until its Telegram owner proves possession with /pair.
+            // Surface that command NOW, in the same response that proved the token, instead of telling the user
+            // to wait for a green row that cannot become green before pairing.
+            if (j.pairingCode) {
+              setMsg(msgEl, '✓ @' + (j.username || 'bot') + (j.rebound ? ' re-bound' : ' added') + ' — finish setup now: DM that bot /pair ' + j.pairingCode + ' (expires in 10 minutes).', 'info');
+            } else if (j.pairingRequired) {
+              setMsg(msgEl, '◐ @' + (j.username || 'bot') + ' is polling, but DMs are blocked: ' + (j.pairingError || 'click its PAIR button to issue the owner command.'), 'info');
+            } else {
+              setMsg(msgEl, '✓ @' + (j.username || 'bot') + (j.rebound ? ' re-bound' : ' added') + ' — connecting as the paired owner', 'ok');
+            }
           }
         } catch (e) { sfx('bad'); setMsg(msgEl, '✕ ' + ((e && e.message) || 'failed to reach the sidecar'), ''); }
         refreshAll();

@@ -7420,6 +7420,15 @@ function persistTelegramBotOwnerClaim(botId, uid) {
   channelSecrets = Object.assign({}, channelSecrets, { telegramBots: all });
   return saveChannelSecrets(channelSecrets) || saveChannelSecrets(channelSecrets);
 }
+// Agent-bound bots use the same explicit local enrollment as the station bot. Keep this in one helper so the
+// add flow and the recovery PAIR action cannot drift: a code is returned only after its salted verifier was
+// durably read back, and the raw code never enters status, logs, or the bot transcript.
+function issueTelegramBotOwnerPairing(botId) {
+  const issued = telegramOwnerPairing.issue({ now: Date.now() });
+  const persisted = saveTelegramBotRecord(botId, { ownerPairing: issued.state });
+  if (!persisted) return { ok: false, error: 'could not save the pairing challenge; no code was issued' };
+  return { ok: true, code: issued.code, expiresAt: issued.state.expiresAt, persisted: true };
+}
 // chat-record namespace wrapper: '<botId>|<chatId>' keys so two bots DM'd by the same user never cross-bind;
 // the REAL chatId + this instance's channel ride ON the record so the notifier can still address the chat.
 function makeBotScopedStore(botId) {
@@ -17002,7 +17011,24 @@ async function handleTelegramBotAdd(req, res) {
   });
   try { startTelegramBot(botId); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
   const live = telegramBots.get(botId);
-  json(200, { botId: botId, username: me.username || '', rebound: !!prev.token, state: (live && live.status && live.status.state) || 'connecting', persisted: !!persisted });
+  // Adding a bot must not strand the Commander at a healthy-but-deaf poller. Mint the required owner challenge
+  // in the SAME response that confirms the token/binding, exactly as the station-bot connect flow does. Before
+  // this, the UI told people to wait for a green row that could never become green until they found and clicked
+  // a separate PAIR control — a circular setup path that looked like silent Telegram failure.
+  const current = telegramBotRecords()[botId] || {};
+  const pairingRequired = !current.ownerId;
+  const pairing = pairingRequired ? issueTelegramBotOwnerPairing(botId) : { ok: true, persisted: !!persisted };
+  const out = {
+    botId: botId, username: me.username || '', rebound: !!prev.token,
+    state: (live && live.status && live.status.state) || 'connecting',
+    persisted: pairingRequired ? !!pairing.persisted : !!persisted,
+    pairingRequired
+  };
+  if (pairingRequired && pairing.ok) {
+    out.pairingCode = pairing.code;
+    out.pairingExpiresAt = pairing.expiresAt;
+  } else if (pairingRequired) out.pairingError = pairing.error || 'could not issue an owner pairing code';
+  json(200, out);
 }
 
 // POST /api/channels/telegram/bots/<botId>/connect (resume from saved) | /disconnect { purge? }.
@@ -17032,10 +17058,9 @@ async function handleTelegramBotOwner(req, res, botId, verb) {
   if (!cur) return json(404, { error: 'unknown bot' });
   if (verb === 'pair') {
     if (cur.ownerId) return json(409, { error: 'an owner is already paired; revoke it locally before pairing a different account' });
-    const issued = telegramOwnerPairing.issue({ now: Date.now() });
-    const persisted = saveTelegramBotRecord(botId, { ownerPairing: issued.state });
-    if (!persisted) return json(500, { error: 'could not save the pairing challenge; no code was issued' });
-    return json(200, { code: issued.code, expiresAt: issued.state.expiresAt, persisted: true });
+    const issued = issueTelegramBotOwnerPairing(botId);
+    if (!issued.ok) return json(500, { error: issued.error });
+    return json(200, { code: issued.code, expiresAt: issued.expiresAt, persisted: true });
   }
   const all = Object.assign({}, telegramBotRecords());
   const next = Object.assign({}, cur);
