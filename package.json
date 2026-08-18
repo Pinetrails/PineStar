@@ -1,6 +1,6 @@
 {
   "name": "starnet-harness",
-  "version": "0.10.3",
+  "version": "0.10.5",
   "private": true,
   "description": "A local-first, gamified desktop harness for building and running real AI-agent teams.",
   "license": "MIT",
