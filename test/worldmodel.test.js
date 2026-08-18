@@ -214,6 +214,20 @@ const noType = sp.addProp({ t: '', x: 8, y: 5, w: 1, h: 1 });
 A.ok(!noType.ok && noType.error === 'NO_TYPE', 'a typeless prop is rejected');
 A.eq(sp.props().length, 1, 'rejected prop adds do not mutate the doc');
 
+/* wall mounts are a placement constraint only: the prop stays in its own deck tile, but every
+   footprint tile must touch the visible north wall. Lock both add and move so a future builder
+   change cannot silently place a wall-only prop in open floor. */
+WM.setPropRules(t => t === 'weaponrack' ? { mount: 'wall' } : {});
+const sw = WM.create();
+const wallMid = sw.addProp({ t: 'weaponrack', x: 3, y: 3, w: 3, h: 1, block: false });
+A.ok(!wallMid.ok && wallMid.error === 'NEEDS_WALL', 'a wall-mounted prop is refused in open floor');
+const wallEdge = sw.addProp({ t: 'weaponrack', x: 3, y: 0, w: 3, h: 1, block: false });
+A.ok(wallEdge.ok && wallEdge.id, 'the same prop places against the visible north wall');
+const wallMove = sw.moveProp(wallEdge.id, 0, 2);
+A.ok(!wallMove.ok && wallMove.error === 'NEEDS_WALL', 'moving a wall-mounted prop off the wall is refused');
+A.eq(sw.propById(wallEdge.id).y, 0, 'a refused wall move leaves the mounted prop in place');
+WM.setPropRules(null);
+
 /* props block walkability in the projected geometry (the furniture seam) */
 const gp = sp.projectGeometry();
 A.ok(gp.props && gp.props.length === 1, 'projectGeometry emits props in the local frame');
