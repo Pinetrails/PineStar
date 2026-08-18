@@ -1511,8 +1511,8 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-18 03:14Z @ 19d3476f | GREEN | 0 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-17T13:01:43.053Z · ui-only · 100408ms | PASS | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-18 04:14Z @ 8f22d02e | GREEN | 0 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-18T04:17:00.436Z · ui-only · 112790ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
@@ -2594,3 +2594,5 @@ GATE: two runs, two DIFFERENT reds, each passing standalone — `boot-security` 
 - 2026-08-18: merged `agent/release-gates-exact-artifact` (`41feb7754`) — RELEASE GATES FAIL CLOSED ON THE EXACT VERSIONED INSTALLER. T0/T1/T3/T4/T5 and the local release cutter now share one canonical Tauri-version resolver and require `StarNet_<version>_x64-setup.exe`; no lexicographic fallback can silently select an older package. A regression fixture containing both 0.8.0 and 0.10.5 proves exact selection, missing-version refusal, and path-escape rejection. Branch gate: `test:fast` **650/650 GREEN**. No push or publication performed.
 
 - 2026-08-18: merged `agent/late-merge-release-hardening` (`c135b89f8`) — WALL-MOUNTED PROP PLACEMENT IS CONTRACT-LOCKED before the refreshed 0.10.5 cut. The model now has explicit regression coverage proving open-floor refusal, north-wall placement, off-wall move refusal, and non-mutation after refusal. Late-merge audit gates on the lane: `test:fast` **650/650 GREEN** and `test:http` **78/78 GREEN**; Parallel Search also answered a live anonymous MCP initialize and tools/list request. No push or publication performed.
+
+- 2026-08-18: merged `agent/release-notes-late-merges` (`0d8961c6c`) — v0.10.5 RELEASE NOTES NOW NAME THE LATE PAYLOAD: the new lab/aimed/wall prop set and the Parallel Search, Unreal Engine, Brave Search, Firecrawl, Gmail, and Outlook catalog additions. The 209-file release surface was re-locked; lane `test:fast` **650/650 GREEN**. No push or publication performed.
