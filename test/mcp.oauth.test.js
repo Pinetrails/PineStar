@@ -132,6 +132,18 @@ const REDIRECT = 'http://127.0.0.1:8787/api/connectors/oauth/callback';
   A.eq(q.get('resource'), SERVER, 'authorize carries the RFC 8707 resource indicator');
   A.eq(q.get('state'), 'st-42', 'authorize carries CSRF state');
   A.eq(q.get('client_id'), 'dcr-abc-123', 'authorize carries the registered client_id');
+  // extraParams (catalog staticOauth, e.g. Google): appended verbatim, scope joins arrays, and a
+  // reserved param can never be overridden by an extra one.
+  const gUrl = O.buildAuthorizeUrl({ authorizationEndpoint: 'https://accounts.google.com/o/oauth2/v2/auth', clientId: 'g-1', redirectUri: REDIRECT, challenge, state: 'st-9',
+    scope: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.compose'],
+    extraParams: { access_type: 'offline', prompt: 'consent', client_id: 'EVIL', state: 'EVIL' } });
+  const gq = new URL(gUrl).searchParams;
+  A.eq(gq.get('access_type'), 'offline', 'authorize carries extraParams (Google access_type=offline)');
+  A.eq(gq.get('prompt'), 'consent', 'authorize carries extraParams (Google prompt=consent)');
+  A.eq(gq.get('scope'), 'https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.compose', 'array scope joins with spaces');
+  A.eq(gq.get('client_id'), 'g-1', 'an extraParam can NEVER override client_id');
+  A.eq(gq.get('state'), 'st-9', 'an extraParam can NEVER override state');
+  A.ok(!gq.has('resource'), 'no resource param when none is given (Google is not RFC 8707)');
 }
 
 // ---- E. code exchange → tokens; resource indicator is sent; expiresAt computed from injected now ----

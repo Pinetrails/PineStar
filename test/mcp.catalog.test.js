@@ -164,7 +164,42 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
       A.ok(target && target.installable, e.id + ' via targets a real, installable catalog entry (' + e.via + ')');
     }
   }
-  for (const id of ['google-workspace', 'atlassian']) A.ok(!!(C.get(id) || {}).via, id + ' points at its aggregator route (via)');
+  A.ok(!!(C.get('atlassian') || {}).via, 'atlassian points at its aggregator route (via)');
+}
+
+// ---- K. Google Workspace (2026-08-14): DIRECT official endpoints with staticOauth, no via-Zapier detour ----
+{
+  A.eq(C.get('google-workspace'), null, 'the stale via-zapier google-workspace umbrella row is gone');
+  const GOOGLE = ['gmail', 'google-drive', 'google-calendar', 'google-docs', 'google-sheets'];
+  for (const id of GOOGLE) {
+    const e = C.get(id);
+    A.ok(e, id + ' is in the catalog');
+    A.eq(e.authType, 'oauth', id + ' is an oauth connector');
+    A.ok(/^https:\/\/\w+mcp\.googleapis\.com\/mcp\/v1$/.test(e.url), id + ' rides Google\'s official MCP endpoint (' + e.url + ')');
+    A.ok(!e.via, id + ' needs no aggregator detour');
+    A.ok(e.staticOauth, id + ' carries staticOauth (Google has no dynamic client registration)');
+    A.eq(e.staticOauth.authorizationServer, 'https://accounts.google.com', id + ' shares the ONE Google authorization server (client pasted once)');
+    A.ok(/^https:\/\/accounts\.google\.com\//.test(e.staticOauth.authorizationEndpoint), id + ' authorize endpoint is Google\'s');
+    A.eq(e.staticOauth.tokenEndpoint, 'https://oauth2.googleapis.com/token', id + ' token endpoint is Google\'s');
+    A.ok(Array.isArray(e.staticOauth.scopes) && e.staticOauth.scopes.length >= 2, id + ' declares real scopes');
+    A.ok(e.staticOauth.scopes.every(s => /^https:\/\/www\.googleapis\.com\/auth\//.test(s)), id + ' scopes are googleapis auth scopes');
+    // Google never issues a refresh token without these — a connector that dies in an hour is a lie.
+    A.eq(e.staticOauth.extraAuthParams.access_type, 'offline', id + ' requests offline access (refresh token)');
+    A.eq(e.staticOauth.extraAuthParams.prompt, 'consent', id + ' forces the consent prompt (refresh token on re-grant)');
+    A.eq(e.staticOauth.clientSecretRequired, true, id + ' requires the Web application client secret Google issues');
+    A.eq(e.staticOauth.developerPreview, true, id + ' is honestly marked as Google Developer Preview');
+    A.ok(/^https:\/\/developers\.google\.com\/workspace\//.test(e.staticOauth.setupUrl), id + ' links the official complete setup guide');
+    A.ok(/enable the product API and MCP API/i.test(e.staticOauth.setupNote), id + ' states the required Google Cloud enablement step');
+    A.eq(C.installConfig(id), null, id + ' is not one-click-upsert installable (sign-in flow owns it)');
+    A.ok(e.aliases.indexOf('google') >= 0 && e.aliases.indexOf('google workspace') >= 0, id + ' is findable by the google names');
+  }
+  // deep-clone guarantee for the new nested field: mutating a returned staticOauth must not leak into the seed.
+  const g1 = C.get('gmail'); g1.staticOauth.scopes.push('MUTATED'); g1.staticOauth.extraAuthParams.prompt = 'MUTATED';
+  const g2 = C.get('gmail');
+  A.ok(g2.staticOauth.scopes.indexOf('MUTATED') < 0, 'staticOauth.scopes is defensively cloned');
+  A.eq(g2.staticOauth.extraAuthParams.prompt, 'consent', 'staticOauth.extraAuthParams is defensively cloned');
+  // entries WITHOUT staticOauth carry an explicit null (a stable shape the UI can branch on).
+  A.eq(C.get('notion').staticOauth, null, 'a DCR oauth entry has staticOauth: null');
 }
 
 // ---- K. requested parity additions are present once, and pre-existing routes stay singular ----
@@ -181,7 +216,8 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
   const composio = C.get('composio');
   A.eq(composio.presets, ['Gmail', 'Outlook'], 'one existing connector exposes the Gmail + Outlook presets');
   A.ok(composio.aliases.indexOf('email') >= 0 && composio.aliases.indexOf('microsoft outlook') >= 0, 'email searches resolve to the preset-bearing connector');
-  A.eq(C.list().filter(e => /^(gmail|outlook|email)$/i.test(e.name)).length, 0, 'email presets do not create duplicate connector cards');
+  A.eq(C.list().filter(e => /^gmail$/i.test(e.name)).length, 1, 'Gmail has exactly one direct connector card');
+  A.eq(C.list().filter(e => /^(outlook|email)$/i.test(e.name)).length, 0, 'Composio presets do not create duplicate Outlook/Email connector cards');
 
   A.eq(C.list().filter(e => /duckduckgo/i.test(e.id + ' ' + e.name)).length, 0, 'DuckDuckGo is not duplicated as a connector (it is built into web_search)');
   A.eq(C.get('atlassian').via, 'zapier', 'Atlassian stays on the proven route until an authenticated direct tool call exists');

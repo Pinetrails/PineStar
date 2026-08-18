@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "9a76752284cd236d9a82e988e3970c20d3cae7e8",
+    "sourceCommit": "f1f49d9ca1ef20f270aa7dac2b5ee8423567bb4d",
     "pathSetSha256": "92160ff9edb3cc6cd7deb0d0e0b35e6e60cf470af43886963164d96bbfaccd50",
     "files": [
       {
@@ -738,8 +738,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 637880,
-        "sha256": "7ea32e39f9933bb42202b04560d2f4ce9b910a513e8dae989f9a756cbe5ccc6a"
+        "bytes": 635249,
+        "sha256": "bd431b96b129e842faee4f6590a15bdb79ce2f608ee8db2601ae96cfbd19a7fa"
       },
       {
         "path": "frontend/app/study.js",
@@ -778,8 +778,8 @@
       },
       {
         "path": "frontend/app/toolprops.js",
-        "bytes": 4382,
-        "sha256": "7e5be6fc756bd54d64271e1f29bd61ad442aa36ecd23c7222ba7d245668f7173"
+        "bytes": 4189,
+        "sha256": "43e5888004215f475e240bbc8ee9ecf26132f78e3548dbd20e3edf143e1b563e"
       },
       {
         "path": "frontend/app/tooltip.js",
@@ -873,8 +873,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 103892,
-        "sha256": "8bdcf249c840cd9312e995d656eb65bbe311944790b7ae8df6869ec293a69eac"
+        "bytes": 107906,
+        "sha256": "91ec1e8c069723a4a821d155ac90e8a9bb0b403914e192bbcb1185a2e4f6282c"
       },
       {
         "path": "frontend/app/windows/logbook.js",
