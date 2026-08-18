@@ -55,7 +55,7 @@ function fakeDeps(busy, extra) {
     const ev = fakeEvent();
     const { deps, calls } = fakeDeps(2, { keepsRunning: async () => true });
     await Q.handleCloseRequested(ev, deps);
-    A.eq(ev.prevented, false, 'tray-supervised close is allowed to reach the native hide path');
+    A.eq(ev.prevented, true, 'tray-supervised close preserves the hidden main window for tray/relaunch reveal');
     A.eq(calls.drains, 1, 'tray-supervised close flushes state before hiding');
     A.eq(calls.shows.length, 0, 'tray-supervised close never claims it will kill live runs');
   }
