@@ -1404,6 +1404,38 @@ per-crew roll-up below can be regenerated any time with:
 node scripts/qa/ledger.mjs --status
 ```
 
+## 2026-08-17 — LAB + AIMED + WALL PROPS (merged `dc0a5f071`, pure FF)
+
+Twelve catalog entries and one placement rule, all additive.
+
+- **CRYO POD** (1x2) and **INCUBATOR** (1x2) — lit tanks with contents: a sleeper behind frost that
+  thickens to the corners, and a column of culture with a specimen suspended in it. Both are the
+  CLAW-MACHINE recipe (stacked bands, a window with contents, one saturated hue, floor-sized).
+- **TELESCOPE**, **CAMERA RIG**, **BENCH PRESS**, **HEAVY BAG**, **WEAPON RACK** — each shipped as a
+  left and a right entry, the right one drawn by mirroring the left through `mirrorV`, so a pair can
+  never drift.
+- **`mount: 'wall'` IS BACK — as a CONSTRAINT ONLY.** The rule shipped once and was reverted
+  (`00b976506`, "the wall-mounted look was bad") because it LIFTED props onto the tall face the bake
+  raises along a room's north edge. This version never lifts anything: it requires a wall north of
+  every footprint tile and the prop draws exactly where it always did. One branch in `checkProp`,
+  one catalog flag; the `propRules` injection already carried `mount` through.
+
+**Gate:** `npm run test:fast` **650/650 green FROM THE LOG** on the synced lane tree, hash-identical
+to trunk by the FF. Trunk had moved a long way (121 -> 130 props) and `propsprites.js` conflicted in
+two places; both were "both sides added new props at the same anchor" and were resolved by UNION,
+with a duplicate-id check after (none).
+
+⛔ **SCALE IS ARITHMETIC, NOT TASTE.** An agent is ~35px for ~1.7m, so the station runs at ~20px per
+metre. Two props in this lane shipped wrong before that was applied — the bench-press bar at
+standing-head height, and rack weapons at 30px (86% of a person). ⛔ **AND WHEN A PROP CANNOT BE
+BOTH TRUE-SCALE AND LEGIBLE, CUT THE COUNT, NOT THE SIZE**: two rifles and a blade at a truthful
+18px are a texture; one rifle at 22px with a blade on its own shelf reads.
+
+⛔ **NOT PUSHED** — the diff touches `website/`, which auto-deploys starnetos.com on push. Nothing
+here affects the already-packaged installer: no version file is touched and no existing prop art
+changed. A station saved WITH these props and opened by the shipped build loses them, since
+`deserialize` prunes prop types the running build does not know.
+
 ## 2026-08-17 — RECLINER (merged `f860b8797`, pure FF)
 
 One seat of the couch, shipped as TWO lounge props: `recliner` faces left, `recliner_r` faces right.
