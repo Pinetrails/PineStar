@@ -1,15 +1,14 @@
-# StarNet v0.10.5
+# StarNet v0.10.6
 
-This update improves long-running agent work, makes memory and skills more relevant, and expands how the station can be furnished without changing existing saves.
+This update makes delegated work, connected services, and first-run station setup more dependable while reducing notification noise.
 
-- Agents can issue independent tool calls in parallel where the safety policy permits, reducing avoidable turn-by-turn delays during multi-step work.
-- Long runs now scale tool-output budgets to the active model context window and re-evaluate those limits when a provider fallback changes models, preventing both premature truncation and unreachable compaction thresholds.
-- Memory recall and the skill library rank against the current conversation, so unrelated recent material stays out while relevant knowledge and reusable skills surface sooner.
-- Failed runs can produce carefully filtered lessons for future attempts, with high-stakes suggestions held for review and personalization controls still respected.
-- Reflection, study, scouting, compaction, and skill maintenance can use a configurable lower-cost auxiliary model and effort tier, with safe fallback to the active run model where required.
-- REFIT now supports honest authored furniture facings and footprint-aware rotation for eligible decor, including chairs, tables, booths, rugs, and floor decals.
-- The furniture catalog adds distinct 3x3 and 5x5 rugs, improves several top-down prop projections, and corrects seating behavior for profile chairs.
-- New station props include cryo pods, incubators, telescopes, camera rigs, heavy bags, bench presses, and wall-mounted weapon racks, with paired left/right variants where direction matters.
-- The abilities catalog adds Parallel Search and local Unreal Engine MCP connections, Brave Search and Firecrawl API-key entries, and Gmail/Outlook presets through the existing Composio connector.
-- Idle crews gather more naturally while retaining wall, visibility, pathing, and personal-space constraints.
-- Existing stations, orientation-free props, memory settings, and saved agent configuration continue to load with backward-compatible defaults.
+- The Commander can steer active delegates and hand off the lead task context, so multi-agent work stays aligned as plans change.
+- Anthropic models through OpenRouter reuse stable cacheable context anchors, improving long-conversation efficiency without changing the visible conversation.
+- A provider retry after partial streaming no longer repeats text that was already shown.
+- Google Workspace gains direct Developer Preview connections for Gmail, Drive, Calendar, Docs, and Sheets with shared OAuth setup and restart-safe credential handling.
+- Zernio joins the Social connector catalog with its official OAuth flow and searchable network coverage.
+- Telegram replies are final-only, pairing appears immediately, agent bots stay bound to the selected roster agent, and removing a bot clears its recoverable credentials only after durable proof.
+- The notification bell now keeps actionable results and failures while leaving routine flavor, progress chatter, and one-tap confirmations out of persistent history.
+- REFIT's starter card now teaches the five practical agent powers—Files, Web, Terminal, Memory, and Images—and retires once the station has them.
+- Background reflection, scouting, skill maintenance, quest refresh, and other fail-open passes now leave throttled diagnostic traces instead of disappearing silently when their envelope fails.
+- Release verification now understands structured cached provider prompts, restoring full approval, workshop-deliverable, visual, and installed-build coverage for this candidate.
