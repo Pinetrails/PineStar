@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "9022d7770d9255a1da9433bd43a7fd4406eb57cc",
+    "sourceCommit": "38bfabb893e04a25de7fe7724ab1e426de806353",
     "pathSetSha256": "92160ff9edb3cc6cd7deb0d0e0b35e6e60cf470af43886963164d96bbfaccd50",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 326351,
-        "sha256": "669c9af9c593f77342748d9e33ddaf259f83651118ae0730cf2b3cc729d89c32"
+        "bytes": 323929,
+        "sha256": "550b1b643a57593f4104f2da677480bb79a6e541868db3c07197c162e65736cb"
       },
       {
         "path": "frontend/app/channels.js",
@@ -968,8 +968,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 381516,
-        "sha256": "9022a3c7ab338501cde889261c4c48c68ac3565b697f81fad2badf72fb37f1f0"
+        "bytes": 380397,
+        "sha256": "ff943823d8886984b28da5fa427ab53525108c1665c026ac1bec37be60ae7740"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -998,8 +998,8 @@
       },
       {
         "path": "frontend/css/refit.css",
-        "bytes": 14763,
-        "sha256": "7d5c39b99c5941cf40c91fee7eec436c8d59807ebeafa94ddb28a0d62433df7a"
+        "bytes": 14782,
+        "sha256": "72e7fdc631f8d89995194d6dc61d5f151cd40397e7831ab43b70e2868f813ec0"
       },
       {
         "path": "frontend/css/safety.css",
