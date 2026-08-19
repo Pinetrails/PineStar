@@ -545,6 +545,26 @@ const Build = (() => {
         : 'NO PROP MATCHES "' + propQuery.trim().toUpperCase() + '"';
       host.appendChild(note);
     }
+    /* STARTER shelf — pinned above the SYSTEMS drawers so a beginner who skipped the tutorial still
+       sees the needed set before the long tail (the ids live with the catalog: PropSprites.STARTER,
+       the same props the tutorial kit teaches). Inside THIS host on purpose: the keystroke/pick
+       rebuild refreshes its active states for free, and a search replaces it wholesale — so the
+       shelf can never disagree with the armed tile or sit above foreign results. Browse-only,
+       functional tier only: DECOR needs no "which of these matter" answer (none of them do). */
+    if (!on && propTier === 'functional') {
+      const starter = ((typeof PropSprites !== 'undefined' && PropSprites.STARTER) || [])
+        .map(id => (PropSprites.spec ? PropSprites.spec(id) : null)).filter(Boolean);
+      if (starter.length) {
+        const cap = document.createElement('div');
+        cap.className = 'refit-starternote';
+        cap.textContent = 'STARTER — the ' + starter.length + ' an agent actually needs · everything else is optional';
+        host.appendChild(cap);
+        const sgrid = document.createElement('div'); sgrid.className = 'refit-propgrid refit-startergrid';
+        sgrid.setAttribute('aria-label', 'Starter props');
+        starter.forEach(c => sgrid.appendChild(propTile(c)));
+        host.appendChild(sgrid);
+      }
+    }
     const grid = document.createElement('div'); grid.className = 'refit-propgrid';
     grid.setAttribute('aria-label', 'Props');
     list.forEach(c => grid.appendChild(propTile(c)));

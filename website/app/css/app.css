@@ -3966,6 +3966,16 @@ body.crew-rail-off #screen-game.active {
 .refit-tier-functional.active { border-color: var(--ok) !important; color: #cfffe0; box-shadow: inset 0 0 0 1.5px var(--ok), 0 0 12px rgba(123,200,138,.18); }
 .refit-tier-cosmetic.active { border-color: var(--ph) !important; color: var(--ph-bright); box-shadow: inset 0 0 0 1.5px var(--ph), 0 0 12px var(--ph-glow2); }
 
+/* STARTER shelf — the pinned essentials above the SYSTEMS drawers (build.js renderPropGrid).
+   Same tile + grid language as the gallery; the caption borrows the search-note voice and the
+   OK-green of the functional tier so the shelf reads as "the working set", not a new widget.
+   The hairline under the shelf is the whole separation — no box, no panel (matte, not glossy). */
+.refit-starternote {
+  width: 100%; margin: 3px 0 0; font-size: 11px; letter-spacing: 1.5px;
+  font-family: 'VT323', monospace; color: #cfffe0; text-shadow: 0 0 5px rgba(123,200,138,.35);
+}
+.refit-startergrid { margin-top: 2px; padding-bottom: 6px; border-bottom: 1px solid var(--ph-faint); }
+
 /* the gallery no longer caps/clips its own height — the .refit-palette column is the scroller */
 .refit-propgrid {
   display: grid; grid-template-columns: repeat(auto-fill, 84px); gap: 6px;

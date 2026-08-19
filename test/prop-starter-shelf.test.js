@@ -1,0 +1,51 @@
+/* test/prop-starter-shelf.test.js — locks the STARTER shelf (the pinned essentials above the
+   ⚙ SYSTEMS drawers). The shelf exists for the user who SKIPPED the tutorial: it must keep
+   naming a real, working starter set, and it must keep agreeing with the set the tutorial
+   route teaches — two onboarding paths teaching two different "essential" lists is exactly
+   the beginner confusion the shelf was built to remove. */
+'use strict';
+const fs = require('fs');
+const path = require('path');
+const A = require('./_assert.js');
+const PS = require('../frontend/app/propsprites.js');
+
+const STARTER = PS.STARTER;
+
+/* ---- 1. the list is real: exported, non-empty, shelf-sized, no duplicates ---- */
+A.ok(Array.isArray(STARTER) && STARTER.length >= 4 && STARTER.length <= 8,
+  'STARTER is a shelf, not a drawer (4-8 ids, got ' + (STARTER && STARTER.length) + ')');
+A.ok(new Set(STARTER).size === STARTER.length, 'STARTER has no duplicate ids');
+
+/* ---- 2. every id is a placeable FUNCTIONAL catalog prop (a decor pick here would be a lie) ---- */
+for (const id of STARTER) {
+  const c = PS.spec(id);
+  A.ok(!!c, 'STARTER id "' + id + '" exists in the CATALOG');
+  A.ok(c && c.tier === 'functional', 'STARTER "' + id + '" is tier functional');
+  A.ok(PS.has(id), 'STARTER "' + id + '" has a draw fn (renders in the shelf preview)');
+}
+
+/* ---- 3. the shelf covers the working set: an agent dock + a seat + the tutorial kit ----
+   tutorial.js KIT_SPEC is the other authority on "what a first agent needs"; read its prop ids
+   from source (it is a browser script, not a require()-able module) and require every one to be
+   on the shelf, so the two onboarding routes can never drift apart silently. */
+A.ok(STARTER.includes('bay'), 'STARTER carries the BAY (the agent dock)');
+A.ok(STARTER.some(id => { const c = PS.spec(id); return c && c.seat; }),
+  'STARTER carries a seat workstation');
+const tut = fs.readFileSync(path.join(__dirname, '../frontend/app/tutorial.js'), 'utf8');
+const kitBlock = tut.match(/KIT_SPEC = \[([\s\S]*?)\]/);
+A.ok(!!kitBlock, 'tutorial.js still declares KIT_SPEC');
+const kitProps = [...kitBlock[1].matchAll(/prop:\s*'([^']+)'/g)].map(m => m[1]);
+A.ok(kitProps.length >= 3, 'KIT_SPEC names its props (got ' + kitProps.length + ')');
+for (const p of kitProps) {
+  A.ok(STARTER.includes(p), 'tutorial kit prop "' + p + '" is on the STARTER shelf');
+}
+
+/* ---- 4. the palette actually renders it, from THIS list ---- */
+const build = fs.readFileSync(path.join(__dirname, '../frontend/app/build.js'), 'utf8');
+A.ok(/PropSprites\.STARTER/.test(build), 'build.js reads PropSprites.STARTER (no second list)');
+A.ok(/refit-startergrid/.test(build), 'build.js renders the starter shelf grid');
+const css = fs.readFileSync(path.join(__dirname, '../frontend/css/app.css'), 'utf8');
+A.ok(/\.refit-starternote/.test(css) && /\.refit-startergrid/.test(css),
+  'app.css styles the starter shelf');
+
+A.report('prop-starter-shelf');
