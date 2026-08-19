@@ -49,12 +49,14 @@ for (const p of kitProps) {
   A.ok(STARTER.includes(p), 'tutorial kit prop "' + p + '" is on the STARTER shelf');
 }
 
-/* ---- 4. the palette actually renders it, from THIS list ---- */
+/* ---- 4. the card actually renders it, from THIS list ----
+   Presentation (Andrew 2026-08-18): the STARTER checklist REPLACED the STATION ORDERS card —
+   the floating REFIT card slot, not a shelf inside the prop palette (that v1/v2 shelf is gone).
+   The deep locks on the card's mechanics (grant-keyed done, self-retire without burning the
+   dismiss key) live in refit-card-stack.test.js next to the rest of the card-slot laws. */
 const build = fs.readFileSync(path.join(__dirname, '../frontend/app/build.js'), 'utf8');
 A.ok(/PropSprites\.STARTER/.test(build), 'build.js reads PropSprites.STARTER (no second list)');
-A.ok(/refit-startergrid/.test(build), 'build.js renders the starter shelf grid');
-const css = fs.readFileSync(path.join(__dirname, '../frontend/css/app.css'), 'utf8');
-A.ok(/\.refit-starternote/.test(css) && /\.refit-startergrid/.test(css),
-  'app.css styles the starter shelf');
+A.ok(/▸ STARTER GEAR/.test(build), 'the card slot carries the STARTER GEAR title');
+A.ok(!/refit-startergrid/.test(build), 'the retired palette shelf is not still half-rendered');
 
 A.report('prop-starter-shelf');

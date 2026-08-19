@@ -100,9 +100,17 @@ A.ok(!/drag\.mode === 'pan'/.test(blur), 'and blur cancels EVERY drag, not just 
 A.ok(/if \(drag\) \{ releaseDrag\(\); hideTip\(\); setCursor\(\); return; \}/.test(escCode), 'ESC on a drag releases the capture too');
 
 /* ---------- 5. completed Build actions leave truthful controls and status ---------- */
+// STARTER GEAR (2026-08-18, Andrew — replaced STATION ORDERS): the card's rows come from the ONE
+// catalog list, and done is read by GRANT off the live doc (a VAULT ticks the INTEL CAB row).
 const ordersBlock = build.slice(build.indexOf('function ordersSteps()'), build.indexOf('function renderOrders()'));
-A.ok(/p\.t === 'bay'[\s\S]*p\.t === 'intake' \|\| p\.t === 'outbox'/.test(ordersBlock),
-  'STATION ORDERS recognizes both intake lines and the SHIP-OUT LOOP outbox line');
+A.ok(/PropSprites\.STARTER/.test(ordersBlock), 'STARTER GEAR reads PropSprites.STARTER (no second list)');
+A.ok(/grantLabelOf/.test(ordersBlock), '…and done keys on the GRANT, not the prop id');
+const renderOrdersBlock = build.slice(build.indexOf('function renderOrders()'), build.indexOf('function renderFinCard()'));
+A.ok(/done === steps\.length\) return ordersHide\(\)/.test(renderOrdersBlock),
+  'the card retires on its own at all-powers-placed');
+A.ok(!/setItem\(ORDERS_KEY\(\), '1'\); \}[\s\S]*?done === steps\.length/.test(renderOrdersBlock)
+  && renderOrdersBlock.indexOf('done === steps.length') < renderOrdersBlock.indexOf('setItem(ORDERS_KEY()'),
+  '…WITHOUT burning the dismiss key (reclaiming a power must re-summon the card)');
 
 const commitDrawBlock = build.slice(build.indexOf('function commitDraw('), build.indexOf('function commitMove('));
 A.ok(/if \(res && res\.ok\) \{[\s\S]*rememberDrawn\(rect\);[\s\S]*deselectTool\(\{ silent: true \}\);[\s\S]*\}/.test(commitDrawBlock),

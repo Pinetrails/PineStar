@@ -197,7 +197,7 @@
   font-family: 'VT323', monospace;
 }
 .refit-finline .fl-head { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
-/* STATION ORDERS — the stage BEFORE a line exists, in the same card slot. The count is the only
+/* STARTER GEAR (was STATION ORDERS) — the stage BEFORE a line exists, in the same card slot. The count is the only
    new part: a real n/4 off the live model, so progress reads at a glance. */
 .refit-finline .fl-count { margin-left: auto; font-size: 13px; letter-spacing: 1px; color: var(--ph-dim); }
 .refit-orders .fl-step { transition: color var(--t-fast, .12s) ease; }

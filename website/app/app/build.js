@@ -545,41 +545,6 @@ const Build = (() => {
         : 'NO PROP MATCHES "' + propQuery.trim().toUpperCase() + '"';
       host.appendChild(note);
     }
-    /* STARTER shelf — pinned above the SYSTEMS drawers so a beginner who skipped the tutorial still
-       sees the needed powers before the long tail (the ids live with the catalog: PropSprites.STARTER
-       — the tutorial kit + studio; Andrew's scope: capability grants only, no bay/workstation).
-       Inside THIS host on purpose: the keystroke/pick rebuild refreshes its active states for free,
-       and a search replaces it wholesale — so the shelf can never disagree with the armed tile or
-       sit above foreign results. It stays for EVERY station until each power is on the floor, then
-       retires. Satisfaction is by GRANT, not by id — the shelf exists to say "this POWER is
-       missing", so a placed VAULT honestly ticks the INTEL CAB slot (both grant FILES); that read
-       comes from the live station doc, never a stored flag, so reclaiming your only dish brings the
-       shelf back. Browse-only, functional tier only. */
-    if (!on && propTier === 'functional') {
-      const starter = ((typeof PropSprites !== 'undefined' && PropSprites.STARTER) || [])
-        .map(id => (PropSprites.spec ? PropSprites.spec(id) : null)).filter(Boolean);
-      const placedGrants = {};
-      try { for (const p of station.props()) { const g = grantLabelOf({ id: p.t }); if (g) placedGrants[g] = 1; } } catch (e) {}
-      const got = c => !!placedGrants[grantLabelOf(c)];
-      const missing = starter.filter(c => !got(c));
-      if (starter.length && missing.length) {
-        const cap = document.createElement('div');
-        cap.className = 'refit-starternote';
-        cap.textContent = 'STARTER — the powers an agent needs · ' + (starter.length - missing.length) + '/' + starter.length + ' placed';
-        host.appendChild(cap);
-        const sgrid = document.createElement('div'); sgrid.className = 'refit-propgrid refit-startergrid';
-        sgrid.setAttribute('aria-label', 'Starter props');
-        starter.forEach(c => {
-          const tile = propTile(c);
-          if (got(c)) {   // this power is already on the floor (maybe via another skin) — tick it, keep it placeable
-            tile.classList.add('got');
-            const g = document.createElement('span'); g.className = 'refit-startergot'; g.textContent = '✓'; tile.appendChild(g);
-          }
-          sgrid.appendChild(tile);
-        });
-        host.appendChild(sgrid);
-      }
-    }
     const grid = document.createElement('div'); grid.className = 'refit-propgrid';
     grid.setAttribute('aria-label', 'Props');
     list.forEach(c => grid.appendChild(propTile(c)));
@@ -2447,74 +2412,83 @@ const Build = (() => {
     if (next) finKeySel = next.key;
     return next;
   }
-  /* ---------- STATION ORDERS (2026-08-07 round 3) ----------
-     FINISH THE LINE only appears once a work line already compiles — so the Commander who most
-     needs a next step, the one standing on a bare starter HAB, was the one shown nothing. ORDERS
-     is the stage before it, in the SAME card slot (never a second floating panel — the one-voice
-     law), handing off the moment a line exists.
+  /* ---------- STARTER GEAR (2026-08-18, Andrew — replaces STATION ORDERS) ----------
+     This slot used to hold STATION ORDERS (grow/dress/desk/line). Andrew's call: the thing a
+     beginner must see FIRST is which props actually matter — the starter POWERS — and a shelf
+     inside the prop palette was too easy to miss, so the powers checklist takes this card
+     instead (same one-voice slot; FINISH THE LINE still takes over the moment a line compiles).
 
-     Every step is a live projection of the model, and every step ARMS THE TOOL that does it —
-     the checklist is the control, not a description of one. It gates NOTHING: this is the station
-     arc vocabulary quests.js already ships ("honest-loot… like everything here it gates nothing"),
-     brought to where the work happens. Dismissable forever. */
+     The list is PropSprites.STARTER (the tutorial kit + studio — capability grants only, no bay:
+     that is conveyor equipment, not a necessity). Every row is a live projection of the model:
+     done = the POWER is on the floor, by GRANT not by id (a placed VAULT honestly ticks the
+     INTEL CAB row — both grant FILES), and clicking a row ARMS the prop tool with that prop
+     picked — the checklist is the control, not a description of one. It gates nothing. The card
+     retires on its own at 5/5 WITHOUT burning the dismiss key, so reclaiming your only dish
+     brings it back; ✕ still dismisses it forever for Commanders who know the drill. */
   // PER STATION, like every other one-shot here (stationKeyOf) — this shipped with no suffix at all, so
-  // dismissing ORDERS on one station silently dismissed it on every station the Commander ever builds.
+  // dismissing the card on one station silently dismissed it on every station the Commander ever builds.
   const ORDERS_KEY = () => 'starnet.refit.orders.dis.' + stationKeyOf(station);
   const ordersDismissed = () => { try { return !!localStorage.getItem(ORDERS_KEY()); } catch (e) { return false; } };
   let ordersSeenDone = null;   // which steps were already done last render (so a NEW completion can chime)
 
   function ordersSteps() {
-    const rooms = station.rooms(), props = station.props();
-    const kinds = station.ROOM_KINDS || {};
-    const spaces = rooms.length;
-    // "dressed" = the Commander made an explicit surface choice somewhere. A room carries null on
-    // every surface field until they do, so this can never read true off a fresh station.
-    const dressed = rooms.some(r => r.floorMat || r.wallMat || r.hullMat || r.wallStyle || r.hullStyle
-      || (r.floorPaint && Object.keys(r.floorPaint).length)
-      || (r.floorStyle && kinds[r.kind] && r.floorStyle !== kinds[r.kind].floor));
-    const desk = props.some(p => WORKSTATION_TYPES[p.t]);
-    const line = props.some(p => p.t === 'bay') && props.some(p => p.t === 'intake' || p.t === 'outbox');
-    return [
-      { id: 'grow', done: spaces >= 2, label: 'ADD A SECOND SPACE', tool: 'room', tip: 'a room or a hallway — your agent walks what you build' },
-      { id: 'dress', done: dressed, label: 'LAY A DECK YOU LIKE', tool: 'paint', tip: 'pick a material and a colour, then click a room' },
-      { id: 'desk', done: desk, label: 'PUT DOWN A WORKSTATION', tool: 'prop', tip: 'an agent walks to its desk to do real work' },
-      { id: 'line', done: line, label: 'STAMP A WORK LINE', tool: 'line', tip: 'a whole working layout in one click — yours to edit' },
-    ];
+    const starter = ((typeof PropSprites !== 'undefined' && PropSprites.STARTER) || [])
+      .map(id => (PropSprites.spec ? PropSprites.spec(id) : null)).filter(Boolean);
+    const placed = {};
+    for (const p of station.props()) { const g = grantLabelOf({ id: p.t }); if (g) placed[g] = 1; }
+    return starter.map(c => {
+      const g = grantLabelOf(c) || '?';
+      return { id: c.id, done: !!placed[g], cat: c.cat, label: g + ' — ' + c.label,
+        tip: 'place one in your agent’s room — any prop wearing the ' + g + ' badge grants it' };
+    });
+  }
+
+  function ordersHide() {
+    if (finCardEl && finCardEl.parentNode) finCardEl.parentNode.removeChild(finCardEl);
+    finCardEl = null; finComp = null; finSig = '';
   }
 
   function renderOrders() {
     bumpUi();   // same as renderFinCard: the card in this slot is about to be rebuilt/re-measured
-    if (ordersDismissed()) {
-      if (finCardEl && finCardEl.parentNode) finCardEl.parentNode.removeChild(finCardEl);
-      finCardEl = null; finComp = null; finSig = '';
-      return;
-    }
+    if (ordersDismissed()) return ordersHide();
     const steps = ordersSteps();
     const done = steps.filter(s => s.done).length;
+    // a step that flipped to done SINCE the last render earns the cue — never on the first paint,
+    // or every reopened session would replay the whole checklist at you. Checked BEFORE the
+    // all-done retirement below, so the final power landing still chimes as the card leaves.
+    if (ordersSeenDone) { for (const s of steps) if (s.done && !ordersSeenDone[s.id]) { sfx('quest'); break; } }
+    ordersSeenDone = {}; for (const s of steps) if (s.done) ordersSeenDone[s.id] = 1;
+    // every power is on the floor → the card's claim is answered; retire it (no dismiss key —
+    // reclaiming a power re-summons it, because done is read live off the doc, never stored)
+    if (steps.length && done === steps.length) return ordersHide();
     const sig = 'orders|' + steps.map(s => (s.done ? 1 : 0)).join('');
     if (!finCardEl) {
       finCardEl = document.createElement('div');
       finCardEl.className = 'refit-finline refit-orders';
       root.appendChild(finCardEl);
     } else if (sig === finSig) return;
-    // a step that flipped to done SINCE the last render earns the cue — never on the first paint,
-    // or every reopened session would replay the whole checklist at you
-    if (ordersSeenDone) { for (const s of steps) if (s.done && !ordersSeenDone[s.id]) { sfx('quest'); break; } }
-    ordersSeenDone = {}; for (const s of steps) if (s.done) ordersSeenDone[s.id] = 1;
     finSig = sig; finComp = null;
     finCardEl.className = 'refit-finline refit-orders';
-    finCardEl.innerHTML = '<div class="fl-head"><span class="fl-title">▸ STATION ORDERS</span>'
+    finCardEl.innerHTML = '<div class="fl-head"><span class="fl-title">▸ STARTER GEAR</span>'
       + '<span class="fl-count">' + done + '/' + steps.length + '</span>'
-      + '<button type="button" class="bb sm fl-x" title="dismiss — you know the controls">✕</button></div>'
+      + '<button type="button" class="bb sm fl-x" title="dismiss — you know the gear">✕</button></div>'
       + steps.map((s, i) => '<button type="button" class="bb fl-step' + (s.done ? ' done' : '') + '" data-ord="' + s.id + '"'
-        + ' title="' + esc(s.tip) + '">' + (s.done ? '✓ ' : '①②③④'[i] + ' ') + esc(s.label) + '</button>').join('');
+        + ' title="' + esc(s.tip) + '">' + (s.done ? '✓ ' : '①②③④⑤'[i] + ' ') + esc(s.label) + '</button>').join('');
     finCardEl.querySelector('.fl-x').onclick = () => {
       try { localStorage.setItem(ORDERS_KEY(), '1'); } catch (e) {}
       sfx('click'); renderOrders();
     };
     finCardEl.querySelectorAll('[data-ord]').forEach(b => {
       const s = steps.find(x => x.id === b.dataset.ord);
-      b.onclick = () => { if (s) { selectTool(s.tool); flashTip(null, s.tip, true); } };
+      // arm the prop tool with THIS prop picked (tier/drawer follow), so the next deck click drops it
+      b.onclick = () => {
+        if (!s) return;
+        selectTool('prop');
+        propQuery = ''; propTier = 'functional'; propCat = s.cat; propType = s.id;
+        renderPalette(); setHint();
+        flashTip(null, s.tip, true);
+        sfx('click');
+      };
     });
   }
 
@@ -3167,9 +3141,6 @@ const Build = (() => {
         if (propType === 'connector_portal') { if (Tutorial.onConnectorPlaced) Tutorial.onConnectorPlaced(); }
         else if ((!isEditableProp(propType) || CONNECT_TYPES[propType]) && Tutorial.onPropPlaced) Tutorial.onPropPlaced(propType);
       }
-      // the STARTER shelf reads the live doc — a landed power must tick its tile now, not on the
-      // next palette rebuild (grid-only refresh: the armed pick and the search field both survive)
-      renderPropGrid();
       // PLACEMENT FLOW (2026-08-10, Andrew's order): a prop stamp KEEPS the tool and the pick
       // armed — dropping to SELECT here threw the user out of the prop drawer after EVERY
       // placement, so furnishing a room meant a re-pick per prop. Double-stamping on top of the
@@ -4866,7 +4837,6 @@ const Build = (() => {
     if (grant) sfx('chime');   // a capability just came online — same brighter note as a hand placement
     if (typeof StationUI !== 'undefined' && StationUI.pokeQuests) { try { StationUI.pokeQuests(); } catch (_) {} }   // resolve+fold now: a gap this requisition closes celebrates on its own edge
     if (typeof Tutorial !== 'undefined' && Tutorial.onPropPlaced) Tutorial.onPropPlaced(t);
-    renderPropGrid();   // tick the STARTER shelf now if the prop palette is up (no-op otherwise)
     return { ok: true, tile };
   }
 
