@@ -130,8 +130,9 @@ async function run() {
     await a.connect();
     for (let i = 0; i < 8 && !inbox.length; i++) await tick();
     A.eq(claims, ['owner'], 'only a valid local enrollment can claim an unclaimed bot');
-    A.eq(inbox.map(m => m.text), ['run this'], 'the pairing exchange never reaches the agent transcript');
-    A.eq(t.sends.map(s => s.text), ['Owner paired.'], 'the owner receives a direct enrollment acknowledgement');
+    A.eq(inbox.filter(m => !m.directReply).map(m => m.text), ['run this'], 'the pairing exchange never reaches the agent transcript');
+    A.eq(inbox.filter(m => m.directReply).map(m => m.directReply), ['Owner paired.'], 'the owner acknowledgement enters the durable direct-reply path');
+    A.eq(t.sends, [], 'the adapter never bypasses the hub/outbox for enrollment acknowledgements');
     await a.disconnect();
   }
 
@@ -282,6 +283,22 @@ async function run() {
     A.eq(t.pollOffsets[0], 0, 'first getUpdates uses initial offset 0');
     A.eq(t.pollOffsets[1], 11, 'second getUpdates advanced to lastId(10)+1');
     A.ok(t.pollOffsets[2] === 12, 'third getUpdates advanced to lastId(11)+1');
+    await a.disconnect();
+  }
+
+  // ---- C2. a synchronous durable-intake failure is never acknowledged to the transport ----
+  {
+    const inbox = [];
+    const update = [{ id: 20, chat: 'c', type: 'dm', user: 'u', text: 'must survive', mid: '20' }];
+    const t = fakeTransport([update, update]);   // Telegram redelivers because the first offset was not advanced
+    let claims = 0;
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',
+      onInbound: m => { claims++; if (claims === 1) throw new Error('disk unavailable'); inbox.push(m); },
+      clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 8 && !inbox.length; i++) await tick();
+    A.eq(t.pollOffsets.slice(0, 3), [0, 0, 21], 'failed durable claim keeps offset 0; successful retry advances to 21');
+    A.eq(inbox.map(m => m.text), ['must survive'], 'the redelivered update reaches the handler exactly once after storage recovers');
     await a.disconnect();
   }
 

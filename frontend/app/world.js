@@ -8308,43 +8308,38 @@ const World = (() => {
     // body wandered idle (2026-07-18: the app asserting idle over a provably live run).
     U.bus.on('agent.run.start', p => { if (p && p.agentId && p.trigger && p.trigger !== 'directive') { serverLit.add(p.agentId); if (agent && p.agentId === agent.id) agent.taskViaConveyor = true; setActivityFor(p.agentId, 'task'); } });
     U.bus.on('agent.run.end', p => { if (p && p.agentId && !noteRunEnd(p.agentId, p.runId) && serverLit.has(p.agentId)) { serverLit.delete(p.agentId); setActivityFor(p.agentId, 'idle'); } });
-    // M-mem.4: a real auto-compaction fired (the loop folded older context into a summary) — raise a
-    // one-line notify. Truthful: driven by the event's own before/after token counts. The bottom-bar
-    // CTX gauge flashes its own mint "compacted" echo (StationUI listens to agent.compact directly).
-    U.bus.on('agent.compact', p => {
-      const freed = (p && p.beforeTokens) ? Math.round((p.removed || 0) / p.beforeTokens * 100) : 0;
-      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('◈ context compacted' + (freed > 0 ? ' — freed ' + freed + '%' : ''), 'good');
-    });
+    // M-mem.4 → notification diet (2026-08-18): auto-compaction no longer toasts — it is loop plumbing,
+    // not news. The bottom-bar CTX gauge still flashes its mint "compacted" echo (StationUI listens to
+    // agent.compact directly), which is the honest, glanceable trace of the same event.
     // ── consume-side telemetry that was already validated + SSE-broadcast but had NO frontend listener
     //    (the wiring-honesty pass: render the events already on the bus so the floor reflects real activity). ──
-    const hudNote = (txt, cls, opts) => { try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(txt, cls || '', undefined, opts); } catch (_) {} };
-    // CRON war-room pulse: an unattended routine actually fired / finished. cron.fire + cron.result are emitted
-    // and SSE-broadcast by the tick driver; surface them so an autonomous fire is VISIBLE, not just in the log.
-    U.bus.on('cron.fire', () => hudNote('◷ routine fired', 'good'));
-    // cron.result outcomes (cron-driver.js finishFire): 'failed' warns; 'ok' celebrates (G0.9 — the win
-    // case used to show nothing); 'silent' stays silent BY DESIGN — it means a clean run whose reply was
-    // exactly the [SILENT] marker, i.e. the routine itself chose to report nothing.
+    const hudNote = (txt, cls, opts, category) => { try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(txt, cls || '', category, opts); } catch (_) {} };
+    // Notification diet (2026-08-18): cron.fire no longer toasts — "fired" then "completed" seconds later
+    // read as two events for one routine, and the conveyor box + work pose already make the fire visible.
+    // cron.result outcomes (cron-driver.js finishFire): 'failed' warns (always — a failure needs eyes);
+    // 'ok' celebrates under the muteable 'cronDigest' category (P1-8); 'silent' stays silent BY DESIGN —
+    // it means a clean run whose reply was exactly the [SILENT] marker (the routine chose to report nothing).
     U.bus.on('cron.result', p => {
       if (!p) return;
       if (p.outcome === 'failed') hudNote('✕ routine failed' + (p.reason ? ' — ' + p.reason : ''), 'warn');
-      else if (p.outcome === 'ok') hudNote('◷ routine completed', 'good');
+      else if (p.outcome === 'ok') hudNote('◷ routine completed', 'good', undefined, 'cronDigest');
     });
     // REWIND: the rare, important "we rolled the workspace back" beat. checkpoint.created is frequent + quiet
     // (the workbench already pulses on shell), so only the restore is toasted.
     U.bus.on('checkpoint.restored', () => hudNote('↶ rewound to an earlier restore point', 'warn'));
     // G0.6 CHANNEL ARRIVAL MADE VISIBLE: a real Telegram/Discord message just reached the station
-    // (hub.js emits { channel, chatId, agentId, kind } on every admitted inbound). It used to be a
-    // chime only — now the receiving agent's DISH fires (the web/comms on-ramp lighting up) and the
-    // HUD names the channel. The riding crate + queue gauge still come from workitem.*/queue.status.
+    // (hub.js emits { channel, chatId, agentId, kind } on every admitted inbound) — the receiving
+    // agent's DISH fires (the web/comms on-ramp lighting up). The riding crate + queue gauge still
+    // come from workitem.*/queue.status.
     U.bus.on('channel.inbound', p => {
       const dish = capPropFor('dish', p && p.agentId);
       if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
-      // channel may be an instance id ('telegram:<botId>' — multi-bot); the HUD names the PLATFORM, not internals.
-      hudNote('📡 message received — ' + String((p && p.channel) || 'channel').split(':')[0].toUpperCase(), 'good');
+      // NO hudNote (notification diet, 2026-08-18): on a connected channel EVERY message toasted — the dish
+      // pulse + chime + the COMMS transcript already show traffic; a per-message bell entry is pure clutter.
     });
     // G0.6 CHANNEL REPLY MADE VISIBLE: the outbound side of the same on-ramp. hub.js emits channel.delivery
     // { channel, chatId, runId, ok, chunks, reason, agentId? } on every reply-send. Mirror the inbound copy
-    // (pulse the DISH, name the channel), only on a genuine successful send — a failed delivery isn't a reply out.
+    // (pulse the DISH), only on a genuine successful send — a failed delivery isn't a reply out.
     U.bus.on('channel.delivery', p => {
       if (!p || !p.ok) return;   // honesty: only confirm a reply that actually left
       // agentId (additive 2026-07-06) names WHICH agent replied. On a multi-agent floor, pulse ONLY that agent's
@@ -8365,7 +8360,7 @@ const World = (() => {
         dish = capPropFor('dish', null);   // legacy/command send (no attribution): any dish, single-agent floor
       }
       if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
-      hudNote('📤 reply sent · ' + String(p.channel || 'channel').split(':')[0].toLowerCase(), 'good');   // instance ids ('telegram:<botId>') stay internal
+      // NO hudNote (notification diet): same law as channel.inbound — the dish pulse IS the confirmation.
     });
     // EL-11 #11 CHANNEL TROUBLE MADE VISIBLE: transport health (channel.connect) used to be seen ONLY inside the open
     // CHANNELS panel. A drop/fatal-token that happens while you're anywhere else in the station now surfaces a single

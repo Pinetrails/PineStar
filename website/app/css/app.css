@@ -3647,7 +3647,10 @@ body.rows-inbox #workstreams .ws-kebab { grid-area: meta; }
 /* 1000px: squeeze gaps/padding + side columns further so the stage keeps room */
 @media (max-width: 1000px) {
   #screen-game.active {
-    grid-template-columns: 176px 1fr 264px;
+    /* --chat-w must survive every breakpoint that still shows a COMMS COLUMN, or the seam drag
+       silently dies under 1000px (the grid stops reading the width chatresize.js writes) —
+       only the DEFAULT tightens, the dragged width still wins */
+    grid-template-columns: 176px 1fr var(--chat-w, 264px);
     padding: 8px; gap: 6px;
   }
 }
@@ -3697,7 +3700,7 @@ body.crew-rail-off #screen-game.active {
   body.crew-rail-off #screen-game.active { grid-template-columns: 1fr var(--chat-w, 300px); }
 }
 @media (max-width: 1000px) {
-  body.crew-rail-off #screen-game.active { grid-template-columns: 1fr 264px; }
+  body.crew-rail-off #screen-game.active { grid-template-columns: 1fr var(--chat-w, 264px); }
 }
 @media (max-width: 860px) {
   body.crew-rail-off #screen-game.active {

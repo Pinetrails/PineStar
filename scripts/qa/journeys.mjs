@@ -59,6 +59,7 @@ import { spawnSync } from 'node:child_process';
 import { sleep, launchChrome, connectCDP, evalJS, capture, collectDiagnostics } from '../lib/cdp.mjs';
 import { materializeSeedWorkspace, bootSeededSidecar, isUp, waitUp, waitDevReady, DEFAULT_MODEL } from '../lib/seed.mjs';
 import { closeOnly, openSel } from '../lib/states.mjs';
+import { messageContentText } from '../lib/message-content.mjs';
 import { makeLedger, fingerprintOf } from './ledger.mjs';
 
 /* ── Dismissed/known journey gate (mirror of golden.mjs's per-frame review-clean) ──────────────
@@ -192,7 +193,7 @@ function startControllableMock(model) {
           // (the interactive chat directives J1-J3 fire) use the hold/quick behavior.
           let msgs = []; try { msgs = (JSON.parse(body).messages) || []; } catch (_) {}
           const userMsg = msgs.find(m => m && m.role === 'user');
-          const prompt = String((userMsg && userMsg.content) || '');
+          const prompt = messageContentText(userMsg && userMsg.content);
           const isWorkshop = prompt.indexOf('[WORKSHOP_SHIFT]') === 0;
           const tool = (id, name, args) => {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id, type: 'function', function: { name, arguments: JSON.stringify(args) } }] } }] }) + '\n\n');

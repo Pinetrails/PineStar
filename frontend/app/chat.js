@@ -4480,7 +4480,8 @@ const Chat = (() => {
              loop keeps for every outcome the harness cannot name. */
           if (g) {
             if (typeof SFX !== 'undefined' && SFX.quest) { try { SFX.quest(); } catch (_) {} }
-            if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('◇ goal path set — track it under ⚑ QUESTS', 'gold');
+            // NO StationUI.notify (notification diet): the Commander just SET this path in a card they were
+            // reading — the sting confirms; the goal tree is where they were told it lives (⚑ QUESTS).
             recAccept('arc', 'goals', false);
           }
         } else {
@@ -6277,11 +6278,11 @@ const Chat = (() => {
     const h = activeWs.history;
     for (let i = h.length - 1; i >= 0; i--) {
       if (h[i].role === 'assistant' && !h[i].error && (h[i].content || '').trim()) {
-        copyText(h[i].content).then(ok => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? 'copied the last reply' : 'copy failed', ok ? 'good' : 'warn'); });
+        copyText(h[i].content).then(ok => { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? 'copied the last reply' : 'copy failed', ok ? 'good' : 'warn', undefined, { transient: true }); });
         return;
       }
     }
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('no reply to copy yet', '');
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('no reply to copy yet', '', undefined, { transient: true });
   }
   function refreshWorkflowViews() {
     try { if (typeof App !== 'undefined' && App.refreshUsage) App.refreshUsage(); } catch (_) {}

@@ -10512,6 +10512,17 @@ const PropSprites = (() => {
   for (const c of CATALOG) BY_ID[c.id] = c;
   const CATS = CATALOG.reduce((o, c) => { (o[c.cat] = o[c.cat] || []).push(c); return o; }, {});
 
+  /* STARTER — the shelf of essentials pinned above the ⚙ SYSTEMS drawers (build.js renders it).
+     ~30 functional entries encode only a handful of POWERS, and a beginner who skipped the tutorial
+     has no way to know which matter. This is that answer: THE SAME props the tutorial kit
+     requisitions (tutorial.js KIT_SPEC — files, web, terminal, memory) plus STUDIO (media — the
+     power users miss). Andrew's scope call 2026-08-18: capability grants ONLY — no BAY (that is
+     conveyor equipment, not a necessity) and no workstation. The shelf stays for EVERY station
+     until each power is placed, then retires; a placed prop granting the same power satisfies its
+     tile (a VAULT counts for the INTEL CAB slot — the shelf tracks powers, not skins). Ids, not
+     labels: the palette resolves each through BY_ID so a renamed prop can never strand the shelf. */
+  const STARTER = ['war_intelcab', 'comms_dish', 'workbench', 'gigs_servercart', 'studio'];
+
   /* The display names for the two TIERS and every CATEGORY. These live HERE, with the catalog they
      describe, because more than one consumer needs them: build.js paints them on the palette tabs and
      propsearch.js matches against them (typing "systems" or "workstations" must find what the tab says).
@@ -10904,6 +10915,8 @@ const PropSprites = (() => {
     setJourneyStage,
     // tab/tier display names — shared with build.js (palette tabs) and propsearch.js (matching)
     TIER_LABEL, CAT_LABEL,
+    // the STARTER shelf ids (build.js pins these above the SYSTEMS drawers; locked by prop-starter-shelf.test.js)
+    STARTER,
     // exposed for tests / reuse
     _F: F,
   };

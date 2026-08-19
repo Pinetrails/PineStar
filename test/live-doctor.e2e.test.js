@@ -128,7 +128,9 @@ test('real host proves selected model and effective execution backend without le
     assert.equal(execution.state, 'round-trip-proven');
     assert.match(execution.detail, /effective local backend executed the sentinel/);
     assert.equal(rows.find(r => r.kind === 'mcp' && r.id === 'doctor-mcp').state, 'round-trip-proven');
-    assert.equal(rows.find(r => r.kind === 'channel' && r.id === 'telegram').state, 'authenticated');
+    const telegramRow = rows.find(r => r.kind === 'channel' && r.id === 'telegram');
+    assert.equal(telegramRow.state, 'refused');
+    assert.match(telegramRow.detail, /owner DMs are blocked until \/pair/);
     assert.ok(rows.filter(r => r.kind === 'channel' && r.id !== 'telegram').every(r => r.state === 'not-configured'));
     assert.ok(mcp.calls.filter(x => x === 'initialize').length >= 2, 'doctor performs a fresh MCP initialize after configuration');
     assert.ok(telegram.calls.filter(x => x === 'getMe').length >= 2, 'doctor performs a fresh Telegram authentication request');

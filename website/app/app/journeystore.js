@@ -38,9 +38,8 @@ const JourneyStore = (() => {
     lastStage = Math.max(0, Number(journey.evolution && journey.evolution.stage) | 0);
     try { document.body.dataset.journeyStage = String(lastStage); } catch (_) {}
     if (seeded && lastStage > prior) {
-      const name = String((journey.evolution && journey.evolution.name) || 'VECTOR');
       try { if (typeof SFX === 'object' && SFX.milestone) SFX.milestone(); } catch (_) {}
-      try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('◆ station vector evolved — ' + name, 'gold'); } catch (_) {}
+      // NO StationUI.notify (notification diet): the sting + the quest-log rerender below carry the evolution.
     }
     seeded = true;
     try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests', false); } catch (_) {}

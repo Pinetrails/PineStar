@@ -1,8 +1,9 @@
 /* node test/queststatestore.test.js — the live wiring around the pure quest-memory engine
    (frontend/app/queststatestore.js). Verifies the G1a celebration + anti-nag contract end to end:
      • resume baseline is silent (no celebration storm on init, even for already-done quests);
-     • an open→done edge celebrates EXACTLY ONCE — one SFX.quest sting, one gold '⚑ quest complete' toast,
-       one quest-log rerender, a bounded row flourish — and repeat syncs stay silent;
+     • an open→done edge celebrates EXACTLY ONCE — one SFX.quest sting, one COMMS broadcast,
+       one quest-log rerender, a bounded row flourish, and NO StationUI.notify (notification diet,
+       2026-08-18: the bell is reserved for things that need the Commander) — and repeat syncs stay silent;
      • dismissal takes only for dossier quests, hides the quest, stops the curiosity nudge for that
        dimension, and SURVIVES A RELOAD (self-persisted localStorage key);
      • THE LAW: quests never mint XP and the store never emits on U.bus — both locked with tripwire stubs
@@ -26,8 +27,9 @@ global.QuestStore = { view: () => ({ meter: null, quests, summary: { open: 0, do
 
 let stings = 0;
 global.SFX = { quest: () => { stings++; }, level: () => { throw new Error('quest completion must use the quest sting, not the level-up fanfare'); } };
-const toasts = [], rerenders = [];
+const toasts = [], rerenders = [], casts = [];
 global.StationUI = { notify: (t, c) => toasts.push({ t: String(t), c }), rerender: k => rerenders.push(k) };
+global.Chat = { broadcast: (t, o) => casts.push({ t: String(t), o }) };
 
 // THE LAW tripwires: a quest completing must never mint XP and the store must never emit on the bus.
 global.Xp = { applyEvent: () => { throw new Error('LAW VIOLATION: quests must never mint XP'); }, compute: () => { throw new Error('LAW VIOLATION: quests must never touch XP'); } };
@@ -46,6 +48,7 @@ quests = [dq('goals', 'open'), mq('first_light', 'done')];
 QuestStateStore.init();
 A.eq(stings, 0, 'init never celebrates — a resumed done quest is baseline, not news');
 A.eq(toasts.length, 0, '…and raises no toast');
+A.eq(casts.length, 0, '…and no COMMS broadcast');
 A.ok(QuestStateStore.stateOf('ms:first_light').completedAt > 0, 'a done-at-first-sight quest still gets completedAt (trophy-case backfill)');
 A.ok(QuestStateStore.stateOf('dim:goals').firstSeenAt > 0, 'an open quest records firstSeenAt');
 A.eq(QuestStateStore.stateOf('dim:goals').completedAt, null, '…but no completedAt while open');
@@ -55,9 +58,9 @@ quests = [dq('goals', 'done'), mq('first_light', 'done')];
 let comps = QuestStateStore.sync();
 A.eq(comps.length, 1, 'sync reports the one completed quest');
 A.eq(stings, 1, 'exactly one quest sting');
-A.eq(toasts.length, 1, 'exactly one toast');
-A.ok(toasts[0].t.indexOf('⚑ quest complete — ') === 0 && toasts[0].t.indexOf('goals') > 0, 'the toast is "⚑ quest complete — <title>"');
-A.eq(toasts[0].c, 'gold', 'the toast is gold');
+A.eq(toasts.length, 0, 'notification diet: a quest completion never toasts (sting + flourish + COMMS carry it)');
+A.eq(casts.length, 1, 'exactly one COMMS broadcast');
+A.ok(casts[0].t.indexOf('QUEST COMPLETE · ') === 0 && casts[0].t.indexOf('GOALS') > 0, 'the broadcast is "QUEST COMPLETE · <TITLE>"');
 A.ok(rerenders.indexOf('quests') >= 0, 'the quest-log panel is asked to rerender so the row can flash');
 A.ok(QuestStateStore.isCelebrating('dim:goals'), 'the completed row flourishes');
 A.eq(QuestStateStore.isCelebrating('ms:first_light'), false, 'the baseline quest does not flourish');
@@ -66,7 +69,8 @@ A.ok(QuestStateStore.stateOf('dim:goals').completedAt > 0, 'completedAt is stamp
 comps = QuestStateStore.sync();
 A.eq(comps.length, 0, 'the same projection synced again is silent');
 A.eq(stings, 1, '…no second sting (exactly once per completion)');
-A.eq(toasts.length, 1, '…no second toast');
+A.eq(casts.length, 1, '…no second broadcast');
+A.eq(toasts.length, 0, '…and still no toast, ever');
 
 /* ---------- dismissal: dossier only, hides, stops the curiosity nudge ---------- */
 quests = [dq('goals', 'done'), mq('first_light', 'done'), dq('stack', 'open')];

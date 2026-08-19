@@ -7090,16 +7090,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (!category || category === 'general') return { show: true, sound: p.sound !== false };
     return { show: p[category] !== false, sound: p.sound !== false };
   }
-  // opts (additive, optional): { onClick, key }. onClick makes the transient toast actionable (EL-11: a
+  // opts (additive, optional): { onClick, key, transient }. onClick makes the toast actionable (EL-11: a
   // background consent toast opens ITS session). key replaces an active toast for the same live condition, so
-  // a recovery can never leave a stale red outage card on screen. Persistent NOTIFICATIONS remain history.
+  // a recovery can never leave a stale red outage card on screen. transient (notification diet, 2026-08-18)
+  // shows the toast but skips the persistent NOTIFICATIONS record — for one-tap confirmations of an action
+  // the Commander just performed ("copied", "archived"): confirming NOW is useful, filing it in the bell as
+  // unread history is clutter. Everything else remains history.
   function notify(text, cls, category, opts) {
     const pref = notifyPrefOf(category);
     if (!pref.show) return;   // this category is muted — honored here, at the real emit point (not decorative)
-    store.notifs.push({ id: uid('n'), t: Date.now(), txt: String(text || ''), cls: cls || '', read: false });
-    if (store.notifs.length > 60) store.notifs = store.notifs.slice(-60);
-    save(); badges();
-    if (open.notifs) rerender('notifs');
+    if (!(opts && opts.transient)) {
+      store.notifs.push({ id: uid('n'), t: Date.now(), txt: String(text || ''), cls: cls || '', read: false });
+      if (store.notifs.length > 60) store.notifs = store.notifs.slice(-60);
+      save(); badges();
+      if (open.notifs) rerender('notifs');
+    }
     toast(String(text || ''), cls || '', pref.sound, opts);
   }
   // A caller that leads with an ALL-CAPS token + colon ("MODEL: gpt / high") is naming a READOUT,

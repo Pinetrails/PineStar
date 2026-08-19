@@ -19,26 +19,6 @@ const XpStore = (() => {
   // update counters/milestones so the dossier still shows shipped work without leveling from chatter.
   const FEED = ['agent.run.end', 'agent.tool_result', 'memory.write', 'memory.used', 'memory.feedback', 'workitem.delivered', 'channel.delivery'];
 
-  // the announce sentence per badge. Kept complete on purpose: an id with no entry used to fall through to the
-  // raw slug, so ARCHIVIST/WORKHORSE/NIGHT SHIFT/VETERAN really did toast "Milestone — night_shift" at the
-  // Commander. milestoneLabel() below is the backstop for anything added to the catalogue later.
-  const MILESTONE_TEXT = {
-    first_light: 'Milestone — first task shipped',
-    still_here: 'Milestone — 5 tasks shipped',
-    approved: 'Milestone — first positive feedback',
-    pack_rat: 'Milestone — first memory reused',
-    long_memory: 'Milestone — 10 memories reused',
-    archivist: 'Milestone — 10 memories saved',
-    hands_on: 'Milestone — 25 successful tool calls',
-    workhorse: 'Milestone — 25 tasks shipped',
-    centurion: 'Milestone — 100 tasks shipped',
-    night_shift: 'Milestone — first external delivery',
-    trusted: 'Milestone — satisfaction reached TRUSTED',
-    dependable: 'Milestone — finish rate reached DEPENDABLE',
-    seasoned: 'Milestone — reached Level 5',
-    veteran: 'Milestone — reached Level 10',
-  };
-
   function eventAgentId(payload) {
     const id = payload && typeof payload.agentId === 'string' ? payload.agentId.trim() : '';
     return id || 'agent';
@@ -88,7 +68,8 @@ const XpStore = (() => {
   function celebrateAgent(a, level) {
     if (typeof World !== 'undefined' && World.pulseLevelUp) World.pulseLevelUp(a && a.id ? a.id : 'agent', level);
     if (typeof SFX !== 'undefined' && SFX.level) { try { SFX.level(); } catch (_) {} }
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((a.name || 'Agent') + ' reached Level ' + level, 'gold');
+    // NO StationUI.notify (notification diet, 2026-08-18): a level-up is flavor the world already tells —
+    // pulse + sting + the COMMS broadcast below. The NOTIFICATIONS bell is reserved for things that need you.
     // COMMS: a terse ambient station broadcast — the codename tinted with the agent's suit colour (the one
     // established colour exception). Not a beat-slot card; coalesced + in-game-gated inside Chat.broadcast.
     if (typeof Chat !== 'undefined' && Chat.broadcast) {
@@ -101,9 +82,9 @@ const XpStore = (() => {
     pushTopbar();
     const chip = document.getElementById('tb-station');   // gold pulse on the top-bar STATION chip
     if (chip) { chip.classList.remove('lvup'); void chip.offsetWidth; chip.classList.add('lvup'); }
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('STATION advanced to Level ' + level, 'gold');
+    // NO StationUI.notify (notification diet): the gold chip pulse + the new level number ARE the announcement.
   }
-  // a milestone's short trophy title for the broadcast (the notify text carries the fuller sentence). Read from
+  // a milestone's short trophy title for the broadcast. Read from
   // the xp.js catalogue rather than a second hand-kept map: the labels ARE the trophy-case labels, so the badge
   // the Commander sees lit and the name the broadcast shouts cannot drift apart. Slug-case is the last resort.
   function milestoneLabel(id) {
@@ -116,7 +97,7 @@ const XpStore = (() => {
   function announceMilestone(id) {
     // G3a: a milestone lands with its own sting — grander than a quest, smaller than a level-up (was mute).
     if (typeof SFX !== 'undefined' && SFX.milestone) { try { SFX.milestone(); } catch (_) {} }
-    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(MILESTONE_TEXT[id] || ('Milestone — ' + milestoneLabel(id)), 'gold');
+    // NO StationUI.notify (notification diet): the sting + trophy-case badge + COMMS broadcast carry it.
     // COMMS: the trophy broadcast — rarer than a level, so the brighter gold treatment.
     if (typeof Chat !== 'undefined' && Chat.broadcast) {
       const nm = milestoneLabel(id);

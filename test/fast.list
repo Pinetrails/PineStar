@@ -250,6 +250,7 @@ test/qa-saboteur.test.js
 test/qa-bugs.test.js
 test/qa-bugs-register.test.js
 test/qa-guardian.test.js
+test/qa-message-content.test.js
 test/qa-closer.test.js
 test/qa-ready.test.js
 test/qa-product-perfect.test.js
@@ -541,6 +542,7 @@ test/proprotate.test.js
 test/recliner-side-seat.test.js
 test/sprite-sit-facing.test.js
 test/prop-search.test.js
+test/prop-starter-shelf.test.js
 test/waitanchor.test.js
 test/harness.integration.test.js
 test/toolsearch.test.js
@@ -649,3 +651,5 @@ test/execution-profiles.test.js
 test/execution-settings.test.js
 test/execution-router.test.js
 test/execution-profiles-ui.test.js
+test/failopen.test.js
+test/failopen-ratchet.test.js

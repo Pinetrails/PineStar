@@ -44,7 +44,9 @@ A.eq(QLS.pendingAttests()[0].id, 'q:1', '…and it is the attesting quest');
 A.notThrows(() => QLS._apply(null), '_apply(null) never throws');
 A.eq(QLS.quests().length, 0, '…and clears the cache to empty');
 
-/* ---------- new-quest detection: first fetch seeds SILENTLY, a later new open quest fires notify + broadcast ---------- */
+/* ---------- new-quest detection: first fetch seeds SILENTLY, a later new open quest fires the COMMS
+   broadcast ONLY — notification diet (2026-08-18): a new quest never reaches StationUI.notify (the quest
+   log is the quest surface; the bell is reserved for things that need the Commander). ---------- */
 {
   // capture StationUI.notify + Chat.broadcast via the globals the store guards on (typeof StationUI/Chat).
   const toasts = [];
@@ -69,9 +71,7 @@ A.eq(QLS.quests().length, 0, '…and clears the cache to empty');
     { id: 'q:2', status: 'open', kind: 'work', title: 'Boot quest two', contract: { type: 'run', key: 'r1' } },
     { id: 'q:3', status: 'open', kind: 'generated', title: 'Automate the weekly digest', contract: { type: 'attest', key: '' } }
   ]);
-  A.eq(toasts.length, 1, 'exactly one toast for the one newly-appeared quest');
-  A.ok(/new quest/.test(toasts[0].t) && /Automate the weekly digest/.test(toasts[0].t), 'the toast names the new quest title');
-  A.eq(toasts[0].c, 'gold', 'the new-quest toast is gold');
+  A.eq(toasts.length, 0, 'notification diet: a new quest never toasts');
   A.eq(casts.length, 1, 'exactly one COMMS broadcast for the new quest');
   A.ok(/NEW QUEST/.test(casts[0].t) && /AUTOMATE THE WEEKLY DIGEST/.test(casts[0].t), 'the broadcast carries the new quest title');
 
@@ -79,15 +79,15 @@ A.eq(QLS.quests().length, 0, '…and clears the cache to empty');
   QLS._apply([
     { id: 'q:3', status: 'open', kind: 'generated', title: 'Automate the weekly digest', contract: { type: 'attest', key: '' } }
   ]);
-  A.eq(toasts.length, 1, 'an already-seen open quest never re-announces');
-  A.eq(casts.length, 1, '…and never re-broadcasts');
+  A.eq(casts.length, 1, 'an already-seen open quest never re-announces');
 
   // a quest first observed as DONE (never open this session) is not a "new quest" (the QuestState fold owns its celebration).
   QLS._apply([
     { id: 'q:3', status: 'open', kind: 'generated', title: 'Automate the weekly digest', contract: { type: 'attest', key: '' } },
     { id: 'q:9', status: 'done', kind: 'work', title: 'Already finished', contract: { type: 'run', key: 'r9' } }
   ]);
-  A.eq(toasts.length, 1, 'a quest that appears already-done is not announced as a new quest');
+  A.eq(casts.length, 1, 'a quest that appears already-done is not announced as a new quest');
+  A.eq(toasts.length, 0, 'StationUI.notify was never touched across the whole sequence');
 
   delete global.StationUI; delete global.Chat;
   QLS.reset();
