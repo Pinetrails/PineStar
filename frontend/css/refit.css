@@ -201,6 +201,8 @@
    new part: a real n/4 off the live model, so progress reads at a glance. */
 .refit-finline .fl-count { margin-left: auto; font-size: 13px; letter-spacing: 1px; color: var(--ph-dim); }
 .refit-orders .fl-step { transition: color var(--t-fast, .12s) ease; }
+/* the card's closing word — quiet permission, not another control */
+.refit-orders .fl-opt { margin-top: 6px; font-size: 12px; letter-spacing: 1.5px; color: var(--ph-dim); text-align: center; }
 @keyframes refit-levelup {
   0%   { filter: brightness(1); }
   25%  { filter: brightness(2.1); }

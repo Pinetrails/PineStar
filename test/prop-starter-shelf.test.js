@@ -57,6 +57,8 @@ for (const p of kitProps) {
 const build = fs.readFileSync(path.join(__dirname, '../frontend/app/build.js'), 'utf8');
 A.ok(/PropSprites\.STARTER/.test(build), 'build.js reads PropSprites.STARTER (no second list)');
 A.ok(/▸ STARTER GEAR/.test(build), 'the card slot carries the STARTER GEAR title');
+A.ok(/everything else is optional/.test(build),
+  'the card grants permission to ignore the rest of the catalog (Andrew’s closing line)');
 A.ok(!/refit-startergrid/.test(build), 'the retired palette shelf is not still half-rendered');
 
 A.report('prop-starter-shelf');

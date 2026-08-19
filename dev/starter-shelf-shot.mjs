@@ -24,6 +24,7 @@ const CARD = `(() => {
   return JSON.stringify({ orders: el.classList.contains('refit-orders'),
     title: (el.querySelector('.fl-title') || {}).textContent,
     count: (el.querySelector('.fl-count') || {}).textContent,
+    opt: (el.querySelector('.fl-opt') || {}).textContent,
     rows: [...el.querySelectorAll('[data-ord]')].map(b => b.textContent.trim()) });
 })()`;
 
@@ -52,7 +53,8 @@ async function main() {
     // 1. fresh floor: the card carries the 5 powers at 0/5
     const fresh = JSON.parse(await evalJS(cdp, CARD));
     console.log('fresh ->', fresh);
-    if (!fresh.orders || !/STARTER GEAR/.test(fresh.title || '') || fresh.count !== '0/5' || fresh.rows.length !== 5)
+    if (!fresh.orders || !/STARTER GEAR/.test(fresh.title || '') || fresh.count !== '0/5' || fresh.rows.length !== 5
+        || fresh.opt !== 'everything else is optional')
       throw new Error('fresh card wrong: ' + JSON.stringify(fresh));
     console.log('shot', await capture(cdp, OUT, 'starter-card-fresh'));
 

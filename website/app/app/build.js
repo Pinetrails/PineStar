@@ -2473,7 +2473,9 @@ const Build = (() => {
       + '<span class="fl-count">' + done + '/' + steps.length + '</span>'
       + '<button type="button" class="bb sm fl-x" title="dismiss — you know the gear">✕</button></div>'
       + steps.map((s, i) => '<button type="button" class="bb fl-step' + (s.done ? ' done' : '') + '" data-ord="' + s.id + '"'
-        + ' title="' + esc(s.tip) + '">' + (s.done ? '✓ ' : '①②③④⑤'[i] + ' ') + esc(s.label) + '</button>').join('');
+        + ' title="' + esc(s.tip) + '">' + (s.done ? '✓ ' : '①②③④⑤'[i] + ' ') + esc(s.label) + '</button>').join('')
+      // the release valve (Andrew): five needs, and permission to ignore the other ~137 props
+      + '<div class="fl-opt">everything else is optional</div>';
     finCardEl.querySelector('.fl-x').onclick = () => {
       try { localStorage.setItem(ORDERS_KEY(), '1'); } catch (e) {}
       sfx('click'); renderOrders();
