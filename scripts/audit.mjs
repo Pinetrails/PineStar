@@ -27,6 +27,7 @@ import { join } from 'node:path';
 import { sleep, launchChrome, connectCDP, evalJS, capture, collectDiagnostics } from './lib/cdp.mjs';
 import { materializeSeedWorkspace, bootSeededSidecar, isUp, waitUp, waitDevReady, DEFAULT_MODEL } from './lib/seed.mjs';
 import { closeOnly, openSel, dismissRefitGuide } from './lib/states.mjs';
+import { messageContentText } from './lib/message-content.mjs';
 
 const PORT = process.env.SKYNET_AUDIT_PORT || '8934';
 const CDP_PORT = Number(process.env.SKYNET_AUDIT_CDP || 9334);
@@ -119,7 +120,7 @@ function startToolMock(model) {
           try {
             const b = JSON.parse(body);
             const lastUser = [...(b.messages || [])].reverse().find(m => m.role === 'user');
-            lastUserTxt = String((lastUser && lastUser.content) || '');
+            lastUserTxt = messageContentText(lastUser && lastUser.content);
             isDirective = lastUserTxt.toLowerCase().indexOf(DIRECTIVE_MARK) >= 0;
           } catch (_) { /* unparseable → treated as background */ }
           if (isDirective) directiveCalls++;
