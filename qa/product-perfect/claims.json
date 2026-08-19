@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5b56521683f307aa4258504e8fa8216fb8bf4328",
+    "sourceCommit": "9022d7770d9255a1da9433bd43a7fd4406eb57cc",
     "pathSetSha256": "92160ff9edb3cc6cd7deb0d0e0b35e6e60cf470af43886963164d96bbfaccd50",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 325002,
-        "sha256": "2aa8f69a44a53e61f04df54fde9b74f42b0bc9418dfaaaae1aaa364aacfb6482"
+        "bytes": 326351,
+        "sha256": "669c9af9c593f77342748d9e33ddaf259f83651118ae0730cf2b3cc729d89c32"
       },
       {
         "path": "frontend/app/channels.js",
@@ -488,8 +488,8 @@
       },
       {
         "path": "frontend/app/propsprites.js",
-        "bytes": 734690,
-        "sha256": "b16e630b0331058f972edb014c8e97d08d77d403e5f52e6fafcadb577f293342"
+        "bytes": 734999,
+        "sha256": "282db84a21850bbdfa9b93434926a8bd46a06536ef281c251f122c72e9654dbd"
       },
       {
         "path": "frontend/app/prospect.js",
@@ -968,8 +968,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 381077,
-        "sha256": "a12809b3e1088663e4db61a7fc8305c2f421b931cf8f82fa6a24accc7e713877"
+        "bytes": 381516,
+        "sha256": "9022a3c7ab338501cde889261c4c48c68ac3565b697f81fad2badf72fb37f1f0"
       },
       {
         "path": "frontend/css/asciifx.css",
