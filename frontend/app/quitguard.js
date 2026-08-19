@@ -93,7 +93,14 @@
     if (updateInstalling(deps)) { await drainState(deps); return; }              // allow: update restart
     // If the native supervisor proves this close only HIDES the window (the explicit close-to-tray preference,
     // or armed background work), there is no run-kill to warn about. Flush browser state and let Rust hide it.
-    if (await keepsRunningAfterClose(deps)) { await drainState(deps); return; }
+    if (await keepsRunningAfterClose(deps)) {
+      await drainState(deps);
+      // Tauri's JS onCloseRequested wrapper destroys the webview window unless this event is
+      // prevented. Rust already intercepted the native close and hid the window; keep the
+      // `main` window registered so tray Open and a second launch can reveal it again.
+      ev.preventDefault();
+      return;
+    }
     const n = liveRunCount(deps.channels);
     if (!n) { await drainState(deps); return; }                                  // allow: nothing live
     ev.preventDefault();                                                          // block; ask first
