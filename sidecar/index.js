@@ -135,6 +135,7 @@ const { readBody, readBodyBuffer } = require('./http-body.js');
 const { MIME, CHANNEL_UPLOAD_MAX_BYTES, mimeForPath, safeDownloadName, isActiveDeliverable, parseRange } = require('./file-response.js');
 const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } = require('./reflect.js');
 const Failreview = require('./failreview.js');   // failure-review aux pass: PURE lesson producer for FAILED runs (reflect.js mold)
+const { swallow } = require('./failopen.js');    // tagged fail-open: a swallowed error stays visible (throttled warn + counter)
 // GROWTH Tier 1 — the pure STUDY ENGINE (the dossier's Phase B). A UMD frontend module that also exports under
 // node, so the sidecar reuses the SAME parse/salience/dedup the browser consent path uses. Fail-open: if it can't
 // load, study just never fires (a run stays byte-identical). No new npm dep — it's a first-party file.
@@ -487,8 +488,8 @@ const livePrices = (function () {
     const prices = require('./providers/prices.js');
     const lp = makeLivePrices({ file: path.join(WORKSPACES, 'liveprices.cache.json'), now: () => Date.now() });
     prices.setLiveLookup((family, id) => lp.lookup(family, id));
-    lp.refresh().catch(() => {});
-    const t = setInterval(() => { lp.refresh().catch(() => {}); }, 6 * 60 * 60 * 1000);
+    lp.refresh().catch(swallow('liveprices.refresh'));
+    const t = setInterval(() => { lp.refresh().catch(swallow('liveprices.refresh')); }, 6 * 60 * 60 * 1000);
     if (t.unref) t.unref();
     return lp;
   } catch (e) { console.warn('[prices] live catalog wiring failed:', (e && e.message) || e); return null; }
@@ -862,11 +863,11 @@ function buildCredits(cfg) {
 // mirroring how handleSetKey mutates provider runtime config. Every call site uses `credits.<method>()`, so a
 // reassignment is transparent to admission / the STORE surface.
 let credits = buildCredits(resolveCreditsConfig());
-if (credits.configured()) { credits.refresh().catch(() => {}); }   // warm the balance cache at boot (fail-open)
+if (credits.configured()) { credits.refresh().catch(swallow('credits.refresh')); }   // warm the balance cache at boot (fail-open)
 // Rebuild the live credits adapter from the current config (after a link/unlink). Warms the balance when live.
 function rebuildCredits() {
   credits = buildCredits(resolveCreditsConfig());
-  if (credits.configured()) return credits.refresh().catch(() => null);
+  if (credits.configured()) return credits.refresh().catch(swallow('credits.refresh', null));
   return Promise.resolve(null);
 }
 
@@ -1508,7 +1509,7 @@ function maybeRewarmModelCatalog() {
   const now = Date.now();
   if (now - _modelCatalogRewarmAt < MODEL_CATALOG_REWARM_MS) return;   // throttle: at most one re-warm per window
   _modelCatalogRewarmAt = now;
-  warmModelCatalog().catch(() => {});   // non-blocking; a failure just leaves it empty for the next attempt to retry
+  warmModelCatalog().catch(swallow('models.warm'));   // non-blocking; a failure just leaves it empty for the next attempt to retry
 }
 
 // jail helper reused by the read-only /api/file route (resolveInside proves a path stays in the workspace)
@@ -3553,7 +3554,7 @@ lspManager = makeLspManager({ spawn: childSpawn, fs, fsp, pathMod: path, env: pr
 const inputGuard = makeInputGuard({ log: (m) => console.log(m) });
 if (require.main === module) {
   // real host boot only (unit tests require() this file and must not probe/kill or touch the real cursor state)
-  procLedger.sweep().then(s => { if (s.examined) console.log('[proc-ledger] boot sweep: examined=' + s.examined + ' killed=' + s.killed + ' gone=' + s.gone + ' pid-reused=' + s.reused); }).catch(() => {});
+  procLedger.sweep().then(s => { if (s.examined) console.log('[proc-ledger] boot sweep: examined=' + s.examined + ' killed=' + s.killed + ' gone=' + s.gone + ' pid-reused=' + s.reused); }).catch(swallow('procledger.bootsweep'));
   inputGuard.observe('boot').catch(() => {});
 }
 const appendDurableProcessOutput = entry => outputArtifacts.append(entry);
@@ -3602,7 +3603,7 @@ async function sweepIdleExecutionEnvironments() {
   catch (e) { return { ok: false, error: String((e && e.message) || e || 'idle cleanup failed') }; }
 }
 if (require.main === module) {
-  executionCleanupTimer = setInterval(() => { sweepIdleExecutionEnvironments().catch(() => {}); }, 60000);
+  executionCleanupTimer = setInterval(() => { sweepIdleExecutionEnvironments().catch(swallow('execution.idlesweep')); }, 60000);
   try { executionCleanupTimer.unref(); } catch (_) {}
 }
 // Real terminal sessions are a distinct rail from shell.bg: node-pty supplies POSIX forkpty / Windows ConPTY,
@@ -5148,7 +5149,7 @@ async function runScoutCycle(o) {
       else {
         const recId = crypto.randomUUID();
         scoutState = Scout.stage(scoutState, { id: recId, kind: 'recipe', draft: parsed.draft, why: parsed.why, fingerprint: parsed.fingerprint }, { now: Date.now() });
-        recommendationLedger.record({ id: 'scout:' + recId, surface: 'scout', kind: 'recipe', title: parsed.draft.name, target: parsed.draft.id || '', evidence: [{ id: 'scout-context', type: 'context', quote: parsed.why }], readiness: { ready: commanderPosture.ready(), reasons: [] }, modelVersion: 'scout-v1' }, Date.now()).catch(() => {});
+        recommendationLedger.record({ id: 'scout:' + recId, surface: 'scout', kind: 'recipe', title: parsed.draft.name, target: parsed.draft.id || '', evidence: [{ id: 'scout-context', type: 'context', quote: parsed.why }], readiness: { ready: commanderPosture.ready(), reasons: [] }, modelVersion: 'scout-v1' }, Date.now()).catch(swallow('recledger.record'));
         scoutNote({ kind: 'recipe', outcome: 'staged', reason: parsed.why, title: parsed.draft.name });
       }
     } else if (d.kind === 'prospect') {
@@ -5168,7 +5169,7 @@ async function runScoutCycle(o) {
         } else {
           const recId = crypto.randomUUID();
           scoutState = Scout.stage(scoutState, { id: recId, kind: 'prospect', draft: draft, why: archMatch.why, fingerprint: archMatch.fingerprint }, { now: Date.now() });
-          recommendationLedger.record({ id: 'scout:' + recId, surface: 'scout', kind: 'prospect', title: draft.name, target: draft.id || '', evidence: [{ id: 'learned-topic', type: 'topic', quote: archMatch.why }], readiness: { ready: commanderPosture.ready(), reasons: [] }, modelVersion: 'scout-v1' }, Date.now()).catch(() => {});
+          recommendationLedger.record({ id: 'scout:' + recId, surface: 'scout', kind: 'prospect', title: draft.name, target: draft.id || '', evidence: [{ id: 'learned-topic', type: 'topic', quote: archMatch.why }], readiness: { ready: commanderPosture.ready(), reasons: [] }, modelVersion: 'scout-v1' }, Date.now()).catch(swallow('recledger.record'));
           scoutNote({ kind: 'prospect', outcome: 'staged', reason: archMatch.why, title: draft.name });
         }
         return;
@@ -5198,7 +5199,7 @@ async function runScoutCycle(o) {
       else {
         const recId = crypto.randomUUID();
         scoutState = Scout.stage(scoutState, { id: recId, kind: 'prospect', draft: parsed.draft, why: parsed.why, fingerprint: parsed.fingerprint }, { now: Date.now() });
-        recommendationLedger.record({ id: 'scout:' + recId, surface: 'scout', kind: 'prospect', title: parsed.draft.name, target: parsed.draft.id || '', evidence: [{ id: 'scout-context', type: 'context', quote: parsed.why }], readiness: { ready: commanderPosture.ready(), reasons: [] }, modelVersion: 'scout-v1' }, Date.now()).catch(() => {});
+        recommendationLedger.record({ id: 'scout:' + recId, surface: 'scout', kind: 'prospect', title: parsed.draft.name, target: parsed.draft.id || '', evidence: [{ id: 'scout-context', type: 'context', quote: parsed.why }], readiness: { ready: commanderPosture.ready(), reasons: [] }, modelVersion: 'scout-v1' }, Date.now()).catch(swallow('recledger.record'));
         scoutNote({ kind: 'prospect', outcome: 'staged', reason: parsed.why, title: parsed.draft.name });
       }
     }
@@ -5277,7 +5278,7 @@ async function handleScoutDecide(req, res) {
   if (!item) return json(200, { ok: false, error: 'unknown id' });
   scoutState = decision === 'accept' ? Scout.accept(scoutState, id, { now: Date.now() }) : Scout.dismiss(scoutState, id, { now: Date.now() });
   scoutState = Scout.note(scoutState, { kind: item.kind, outcome: decision === 'accept' ? 'accepted' : 'dismissed', reason: 'commander verdict', title: (item.draft && item.draft.name) || '' }, { now: Date.now() });
-  await recommendationLedger.verdict('scout:' + id, decision === 'accept' ? 'accepted' : 'declined', decision === 'accept' ? 'accepted' : String(body.reason || 'not_relevant'), Date.now()).catch(() => null);
+  await recommendationLedger.verdict('scout:' + id, decision === 'accept' ? 'accepted' : 'declined', decision === 'accept' ? 'accepted' : String(body.reason || 'not_relevant'), Date.now()).catch(swallow('recledger.verdict', null));
   persistScout();
   json(200, { ok: true, item: item });
 }
@@ -5303,7 +5304,7 @@ function handleRecommendationsGet(req, res) {
   try {
     // lapse un-answered rows whose surface declared an expiry (same read-time discipline as scoutSweep) —
     // fire-and-forget: this read serves the pre-sweep state, the next one is clean.
-    try { recommendationLedger.sweep(Date.now()).catch(() => {}); } catch (_) {}
+    try { recommendationLedger.sweep(Date.now()).catch(swallow('recledger.sweep')); } catch (_) {}
     const u = new URL(req.url, 'http://127.0.0.1');
     const surface = String(u.searchParams.get('surface') || '').slice(0, 40);
     const state = String(u.searchParams.get('state') || '').slice(0, 20);
@@ -5384,7 +5385,7 @@ function nightshiftDecideLearn(agentId, runId, useful) {
   }
   if (!arch) return;   // not a night-shift act (or already reaped) → nothing to learn
   if (learning) {
-    recommendationLedger.verdict('nightshift:' + String(runId || ''), useful ? 'completed' : 'declined', useful ? 'completed' : 'bad_quality', Date.now()).catch(() => {});
+    recommendationLedger.verdict('nightshift:' + String(runId || ''), useful ? 'completed' : 'declined', useful ? 'completed' : 'bad_quality', Date.now()).catch(swallow('recledger.verdict'));
   }
   try { recordAutonomy({ ts: Date.now(), source: 'nightshift', kind: 'note', agentId: String(agentId || ''), runId: String(runId || ''), reason: useful ? 'approved' : 'denied', detail: { phase: 'verdict', archetype: arch, useful: !!useful } }); } catch (_) {}
   try { delete nightshiftActs[String(runId || '')]; saveResilient(NIGHTSHIFT_ACTS_FILE, { v: 1, acts: nightshiftActs }); } catch (_) {}   // decided once
@@ -5584,7 +5585,7 @@ async function runNightshiftBeat(opts) {
   const draftRecId = 'nightshift-draft:' + String(opts.runId || crypto.randomUUID());
   recommendationLedger.record({ id: draftRecId, surface: 'nightshift', kind: sel.selected.archetype || 'draft', title: sel.selected.title,
     target: sel.selected.threadId || '', evidence: [{ id: sel.selected.threadId ? 'thread:' + sel.selected.threadId : 'nightshift-grounds', type: sel.selected.threadId ? 'thread' : 'context', quote: sel.selected.grounds || '' }],
-    readiness: { ready: rd.tier === 'hot', reasons: rd.tier === 'hot' ? [] : [rd.tier] }, score: sel.selected.score, modelVersion: 'autopilot-v2' }, Date.now()).catch(() => {});
+    readiness: { ready: rd.tier === 'hot', reasons: rd.tier === 'hot' ? [] : [rd.tier] }, score: sel.selected.score, modelVersion: 'autopilot-v2' }, Date.now()).catch(swallow('recledger.record'));
   // NS-6 writeback: the selected candidate cited an open thread → mark it PICKED (it's being worked this beat).
   if (sel.selected.threadId) { try { await threadsStore.pick(sel.selected.threadId, Date.now()); } catch (_) {} }
   // CONVEYOR TRUTH (2026-07-18): the crate used to be dropped AFTER the draft landed, keyed to a runId no run.end
@@ -5724,12 +5725,12 @@ async function runNightshiftActShift(opts) {
   const runId = opts.runId || crypto.randomUUID();
   recommendationLedger.record({ id: 'nightshift:' + runId, surface: 'nightshift', kind: sel.selected.archetype || 'build', title: sel.selected.title,
     target: sel.selected.threadId || targetRoot || '', evidence: [{ id: sel.selected.threadId ? 'thread:' + sel.selected.threadId : (targetRoot ? 'project:' + targetRoot : 'nightshift-grounds'), type: sel.selected.threadId ? 'thread' : (targetRoot ? 'project' : 'context'), quote: sel.selected.grounds || focusHeader || '' }],
-    readiness: { ready: rd.tier === 'hot', reasons: rd.tier === 'hot' ? [] : [rd.tier] }, score: sel.selected.score, modelVersion: 'autopilot-v2' }, Date.now()).catch(() => {});
+    readiness: { ready: rd.tier === 'hot', reasons: rd.tier === 'hot' ? [] : [rd.tier] }, score: sel.selected.score, modelVersion: 'autopilot-v2' }, Date.now()).catch(swallow('recledger.record'));
   const backlogId = 'ns-act-' + runId;
   const title = String(sel.selected.title || 'Night-shift build').slice(0, 200);
   try { await workshopStore.queue(agentId, { id: backlogId, title, detail: String(sel.selected.spec || ''), source: 'nightshift', grounds: String(sel.selected.grounds || '') }, Date.now()); }
   catch (_) { /* a queue hiccup (e.g. a title the Commander earlier discarded) → stand down honestly */ return { delivered: false, reason: 'queue-refused' }; }
-  await workshopStore.claimNext(agentId, runId, isRunLive).catch(() => null);   // stamp buildingRunId (zombie-reap aware)
+  await workshopStore.claimNext(agentId, runId, isRunLive).catch(swallow('workshop.claim', null));   // stamp buildingRunId (zombie-reap aware)
 
   const dir = 'workshop/' + runId;
   const prompt = NIGHTSHIFT_ACT_MARK + '\n' + Autopilot.buildDoDirectiveV2(sel.selected, { runId, dir, backlogId, focusHeader, projectSnapshot, targetRoot, initiative: currentInitiative() });
@@ -6955,7 +6956,7 @@ async function mintQuestRecommendations(quests, why) {
       await recommendationLedger.record({ id: 'quest:' + r.id, surface: 'quest', kind: 'quest', title: q.title, target: r.id,
         traits: rankedQ.traits, evidence: [{ id: 'quest-grounding', type: 'context', quote: q.groundedIn }],
         readiness: { ready: true, reasons: [] }, contextId: 'quest-refresh:' + Math.floor(Date.now() / 60000), rank: rankedQ.rank, score: rankedQ.utility,
-        scoreComponents: rankedQ.scoreComponents, modelVersion: 'quest-refresh-v4' }, Date.now()).catch(() => null);
+        scoreComponents: rankedQ.scoreComponents, modelVersion: 'quest-refresh-v4' }, Date.now()).catch(swallow('recledger.record', null));
       questRefreshNote({ outcome: 'minted', reason: why + ' refresh — ' + q.groundedIn, title: q.title });
     } else questRefreshNote({ outcome: 'rejected', reason: (r && r.error) || 'the store rejected the mint', title: q.title });
   }
@@ -6965,8 +6966,8 @@ async function mintQuestRecommendations(quests, why) {
 
 async function completeQuestRecommendationIds(ids) {
   for (const id of (Array.isArray(ids) ? ids : [])) {
-    recommendationLedger.verdict('quest:' + id, 'completed', 'completed', Date.now()).catch(() => {});
-    recommendationLedger.outcome('quest:' + id, { adopted: true, quality: 1, completedAt: Date.now() }, Date.now()).catch(() => {});
+    recommendationLedger.verdict('quest:' + id, 'completed', 'completed', Date.now()).catch(swallow('recledger.verdict'));
+    recommendationLedger.outcome('quest:' + id, { adopted: true, quality: 1, completedAt: Date.now() }, Date.now()).catch(swallow('recledger.outcome'));
     // The quest store is the completion authority. Only AFTER it says done do we fold the exact persisted record
     // into the journey ledger; duplicate sweeps are idempotent by quest id.
     try { const q = questStore.get(id); if (q && q.status === 'done') await journeyStore.recordQuest(q, commanderGoals.get(), q.completedAt || Date.now()); } catch (e) { console.warn('[journey] quest fold failed:', (e && e.message) || e); }
@@ -7094,7 +7095,7 @@ async function runQuestRefreshCycle(why) {
       const proposed = QuestRefresh.normalize(questRefreshState).proposedNorthStar;
       if (proposed) recommendationLedger.record({ id: 'northstar:' + Recommendation.fingerprint(proposed.text), surface: 'northstar', kind: 'direction', title: proposed.text,
         target: 'pending', traits: ['direction', 'north-star'], evidence: [{ id: 'quest-refresh-context', type: 'context', quote: proposed.groundedIn }],
-        readiness: { ready: true, reasons: [] }, modelVersion: 'quest-refresh-v4' }, Date.now()).catch(() => {});
+        readiness: { ready: true, reasons: [] }, modelVersion: 'quest-refresh-v4' }, Date.now()).catch(swallow('recledger.record'));
     }
     persistQuestRefresh();
 
@@ -7134,7 +7135,7 @@ function questRefreshTick() {
   questRefreshState = QuestRefresh.stampCycle(questRefreshState, { now: Date.now() });
   persistQuestRefresh();
   questRefreshingNow = true;
-  runQuestRefreshCycle(d.why).catch(() => {}).finally(() => { questRefreshingNow = false; });
+  runQuestRefreshCycle(d.why).catch(swallow('aux.questrefresh.envelope')).finally(() => { questRefreshingNow = false; });
 }
 let questRefreshTimer = null;
 function armQuestRefresh() {
@@ -7480,7 +7481,7 @@ function publishCommandMenu(adapter, label) {
     Promise.resolve(adapter.setCommands(menuCommands(), { scope: { type: 'all_group_chats' } }))
   ])
     .then((results) => { for (const r of results) if (r && r.ok === false) console.warn('[' + label + '] command menu not published: ' + (r.error || 'unknown')); })
-    .catch(() => {});
+    .catch(swallow('channels.menu'));
 }
 function stopTelegram() {
   // Say we are going BEFORE the transport is torn down — after disconnect there is nothing left to say it with.
@@ -8642,7 +8643,7 @@ server.listen(PORT, '127.0.0.1', () => {
   );
   // Install the Commander's shell hooks onto the station-wide spine. Awaited-but-guarded: a hooks file that
   // is broken must delay nothing and break nothing at boot.
-  installShellHooks().catch(() => {});
+  installShellHooks().catch(swallow('shellhooks.install'));
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
   try {
     const t = (channelSecrets && channelSecrets.telegram) || {};
@@ -8695,7 +8696,7 @@ server.listen(PORT, '127.0.0.1', () => {
     for (const c of connectorConfigs) {
       if (!c || !(c.url || c.command || c.oauth)) continue;
       if (c.enabled === false) disabled++; else warming++;
-      configureConnectorCfg(c, { deferConnect: c.transport === 'stdio' }).catch(() => {});
+      configureConnectorCfg(c, { deferConnect: c.transport === 'stdio' }).catch(swallow('connector.boot'));
     }
     if (warming) console.log('  · ' + warming + ' MCP connector(s) warming');
     if (disabled) console.log('  · ' + disabled + ' disabled MCP connector(s) loaded');
@@ -8738,7 +8739,7 @@ server.listen(PORT, '127.0.0.1', () => {
     const files = fs.readdirSync(WORKSPACES).filter(f => /^[A-Za-z0-9_-]{1,40}\.workshop\.json$/.test(f));
     for (const f of files) {
       const aid = f.replace(/\.workshop\.json$/, '');
-      workshopStore.sweepStaleClaims(aid, isRunLive).then(n => { if (n) console.warn('[workshop] boot sweep un-stuck ' + n + ' zombie claim(s) for ' + aid + ' (crashed mid-shift)'); }).catch(() => {});
+      workshopStore.sweepStaleClaims(aid, isRunLive).then(n => { if (n) console.warn('[workshop] boot sweep un-stuck ' + n + ' zombie claim(s) for ' + aid + ' (crashed mid-shift)'); }).catch(swallow('workshop.bootsweep'));
     }
   } catch (e) { console.warn('[workshop] boot sweep failed:', (e && e.message) || e); }
 });
@@ -9115,7 +9116,7 @@ function handleBudgetStatus(req, res) {
    dead balance. Never emits a secret (no api key, no account internals beyond the display id). Read-only. ---- */
 async function handleCredits(req, res) {
   if (!credits.configured()) { res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ configured: false })); }
-  await credits.refresh(CREDITS_ACCOUNT).catch(() => {});   // reconcile the cached balance before we report it
+  await credits.refresh(CREDITS_ACCOUNT).catch(swallow('credits.refresh'));   // reconcile the cached balance before we report it
   const hist = await credits.history(CREDITS_ACCOUNT, 20).catch(() => ({ entries: [] }));
   const snap = credits.snapshot();
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -11032,7 +11033,7 @@ async function runWorkshopShift(agentId, opts) {
   // SHIFT HEALTH (2026-07-15 UX audit): every exit path records an honest lastShift outcome in the durable
   // store, so the away card can distinguish "waiting" from "broken" — the old behavior was total silence
   // (a keyless station no-op'd every 6h forever while the toggle read ON). Best-effort, never blocks the shift.
-  const noteShift = (info) => { try { workshopStore.setLastShift(id, Object.assign({ at: Date.now() }, info)).catch(() => {}); } catch (_) {} };
+  const noteShift = (info) => { try { workshopStore.setLastShift(id, Object.assign({ at: Date.now() }, info)).catch(swallow('workshop.noteShift')); } catch (_) {} };
   if (!workshopOf(id)) { noteShift({ reason: 'not-granted' }); return { fired: false, reason: 'not-granted' }; }   // grant revoked between arm and fire
   const runId = o.runId || crypto.randomUUID();
   // pass isRunLive so a zombie claim (a buildingRunId left by a crashed shift) is reaped in the SAME locked
@@ -11259,7 +11260,7 @@ async function runImplementBuild(agentId, sourceRunId, opts) {
   // queue RESOLVES with a reason rather than throwing — a discarded/denylisted id comes back { item: null }.
   if (!queued || !queued.item) return { fired: false, reason: 'queue-refused' };
   // claim THIS item by id: claimNext would stamp whatever sits at the top of the backlog, which is not ours.
-  const claimed = await workshopStore.claimById(id, backlogId, runId, isRunLive).catch(() => null);
+  const claimed = await workshopStore.claimById(id, backlogId, runId, isRunLive).catch(swallow('workshop.claim', null));
   if (!claimed) {
     // A previous build may have landed durably while its source-retirement step failed. Re-pressing Implement is
     // the repair path: finish that idempotent retirement, never spend a second build or strand the source forever.
@@ -11453,7 +11454,7 @@ async function handleQuestsDismiss(req, res) {
   const id = String(body.id || '');
   if (!id) return json(400, { ok: false, error: 'which quest?' });
   let did; try { did = await questStore.dismiss(id, Date.now()); } catch (e) { return json(500, { ok: false, error: 'could not dismiss that quest' }); }
-  if (did) await recommendationLedger.verdict('quest:' + id, 'declined', String(body.reason || 'wrong_thing'), Date.now()).catch(() => null);
+  if (did) await recommendationLedger.verdict('quest:' + id, 'declined', String(body.reason || 'wrong_thing'), Date.now()).catch(swallow('recledger.verdict', null));
   if (did) { try { questRefreshTick(); } catch (_) {} }   // caught-up nudge (QUEST V3) — same early look as confirm
   json(200, { ok: !!did });
 }
@@ -11470,7 +11471,7 @@ async function handleQuestsRefreshRun(req, res) {
   questRefreshState = QuestRefresh.stampCycle(questRefreshState, { now: Date.now() });
   persistQuestRefresh();
   questRefreshingNow = true;
-  runQuestRefreshCycle('manual').catch(() => {}).finally(() => { questRefreshingNow = false; });
+  runQuestRefreshCycle('manual').catch(swallow('aux.questrefresh.envelope')).finally(() => { questRefreshingNow = false; });
   json(200, { ok: true, started: true });
 }
 
@@ -11518,7 +11519,7 @@ async function handleQuestsRefreshNorthStar(req, res) {
   persistQuestRefresh();
   let minted = 0;
   if (had && decision === 'confirm' && staged.length) minted = await mintQuestRecommendations(staged, 'confirmed-direction');
-  await recommendationLedger.verdictTarget('northstar', 'pending', decision === 'confirm' ? 'completed' : 'declined', decision === 'confirm' ? 'completed' : 'wrong_thing', Date.now()).catch(() => null);
+  await recommendationLedger.verdictTarget('northstar', 'pending', decision === 'confirm' ? 'completed' : 'declined', decision === 'confirm' ? 'completed' : 'wrong_thing', Date.now()).catch(swallow('recledger.verdict', null));
   const s = QuestRefresh.normalize(questRefreshState);
   json(200, { ok: true, applied: had, decision: decision, minted: minted, northStar: QuestRefresh.effectiveNorthStar(s), northStarProposed: !!s.proposedNorthStar });
 }
@@ -13714,7 +13715,7 @@ async function runOnce(o) {
     : stationMaxIters;
   const managedRun = credits.configured() && !providerUnmetered;
   if (managedRun) {
-    await credits.refresh(CREDITS_ACCOUNT).catch(() => {});   // reconcile the cached balance right before admission
+    await credits.refresh(CREDITS_ACCOUNT).catch(swallow('credits.refresh'));   // reconcile the cached balance right before admission
     // A managed reservation needs a FINITE cap to hold. With no opt-in cap the wallet itself is the run's
     // only ceiling: reserve the full available balance — the least-limiting finite number there is — and
     // settle refunds whatever the run didn't use. The reservation is also the loop's maxCostUsd (below),
@@ -14355,7 +14356,7 @@ async function runOnce(o) {
   // Fire-and-forget + fail-open: a quest-store hiccup never touches run admission.
   try {
     for (const _pk of QuestSweeps.livePropKeys(questStore.openForAgent(agentId), agentId, station, resolved)) {
-      questStore.completeByContract('prop', _pk, Date.now()).then(completeQuestRecommendationIds).catch(() => {});
+      questStore.completeByContract('prop', _pk, Date.now()).then(completeQuestRecommendationIds).catch(swallow('quest.complete'));
     }
   } catch (_) {}
   // P1.5: the real informed-consent broker. surface:'interactive' + prompt ⇒ ungranted mutations ask live;
@@ -15717,8 +15718,8 @@ async function runOnce(o) {
     // fact sweep at writeMemoryRecord (memory provably committed); see questsweeps.js.
     try {
       const _qReason = taskQuestionAsked ? 'clarifying' : ((result && result.reason) || 'done');
-      if (_qReason === 'done') questStore.completeByContract('run', runId, Date.now()).then(completeQuestRecommendationIds).catch(() => {});
-      else questStore.stallRun(runId, _qReason, Date.now()).catch(() => {});
+      if (_qReason === 'done') questStore.completeByContract('run', runId, Date.now()).then(completeQuestRecommendationIds).catch(swallow('quest.complete'));
+      else questStore.stallRun(runId, _qReason, Date.now()).catch(swallow('quest.stall'));
     } catch (_) {}
     // QUEST V2 §A — the ARTIFACT-contract sweep: a quest keyed to a deliverable completes ONLY when that file
     // provably exists inside the CALLING agent's fs jail (fsJail.resolveInside — the same proof /api/file uses;
@@ -15732,7 +15733,7 @@ async function runOnce(o) {
           if (fs.existsSync(_aAbs)) await completeQuestRecommendationIds(await questStore.completeByContract('artifact', _aq.key, Date.now()));
         } catch (_) { /* a non-path or escaping key simply never completes — truthful telemetry */ }
       }
-    })().catch(() => {});
+    })().catch(swallow('quest.artifactsweep'));
     budget.clearLive(runId);
   }
 
@@ -15830,7 +15831,7 @@ async function runOnce(o) {
   // so it re-qualifies next run.
   if (_auxSpend.has('reflection')) {
     reflectingNow.add(agentId);
-    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered, origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }) }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
+    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered, origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }) }).catch(swallow('aux.reflection.envelope')).finally(() => { reflectingNow.delete(agentId); });
   }
   if (_auxSpend.has('failure-review')) {
     failReviewingNow.add(agentId);
@@ -15840,26 +15841,26 @@ async function runOnce(o) {
       toolTrace: execution.toolTraceList(), recoveryAttempts: execution.recoveryAttempts(),
       uncertainMutations: execution.uncertainMutations(),
       provider, model: _auxFailModel, reasoningEffort: _auxFailEffort, cost, unmetered: providerUnmetered
-    }).catch(() => {}).finally(() => { failReviewingNow.delete(agentId); });
+    }).catch(swallow('aux.failreview.envelope')).finally(() => { failReviewingNow.delete(agentId); });
   }
   if (_auxSpend.has('study')) {
     studyingNow.add(agentId);
     const studyDirective = latestUserText(result.messages);   // study the turn that actually ran, attachment or not
-    runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
+    runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(swallow('aux.study.envelope')).finally(() => { studyingNow.delete(agentId); });
   }
   if (_auxSpend.has('threadmine')) {
     threadMiningNow.add(agentId);
-    runThreadMine({ agentId, runId, streamId: o.streamId || '', messages: result.messages.slice(), provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { threadMiningNow.delete(agentId); });
+    runThreadMine({ agentId, runId, streamId: o.streamId || '', messages: result.messages.slice(), provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(swallow('aux.threadmine.envelope')).finally(() => { threadMiningNow.delete(agentId); });
   }
   if (_auxSpend.has('scout')) {
     scoutingNow = true;
-    runScoutCycle({ runId, agentId, provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { scoutingNow = false; });
+    runScoutCycle({ runId, agentId, provider, model: _auxModel, reasoningEffort: _auxEffort, cost, unmetered: providerUnmetered }).catch(swallow('aux.scout.envelope')).finally(() => { scoutingNow = false; });
   }
   if (_auxSpend.has('skill-review')) {
-    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model: _auxSkillModel, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(() => {});
+    runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model: _auxSkillModel, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(swallow('aux.skillreview.envelope'));
   }
   if (_auxSpend.has('skill-curator')) {
-    runSkillCurator({ agentId, runId, provider, model: _auxSkillModel, cost, unmetered: providerUnmetered }).catch(() => {});
+    runSkillCurator({ agentId, runId, provider, model: _auxSkillModel, cost, unmetered: providerUnmetered }).catch(swallow('aux.skillcurator.envelope'));
   }
 
   // TRUTHFUL TELEMETRY: when the governor holds the ceiling, record WHICH passes yielded. A deferral is NOT an
@@ -18699,7 +18700,7 @@ async function writeMemoryRecord(agentId, prop, opts) {
   // open until a committed memory covers them. Fire-and-forget + fail-open: never fails the memory write.
   try {
     for (const _fk of QuestSweeps.learnedFactKeys(questStore.openForAgent(agentId), agentId, { id: writtenId, content: content })) {
-      questStore.completeByContract('fact', _fk, Date.now()).then(completeQuestRecommendationIds).catch(() => {});
+      questStore.completeByContract('fact', _fk, Date.now()).then(completeQuestRecommendationIds).catch(swallow('quest.complete'));
     }
   } catch (_) {}
   return { ok: true, id: writtenId, kind: rec.kind };
