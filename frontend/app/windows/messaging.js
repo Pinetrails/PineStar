@@ -263,11 +263,15 @@
         name.textContent = (bItem.username ? '@' + bItem.username : 'bot ' + bItem.botId) + ' → ' + (bItem.agentName || bItem.agentId || '?');
         const state = document.createElement('span');
         const inFlight = !bItem.connected && (bItem.state === 'connecting' || bItem.state === 'reconnecting');
-        state.className = 'ch-state ' + (pairingBlocked ? 'st-wait' : stateClass(bItem.connected, inFlight, bItem.state, bItem.configured));
-        state.textContent = pairingBlocked ? '◐ polling · pair owner' : acceptingDms ? '● connected' : inFlight ? '◐ connecting…'
+        const deliveryDown = !!(bItem.delivery && bItem.delivery.state === 'down');
+        const runBlocked = bItem.runReady === false;
+        state.className = 'ch-state ' + ((deliveryDown || runBlocked) ? 'st-err' : pairingBlocked ? 'st-wait' : stateClass(bItem.connected, inFlight, bItem.state, bItem.configured));
+        state.textContent = runBlocked ? ('✕ replies blocked · ' + (bItem.runDetail || 'agent model unavailable')) : deliveryDown ? '✕ replies blocked · polling' : pairingBlocked ? '◐ polling · pair owner' : acceptingDms ? '● connected' : inFlight ? '◐ connecting…'
           : bItem.state === 'error' ? ('✕ ' + (bItem.detail || 'error')) : (bItem.enabled === false ? '○ off' : '○ offline');
         if (bItem.ownerLocked) state.title = 'owner-locked';
+        if (runBlocked) state.title = 'Telegram transport may be polling, but this agent cannot run: ' + (bItem.runDetail || 'provider/model unavailable');
         if (bItem.delivery && bItem.delivery.state === 'down') state.title = 'outbound delivery degraded' + (bItem.delivery.detail ? ': ' + bItem.delivery.detail : '');
+        if (bItem.warning) state.textContent += ' ⚠ ' + bItem.warning;
         row.appendChild(name); row.appendChild(state);
         const btn = (label, act, danger) => {
           const b = document.createElement('button');
@@ -653,26 +657,43 @@
         if (!token) { sfx('bad'); setMsg(msgEl, 'paste a @BotFather token for the new bot first', ''); return; }
         if (!agentId) { sfx('bad'); setMsg(msgEl, 'pick which agent this bot should be', ''); return; }
         const ag = (H.present || []).find(a => a && a.id === agentId) || null;
-        const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
+        // An agent bot runs as the SELECTED roster agent, not whichever agent/provider is currently focused in
+        // COMMS. Keep provider+model+credential together here; the backend independently resolves the same roster
+        // tuple and refuses any mismatch before it saves the Telegram token.
+        const provider = (ag && ag.provider) || ((typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter');
         const usingCodex = provider === 'codex' || provider === 'openai-codex';
+        const usingOAuth = usingCodex || provider === 'grok' || provider === 'kimi';
         const key = (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey(provider) || '') : '';
         const baseUrl = (typeof Harness !== 'undefined' && Harness.getBaseUrl) ? (Harness.getBaseUrl(provider) || '') : '';
         const hasStoredKey = !!(typeof Harness !== 'undefined' && Harness.configured && Harness.configured(provider));
-        const model = (typeof Harness !== 'undefined' && Harness.getModel()) || '';
-        if (!model || (!usingCodex && !key && !hasStoredKey)) { sfx('bad'); setMsg(msgEl, '✕ connect your agent\'s provider + model in SETTINGS first', ''); return; }
-        setMsg(msgEl, 'checking the token with Telegram…', 'info');
+        const model = (ag && ag.model) || '';
+        const reasoningEffort = (ag && ag.reasoningEffort) || ((typeof Harness !== 'undefined' && Harness.getReasoningEffort) ? Harness.getReasoningEffort(provider) : 'medium');
+        if (!model || (!usingOAuth && !key && !hasStoredKey)) { sfx('bad'); setMsg(msgEl, '✕ connect this agent\'s provider + model in SETTINGS first', ''); return; }
+        setMsg(msgEl, 'checking Telegram and proving this agent\'s model sign-in…', 'info');
         try {
           const r = await Harness.api.post('/api/channels/telegram/bots/connect', {
-            token, agentId, key, model, provider, baseUrl,
+            token, agentId, key, model, provider, baseUrl, reasoningEffort,
             system: (ag && ag.systemPrompt) || '', agentName: (ag && ag.name) || ''
           });
           const j = r.j || {};
           if (!r.ok || j.error) { sfx('bad'); setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); }
           else {
+            let localFallback = false;
+            if (j.botId && typeof Harness !== 'undefined' && Harness.storeChannelToken) {
+              const stored = await Harness.storeChannelToken('telegram:' + j.botId, token);
+              localFallback = !stored && !!(Harness.isDesktop && Harness.isDesktop());
+            }
             sfx('click'); tokInp.value = '';
-            // the CONNECTED claim stays with the list row (painted from proven per-instance status) — this line
-            // only asserts what getMe proved: the token is real and the bot is bound.
-            setMsg(msgEl, '✓ @' + (j.username || 'bot') + (j.rebound ? ' re-bound' : ' added') + ' — connecting; DM it on Telegram once the row shows ●', 'ok');
+            // A new agent bot is deliberately deaf until its Telegram owner proves possession with /pair.
+            // Surface that command NOW, in the same response that proved the token, instead of telling the user
+            // to wait for a green row that cannot become green before pairing.
+            if (j.pairingCode) {
+              setMsg(msgEl, '✓ @' + (j.username || 'bot') + (j.rebound ? ' re-bound' : ' added') + ' — ' + (j.providerVerified ? 'agent model verified; ' : '') + 'finish setup now: DM that bot /pair ' + j.pairingCode + ' (expires in 10 minutes).' + (localFallback ? ' Token saved locally, not the OS keychain.' : ''), 'info');
+            } else if (j.pairingRequired) {
+              setMsg(msgEl, '◐ @' + (j.username || 'bot') + ' is polling, but DMs are blocked: ' + (j.pairingError || 'click its PAIR button to issue the owner command.') + (localFallback ? ' Token saved locally, not the OS keychain.' : ''), 'info');
+            } else {
+              setMsg(msgEl, '✓ @' + (j.username || 'bot') + (j.rebound ? ' re-bound' : ' added') + ' — connecting as the paired owner' + (localFallback ? ' (token saved locally, not the OS keychain)' : ''), 'ok');
+            }
           }
         } catch (e) { sfx('bad'); setMsg(msgEl, '✕ ' + ((e && e.message) || 'failed to reach the sidecar'), ''); }
         refreshAll();
@@ -703,8 +724,22 @@
         else if (act === 'revokeOwner') armed('tg-bot-owner-' + botId, b, 'UNPAIR', 'CONFIRM UNPAIR', () =>
           doPost('/api/channels/telegram/bots/' + botId + '/owner/revoke', {}, 'bot owner revoked locally'));
         else if (act === 'off') doPost('/api/channels/telegram/bots/' + botId + '/disconnect', {}, 'bot disconnected — token kept; ⏵ to reconnect');
-        else if (act === 'forget') armed('tg-bot-forget-' + botId, b, '⌫', '⌫ SURE?', () =>
-          doPost('/api/channels/telegram/bots/' + botId + '/disconnect', { purge: true }, 'bot forgotten — its token was removed'));
+        else if (act === 'forget') armed('tg-bot-forget-' + botId, b, '⌫', '⌫ SURE?', async () => {
+          try {
+            const r = await Harness.api.post('/api/channels/telegram/bots/' + botId + '/disconnect', { purge: true });
+            const j = r.j || {};
+            if (!r.ok || j.error || !j.purged) { sfx('bad'); setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); }
+            else {
+              let kcCleared = true;
+              if (Harness.storeChannelToken && Harness.isDesktop && Harness.isDesktop()) {
+                kcCleared = await Harness.storeChannelToken('telegram:' + botId, '');
+              }
+              if (kcCleared) { sfx('click'); setMsg(msgEl, 'bot forgotten — its stored token was purged', 'info'); }
+              else { sfx('bad'); setMsg(msgEl, '⚠ bot record removed, but the OS keychain token could not be deleted; try FORGET again after re-adding it', ''); }
+            }
+          } catch (_) { sfx('bad'); setMsg(msgEl, '✕ could not reach the sidecar', ''); }
+          refreshAll();
+        });
       });
     })();
 

@@ -4,6 +4,7 @@
 //! keychain namespace, provider/channel normalization, secret reads, and the
 //! crash-safe migration of legacy plaintext channel tokens.
 
+use std::collections::BTreeMap;
 use std::path::Path;
 
 pub(crate) const KEYCHAIN_SERVICE: &str = "ai.skynet.harness";
@@ -120,6 +121,9 @@ pub(crate) fn is_known_channel(channel: &str) -> bool {
     SIDECAR_CHANNEL_TOKEN_ENVS
         .iter()
         .any(|(id, _)| *id == channel)
+        || channel.strip_prefix("telegram:").is_some_and(|id| {
+            !id.is_empty() && id.len() <= 20 && id.bytes().all(|byte| byte.is_ascii_digit())
+        })
 }
 
 fn channel_keychain_account(channel: &str) -> String {
@@ -164,6 +168,30 @@ pub(crate) fn read_channel_token(channel: &str) -> Option<String> {
         .ok()
         .and_then(|entry| entry.get_password().ok())
         .filter(|token| !token.trim().is_empty())
+}
+
+/// Keychain-backed tokens for saved agent-bound Telegram bots, keyed by their stable numeric Bot API id.
+/// The returned map is injected as one JSON environment value when the sidecar starts.
+pub(crate) fn read_telegram_bot_tokens(workspaces: &Path) -> BTreeMap<String, String> {
+    let file = workspaces.join("channels").join("secrets.json");
+    let json: serde_json::Value = match std::fs::read_to_string(file)
+        .ok()
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+    {
+        Some(json) => json,
+        None => return BTreeMap::new(),
+    };
+    json.get("telegramBots")
+        .and_then(|value| value.as_object())
+        .into_iter()
+        .flat_map(|bots| bots.keys())
+        .filter(|bot_id| is_known_channel(&format!("telegram:{bot_id}")))
+        .take(200)
+        .filter_map(|bot_id| {
+            read_channel_token(&format!("telegram:{bot_id}"))
+                .map(|token| (bot_id.to_string(), token))
+        })
+        .collect()
 }
 
 // ---- StarNet Cloud device token (keychain account "credits:device") ----
@@ -285,6 +313,49 @@ pub(crate) fn migrate_channel_tokens_from_plaintext(workspaces: &Path) {
         }
     }
 
+    // Agent-bound Telegram bots use dynamic channel ids (`telegram:<numeric bot id>`). Import each nested token
+    // independently and remove it only after exact keychain read-back, preserving the same last-copy invariant.
+    let nested_tokens: Vec<(String, String)> = json
+        .get("telegramBots")
+        .and_then(|value| value.as_object())
+        .into_iter()
+        .flat_map(|bots| bots.iter())
+        .filter_map(|(bot_id, record)| {
+            let channel = format!("telegram:{bot_id}");
+            if !is_known_channel(&channel) {
+                return None;
+            }
+            record
+                .get("token")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(|token| (bot_id.clone(), token.to_string()))
+        })
+        .take(200)
+        .collect();
+    for (bot_id, token) in nested_tokens {
+        let channel = format!("telegram:{bot_id}");
+        if read_channel_token(&channel).is_none() {
+            if let Ok(entry) = channel_keychain_entry(&channel) {
+                let _ = entry.set_password(&token);
+            }
+        }
+        let keychain_has_it = read_channel_token(&channel)
+            .map(|stored| stored == token)
+            .unwrap_or(false);
+        if keychain_has_it {
+            if let Some(record) = json
+                .get_mut("telegramBots")
+                .and_then(|value| value.get_mut(&bot_id))
+                .and_then(|value| value.as_object_mut())
+            {
+                record.remove("token");
+                changed = true;
+            }
+        }
+    }
+
     if changed {
         if let Ok(serialized) = serde_json::to_string(&json) {
             let _ = atomic_write(&file, serialized.as_bytes());
@@ -362,9 +433,17 @@ mod tests {
     fn channel_namespace_is_closed_and_env_mapping_is_stable() {
         assert!(is_known_channel("telegram"));
         assert!(is_known_channel("discord"));
+        assert!(is_known_channel("telegram:123456789"));
         assert!(!is_known_channel("Telegram"));
         assert!(!is_known_channel("matrix"));
+        assert!(!is_known_channel("telegram:"));
+        assert!(!is_known_channel("telegram:12/34"));
+        assert!(!is_known_channel("telegram:123456789012345678901"));
         assert_eq!(channel_keychain_account("telegram"), "channel:telegram");
+        assert_eq!(
+            channel_keychain_account("telegram:123"),
+            "channel:telegram:123"
+        );
         assert_eq!(
             SIDECAR_CHANNEL_TOKEN_ENVS,
             [

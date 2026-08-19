@@ -888,8 +888,8 @@
       },
       {
         "path": "frontend/app/windows/messaging.js",
-        "bytes": 53291,
-        "sha256": "97760bcc8fac4ee3810b9a3ad3ce2d45b2b8b7a213630750e6afd417c1214642"
+        "bytes": 56446,
+        "sha256": "e56394e005f3ebc9df3e116ff966eee8bbc4a862eb26eebfc3cc5ca5d4f14eec"
       },
       {
         "path": "frontend/app/windows/outbox.js",

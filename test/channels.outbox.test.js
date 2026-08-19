@@ -1,7 +1,7 @@
 /* node test/channels.outbox.test.js — the durable outbound-retry seam (store outbox + hub queue/flush).
    Proves: a FAILED reply is queued (only the undelivered remainder, never a /command reply), the queue is
    bounded + survives via the same atomic store, an adapter 'up' status redelivers it, a mid-session healthy
-   send drains the backlog, and a hopeless item drops with an honest event only after MAX_OUTBOX_TRIES. */
+   send drains the backlog, and prolonged outages retain replies instead of silently giving up. */
 'use strict';
 const A = require('./_assert.js');
 const pathMod = require('path');
@@ -34,7 +34,7 @@ function mkHub(store, sendImpl, events) {
     secrets: () => ({ key: 'k', model: 'm', configured: true }),
     emit: (name, payload) => events.push([name, payload]),
     newId: (() => { let n = 0; return () => 'run-' + (++n); })(),
-    sleep: () => Promise.resolve()
+    sleep: () => Promise.resolve(), outboxRetryMs: 5
   });
 }
 
@@ -56,15 +56,54 @@ function mkHub(store, sendImpl, events) {
     A.eq(s.removeOutbox('nope'), false, 'removing a missing id is a safe no-op');
   }
 
-  // ---- B. bounds: oldest drops past maxOutbox; oversized text is truncated, never unbounded ----
+  // ---- B. bounds: saturation refuses new work instead of evicting old replies; text stays bounded ----
   {
     const s = mkStore(memFs(), { maxOutbox: 3, maxOutboxChars: 20 });
-    for (let i = 1; i <= 5; i++) s.pushOutbox({ channel: 'telegram', chatId: String(i), text: 't' + i });
+    const big = s.pushOutbox({ channel: 'telegram', chatId: '1', text: 'x'.repeat(100) });
+    A.ok(big.text.length < 100 && /truncated/.test(big.text), 'oversized reply is truncated with an honest marker');
+    s.pushOutbox({ channel: 'telegram', chatId: '2', text: 't2' });
+    s.pushOutbox({ channel: 'telegram', chatId: '3', text: 't3' });
+    A.throws(() => s.pushOutbox({ channel: 'telegram', chatId: '4', text: 't4' }), 'full outbox refuses to discard an undelivered reply');
     const items = s.loadOutbox();
     A.eq(items.length, 3, 'outbox is bounded');
-    A.eq(items.map(x => x.chatId), ['3', '4', '5'], 'oldest undelivered dropped first');
-    const big = s.pushOutbox({ channel: 'telegram', chatId: '9', text: 'x'.repeat(100) });
-    A.ok(big.text.length < 100 && /truncated/.test(big.text), 'oversized reply is truncated with an honest marker');
+    A.eq(items.map(x => x.chatId), ['1', '2', '3'], 'every previously queued reply remains intact');
+  }
+
+  // ---- B2. durable inbox is idempotent, bounded, and survives a new store instance ----
+  {
+    const fs = memFs();
+    const s = makeChannelStore({ fs, pathMod, root: ROOT, clock, inboxLimits: { maxInbox: 2 } });
+    const msg = { chatId: '77', chatType: 'dm', userId: 'u', text: 'work', messageId: '9' };
+    s.pushInbox({ id: 'telegram|77|9', channel: 'telegram', message: msg });
+    s.pushInbox({ id: 'telegram|77|9', channel: 'telegram', message: msg });
+    A.eq(s.loadInbox('telegram').length, 1, 'duplicate delivery creates one durable intake receipt');
+    const restarted = makeChannelStore({ fs, pathMod, root: ROOT, clock, inboxLimits: { maxInbox: 2 } });
+    A.eq(restarted.loadInbox('telegram')[0].message.text, 'work', 'unfinished intake survives a store restart');
+    restarted.pushInbox({ id: 'telegram|78|10', channel: 'telegram', message: Object.assign({}, msg, { chatId: '78', messageId: '10' }) });
+    A.throws(() => restarted.pushInbox({ id: 'telegram|79|11', channel: 'telegram', message: Object.assign({}, msg, { chatId: '79', messageId: '11' }) }), 'a full inbox refuses acknowledgement instead of dropping oldest work');
+    A.eq(restarted.removeInbox('telegram|77|9'), true, 'completion removes exactly its receipt');
+  }
+
+  // ---- B3. hub claims before returning, clears after completion, and replays a crash survivor on poll-up ----
+  {
+    const store = mkStore();
+    const sends = [], events = [];
+    const hub = mkHub(store, async (chatId, text) => { sends.push({ chatId, text }); return { ok: true }; }, events);
+    const msg = { chatId: '80', chatType: 'dm', userId: 'u', text: 'normal work', messageId: '30', ts: 1 };
+    const running = hub.onInbound(msg);
+    A.eq(store.loadInbox('telegram').length, 1, 'admitted message is durable synchronously before processing runs');
+    await running;
+    A.eq(store.loadInbox('telegram'), [], 'completed reply removes its durable intake receipt');
+    hub.close();
+
+    const crashed = { chatId: '81', chatType: 'dm', userId: 'u', text: 'survived crash', messageId: '31', ts: 2 };
+    store.pushInbox({ id: 'telegram|81|31', channel: 'telegram', message: crashed });
+    const restartedHub = mkHub(store, async (chatId, text) => { sends.push({ chatId, text }); return { ok: true }; }, events);
+    restartedHub.onStatus({ state: 'up' });
+    for (let i = 0; i < 10 && store.loadInbox('telegram').length; i++) await new Promise(r => setTimeout(r, 0));
+    A.eq(store.loadInbox('telegram'), [], 'poll-up replays and completes unfinished durable intake');
+    A.ok(sends.some(s => s.chatId === '81' && /the result/.test(s.text)), 'recovered intake produces its real reply');
+    restartedHub.close();
   }
 
   // ---- C. hub queues ONLY the undelivered remainder of a failed reply ----
@@ -115,18 +154,58 @@ function mkHub(store, sendImpl, events) {
     A.eq(store.loadOutbox('telegram'), [], 'a failed /command reply is not queued');
   }
 
-  // ---- G. give-up honesty: after MAX_OUTBOX_TRIES failed flushes the item drops with an ok:false event ----
+  // ---- F2. outbound-only recovery retries itself; no new inbound or poll reconnect is required ----
+  {
+    const events = [];
+    const store = mkStore();
+    let sendOk = false;
+    const hub = mkHub(store, async () => (sendOk ? { ok: true } : { ok: false, error: 'outbound only' }), events);
+    await hub.onInbound({ chatId: '12', chatType: 'dm', userId: 'u1', text: 'finish this', messageId: 'm4', ts: 4 });
+    A.eq(store.loadOutbox('telegram').length, 1, 'outbound-only failure is queued');
+    sendOk = true;
+    await new Promise(r => setTimeout(r, 20));
+    A.eq(store.loadOutbox('telegram'), [], 'scheduled retry drains it without a new message or poll transition');
+    A.ok(events.some(e => e[0] === 'channel.delivery' && e[1].reason === 'redelivered'), 'scheduled recovery emits the proven redelivery');
+    hub.close();
+  }
+
+  // ---- G. prolonged outage: escalation is visible, but the reply remains queued until recovery ----
   {
     const events = [];
     const store = mkStore();
     store.pushOutbox({ channel: 'telegram', chatId: '13', text: 'doomed', runId: 'rX' });
     const hub = mkHub(store, async () => ({ ok: false, error: 'still down' }), events);
-    const tries = hub._internals.MAX_OUTBOX_TRIES;
+    const tries = hub._internals.OUTBOX_ESCALATE_TRIES;
     for (let i = 0; i < tries; i++) await hub._internals.flushOutbox();
-    A.eq(store.loadOutbox('telegram'), [], 'the hopeless item was dropped after ' + tries + ' attempts');
-    const gaveUp = events.filter(e => e[0] === 'channel.delivery' && e[1].reason === 'redelivery-gave-up');
-    A.eq(gaveUp.length, 1, 'the drop emitted one honest gave-up event');
-    A.eq(gaveUp[0][1].ok, false, '…as ok:false');
+    A.eq(store.loadOutbox('telegram').length, 1, 'the delayed reply is retained after ' + tries + ' attempts');
+    const delayed = events.filter(e => e[0] === 'channel.delivery' && e[1].reason === 'redelivery-delayed');
+    A.eq(delayed.length, 1, 'the prolonged delay emitted one honest escalation event');
+    A.eq(delayed[0][1].ok, false, '…as ok:false');
+    hub.close();
+  }
+
+  // ---- H. saturation backpressures durable intake, then replays it when old replies drain ----
+  {
+    const events = [];
+    const store = mkStore(memFs(), { maxOutbox: 1 });
+    store.pushOutbox({ channel: 'telegram', chatId: 'old', text: 'older delayed answer', runId: 'old-run' });
+    let sendOk = false;
+    const sends = [];
+    const hub = mkHub(store, async (chatId, text) => { sends.push({ chatId, text }); return sendOk ? { ok: true } : { ok: false, error: 'down' }; }, events);
+    let rejected = false;
+    try { await hub.onInbound({ chatId: 'new', chatType: 'dm', userId: 'u1', text: 'new work', messageId: 'm5', ts: 5 }); }
+    catch (_) { rejected = true; }
+    A.ok(rejected, 'a reply that cannot enter the full outbox does not claim processing complete');
+    A.eq(store.loadOutbox('telegram').map(x => x.chatId), ['old'], 'saturation preserves the older queued reply');
+    A.eq(store.loadInbox('telegram').map(x => x.message.chatId), ['new'], 'the newer message remains durably pending');
+
+    sendOk = true;
+    await hub._internals.flushOutbox();
+    for (let i = 0; i < 20 && store.loadInbox('telegram').length; i++) await new Promise(r => setTimeout(r, 0));
+    A.eq(store.loadOutbox('telegram'), [], 'old queued reply drains after recovery');
+    A.eq(store.loadInbox('telegram'), [], 'capacity recovery replays and completes the pending intake');
+    A.ok(sends.some(x => x.chatId === 'new' && /the result/.test(x.text)), 'the backpressured message ultimately receives its answer');
+    hub.close();
   }
 
   A.report('channels.outbox.test');

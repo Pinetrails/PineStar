@@ -58,6 +58,10 @@
   const STRIP_FIELDS = ['token', 'key'];
 
   function isChannelRecord(v) { return v && typeof v === 'object' && !Array.isArray(v); }
+  function telegramBotSecretId(botId) {
+    const id = String(botId || '');
+    return /^\d+$/.test(id) && id.length <= 20 ? 'telegram:' + id : '';
+  }
 
   // pull the secret fields out of ONE channel record. Returns { config, token } where config is a shallow clone
   // MINUS every secret field (token AND key) and token is the extracted bot token (import candidate; '' when absent).
@@ -100,7 +104,20 @@
     const durable = (typeof isDurable === 'function') ? isDurable : function () { return true; };
     for (const k of Object.keys(src)) {
       if (CHANNEL_IDS.indexOf(k) >= 0 && isChannelRecord(src[k])) {
-        out[k] = durable(k) ? splitSecret(src[k]).config : splitKeyOnly(src[k]);
+        const split = splitSecret(src[k]);
+        out[k] = split.token && durable(k, split.token) ? split.config : splitKeyOnly(src[k]);
+      } else if (k === 'telegramBots' && isChannelRecord(src[k])) {
+        const bots = {};
+        for (const botId of Object.keys(src[k])) {
+          const record = src[k][botId];
+          const secretId = telegramBotSecretId(botId);
+          if (isChannelRecord(record)) {
+            const split = splitSecret(record);
+            bots[botId] = secretId && split.token && durable(secretId, split.token) ? split.config : splitKeyOnly(record);
+          }
+          else bots[botId] = record;
+        }
+        out[k] = bots;
       } else out[k] = src[k];
     }
     return out;
@@ -129,29 +146,32 @@
     const imports = [];
     let changed = false;
     const config = {};
+    function migrateRecord(id, record) {
+      const hadStrippable = hasStrippableSecret(record);
+      const s = splitSecret(record);
+      if (s.token) {
+        if (id && has(id, s.token)) {
+          changed = true;
+          imports.push({ id: id, token: s.token });
+          return s.config;
+        }
+        if (hadStrippable) changed = true;
+        if (id) imports.push({ id: id, token: s.token });
+        return splitKeyOnly(record);
+      }
+      if (hadStrippable) changed = true;
+      return s.config;
+    }
     for (const k of Object.keys(src)) {
       if (CHANNEL_IDS.indexOf(k) >= 0 && isChannelRecord(src[k])) {
-        const hadStrippable = hasStrippableSecret(src[k]);      // a plaintext `key` (or other strip-only secret)
-        const s = splitSecret(src[k]);
-        if (s.token) {
-          if (has(k)) {
-            // The keychain PROVABLY holds this token -> the plaintext copy is now redundant; strip it. Also report
-            // it as an import so the runtime layer stays live this session (harmless duplicate the host de-dupes).
-            changed = true;
-            imports.push({ id: k, token: s.token });
-            config[k] = s.config;                            // token removed from persisted config
-          } else {
-            // The keychain does NOT (yet) hold it. NEVER remove the last copy: keep the token in the persisted
-            // config, but still report it as an import so the shell can adopt it into the keychain on this launch
-            // (self-healing — once stored, a later boot with has(k) true strips it). Only the `key` is dropped.
-            if (hadStrippable) changed = true;                // dropping the plaintext key is the only rewrite here
-            imports.push({ id: k, token: s.token });
-            config[k] = splitKeyOnly(src[k]);                 // KEEP token, drop key
-          }
-        } else {
-          if (hadStrippable) changed = true;                // a plaintext provider key alone forces the scrub-rewrite
-          config[k] = s.config;
+        config[k] = migrateRecord(k, src[k]);
+      } else if (k === 'telegramBots' && isChannelRecord(src[k])) {
+        const bots = {};
+        for (const botId of Object.keys(src[k])) {
+          const record = src[k][botId];
+          bots[botId] = isChannelRecord(record) ? migrateRecord(telegramBotSecretId(botId), record) : record;
         }
+        config[k] = bots;
       } else {
         config[k] = src[k];
       }
@@ -190,5 +210,5 @@
     };
   }
 
-  return { CHANNEL_IDS, TOKEN_FIELDS, STRIP_FIELDS, splitSecret, splitKeyOnly, stripTokens, hasStrippableSecret, migratePlaintext, makeVerifiedPersist };
+  return { CHANNEL_IDS, TOKEN_FIELDS, STRIP_FIELDS, telegramBotSecretId, splitSecret, splitKeyOnly, stripTokens, hasStrippableSecret, migratePlaintext, makeVerifiedPersist };
 });

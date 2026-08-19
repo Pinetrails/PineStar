@@ -284,6 +284,13 @@
     // root doesn't inject one. It is a wall-time WAIT, not a clock READ — the determinism gate bans Date.now/random
     // here, not setTimeout (see adapter.js:70, discord.transport.js:33 for the identical fallback).
     const sleep = typeof o.sleep === 'function' ? o.sleep : (ms => new Promise(r => setTimeout(r, ms)));
+    // Durable replies must recover even when polling never drops. A separate outbound-only outage used to leave
+    // the outbox parked forever unless another message happened to send successfully. The timer is injected for
+    // deterministic tests, unref'd in production, and explicitly closed with the hub lifecycle.
+    const setTimer = typeof o.setTimeout === 'function' ? o.setTimeout : setTimeout;
+    const clearTimer = typeof o.clearTimeout === 'function' ? o.clearTimeout : clearTimeout;
+    const outboxRetryMs = Number.isFinite(o.outboxRetryMs) ? Math.max(1, Number(o.outboxRetryMs)) : 5000;
+    const outboxRetryMaxMs = Number.isFinite(o.outboxRetryMaxMs) ? Math.max(outboxRetryMs, Number(o.outboxRetryMaxMs)) : 60000;
     // Supersede-retry knobs (tunable for tests; the defaults give ~0.3s+0.6s+1.2s ≈ a couple seconds of grace). When a
     // second message aborts this chat's in-flight run, the fresh run can momentarily lose the same-agent workspace
     // mutex race in the host and get a TRANSIENT "already running a task" refusal — retry exactly that class a few
@@ -746,16 +753,24 @@
       if (!ok && unreachable) {
         try { console.error('[' + channel + '] reply for chat ' + chatId + ' NOT queued — this chat has blocked or removed the bot'); } catch (_) {}
       }
-      if (!ok && !unreachable && reason !== 'command' && reason !== 'prompt' && typeof store.pushOutbox === 'function') {
+      const mustPersistFailure = !ok && !unreachable && reason !== 'command' && reason !== 'prompt' && typeof store.pushOutbox === 'function';
+      let failurePersisted = false;
+      let failurePersistError = null;
+      if (mustPersistFailure) {
         try {
           const remainder = '⌛ delayed reply — the channel was unreachable when this was first sent:\n' + chunks.slice(failedAt).join('');
           store.pushOutbox({ channel: channel, chatId: String(chatId), text: remainder, runId: runId || '', agentId: agentId ? String(agentId) : '', reason: reason || '' });
-        } catch (_) {}
+          failurePersisted = true;
+          scheduleOutboxRetry();
+        } catch (e) { failurePersistError = e; }
       }
       const ev = { channel, chatId: String(chatId), runId: runId || '', ok, chunks: chunks.length, reason: reason || '' };
       if (agentId) ev.agentId = String(agentId);   // additive/optional — attribute the dish to the acting agent
       try { emit('channel.delivery', ev); } catch (_) {}
-      if (ok) { try { const p = flushOutbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {} }   // a proven-healthy send is the cue to drain any backlog
+      if (ok) { try { kickOutbox(); } catch (_) {} }   // a proven-healthy send is the cue to drain any backlog
+      // The adapter acknowledged this message only after its durable INBOX receipt existed. If the failed answer
+      // cannot enter the outbox, reject processing so that receipt remains and replays once capacity returns.
+      if (mustPersistFailure && !failurePersisted) throw new Error('failed reply could not be persisted: ' + ((failurePersistError && failurePersistError.message) || 'outbox unavailable'));
       // `text` is the FINAL chunk's text — the one a keyboard was attached to, and therefore the exact string a
       // later editMessage must rebuild on top of when it stamps the chosen answer in place.
       return { ok: ok, messageId: messageId, text: chunks.length ? chunks[chunks.length - 1] : '' };
@@ -765,11 +780,36 @@
     // Triggered by (a) the adapter reporting 'up' (reconnect/restart recovery) and (b) any successful deliver
     // (covers a mid-session send failure while the poll status never dropped). One pass at a time; a failed
     // redelivery bumps the item's try-count and STOPS the pass (transport clearly still shaky) — the item is
-    // dropped with an honest event only after MAX_OUTBOX_TRIES failed attempts, never silently.
-    const MAX_OUTBOX_TRIES = 5;
+    // Retained until delivery succeeds or Telegram proves the chat unreachable. At five failures we emit one
+    // escalation event, but keep retrying at the capped cadence — a two-minute outage must not become message loss.
+    const OUTBOX_ESCALATE_TRIES = 5;
     let flushing = false;
+    let outboxTimer = null;
+    let closed = false;
+    function pendingOutbox() {
+      try { return typeof store.loadOutbox === 'function' ? (store.loadOutbox(channel) || []) : []; }
+      catch (_) { return []; }
+    }
+    function scheduleOutboxRetry() {
+      if (closed || outboxTimer || typeof store.loadOutbox !== 'function') return;
+      const items = pendingOutbox();
+      if (!items.length) return;
+      const tries = Math.max(0, Number(items[0] && items[0].tries) || 0);
+      const delay = Math.min(outboxRetryMs * Math.pow(2, Math.min(tries, 8)), outboxRetryMaxMs);
+      outboxTimer = setTimer(() => {
+        outboxTimer = null;
+        Promise.resolve(flushOutbox()).catch(function () {});
+      }, delay);
+      if (outboxTimer && typeof outboxTimer.unref === 'function') outboxTimer.unref();
+    }
+    function kickOutbox() {
+      if (closed) return;
+      if (outboxTimer) { try { clearTimer(outboxTimer); } catch (_) {} outboxTimer = null; }
+      const p = flushOutbox();
+      if (p && typeof p.catch === 'function') p.catch(function () {});
+    }
     async function flushOutbox() {
-      if (flushing || typeof store.loadOutbox !== 'function') return;
+      if (closed || flushing || typeof store.loadOutbox !== 'function') return;
       flushing = true;
       try {
         const items = store.loadOutbox(channel);
@@ -797,14 +837,25 @@
           }
           let bumped = null;
           try { bumped = (typeof store.bumpOutboxTry === 'function') ? store.bumpOutboxTry(it.id) : null; } catch (_) {}
-          if (bumped && bumped.tries >= MAX_OUTBOX_TRIES) {
-            try { store.removeOutbox(it.id); } catch (_) {}
-            try { emit('channel.delivery', { channel, chatId: String(it.chatId), runId: it.runId || '', ok: false, chunks: 0, reason: 'redelivery-gave-up' }); } catch (_) {}
-            try { console.error('[' + channel + '] outbox item for chat ' + it.chatId + ' dropped after ' + MAX_OUTBOX_TRIES + ' failed redeliveries'); } catch (_) {}
+          if (bumped && bumped.tries === OUTBOX_ESCALATE_TRIES) {
+            try { emit('channel.delivery', { channel, chatId: String(it.chatId), runId: it.runId || '', ok: false, chunks: 0, reason: 'redelivery-delayed' }); } catch (_) {}
+            try { console.error('[' + channel + '] outbox item for chat ' + it.chatId + ' still delayed after ' + OUTBOX_ESCALATE_TRIES + ' attempts; retained for retry'); } catch (_) {}
           }
           break;   // transport still unhealthy — end this pass; the next healthy cue retries
         }
-      } finally { flushing = false; }
+      } finally {
+        flushing = false;
+        if (pendingOutbox().length) scheduleOutboxRetry();
+        else {
+          // Capacity is back. Replay intake deliberately held when a saturated outbox could not accept its reply.
+          try { const p = recoverInbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {}
+        }
+      }
+    }
+
+    function close() {
+      closed = true;
+      if (outboxTimer) { try { clearTimer(outboxTimer); } catch (_) {} outboxTimer = null; }
     }
 
     // Resolve which agent a chat is currently bound to, from the SAME precedence run resolution uses (minus the
@@ -1161,12 +1212,51 @@
     const TEXT_BATCH_WAIT_MS = Number.isFinite(o.textBatchWaitMs) ? Math.max(0, o.textBatchWaitMs) : 0;
     const textBatches = new Map();
 
-    async function onInbound(msg, intake) {
+    const activeInbox = new Map();   // durable inbox id -> the one live processing promise (dedupes restart races)
+    function inboxId(msg) {
+      if (!msg || msg.messageId == null || String(msg.messageId) === '') return '';
+      return channel + '|' + String(msg.chatId) + '|' + String(msg.messageId) + (msg.edited ? '|edited' : '');
+    }
+    function onInbound(msg, intake) {
+      const id = inboxId(msg);
+      // Older/test stores retain the original behavior. Production's store claim is synchronous and durable,
+      // so returning from this function is the exact point the adapter may safely advance Telegram's offset.
+      if (!id || typeof store.pushInbox !== 'function' || typeof store.removeInbox !== 'function') return routeInbound(msg, intake);
+      const live = activeInbox.get(id);
+      if (live) {
+        if (intake && typeof intake.onAccepted === 'function') { try { intake.onAccepted({ id, durable: true, duplicate: true }); } catch (_) {} }
+        return live;
+      }
+      store.pushInbox({ id: id, channel: channel, message: msg });   // throws synchronously -> adapter does NOT ack
+      if (intake && typeof intake.onAccepted === 'function') { try { intake.onAccepted({ id, durable: true }); } catch (_) {} }
+      const running = Promise.resolve().then(() => routeInbound(msg, intake)).then((value) => {
+        store.removeInbox(id);   // reply delivered OR its undelivered remainder is now durable in the outbox
+        return value;
+      }).finally(() => { activeInbox.delete(id); });
+      activeInbox.set(id, running);
+      return running;
+    }
+
+    async function routeInbound(msg, intake) {
       const gid = (msg && msg.mediaGroupId != null && String(msg.mediaGroupId))
         ? (String(msg.chatId) + '|' + String(msg.mediaGroupId)) : '';
       if (gid) return albumInbound(msg, gid, intake);
       if (TEXT_BATCH_WAIT_MS > 0 && textBatchable(msg)) return textInbound(msg, intake);
       return processInbound(msg, intake);
+    }
+
+    let recoveringInbox = false;
+    async function recoverInbox() {
+      if (closed || recoveringInbox || typeof store.loadInbox !== 'function') return;
+      recoveringInbox = true;
+      try {
+        const items = store.loadInbox(channel) || [];
+        for (const it of items) {
+          if (closed || !it || !it.message) break;
+          try { await onInbound(it.message, { recovered: true }); }
+          catch (e) { try { console.error('[' + channel + '] durable inbox recovery failed for ' + String(it.id || '') + ':', (e && e.message) || e); } catch (_) {} break; }
+        }
+      } finally { recoveringInbox = false; }
     }
 
     function textBatchable(msg) {
@@ -1215,6 +1305,12 @@
     }
 
     async function processInbound(msg, intake) {
+      if (msg && msg.directReply) {
+        const directChatId = String(msg.chatId);
+        noteRoute(msg);
+        await deliver(directChatId, String(msg.directReply), '', 'admission');
+        return;
+      }
       const hasMedia = !!(msg && Array.isArray(msg.media) && msg.media.length);
       if (!msg || (!msg.text && !hasMedia)) return;   // empty update; media-only messages ARE admitted
       const chatId = String(msg.chatId);
@@ -1366,7 +1462,7 @@
       try { emit('channel.inbound', { channel, chatId, agentId, userId: msg.userId || '', kind: msg.chatType === 'group' ? 'group' : 'dm' }); } catch (_) {}
 
       if (!sec.model || (!usingCodex && !sec.configured && !sec.key)) {
-        await deliver(chatId, '⚠ No provider/model is configured yet. Open the STARNET app → Messaging tab and connect.', '', 'error');
+        await deliver(chatId, '⚠ ' + (sec.error || 'No provider/model is configured yet. Open the STARNET app → Messaging tab and connect.'), '', 'error');
         return;
       }
 
@@ -1830,7 +1926,10 @@
     // queued while it was down (or while the sidecar was off — the outbox survives restarts) redelivers now.
     function onStatus(s) {
       try { emit('channel.connect', { channel, state: (s && s.state) || 'down', detail: (s && s.detail) || '' }); } catch (_) {}
-      if (s && s.state === 'up') { try { const p = flushOutbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {} }
+      if (s && s.state === 'up') {
+        try { kickOutbox(); } catch (_) {}
+        try { const p = recoverInbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {}
+      }
     }
 
     /* OUR OWN MEMBERSHIP CHANGED — we were blocked, kicked, or let back in.
@@ -1865,8 +1964,8 @@
     }
 
     return {
-      onInbound, onCallback, onStatus, onMembership,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn, startStream, streamOk, notModified }
+      onInbound, onCallback, onStatus, onMembership, close,
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, scheduleOutboxRetry, recoverInbox, activeInbox, inboxId, OUTBOX_ESCALATE_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn, startStream, streamOk, notModified }
     };
   }
 

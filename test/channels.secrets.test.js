@@ -64,6 +64,32 @@ const root = path.resolve(__dirname, '..');
   A.eq(res.changed, false, 'bare mode: unchanged');
 }
 
+// ---- B2. Agent-bound Telegram bots obey the same keychain/last-copy split as the station bot ----
+{
+  const secrets = {
+    telegramBots: {
+      '101': { token: 'BOT:101', key: 'sk-101', model: 'm', agentId: 'a' },
+      '202': { token: 'BOT:202', key: 'sk-202', model: 'm', agentId: 'b' }
+    }
+  };
+  const out = S.stripTokens(secrets, (id) => id === 'telegram:101');
+  A.ok(!('token' in out.telegramBots['101']), 'nested durable bot token is stripped');
+  A.eq(out.telegramBots['202'].token, 'BOT:202', 'nested non-durable bot keeps its last plaintext copy');
+  A.ok(!('key' in out.telegramBots['101']) && !('key' in out.telegramBots['202']), 'nested provider keys are always stripped on desktop');
+  A.eq(S.telegramBotSecretId('101'), 'telegram:101', 'numeric bot id maps to its closed keychain namespace');
+  A.eq(S.telegramBotSecretId('../bad'), '', 'malformed bot id cannot enter the keychain namespace');
+  A.eq(S.telegramBotSecretId('123456789012345678901'), '', 'oversized bot id cannot enter the keychain namespace');
+
+  const migrated = S.migratePlaintext(secrets, { keychainMode: true, hasChannelToken: (id) => id === 'telegram:101' });
+  A.ok(!('token' in migrated.config.telegramBots['101']), 'nested migration strips a read-back-proven token');
+  A.eq(migrated.config.telegramBots['202'].token, 'BOT:202', 'nested migration preserves an unproven last copy');
+  A.eq(migrated.imports.map(i => i.id).sort(), ['telegram:101', 'telegram:202'], 'nested tokens are reported under per-bot keychain ids');
+
+  const rotated = S.stripTokens({ telegramBots: { '101': { token: 'BOT:new', model: 'm' } } },
+    (_id, candidate) => candidate === 'BOT:old');
+  A.eq(rotated.telegramBots['101'].token, 'BOT:new', 'an old keychain value cannot falsely prove a rotated token durable');
+}
+
 // ---- D. migratePlaintext: desktop mode WITHOUT keychain proof KEEPS the token (never destroys the last copy) ----
 //   Andrew's invariant: never remove the last copy of a secret without proof another durable home holds it. When
 //   hasChannelToken(id) is false the keychain provably does NOT have the token, so the plaintext copy is the only
@@ -188,6 +214,8 @@ const root = path.resolve(__dirname, '..');
   A.ok(/require\(['"]\.\/channels\/secrets\.js['"]\)/.test(src), 'index.js requires the secrets module');
   A.ok(/DESKTOP_SHELL\s*=\s*\/\^\(1\|true\|yes\|on\)/.test(src), 'index.js derives DESKTOP_SHELL from the shell env');
   A.ok(/channelTokenRuntime/.test(src), 'index.js has a runtime channel-token layer');
+  A.ok(/TELEGRAM_BOT_TOKENS/.test(src) && /telegramBotSecretId/.test(src), 'index.js loads per-bot keychain tokens from the bounded JSON spawn payload');
+  A.ok(/dynamicTelegram[\s\S]*?telegramBotSecretId/.test(src), 'the live token push uses the same closed numeric Telegram bot key namespace');
   A.ok(/SKYNET_TELEGRAM_TOKEN|TELEGRAM_TOKEN/.test(src) && /DISCORD_TOKEN/.test(src), 'index.js seeds tokens from env');
   A.ok(/DESKTOP_SHELL\s*\?\s*channelSecretsMod\.stripTokens\(obj,\s*isChannelTokenDurable\)/.test(src), 'saveChannelSecrets strips secrets DURABILITY-AWARE under the desktop shell (never the last copy)');
   A.ok(/migratePlaintext/.test(src), 'index.js runs the boot migration');
@@ -195,7 +223,7 @@ const root = path.resolve(__dirname, '..');
   // DURABILITY LEDGER (Andrew's invariant): a ledger exists, spawn-env seeds it durable, and a body-token stays non-durable.
   A.ok(/channelTokenDurable/.test(src), 'index.js tracks per-channel token durability');
   A.ok(/function isChannelTokenDurable/.test(src), 'index.js exposes isChannelTokenDurable(id)');
-  A.ok(/channelTokenRuntime\[id\]\s*=\s*v;\s*channelTokenDurable\[id\]\s*=\s*true/.test(src), 'spawn-env token is seeded durable (keychain-backed)');
+  A.ok(/channelTokenRuntime\[id\]\s*=\s*v;\s*channelTokenDurable\[id\]\s*=\s*v/.test(src), 'spawn-env seeds the exact keychain-backed value into the durability ledger');
   A.ok(/scrubChannelSecretsBak[\s\S]*?stripTokens\(parsed,\s*isChannelTokenDurable\)/.test(src), 'the .bak scrub is durability-aware (never destroys the last copy in .bak)');
   // channelToken() now allows the plaintext-record fallback on desktop too (it only exists there when non-durable).
   A.ok(/if\s*\(savedRecord\s*&&\s*savedRecord\.token\)\s*return String\(savedRecord\.token\)/.test(src), 'channelToken() allows the plaintext-record fallback (desktop included)');
@@ -203,7 +231,7 @@ const root = path.resolve(__dirname, '..');
   // /status exposes a truthful `durable` flag (keychain/env OR plaintext-on-disk).
   A.ok(/durable:\s*durable/.test(src), '/status endpoints report a truthful durable flag');
   A.ok(/handleChannelSync[\s\S]*?channelToken\(['"]telegram['"],\s*['"]['"],\s*t\)/.test(src), 'Telegram identity sync resolves a keychain/runtime token instead of requiring a plaintext copy');
-  A.ok(/channelTokenDurable\[channel\]\s*=\s*true/.test(src), 'a /api/channels/token push marks the token durable (keychain-backed)');
+  A.ok(/channelTokenDurable\[channel\]\s*=\s*tok/.test(src), 'a /api/channels/token push records the exact keychain-backed value as durable');
   // P1 key hygiene: the boot migration also sweeps the .bak, and the provider key is resolved from the runtime
   // layer (never persisted). Guard the .bak-scrub wiring and that no write path re-persists a resolved key.
   A.ok(/function scrubChannelSecretsBak/.test(src), 'index.js defines the .bak secret scrub');
@@ -282,6 +310,8 @@ const root = path.resolve(__dirname, '..');
   A.ok(/"telegram",\s*"SKYNET_TELEGRAM_TOKEN"/.test(credentialsRs) && /"discord",\s*"SKYNET_DISCORD_TOKEN"/.test(credentialsRs), 'credentials.rs maps both channels to their spawn env vars');
   A.ok(/format!\("channel:\{channel\}"\)/.test(credentialsRs), 'credentials.rs uses the channel:<id> keychain account');
   A.ok(/read_channel_token\(channel\)/.test(nativeRs) && /set_sidecar_branded_env\(&mut cmd, env_name, token\)/.test(mainRs), 'main.rs injects module-owned keychain tokens into both branded sidecar env aliases at spawn');
+  A.ok(/fn read_telegram_bot_tokens/.test(credentialsRs) && /SKYNET_TELEGRAM_BOT_TOKENS/.test(mainRs), 'the shell injects saved agent-bot keychain tokens at every sidecar spawn');
+  A.ok(/strip_prefix\("telegram:"\)/.test(credentialsRs) && /byte\.is_ascii_digit/.test(credentialsRs), 'the dynamic keychain namespace accepts numeric Telegram bot ids only');
   A.ok(/fn migrate_channel_tokens_from_plaintext/.test(credentialsRs), 'credentials.rs migrates plaintext channel tokens into the keychain');
   A.ok(/fn harness_store_channel_token/.test(mainRs) && /fn harness_has_channel_token/.test(mainRs), 'main.rs preserves the store/has channel-token commands');
   A.ok(/harness_store_channel_token,\s*\n\s*harness_has_channel_token/.test(mainRs), 'both channel-token commands are registered in the invoke handler');
@@ -307,6 +337,8 @@ const root = path.resolve(__dirname, '..');
   A.ok(/isDesktop/.test(harness), 'harness.js exposes isDesktop() so the UI can tell a desktop store failure from a browser no-op');
   A.ok((ui.match(/localFallback = true/g) || []).length >= 1, 'the generic connect handler flags a desktop keychain-store failure');
   A.ok(/token saved locally, not the OS keychain/.test(ui), 'the connect handler notes a local (non-keychain) save honestly');
+  A.ok(/storeChannelToken\('telegram:' \+ j\.botId, token\)/.test(ui), 'agent-bound Telegram tokens move into their per-bot keychain slot after getMe reveals the stable id');
+  A.ok(/storeChannelToken\('telegram:' \+ botId, ''\)/.test(ui), 'forget clears the agent bot keychain slot as well as its saved record');
 }
 
 // ---- G. makeVerifiedPersist: the saveJsonVerified law applied to channel secrets (EL-5 class) ----
