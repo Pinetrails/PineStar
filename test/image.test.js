@@ -78,6 +78,21 @@ function jsonResp(obj, status) { return { status: status || 200, json: async () 
   await TB.generateTool.run({ prompt: 'local route' }, ctx);
   A.eq(baseFetch.calls[0].url, 'http://127.0.0.1:43210/api/v1/chat/completions', 'image_generate honors the configured OpenRouter base URL');
 
+  // ---- B1b. aspect_ratio rides image_config; default stays bare (no image_config); bad value refused pre-flight ----
+  const gAr = await T1.generateTool.run({ prompt: 'a wide vista', aspect_ratio: '16:9' }, ctx);
+  A.ok(gAr.summary.indexOf('image → ') === 0, 'aspect_ratio call still saves an image');
+  const arCall = genFetch.calls[genFetch.calls.length - 1];
+  A.eq(arCall.body.image_config, { aspect_ratio: '16:9' }, 'aspect_ratio:"16:9" is sent as image_config.aspect_ratio');
+  A.eq(genFetch.calls[0].body.image_config, undefined, 'no aspect_ratio -> no image_config field (provider default 1:1)');
+  A.ok(/16:9/.test(T1.generateTool.description) && /widescreen/i.test(T1.generateTool.description), 'the tool teaches the aspect_ratio dial for widescreen asks');
+  A.ok(Array.isArray(T1.generateTool.schema.properties.aspect_ratio.enum) && T1.generateTool.schema.properties.aspect_ratio.enum.indexOf('9:16') >= 0, 'schema enumerates the allowed ratios');
+  {
+    const before = genFetch.calls.length;
+    let badAr = null; try { await T1.generateTool.run({ prompt: 'x', aspect_ratio: '99:1' }, ctx); } catch (e) { badAr = e.message; }
+    A.ok(/aspect_ratio must be one of/.test(badAr) && /no image was produced/.test(badAr), 'an unknown ratio is refused with an honest, actionable error');
+    A.eq(genFetch.calls.length, before, 'the bad-ratio refusal fires BEFORE any network call');
+  }
+
   // ---- B2. custom output path + content-addressed idempotency (same bytes -> same default name) ----
   const g2 = await T1.generateTool.run({ prompt: 'x', path: 'art/cube' }, ctx);
   A.ok(g2.summary.indexOf('art/cube.png') >= 0, 'image_generate appends .png to an extensionless custom path');

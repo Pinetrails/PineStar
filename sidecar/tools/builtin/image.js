@@ -39,6 +39,8 @@
   const PREMIUM_IMAGE_MODEL  = 'google/gemini-3-pro-image';       // readable text, hero/marketing quality
   const LEGACY_IMAGE_MODEL   = 'google/gemini-2.5-flash-image';   // known-good everywhere; the fallback wire
   const DEFAULT_VISION_MODEL = 'google/gemini-2.5-flash';         // image->text (multimodal); override via args.model
+  // OpenRouter image_config.aspect_ratio passthrough — the set the Gemini image endpoints accept.
+  const ASPECT_RATIOS = ['1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
   const GEN_TIMEOUT_MS    = 110000;   // image generation can take 10-40s; the tool-level timeout sits above this
   const ANALYZE_TIMEOUT_MS = 55000;
   const ANALYZE_RETURN_CHARS = 8000;
@@ -141,24 +143,34 @@
         'Use for any "draw / create / generate an image of …" request. Optional "model" picks the image model: ' +
         'default ' + DEFAULT_IMAGE_MODEL + ' (fast, current-gen). For HERO/MARKETING assets or ANY image that must show ' +
         'READABLE TEXT (UI mockups, landing pages, posters, infographics, product concepts), pass model:"' + PREMIUM_IMAGE_MODEL + '" ' +
-        '— it renders legible text; the fast tier garbles it. Optional "path" sets the output filename.',
+        '— it renders legible text; the fast tier garbles it. Optional "path" sets the output filename. ' +
+        'Optional "aspect_ratio" sets the image shape (one of ' + ASPECT_RATIOS.join(', ') + '; default 1:1) — ' +
+        'use 16:9 for widescreen/banner/desktop-wallpaper requests, 9:16 for phone/story formats.',
       schema: { type: 'object', required: ['prompt'], properties: {
         prompt: { type: 'string' },
         model: { type: 'string' },
-        path: { type: 'string' }
+        path: { type: 'string' },
+        aspect_ratio: { type: 'string', enum: ASPECT_RATIOS }
       } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
         const prompt = String(args.prompt || '').trim();
         if (!prompt) throw new Error('prompt is required');
         let model = String(args.model || IMAGE_MODEL);
+        // Aspect ratio rides OpenRouter's image_config passthrough — prose in the prompt is
+        // mostly ignored by the Gemini image models, so this field is the only real dial.
+        const aspect = String(args.aspect_ratio || '').trim();
+        if (aspect && ASPECT_RATIOS.indexOf(aspect) === -1) {
+          throw new Error('aspect_ratio must be one of: ' + ASPECT_RATIOS.join(', ') + ' (got "' + aspect + '"); no image was produced.');
+        }
+        const baseBody = {
+          messages: [{ role: 'user', content: prompt }],
+          modalities: ['image', 'text']
+        };
+        if (aspect) baseBody.image_config = { aspect_ratio: aspect };
         let data;
         try {
-          data = await orPost({
-            model,
-            messages: [{ role: 'user', content: prompt }],
-            modalities: ['image', 'text']
-          }, GEN_TIMEOUT_MS);
+          data = await orPost(Object.assign({ model }, baseBody), GEN_TIMEOUT_MS);
         } catch (e) {
           // slug-drift safety net: if the CHOSEN model is rejected as unknown/unavailable (400/404 "not a valid
           // model" / "no endpoints"), retry ONCE on the known-good legacy slug instead of failing the whole task.
@@ -167,11 +179,7 @@
           const modelish = /\b(400|404)\b/.test(msg) && /model|endpoint/i.test(msg);
           if (!modelish || model === LEGACY_IMAGE_MODEL) throw e;
           model = LEGACY_IMAGE_MODEL;
-          data = await orPost({
-            model,
-            messages: [{ role: 'user', content: prompt }],
-            modalities: ['image', 'text']
-          }, GEN_TIMEOUT_MS);
+          data = await orPost(Object.assign({ model }, baseBody), GEN_TIMEOUT_MS);
         }
         const url = parseImageFromResponse(data);
         if (!url) {
