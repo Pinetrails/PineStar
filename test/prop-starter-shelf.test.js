@@ -24,13 +24,22 @@ for (const id of STARTER) {
   A.ok(PS.has(id), 'STARTER "' + id + '" has a draw fn (renders in the shelf preview)');
 }
 
-/* ---- 3. the shelf covers the working set: an agent dock + a seat + the tutorial kit ----
+/* ---- 3. the shelf is CAPABILITY GRANTS ONLY: the tutorial kit + studio ----
+   Andrew's scope call (2026-08-18): no BAY (conveyor equipment, not a necessity) and no seat
+   workstation — every tile must be a prop that grants a real power, because the shelf's whole
+   claim is "these are the powers an agent needs" and its satisfied-tick logic keys on the grant.
    tutorial.js KIT_SPEC is the other authority on "what a first agent needs"; read its prop ids
    from source (it is a browser script, not a require()-able module) and require every one to be
    on the shelf, so the two onboarding routes can never drift apart silently. */
-A.ok(STARTER.includes('bay'), 'STARTER carries the BAY (the agent dock)');
-A.ok(STARTER.some(id => { const c = PS.spec(id); return c && c.seat; }),
-  'STARTER carries a seat workstation');
+const WM = require('../frontend/app/worldmodel.js');
+A.ok(!STARTER.includes('bay'), 'STARTER has NO bay (conveyor gear, not a necessity)');
+A.ok(!STARTER.some(id => { const c = PS.spec(id); return c && c.seat; }),
+  'STARTER has no seat workstation');
+A.ok(STARTER.includes('studio'), 'STARTER carries the STUDIO (the power users miss)');
+for (const id of STARTER) {
+  A.ok(!!(WM.grantLabelForProp && WM.grantLabelForProp(id)),
+    'STARTER "' + id + '" grants a real power (satisfied-tick keys on this)');
+}
 const tut = fs.readFileSync(path.join(__dirname, '../frontend/app/tutorial.js'), 'utf8');
 const kitBlock = tut.match(/KIT_SPEC = \[([\s\S]*?)\]/);
 A.ok(!!kitBlock, 'tutorial.js still declares KIT_SPEC');

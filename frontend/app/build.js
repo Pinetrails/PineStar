@@ -546,22 +546,37 @@ const Build = (() => {
       host.appendChild(note);
     }
     /* STARTER shelf — pinned above the SYSTEMS drawers so a beginner who skipped the tutorial still
-       sees the needed set before the long tail (the ids live with the catalog: PropSprites.STARTER,
-       the same props the tutorial kit teaches). Inside THIS host on purpose: the keystroke/pick
-       rebuild refreshes its active states for free, and a search replaces it wholesale — so the
-       shelf can never disagree with the armed tile or sit above foreign results. Browse-only,
-       functional tier only: DECOR needs no "which of these matter" answer (none of them do). */
+       sees the needed powers before the long tail (the ids live with the catalog: PropSprites.STARTER
+       — the tutorial kit + studio; Andrew's scope: capability grants only, no bay/workstation).
+       Inside THIS host on purpose: the keystroke/pick rebuild refreshes its active states for free,
+       and a search replaces it wholesale — so the shelf can never disagree with the armed tile or
+       sit above foreign results. It stays for EVERY station until each power is on the floor, then
+       retires. Satisfaction is by GRANT, not by id — the shelf exists to say "this POWER is
+       missing", so a placed VAULT honestly ticks the INTEL CAB slot (both grant FILES); that read
+       comes from the live station doc, never a stored flag, so reclaiming your only dish brings the
+       shelf back. Browse-only, functional tier only. */
     if (!on && propTier === 'functional') {
       const starter = ((typeof PropSprites !== 'undefined' && PropSprites.STARTER) || [])
         .map(id => (PropSprites.spec ? PropSprites.spec(id) : null)).filter(Boolean);
-      if (starter.length) {
+      const placedGrants = {};
+      try { for (const p of station.props()) { const g = grantLabelOf({ id: p.t }); if (g) placedGrants[g] = 1; } } catch (e) {}
+      const got = c => !!placedGrants[grantLabelOf(c)];
+      const missing = starter.filter(c => !got(c));
+      if (starter.length && missing.length) {
         const cap = document.createElement('div');
         cap.className = 'refit-starternote';
-        cap.textContent = 'STARTER — the ' + starter.length + ' an agent actually needs · everything else is optional';
+        cap.textContent = 'STARTER — the powers an agent needs · ' + (starter.length - missing.length) + '/' + starter.length + ' placed';
         host.appendChild(cap);
         const sgrid = document.createElement('div'); sgrid.className = 'refit-propgrid refit-startergrid';
         sgrid.setAttribute('aria-label', 'Starter props');
-        starter.forEach(c => sgrid.appendChild(propTile(c)));
+        starter.forEach(c => {
+          const tile = propTile(c);
+          if (got(c)) {   // this power is already on the floor (maybe via another skin) — tick it, keep it placeable
+            tile.classList.add('got');
+            const g = document.createElement('span'); g.className = 'refit-startergot'; g.textContent = '✓'; tile.appendChild(g);
+          }
+          sgrid.appendChild(tile);
+        });
         host.appendChild(sgrid);
       }
     }
@@ -3152,6 +3167,9 @@ const Build = (() => {
         if (propType === 'connector_portal') { if (Tutorial.onConnectorPlaced) Tutorial.onConnectorPlaced(); }
         else if ((!isEditableProp(propType) || CONNECT_TYPES[propType]) && Tutorial.onPropPlaced) Tutorial.onPropPlaced(propType);
       }
+      // the STARTER shelf reads the live doc — a landed power must tick its tile now, not on the
+      // next palette rebuild (grid-only refresh: the armed pick and the search field both survive)
+      renderPropGrid();
       // PLACEMENT FLOW (2026-08-10, Andrew's order): a prop stamp KEEPS the tool and the pick
       // armed — dropping to SELECT here threw the user out of the prop drawer after EVERY
       // placement, so furnishing a room meant a re-pick per prop. Double-stamping on top of the
@@ -4848,6 +4866,7 @@ const Build = (() => {
     if (grant) sfx('chime');   // a capability just came online — same brighter note as a hand placement
     if (typeof StationUI !== 'undefined' && StationUI.pokeQuests) { try { StationUI.pokeQuests(); } catch (_) {} }   // resolve+fold now: a gap this requisition closes celebrates on its own edge
     if (typeof Tutorial !== 'undefined' && Tutorial.onPropPlaced) Tutorial.onPropPlaced(t);
+    renderPropGrid();   // tick the STARTER shelf now if the prop palette is up (no-op otherwise)
     return { ok: true, tile };
   }
 

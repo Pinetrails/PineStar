@@ -3975,6 +3975,13 @@ body.crew-rail-off #screen-game.active {
   font-family: 'VT323', monospace; color: #cfffe0; text-shadow: 0 0 5px rgba(123,200,138,.35);
 }
 .refit-startergrid { margin-top: 2px; padding-bottom: 6px; border-bottom: 1px solid var(--ph-faint); }
+/* a starter power already on the floor (any skin of it) — quiet the tile and tick it. Still a live,
+   placeable tile: satisfied is not disabled (you may well want a second dish). */
+.refit-startergrid .refit-proptile.got { opacity: .55; }
+.refit-startergot {
+  position: absolute; top: 2px; right: 4px; font-size: 12px; line-height: 1;
+  font-family: 'VT323', monospace; color: var(--ok); text-shadow: 0 0 5px rgba(123,200,138,.45);
+}
 
 /* the gallery no longer caps/clips its own height — the .refit-palette column is the scroller */
 .refit-propgrid {
