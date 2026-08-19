@@ -1513,8 +1513,8 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-19 02:14Z @ b2bcda95 | RED | 3 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-18T17:16:17.997Z · ui-only · 41432ms | STUCK@boot | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-19 04:30Z @ 47ad8496 | GREEN | 0 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-19T04:31:18.836Z · ui-only · 30340ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
@@ -2612,3 +2612,4 @@ GATE: two runs, two DIFFERENT reds, each passing standalone — `boot-security` 
 - 2026-08-19: merged `agent/fail-open-sweep` (pure FF `b2bcda951` -> `3b1927b22`) - FAIL-OPEN SWEEP from Andrew's reliability push: the silent-catch class that killed reflection (a bare empty `.catch` hiding a 100% failure rate) is closed at the envelope layer. New `sidecar/failopen.js`: `swallow(tag)` keeps the fail-open contract but leaves a trace (throttled console.warn + per-tag counter readable via `counts()`). 44 dangerous sites in `sidecar/index.js` rewired to tagged swallows - ALL SEVEN aux-pass envelopes (reflection/failreview/study/threadmine/scout/skill-review/skill-curator) were still bare-catch post-incident, plus quest-refresh envelopes, boot sweeps (procledger, workshop zombie claims, shellhooks, connectors), credits refreshes, recommendation-ledger writes, and quest-contract sweeps. New test/failopen.test.js (fires-proof: reject into the envelope, read the counter) + test/failopen-ratchet.test.js (locks the hand-audited per-file baseline of remaining benign silent catches across all of sidecar/ - any NEW bare silent catch anywhere is a red gate; counts may only go down). Exact merged-tree gates (hash-identical FF): test:fast 653/653 GREEN + test:http 78/78 GREEN, both FROM THE LOG. No frontend changes, no claims re-lock owed. No push.
 
 - 2026-08-19: merged `agent/release-readiness-0818` -> trunk `ec5af5372` — QA provider mocks now extract both plain and structured/cacheable message content, restoring truthful approval and workshop routing after the OpenRouter cache-anchor change. Live proofs: behavioral audit **45/45**, journey corps **130/130**, golden **16/16** after visually reviewing and blessing the intentional empty notifications panel. Exact merged-tree gates: `test:fast` **654/654 GREEN** + `test:http` **78/78 GREEN**. No push or publication performed.
+- 2026-08-19 agent/comms-stretch -> trunk FF 0b211acd8 · test:fast 654/654 green · COMMS seam drag honored under 1000px
