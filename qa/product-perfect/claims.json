@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "38bfabb893e04a25de7fe7724ab1e426de806353",
+    "sourceCommit": "fb82c64b631695ed80d7f9627da7cce8a2d28137",
     "pathSetSha256": "92160ff9edb3cc6cd7deb0d0e0b35e6e60cf470af43886963164d96bbfaccd50",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 323929,
-        "sha256": "550b1b643a57593f4104f2da677480bb79a6e541868db3c07197c162e65736cb"
+        "bytes": 324088,
+        "sha256": "175c0f22585e27975a8c10e28c952512e1d178a3aba36702e31d392027c6583e"
       },
       {
         "path": "frontend/app/channels.js",
@@ -998,8 +998,8 @@
       },
       {
         "path": "frontend/css/refit.css",
-        "bytes": 14782,
-        "sha256": "72e7fdc631f8d89995194d6dc61d5f151cd40397e7831ab43b70e2868f813ec0"
+        "bytes": 14979,
+        "sha256": "f3fef3d794b3357badfa35643c800685782a9b7244c274928988f6d7f5ada26c"
       },
       {
         "path": "frontend/css/safety.css",
