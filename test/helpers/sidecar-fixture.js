@@ -60,6 +60,13 @@ class SidecarFixture {
   constructor(options) {
     const opts = options || {};
     this.workspace = fs.mkdtempSync(path.join(os.tmpdir(), opts.prefix || 'starnet-sidecar-'));
+    // HERMETIC PROFILE: the sidecar's boot-time station auto-recovery scans the REAL per-user
+    // app-data roots (%APPDATA%/%LOCALAPPDATA%/XDG/~) for a lost station, and a fresh temp
+    // workspace looks exactly like one — so a machine with an installed StarNet station had its
+    // real save COPIED INTO every test workspace (2026-08-20: broke schema-stamp on the dev box
+    // the day the desktop app was first installed there). Point every profile root the candidate
+    // scan reads at an empty scratch sibling so fixture boots never see, or touch, real user data.
+    this.profile = fs.mkdtempSync(path.join(os.tmpdir(), (opts.prefix || 'starnet-sidecar-') + 'profile-'));
     this.entry = opts.entry || DEFAULT_ENTRY;
     this.args = Array.isArray(opts.args) ? opts.args.slice() : [];
     this.env = Object.assign({}, opts.env || {});
@@ -93,7 +100,15 @@ class SidecarFixture {
     this.baseUrl = 'http://' + HOST + ':' + this.port;
     this.token = '';
     this._output = '';
-    const env = Object.assign({}, process.env, this.env, extraEnv || {}, {
+    const hermeticProfile = {
+      APPDATA: this.profile,
+      LOCALAPPDATA: this.profile,
+      XDG_DATA_HOME: this.profile
+    };
+    // POSIX resolves ~ from $HOME (os.homedir() honors it); Windows uses USERPROFILE, which we
+    // deliberately leave alone — node/npm subprocesses still need a sane Windows profile.
+    if (process.platform !== 'win32') hermeticProfile.HOME = this.profile;
+    const env = Object.assign({}, process.env, hermeticProfile, this.env, extraEnv || {}, {
       SKYNET_PORT: String(this.port),
       STARNET_PORT: String(this.port),
       SKYNET_WORKSPACES: this.workspace,
@@ -184,6 +199,7 @@ class SidecarFixture {
     this._disposed = true;
     await this.stop();
     removeTree(this.workspace);
+    removeTree(this.profile);
     active.delete(this);
   }
 }
