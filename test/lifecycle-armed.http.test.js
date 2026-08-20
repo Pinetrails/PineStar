@@ -78,6 +78,31 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(off.status, 200, 'GET /api/lifecycle/armed -> 200');
     A.eq(off.body.armed, false, 'fresh boot: armed:false (nothing requires a background process)');
     A.ok(off.body.categories && off.body.categories.routines && off.body.categories.channels && off.body.categories.nightshift && off.body.categories.terminals, 'all background-work categories present in the snapshot');
+
+    // ---- RAW-SOCKET SHAPE RATCHET (the shell's close decision reads these exact bytes) ----
+    // The desktop supervisor parses the raw response with a minimal parser: status line, blank
+    // line, JSON body. Node chunk-framing this response made every close probe read Ambiguous —
+    // the shell then failed open into the tray on EVERY window close and left an unopenable
+    // background process (0.10.x zombie). This endpoint must stay un-chunked forever.
+    {
+      const net = require('net');
+      const raw = await new Promise((resolve, reject) => {
+        const chunks = [];
+        const s = net.connect(port, HOST, () => {
+          s.write('GET /api/lifecycle/armed HTTP/1.1\r\nHost: ' + HOST + '\r\nX-StarNet-Token: ' + apiToken + '\r\nConnection: close\r\n\r\n');
+        });
+        s.on('data', d => chunks.push(d));
+        s.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+        s.on('error', reject);
+        setTimeout(() => reject(new Error('raw armed probe timed out')), 4000);
+      });
+      A.ok(/^HTTP\/1\.1 200 /.test(raw), 'raw armed probe answers 200');
+      A.ok(/content-length:/i.test(raw), 'armed response declares an explicit Content-Length');
+      A.ok(!/transfer-encoding/i.test(raw), 'armed response is never chunk-framed (shell parser reads raw bytes)');
+      const rawBody = raw.split('\r\n\r\n')[1] || '';
+      const parsed = JSON.parse(rawBody.trim());
+      A.eq(parsed.armed, false, 'raw body after the header break is directly JSON-parseable, as the shell assumes');
+    }
     A.eq(off.body.categories.terminals, { armed: false, count: 0 }, 'fresh boot reports no attached terminal work');
     A.eq(off.body.categories.routines.armed, false, 'routines not armed on a fresh boot');
     A.eq(off.body.categories.channels.armed, false, 'no channel connected on a fresh boot');

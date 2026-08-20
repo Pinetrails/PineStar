@@ -102,7 +102,17 @@
       return;
     }
     const n = liveRunCount(deps.channels);
-    if (!n) { await drainState(deps); return; }                                  // allow: nothing live
+    if (!n) {
+      // Nothing live: flush state, then STILL prevent the JS-side default. Tauri's onCloseRequested
+      // wrapper destroys the webview window when the event is un-prevented — but the native
+      // supervisor already intercepted this close (hid the window) and owns the outcome: full quit
+      // (process exit tears everything down) or tray residency (the window MUST survive so tray
+      // Open / a second launch can reveal it). Destroying here while the supervisor chose residency
+      // left a windowless, unrevealable background process (the 0.10.x zombie).
+      await drainState(deps);
+      ev.preventDefault();
+      return;
+    }
     ev.preventDefault();                                                          // block; ask first
     (deps.show || showConfirm)(doc, n, () => { if (typeof deps.destroy === 'function') deps.destroy(); });
   }

@@ -26,13 +26,16 @@ function fakeDeps(busy, extra) {
 }
 
 (async () => {
-  // idle → close proceeds, state drained first
+  // idle → state drained, then the JS default (window destroy) is STILL prevented: the native
+  // supervisor owns the outcome (full quit or tray residency). An un-prevented idle close let
+  // Tauri's wrapper destroy the window while the supervisor chose residency — the 0.10.x
+  // windowless, unrevealable background process.
   {
     const ev = fakeEvent();
     const { deps, calls } = fakeDeps(0);
     await Q.handleCloseRequested(ev, deps);
-    A.eq(ev.prevented, false, 'idle close is not blocked');
-    A.eq(calls.drains, 1, 'idle close still drains state before dying');
+    A.eq(ev.prevented, true, 'idle close never destroys the window from JS — the supervisor owns teardown');
+    A.eq(calls.drains, 1, 'idle close still drains state before the supervisor decides');
     A.eq(calls.shows.length, 0, 'idle close never shows the guard card');
   }
 
@@ -99,12 +102,14 @@ function fakeDeps(busy, extra) {
     A.eq(calls.shows.join(','), '4', 'guard card shown for the normal live-agent close');
   }
 
-  // fail-open: Channels throwing reads as 0 live runs — the window stays closable
+  // fail-open: Channels throwing reads as 0 live runs — no guard card wedges the close; the
+  // supervisor still owns teardown (prevented, like every non-consent path).
   {
     const ev = fakeEvent();
     const { deps, calls } = fakeDeps(0, { channels: { busyCount: () => { throw new Error('dead'); } } });
     await Q.handleCloseRequested(ev, deps);
-    A.eq(ev.prevented, false, 'a broken Channels can never wedge the window shut');
+    A.eq(ev.prevented, true, 'a broken Channels reads as idle — no card, supervisor owns teardown');
+    A.eq(calls.shows.length, 0, 'a broken Channels never blocks the close behind a guard card');
     A.eq(calls.drains, 1, 'fail-open path still drains');
   }
 

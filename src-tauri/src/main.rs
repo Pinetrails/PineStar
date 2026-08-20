@@ -2154,6 +2154,30 @@ enum LifecycleProbe {
     Armed(LifecycleArmed),
 }
 
+/// Decode an HTTP/1.1 chunk-framed body (`<hex-size>\r\n<bytes>\r\n … 0\r\n\r\n`) into its payload.
+/// None = the framing is malformed or the read stopped mid-chunk (a timeout's partial body must
+/// never parse as a complete snapshot). Byte-wise so a multi-byte character can never panic a slice.
+fn decode_chunked_body(raw: &str) -> Option<String> {
+    let bytes = raw.as_bytes();
+    let mut out: Vec<u8> = Vec::new();
+    let mut pos = 0usize;
+    loop {
+        let line_end = bytes[pos..].windows(2).position(|w| w == b"\r\n")? + pos;
+        let size_str = std::str::from_utf8(&bytes[pos..line_end]).ok()?;
+        let size = usize::from_str_radix(size_str.trim().split(';').next()?.trim(), 16).ok()?;
+        if size == 0 {
+            return Some(String::from_utf8_lossy(&out).into_owned());
+        }
+        let start = line_end + 2;
+        let end = start.checked_add(size)?;
+        if end > bytes.len() {
+            return None;
+        }
+        out.extend_from_slice(&bytes[start..end]);
+        pos = if bytes[end..].starts_with(b"\r\n") { end + 2 } else { end };
+    }
+}
+
 /// Pure parser for the raw HTTP response text of GET /api/lifecycle/armed. None = not a valid 200 snapshot
 /// (callers classify that as Ambiguous). Kept side-effect-free so it is unit-testable (M3).
 fn parse_lifecycle_response(text: &str) -> Option<LifecycleArmed> {
@@ -2162,7 +2186,19 @@ fn parse_lifecycle_response(text: &str) -> Option<LifecycleArmed> {
     if !status_line.contains(" 200 ") {
         return None;
     }
-    let body = text.split("\r\n\r\n").nth(1)?;
+    let (head, raw_body) = text.split_once("\r\n\r\n")?;
+    // Node's http server answers an HTTP/1.1 request with `Transfer-Encoding: chunked` unless the
+    // handler sets an explicit Content-Length. Feeding the chunk framing straight to the JSON
+    // parser rejected EVERY live snapshot as Ambiguous — so window-close always failed open into
+    // the tray and left an unopenable background process (the 0.10.x zombie). Dechunk first.
+    let body = if head.lines().any(|l| {
+        let lower = l.to_ascii_lowercase();
+        lower.starts_with("transfer-encoding:") && lower.contains("chunked")
+    }) {
+        decode_chunked_body(raw_body)?
+    } else {
+        raw_body.to_string()
+    };
     let json: serde_json::Value = serde_json::from_str(body.trim()).ok()?;
     // `armed` must be PRESENT and boolean — a 200 without it is not our snapshot (never default to false
     // here: the caller would translate that into "safe to kill").
@@ -2242,6 +2278,32 @@ fn drain_and_kill_sidecar(state: &AppState) {
     state.shutting_down.store(true, Ordering::SeqCst);
     post_sidecar_halt(state, Duration::from_secs(3));
     state.kill_sidecar();
+}
+
+/// Finish a close decision whose outcome is "keep the supervised process alive in the tray".
+/// Two invariants make tray residency honest:
+///   1. `close_exit_pending` is cleared — the decision is made, so the one-shot veto must not
+///      linger and swallow a later, unrelated exit request.
+///   2. The `main` webview window must still exist: every reveal path (tray Open, a second
+///      launch's single-instance signal) addresses `get_webview_window("main")`. If the window
+///      was destroyed, "residency" would be an unrevealable background process the user can only
+///      end from Task Manager — so full-quit instead. The tray must never claim an Open it
+///      cannot perform.
+fn stay_resident_or_quit(app: &AppHandle, st: &AppState, why: &str) {
+    st.close_exit_pending.store(false, Ordering::SeqCst);
+    if app.get_webview_window("main").is_some() {
+        log_startup(
+            &st.startup_log,
+            format!("close-request: staying resident ({why})"),
+        );
+        return;
+    }
+    log_startup(
+        &st.startup_log,
+        format!("close-request: {why}, but the main window is gone — unrevealable residency; quitting fully"),
+    );
+    drain_and_kill_sidecar(st);
+    app.exit(0);
 }
 
 /// Reveal + focus the main window (from a hidden/close-to-tray state or a minimized one).
@@ -3359,6 +3421,22 @@ fn main() {
                 let _ = win.show(); // the window may be hidden in the tray — a relaunch should reveal it
                 let _ = win.unminimize();
                 let _ = win.set_focus();
+            } else {
+                // No `main` window means this resident instance can never be revealed again (every
+                // reveal path addresses that window). Get out of the way — drain on a worker thread
+                // (network on the event loop is forbidden) and exit, so the user's next launch
+                // boots a fresh instance instead of signalling a zombie forever.
+                let app2 = app.clone();
+                std::thread::spawn(move || {
+                    if let Some(state) = app2.try_state::<AppState>() {
+                        log_startup(
+                            &state.startup_log,
+                            "second-launch: main window missing — exiting unrevealable resident instance",
+                        );
+                        drain_and_kill_sidecar(state.inner());
+                    }
+                    app2.exit(0);
+                });
             }
         }))
         // Lane 4D: launch-at-login (opt-in, default OFF). macOS uses a LaunchAgent; Windows a Run key; Linux an
@@ -3618,6 +3696,7 @@ fn main() {
                             if close_to_tray {
                                 // Explicit authority to keep the supervised process alive even when no scheduled
                                 // work is armed. Tray Quit remains the only full-stop action in this mode.
+                                stay_resident_or_quit(&app2, st, "close-to-tray preference");
                                 return;
                             }
                             let mut probe = probe_lifecycle_armed(
@@ -3635,8 +3714,13 @@ fn main() {
                                 );
                             }
                             match probe {
-                                LifecycleProbe::Armed(l) if l.armed => { /* stay hidden in the tray */ }
-                                LifecycleProbe::Ambiguous => { /* alive but unwell — fail OPEN, stay in tray */ }
+                                LifecycleProbe::Armed(l) if l.armed => {
+                                    stay_resident_or_quit(&app2, st, "armed background work");
+                                }
+                                LifecycleProbe::Ambiguous => {
+                                    // Alive but unwell — fail OPEN (killing could destroy armed work).
+                                    stay_resident_or_quit(&app2, st, "armed state ambiguous");
+                                }
                                 _ => {
                                     // Armed{armed:false} or NotRunning: window-close is a full quit.
                                     drain_and_kill_sidecar(st);
@@ -3829,6 +3913,36 @@ mod lifecycle_probe_tests {
         let l = parse_lifecycle_response(raw).expect("valid idle snapshot parses");
         assert!(!l.armed);
         assert!(l.reasons.is_empty());
+    }
+
+    #[test]
+    fn parses_nodes_chunked_200_snapshot() {
+        // EXACTLY what node's http server emits for the armed endpoint when no Content-Length is
+        // set (HTTP/1.1 → Transfer-Encoding: chunked). This framing being unparseable is the root
+        // cause of the 0.10.x close-leaves-an-unopenable-background-process bug: every close
+        // probe read as Ambiguous, so the shell always failed open into the tray.
+        let raw = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nCache-Control: no-store\r\nDate: Thu, 20 Aug 2026 21:17:18 GMT\r\nConnection: close\r\nTransfer-Encoding: chunked\r\n\r\n1c\r\n{\"armed\":false,\"reasons\":[]}\r\n0\r\n\r\n";
+        let l = parse_lifecycle_response(raw).expect("node's chunked idle snapshot parses");
+        assert!(!l.armed);
+        assert!(l.reasons.is_empty());
+    }
+
+    #[test]
+    fn parses_chunked_snapshot_split_across_chunks() {
+        let raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\ne\r\n{\"armed\":true,\r\nd\r\n\"reasons\":[]}\r\n0\r\n\r\n";
+        let l = parse_lifecycle_response(raw).expect("multi-chunk snapshot parses");
+        assert!(l.armed);
+    }
+
+    #[test]
+    fn rejects_truncated_chunked_body() {
+        // A read timeout can yield a partial chunk — that must classify Ambiguous (None), never
+        // parse as a complete snapshot.
+        let raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1c\r\n{\"armed\":false,\"rea";
+        assert!(parse_lifecycle_response(raw).is_none());
+        // ...and a body that never reaches the 0-terminator is equally incomplete.
+        let raw = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n1c\r\n{\"armed\":false,\"reasons\":[]}\r\n";
+        assert!(parse_lifecycle_response(raw).is_none());
     }
 
     #[test]

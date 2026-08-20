@@ -10321,8 +10321,14 @@ function nightshift$rollDay(now) {
 }
 function handleLifecycleArmed(req, res) {
   const out = lifecycleArmedSnapshot(Date.now());
-  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(out));
+  const body = JSON.stringify(out);
+  // Explicit Content-Length so node never chunk-frames this response: the desktop shell's close
+  // decision parses the raw socket bytes, and chunk framing made every snapshot read as
+  // "Ambiguous" — which parked the app in the tray on every window close (the 0.10.x
+  // unopenable-background-process bug). The shell also dechunks now, but this endpoint must stay
+  // parseable by every shipped shell parser.
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(body) });
+  res.end(body);
 }
 
 /* GET /api/state/snapshot — a RECONNECTION snapshot for the frontend (Lane E). After the SSE bridge drops and
