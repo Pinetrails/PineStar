@@ -212,7 +212,8 @@ try {
   const sourceBytes = fs.readFileSync(path.join(legacyMac, 'agent.save.json'));
   const recovered = WorkspaceRecovery.applyPendingRecovery({
     fs, path, platform: 'darwin', home: intelHome, workspaceRoot: desktopMac,
-    candidateRoots: [legacyMac], auto: true, now: () => 1700000000200
+    candidateRoots: [legacyMac], auto: true, now: () => 1700000000200,
+    scratchRoots: []   // this mkdtemp home STANDS IN for a real user home; the tmpdir auto-guard is exercised in workspace-recovery.test.js
   });
   A.eq(recovered.applied, true, 'Intel macOS fixture automatically activates one v0.8.5 manual-sidecar station');
   A.eq(makeSaveStore({ fs, pathMod: path, root: desktopMac, clock: { now: () => 1700000000300 } }).load('agent'), oldDoc,
