@@ -246,5 +246,29 @@ const A = require('./_assert.js');
     A.eq([r.exe, r.cases, r['feed-must-match'], r.tag], ['C:\\x.exe', 'idle-close,updater-smoke', true, 'v0.10.7'], 'parseArgs');
   }
 
+  // ---- the hosted workflow + package script + runbook are wired (string lock; no YAML parser in the repo)
+  {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const root = path.resolve(__dirname, '..');
+    const yml = fs.readFileSync(path.join(root, '.github', 'workflows', 'g1-packaged-lifecycle.yml'), 'utf8');
+    A.ok(/^name: g1-packaged-lifecycle$/m.test(yml), 'workflow is named g1-packaged-lifecycle');
+    A.ok(/workflow_dispatch:\s*\n\s*inputs:\s*\n\s*tag:/.test(yml), 'workflow_dispatch exposes a `tag` input');
+    A.ok(/runs-on: windows-latest/.test(yml), 'runs on a hosted Windows VM (fresh machine per run)');
+    A.ok(/androoAGI\/starnet-releases/.test(yml), 'pulls the installer from the releases repo');
+    A.ok(/gh release download \$env:TAG .*--pattern '\*-setup\.exe'/.test(yml), 'downloads the tag installer');
+    A.ok(/-ArgumentList '\/S'/.test(yml), 'silent install');
+    A.ok(/scripts\/qa\/packaged-lifecycle\.mjs/.test(yml), 'the workflow calls the reusable runner (no inline case logic)');
+    A.ok(/--tag-feed-path=/.test(yml) && /--feed-must-match/.test(yml), 'updater smoke receives the tag feed + the pinned flag');
+    const upload = yml.slice(yml.indexOf('upload-artifact@v4'));
+    A.ok(/if: always\(\)/.test(upload) && /if-no-files-found: error/.test(upload), 'receipt artifact is uploaded even on failure');
+    const matrixStep = yml.split('Run the packaged-lifecycle matrix')[1].split('- name:')[0];
+    A.ok(!/taskkill|Stop-Process/.test(matrixStep), 'no force-kill inside the matrix step (cleanup lives outside the assertions)');
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
+    A.eq(pkg.scripts['qa:lifecycle:packaged'], 'node scripts/qa/packaged-lifecycle.mjs', 'package script qa:lifecycle:packaged is wired');
+    const runbook = fs.readFileSync(path.join(root, 'docs', 'RELEASE_RUNBOOK.md'), 'utf8');
+    A.ok(/g1-packaged-lifecycle/.test(runbook) && /packaged-lifecycle-receipt\.json/.test(runbook), 'RELEASE_RUNBOOK documents the G1 gate + its receipt');
+  }
+
   A.report();
 })().catch((e) => { console.log('FAIL: ' + (e && e.stack || e)); process.exit(1); });

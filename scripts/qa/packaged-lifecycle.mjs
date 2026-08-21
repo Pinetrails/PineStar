@@ -342,9 +342,9 @@ export async function runCaseCloseToTray(drivers, ctx) {
 export async function runCaseUpdaterSmoke(drivers, ctx) {
   const { exe, expectedVersion, tagFeedUrl, publicFeedUrl, feedMustMatch } = ctx;
   const t0 = drivers.now();
-  let exeVersion = null, tagFeed = null, publicFeed = null, publicFeedError = null, tagFeedError = null;
+  let exeVersion = null, tagFeed = ctx.tagFeed || null, publicFeed = null, publicFeedError = null, tagFeedError = null;
   try { exeVersion = await drivers.exeVersion(exe); } catch (e) { exeVersion = null; }
-  if (tagFeedUrl) { try { tagFeed = await drivers.fetchJson(tagFeedUrl); } catch (e) { tagFeedError = String(e && e.message || e); } }
+  if (!tagFeed && tagFeedUrl) { try { tagFeed = await drivers.fetchJson(tagFeedUrl); } catch (e) { tagFeedError = String(e && e.message || e); } }
   if (publicFeedUrl) { try { publicFeed = await drivers.fetchJson(publicFeedUrl); } catch (e) { publicFeedError = String(e && e.message || e); } }
   const verdict = judgeUpdater({ expectedVersion, exeVersion, tagFeed, publicFeed, feedMustMatch, publicFeedError });
   if (tagFeedError) verdict.reasons.push(`tag latest.json fetch failed: ${tagFeedError}`);
@@ -515,6 +515,8 @@ async function main() {
   const receipt = await runMatrix(drivers, {
     exe, installDir, cases, expectedVersion,
     tagFeedUrl: a['tag-feed-url'] || '',
+    // the tag's own latest.json, already downloaded next to the installer (drafts are not public)
+    tagFeed: a['tag-feed-path'] ? JSON.parse(fs.readFileSync(String(a['tag-feed-path']), 'utf8')) : null,
     publicFeedUrl: a['public-feed-url'] || 'https://github.com/androoAGI/starnet-releases/releases/latest/download/latest.json',
     feedMustMatch: a['feed-must-match'] === true || a['feed-must-match'] === 'true',
     meta: { exe, installDir, appDataDir, tag, runId: process.env.GITHUB_RUN_ID || null, host: process.env.COMPUTERNAME || null, image: process.env.ImageOS ? `${process.env.ImageOS} ${process.env.ImageVersion || ''}`.trim() : null },
