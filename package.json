@@ -102,6 +102,8 @@
     "qa:bugs:new": "node scripts/qa/bugs.mjs --new",
     "qa:bugs:index": "node scripts/qa/bugs.mjs --index --write",
     "qa:bugs:validate": "node scripts/qa/bugs.mjs --validate",
+    "qa:reconcile": "node scripts/qa/ledger-reconcile.mjs",
+    "qa:reconcile:ci": "node scripts/qa/ledger-reconcile.mjs --no-run --no-write --ci",
     "eval:contract": "node scripts/eval/runner.mjs contract",
     "eval:fault": "node scripts/eval/runner.mjs fault",
     "eval:fault:capture": "node scripts/eval/runner.mjs capture-fault",
