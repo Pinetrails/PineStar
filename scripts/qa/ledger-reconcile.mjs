@@ -55,8 +55,10 @@
  * }
  *
  * CLI:
- *   node scripts/qa/ledger-reconcile.mjs [--all] [--no-run] [--json] [--no-write]
+ *   node scripts/qa/ledger-reconcile.mjs [--all] [--no-run] [--http] [--json] [--no-write]
  *                                        [--findings-dir <dir>] [--ci [--stale-days N]]
+ *   Named tests run under the gate's hermetic app-data profile; suites on test/http.list are
+ *   skipped (reported as "not run here") unless --http.
  *   Writes qa/digests/reconcile-<date>.md + .json (the digests convention; machine-local) unless
  *   --no-write. --json prints the JSON result to stdout instead of the markdown.
  * Exit code: 0; with --ci, 3 when a likely-fixed record is still open and older than N days
@@ -66,6 +68,7 @@
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { makeBugRegister, extractAnchors, anchorLawApplies } from './bugs.mjs';
 
@@ -146,6 +149,12 @@ export function makeReconciler(opts) {
       if (!exists) { testMissing++; checks.tests.push({ file: t, exists: false, ok: null, regression: isRegression }); evidence.push('named test ' + t + ' does not exist'); continue; }
       if (o.runTests === false) { checks.tests.push({ file: t, exists: true, ok: null, regression: isRegression, skipped: true }); continue; }
       const r = runTest(t) || {};
+      if (r.skipped) {
+        // the host declined to run it (an http-gate suite): not evidence either way, and said so.
+        checks.tests.push({ file: t, exists: true, ok: null, regression: isRegression, skipped: r.skipped });
+        evidence.push('named test ' + t + ' not run here (' + r.skipped + ')');
+        continue;
+      }
       checks.tests.push({ file: t, exists: true, ok: !!r.ok, code: r.code, ms: r.ms, regression: isRegression, tail: str(r.tail).slice(-400) });
       if (r.ok) { testPass++; if (isRegression) regressionPass++; evidence.push((isRegression ? 'regression test ' : 'named test ') + t + ' passes'); }
       else { testFail++; evidence.push('named test ' + t + ' FAILS (exit ' + r.code + ')'); }
@@ -435,7 +444,19 @@ export function realIo(ROOT, o) {
     try { return { ok: true, out: execFileSync('git', args, { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() }; }
     catch (e) { return { ok: false, code: e.status, out: '' }; }
   };
-  let branchSet = null, mergedSet = null, worktreeList = null;
+  let branchSet = null, mergedSet = null, worktreeList = null, httpSet = null;
+  const httpList = () => {
+    if (!httpSet) {
+      httpSet = new Set();
+      try {
+        for (const line of fs.readFileSync(path.join(ROOT, 'test', 'http.list'), 'utf8').replace(/^﻿/, '').split(/\r?\n/)) {
+          const t = line.trim();
+          if (t && !t.startsWith('#')) httpSet.add(t.replace(/\\/g, '/'));
+        }
+      } catch (_) { /* no list: nothing is skipped */ }
+    }
+    return httpSet;
+  };
   const bodyCache = new Map();
   const codeFiles = (() => {
     let cache = null;
@@ -487,8 +508,22 @@ export function realIo(ROOT, o) {
     fileExists(rel) { try { return fs.statSync(path.join(ROOT, rel)).isFile(); } catch (_) { return false; } },
     readFile(rel) { try { return fs.readFileSync(path.join(ROOT, rel), 'utf8'); } catch (_) { return null; } },
     runTest(rel) {
+      // Suites on test/http.list boot real sidecars and belong to the `test:http` gate; they are
+      // not run from here unless --http asks (a bare `node` of one is red for environment reasons
+      // and would read as a false still-open).
+      if (!o.runHttp && httpList().has(rel.replace(/\\/g, '/'))) return { ok: null, code: null, ms: 0, tail: '', skipped: 'test:http gate suite' };
+      // HERMETIC PROFILE — the same isolation scripts/run-test-list.mjs gives every gate step: a
+      // spawned sidecar's boot-time station recovery must never see the real per-user app-data roots.
+      const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-reconcile-profile-'));
+      const hermetic = { APPDATA: profile, LOCALAPPDATA: profile, XDG_DATA_HOME: profile };
+      if (process.platform !== 'win32') hermetic.HOME = profile;
       const t0 = Date.now();
-      const r = spawnSync(process.execPath, [rel], { cwd: ROOT, encoding: 'utf8', timeout: o.testTimeoutMs || 120000, env: process.env, windowsHide: true });
+      let r;
+      try {
+        r = spawnSync(process.execPath, [rel], { cwd: ROOT, encoding: 'utf8', timeout: o.testTimeoutMs || 120000, env: Object.assign({}, process.env, hermetic), windowsHide: true });
+      } finally {
+        try { fs.rmSync(profile, { recursive: true, force: true }); } catch (_) { /* ignore */ }
+      }
       const tail = (str(r.stdout) + '\n' + str(r.stderr)).trim().slice(-800);
       return { ok: r.status === 0, code: r.status == null ? -1 : r.status, ms: Date.now() - t0, tail };
     },
@@ -542,17 +577,18 @@ if (INVOKED_DIRECTLY) {
     else if (t === '--json') args.json = true;
     else if (t === '--ci') args.ci = true;
     else if (t === '--no-run') args.run = false;
+    else if (t === '--http') args.http = true;
     else if (t === '--no-write') args.write = false;
     else if (t === '--stale-days') args.staleDays = Number(argv[++i]);
     else if (t === '--findings-dir') args.findingsDir = argv[++i] || '';
     else if (t === '--help' || t === '-h') {
-      console.error('usage: node scripts/qa/ledger-reconcile.mjs [--all] [--no-run] [--json] [--no-write] [--findings-dir <dir>] [--ci [--stale-days N]]');
+      console.error('usage: node scripts/qa/ledger-reconcile.mjs [--all] [--no-run] [--http] [--json] [--no-write] [--findings-dir <dir>] [--ci [--stale-days N]]');
       process.exit(1);
     }
   }
   if (!isFinite(args.staleDays) || args.staleDays < 0) { console.error('[qa:reconcile] --stale-days must be a non-negative number'); process.exit(1); }
 
-  const io = realIo(ROOT, { findingsDir: args.findingsDir });
+  const io = realIo(ROOT, { findingsDir: args.findingsDir, runHttp: !!args.http });
   const R = makeReconciler({ io, clock: { today: () => new Date().toISOString().slice(0, 10) } });
   let result;
   try { result = R.reconcile({ all: !!args.all, runTests: args.run }); }

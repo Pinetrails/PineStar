@@ -150,6 +150,18 @@ const rowOf = (res, fp) => res.records.find(r => r.fingerprint === fp);
   A.eq(row.confidence, 'soft', '...but only softly without the test');
 }
 
+// ---- G2. a host that DECLINES to run a test (http-gate suite) is not evidence either way ----
+{
+  const r = record(scratchReg, { title: 'http suite', slug: 'http-suite', fix: 'abc1234', sections: { Verdict: 'abc1234; regression test/x.http.test.js' } });
+  const w = world({ bugs: [r], ancestors: { abc1234: true }, files: { 'test/x.http.test.js': '' } });
+  w.io.runTest = () => ({ ok: null, code: null, ms: 0, tail: '', skipped: 'test:http gate suite' });
+  const row = rowOf(makeReconciler({ io: w.io, clock }).reconcile(), r.bug.fingerprint);
+  A.eq(row.verdict, 'likely-fixed', 'the commit still decides');
+  A.eq(row.confidence, 'soft', 'a skipped regression cannot make it hard');
+  A.eq(row.checks.tests[0].skipped, 'test:http gate suite', 'the skip reason is recorded');
+  A.ok(row.evidence.some(e => /not run here \(test:http gate suite\)/.test(e)), 'the row says the test was not run here');
+}
+
 // ---- H. closed-record audit: a fixed record whose fix is NOT on this tree is flagged ----
 {
   const good = record(scratchReg, { title: 'closed good', slug: 'closed-good', status: 'fixed', fix: 'aaaaaaa1', sections: { Verdict: 'done' } });
@@ -257,6 +269,8 @@ const rowOf = (res, fp) => res.records.find(r => r.fingerprint === fp);
     fs.writeFileSync(path.join(root, 'sidecar', 'x.js'), 'module.exports = 1; // if (a == b) return;\n');
     fs.writeFileSync(path.join(root, 'test', 'green.test.js'), 'process.exit(0);\n');
     fs.writeFileSync(path.join(root, 'test', 'red.test.js'), 'process.exit(1);\n');
+    fs.writeFileSync(path.join(root, 'test', 'http.list'), '# gate\ntest/red.test.js\n');
+    fs.writeFileSync(path.join(root, 'test', 'env.test.js'), "process.exit(process.env.LOCALAPPDATA && process.env.LOCALAPPDATA.includes('starnet-reconcile-profile-') ? 0 : 1);\n");
     git(root, ['add', '-A']);
     git(root, ['commit', '-q', '-m', 'base']);
     const base = git(root, ['rev-parse', 'HEAD']);
@@ -283,7 +297,9 @@ const rowOf = (res, fp) => res.records.find(r => r.fingerprint === fp);
     A.eq(io.fileExists('sidecar/x.js'), true, 'fileExists reads the tree');
     A.eq(io.searchCode('if (a == b) return;'), ['sidecar/x.js'], 'searchCode finds an exact substring under the code roots');
     A.eq(io.runTest('test/green.test.js').ok, true, 'runTest runs a real node file (green)');
-    A.eq(io.runTest('test/red.test.js').code, 1, 'runTest reports a red exit code');
+    A.eq(io.runTest('test/red.test.js').skipped, 'test:http gate suite', 'a suite on test/http.list is skipped, not run');
+    A.eq(realIo(root, { runHttp: true }).runTest('test/red.test.js').code, 1, '--http runs it and reports the red exit code');
+    A.eq(io.runTest('test/env.test.js').ok, true, 'a test runs under the hermetic app-data profile (LOCALAPPDATA is a scratch dir)');
 
     // the CLI end to end: one stale likely-fixed record -> --ci exits 3; --json prints the result.
     const reg = makeBugRegister({ io: { listBugs: () => [], writeBug() {}, knownFingerprints: () => [] }, clock });
