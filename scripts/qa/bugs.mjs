@@ -47,6 +47,12 @@
  *      frontmatter must agree. A hand-renamed file is a corrupt key, caught loudly.
  *   6. NO DUPLICATE FINGERPRINTS, and no OPEN bug whose fingerprint is on the KNOWN_ISSUES
  *      baseline (anti-nag: a known defect is not re-filed as fresh work).
+ *   7. ANCHOR LAW (records found since ANCHOR_LAW_SINCE) — a bug must name at least one
+ *      machine-checkable anchor: a test path, a repo file[:line], or the defective code quoted in
+ *      backticks. scripts/qa/ledger-reconcile.mjs re-checks those anchors against the tree; a
+ *      record with none can only ever be closed by a human re-reading it, which is how the
+ *      register drifted to 25-of-28 "open" rows already fixed on trunk. Older records are
+ *      grandfathered and reported as `unverifiable`.
  *
  * makeBugRegister({ io, clock }) -> {
  *   slugify(title)                  -> kebab slug
@@ -140,6 +146,96 @@ export function fingerprintFor(parts) {
 
 export function fileNameFor(bug) {
   return trimmed(bug && bug.fingerprint) + '-' + trimmed(bug && bug.slug) + '.md';
+}
+
+/* ───────────────────────── MACHINE-CHECKABLE ANCHORS (Law 7) ─────────────────────────
+ * A bug record is only reconcilable by a machine if it NAMES something a machine can re-check on
+ * the current tree: a test file (does it exist, does it pass), a repo file[:line] (does the cited
+ * code still exist), or an inline code snippet quoted from that file (is the defect still there).
+ * Without one of those a record can only be closed by a human re-reading it — which is exactly
+ * how the register drifted to ~25 of 28 "open" rows being already fixed on trunk. From
+ * ANCHOR_LAW_SINCE a new record MUST carry at least one anchor; older records are grandfathered
+ * (the reconciler lists them as `unverifiable` so they can be back-filled, never silently kept).
+ *
+ * extractAnchors(bug) is PURE text parsing over the record's `fix:` field and its four sections.
+ * It is shared with scripts/qa/ledger-reconcile.mjs so the validator and the reconciler can never
+ * disagree about what counts as an anchor. */
+export const ANCHOR_LAW_SINCE = '2026-08-21';
+
+// Repo roots a cited file may live under. `test/` is deliberately separate (it is the TEST anchor).
+const CODE_ROOTS = '(?:test|sidecar|frontend|shared|scripts|desktop|website|loops|docs|dev|qa|bin|src)';
+const RE_TEST = /\btest\/[\w./-]+?\.(?:m?js|cjs)\b/g;
+const RE_FILE = new RegExp('(?:^|[\\s`(\\[])(' + CODE_ROOTS + '\\/[\\w./-]+?\\.[A-Za-z]{1,5})(?::(\\d+)(?:-(\\d+))?)?(?=$|[\\s`)\\],;:])', 'gm');
+const RE_SNIPPET = /`([^`\n]{12,240})`/g;
+const RE_HEX = /\b[0-9a-f]{7,40}\b/g;
+
+function looksLikeCode(s) {
+  // a quoted snippet that is CODE, not a path or a prose phrase: needs a call, assignment,
+  // comparison, arrow, block or statement terminator — and must not itself be a bare file path.
+  if (/^(?:test|sidecar|frontend|shared|scripts|desktop|website|loops|docs|dev|qa)\/[\w./-]+(?::\d+(?:-\d+)?)?$/.test(s)) return false;
+  return /[(){};]|=>|==|!=|\s=\s|\.\w+\(/.test(s);
+}
+
+export function extractAnchors(bug) {
+  bug = bug || {};
+  const sections = bug.sections || {};
+  const out = { commits: [], tests: [], regressionTests: [], files: [], snippets: [], count: 0 };
+  const seenTest = new Set(), seenFile = new Set(), seenSnip = new Set(), seenCommit = new Set();
+
+  const fix = trimmed(bug.fix);
+  const fp = trimmed(bug.fingerprint).toLowerCase();
+  for (const m of fix.toLowerCase().match(RE_HEX) || []) { if (m !== fp && !seenCommit.has(m)) { seenCommit.add(m); out.commits.push(m); } }
+  // A commit named in the Verdict ("Fixed by abc1234", "landed in `deadbeef`") is closure
+  // evidence too — but never the record's own 8-hex fingerprint.
+  for (const m of str(sections.Verdict).toLowerCase().match(RE_HEX) || []) { if (m !== fp && !seenCommit.has(m)) { seenCommit.add(m); out.commits.push(m); } }
+
+  for (const name of SECTIONS) {
+    const text = str(sections[name]);
+    if (!text) continue;
+    for (const m of text.match(RE_TEST) || []) {
+      const t = m.replace(/\\/g, '/');
+      if (!seenTest.has(t)) { seenTest.add(t); out.tests.push(t); }
+      // A test named in the VERDICT is the regression the fix left behind (hard evidence when it
+      // passes); one named elsewhere is "existing coverage" that passed BEFORE the fix too (weak).
+      if (name === 'Verdict' && !out.regressionTests.includes(t)) out.regressionTests.push(t);
+    }
+    // file[:line] citations, in document order, so a snippet can bind to the nearest one above it.
+    const cites = [];
+    let fm;
+    RE_FILE.lastIndex = 0;
+    while ((fm = RE_FILE.exec(text))) {
+      const file = fm[1].replace(/\\/g, '/');
+      const line = fm[2] ? Number(fm[2]) : null;
+      // a test path still BINDS the snippets quoted after it (so a line quoted from a test is
+      // never mistaken for defect code), but it is a TEST anchor, not a file anchor.
+      cites.push({ at: fm.index, file, line });
+      if (/^test\//.test(file)) continue;
+      const key = file + ':' + (line == null ? '' : line);
+      if (!seenFile.has(key)) { seenFile.add(key); out.files.push({ file, line, section: name }); }
+    }
+    let sm;
+    RE_SNIPPET.lastIndex = 0;
+    while ((sm = RE_SNIPPET.exec(text))) {
+      const snip = sm[1].trim();
+      if (!looksLikeCode(snip)) continue;
+      let file = '';
+      for (const c of cites) { if (c.at < sm.index) file = c.file; else break; }
+      const key = file + '|' + snip;
+      if (seenSnip.has(key)) continue;
+      seenSnip.add(key);
+      out.snippets.push({ text: snip, file, section: name });
+    }
+  }
+  out.count = out.tests.length + out.files.length + out.snippets.length;
+  return out;
+}
+
+// Does this record fall under Law 7? Grandfathering is by the record's own `found` date, which the
+// filename-authority law already makes immutable in practice (a re-dated record re-keys nothing,
+// but a reviewer sees the diff).
+export function anchorLawApplies(bug) {
+  const found = trimmed(bug && bug.found);
+  return /^\d{4}-\d{2}-\d{2}$/.test(found) && found >= ANCHOR_LAW_SINCE;
 }
 
 // Deliberately NOT a YAML parser. The frontmatter is a flat `key: value` block by design — the
@@ -253,6 +349,14 @@ export function makeBugRegister(opts) {
     // Law 1 + Law 2 — evidence and repro, on every bug, always.
     if (!trimmed(sections.Evidence)) errors.push(file + ': `## Evidence` is empty — a finding with no artifact is a vibe, not a bug');
     if (!trimmed(sections.Repro)) errors.push(file + ': `## Repro` is empty — a defect nobody can re-trigger can never be proven fixed');
+
+    // Law 7 — a NEW record must be machine-reconcilable: at least one test path, repo file[:line]
+    // or quoted code snippet. Records found before ANCHOR_LAW_SINCE are grandfathered (the
+    // reconciler reports them as `unverifiable`).
+    bug.anchors = extractAnchors(bug);
+    if (anchorLawApplies(bug) && bug.anchors.count === 0) {
+      errors.push(file + ': carries no machine-checkable anchor — name a repro test (`test/x.test.js`), a file (`sidecar/x.js:123`) or quote the defective code in backticks (records found since ' + ANCHOR_LAW_SINCE + ' must be reconcilable by `npm run qa:reconcile`)');
+    }
 
     // Law 3 — no-fake-fixed.
     if (bug.status === 'fixed' && !bug.fix) errors.push(file + ': `status: fixed` requires a non-empty `fix:` (the commit that closed it)');
@@ -612,6 +716,7 @@ if (INVOKED_DIRECTLY) {
       writeIndex();
       console.log('CREATED qa/bugs/' + res.bug.file + '  [' + res.bug.severity + ' · ' + res.bug.surface + ']  fp=' + res.bug.fingerprint);
       console.log('Fill in ## Symptom, ## Repro and ## Evidence — an unfilled bug FAILS `--validate`.');
+      console.log('Name at least one machine-checkable anchor (a `test/x.test.js`, a `sidecar/x.js:123`, or the defective code in backticks) — an anchor-less record FAILS `--validate` (Law 7).');
       process.exit(0);
     }
     if (res.ok && res.status === 'duplicate') { console.log('DUPLICATE — ' + res.reason); process.exit(0); }

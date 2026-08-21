@@ -271,4 +271,61 @@ function filled(reg, over) {
   A.ok(!/-$/.test(slugify('x'.repeat(47) + ' tail')), 'a truncated slug never ends in a dangling dash');
 }
 
+// ---- O. Law 7: a NEW record must carry a machine-checkable anchor; old ones are grandfathered ----
+{
+  const { extractAnchors, anchorLawApplies, ANCHOR_LAW_SINCE } = require('../scripts/qa/bugs.mjs');
+  A.eq(ANCHOR_LAW_SINCE, '2026-08-21', 'the anchor law has a fixed start date');
+
+  // anchor extraction: tests, files[:line], code snippets bound to the nearest cited file, commits.
+  const a = extractAnchors({
+    fingerprint: 'abcdef12', fix: 'f4d03511',
+    sections: {
+      Evidence: '`frontend/app/tooltip.js:136`\n\nThe handler opens with `if (!anchor) return;` (tooltip.js:136). ' +
+        'test/station-tooltip.test.js never drives init(). Also `sidecar/loop.js` — `let activeCredKey = (o.credKey != null) ? o.credKey : null` seeds it.',
+      Verdict: 'Fixed in `f4d03511`; regression in test/tooltip-pending.test.js. Not the fingerprint abcdef12.'
+    }
+  });
+  A.eq(a.commits, ['f4d03511'], 'the fix commit is an anchor once (fix: and Verdict agree); the fingerprint is never a commit');
+  A.eq(a.tests, ['test/station-tooltip.test.js', 'test/tooltip-pending.test.js'], 'every named test path is a test anchor');
+  A.eq(a.regressionTests, ['test/tooltip-pending.test.js'], 'only a Verdict-named test is the regression left by the fix');
+  A.eq(a.files.map(f => f.file + ':' + f.line), ['frontend/app/tooltip.js:136', 'sidecar/loop.js:null'], 'file[:line] citations are file anchors');
+  A.eq(a.snippets.map(s => s.file + ' ' + s.text), [
+    'frontend/app/tooltip.js if (!anchor) return;',
+    'sidecar/loop.js let activeCredKey = (o.credKey != null) ? o.credKey : null'
+  ], 'code snippets bind to the nearest cited file above them');
+  A.eq(a.count, 6, 'count = tests + files + snippets (commits are closure evidence, not creation anchors)');
+
+  // a snippet quoted from a TEST binds to the test and is not a file anchor
+  const t = extractAnchors({ sections: { Evidence: 'test/x.test.js:52 — `A.eq(order([1,2]), [2,1], "cooled")` passes vacuously.' } });
+  A.eq(t.files.length, 0, 'a test citation is not a file anchor');
+  A.eq(t.snippets[0].file, 'test/x.test.js', 'but it still binds the snippet quoted after it');
+
+  // prose in backticks is NOT an anchor
+  const p = extractAnchors({ sections: { Evidence: 'The `SPEND TODAY instrument` reads wrong and `status: fixed` is cheap.' } });
+  A.eq(p.count, 0, 'backticked prose is not a code anchor');
+
+  A.eq(anchorLawApplies({ found: '2026-08-20' }), false, 'a record found the day before the law is grandfathered');
+  A.eq(anchorLawApplies({ found: '2026-08-21' }), true, 'a record found on the law date is covered');
+  A.eq(anchorLawApplies({ found: 'garbage' }), false, 'an unparseable date never silently triggers the law (the date law catches it)');
+
+  // validate(): an anchor-less record found after the law FAILS; the same text found before passes.
+  const reg0 = mk(memIo());
+  const bug = filled(reg0, { title: 'prose only bug', surface: 'world', found: '2026-09-01' });
+  bug.sections.Evidence = 'Saw it happen twice on the dev box. Screenshot in .bugloops/prose/shot.png';
+  const reg = mk(memIo([{ file: bug.file, text: reg0.render(bug) }]));
+  const v = reg.validate();
+  A.eq(v.ok, false, 'an anchor-less record found after the law date is refused');
+  A.ok(v.errors.some(e => /no machine-checkable anchor/.test(e)), 'the violation names the law: ' + v.errors.join(' | '));
+
+  const old = Object.assign({}, bug, { found: '2026-07-28' });
+  const regOld = mk(memIo([{ file: old.file, text: reg0.render(old) }]));
+  A.eq(regOld.validate().ok, true, 'the same anchor-less record found before the law is grandfathered');
+
+  bug.sections.Evidence = 'Repro test: test/prose-only.test.js (red on trunk).';
+  const regAnch = mk(memIo([{ file: bug.file, text: reg0.render(bug) }]));
+  const va = regAnch.validate();
+  A.eq(va.ok, true, 'naming one repro test satisfies the law: ' + va.errors.join(' | '));
+  A.eq(va.bugs[0].anchors.tests, ['test/prose-only.test.js'], 'parse() exposes the anchors it found');
+}
+
 A.report('qa-bugs.test');
