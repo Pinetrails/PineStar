@@ -80,7 +80,7 @@ A.ok(/no keys, tokens, or message content/.test(poisoned.text), 'block states it
 // 100% of the time for weeks must show up in the bug report as a count, not vanish behind console.warn).
 (async () => {
   const failopen = require('../sidecar/failopen.js');
-  failopen.resetForTests();
+  failopen.resetForTests(); failopen.setClock(Date.now);
   A.ok(diag.assemble({ swallowed: failopen.summary() }).text.indexOf('(none recorded)') >= 0
     && diag.assemble({ swallowed: failopen.summary() }).report.swallowed.present === true, 'a readable EMPTY tally renders "(none recorded)"');
   A.ok(diag.assemble({}).text.indexOf('Swallowed errors') >= 0 && diag.assemble({}).text.indexOf('(unknown — tally not readable)') >= 0,

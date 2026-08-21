@@ -21,13 +21,19 @@ const WARN_EVERY_TAIL = 50;
 const tally = new Map();   // tag -> { n, firstAt, lastAt } since boot
 const MAX_TAGS = 64;       // summary() bound — a hostile/dynamic tag explosion must not grow a diagnostics report unboundedly
 
+// Injected clock (lint-determinism: backend logic never reads ambient time). The composition root calls
+// setClock(Date.now) at boot; until then first/last-seen stamps are null — counts are never affected.
+let clock = null;
+function setClock(fn) { clock = typeof fn === 'function' ? fn : null; }
+function stamp() { try { const t = clock ? Number(clock()) : NaN; return Number.isFinite(t) ? t : null; } catch (_) { return null; } }
+
 function swallow(tag, rv) {
   const t = String(tag || 'untagged').slice(0, 80);
   return (e) => {
-    const now = Date.now();
+    const now = stamp();
     let row = tally.get(t);
     if (!row) { row = { n: 0, firstAt: now, lastAt: now }; tally.set(t, row); }
-    row.n += 1; row.lastAt = now;
+    row.n += 1; if (now !== null) { row.lastAt = now; if (row.firstAt === null) row.firstAt = now; }
     const n = row.n;
     if (n <= WARN_EVERY_HEAD || n % WARN_EVERY_TAIL === 0) {
       try { console.warn('[failopen] ' + t + ' (x' + n + '):', (e && e.message) || e); } catch (_) {}
@@ -52,4 +58,4 @@ function summary() {
 }
 function resetForTests() { tally.clear(); }
 
-module.exports = { swallow, counts, summary, resetForTests };
+module.exports = { swallow, counts, summary, setClock, resetForTests };
