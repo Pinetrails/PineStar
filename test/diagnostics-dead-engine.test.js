@@ -64,6 +64,17 @@ const Diag = require('../frontend/app/diagnostics.js');
 
     // ---- (4) it must be honest that it is the SHORT report, so support does not read absence as evidence ----
     A.ok(/fallback/i.test(dead) && /SHORTER/.test(dead), 'the report names itself a page-side fallback');
+
+    /* ---- (5) SWALLOWED ERRORS line (2026-08-21): three honest states, never collapsed into one ----
+       The Settings DIAGNOSTICS block paints Diag.formatSwallowed(report.swallowed) on open. An unreadable report
+       must say unknown (not zero); a measured zero must say none recorded; pressure lists the loudest tags. */
+    A.eq(Diag.formatSwallowed(null), 'swallowed errors: unknown', 'no report -> unknown, never a reassuring zero');
+    A.eq(Diag.formatSwallowed({}), 'swallowed errors: unknown', 'a report predating the field -> unknown');
+    A.eq(Diag.formatSwallowed({ swallowed: { present: false, total: 0, tags: [] } }), 'swallowed errors: unknown', 'present:false (tally unreadable) -> unknown');
+    A.eq(Diag.formatSwallowed({ swallowed: { present: true, total: 0, tagCount: 0, tags: [] } }), 'swallowed errors: none recorded since boot', 'a measured zero says none recorded');
+    const busy = Diag.formatSwallowed({ swallowed: { present: true, total: 9, tagCount: 6, tags: [
+      { tag: 'aux.reflection.envelope', count: 4 }, { tag: 'b', count: 1 }, { tag: 'c', count: 1 }, { tag: 'd', count: 1 }, { tag: 'e', count: 1 }, { tag: 'f', count: 1 }] } });
+    A.ok(/^swallowed errors: 9 since boot — aux\.reflection\.envelope ×4 · b ×1 · c ×1 · d ×1 · \+2 more$/.test(busy), 'pressure lists total + loudest tags, bounded with an honest "+N more": ' + busy);
   } finally {
     if (hadWindow) global.window = savedWindow; else { try { delete global.window; } catch (_) { global.window = undefined; } }
   }

@@ -71,6 +71,33 @@
       .catch(() => '');
   }
 
+  // GET the STRUCTURED report (the same endpoint; `report` rides alongside `text`). null on any failure — the
+  // caller renders "unknown", never a made-up zero.
+  function fetchReport() {
+    return fetch('/api/diagnostics', { cache: 'no-store' })
+      .then(r => (r && r.ok) ? r.json() : null)
+      .then(j => (j && j.report && typeof j.report === 'object') ? j.report : null)
+      .catch(() => null);
+  }
+
+  /* SWALLOWED ERRORS line (2026-08-21, reliability item 1). Pure formatter over report.swallowed from the sidecar
+     (failopen.summary() -> sidecar/diagnostics.js). Three honest states, never collapsed into one:
+       · 'unknown'        — the report was unreadable or predates the field (we cannot claim zero);
+       · 'none recorded'  — the tally exists and is zero since boot (a real measurement);
+       · 'N — tag ×c · …' — pressure, loudest seam first, bounded to MAX_LINE_TAGS so the line stays one line.
+     Counts only: no error text ever reaches this line (the sidecar never sends it). */
+  const MAX_LINE_TAGS = 4;
+  function formatSwallowed(report) {
+    const sw = report && report.swallowed && typeof report.swallowed === 'object' ? report.swallowed : null;
+    if (!sw || sw.present !== true) return 'swallowed errors: unknown';
+    const total = Number(sw.total) || 0;
+    if (total <= 0) return 'swallowed errors: none recorded since boot';
+    const tags = Array.isArray(sw.tags) ? sw.tags : [];
+    const shown = tags.slice(0, MAX_LINE_TAGS).map(t => String(t && t.tag || 'untagged') + ' ×' + (Number(t && t.count) || 0));
+    const more = (Number(sw.tagCount) || tags.length) - shown.length;
+    return 'swallowed errors: ' + total + ' since boot — ' + shown.join(' · ') + (more > 0 ? ' · +' + more + ' more' : '');
+  }
+
   // Opt-in LIVE doctor. This is intentionally separate from fetchText(): it performs real provider/execution/
   // connector/channel I/O and may spend one tiny model response. The host independently requires the boolean,
   // so a caller cannot trigger live probes with an accidental GET or an omitted body.
@@ -269,5 +296,5 @@
     return fetchText().then(paint).catch(() => paint(''));
   }
 
-  return { SUPPORT_EMAIL, supportEmail, hasSupport, fetchText, runLive, copy, showBlock, buildLine, localReport, copyText: copyToClipboard, _internals: { copyToClipboard, fallbackCopy, normSupport, SUPPORT_PLACEHOLDER, formatBuild, tauriCore, localRedact, apiOrigin } };
+  return { SUPPORT_EMAIL, supportEmail, hasSupport, fetchText, fetchReport, formatSwallowed, runLive, copy, showBlock, buildLine, localReport, copyText: copyToClipboard, _internals: { copyToClipboard, fallbackCopy, normSupport, SUPPORT_PLACEHOLDER, formatBuild, tauriCore, localRedact, apiOrigin, MAX_LINE_TAGS } };
 });

@@ -5298,6 +5298,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (!el || typeof Diag === 'undefined' || typeof Diag.buildLine !== 'function') return;
       Diag.buildLine().then(line => { if (line) { el.textContent = line; el.hidden = false; } }).catch(() => {});
     })();
+    // SWALLOWED ERRORS (2026-08-21): the fail-open seams' per-tag counters, read from the SAME sidecar report the
+    // copy button ships (report.swallowed). Painted on open so silent degradation is a visible number without a
+    // copy; "unknown" when the sidecar can't be read — never a reassuring zero the harness didn't measure.
+    (function paintSwallowed() {
+      const el = body.querySelector('#diag-swallowed');
+      if (!el || typeof Diag === 'undefined' || typeof Diag.fetchReport !== 'function') return;
+      el.textContent = 'swallowed errors: reading…';
+      Diag.fetchReport().then(rep => { el.textContent = Diag.formatSwallowed(rep); }).catch(() => { el.textContent = Diag.formatSwallowed(null); });
+    })();
     if (!btn) return;
     const setMsg = (t, ok) => { if (msgEl) { msgEl.textContent = t || ''; msgEl.className = 'msg' + (ok ? ' ok' : ''); } };
     btn.addEventListener('click', () => {
@@ -5799,6 +5808,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       })()) +
       '<div class="set-save"><button class="bb sm" id="diag-copy">⧉ COPY DIAGNOSTICS</button></div>' +
       '<div id="diag-msg" class="msg"></div>' +
+      // fail-open pressure: per-tag swallowed-error counts since boot, from report.swallowed. Painted in wireDiagnostics().
+      '<div id="diag-swallowed" class="dim" style="margin-top:6px;font-size:11px">swallowed errors: reading…</div>' +
       '<h4 class="ms-h">LIVE DOCTOR <span class="dim">— opt-in runtime proof</span></h4>' +
       '<p class="set-about">Runs one tiny response through the selected model, a harmless sentinel through the effective execution profile, an initialize/list round-trip for each enabled MCP server, and safe authentication/status checks for messaging channels. It sends no channel messages and exports no secrets.</p>' +
       '<label class="set-check"><input type="checkbox" id="diag-live-consent"> I understand this performs real network and execution probes and may spend one tiny model response.</label>' +
