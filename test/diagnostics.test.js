@@ -81,8 +81,8 @@ A.ok(/no keys, tokens, or message content/.test(poisoned.text), 'block states it
 (async () => {
   const failopen = require('../sidecar/failopen.js');
   failopen.resetForTests(); failopen.setClock(Date.now);
-  A.ok(diag.assemble({ swallowed: failopen.summary() }).text.indexOf('(none recorded)') >= 0
-    && diag.assemble({ swallowed: failopen.summary() }).report.swallowed.present === true, 'a readable EMPTY tally renders "(none recorded)"');
+  A.ok(diag.assemble({ swallowed: failopen.summary() }).text.indexOf('(none since boot)') >= 0
+    && diag.assemble({ swallowed: failopen.summary() }).report.swallowed.present === true, 'a readable EMPTY tally renders "(none since boot)"');
   A.ok(diag.assemble({}).text.indexOf('Swallowed errors') >= 0 && diag.assemble({}).text.indexOf('(unknown — tally not readable)') >= 0,
     'a MISSING tally says unknown — never a reassuring zero');
   A.eq(diag.assemble({}).report.swallowed.present, false, 'report.swallowed.present is false when the tally was not passed');

@@ -214,7 +214,7 @@
       } else {
         lines.push('  (none recorded)');   // the error tail persists across restarts (diag.errors.json) — "this session" would undersell it
       }
-      /* Fail-open pressure. "(none recorded)" is a real measurement (the tally exists and is zero); "unknown" means
+      /* Fail-open pressure. "(none since boot)" is a real measurement (the tally exists and is zero); "unknown" means
          the tally could not be read — the two must never collapse into one reassuring line. */
       lines.push('Swallowed errors (fail-open seams, since boot):');
       if (!r.swallowed || !r.swallowed.present) {
@@ -226,7 +226,7 @@
         }
         if (r.swallowed.truncated) lines.push('  · … more tags not shown');
       } else {
-        lines.push('  (none recorded)');
+        lines.push('  (none since boot)');
       }
       lines.push('--- end diagnostics — contains no keys, tokens, or message content ---');
       return lines.join('\n');
