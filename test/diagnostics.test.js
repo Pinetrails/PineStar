@@ -75,4 +75,39 @@ A.notThrows(() => diag.assemble({ errors: 'not-an-array', lastRun: 42, uptimeMs:
 // the block advertises its own safety (a small honesty cue for the user pasting it).
 A.ok(/no keys, tokens, or message content/.test(poisoned.text), 'block states it contains no secrets');
 
-A.report('diagnostics');
+// ---- SWALLOWED ERRORS (2026-08-21): fail-open pressure is a VISIBLE number, and the section FIRES ----
+// reject into a tagged swallow, then assert the assembler reports it (the close-zombie law: a seam that swallows
+// 100% of the time for weeks must show up in the bug report as a count, not vanish behind console.warn).
+(async () => {
+  const failopen = require('../sidecar/failopen.js');
+  failopen.resetForTests();
+  A.ok(diag.assemble({ swallowed: failopen.summary() }).text.indexOf('(none recorded)') >= 0
+    && diag.assemble({ swallowed: failopen.summary() }).report.swallowed.present === true, 'a readable EMPTY tally renders "(none recorded)"');
+  A.ok(diag.assemble({}).text.indexOf('Swallowed errors') >= 0 && diag.assemble({}).text.indexOf('(unknown — tally not readable)') >= 0,
+    'a MISSING tally says unknown — never a reassuring zero');
+  A.eq(diag.assemble({}).report.swallowed.present, false, 'report.swallowed.present is false when the tally was not passed');
+
+  await Promise.reject(new Error('aux pass died ' + SECRETS[0])).catch(failopen.swallow('aux.test.envelope'));
+  await Promise.reject(new Error('again')).catch(failopen.swallow('aux.test.envelope'));
+  await Promise.reject(new Error('once')).catch(failopen.swallow('maint.test.loop'));
+  const fired = diag.assemble({ swallowed: failopen.summary() });
+  const row = fired.report.swallowed.tags.find(t => t.tag === 'aux.test.envelope');
+  A.ok(!!row && row.count === 2, 'the rejected-into tag is reported with its exact count (the envelope provably fired)');
+  A.ok(row && Number.isFinite(row.firstAt) && Number.isFinite(row.lastAt) && row.lastAt >= row.firstAt, 'first/last-seen timestamps ride along');
+  A.eq(fired.report.swallowed.total, 3, 'total sums every tag');
+  A.eq(fired.report.swallowed.tags[0].tag, 'aux.test.envelope', 'loudest seam leads');
+  A.ok(/aux\.test\.envelope ×2/.test(fired.text), 'the paste-ready block lists the tag with its count');
+  A.ok(/total 3 across 2 tags/.test(fired.text), 'the block states total + tag count');
+  A.ok(JSON.stringify(fired).indexOf(SECRETS[0]) < 0, 'error MESSAGES never ride into the swallowed section (counts only)');
+  // snapshot semantics: mutating what the endpoint saw cannot blind the trace
+  const snap = failopen.summary(); snap.tags.length = 0; snap.total = 0;
+  A.eq(failopen.summary().total, 3, 'summary() is a fresh snapshot — mutating it does not clear the real tally');
+  // bounded: a tag explosion is capped and flagged, never an unbounded report
+  for (let i = 0; i < 40; i++) failopen.swallow('flood.' + i)(new Error('x'));
+  const flooded = diag.assemble({ swallowed: failopen.summary() });
+  A.ok(flooded.report.swallowed.tags.length <= 24 && flooded.report.swallowed.truncated === true, 'tag rows are bounded and truncation is stated');
+  A.ok(flooded.text.indexOf('more tags not shown') >= 0, 'the block says when rows were cut');
+  failopen.resetForTests();
+
+  A.report('diagnostics');
+})();

@@ -11,6 +11,7 @@
 
 const MAX_CONNECTORS = 30;
 const MAX_ERRORS = 5;
+const MAX_SWALLOWED = 12;   // fail-open tag rows an agent sees — the loudest seams; bounded like every other section
 
 function oneLine(value, max) {
   return String(value == null ? '' : value)
@@ -105,8 +106,23 @@ function diagnosticsShape(raw, redact) {
     } : null,
     uptimeMs: Number.isFinite(Number(raw.uptimeMs)) ? Number(raw.uptimeMs) : null,
     workspacePresent: raw.workspacePresent === true,
-    agentCount: Number.isFinite(Number(raw.agentCount)) ? Number(raw.agentCount) : null
+    agentCount: Number.isFinite(Number(raw.agentCount)) ? Number(raw.agentCount) : null,
+    // swallowed-error pressure (failopen.summary()). Tags are code literals, redacted anyway; counts + epoch ms
+    // only. null when the caller could not read the tally — an agent must not read a missing tally as zero.
+    swallowed: swallowedShape(raw.swallowed, redact)
   };
+}
+
+function swallowedShape(raw, redact) {
+  if (!raw || typeof raw !== 'object') return null;
+  const tags = (Array.isArray(raw.tags) ? raw.tags : []).slice(0, MAX_SWALLOWED).map(row => ({
+    tag: oneLine(redact(String(row && row.tag == null ? '' : row.tag)), 80) || 'untagged',
+    count: Number.isFinite(Number(row && row.count)) ? Number(row.count) : 0,
+    lastAt: Number.isFinite(Number(row && row.lastAt)) ? Number(row.lastAt) : null
+  })).filter(row => row.count > 0);
+  const total = Number.isFinite(Number(raw.total)) ? Number(raw.total) : 0;
+  const tagCount = Number.isFinite(Number(raw.tagCount)) ? Number(raw.tagCount) : tags.length;
+  return { total, tagCount, truncated: raw.truncated === true || tagCount > tags.length, tags };
 }
 
 function makeHarnessSnapshot(deps) {
@@ -134,5 +150,5 @@ module.exports = {
   oneLine,
   unavailable,
   confirmed,
-  _internals: { buildShape, runtimeShape, schedulerShape, connectorShape, diagnosticsShape, safeRead, MAX_CONNECTORS, MAX_ERRORS }
+  _internals: { buildShape, runtimeShape, schedulerShape, connectorShape, diagnosticsShape, swallowedShape, safeRead, MAX_CONNECTORS, MAX_ERRORS, MAX_SWALLOWED }
 };

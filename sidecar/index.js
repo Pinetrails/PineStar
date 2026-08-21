@@ -135,7 +135,7 @@ const { readBody, readBodyBuffer } = require('./http-body.js');
 const { MIME, CHANNEL_UPLOAD_MAX_BYTES, mimeForPath, safeDownloadName, isActiveDeliverable, parseRange } = require('./file-response.js');
 const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } = require('./reflect.js');
 const Failreview = require('./failreview.js');   // failure-review aux pass: PURE lesson producer for FAILED runs (reflect.js mold)
-const { swallow } = require('./failopen.js');    // tagged fail-open: a swallowed error stays visible (throttled warn + counter)
+const { swallow, summary: failopenSummary } = require('./failopen.js');    // tagged fail-open: a swallowed error stays visible (throttled warn + counter + diagnostics summary)
 // GROWTH Tier 1 — the pure STUDY ENGINE (the dossier's Phase B). A UMD frontend module that also exports under
 // node, so the sidecar reuses the SAME parse/salience/dedup the browser consent path uses. Fail-open: if it can't
 // load, study just never fires (a run stays byte-identical). No new npm dep — it's a first-party file.
@@ -1048,6 +1048,13 @@ const relayWebhook = makeWebhookVerifier({ secret: process.env.STARNET_CHANNEL_W
    public user in a failure state can grab a useful, secret-free report. It is RAM-only + bounded — never persisted,
    never contains transcript content or a prompt (only the classified run-error message). ---- */
 const PROCESS_START = Date.now();
+/* DEV/TEST-ONLY liveness probe for the swallowed-errors surface (2026-08-21). Set STARNET_FAILOPEN_SELFTEST=1 and
+   the sidecar rejects ONE promise into a tagged swallow at boot, so a live verifier can prove the whole path
+   (failopen tally -> GET /api/diagnostics -> the rendered report) without waiting for a real aux pass to break.
+   Inert unless the env var is set; it never runs in a packaged build (the shell does not set it). */
+if (process.env.STARNET_FAILOPEN_SELFTEST === '1') {
+  Promise.reject(new Error('failopen selftest (STARNET_FAILOPEN_SELFTEST=1)')).catch(swallow('diag.failopen.selftest'));
+}
 const DIAG_ERR_RING = [];             // [{ ts, message }] newest-last, bounded
 const DIAG_ERR_MAX = 8;
 // 2026-07-07 escape: a multi-agent run failed, the user restarted, and diagnostics said "(none recorded
@@ -16716,7 +16723,10 @@ function collectDiagnosticsInput(opts) {
       // must never be rendered as "plenty left" (see ratelimits.advise).
       rateLimits: (() => { try { return rateLimits.snapshot(); } catch (_) { return []; } })(),
       errors: DIAG_ERR_RING.slice(),   // already redacted on write; the assembler redacts again as a backstop
-      proxy: proxySnapshot()
+      proxy: proxySnapshot(),
+      // fail-open pressure: per-tag swallowed-error counts since boot (failopen.js). Bounded + secret-free by
+      // construction (tags are code literals). A read failure leaves it undefined -> the assembler says "unknown".
+      swallowed: (() => { try { return failopenSummary(); } catch (_) { return undefined; } })()
     };
 }
 

@@ -27,6 +27,7 @@
        uptimeMs:  number                         // process uptime
        workspacePresent: bool                    // does the workspaces dir exist? (bool ONLY — never the path)
        agentCount: number                        // roster size (shape only)
+       swallowed: { total, tagCount, truncated, tags:[{ tag, count, firstAt, lastAt }] }   // failopen.summary()
 */
 'use strict';
 (function (root, factory) {
@@ -39,6 +40,7 @@
   const MAX_ERRORS = 5;        // tail length — enough to see a pattern, bounded so the block stays pasteable
   const MAX_RATE_PROVIDERS = 4; // quota rows — the fallback chain can touch several providers in one session
   const MSG_MAX = 300;         // per-error message cap after redaction
+  const MAX_SWALLOWED = 24;    // fail-open tag rows — the loudest seams first; enough to see pressure, bounded so the block stays pasteable
   const IDENT = /* the fields that are shape-only by construction can still be length-clamped for readability */ 200;
 
   // collapse control chars + whitespace onto one clamped line (a message must not inject blank lines / smuggle
@@ -133,7 +135,30 @@
         errors: (Array.isArray(s.errors) ? s.errors : []).slice(-MAX_ERRORS).map(e => ({
           ts: num(e && e.ts) || null,
           message: redactStr(e && e.message)   // SECOND redaction backstop over the caller's already-redacted tail
-        })).filter(e => e.message)
+        })).filter(e => e.message),
+        /* SWALLOWED ERRORS (2026-08-21, reliability item 1). Every fire-and-forget seam in the sidecar goes through
+           failopen.swallow(tag): the pass is allowed to fail, but the failure is COUNTED. Those counters used to
+           end at console.warn — a probe that misread 100% of the time for weeks (the close-zombie incident) is the
+           case this section exists for: silent degradation must be a visible number in the bug report. Tags are
+           static code literals (redacted anyway, never a path/secret); counts + epoch timestamps only. `present`
+           false means the caller could not read the tally — rendered as "unknown", never as a reassuring zero. */
+        swallowed: (() => {
+          const sw = s.swallowed && typeof s.swallowed === 'object' ? s.swallowed : null;
+          if (!sw) return { present: false, total: 0, tagCount: 0, truncated: false, tags: [] };
+          const tags = (Array.isArray(sw.tags) ? sw.tags : []).slice(0, MAX_SWALLOWED).map(t => ({
+            tag: clean(t && t.tag, 80) || 'untagged',
+            count: num(t && t.count),
+            firstAt: num(t && t.firstAt) || null,
+            lastAt: num(t && t.lastAt) || null
+          })).filter(t => t.count > 0);
+          return {
+            present: true,
+            total: num(sw.total),
+            tagCount: num(sw.tagCount) || tags.length,
+            truncated: bool(sw.truncated) || (Array.isArray(sw.tags) && sw.tags.length > tags.length),
+            tags: tags
+          };
+        })()
       };
 
       return { report, text: render(report) };
@@ -188,6 +213,20 @@
         for (const e of r.errors) lines.push('  · ' + (e.ts ? iso(e.ts) + ' ' : '') + e.message);
       } else {
         lines.push('  (none recorded)');   // the error tail persists across restarts (diag.errors.json) — "this session" would undersell it
+      }
+      /* Fail-open pressure. "(none recorded)" is a real measurement (the tally exists and is zero); "unknown" means
+         the tally could not be read — the two must never collapse into one reassuring line. */
+      lines.push('Swallowed errors (fail-open seams, since boot):');
+      if (!r.swallowed || !r.swallowed.present) {
+        lines.push('  (unknown — tally not readable)');
+      } else if (r.swallowed.total > 0) {
+        lines.push('  total ' + r.swallowed.total + ' across ' + r.swallowed.tagCount + ' tag' + (r.swallowed.tagCount === 1 ? '' : 's'));
+        for (const t of r.swallowed.tags) {
+          lines.push('  · ' + t.tag + ' ×' + t.count + (t.lastAt ? ' (last ' + iso(t.lastAt) + ')' : ''));
+        }
+        if (r.swallowed.truncated) lines.push('  · … more tags not shown');
+      } else {
+        lines.push('  (none recorded)');
       }
       lines.push('--- end diagnostics — contains no keys, tokens, or message content ---');
       return lines.join('\n');

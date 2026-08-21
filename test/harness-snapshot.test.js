@@ -22,7 +22,11 @@ const snap = makeHarnessSnapshot({
   readDiagnostics: () => ({
     errors: [{ ts: 1699999990000, message: 'provider failed ' + SECRET }],
     lastRun: { runId: 'run-1', status: 'done', ts: 1699999995000 },
-    uptimeMs: 90000, workspacePresent: true, agentCount: 3, workspace: 'C:\\private'
+    uptimeMs: 90000, workspacePresent: true, agentCount: 3, workspace: 'C:\\private',
+    swallowed: { total: 7, tagCount: 2, truncated: false, tags: [
+      { tag: 'aux.reflection.envelope', count: 6, firstAt: 1699999990000, lastAt: 1699999999000 },
+      { tag: 'cron.tick ' + SECRET, count: 1, firstAt: 1699999991000, lastAt: 1699999991000 }
+    ] }
   })
 }).snapshot({ provider: 'codex', model: 'gpt-5.3-codex', agentId: 'nova', runId: 'run-live', surface: 'interactive', trigger: 'directive' });
 
@@ -37,6 +41,10 @@ A.eq(snap.connectors.data.count, 1, 'planted connector count is exact');
 A.eq(snap.connectors.data.connected[0].state, 'up', 'planted connector handshake state survives');
 A.eq(snap.diagnostics.data.errorCount, 1, 'planted recorded-error count is exact');
 A.ok(/\[REDACTED\]/.test(snap.diagnostics.data.recentErrors[0].message), 'diagnostic error text is redacted again');
+A.eq(snap.diagnostics.data.swallowed.total, 7, 'planted swallowed-error total is exact (fail-open pressure is visible to the agent)');
+A.eq(snap.diagnostics.data.swallowed.tags[0].tag, 'aux.reflection.envelope', 'swallowed tags ride through with their count');
+A.eq(snap.diagnostics.data.swallowed.tags[0].count, 6, 'per-tag count is exact');
+A.ok(/\[REDACTED\]/.test(snap.diagnostics.data.swallowed.tags[1].tag), 'even a tag is redacted again (defence in depth)');
 const wire = JSON.stringify(snap);
 A.ok(wire.indexOf(SECRET) < 0, 'no secret reaches the snapshot');
 A.ok(wire.indexOf('C:\\\\private') < 0, 'unapproved filesystem paths are not in the allowlisted shape');
@@ -53,5 +61,7 @@ A.eq(partial.scheduler.status, 'unavailable', 'a failed scheduler read is not re
 A.ok(/cron store unreadable/.test(partial.scheduler.reason), 'the unavailable section names its source failure');
 A.eq(partial.connectors.status, 'unavailable', 'a failed connector read is not rendered as none connected');
 A.eq(partial.diagnostics.status, 'unavailable', 'a failed diagnostics read is not rendered as no errors');
+const noTally = makeHarnessSnapshot({ now: () => 1, readDiagnostics: () => ({ errors: [] }) }).snapshot({});
+A.eq(noTally.diagnostics.data.swallowed, null, 'a missing swallowed tally is null, never a confident zero');
 
 A.report('harness-snapshot');
