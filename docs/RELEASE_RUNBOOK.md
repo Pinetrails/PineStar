@@ -154,6 +154,41 @@ Checklist — eyeball all of these before you publish:
     `latest.json`**. A `.sig` with no artifact, or an artifact with no `.sig`, is a red flag —
     do not publish; re-run **stage-draft** (section 2.2).
 
+### 1.7a Packaged gates on the DRAFT — T0 clean-install + G1 packaged-lifecycle (RELEASE BLOCKERS)
+
+Both run on a **fresh GitHub-hosted Windows VM** against the exact staged installer, so they prove
+what no dev box and no `test:fast` step can: the installed exe on a clean machine. **Neither green =
+do not publish.**
+
+- **T0 clean-install proof** — Actions → `t0-clean-install-proof` → Run workflow → `tag` = `v0.2.0`.
+  Artifact `clean-install-proof-<tag>` (schema `starnet.clean-install-proof.v1`). Proves first launch
+  on a machine with no prior StarNet state.
+- **G1 packaged-lifecycle** — Actions → `g1-packaged-lifecycle` → Run workflow → `tag` = `v0.2.0`
+  (blank = latest *published* release; `cases` defaults to all three). Artifact
+  `packaged-lifecycle-<tag>` holds `packaged-lifecycle-receipt.json`
+  (schema `starnet.packaged-lifecycle-receipt.v1`, per-case PASS/FAIL + reasons + timings + process
+  snapshots + the close branch the shell logged) plus the shell's `startup.log`. The job is red on any
+  miss. What it proves, case by case:
+  1. `idle-close` — default prefs, real `WM_CLOSE`: `skynet-desktop.exe` exits, **no orphan
+     `<install>\node.exe`**, `startup.log` shows the idle branch (`close_to_tray=false`, no "staying
+     resident"), relaunch shows a visible `StarNet` window and `/api/health` answers. This is the
+     branch 0.10.5 / 0.10.6 escaped through.
+  2. `close-to-tray` — `%APPDATA%\ai.skynet.harness\lifecycle.json` set to
+     `{"version":1,"startMinimized":false,"closeToTray":true}` while the app is down, launch, `WM_CLOSE`:
+     shell + sidecar **stay**, window hidden, log shows `staying resident (close-to-tray preference)`;
+     a second launch (single-instance signal) **reveals** a visible window on the SAME pid — never a
+     windowless resident.
+  3. `updater-smoke` — installed exe ProductVersion == tag; the tag's own `latest.json` is pinned to
+     it with a signed `windows-x86_64` entry; the public updater endpoint is reachable (and pinned to
+     the tag when the tag is the published latest). Read-only — nothing is installed.
+
+  **Not covered** (stated in the receipt too): the tray-menu **Quit** item, the armed-work residency
+  branch (needs seeded scheduled work), macOS. The same matrix runs locally with
+  `npm run qa:lifecycle:packaged -- --exe=<path\skynet-desktop.exe> --tag=v0.2.0` — but ONLY inside
+  an isolated identity (a throwaway Windows user or VM): the shell reads `lifecycle.json` from the
+  real `%APPDATA%\ai.skynet.harness` of whoever runs it, and the runner closes, rewrites that prefs
+  file, and relaunches whatever exe you point it at. Never run it against your real station.
+
 ### 1.8 Publish (the only human ship gate)
 
 On the draft release page: **Edit** (pencil) if needed → scroll to the bottom → make sure
