@@ -151,6 +151,37 @@ READY — the preflight row goes FAIL, not green. And if you're cutting the real
 soaked, the READY receipt you earned at soak end (`docs/RELEASE_READINESS.md` §2.3) is exactly this
 gate — the preflight re-runs it at cut time to confirm it's still green.
 
+### 0.1 Scripted soak — the mandatory MACHINE verdict (before any attended soak)
+
+The attended packaged-desktop soak (`docs/RELEASE_READINESS.md` §2) stays the FINAL check: it is the only thing
+that sees the installed exe, the Tauri shell, WebView2, and real providers. But it owns the dev box for 15–48h
+and produces no machine-readable verdict — the first v0.10.0 soak failed after ~15h with nothing to read. So
+before anyone spends those hours, the scripted soak must PASS:
+
+```
+npm run qa:soak            # 20-minute smoke (same harness, short)
+npm run qa:soak:release    # 720-minute release soak
+# or any length: node scripts/qa/soak.mjs --minutes=N [--out=dir]   · CI: Actions → soak → minutes
+```
+
+It boots a hermetic SOURCE sidecar (scratch workspace + scratch app-data profile, free port, in-process MOCK
+provider — zero spend, never your real station) and drives it unattended: real `/api/run` conversations, a
+real `shell_exec` tool run, a cron routine firing on its own, `/api/diagnostics` / `/api/health` /
+`/api/state/snapshot` reads every tick, and stop→boot restart cycles on the same workspace. Every tick samples
+RSS, health latency, the fail-open swallowed-error tally, the diagnostics error ring, and workspace growth.
+
+The receipt (`.dogfood/soak/<timestamp>/soak-receipt.json` + `SUMMARY.md`, schema
+`starnet.soak-receipt.v1`) carries one PASS/FAIL per rule WITH the numbers and the threshold's reason: run
+errors (tolerance 0 — the mock never errors), routine never fired, swallowed-error growth over the last third,
+RSS leak trend over the last half, health p95 > 500 ms, any persisted entity (agent / routine / run / turn)
+lost across a restart, an unplanned exit or orphaned child, or an incomplete soak. An unobtainable metric is
+`null` with a reason, never 0. **A FAIL is a finding, not a flaky gate — route it through the ledger; do not
+re-run until green and do not tune the threshold.**
+
+What it cannot see (so the attended soak still must): the packaged shell and its close/tray branches (that is
+G1, §1.7a), WebView2, the installer/updater, real provider behavior and quota, channels, and anything aux
+passes do under a real model (aux is off by default; `--aux` turns it on against the mock).
+
 ---
 
 ## 1. NORMAL CUT
