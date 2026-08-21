@@ -6,7 +6,7 @@
    envelope, read counts(). */
 'use strict';
 const A = require('./_assert.js');
-const { swallow, counts, resetForTests } = require('../sidecar/failopen.js');
+const { swallow, note, counts, resetForTests } = require('../sidecar/failopen.js');
 
 (async () => {
   // ---- A. the handler swallows (fail-open contract intact) and counts (visibility contract new) ----
@@ -38,6 +38,23 @@ const { swallow, counts, resetForTests } = require('../sidecar/failopen.js');
   const snap = counts();
   snap['t.stuck-loop'] = 0;
   A.eq(counts()['t.stuck-loop'], 137, 'mutating the snapshot does not clear the real tally');
+
+  // ---- F. note(tag, err): the SYNC counterpart fires, counts, never throws, shares the tally ----
+  resetForTests();
+  function risky() { throw new Error('sync boom'); }
+  let rv = 'unset';
+  A.notThrows(() => { try { risky(); } catch (e) { rv = note('t.sync', e); } }, 'note() never rethrows');
+  A.eq(rv === undefined, true, 'note() returns undefined (drop-in for an empty catch body)');
+  A.eq(counts()['t.sync'], 1, 'a sync catch routed through note() is counted — the handler provably fired');
+  for (let i = 0; i < 99; i++) { try { risky(); } catch (e) { note('t.sync', e); } }
+  A.eq(counts()['t.sync'], 100, 'sync tally never throttles (only the warn does)');
+  A.notThrows(() => note('t.sync.weird', null), 'note() with a null error');
+  A.notThrows(() => note(undefined, new Error('x')), 'note() without a tag lands under "untagged"');
+  A.eq(counts()['untagged'] >= 1, true, 'untagged sync note is counted, not lost');
+  // the warn actually reaches the console (visibility contract): first hit of a fresh tag warns
+  const seen = []; const ow = console.warn; console.warn = (...a) => seen.push(a.join(' '));
+  try { note('t.sync.visible', new Error('shown')); } finally { console.warn = ow; }
+  A.ok(seen.some(l => /\[failopen\] t\.sync\.visible \(x1\): shown/.test(l)), 'first sync note warns with tag, count and message');
 
   A.report('failopen helper');
 })();

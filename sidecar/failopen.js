@@ -32,8 +32,15 @@ function swallow(tag, rv) {
   };
 }
 
+/* note(tag, err) — the SYNC counterpart for `try { ... } catch (e) { note('tag', e); }`.
+   Same contract as swallow: never throws, same throttled warn, same per-tag tally, same counts() snapshot —
+   so a silent sync catch becomes provable the same way (trip the body, read counts()). Returns undefined.
+   Use it wherever an empty `catch (_) {}` hides a failure someone would want to know about; a catch whose
+   silence is the DESIGN (value default, best-effort teardown, self-re-arming retry) may stay bare. */
+function note(tag, err) { return swallow(tag)(err); }
+
 // read-only copy for tests / diagnostics; never expose the live Map (a caller clearing it would blind the trace)
 function counts() { const o = {}; for (const [k, v] of tally) o[k] = v; return o; }
 function resetForTests() { tally.clear(); }
 
-module.exports = { swallow, counts, resetForTests };
+module.exports = { swallow, note, counts, resetForTests };
