@@ -124,6 +124,27 @@ const base = (over) => Object.assign({
   A.eq(s.crews['Janitor'].findings, 0, 'a quiet crew still appears with zero');
   A.ok(/\| Green Guardian \| 2 \| 2 \| P0 \|/.test(s.markdown), 'markdown table row for the busy crew');
   A.ok(/\| Beginner Run \| 0 \| 0 \|/.test(s.markdown), 'markdown shows every seat');
+
+  // Staleness columns: the oldest open finding's age and the count older than 30 days, both from
+  // the injected clock. A quiet seat renders '—' for both (never a fake 0d).
+  const DAY = 86400000;
+  clk = 3005 + 45 * DAY;                                   // 45 days after the newest finding
+  const s2 = L.status();
+  A.eq(s2.staleDays, 30, 'the stale threshold is exposed');
+  A.eq(s2.crews['Green Guardian'].oldestOpenDays, 45, 'oldest open age is measured from the injected clock');
+  A.eq(s2.crews['Green Guardian'].staleOpen, 2, 'both findings are older than 30 days');
+  A.eq(s2.crews['Janitor'].oldestOpenDays, null, 'a seat with nothing open has no age');
+  A.ok(/\| Oldest open \| >30d \|/.test(s2.markdown), 'markdown header carries the staleness columns');
+  A.ok(/\| Green Guardian \| 2 \| 2 \| P0 \| 3005 \| 45d \| 2 \|/.test(s2.markdown), 'busy crew row shows 45d and 2 stale');
+  A.ok(/\| Janitor \| 0 \| 0 \| — \| — \| — \| — \|/.test(s2.markdown), 'quiet seat renders dashes, not 0d');
+  // a fixed finding never ages the backlog: fix one, the oldest-open moves to the other.
+  const io2 = memIo();
+  const L2 = makeLedger({ io: io2, clock });
+  clk = 5000; L2.add(base({ subject: 'old-but-fixed', status: 'fixed', evidence: ['x'] }));
+  clk = 5000 + 10 * DAY; L2.add(base({ subject: 'young-open', evidence: ['y'] }));
+  clk = 5000 + 12 * DAY;
+  A.eq(L2.status().crews['Green Guardian'].oldestOpenDays, 2, 'a fixed row is excluded from the oldest-open age');
+  A.eq(L2.status().crews['Green Guardian'].staleOpen, 0, 'a fixed row never counts as stale');
 }
 
 // ---- F. malformed input coerces to a safe finding (never throws), fields clamped ----

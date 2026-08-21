@@ -280,29 +280,50 @@ export function makeLedger(opts) {
   // Per-crew last-run state, for the STATUS.md dashboard. "Last finding" = most recent finding ts per
   // crew; "open" = count of that crew's non-terminal findings. A crew with zero findings is still
   // reported so the dashboard shows every seat, even the quiet ones.
+  //
+  // STALENESS (2026-08-21): the raw Open count hid how OLD the backlog was — "427 open" reads as
+  // 427 live defects when most are weeks-old housekeeping rows nobody re-checked (the ledger drifts
+  // stale in the FIXED direction; scripts/qa/ledger-reconcile.mjs is the re-checker). Two extra
+  // columns make the volume legible: the age of the OLDEST open finding and how many open findings
+  // are older than STALE_DAYS. Ages come from the injected clock, never Date.now(); with the default
+  // zero clock (or a finding with no ts) the age is unknown and renders '—', never a fake 0.
+  const STALE_DAYS = 30;
+  const DAY_MS = 86400000;
   function status() {
+    const now = num(clock.now && clock.now());
+    const seat = (name) => ({ crew: name, findings: 0, open: 0, lastTs: 0, worstSeverity: '', oldestOpenTs: 0, oldestOpenDays: null, staleOpen: 0 });
     const crews = {};
-    for (const name of Object.keys(CREW)) crews[name] = { crew: name, findings: 0, open: 0, lastTs: 0, worstSeverity: '' };
+    for (const name of Object.keys(CREW)) crews[name] = seat(name);
     for (const r of rows) {
       const name = crewOf(r.crew);
-      const c = crews[name] || (crews[name] = { crew: name, findings: 0, open: 0, lastTs: 0, worstSeverity: '' });
+      const c = crews[name] || (crews[name] = seat(name));
       c.findings++;
       const s = statusOf(r.status);
-      if (s !== 'fixed' && s !== 'dismissed') c.open++;
       const ts = num(r.ts);
+      if (s !== 'fixed' && s !== 'dismissed') {
+        c.open++;
+        if (ts > 0 && (!c.oldestOpenTs || ts < c.oldestOpenTs)) c.oldestOpenTs = ts;
+        if (now > 0 && ts > 0 && (now - ts) > STALE_DAYS * DAY_MS) c.staleOpen++;
+      }
       if (ts > c.lastTs) c.lastTs = ts;
       const sev = severity(r.severity);
       if (!c.worstSeverity || SEVERITIES[sev] < SEVERITIES[c.worstSeverity]) c.worstSeverity = sev;
     }
+    for (const name of Object.keys(crews)) {
+      const c = crews[name];
+      c.oldestOpenDays = (now > 0 && c.oldestOpenTs > 0) ? Math.max(0, Math.floor((now - c.oldestOpenTs) / DAY_MS)) : null;
+    }
     const order = Object.keys(CREW).concat(Object.keys(crews).filter(k => !CREW[k]).sort());
     const md = [];
-    md.push('| Crew | Findings | Open | Worst | Last finding (ts) |');
-    md.push('| --- | --- | --- | --- | --- |');
+    md.push('| Crew | Findings | Open | Worst | Last finding (ts) | Oldest open | >' + STALE_DAYS + 'd |');
+    md.push('| --- | --- | --- | --- | --- | --- | --- |');
     for (const name of order) {
       const c = crews[name];
-      md.push('| ' + name + ' | ' + c.findings + ' | ' + c.open + ' | ' + (c.worstSeverity || '—') + ' | ' + (c.lastTs || '—') + ' |');
+      const oldest = c.oldestOpenDays == null ? '—' : (c.oldestOpenDays + 'd');
+      md.push('| ' + name + ' | ' + c.findings + ' | ' + c.open + ' | ' + (c.worstSeverity || '—') + ' | ' + (c.lastTs || '—') +
+        ' | ' + oldest + ' | ' + (c.open ? c.staleOpen : '—') + ' |');
     }
-    return { crews, markdown: md.join('\n') };
+    return { crews, markdown: md.join('\n'), staleDays: STALE_DAYS };
   }
 
   // Count OPEN findings by severity, using the ledger's OWN severity()/statusOf() normalization so the
