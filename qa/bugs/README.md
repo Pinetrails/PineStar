@@ -58,5 +58,12 @@ node scripts/qa/bugs.mjs --validate
    frontmatter must agree.
 6. **No duplicates**, and no `open` bug whose fingerprint sits on the `../KNOWN_ISSUES.md`
    baseline (anti-nag — accept it or retire the baseline row).
+7. **Anchor** (records found on/after 2026-08-21) — a bug names at least one thing a machine
+   can re-check on the current tree: a test path (`test/x.test.js`), a `file:line`
+   (`sidecar/x.js:123`), or the defective code quoted in backticks. `npm run qa:reconcile`
+   (`scripts/qa/ledger-reconcile.mjs`) re-checks those anchors and reports which open records
+   are already fixed on trunk; an anchor-less record can only ever be closed by a human
+   re-reading it, which is how the register drifted stale. Older records are grandfathered
+   and listed by the report for back-fill.
 
 Identity is **(surface + slug)**, frozen at creation. Re-wording a title never re-keys a bug.

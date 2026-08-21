@@ -22,6 +22,7 @@
 4. [Truth Auditor](#4--truth-auditor)
 5. [Visual Auditor](#5--visual-auditor)
 6. [Overseer (the daily digest)](#6--overseer-the-daily-digest)
+6b. [Ledger reconcile — is the register still true?](#6b--ledger-reconcile--is-the-register-still-true)
 7. [Janitor](#7--janitor)
 7b. [Cartographer](#7b--cartographer)
 7c. [Perfectionist](#7c--perfectionist)
@@ -295,6 +296,60 @@ Open a Claude Code session in the repo (`C:\Users\<you>\Desktop\gen`) and run:
 `24h` fires it daily; drop the interval to self-pace. It reads `qa/digests/`, writes today's
 digest, and is the single throat-to-choke for notifications. **On P0 it notifies; on P1/P2 it
 lets the morning digest do the talking** (anti-nag).
+
+---
+
+## 6b · Ledger reconcile — is the register still true?
+
+**Question it answers:** *which "open" rows are already fixed on trunk?* The register drifts stale
+in the FIXED direction — an audit found ~25 of 28 open `qa/bugs/` records already closed by code on
+trunk, and the Janitor seat carried 400+ open rows nobody re-checked. A backlog that over-reports
+stops being an authority (docs/MISTAKES.md law #2: plan docs lie within hours — the register is a
+plan doc too), and lanes re-build fixes that already shipped.
+
+`scripts/qa/ledger-reconcile.mjs` re-checks every record's **machine-checkable anchors** against
+the current tree and writes one row per record / finding:
+
+| Anchor the record names | What is checked |
+| --- | --- |
+| a fix commit (`fix:` or a sha in `## Verdict`) | `git merge-base --is-ancestor <sha> HEAD` |
+| a test path (`test/x.test.js`) | exists? `node test/x.test.js` green? (a test named in `## Verdict` is the fix's REGRESSION — hard evidence; one named elsewhere is pre-existing coverage — weak) |
+| a file[:line] + the defective code quoted in backticks | does that code still exist in the cited file (then anywhere under the code roots)? |
+| Janitor findings (removable worktree / stranded branch / dead doc ref) | `git worktree list`, branch exists / merged, the doc still cites the missing file |
+
+| Verdict | Meaning |
+| --- | --- |
+| `likely-fixed` (`hard` / `soft`) | fix commit is an ancestor, or the quoted defect code is gone. **hard** = a passing regression test agrees |
+| `still-open` | a named test is RED, or the quoted defect code is still present |
+| `unverifiable` | no anchor a machine can re-check — the row says WHICH anchor it needs |
+
+**It closes nothing.** A closure still goes through the register flow with a human reading the row:
+`node scripts/qa/bugs.mjs --set <fp> --status fixed --fix <sha> --verdict "..."` (which regenerates
+`qa/BUGS.md`). Closed records are always audited too (is the recorded `fix:` actually on this tree?).
+
+```
+npm run qa:reconcile                      # open records + closed audit + ledger findings; runs named tests
+node scripts/qa/ledger-reconcile.mjs --all        # judge closed records by their anchors too
+node scripts/qa/ledger-reconcile.mjs --no-run     # anchors + git only, no test execution (seconds)
+node scripts/qa/ledger-reconcile.mjs --json       # the result object to stdout
+npm run qa:reconcile:ci                   # --ci: exit 3 if a likely-fixed record is still open > 7 days (--stale-days N)
+node scripts/qa/ledger-reconcile.mjs --findings-dir <path>   # reconcile another checkout's qa/findings
+```
+
+Report lands at `qa/digests/reconcile-<date>.md` + `.json` (machine-local like every digest; pass
+`--no-write` to skip). Named tests run under the same hermetic app-data profile as the gate runner;
+suites on `test/http.list` are reported "not run here" unless `--http` (a bare `node` of one is
+red for environment reasons and would read as a false still-open).
+
+**Law 7 (2026-08-21) — a new bug record must carry an anchor.** `bugs.mjs --validate` (in
+`test:fast` via `test/qa-bugs-register.test.js`) refuses a record found on/after 2026-08-21 that
+names no test path, no `file:line`, and no quoted code. Older anchor-less records are grandfathered
+and listed by the report so they can be back-filled. `ledger.mjs --status` now also shows the age of
+each crew's oldest open finding and how many are older than 30 days, so volume reads as age, not as
+400 live defects.
+
+**Cadence:** `qa:reconcile:ci` in the merge ritual / Guardian cycle (seconds, no tests); the full
+`qa:reconcile` weekly alongside the Janitor, and before any register closure commit.
 
 ---
 
