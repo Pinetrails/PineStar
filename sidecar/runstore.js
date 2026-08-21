@@ -38,6 +38,8 @@
   else { (root.SK = root.SK || {}).runstore = api; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('./failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
   // silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
@@ -246,7 +248,7 @@
       // this in-process array is capped so a long-lived process doesn't leak. The cap is well above every served
       // query horizon (≤1000), so no list()/insights query is ever short-changed within the window it reads.
       if (rows.length > ramMax) rows.splice(0, rows.length - ramMax);
-      try { io.append(entry); } catch (_) { /* persistence failure must never crash the run; RAM mirror still answers */ }
+      try { io.append(entry); } catch (e) { failNote('runstore.append', e); }
       return entry;
     }
 

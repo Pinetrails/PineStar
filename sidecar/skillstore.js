@@ -21,6 +21,8 @@
   else { (root.SK = root.SK || {}).skillstore = api; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('./failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   // Open Agent Skills recommend keeping SKILL.md lean, but real production procedures commonly exceed
   // 20k characters. Truncating one while retaining its upstream digest made provenance lie: "up to date"
@@ -214,7 +216,7 @@
     function now() { return num(clock.now()); }
     function red(s, max) {
       let v = str(s).slice(0, max);
-      try { v = str(redact(v)).slice(0, max); } catch (_) {}
+      try { v = str(redact(v)).slice(0, max); } catch (e) { failNote('skillstore.redact', e); }
       return v;
     }
     // RAM-only bump: update the in-memory `latest` copy WITHOUT appending a JSONL line. view() is called on
@@ -246,7 +248,7 @@
             entry.guardAction = policy.action || '';
           }
         }
-      } catch (_) {}
+      } catch (e) { failNote('skillstore.guard.scan', e); }
       // Stamp the digest of the content that was JUST scanned, so the verdict and the digest can
       // never disagree about which bytes they describe.
       try { if (digest) entry.contentDigest = str(digest(projected)); } catch (_) {}
@@ -255,9 +257,9 @@
           const dir = packageStore.writePackage(projectSkill(entry, true));
           if (dir) entry.packagePath = dir;
         }
-      } catch (_) {}
+      } catch (e) { failNote('skillstore.package.write', e); }
       latest.set(keyOf(entry.agentId, entry.name), clone(entry));
-      try { io.append(clone(entry)); } catch (_) { /* persistence failure must never crash a run */ }
+      try { io.append(clone(entry)); } catch (e) { failNote('skillstore.append', e); }
       return entry;
     }
     function mine(agentId, opts2) {

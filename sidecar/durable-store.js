@@ -41,6 +41,7 @@
 'use strict';
 
 const { writeFileDurable } = require('./durable-write.js');
+const { note: failNote } = require('./failopen.js');   // tagged SYNC swallow: a fail-open catch must never be invisible
 
 /* ---- per-key async mutex: serialize fn()s that share a key into one promise chain ----
    Each key owns a tail promise; a new run chains after it (running fn whether the prior settled or
@@ -141,10 +142,10 @@ function makeDurableJsonStore(deps) {
   function readKey(key) {
     const file = fileFor(key);
     const r = readJsonResilient({ fs: fs }, file);
-    if (r.status === 'recovered') { try { onRecover(key, file, r); } catch (_) {} }
+    if (r.status === 'recovered') { try { onRecover(key, file, r); } catch (e) { failNote('durable-store.onRecover', e); } }
     // both 'corrupt' (bad bytes, no .bak) and 'unreadable' (present but locked) are LOUD failures the caller
     // must see — never a silent empty. Route both through the store's onCorrupt-style surface.
-    else if (r.status === 'corrupt' || r.status === 'unreadable') { try { onCorrupt(key, file, r); } catch (_) {} }
+    else if (r.status === 'corrupt' || r.status === 'unreadable') { try { onCorrupt(key, file, r); } catch (e) { failNote('durable-store.onCorrupt', e); } }
     return r;
   }
   function get(key) {

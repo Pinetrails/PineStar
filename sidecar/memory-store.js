@@ -9,6 +9,7 @@
 'use strict';
 
 const { makeDurableJsonStore } = require('./durable-store.js');
+const { note: failNote } = require('./failopen.js');   // tagged SYNC swallow: a fail-open catch must never be invisible
 
 function agentIdFromKey(key, prefix) {
   const raw = String(key || '').replace(prefix, '') || 'agent';
@@ -70,7 +71,7 @@ function makeMemoryStore(deps) {
 async function resetAgentMemory(store, agentId) {
   const id = String(agentId || 'agent');
   for (const key of ['notebook:' + id, 'declined:' + id, 'todo:' + id, 'minted:' + id, 'pending:' + id]) {
-    try { await store.update(key, () => []); } catch (_) {}
+    try { await store.update(key, () => []); } catch (e) { failNote('memory.clear', e); }
   }
 }
 

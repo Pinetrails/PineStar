@@ -30,6 +30,8 @@
   else { root.SK = root.SK || {}; (root.SK.providers = root.SK.providers || {}).ratelimits = api; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('../failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   const RESOURCES = ['requests', 'tokens', 'input-tokens', 'output-tokens'];
 
@@ -198,7 +200,7 @@
         const p = fetchImpl(url, init);
         if (!p || typeof p.then !== 'function') return p;
         return p.then(function (res) {
-          try { if (res && res.headers) observe(providerId, res.headers, null); } catch (_) {}
+          try { if (res && res.headers) observe(providerId, res.headers, null); } catch (e) { failNote('providers.ratelimits.observe', e); }
           return res;
         });
       };

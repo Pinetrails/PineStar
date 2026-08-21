@@ -60,6 +60,8 @@
   else { (root.SK = root.SK || {}).cronDriver = api; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (cron, cronStore) {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('./failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   const SILENT_MARKER = '[SILENT]';
   const iso = cron._internals.iso;   // ms(arg) -> ISO; deterministic (the lint bans only the zero-arg new Date)
@@ -202,7 +204,7 @@
       // throttle the durable write: only persist once the last durable stamp is older than durableHeartbeatMs.
       if (lease.durableAt != null && (at - lease.durableAt) < durableHeartbeatMs) return;
       lease.durableAt = at;
-      try { setJobs(cronStore.renewOnceHeartbeat(getJobs(), jobId, { now: at })); } catch (_) { /* a heartbeat persist must never crash a live run */ }
+      try { setJobs(cronStore.renewOnceHeartbeat(getJobs(), jobId, { now: at })); } catch (e) { failNote('cron.heartbeat.persist', e); }
     }
 
     /* finishFire — record a fired run's outcome once it settles: markRun (the reducer owns the transient-backoff
@@ -273,7 +275,7 @@
       // the job durably instead of firing. Skip reason reuses the governed 'no-capability' enum value
       // (the cron.skipped enum is owned/closed; a gone agent has no capability to run as).
       if (agentExists && !agentExists(job.agentId)) {
-        try { setJobs(cronStore.removeJob(getJobs(), job.id)); } catch (_) { /* removal is best-effort; the guard still blocks the fire */ }
+        try { setJobs(cronStore.removeJob(getJobs(), job.id)); } catch (e) { failNote('cron.removeJob', e); }
         try { emit('cron.skipped', { jobId: job.id, reason: 'no-capability' }); } catch (_) {}
         return false;
       }
@@ -290,7 +292,7 @@
       } catch (e) {
         const blockedRunId = newId();
         const msg = 'context pipeline unavailable: ' + ((e && e.message) || e);
-        try { setJobs(cronStore.markRun(getJobs(), job.id, { runId: blockedRunId, status: 'error', reason: 'context-error', error: msg, transient: false }, { now: nowMs })); } catch (_) {}
+        try { setJobs(cronStore.markRun(getJobs(), job.id, { runId: blockedRunId, status: 'error', reason: 'context-error', error: msg, transient: false }, { now: nowMs })); } catch (e) { failNote('cron.markRun', e); }
         try { emit('cron.result', { jobId: job.id, runId: blockedRunId, outcome: 'failed', reason: 'context-error' }); } catch (_) {}
         return false;
       }
@@ -305,7 +307,7 @@
             setJobs(cronStore.markRun(getJobs(), job.id, {
               runId: blockedRunId, status: 'error', reason: 'blocked', error: scan.error, transient: false
             }, { now: nowMs }));
-          } catch (_) { /* a persist hiccup must not let the fire proceed */ }
+          } catch (e) { failNote('cron.markRun', e); }
           try { emit('cron.result', { jobId: job.id, runId: blockedRunId, outcome: 'failed', reason: 'blocked: ' + scan.patternId }); } catch (_) {}
           return false;
         }
@@ -360,7 +362,7 @@
         if (live.monitorHash && live.monitorHash === sourceHash) {
           try { setJobs(cronStore.markMonitorCheck(getJobs(), job.id, {
             hash: sourceHash, commit: false, unchanged: true, retryAt: nowMs + blockedRetryMs
-          }, { now: nowMs })); } catch (_) {}
+          }, { now: nowMs })); } catch (e) { failNote('cron.markMonitorCheck', e); }
           return false;
         }
       }
@@ -376,7 +378,7 @@
       try { emit('cron.fire', { jobId: job.id, runId: runId, scheduledFor: scheduledFor }); } catch (_) {}
       // ride the routine's instruction onto the CONVEYOR as a box bound for this agent — only NOW (past the
       // capability gate, lease taken), so a crate appears on the floor iff a run is genuinely firing.
-      try { placeWorkitem(job.agentId, assembledPrompt, runId); } catch (_) {}
+      try { placeWorkitem(job.agentId, assembledPrompt, runId); } catch (e) { failNote('cron.placeWorkitem', e); }
 
       // in-process emit sink: assemble the reply from agent.token deltas (the SAME contract harness.js/hub.js use —
       // there is no agent.message event), capture the end reason / error / transient flag off the RAW payload

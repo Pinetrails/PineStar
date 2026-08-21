@@ -72,8 +72,9 @@ try {
   A.eq(conflict.recoverableCount, 2, 'both valid station generations are shown');
   A.eq(conflict.distinctSaveCount, 2, 'different save bytes are identified as a real conflict');
   A.eq(conflict.automaticCandidateId, null, 'conflict has no automatic winner');
-  const untouched = Recovery.applyPendingRecovery({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA, legacyB], auto: true });
+  const untouched = Recovery.applyPendingRecovery({ fs, path, platform: 'darwin', home, workspaceRoot: current, candidateRoots: [legacyA, legacyB], auto: true, scratchRoots: [] });
   A.eq(untouched.applied, false, 'automatic boot refuses to choose between stations');
+  A.ok(!untouched.autoSkipped, 'with scratchRoots:[] the refusal is the CONFLICT rule, not the scratch guard');
   A.eq(fs.existsSync(path.join(current, 'agent.save.json')), false, 'conflict leaves active workspace empty and unmodified');
 
   const selectedB = conflict.candidates.find(row => row.stationName === 'ORION');
@@ -141,6 +142,64 @@ try {
   A.eq(fileTooBig.ok, false, 'a single over-limit file fails the recovery closed');
   A.ok(/per-file/.test(String(fileTooBig.error)), 'per-file failure names the per-file limit: ' + fileTooBig.error);
   A.eq(fs.existsSync(path.join(current, 'agent.save.json')), false, 'per-file over-limit source never mutates the active workspace');
+
+  // ---- SCRATCH-TARGET GUARD (2026-08-19/20 incident): auto recovery must never heal a REAL station INTO a temp
+  // workspace. Real filesystem: a fake "real" home holding one unambiguous station + a target under os.tmpdir().
+  const realHome = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-fake-real-home-'));
+  const tmpTarget = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-scratch-target-')) + path.sep + 'workspaces';
+  try {
+    const realRoot = path.join(realHome, '.local', 'share', 'StarNet', 'workspaces');
+    write(realRoot, 'agent.save.json', save('ANDREWS-REAL-STATION', 5000, 'real-station'));
+    write(realRoot, 'agent/secret-report.md', 'production bytes');
+    const realBytes = fs.readFileSync(path.join(realRoot, 'agent.save.json'));
+    // sanity: the fixture IS an unambiguous auto candidate (so a skip below is the guard, not a non-candidate)
+    const probe = Recovery.inspectCandidates({ fs, path, platform: 'linux', home: realHome, workspaceRoot: tmpTarget, candidateRoots: [realRoot] });
+    A.eq(probe.recoverableCount, 1, 'fixture: one unambiguous real station is visible to auto recovery');
+    // (a) default guard: target under os.tmpdir() -> auto recovery SKIPS, nothing ingested, source untouched
+    const warns = []; const origWarn = console.warn; console.warn = (...a) => warns.push(a.join(' '));
+    let skipped;
+    try { skipped = Recovery.applyPendingRecovery({ fs, path, platform: 'linux', home: realHome, workspaceRoot: tmpTarget, candidateRoots: [realRoot], auto: true, now: () => 6000 }); }
+    finally { console.warn = origWarn; }
+    A.eq(skipped.applied, false, 'auto recovery into a tmpdir target does NOT apply');
+    A.eq(skipped.autoSkipped, true, 'result names the skip explicitly (autoSkipped)');
+    A.eq(skipped.code, 'AUTO_RECOVERY_TARGET_IS_SCRATCH', 'result carries the scratch code');
+    A.eq(fs.existsSync(path.join(tmpTarget, 'agent.save.json')), false, 'the real station was NOT copied into the temp workspace');
+    A.eq(fs.existsSync(path.join(tmpTarget, 'agent', 'secret-report.md')), false, 'no production artifact landed in the temp workspace');
+    A.eq(fs.readdirSync(path.dirname(tmpTarget)).filter(n => /recovery-(stage|rollback)/.test(n)).length, 0, 'no stage/rollback generation was created');
+    A.eq(fs.readFileSync(path.join(realRoot, 'agent.save.json')).equals(realBytes), true, 'real source byte-exact after the skip');
+    A.ok(warns.some(w => /\[recovery\] auto station recovery SKIPPED/.test(w)), 'the skip is LOUD: a [recovery] warn line names it (not a silent no-op)');
+    // (b) env-declared scratch root outside tmpdir is honored too
+    const envScratch = fs.mkdtempSync(path.join(realHome, 'ci-scratch-'));
+    const envTarget = path.join(envScratch, 'ws');
+    const viaEnv = Recovery.applyPendingRecovery({ fs, path, platform: 'linux', home: realHome, workspaceRoot: envTarget, candidateRoots: [realRoot], auto: true, now: () => 6100,
+      tmpdir: () => path.join(realHome, 'not-tmp'), env: { STARNET_SCRATCH_ROOT: envScratch } });
+    A.eq(viaEnv.autoSkipped, true, 'STARNET_SCRATCH_ROOT declares a scratch root the guard honors');
+    A.eq(fs.existsSync(path.join(envTarget, 'agent.save.json')), false, 'env-declared scratch target never ingests either');
+    // (c) a NON-scratch target keeps the existing auto-heal behavior unchanged
+    const realTarget = path.join(realHome, 'Library', 'Application Support', 'ai.skynet.harness', 'workspaces');
+    const healed = Recovery.applyPendingRecovery({ fs, path, platform: 'darwin', home: realHome, workspaceRoot: realTarget, candidateRoots: [realRoot], auto: true, now: () => 6200,
+      tmpdir: () => path.join(realHome, 'not-tmp'), env: {} });
+    A.eq(healed.applied, true, 'a non-scratch target still auto-heals one unambiguous station');
+    A.eq(JSON.parse(fs.readFileSync(path.join(realTarget, 'agent.save.json'), 'utf8')).doc.agent.name, 'ANDREWS-REAL-STATION', 'non-scratch auto-heal content intact');
+    // (d) an EXPLICIT operator request into a tmpdir target is NOT blocked (the guard is auto-only)
+    const explicitTarget = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-explicit-target-')) + path.sep + 'workspaces';
+    write(explicitTarget, '.migrated', '1');
+    const insp = Recovery.inspectCandidates({ fs, path, platform: 'linux', home: realHome, workspaceRoot: explicitTarget, candidateRoots: [realRoot] });
+    Recovery.requestRecovery({ fs, path, platform: 'linux', home: realHome, workspaceRoot: explicitTarget, candidateRoots: [realRoot], inspection: insp, candidateId: insp.automaticCandidateId });
+    const explicit = Recovery.applyPendingRecovery({ fs, path, platform: 'linux', home: realHome, workspaceRoot: explicitTarget, candidateRoots: [realRoot], auto: true, now: () => 6300 });
+    A.eq(explicit.applied, true, 'an explicit operator request still activates even when the target is under tmpdir');
+    fs.rmSync(path.dirname(explicitTarget), { recursive: true, force: true });
+    // (e) the predicate itself, cross-platform: case-insensitive on win32, prefix-safe (no /tmpx vs /tmp false positive)
+    const w = require('node:path').win32;
+    A.ok(Recovery.scratchTargetReason({ path: w, platform: 'win32', workspaceRoot: 'C:\\Users\\A\\AppData\\Local\\Temp\\starnet-x\\StarNet\\workspaces', tmpdir: () => 'c:\\users\\a\\appdata\\local\\temp', env: {} }), 'win32: case-insensitive prefix under tmpdir is scratch');
+    A.eq(Recovery.scratchTargetReason({ path: w, platform: 'win32', workspaceRoot: 'C:\\Users\\A\\AppData\\Local\\StarNet\\workspaces', tmpdir: () => 'C:\\Users\\A\\AppData\\Local\\Temp', env: {} }), null, 'win32: the real LOCALAPPDATA root is NOT scratch');
+    const px = require('node:path').posix;
+    A.eq(Recovery.scratchTargetReason({ path: px, platform: 'linux', workspaceRoot: '/tmpx/ws', tmpdir: () => '/tmp', env: {} }), null, 'posix: /tmpx is not under /tmp (no string-prefix false positive)');
+    A.ok(Recovery.scratchTargetReason({ path: px, platform: 'linux', workspaceRoot: '/tmp', tmpdir: () => '/tmp', env: {} }), 'posix: the tmpdir itself counts as scratch');
+  } finally {
+    fs.rmSync(realHome, { recursive: true, force: true });
+    fs.rmSync(path.dirname(tmpTarget), { recursive: true, force: true });
+  }
 
   A.report('workspace-recovery.test');
 } finally {

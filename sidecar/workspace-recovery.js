@@ -8,6 +8,7 @@
 
 const crypto = require('node:crypto');
 const fsNative = require('node:fs');
+const osNative = require('node:os');
 const pathNative = require('node:path');
 const { makeCronLock } = require('./cron-lock.js');   // O_EXCL + pid:nonce + stale-break advisory lock (G4.3 primitive)
 
@@ -255,6 +256,44 @@ function readLastResult(workspaceRoot, deps) {
   try { return JSON.parse(fs.readFileSync(lastResultFile(workspaceRoot, path), 'utf8')); } catch (_) { return null; }
 }
 
+/* scratchTargetReason — AUTO recovery must never heal INTO a scratch workspace (2026-08-19/20 incident).
+   Automatic recovery scans the REAL per-user app-data roots for a stranded station, and a fresh temp
+   workspace looks exactly like a lost one — so every ad-hoc test sidecar (mkdtemp under os.tmpdir())
+   silently copied the Commander's production station into its throwaway workspace the day v0.10.6 was
+   installed locally. Rule: when the TARGET workspace root resolves under os.tmpdir() or under any
+   env-declared scratch root (STARNET_SCRATCH_ROOT / SKYNET_SCRATCH_ROOT, path-delimiter separated),
+   the auto branch is skipped with a reason. Explicit operator-driven recovery (a written request file,
+   the CLI, disaster-recovery restore) is untouched: it never consults this. Returns null when the
+   target is not scratch. */
+function scratchRoots(o) {
+  const path = o.path || pathNative;
+  if (Array.isArray(o.scratchRoots)) return o.scratchRoots.map(r => path.resolve(String(r || '')));   // explicit override (tests stand in a fake "real" home)
+  const env = o.env || process.env;
+  const out = [];
+  try { const t = typeof o.tmpdir === 'function' ? o.tmpdir() : osNative.tmpdir(); if (t) out.push(path.resolve(String(t))); } catch (_) {}
+  for (const k of ['STARNET_SCRATCH_ROOT', 'SKYNET_SCRATCH_ROOT']) {
+    const v = env && env[k];
+    if (!v) continue;
+    for (const part of String(v).split(path.delimiter)) { if (part.trim()) out.push(path.resolve(part.trim())); }
+  }
+  return out;
+}
+function underRoot(target, root, path, platform) {
+  const rel = path.relative(root, target);
+  if (rel === '') return true;
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+  return true;
+}
+function scratchTargetReason(o) {
+  const path = o.path || pathNative, platform = String(o.platform || process.platform);
+  const target = path.resolve(String(o.workspaceRoot || ''));
+  const norm = p => (platform === 'win32' ? String(p).toLowerCase() : String(p));
+  for (const root of scratchRoots(o)) {
+    if (underRoot(norm(target), norm(root), path, platform)) return { root, code: 'AUTO_RECOVERY_TARGET_IS_SCRATCH' };
+  }
+  return null;
+}
+
 function recoveryLockFile(workspaceRoot, path) {
   const root = path.resolve(String(workspaceRoot || ''));
   return path.join(path.dirname(root), path.basename(root) + '.recovery.lock');
@@ -301,6 +340,12 @@ function applyPendingRecoveryLocked(opts) {
   const requestPath = requestFile(current, path);
   if (!fs.existsSync(requestPath)) {
     if (o.auto === true) {
+      const scratch = scratchTargetReason(o);
+      if (scratch) {
+        // Loud by contract: the skip is a data-safety decision a diagnostics reader must be able to see.
+        try { console.warn('[recovery] auto station recovery SKIPPED: target workspace is a scratch root (' + current + ' is under ' + scratch.root + '); a real station is never ingested into a temp workspace. Explicit recovery (request file / CLI restore) is unaffected.'); } catch (_) {}
+        return { applied: false, pending: false, autoSkipped: true, code: scratch.code, scratchRoot: scratch.root };
+      }
       const active = readRootCandidate(current, { fs, path });
       const inspection = inspectCandidates(o);
       if ((!active || !active.recoverable) && inspection.recoverableCount === 1 && inspection.automaticCandidateId) {
@@ -388,5 +433,6 @@ function recoveryReport(opts) {
 
 module.exports = {
   inspectCandidates, publicInspection, requestRecovery, applyPendingRecovery, recoveryReport, readRootCandidate,
+  scratchTargetReason,
   _internals: { decodeSave, displayPath, inventory, requestFile, lastResultFile, copyVerified, sha256, recoveryLockFile }
 };

@@ -28,6 +28,8 @@
   else { (root.SK = root.SK || {}).projectsStore = api; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('./failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   function makeProjectsStore(opts) {
     opts = opts || {};
@@ -89,7 +91,7 @@
       const i = indexOfRoot(key);
       if (i < 0) return { ok: false };
       records[i].lastTouchedAt = at != null ? at : now();
-      if (persist) { try { persist(records.map(rowView)); } catch (e) { /* soft metadata — keep the in-memory bump */ } }
+      if (persist) { try { persist(records.map(rowView)); } catch (e) { failNote('projects.persist', e); } }
       return { ok: true };
     }
 

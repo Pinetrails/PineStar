@@ -27,6 +27,8 @@
   else { root.SK = root.SK || {}; root.SK.channels = root.SK.channels || {}; root.SK.channels.hub = api; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('../failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   const TASK_SUFFIX = ' The Commander has just messaged you a task — carry it out as best you can and report the result clearly.';
   const DEFAULT_PERSONA = 'You are the Commander\'s AI agent, reachable over a messaging app. Address the user as "Commander", '
@@ -443,7 +445,7 @@
         // two-minute stall — strictly worse than the autonomous floor this chat opted IN from. Same decision,
         // no wait. (No apology message here: the send path is the thing that just failed.)
         prompts.take(entry.token);
-        try { if (resolveConsent) resolveConsent(runId, promptId, 'deny'); } catch (_) {}
+        try { if (resolveConsent) resolveConsent(runId, promptId, 'deny'); } catch (e) { failNote('channels.hub.consent.deny', e); }
       })().catch(function () {});
     }
     const MAX_MEDIA_PER_MESSAGE = 10;                // a full Telegram album is 10 items; a merged album must fit
@@ -818,7 +820,7 @@
           // racing that drop would otherwise spend a failed send per item and then stop the whole pass.
           let dead = false;
           try { const r0 = typeof store.getChatRecord === 'function' ? store.getChatRecord(String(it.chatId)) : null; dead = !!(r0 && r0.unreachable); } catch (_) {}
-          if (dead) { try { store.removeOutbox(it.id); } catch (_) {} continue; }
+          if (dead) { try { store.removeOutbox(it.id); } catch (e) { failNote('channels.hub.outbox.remove', e); } continue; }
           const chunks = chunkText(it.text, maxMessageLength);
           let ok = true;
           for (const c of chunks) {
@@ -829,14 +831,14 @@
             if (!r || r.ok === false) { ok = false; break; }
           }
           if (ok) {
-            try { store.removeOutbox(it.id); } catch (_) {}
+            try { store.removeOutbox(it.id); } catch (e) { failNote('channels.hub.outbox.remove', e); }
             const ev = { channel, chatId: String(it.chatId), runId: it.runId || '', ok: true, chunks: chunks.length, reason: 'redelivered' };
             if (it.agentId) ev.agentId = String(it.agentId);
             try { emit('channel.delivery', ev); } catch (_) {}
             continue;
           }
           let bumped = null;
-          try { bumped = (typeof store.bumpOutboxTry === 'function') ? store.bumpOutboxTry(it.id) : null; } catch (_) {}
+          try { bumped = (typeof store.bumpOutboxTry === 'function') ? store.bumpOutboxTry(it.id) : null; } catch (e) { failNote('channels.hub.outbox.bump', e); }
           if (bumped && bumped.tries === OUTBOX_ESCALATE_TRIES) {
             try { emit('channel.delivery', { channel, chatId: String(it.chatId), runId: it.runId || '', ok: false, chunks: 0, reason: 'redelivery-delayed' }); } catch (_) {}
             try { console.error('[' + channel + '] outbox item for chat ' + it.chatId + ' still delayed after ' + OUTBOX_ESCALATE_TRIES + ' attempts; retained for retry'); } catch (_) {}
@@ -1193,7 +1195,7 @@
       if (!body) return;
       const who = String(msg.userName || '').trim();
       const agentId = currentBoundAgent(chatId, boundAgentId, sec);
-      try { store.appendTurn(agentId, 'user', who ? (who + ': ' + body) : body); } catch (_) {}
+      try { store.appendTurn(agentId, 'user', who ? (who + ': ' + body) : body); } catch (e) { failNote('channels.hub.appendTurn', e); }
     }
 
     // ---- ALBUM (media-group) BATCHING --------------------------------------------------------------------
@@ -1332,7 +1334,7 @@
         try {
           const rec0 = store.getChatRecord(chatId);
           if (rec0 && rec0.unreachable) store.saveChatRecord(chatId, { unreachable: false });
-        } catch (_) {}
+        } catch (e) { failNote('channels.hub.chatRecord.save', e); }
       }
 
       // Runtime config (live each message): { key?, model, provider?, agentId?, system? }. When the app supplies the
@@ -1429,7 +1431,7 @@
       // /model and the notifier all started asserting an agent the user never chose. Persist only when the chat is
       // unbound or the resolution agrees with the binding.
       // (bindChats:false — an ephemeral proof chat never becomes addressed; see the option note above.)
-      try { if (bindChats && typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel, streamId: canonicalStreamId || undefined }); } catch (_) {}
+      try { if (bindChats && typeof store.saveChatRecord === 'function' && (!boundAgentId || boundAgentId === agentId)) store.saveChatRecord(chatId, { agentId: agentId, channel: channel, streamId: canonicalStreamId || undefined }); } catch (e) { failNote('channels.hub.chatRecord.save', e); }
 
       // announce the SINGLE resolution to the host (workitem crate + queue HUD attribution — one truth).
       // isTask rides along: the BELT IS WORK-ONLY (Andrew's ruling 2026-07-05) — the host places a crate only
@@ -1519,7 +1521,7 @@
       const attributed = speaker ? (speaker + ': ' + written) : written;
       const bodyText = spoken ? (attributed ? attributed + '\n' + spoken : spoken) : attributed;
       // The words only became available just now — classify them, or a spoken task runs without the task prompt.
-      if (spoken && !isTask) { try { isTask = !!classify(mediaIngest.transcripts.join(' ')); } catch (_) {} }
+      if (spoken && !isTask) { try { isTask = !!classify(mediaIngest.transcripts.join(' ')); } catch (e) { failNote('channels.hub.classify', e); } }
       /* AN EDIT IS A CORRECTION, AND IT MUST SAY SO. The original text is already in history — replaying it
          followed by a near-identical turn reads to the model as the member saying two slightly different things
          and can have it answer both, or split the difference. One line naming what happened is the difference
@@ -1536,7 +1538,7 @@
         history = canonicalStreamId && historyFor ? historyFor(canonicalStreamId, agentId) : store.loadHistory(agentId);
         if (!Array.isArray(history)) history = [];
       } catch (_) { try { history = store.loadHistory(agentId); } catch (_) { history = []; } }
-      try { store.appendTurn(agentId, 'user', turnText || '[the user sent a media message]'); } catch (_) {}
+      try { store.appendTurn(agentId, 'user', turnText || '[the user sent a media message]'); } catch (e) { failNote('channels.hub.appendTurn', e); }
       const userTurn = { role: 'user', content: turnText };
       if (mediaIngest.attachments.length) userTurn.attachments = mediaIngest.attachments;
       let messages = history.map(m => ({ role: m.role, content: m.content })).concat([userTurn]);
@@ -1731,7 +1733,7 @@
             };
             let hist = [];
             try { hist = store.loadHistory(h.agentId); } catch (_) {}
-            try { store.appendTurn(h.agentId, 'user', h.text); } catch (_) {}
+            try { store.appendTurn(h.agentId, 'user', h.text); } catch (e) { failNote('channels.hub.appendTurn', e); }
             try {
               await runOnce({
                 key: hopConfig.key, model: hopConfig.model, provider: hopConfig.provider,
@@ -1745,7 +1747,7 @@
                 taskKey: 'chain:' + channel + ':' + chatId + ':' + h.agentId, taskSource: channel
               });
             } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
-            if (hs.buf.trim() && !hs.errMsg) { try { store.appendTurn(h.agentId, 'assistant', hs.buf); } catch (_) {} }
+            if (hs.buf.trim() && !hs.errMsg) { try { store.appendTurn(h.agentId, 'assistant', hs.buf); } catch (e) { failNote('channels.hub.appendTurn', e); } }
             return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
           }
         });
@@ -1822,7 +1824,7 @@
            output under its own id (and the delivering stage's transcript holds the delivered text), so the
            entry dock gets back what IT actually produced. */
         const ownReply = (firstStageText != null) ? firstStageText : reply;
-        if (ownReply) { try { store.appendTurn(agentId, 'assistant', ownReply); } catch (_) {} }
+        if (ownReply) { try { store.appendTurn(agentId, 'assistant', ownReply); } catch (e) { failNote('channels.hub.appendTurn', e); } }
         if (state.reason && state.reason !== 'done') reply += endNote(state.reason, state);
       }
 
@@ -1951,14 +1953,14 @@
       if (!chatId || !status) return;
       const gone = status === 'kicked' || status === 'left';
       if (!gone) return;                                    // added/promoted/restricted: nothing to stop doing
-      try { if (typeof store.saveChatRecord === 'function') store.saveChatRecord(chatId, { unreachable: true }); } catch (_) {}
+      try { if (typeof store.saveChatRecord === 'function') store.saveChatRecord(chatId, { unreachable: true }); } catch (e) { failNote('channels.hub.chatRecord.save', e); }
       try { console.error('[' + channel + '] chat ' + chatId + ' has ' + (status === 'kicked' ? 'blocked or banned' : 'removed') + ' this bot — queued replies for it are being dropped'); } catch (_) {}
       if (typeof store.loadOutbox !== 'function' || typeof store.removeOutbox !== 'function') return;
       let items = [];
       try { items = store.loadOutbox(channel) || []; } catch (_) { items = []; }
       for (const it of items) {
         if (String(it.chatId) !== chatId) continue;
-        try { store.removeOutbox(it.id); } catch (_) {}
+        try { store.removeOutbox(it.id); } catch (e) { failNote('channels.hub.outbox.remove', e); }
         try { emit('channel.delivery', { channel, chatId: chatId, runId: it.runId || '', ok: false, chunks: 0, reason: 'redelivery-gave-up' }); } catch (_) {}
       }
     }

@@ -29,6 +29,8 @@
   else { (root.SK = root.SK || {}).transcriptstore = api; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('./failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   const SID_RE = /^[A-Za-z0-9_-]{1,64}$/;   // same workstream grammar index.js validates streamId against
   // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
@@ -153,7 +155,7 @@
       const all = o.scope === 'all';
       const want = normStream(streamId);
       if (typeof io.search === 'function') {
-        try { return io.search(want, query, { limit: limit, scope: all ? 'all' : 'stream' }) || []; } catch (_) {}
+        try { return io.search(want, query, { limit: limit, scope: all ? 'all' : 'stream' }) || []; } catch (e) { failNote('transcript.io', e); }
       }
       const scored = [];
       for (let i = 0; i < rows.length; i++) {
@@ -177,7 +179,7 @@
       const limit = num(o.limit) > 0 ? Math.min(num(o.limit), 100) : 20;
       const previewMax = num(o.previewChars) > 0 ? num(o.previewChars) : 160;
       if (typeof io.streams === 'function') {
-        try { return io.streams({ limit: limit, previewChars: previewMax }) || []; } catch (_) {}
+        try { return io.streams({ limit: limit, previewChars: previewMax }) || []; } catch (e) { failNote('transcript.io', e); }
       }
       const by = new Map();
       for (let i = 0; i < rows.length; i++) {
@@ -204,7 +206,7 @@
       const want = normStream(streamId);
       const at = num(ts);
       if (typeof io.around === 'function') {
-        try { return io.around(want, ts, { window: win, rowId: o.rowId }) || []; } catch (_) {}
+        try { return io.around(want, ts, { window: win, rowId: o.rowId }) || []; } catch (e) { failNote('transcript.io', e); }
       }
       const mine = [];
       for (let i = 0; i < rows.length; i++) { if (rows[i].streamId === want) mine.push(rows[i]); }
@@ -223,7 +225,7 @@
     function buildEntry(e) {
       e = e || {};
       let content = str(e.content).slice(0, CONTENT_MAX);
-      try { content = str(redact(content)).slice(0, CONTENT_MAX); } catch (_) { /* redact must never crash a run */ }
+      try { content = str(redact(content)).slice(0, CONTENT_MAX); } catch (e) { failNote('transcript.redact', e); }
       const entry = {
         streamId: normStream(e.streamId),
         agentId: str(e.agentId),
@@ -235,7 +237,7 @@
       // tool_calls and a tool result's tool_call_id. Redacted like content; absent fields => byte-identical to before.
       if (e.toolCalls != null) {
         let tc = '';
-        try { tc = str(redact(typeof e.toolCalls === 'string' ? e.toolCalls : JSON.stringify(e.toolCalls))).slice(0, CONTENT_MAX); } catch (_) {}
+        try { tc = str(redact(typeof e.toolCalls === 'string' ? e.toolCalls : JSON.stringify(e.toolCalls))).slice(0, CONTENT_MAX); } catch (e) { failNote('transcript.redact', e); }
         if (tc) entry.toolCalls = tc;
       }
       if (e.toolCallId != null) { const id = str(e.toolCallId).slice(0, 200); if (id) entry.toolCallId = id; }
@@ -327,7 +329,7 @@
         try {
           const found = io.history(want, { limit });
           if (Array.isArray(found)) return found.map(r => Object.assign({}, r));
-        } catch (_) { /* fall back to the RAM tail below */ }
+        } catch (e) { failNote('transcript.io', e); }
       }
       const out = [];
       for (let i = rows.length - 1; i >= 0 && out.length < limit; i--) {

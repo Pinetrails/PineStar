@@ -416,6 +416,9 @@ if (startupWorkspaceRecovery && startupWorkspaceRecovery.applied) {
   console.warn('[recovery] restored prior station before opening stores; source preserved, rollback retained=' + !!startupWorkspaceRecovery.rollbackRetained);
 } else if (startupWorkspaceRecovery && startupWorkspaceRecovery.ok === false) {
   console.error('[recovery] automatic station recovery failed closed: ' + String(startupWorkspaceRecovery.error || 'unknown error'));
+} else if (startupWorkspaceRecovery && startupWorkspaceRecovery.autoSkipped) {
+  // workspace-recovery.js already warned with the paths; this second line is the one-glance boot summary.
+  console.warn('[recovery] auto recovery skipped (' + String(startupWorkspaceRecovery.code) + '): this workspace is a scratch/temp root, so no real station was ingested.');
 }
 
 // DEV/QA must be destructive only inside an explicit scratch profile. A forgotten WORKSPACES override used
@@ -466,6 +469,11 @@ const workspaceRecoveryInspection = workspaceRecovery.inspectCandidates({
   candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS
 });
 workspaceLineage.recovery = workspaceRecovery.publicInspection(workspaceRecoveryInspection);
+// diagnostics-visible note (GET lineage/report): an auto-recovery that was SKIPPED because the target is a
+// scratch root must be readable after the fact, not only in the boot log (truthful telemetry, not a hidden skip).
+if (startupWorkspaceRecovery && startupWorkspaceRecovery.autoSkipped) {
+  workspaceLineage.autoRecovery = { skipped: true, code: String(startupWorkspaceRecovery.code || 'AUTO_RECOVERY_TARGET_IS_SCRATCH'), reason: 'target workspace resolves under a scratch/temp root' };
+}
 
 function publicWorkspaceLineage() {
   const home = os.homedir();
