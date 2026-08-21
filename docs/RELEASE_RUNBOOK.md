@@ -151,7 +151,7 @@ READY — the preflight row goes FAIL, not green. And if you're cutting the real
 soaked, the READY receipt you earned at soak end (`docs/RELEASE_READINESS.md` §2.3) is exactly this
 gate — the preflight re-runs it at cut time to confirm it's still green.
 
-### 0.1 Scripted soak — the mandatory MACHINE verdict (before any attended soak)
+### 0.6 Scripted soak — the mandatory MACHINE verdict (before any attended soak)
 
 The attended packaged-desktop soak (`docs/RELEASE_READINESS.md` §2) stays the FINAL check: it is the only thing
 that sees the installed exe, the Tauri shell, WebView2, and real providers. But it owns the dev box for 15–48h
