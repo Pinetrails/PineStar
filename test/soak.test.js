@@ -134,7 +134,8 @@ function healthyInput(samples, extra) {
   // ---- process + runs + routine + completed
   {
     A.eq(M.evaluate(healthyInput(series(40), { process: { unexpectedExits: 1, orphans: [] } })).failedRules, ['process'], 'unexpected exit fails process');
-    A.eq(M.evaluate(healthyInput(series(40), { process: { unexpectedExits: 0, orphans: [{ pid: 4242 }] } })).failedRules, ['process'], 'an orphan child fails process');
+    A.eq(M.evaluate(healthyInput(series(40), { process: { unexpectedExits: 0, orphans: [{ pid: 4242, name: 'node.exe' }] } })).failedRules, ['process'], 'an orphan child fails process');
+    A.eq(M.evaluate(healthyInput(series(40), { process: { unexpectedExits: 0, orphans: [], transientChildren: [{ pid: 4243, name: 'conhost.exe' }] } })).rules.process.pass, true, 'a transient child (gone within the grace) is a measurement, not a failure');
     A.eq(M.evaluate(healthyInput(series(40), { runs: { ok: 9, failed: 1, errors: [{ reason: 'error' }] } })).failedRules, ['runs'], 'one run error fails (tolerance 0)');
     A.eq(M.evaluate(healthyInput(series(40), { runs: { ok: 0, failed: 0, errors: [] } })).failedRules, ['runs'], 'zero runs measured nothing → FAIL');
     A.eq(M.evaluate(healthyInput(series(40), { routineFires: 0 })).failedRules, ['routine'], 'no routine fire fails');
@@ -240,6 +241,17 @@ function healthyInput(samples, extra) {
     const lostRec = M.buildReceipt(lost);
     A.ok(lostRec.failedRules.includes('restart'), 'a restart that drops the routine fails: ' + JSON.stringify(lostRec.failedRules));
     A.eq(lostRec.rules.restart.actual.detail[0].lost, { routines: ['r1'] }, 'the lost routine id is named');
+
+    // orphan probe: a child alive at stop but gone after the grace is transient; one that stays is an orphan (named)
+    let t4 = 1_000_000; let probes = 0;
+    const zombie = Object.assign({}, drivers, { now: () => t4, sleep: async (ms) => { t4 += ms; }, async json(m, r) { if (m === 'GET' && r === '/api/health') t4 += 2; return drivers.json(m, r); },
+      childrenOf: async () => { probes++; return probes === 1 ? [{ pid: 77, name: 'conhost.exe', cmd: null }, { pid: 78, name: 'node.exe', cmd: 'node dev-server.js' }] : [{ pid: 78, name: 'node.exe', cmd: 'node dev-server.js' }]; } });
+    const z = await M.runSoak(zombie, M.parseArgs(['--minutes=4', '--tick-seconds=15', '--restart-every=2']));
+    const zRec = M.buildReceipt(z);
+    A.ok(zRec.failedRules.includes('process'), 'a child that survives the grace fails process: ' + JSON.stringify(zRec.failedRules));
+    A.eq(zRec.rules.process.actual.orphans[0].name, 'node.exe', 'the orphan is named');
+    A.eq(zRec.rules.process.actual.transientChildren[0].pid, 77, 'the transient child is recorded separately');
+    A.ok(/grace/.test(zRec.rules.process.actual.orphanCheck), 'the receipt says a grace re-check happened');
   }
 
   A.report('soak.test');

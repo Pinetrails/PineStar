@@ -49,6 +49,8 @@ export const CONVERSATION_REPLY = 'SOAK_REPLY: acknowledged.';
 export const TOOL_MARKER = 'SOAK_TOOL';
 export const TOOL_STDOUT = 'SOAK_TOOL_OK';
 
+export const ORPHAN_GRACE_MS = 3000;   // a child seen right after its parent died gets this long to finish exiting before it counts as an orphan
+
 export const DEFAULTS = Object.freeze({
   minutes: 20,
   tickSeconds: 15,
@@ -100,7 +102,7 @@ export const RULES = Object.freeze({
   },
   process: {
     title: 'sidecar never died and never orphaned a child',
-    why: 'an unplanned exit is a crash; a child process alive after the sidecar stopped is the close-zombie class (0.10.5/0.10.6)',
+    why: 'an unplanned exit is a crash; a child process STILL alive 3s after the sidecar stopped is the close-zombie class (0.10.5/0.10.6). A child seen at the instant of the stop but gone within the grace is recorded as transient (a measurement, not a failure)',
   },
 });
 
@@ -266,7 +268,7 @@ export function evaluate(input) {
   }
 
   // process
-  rules.process = { pass: (process.unexpectedExits || 0) === 0 && (process.orphans || []).length === 0, actual: { unexpectedExits: process.unexpectedExits || 0, orphans: (process.orphans || []).slice(0, 20), orphanCheck: process.orphanCheck || null }, expected: { unexpectedExits: 0, orphans: 0 }, why: RULES.process.why };
+  rules.process = { pass: (process.unexpectedExits || 0) === 0 && (process.orphans || []).length === 0, actual: { unexpectedExits: process.unexpectedExits || 0, orphans: (process.orphans || []).slice(0, 20), transientChildren: (process.transientChildren || []).slice(0, 20), orphanCheck: process.orphanCheck || null }, expected: { unexpectedExits: 0, orphans: 0 }, why: RULES.process.why };
 
   const failed = Object.keys(rules).filter((k) => !rules[k].pass);
   return { verdict: failed.length ? 'FAIL' : 'PASS', failedRules: failed, rules };
@@ -336,7 +338,7 @@ export function renderSummary(r) {
 
 /* drivers = {
      boot(): Promise<{pid}>        restart(): Promise<{pid, bootMs}>      stop(): Promise<void>
-     isAlive(): bool               childrenOf(pid): Promise<number[]|null>
+     isAlive(): bool               childrenOf(pid): Promise<{pid,name,cmd}[]|null>
      json(method, route, body): Promise<{status, body}>     runConversation(text): Promise<{reason, events}>
      rss(pid): Promise<number|null>     workspaceBytes(): number|null
      now(): number     sleep(ms): Promise<void>     log(msg)
@@ -346,7 +348,7 @@ export async function runSoak(drivers, opts, hooks) {
   const state = {
     samples: [], restarts: [], processSnapshots: [],
     runs: { ok: 0, failed: 0, errors: [] }, routineFires: 0,
-    process: { unexpectedExits: 0, orphans: [], orphanCheck: null },
+    process: { unexpectedExits: 0, orphans: [], transientChildren: [], orphanCheck: null },
     epoch: 0, completed: false, stopReason: null,
   };
   const seenRoutineRuns = new Set();
@@ -415,15 +417,30 @@ export async function runSoak(drivers, opts, hooks) {
     } catch (e) { state.runs.failed++; state.runs.errors.push({ at: now(), kind, reason: 'exception', detail: String(e && e.message) }); }
   };
 
+  /* ORPHAN PROBE: children of the stopped sidecar pid. A child still alive the instant its parent is gone is
+     normal OS semantics (it is mid-exit on a closed pipe); the zombie class is a child that STAYS. So: enumerate,
+     and if anything is there, re-enumerate after ORPHAN_GRACE_MS — survivors are orphans (with name + command
+     line so the receipt names the process), the rest are recorded as transient children (a measurement). */
+  const orphanProbe = async (pid, final) => {
+    const kids = await drivers.childrenOf(pid);
+    state.process.orphanCheck = kids === null ? 'child enumeration unavailable on this host' : `enumerated after stop, re-checked after ${ORPHAN_GRACE_MS}ms grace`;
+    if (!Array.isArray(kids) || !kids.length) return;
+    await drivers.sleep(ORPHAN_GRACE_MS);
+    const survivors = await drivers.childrenOf(pid);
+    const alive = new Set((survivors || []).map((k) => k.pid));
+    for (const k of kids) {
+      const row = Object.assign({}, k, { afterStopOf: pid, final: !!final });
+      if (alive.has(k.pid)) state.process.orphans.push(row); else state.process.transientChildren.push(row);
+    }
+  };
+
   const restartCycle = async () => {
     const rec = { at: now(), epoch: state.epoch, before: null, after: null, bootMs: null, stopMode: drivers.stopMode || null, error: null };
     try {
       rec.before = await entities();
       const pid = drivers.pid();
       await drivers.stop();
-      const kids = await drivers.childrenOf(pid);
-      state.process.orphanCheck = kids === null ? 'child enumeration unavailable on this host' : 'enumerated after stop';
-      if (Array.isArray(kids) && kids.length) state.process.orphans.push(...kids.map((k) => ({ pid: k, afterStopOf: pid })));
+      await orphanProbe(pid, false);
       const t = now();
       const booted = await drivers.restart();
       rec.bootMs = now() - t;
@@ -458,7 +475,7 @@ export async function runSoak(drivers, opts, hooks) {
     state.stopReason = 'harness error: ' + (e && e.stack || e);
     log(state.stopReason);
   } finally {
-    try { const pid = drivers.pid(); await drivers.stop(); const kids = await drivers.childrenOf(pid); if (Array.isArray(kids) && kids.length) state.process.orphans.push(...kids.map((k) => ({ pid: k, afterStopOf: pid, final: true }))); } catch (e) { /* teardown */ }
+    try { const pid = drivers.pid(); await drivers.stop(); await orphanProbe(pid, true); } catch (e) { /* teardown */ }
   }
   const endedAt = now();
   return Object.assign({}, state, { startedAt, endedAt, plannedMinutes: opts.minutes, options: opts, maxSamples: opts.maxSamples });
@@ -532,13 +549,13 @@ function childrenOf(pid) {
   if (!pid) return null;
   try {
     if (process.platform === 'win32') {
-      const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid}" | ForEach-Object { $_.ProcessId }`], { encoding: 'utf8', windowsHide: true, timeout: 20000 });
+      const r = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', `Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid}" | ForEach-Object { "$($_.ProcessId)|$($_.Name)|$($_.CommandLine)" }`], { encoding: 'utf8', windowsHide: true, timeout: 20000 });
       if (r.status !== 0) return null;
-      return (r.stdout || '').split(/\r?\n/).map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0);
+      return (r.stdout || '').split(/\r?\n/).filter(Boolean).map((l) => { const [p, name, ...cmd] = l.split('|'); return { pid: Number(p), name: name || null, cmd: cmd.join('|').slice(0, 300) || null }; }).filter((k) => Number.isFinite(k.pid) && k.pid > 0);
     }
-    const r = spawnSync('ps', ['-o', 'pid=', '--ppid', String(pid)], { encoding: 'utf8' });
+    const r = spawnSync('ps', ['-o', 'pid=,comm=,args=', '--ppid', String(pid)], { encoding: 'utf8' });
     if (r.status !== 0 && !(r.stdout || '').trim()) return [];
-    return (r.stdout || '').split(/\r?\n/).map((s) => Number(s.trim())).filter((n) => Number.isFinite(n) && n > 0);
+    return (r.stdout || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean).map((l) => { const m = /^(\d+)\s+(\S+)\s*(.*)$/.exec(l); return m ? { pid: Number(m[1]), name: m[2], cmd: (m[3] || '').slice(0, 300) || null } : null; }).filter((k) => k && k.pid > 0);
   } catch (e) { return null; }
 }
 
