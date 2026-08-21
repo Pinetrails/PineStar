@@ -134,6 +134,8 @@
     "qa:smoke:installed": "node scripts/qa/installed-smoke.mjs",
     "qa:input-isolation": "node scripts/qa/input-isolation-smoke.mjs",
     "qa:lifecycle:packaged": "node scripts/qa/packaged-lifecycle.mjs",
+    "qa:soak": "node scripts/qa/soak.mjs --minutes=20",
+    "qa:soak:release": "node scripts/qa/soak.mjs --minutes=720",
     "certify:providers": "node scripts/provider-certify.mjs",
     "serve": "node scripts/serve-ui-only.js",
     "serve:ui-only": "node scripts/serve-ui-only.js",

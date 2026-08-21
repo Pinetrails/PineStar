@@ -144,6 +144,7 @@ test/phase5.evidence.test.js
 test/phase5.runner.test.js
 test/t0-clean-install.test.js
 test/packaged-lifecycle.test.js
+test/soak.test.js
 test/desktop-workspace-migration.test.js
 test/t1-signing.test.js
 test/t2-state-safety.test.js

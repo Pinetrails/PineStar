@@ -87,7 +87,7 @@ export const RULES = Object.freeze({
     maxSlopeMBPerMin: 2,
     minGrowthPct: 20,
     minPoints: 5,
-    why: 'least-squares slope of RSS over the LAST HALF of the longest boot epoch in that half. 2 MB/min compounds to ~1.4 GB over a 12h soak — a leak by any definition; GC noise on a ~100 MB heap swings tens of MB but not monotonically, so BOTH the slope and ≥20% growth across the window are required. Epochs under 5 points are not judged (null, with reason)',
+    why: 'least-squares slope of RSS over the LAST HALF of the longest boot epoch in that half. 2 MB/min compounds to ~1.4 GB over a 12h soak — a leak by any definition; GC noise on a ~100 MB heap swings tens of MB but not monotonically, so BOTH the slope and ≥20% growth (mean of the last quarter of the window vs the first quarter) are required. Epochs under 5 points are not judged (null, with reason)',
   },
   latency: {
     title: '/api/health p95 latency (event-loop stall proxy)',
@@ -226,7 +226,11 @@ export function evaluate(input) {
       const xs = best.xs;
       const slopeB = linearSlope(xs.map((s) => ({ x: minutesFrom(t0, s.at), y: s.rssBytes })));
       const slopeMB = slopeB / (1024 * 1024);
-      const growthPct = ((xs[xs.length - 1].rssBytes - xs[0].rssBytes) / xs[0].rssBytes) * 100;
+      // growth = mean of the last quarter vs mean of the first quarter (a GC sawtooth's phase cannot fake it)
+      const q = Math.max(1, Math.floor(xs.length / 4));
+      const mean = (arr) => arr.reduce((s, p) => s + p.rssBytes, 0) / arr.length;
+      const headMean = mean(xs.slice(0, q)), tailMean = mean(xs.slice(-q));
+      const growthPct = ((tailMean - headMean) / headMean) * 100;
       rules.rss = {
         pass: !(slopeMB > RULES.rss.maxSlopeMBPerMin && growthPct >= RULES.rss.minGrowthPct),
         actual: { slopeMBPerMin: +slopeMB.toFixed(3), growthPct: +growthPct.toFixed(1), epoch: best.epoch, points: xs.length, firstMB: +(xs[0].rssBytes / 1048576).toFixed(1), lastMB: +(xs[xs.length - 1].rssBytes / 1048576).toFixed(1), peakMB: +(Math.max(...samples.filter((s) => Number.isFinite(s.rssBytes)).map((s) => s.rssBytes)) / 1048576).toFixed(1) },
