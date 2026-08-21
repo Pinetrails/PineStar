@@ -1,5 +1,31 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-21 — RELEASE CUT IS TWO COMMANDS (`agent/rel-cut-ritual`)
+
+Reliability item 3 (ship cadence): the cut was a long manual ritual across the runbook, memory notes
+and tribal knowledge, so fixes rotted on trunk (0.10.6 shipped the close-zombie partly because cutting
+was expensive enough that the fix waited; two version numbers and a 15h soak were lost to step-order
+mistakes). It is now scripted, re-runnable, and refuses to skip a step:
+
+```
+npm run release:preflight -- --next patch      # read-only: one PASS/FAIL/WARN/SKIP row per precondition, exact fix per red row
+npm run release:ritual:dry -- --next patch     # print the whole plan, mutate nothing
+npm run release:ritual -- --next patch         # preflight → bump (--no-tag) → STOP for notes → claims re-lock →
+                                               # STOP for gates (--gates-proven-by <log>: last line must be the green
+                                               # summary, never the exit code) → post-bump preflight → tag → STOP (never pushes)
+```
+
+Rows: trunk branch · clean tree (Guardian `qa/STATUS.md` row named, not failed) · five version pins ·
+tag not local/origin/releases-repo (SKIP "unverified: offline") · claims lock current for HEAD (reads
+the COMMIT) · `website/app` mirror · `test:fast`/`test:http` receipts at HEAD
+(`.dogfood/gate-receipts/<sha>.<gate>.json`, written only by the ritual) · T0/G1/soak receipts or
+"owed" · `qa:ready` · updater key present (never printed) · release notes real. Full row table with
+the law behind each: `docs/RELEASE_RUNBOOK.md` §0. Unit-tested with fake io
+(`test/release-preflight.test.js` 92 assertions, `test/release-ritual.test.js` 64) and registered in
+`test/fast.list`. Still human: the truth of the notes, the offline key backups, the hotfix soak
+waiver decision, and everything after the push (train watch, draft review, T0/G1 runs, Publish,
+`verify-host`, canary).
+
 ## 2026-08-14 — VOICE ENDPOINTS: MANUAL STANDARD + QUICKER LOCAL LIVE (`agent/latency-hotpath`)
 
 READY TO MERGE. Standard voice is now an explicit two-click take: click the mic to start recording,

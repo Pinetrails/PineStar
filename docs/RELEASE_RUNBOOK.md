@@ -32,44 +32,144 @@ see or download anything.
 
 ---
 
-## 0. READY GATE (do this BEFORE you bump anything)
+## 0. THE CUT — two commands (read this section; the rest of §1 is what happens after the push)
 
-Before `release:bump`, before the tag, before you touch a version number:
+The cut used to be a ritual spread across this runbook, memory notes, and tribal knowledge —
+version in five files, gate AFTER bump BEFORE tag, claims re-lock owed, receipts, the key — and every
+step-order mistake cost real money (v0.2.0 + v0.2.1 burned by gating after the tag push; a 15h soak
+lost to a re-cut; 0.10.6 shipped a close-zombie partly because cutting was expensive enough that the
+fix waited). The cut is now **two scripts**. They encode every requirement below; nothing was removed
+from the ritual, it was moved into code that refuses to skip a step.
 
 ```
-npm run qa:ready
+npm run release:preflight -- --next patch        # read-only checklist: PASS/FAIL/WARN/SKIP per row
+npm run release:ritual    -- --next patch        # the ordered cut; hard-stops; NEVER pushes
+npm run release:ritual:dry -- --next patch       # print the whole plan, mutate nothing
 ```
 
-Read the last line. There are exactly two outcomes:
+(`--version X.Y.Z` instead of `--next patch|minor|major` when you want an exact number.)
 
-- **READY** → proceed to section 1. The house is green: zero open P0/P1 findings, the Guardian's last
-  cycle is green and fresh, `qa:journeys` passes, the Beginner Run isn't stuck, and the installed-exe
-  smoke stamp (`qa/installed/last-smoke.json`) is fresh + GREEN. You're clear to cut.
+### 0.1 `release:preflight` — every precondition, one checklist, exact fix per red row
+
+Read-only and idempotent; run it as often as you like. Exit 0 only when no row is `FAIL`. Each row
+exists because of a law; the law is cited so you know why you can't wave it through:
+
+| row | hard? | why it exists |
+| --- | --- | --- |
+| on trunk `feat/harness-backend` | FAIL (`--allow-lane` → WARN) | the tag must point at trunk; a lane bump is fine (v0.10.7 did it) but the **tag goes on the merge commit** |
+| working tree clean | FAIL on modified tracked files; WARN on untracked | the tag must name a tree you can rebuild; foreign untracked files have blocked the claims re-lock guard |
+| Guardian `qa/STATUS.md` row refresh | WARN, named | the Guardian's periodic status row is benign dirt — commit it as `qa: record …` or stash it; never fold it into the release commit |
+| five version pins agree | FAIL | `package.json`, `package-lock.json` root, `tauri.conf.json`, `Cargo.toml`, `Cargo.lock` `skynet-desktop` (`docs/BRAIN.md`); `release:bump` moves all five; a straggler breaks `cargo build --locked` on CI |
+| tag not local / not on origin / no release on `starnet-releases` | FAIL (SKIP "unverified: offline" when unreachable) | a tag already on origin has **already fired the train**; a draft on the releases repo reserves the version; tags are never force-moved (§2.3) — spent versions get `--next patch` |
+| claims lock current for HEAD | FAIL | `qa/product-perfect/claims.json` pins bytes of the release surface (incl. `RELEASE_NOTES.md`, `website/app`); the audit **reads the COMMIT, never the tree** — an uncommitted re-lock is invisible |
+| `website/app` mirror in sync | FAIL | the live demo is a GENERATED verbatim copy of `frontend/` (`sync:website --check`); drift is a truthfulness bug, and it is inside the locked claims surface |
+| `test:fast` green at HEAD | WARN pre-bump, **FAIL post-bump** | `MISTAKES.md` "Gate order": gate AFTER the bump, BEFORE the tag push. The receipt is `.dogfood/gate-receipts/<sha>.fast.json`, written only by the ritual after verifying a gate LOG's last line |
+| `test:http` green at HEAD | WARN (`--require-http` → FAIL) | `starnet-backend-law`: owed whenever sidecar/ship/route code changed since the last cut |
+| T0 clean-install · G1 packaged-lifecycle · installed-exe soak | WARN "owed" until a receipt for the target exists | post-draft RELEASE BLOCKERS (§1.7a) and the RC soak (`docs/RELEASE_READINESS.md`); pre-tag they can only be owed — the row makes the debt explicit so it is never silently forgotten. For a hotfix that waives the soak, say so in `RELEASE_NOTES`/`NEXT.md` |
+| `qa:ready` verdict | FAIL on NOT READY or unrunnable | READY-GATE law (`docs/RELEASE_READINESS.md`, `docs/DECISIONS.md`): no version is cut against a red house. No-fake-green: an unrunnable `qa:ready` is NOT READY |
+| updater signing key present | FAIL | `~/.tauri/starnet-updater.key` — lose it and no installed StarNet can ever update again (§4). Presence only; the file is never read or printed |
+| updater key backed up offline ≥2 copies | SKIP — human attestation | §4.1; no machine can verify a USB stick |
+| `RELEASE_NOTES.md` for the target | WARN pre-bump, **FAIL post-bump** if still the TODO scaffold | the notes are the GitHub release body AND the in-app UPDATE CENTER text |
+| trunk vs `origin` | WARN if ahead | informational: push the branch WITH the tag so the source-release mirror can find the commit |
+
+### 0.2 `release:ritual` — the ordered cut, with a hard stop between irreversible steps
+
+The ritual is **re-runnable**: after every STOP you fix the thing and run the SAME command again;
+completed steps are detected from the repo and skipped. There is no `--resume` to forget. The order
+is the v0.10.7 cut as practiced (`db64f0064` release commit → `3ba1837cb` claims re-lock → `07ea9ebf8`
+merge, tag on the merge):
+
+1. **preflight (pre-bump)** — any `FAIL` row stops here (§0.1).
+2. **bump** — `node scripts/release-bump.mjs <ver> --no-tag`: moves the five pins, scaffolds
+   `RELEASE_NOTES.md`, commits `release: v<ver>` by pathspec. `--no-tag` on purpose: the tag goes on
+   the re-lock commit (tag-after-stamp is what made the v0.6.5 train pass first try).
+   `release-bump` also refuses a version ≤ the highest **published** release (the fleet floor) when
+   `gh` can reach `starnet-releases`, and warns loudly when it can't.
+3. **release notes — STOP** until `RELEASE_NOTES.md` has no `TODO: summarize` line. Write the real
+   user-facing notes, then `git add RELEASE_NOTES.md && git commit --amend --no-edit` (the
+   `release: v<ver>` commit must be HEAD). Re-run.
+4. **claims re-lock** — `claims.mjs --refresh-surface --candidate HEAD` spliced into
+   `qa/product-perfect/claims.json`, committed as its OWN commit
+   `qa(claims): re-lock the release surface for v<ver>`. Every bump owes this because
+   `RELEASE_NOTES.md` is in the locked surface.
+5. **gates — STOP** until a fresh green receipt exists for HEAD. The ritual prints the exact commands:
+   ```
+   npm run test:fast 2>&1 | tee gate-fast.log
+   npm run test:http 2>&1 | tee gate-http.log      # when sidecar/ship/route code changed
+   npm run release:ritual -- --version <ver> --gates-proven-by gate-fast.log --gates-proven-by gate-http.log
+   ```
+   It verifies the log's **last line** is the runner's green summary
+   (`run-fast-tests: OK — N step(s) green`) — never the exit code (`| tail` and wrappers hide a red
+   gate; the summary line can't be faked by accident) — and that the log is newer than HEAD's commit
+   (a green log from before the bump proves an older tree). Then it writes
+   `.dogfood/gate-receipts/<sha>.<gate>.json`. **This is the gate that burned v0.2.0 and v0.2.1 when
+   it was skipped**: the bump changes the shipped version, and a test coupled to it fails the train's
+   CI gate AFTER the tag is pushed, which burns the number (tags are never force-moved).
+6. **preflight (post-bump)** — same checklist, now hard: pins == target, notes real, claims current,
+   gate receipt at HEAD.
+7. **tag** — `git tag v<ver>` on HEAD (the re-lock commit). On a lane (`--allow-lane`) this step
+   STOPs instead and prints the merge: from the integration tree
+   `git merge agent/<lane> -m "merge: cut v<ver>"`, then run the ritual again there to tag the merge
+   commit (a non-fast-forward merge is a NEW commit — earn its gate receipt there too).
+8. **STOP — never pushes.** Prints `git push origin HEAD v<ver>` and what it triggers (below), plus
+   the post-push debts (train watch, draft review, T0, G1, Publish, `verify-host`, canary).
+
+### 0.3 What the push does (read before you paste it)
+
+- Pushing the `v*` tag **fires `.github/workflows/release-train.yml`**: gate → build (Windows + both
+  Mac legs, updater signing REQUIRED) → assemble one multi-platform `latest.json` → stage a **DRAFT**
+  on `starnet-releases`. A draft is invisible to users; nothing ships until you click Publish (§1.8).
+- The stage-draft job uploads with `--clobber`: re-pushing or force-moving the tag **overwrites the
+  staged installer/.sig** for that version. Never force-move a tag CI may have built from — bump a
+  patch instead (§2.3).
+- Push the branch WITH the tag (`git push origin HEAD v<ver>`): the tag alone drives the train; the
+  branch push is what lets the source-release mirror (§1.8a) find the commit.
+
+### 0.4 What the scripts cannot check (still yours)
+
+- That the release notes are *true* — the script only checks the TODO scaffold is gone.
+- The offline key backups (§4.1) — two physical copies, password "(empty string)".
+- Whether a hotfix may waive the 48h RC soak (`docs/RELEASE_READINESS.md`) — the row stays WARN; you
+  decide and you write the waiver down in `RELEASE_NOTES`/`NEXT.md`.
+- Everything after the push: §1.6 onward is still a human watching a train and clicking Publish.
+
+### 0.5 READY GATE (the ritual runs it for you; here is what it means)
+
+`qa:ready` is row one of the preflight and the runbook's original section 0. There are exactly two
+outcomes:
+
+- **READY** → the house is green: zero open P0/P1 findings, the Guardian's last cycle is green and
+  fresh on the current trunk head, `qa:journeys` passes, the Beginner Run isn't stuck, and the
+  installed-exe smoke stamp (`qa/installed/last-smoke.json`) is fresh + GREEN. You're clear to cut.
 - **NOT READY** → **stop. Do not bump. Do not tag.** Every NOT-READY line names the check that failed.
   Route those findings (`node scripts/qa/ledger.mjs --digest`), fix them on trunk, and re-run
   `npm run qa:ready` until it prints READY. No version is cut against a red house — that's the whole
   point of the gate (READY-GATE law, `docs/RELEASE_READINESS.md`).
 
 No-fake-green: if `qa:ready` itself can't run (missing script, a check that errors), that is a NOT
-READY — treat it as red, not as permission to proceed. And if you're cutting the real release off an RC
-you soaked, the READY receipt you earned at soak end (`docs/RELEASE_READINESS.md` §2.3) is exactly this
-gate — re-run it here to confirm it's still green at cut time.
+READY — the preflight row goes FAIL, not green. And if you're cutting the real release off an RC you
+soaked, the READY receipt you earned at soak end (`docs/RELEASE_READINESS.md` §2.3) is exactly this
+gate — the preflight re-runs it at cut time to confirm it's still green.
 
 ---
 
 ## 1. NORMAL CUT
 
-You are cutting version `<VER>` (example below uses `0.2.0`). Do these in order.
+You are cutting version `<VER>` (example below uses `0.2.0`). Sections 1.1–1.5 are now executed by
+`npm run release:ritual` (§0.2) — they stay here as the reference for what each step does and as the
+manual fallback if the script itself is broken.
 
-### 1.1 Bump the version (creates the commit + tag locally, pushes nothing)
+### 1.1 Bump the version (creates the commit locally, pushes nothing)
 
 ```
-npm run release:bump 0.2.0
+npm run release:bump 0.2.0 -- --no-tag
 ```
 
-This (per contract C1) bumps `src-tauri/tauri.conf.json` + `src-tauri/Cargo.toml`
-(+ refreshes `Cargo.lock`), scaffolds `RELEASE_NOTES.md`, commits `release: v0.2.0` with those
-files only, and creates the tag `v0.2.0`. It does **not** push.
+This (per contract C1) bumps `package.json`, the `package-lock.json` root entries,
+`src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` and the `skynet-desktop` pin in
+`src-tauri/Cargo.lock` (the five pins in `docs/BRAIN.md`), scaffolds `RELEASE_NOTES.md`, and commits
+`release: v0.2.0` with those files only. It does **not** push. Without `--no-tag` it also tags — the
+ritual passes `--no-tag` so the tag lands on the claims re-lock commit instead (§1.2a).
 
 > Want to see exactly what it will touch first? `npm run release:bump 0.2.0 -- --dry-run`
 
@@ -83,39 +183,55 @@ into the release commit so the tag points at the final notes:
 ```
 git add RELEASE_NOTES.md
 git commit --amend --no-edit
-git tag -f v0.2.0
 ```
 
-### 1.3 Review the commit before it leaves your machine
+### 1.2a Re-lock the claims surface (its own commit)
+
+`RELEASE_NOTES.md` is inside the locked release surface, so every bump owes a re-lock, generated
+from the COMMIT (the audit never reads the working tree):
 
 ```
-git show --stat v0.2.0
+SHA=$(git rev-parse HEAD)
+node scripts/qa/product-perfect/claims.mjs --refresh-surface --candidate $SHA > surface.json
+# splice surface.json in as .releaseSurface of qa/product-perfect/claims.json
+git commit -m "qa(claims): re-lock the release surface for v0.2.0" -- qa/product-perfect/claims.json
+node scripts/qa/product-perfect/claims.mjs      # expect: PASS claims planning authority …
 ```
 
-Eyeball: version is `0.2.0` in **both** `tauri.conf.json` and `Cargo.toml`; `RELEASE_NOTES.md`
-reads the way you want; no stray files snuck into the commit.
+### 1.3 Review the commits before they leave your machine
+
+```
+git show --stat HEAD~1 HEAD
+```
+
+Eyeball: version is `0.2.0` in **all five** pins; `RELEASE_NOTES.md` reads the way you want; the
+re-lock commit touches only `qa/product-perfect/claims.json`; no stray files snuck in.
 
 ### 1.4 Run the gate locally AFTER the bump, BEFORE pushing the tag
 
 ```
-npm run test:fast
+npm run test:fast 2>&1 | tee gate-fast.log
+npm run test:http 2>&1 | tee gate-http.log     # when sidecar/ship/route code changed
 ```
 
-The bump changes the shipped version, and any test coupled to it will fail the train's CI
-gate AFTER the tag is pushed — which burns a version number (tags are never force-moved;
-a failed tag means cutting a patch). This exact mistake cost v0.2.0 AND v0.2.1 on
-2026-07-06 (a fixture pinned near the current version). Green locally post-bump = the CI
-gate will be green too.
+Read the LAST LINE of each log — `run-fast-tests: OK — N step(s) green` — never the exit code. The
+bump changes the shipped version, and any test coupled to it will fail the train's CI gate AFTER the
+tag is pushed — which burns a version number (tags are never force-moved; a failed tag means cutting
+a patch). This exact mistake cost v0.2.0 AND v0.2.1 on 2026-07-06 (a fixture pinned near the current
+version). Green locally post-bump = the CI gate will be green too. Then tag the re-lock commit:
+
+```
+git tag v0.2.0
+```
 
 ### 1.5 Push the tag — this is what starts the train
 
 ```
-git push origin v0.2.0
+git push origin HEAD v0.2.0
 ```
 
-Pushing the `v*` tag triggers `.github/workflows/release-train.yml`.
-(You do not need to push the branch for the train; the tag is the trigger. Push the branch too
-if you want the commit on the branch: `git push origin HEAD`.)
+Pushing the `v*` tag triggers `.github/workflows/release-train.yml` (§0.3 says what that means).
+(The tag is the trigger; the branch push lets the source-release mirror find the commit.)
 
 ### 1.6 Watch the train (4 jobs)
 
