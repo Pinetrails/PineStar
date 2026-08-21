@@ -32,6 +32,8 @@
   else { (root.SK = root.SK || {}).checkpointStore = api; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (cp, writeFileDurableInjected) {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('./failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   // fallback: if durable-write couldn't be loaded (browser bundle), do a plain atomic temp+rename.
   const writeFileDurable = typeof writeFileDurableInjected === 'function' ? writeFileDurableInjected
@@ -225,7 +227,7 @@
       if (viaBak.snapshots.length) return viaBak;
       const rebuilt = await rebuildIndexFromGit(aid);
       if (rebuilt.snapshots.length) {
-        try { saveIndex(aid, rebuilt); } catch (_) { /* rebuild still usable in-memory even if re-persist fails */ }
+        try { saveIndex(aid, rebuilt); } catch (e) { failNote('checkpoint.index.persist', e); }
         try { console.warn('[checkpoint] rebuilt index for ' + aid + ' from ' + rebuilt.snapshots.length + ' shadow-git commits (index.json was empty/corrupt)'); } catch (_) {}
         return rebuilt;
       }
@@ -307,7 +309,7 @@
             id: fullId, runId: '', turn: 0, parentId: null, label: 'baseline (re-init)', files: size.files, bytes: size.bytes,
             scopeId: (scope && scope.id) || '', workTree: scope && scope.id ? scope.workTree : '', gitCommit: sha
           }, { now: clock.now(), keep: keep }));
-        } catch (_) {}
+        } catch (e) { failNote('checkpoint.index.persist', e); }
         return true;
       } catch (_) { return false; }
     }
@@ -375,9 +377,9 @@
               workTree: scope.id ? scope.workTree : '', gitCommit: sha },
             { now: clock.now(), keep: keep });
           saveIndex(aid, index);
-        } catch (e) { /* index persistence failed — the git commit still exists + is restorable; don't crash */ }
+        } catch (e) { failNote('checkpoint.index.persist', e); }
         // bound the shadow repo's on-disk footprint after each real commit (no-op unless past the ceiling).
-        try { await enforceSizeCeiling(aid, scope); } catch (_) { /* size sweep is best-effort; never fail the snapshot */ }
+        try { await enforceSizeCeiling(aid, scope); } catch (e) { failNote('checkpoint.sizeCeiling', e); }
         return { id: fullId, created: true, files: size.files, bytes: size.bytes, workTree: scope.id ? scope.workTree : '' };
       } catch (e) { return null; }                                               // fail-open
     }

@@ -35,6 +35,8 @@
   else { root.SK = root.SK || {}; root.SK.channels = root.SK.channels || {}; root.SK.channels.store = api; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('../failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;            // same agentId grammar as the notebook/fs jail
   const DEFAULTS = { maxTurns: 40, maxChars: 24000 };  // bound the on-disk + replayed transcript
@@ -118,7 +120,7 @@
       // so it is inherently serialized per file by the event loop — concurrent in-process writers cannot lose an
       // update — and now it is durable + recoverable too.
       const prev = readRaw(file);
-      if (prev !== undefined) { try { writeRaw(file + '.bak', prev); } catch (_) {} }
+      if (prev !== undefined) { try { writeRaw(file + '.bak', prev); } catch (e) { failNote('channels.store.bak', e); } }
       writeRaw(file, value);
     }
 

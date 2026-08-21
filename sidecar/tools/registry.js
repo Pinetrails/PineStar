@@ -23,6 +23,8 @@
   }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (schema, toolMod) {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('../failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   /* CENTRAL TOOL-OUTPUT CAP (ref-parity: the reference harness's tool_output_limits). Every builtin clamps its own output today,
      which means the protection is a CONVENTION — a new tool, or an MCP server behind a new connector,
@@ -123,7 +125,7 @@
       const timer = setTimeout(() => {
         if (!done) {
           done = true;
-          if (typeof onTimeout === 'function') { try { onTimeout(); } catch (_) {} }   // abort the work BEFORE we reject
+          if (typeof onTimeout === 'function') { try { onTimeout(); } catch (e) { failNote('tools.registry.onTimeout', e); } }   // abort the work BEFORE we reject
           const e = new Error('timeout'); e.__timeout = true; reject(e);
         }
       }, ms);
@@ -253,7 +255,7 @@
               duration_ms: ms
             })
           }));
-        } catch (_) { /* an observer must never change the outcome it observed */ }
+        } catch (e) { failNote('tools.registry.observer', e); }
         return res;
       };
 
@@ -290,7 +292,7 @@
         // Park BEFORE clamping — the clamp is what destroys the middle, so the full text has to be on disk first.
         let parked = null;
         if (typeof full === 'string' && (full !== raw || full.length > OUTPUT_MAX) && ctx && typeof ctx.parkOutput === 'function') {
-          try { const p = await ctx.parkOutput(full, { tool: (call && call.name) || 'tool' }); parked = p && p.path ? String(p.path) : null; } catch (_) {}
+          try { const p = await ctx.parkOutput(full, { tool: (call && call.name) || 'tool' }); parked = p && p.path ? String(p.path) : null; } catch (e) { failNote('tools.registry.parkOutput', e); }
         } else {
           parked = await parkIfOver(raw, call, ctx);
         }
@@ -303,7 +305,7 @@
         const fullError = e && typeof e.fullContent === 'string' ? e.fullContent : errorText;
         let parked = null;
         if (fullError !== errorText || fullError.length > OUTPUT_MAX) {
-          try { const p = ctx && typeof ctx.parkOutput === 'function' ? await ctx.parkOutput(fullError, { tool: call.name }) : null; parked = p && p.path ? String(p.path) : null; } catch (_) {}
+          try { const p = ctx && typeof ctx.parkOutput === 'function' ? await ctx.parkOutput(fullError, { tool: call.name }) : null; parked = p && p.path ? String(p.path) : null; } catch (e) { failNote('tools.registry.parkOutput', e); }
         }
         const fullErrorBytes = utf8Bytes(fullError);
         const visibleError = fullError !== errorText ? intrinsicReceipt(errorText, fullError.length, fullErrorBytes, parked) : errorText;

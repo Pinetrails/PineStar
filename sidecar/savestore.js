@@ -27,6 +27,8 @@
   else { root.SK = root.SK || {}; root.SK.savestore = api; }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('./failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;   // same agentId grammar as the notebook / fs jail / channels store
 
@@ -98,7 +100,7 @@
         const cur = readTaggedRaw(rf);
         if (cur.status === 'ok' && cur.wrapper && cur.wrapper.kind === 'quarantined' && kind === 'recovered') return;
         writeDurable(rf, JSON.stringify(Object.assign({ version: 1, kind: kind, at: clock.now() }, extra || {})));
-      } catch (_) { /* fail-open: the notice is best-effort */ }
+      } catch (e) { failNote('savestore.notice', e); }
     }
     // RESILIENT tagged read: main first; on a corrupt/torn main, quarantine it and recover from <file>.bak. An
     // 'unreadable' main is NOT quarantined (bytes are fine, just locked) — surfaced as-is so the caller stays

@@ -144,6 +144,13 @@ async function main() {
     A.eq(r2.status, 'corrupt', 'present-but-bad main with no .bak is CORRUPT, never silently absent/empty');
     A.eq(store.get('busted'), undefined, 'get() returns undefined for corrupt (caller decides) — but onCorrupt fired');
     A.ok(corruptFlagged >= 1, 'onCorrupt surfaced the unrecoverable file LOUDLY (not silent)');
+    // 2026-08-21 sync-silence ratchet: an onCorrupt handler that THROWS used to vanish into an empty catch.
+    // It is still fail-open (the read returns), but the swallow is now tagged + counted — provably fired.
+    const failopen = require('../sidecar/failopen.js');
+    failopen.resetForTests();
+    const loud = makeDurableJsonStore({ fs, path: pathMod, fileFor, onCorrupt: () => { throw new Error('handler bug'); } });
+    A.notThrows(() => loud.get('busted'), 'a throwing onCorrupt handler never escapes into the caller (fail-open kept)');
+    A.eq(failopen.counts()['durable-store.onCorrupt'], 1, 'the swallowed handler failure is COUNTED under its tag (wiring proof, not just helper proof)');
 
     // A corrupt record is not a new record. update() must preserve its only forensic/recovery bytes instead of
     // passing undefined to a default-empty mutator and committing an amnesiac replacement.

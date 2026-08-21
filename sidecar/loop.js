@@ -20,6 +20,8 @@
   else { root.SK = root.SK || {}; root.SK.loop = factory(root.SK.providers && root.SK.providers.sanitize, root.SK.providers && root.SK.providers.errorClass, root.SK.outputContinuation, root.SK.recoveryPolicy); }
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (sanitize, errorClass, outputContinuation, recoveryPolicy) {
   'use strict';
+  // failopen.note — the tagged SYNC swallow (per-tag count + throttled warn): a fail-open catch must never be invisible.
+  const { note: failNote } = (typeof require === 'function') ? require('./failopen.js') : { note: function (tag, e) { console.warn('[failopen] ' + tag + ':', (e && e.message) || e); } };
 
   // tool-call argument repair (L2): recover mechanically-broken JSON from non-Anthropic models. Degrades to
   // identity if the module is absent (e.g. a browser build that never runs the loop).
@@ -678,7 +680,7 @@
     let recoveryAttemptSequence = 0;
     function noteRecovery(row) {
       if (!onRecovery) return;
-      try { onRecovery(Object.assign({ sequence: ++recoveryAttemptSequence }, row || {})); } catch (_) {}
+      try { onRecovery(Object.assign({ sequence: ++recoveryAttemptSequence }, row || {})); } catch (e) { failNote('loop.onRecovery', e); }
     }
     // mid-stream retry backoff schedule (same shape as the adapters' pre-stream RETRY_DELAYS).
     // Widened 2026-08-11 after the installed Hermes parity run: ~16.6s still lost all three StarNet
@@ -761,7 +763,7 @@
          file). Observe-only by construction in hooks.js: a hook that could VETO compaction could pin a run
          against its context ceiling until it died, which is a worse failure than losing detail. */
       if (hooks) {
-        try { await hooks.invoke('on_pre_compress', { session_id: runId, extra: { agent_id: agentId, model, before_tokens: beforeTokens, folding: plan.older.length, turn: turns } }); } catch (_) {}
+        try { await hooks.invoke('on_pre_compress', { session_id: runId, extra: { agent_id: agentId, model, before_tokens: beforeTokens, folding: plan.older.length, turn: turns } }); } catch (e) { failNote('loop.hook.on_pre_compress', e); }
       }
       let r;
       // Pass the loop's CURRENT provider/model/cost: after a rotation or a cross-provider fallback these are the
@@ -775,7 +777,7 @@
       const note = { role: 'system', content: '<conversation_summary>\n' + summary + '\n</conversation_summary>' };
       let rebuilt = prefix.concat([note], plan.tail);
       // re-append the active task plan so it rides through the compaction (folded into the after-count below)
-      if (todoNote) { try { const tn = todoNote(); if (tn) rebuilt = rebuilt.concat([{ role: 'system', content: String(tn) }]); } catch (e) {} }
+      if (todoNote) { try { const tn = todoNote(); if (tn) rebuilt = rebuilt.concat([{ role: 'system', content: String(tn) }]); } catch (e) { failNote('loop.compaction.todoNote', e); } }
       const afterTokens = context.estimateMessages(rebuilt);
       messages.length = 0; for (const mm of rebuilt) messages.push(mm);
       if (r && typeof r === 'object') {
@@ -952,7 +954,7 @@
           const fb = fallbacks[fbIndex++];
           if (fb && fb.provider) {
             // notify BEFORE switching: activeCredKey is still the OUTGOING key that just failed (cool it if rotate).
-            if (onFallback) { try { onFallback({ reason: cls.reason, rotate: !!cls.shouldRotateCredential, credKey: activeCredKey, retryAfterMs: cls.retryAfterMs, resetAtMs: cls.resetAtMs }); } catch (_) {} }   // H6.1: pass the server-stated wait so the cooldown honors it
+            if (onFallback) { try { onFallback({ reason: cls.reason, rotate: !!cls.shouldRotateCredential, credKey: activeCredKey, retryAfterMs: cls.retryAfterMs, resetAtMs: cls.resetAtMs }); } catch (e) { failNote('loop.onFallback', e); } }   // H6.1: pass the server-stated wait so the cooldown honors it
             // observable failover telemetry (P3.1): which model we left, which we moved to, and why.
             emit('provider.fallback', { agentId, runId, fromModel: model, toModel: (fb.model || model), reason: cls.reason, rotate: !!cls.shouldRotateCredential });
             if (fb.credKey != null) activeCredKey = fb.credKey;   // the entry we switch TO becomes the live credential
@@ -1053,7 +1055,7 @@
       // HOOKS — post_llm_call. Deliberately here rather than after tool execution: it must fire once per MODEL
       // CALL, including the final tool-free turn, and a site further down would silently skip exactly the turn
       // that produced the answer. Observe-only; cost is already reconciled so the payload is honest.
-      if (hooks) { try { await hooks.invoke('post_llm_call', { session_id: runId, extra: { agent_id: agentId, model, turn: turns, usd: spentUsd, tokens_in: final.tokensIn || 0, tokens_out: final.tokensOut || 0, finish_reason: lastFinishReason || '' } }); } catch (_) {} }
+      if (hooks) { try { await hooks.invoke('post_llm_call', { session_id: runId, extra: { agent_id: agentId, model, turn: turns, usd: spentUsd, tokens_in: final.tokensIn || 0, tokens_out: final.tokensOut || 0, finish_reason: lastFinishReason || '' } }); } catch (e) { failNote('loop.hook.post_llm_call', e); } }
 
       // (4) APPEND assistant turn FIRST. Capture the prior assistant text BEFORE appending, so a no-op turn whose
       // content merely duplicates the previous assistant turn can be detected below.

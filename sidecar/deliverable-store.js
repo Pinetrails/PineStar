@@ -6,6 +6,7 @@
 'use strict';
 
 const { makeDurableJsonStore } = require('./durable-store.js');
+const { note: failNote } = require('./failopen.js');   // tagged SYNC swallow: a fail-open catch must never be invisible
 const { writeFileDurable } = require('./durable-write.js');
 
 // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
@@ -113,7 +114,7 @@ function makeDeliverableStore(deps) {
       // Preserve the forensic bytes, then repair the active append path to the proven prefix.
       // Otherwise every later valid append would sit after the torn line and disappear again
       // on the next restart because replay correctly stops at the first untrusted record.
-      try { fs.copyFileSync(journalFile, journalFile + '.corrupt'); } catch (_) {}
+      try { fs.copyFileSync(journalFile, journalFile + '.corrupt'); } catch (e) { failNote('deliverables.journal.quarantine', e); }
       durableWrite({ fs, path: pathMod }, journalFile, validLines.join('\n') + (validLines.length ? '\n' : ''));
     }
     nextSeq = Math.max(nextSeq, state.appliedSeq + 1);
