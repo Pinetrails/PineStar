@@ -28,9 +28,34 @@
 'use strict';
 const Pipeline = require('../../frontend/app/pipeline.js');
 
-const MAX_HOPS = 6;            // stages AFTER the first (a drawn floor with more is a design smell, not a run)
-const MAX_CHAIN_USD = 2.00;    // the WHOLE chain's spend ceiling, entry run included (seed.entryUsd) — one message must not become an open tab
+// the DEFAULT ceilings — a line that sets no LINE BUDGET runs under exactly these. They are the one
+// normalizer's defaults (Pipeline.LINE_LIMIT_DEFAULTS) so the compiler and the executor can never disagree.
+const MAX_HOPS = Pipeline.LINE_LIMIT_DEFAULTS.maxHops;                  // 6 stages AFTER the first (a drawn floor with more is a design smell, not a run)
+const MAX_CHAIN_USD = Pipeline.LINE_LIMIT_DEFAULTS.maxUsdPerMessage;    // $2.00 — the WHOLE chain's spend ceiling, entry run included (seed.entryUsd) — one message must not become an open tab
 const PREVIEW = 40;
+
+/* effectiveLimits(seed, lineLimits(lineId), runnerDefaults) -> { maxHops, maxUsd, maxUsdPerDay, clamped[] }.
+   PRECEDENCE (narrowest, most explicit first): seed.limits (a caller that already resolved the line's budget)
+   > the injected per-line reader (the compiled plan's LINE BUDGET, via router.lineLimits) > the runner's
+   construction-time overrides > the constants. Every layer passes through the ONE normalizer, so a raw
+   number from any surface is clamped to the hard ceilings (24 hops / $50 per message / $500 per day) and
+   the clamp is RECORDED, never silent. `poolCap` (the global budget pool, a sidecar fact) is applied LAST:
+   no line may be allowed to spend more per message than the whole station may spend at all. */
+function effectiveLimits(raw, fallback, poolCap) {
+  const f = fallback || {};
+  const out = { maxHops: (typeof f.maxHops === 'number' && f.maxHops >= 0) ? f.maxHops : MAX_HOPS, maxUsd: (typeof f.maxUsd === 'number' && f.maxUsd > 0) ? f.maxUsd : MAX_CHAIN_USD, maxUsdPerDay: (typeof f.maxUsdPerDay === 'number' && f.maxUsdPerDay > 0) ? f.maxUsdPerDay : null, clamped: [] };
+  const n = Pipeline.normalizeLineLimits(raw);
+  if (n) {
+    out.maxHops = n.maxHops; out.maxUsd = n.maxUsdPerMessage; out.maxUsdPerDay = n.maxUsdPerDay;
+    if (Array.isArray(n.clamped)) out.clamped = n.clamped.slice();
+  }
+  const pool = (typeof poolCap === 'number' && isFinite(poolCap) && poolCap > 0) ? poolCap : null;
+  if (pool != null) {
+    if (out.maxUsd > pool) { out.maxUsd = pool; out.clamped.push('maxUsdPerMessage>pool:' + pool); }
+    if (out.maxUsdPerDay != null && out.maxUsdPerDay > pool) { out.maxUsdPerDay = pool; out.clamped.push('maxUsdPerDay>pool:' + pool); }
+  }
+  return out;
+}
 
 function makeChainRunner(o) {
   o = o || {};
@@ -43,6 +68,14 @@ function makeChainRunner(o) {
   const now = typeof o.now === 'function' ? o.now : function () { return 0; };
   const maxHops = (typeof o.maxHops === 'number' && o.maxHops >= 0) ? o.maxHops : MAX_HOPS;
   const maxUsd = (typeof o.maxUsd === 'number' && o.maxUsd > 0) ? o.maxUsd : MAX_CHAIN_USD;
+  /* LINE BUDGET seams (2026-08-21). lineLimits(lineId) -> the compiled plan's normalized limits for the line
+     this work entered on, or null (router.lineLimits in production; a direct order has no line and runs on
+     the defaults). poolCap() -> the station's global $ pool (budget.js effective cap), or null = ungoverned.
+     daySpend -> { spentToday(lineId), note(lineId, usd) }: the durable per-line day ledger (line-spend.js).
+     All optional; absent = exactly the pre-budget executor. */
+  const lineLimits = typeof o.lineLimits === 'function' ? o.lineLimits : null;
+  const poolCap = typeof o.poolCap === 'function' ? o.poolCap : function () { return null; };
+  const daySpend = (o.daySpend && typeof o.daySpend.spentToday === 'function' && typeof o.daySpend.note === 'function') ? o.daySpend : null;
   let seq = 0;
   const newId = typeof o.newId === 'function' ? o.newId : function () { return 'chain' + (++seq); };
   const say = (n, p) => { try { emit(n, p); } catch (_) {} };
@@ -111,13 +144,22 @@ function makeChainRunner(o) {
        both production callers ADD it to their own entry accounting (cron-driver `state.usd += line.usd`, the
        hub's onLineOutcome), so totalling the entry into it here would double-count the same dollars. */
     const entryUsd = (typeof s.entryUsd === 'number' && isFinite(s.entryUsd) && s.entryUsd > 0) ? s.entryUsd : 0;
-    const out = { text: s.text, agentId: startAgent, hops: [], usd: 0, stopped: null };
+    // the ceilings THIS advance runs under — seed.limits wins, else the line's LINE BUDGET, else the runner's
+    let fromPlan = null;
+    if (lineLimits && lineId) { try { fromPlan = lineLimits(lineId); } catch (_) { fromPlan = null; } }
+    let pool = null; try { pool = poolCap(); } catch (_) { pool = null; }
+    const lim = effectiveLimits(s.limits || fromPlan, { maxHops, maxUsd }, pool);
+    const out = { text: s.text, agentId: startAgent, hops: [], usd: 0, stopped: null, limits: { maxHops: lim.maxHops, maxUsd: lim.maxUsd, maxUsdPerDay: lim.maxUsdPerDay, clamped: lim.clamped } };
     if (!nextAgent || !runAgent || !startAgent) return out;
+    // the entry run's spend lands in the line's DAY bucket here — the caller never sees this ledger
+    // (out.usd stays HOP-ONLY; the ledger is the only place entry + hops are summed across messages).
+    const dayLedger = (daySpend && lineId) ? daySpend : null;
+    if (dayLedger && entryUsd) { try { dayLedger.note(lineId, entryUsd); } catch (_) {} }
 
     const visited = { [startAgent]: true };
     let spent = entryUsd;   // entry + hops — what the $ ceiling is actually measured against
     let cur = startAgent;
-    for (let hop = 1; hop <= maxHops + 1; hop++) {
+    for (let hop = 1; hop <= lim.maxHops + 1; hop++) {
       if (s.signal && s.signal.aborted) { out.stopped = 'stopped'; return out; }
       // the tag is derived from the OUTPUT of the stage that just ran — this is what makes a FILTER downstream
       // of a dock a real branch on the result rather than a re-read of the original message.
@@ -127,10 +169,17 @@ function makeChainRunner(o) {
       // refusing this work. refusalNote tells the two apart, and only speaks when it can prove the second.
       if (!target) { out.stopped = refusalNote(cur, lineId); return out; }
       if (visited[target]) { out.stopped = 'the line loops back to ' + target; return out; }
-      if (hop > maxHops) { out.stopped = 'the line is longer than ' + maxHops + ' stages'; return out; }
+      if (hop > lim.maxHops) { out.stopped = 'the line is longer than ' + lim.maxHops + ' stages'; return out; }
       // PRE-hop because a hop's cost is unknowable before it runs: the ceiling is enforced to within one
       // hop's spend. `spent` (never out.usd) is the guard — entry seeded, so stage one no longer rides free.
-      if (spent >= maxUsd) { out.stopped = 'the line reached its $' + maxUsd.toFixed(2) + ' limit'; return out; }
+      if (spent >= lim.maxUsd) { out.stopped = 'the line reached its $' + lim.maxUsd.toFixed(2) + ' limit'; return out; }
+      // THE DAILY CAP — same pre-hop posture, measured against the durable per-line day ledger (entry run and
+      // every earlier message today included). Only a line with a ledger AND a cap can refuse; a line with no
+      // cap, or no lineId (a direct order), never does — the executor does not invent a day it cannot prove.
+      if (dayLedger && lim.maxUsdPerDay != null) {
+        let today = 0; try { today = dayLedger.spentToday(lineId); } catch (_) { today = 0; }
+        if (today >= lim.maxUsdPerDay) { out.stopped = 'the line reached its $' + lim.maxUsdPerDay.toFixed(2) + ' daily limit'; return out; }
+      }
       // a stage that produced nothing has nothing to hand on — handing it an empty crate would buy a run that
       // can only hallucinate its input (and the floor would draw a crate carrying nothing).
       if (!String(out.text || '').trim()) { out.stopped = cur + ' produced no output to hand on'; return out; }
@@ -156,6 +205,7 @@ function makeChainRunner(o) {
       r = r || {};
       const usd = (typeof r.usd === 'number' && isFinite(r.usd) && r.usd > 0) ? r.usd : 0;
       out.usd += usd; spent += usd;
+      if (dayLedger && usd) { try { dayLedger.note(lineId, usd); } catch (_) {} }
 
       // A FAILED STAGE KEEPS THE LAST GOOD ANSWER. The reply the user gets is still real work by a real agent;
       // the note says the line stopped short, so the floor and the channel tell the same story.
@@ -181,4 +231,4 @@ function makeChainRunner(o) {
   return { advance, stopNote, _limits: { maxHops, maxUsd } };
 }
 
-module.exports = { makeChainRunner, MAX_HOPS, MAX_CHAIN_USD };
+module.exports = { makeChainRunner, effectiveLimits, MAX_HOPS, MAX_CHAIN_USD };
