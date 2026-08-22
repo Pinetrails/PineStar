@@ -85,6 +85,12 @@
 /* a lane pick button in the selected state — replaces the old inline background/border hex so the
    JS toggle just flips .sel (no inline hex in build.js). */
 .lane-btn.sel { background: var(--ph-faint); border-color: var(--ph); color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow2); }
+/* LOOP gate (2026-08-22): the DONE-lane picker lists the gate's real exits ("E → OUTBOX" / "S → to WRITER"),
+   one chip per lane in the .refit-agents voice; the verdict-tag row reuses the FILTER route-row vocabulary
+   (same .sel state) so "route by content" reads the same on both junction cards. */
+.loop-exits .loop-exit { letter-spacing: .5px; }
+.loop-when-row .refit-route-lbl { width: auto; }
+.loop-when.sel { background: var(--ph-faint); border-color: var(--ph); color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow2); }
 
 /* ---------- action row (ASSIGN · CANCEL · …) ---------- */
 .refit-actions { display: flex; gap: 6px; margin-top: 8px; }

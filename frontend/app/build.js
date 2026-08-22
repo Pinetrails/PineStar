@@ -870,6 +870,17 @@ const Build = (() => {
   /* ---------- visual prop palette: a scrollable gallery of LIVE animated previews ----------
      Each tile carries its own mini-canvas; paintThumbs() blits the real PropSprites art into it every
      few frames (driven by the main loop) so the screens/LEDs animate exactly like the placed prop. */
+  // one line per WORKFLOW machine — what it DOES, in the words the flow card will repeat (never a footprint)
+  const PALETTE_PURPOSE = {
+    intake: 'the front door — outside work (channels, routines) arrives here and rides the belts in',
+    bay: 'an agent’s dock — work that reaches it runs as that agent; one step of the line',
+    filter: 'sorts work by its content — each kind takes a different out-lane',
+    merger: 'several lanes become one — every crate rides straight through, nothing waits',
+    splitter: 'one lane fans into several — parallel branches of the same job, or load-balanced work',
+    joiner: 'parallel branches WAIT here — one merged crate leaves once every branch has delivered',
+    loop: 'the gate that sends work round again — one lane back upstream, one lane onward when done',
+    outbox: 'the exit — every finished result ships here; click it for the logbook'
+  };
   const THUMB_PAD = 7;   // native-px halo so art that overflows the footprint (monitors, masts, shadows) isn't clipped
   function propTile(c) {
     const b = document.createElement('button');
@@ -878,7 +889,11 @@ const Build = (() => {
     b.dataset.prop = c.id;   // lets the tutorial light a specific gear tile by id
     b.setAttribute('aria-pressed', c.id === propType ? 'true' : 'false');
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(c.id) : null;
-    b.title = c.label + ' · ' + c.w + '×' + c.h + (grant ? ' · grants ' + grant : '');   // native fallback; the rich Fallout-style card is the hover surface
+    /* the station tooltip (tooltip.js adopts this title) is the FIRST thing a hover says, and "JOINER · 1×1"
+       told a Commander nothing a MERGER did not — so every WORKFLOW machine carries a one-line purpose here
+       (PALETTE_PURPOSE), distinguishable before it is placed. The rich card below stays the long form. */
+    const purpose = PALETTE_PURPOSE[c.id] || '';
+    b.title = c.label + ' · ' + c.w + '×' + c.h + (grant ? ' · grants ' + grant : '') + (purpose ? ' — ' + purpose : '');
     // Grid-only re-render: a full renderPalette() here would rebuild the search field and steal focus
     // out of it mid-search. But a pick out of a SEARCH result does change tab state — the prop almost
     // always lives under a different tier/category than the one still selected behind the results. Move
