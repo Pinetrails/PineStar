@@ -839,4 +839,25 @@ A.eq(JSON.stringify(WM.deserialize({ rooms: {}, order: [], props: [], edges: [{ 
   void key;
 }
 
+/* ---- LINE BUDGET: an INBOX's limits normalize, clamp, persist through serialize/migrate, project ---- */
+{
+  const lb = WM.create();
+  const ib = lb.addProp({ t: 'intake', x: 2, y: 2, w: 1, h: 1 });
+  const dk = lb.addProp({ t: 'desk', x: 8, y: 2, w: 2, h: 1 });
+  A.ok(ib.ok && dk.ok, 'an INBOX and a desk place');
+  A.ok(!lb.setPropLimits(dk.id, { maxHops: 2 }).ok, 'only an INBOX carries a line budget');
+  const r1 = lb.setPropLimits(ib.id, { maxHops: 99, maxUsdPerMessage: '3', maxUsdPerDay: 10 });
+  A.ok(r1.ok, 'setPropLimits on an INBOX succeeds');
+  A.eq(r1.limits.maxHops, 24, 'maxHops is clamped to the ceiling on the way into the doc');
+  A.eq(r1.clamped[0], 'maxHops>24', 'and the clamp is reported');
+  A.eq(r1.limits.maxUsdPerMessage, 3, 'a numeric string normalizes');
+  const back = WM.deserialize(JSON.parse(JSON.stringify(lb.serialize())));
+  const ip = back.propById(ib.id);
+  A.eq(JSON.stringify(ip.limits), JSON.stringify({ maxHops: 24, maxUsdPerMessage: 3, maxUsdPerDay: 10 }), 'limits survive serialize -> migrate -> deserialize');
+  const geoP = back.projectGeometry().props.find(q => q.id === ib.id);
+  A.eq(geoP.limits.maxUsdPerDay, 10, 'and project onto the geometry the plan compiles from');
+  A.ok(lb.setPropLimits(ib.id, null).ok && !lb.propById(ib.id).limits, 'null clears the budget (station defaults)');
+  A.ok(lb.setPropLimits(ib.id, { maxHops: 'x' }).ok && !lb.propById(ib.id).limits, 'garbage clears rather than stores garbage');
+}
+
 A.report('worldmodel');
