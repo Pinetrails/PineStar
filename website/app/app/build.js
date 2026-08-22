@@ -1880,6 +1880,16 @@ const Build = (() => {
      injected deps; PURE: params + locals only, no module state, no DOM). The LOOP card's lane labels and the
      FINISH card's sample readout are both "what does this do / did that work?" answers, and an answer that
      lives only inside a browser IIFE is an answer no test can hold to the truthful-telemetry law. */
+  /* loopRuleTxt(when, max) -> the ONE loop rule in the words the sidecar runs it by (routing/chain.js, 2026-08-22).
+     PURE. The card, the saved-note and the gate agree because they all read this. */
+  function loopRuleTxt(when, max) {
+    const n = max || 5, passes = n + ' pass' + (n === 1 ? '' : 'es');
+    if (when === 'approved' || when === 'revise') {
+      return 'goes round until the reviewer’s last line says VERDICT: ' + when + ' (the reviewer is told to end with one; no verdict = round again), or MAX PASSES (' + passes + ') — then leaves on DONE marked unapproved.';
+    }
+    if (when) return 'goes round again ONLY while the reviewer’s output reads as ' + when.toUpperCase() + ' work; anything else leaves on DONE. MAX PASSES (' + passes + ') ends it regardless.';
+    return 'no verdict picked: every pass goes round until MAX PASSES (' + passes + ') is spent, then leaves on DONE.';
+  }
   /* a LOOP gate's exits, labelled by DIRECTION and by WHAT THEY LEAD TO — read off the compiled plan (local
      frame), never guessed from geometry. Walks each out-lane along the belts to the first machine it meets:
      a dock (-> "to WRITER"), an OUTBOX mouth (-> "OUTBOX"), another junction (-> "a FILTER"), its own tile
@@ -1958,7 +1968,7 @@ const Build = (() => {
       // has delivered (or the timeout passes), then ONE merged crate leaves — the sidecar chain runner performs it.
       joiner: 'Where parallel branches of ONE job come back together. Each branch’s result is held here until every in-lane has delivered (10 minutes at most — then it goes on, marked partial), and a single merged crate continues. A SPLITTER upstream of a JOINER runs all its lanes, not one.',
       // a bounded cycle: the gate is the only legal way round; the runner counts passes per job
-      loop: 'The gate that lets a line go round again. One lane leads BACK to an upstream dock, the other is DONE. Work re-enters up to 5 times (the line’s dollar cap still binds), then leaves on DONE. A cycle drawn without a LOOP is refused.'
+      loop: 'The gate that lets a line go round again. One lane leads BACK to an upstream dock, the other is DONE. Work re-enters until the reviewer’s last line says VERDICT: approved (or up to MAX PASSES, default 5 — the line’s dollar cap still binds), then leaves on DONE. A cycle drawn without a LOOP is refused.'
     };
     const line = LINE[p.t] || LINE.outbox;
     /* LINE NAMING (workflow studio, 2026-08-05): the INTAKE is a line's front door, so its card names the
@@ -2025,15 +2035,19 @@ const Build = (() => {
             : '<div class="refit-note bad">lay belts OUT of this gate first — it needs two exits: one onward, one back</div>')
         + '<div class="refit-sec">HOW MANY TIMES ROUND</div>'
         + jnField('loop-max', 'MAX PASSES', 1, loopMaxCeil, 1, p.maxIter ? String(p.maxIter) : '', String(loopMaxDef))
-        /* the verdict TAG is a pick, not a free word: the sidecar's loop gate (routing/chain.js) compares the
-           reviewer's output tag — the SAME content classifier a FILTER sorts by (classify.js getTag:
-           code / research / general) — so those three are the only tags that can ever match. A typed
-           "approved" would be a field that can never fire; offering it would be the card asserting a
-           rule the harness does not run. */
-        + '<div class="refit-route-row loop-when-row"><span class="refit-route-lbl">GO ROUND WHILE →</span>'
+        /* the verdict is a pick, not a free word, and the picks are the ONLY words the sidecar's loop gate
+           (routing/chain.js) can ever read: two VERDICT words (`VERDICT: approved` / `VERDICT: revise` — the
+           last line of the reviewer's reply, parsed by routing/verdict.js; the reviewer is TOLD to end with it)
+           and the three content tags the same classifier a FILTER sorts by can produce (classify.js getTag).
+           A verdict word flips the rule: the crate goes round UNTIL the verdict says it (revise / no verdict =
+           round again); a classifier tag keeps it going round WHILE the output reads as that kind of work. */
+        + '<div class="refit-route-row loop-when-row"><span class="refit-route-lbl">LOOP UNTIL VERDICT →</span>'
+        + [['approved', 'APPROVED'], ['revise', 'REVISE']].map(([tag, lbl]) => '<button type="button" class="bb sm loop-when loop-verdict' + (p.when === tag ? ' sel' : '') + '" data-tag="' + tag + '">' + lbl + '</button>').join('')
+        + '</div>'
+        + '<div class="refit-route-row loop-when-row"><span class="refit-route-lbl">…OR GO ROUND WHILE →</span>'
         + [['code', 'CODE'], ['research', 'RESEARCH'], ['general', 'GENERAL']].map(([tag, lbl]) => '<button type="button" class="bb sm loop-when' + (p.when === tag ? ' sel' : '') + '" data-tag="' + tag + '">' + lbl + '</button>').join('')
         + '</div>'
-        + '<div class="refit-note" id="loop-note">the crate goes round again ONLY while the reviewer’s output reads as that kind of work; any other verdict leaves on DONE. no tag picked = every pass goes round until MAX PASSES is spent. blank max = ' + loopMaxDef + ' · ceiling ' + loopMaxCeil + ' — saved on Enter / blur</div>'
+        + '<div class="refit-note" id="loop-note">' + esc(loopRuleTxt(p.when, loopMaxDef)) + ' blank max = ' + loopMaxDef + ' · ceiling ' + loopMaxCeil + ' — saved on Enter / blur</div>'
       : '';
     /* ---------- THE TRIGGER ZONE (inbox-trigger, 2026-08-05) ----------
        The INBOX card is the workflow's WHY, completing the loop the floor already draws: trigger (INBOX) →
@@ -2196,7 +2210,7 @@ const Build = (() => {
       gateSaved = next; sfx('click');
       const said = isJoiner
         ? (res.timeoutMin ? '✓ saved — waits ' + res.timeoutMin + ' min, then releases partial' : '✓ saved — station default (10 min), then releases partial')
-        : '✓ saved — ' + (res.maxIter || loopMaxDef) + ' pass' + ((res.maxIter || loopMaxDef) === 1 ? '' : 'es') + ' max' + (res.done ? ', DONE on ' + res.done : '') + (res.when ? ', round again while ' + res.when.toUpperCase() : '');
+        : '✓ saved — ' + loopRuleTxt(res.when, res.maxIter || loopMaxDef) + (res.done ? ' DONE on ' + res.done + '.' : '');
       if (isJoiner && jnNote) jnNote.textContent = said;
       if (isLoop && loopNote) loopNote.textContent = said;
       /* THE WRONG DONE LANE IS A CYCLE (live-proved 2026-08-22): pick the back lane as DONE and the static

@@ -880,14 +880,18 @@
      NOT the user, it is a machine being handed material, so the turn names the line explicitly. Carrying the
      ORIGINAL request as well as the upstream output is load-bearing: a writer handed only research has no
      idea what was asked and invents one. */
-  function handoffPrompt(originalText, fromAgentId, upstream, hop, stageBrief) {
+  function handoffPrompt(originalText, fromAgentId, upstream, hop, stageBrief, verdictBrief) {
     // stageBrief (step editor, 2026-08-05): the RECEIVING dock's standing job brief — optional 5th param so
     // every existing caller composes byte-identical turns. Prompt text only; bounded like the compiled copy.
+    // verdictBrief (LOOP verdicts, 2026-08-22): the VERDICT-line instruction for a dock whose lane meets a
+    // verdict-keyed LOOP gate (sidecar/routing/verdict.js composes it) — optional 6th param, same law.
     const brief = (typeof stageBrief === 'string' && stageBrief.trim()) ? stageBrief.trim().slice(0, 2000) : '';
+    const verdict = (typeof verdictBrief === 'string' && verdictBrief.trim()) ? verdictBrief.trim().slice(0, 600) : '';
     return 'PIPELINE HANDOFF — you are stage ' + (hop + 1) + ' of a work line on this station.\n\n'
       + 'The original request was:\n' + String(originalText || '(none recorded)') + '\n\n'
       + 'The upstream stage (' + fromAgentId + ') produced:\n' + String(upstream) + '\n\n'
       + (brief ? 'YOUR STANDING BRIEF FOR THIS STATION:\n' + brief + '\n\n' : '')
+      + (verdict ? verdict + '\n\n' : '')
       + 'Do YOUR part of this work and produce the output for the next stage. Do not restate the upstream '
       + 'output — build on it. Answer with the work itself, not a description of what you would do.';
   }
