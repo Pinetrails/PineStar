@@ -2135,6 +2135,9 @@ const Build = (() => {
         : lbDefaultNote;
       if (next === lbSaved) return;
       lbSaved = next; sfx('click');
+      // the confirmation is DURABLE on the card (a blur-save used to show only the 1.3s flash, which a
+      // Commander tabbing to the next field never saw): the note itself says it landed
+      if (lbNote) lbNote.textContent = (res.limits ? '✓ line budget saved · ' : '✓ cleared — station defaults · ') + lbNote.textContent;
       flashTip(null, res.limits ? 'line budget saved' : 'line budget cleared — station defaults', true);
     };
     for (const el of lbNums) {
