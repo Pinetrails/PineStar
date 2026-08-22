@@ -108,8 +108,8 @@
         '</div>' +
       '</div>' +
       '<div id="mc-msg" class="msg" role="status" aria-live="polite"></div>';
-    // ---- CATALOG pane markup: one-click, vetted MCP servers. The cards + category groups render async from
-    //      GET /api/connectors/catalog. Installing reuses the SAME POST /api/connectors upsert the manual form uses. ----
+    // ---- CATALOG pane markup: one-click, vetted MCP servers and platform APIs. Cards render async from
+    //      both catalog endpoints and route through the existing connector/key setup flows. ----
     // The pane copy is JUST the setup-type legend now — the "browse vetted MCP servers and add them" sentence lived
     // here AND verbatim in the section desc below (mountConsole), so it read twice. CRT glyphs, not emoji.
     // The legend doubles as the FILTER: it already taught the three setup tiers, so making those same
@@ -128,10 +128,10 @@
         '<b class="cc-lg-key">API key</b> you paste a key · <b class="cc-lg-oauth">OAUTH</b> a secure browser sign-in.</span></p>' +
       '<div id="cc-list" class="cc-list"><span class="loading pulse">loading catalog…</span></div>' +
       '<div id="cc-msg" class="msg" role="status" aria-live="polite"></div>' +
-      '<p class="set-about dim">Need something not listed? Add any remote MCP server by URL in <b>MCP CONNECTORS</b>, or paste a bare API key for any platform in <b>KEYS</b>.</p>';
-    // ---- KEYS pane markup: every platform key the agents hold, in one place. Top = keyed CATALOG/MCP platforms
+      '<p class="set-about dim">Need something not listed? Add any remote MCP server by URL in <b>MCP CONNECTORS</b>, or paste a custom platform key in <b>KEYS</b>.</p>';
+    // ---- KEYS pane markup: every platform key the agents hold, in one place. Top = keyed catalog/MCP platforms
     //      currently connected (truth from /api/connectors — managed on their own tab, read-only here). Bottom =
-    //      custom keys for UNLISTED platforms (POST /api/servicekeys): the sidecar exposes each as an env var in
+    //      encrypted API credentials (POST /api/servicekeys): the sidecar exposes each as an env var in
     //      the agents' shell, so an agent can call ANY service's API with it. Values render masked, never whole. ----
     /* SHAPE (2026-08-13, Andrew's call): "keys should just be the list of keys available and connected,
        and underneath should allow users to add custom keys." The pane was FIVE stacked top-level sections
@@ -144,26 +144,17 @@
        shared `.set-sub` label, which is what they always were: two groups of one list. Their counts stay
        SPLIT for the same reason the code already refuses to fake one: if the /api/connectors read fails
        we say so rather than assert a zero, and a single summed total could not stay honest through that.
-       The platform directory keeps its job — most services ship no MCP server at all (probed 2026-07-24:
-       printify/printful/etsy/woocommerce/shopify all 404), so this generic key path IS their route, and
-       picking one prefills the exact name whose env var the agent references — but it folds into the ADD
-       block it feeds, instead of separating the list from the form. */
+       The curated platform directory now lives in CATALOG, where discovery belongs. Its cards route here
+       and prefill this form; KEYS stays the inventory/setup surface for credentials the Commander actually
+       holds, plus the escape hatch for a custom platform the catalog does not list. */
     const secKeys =
       '<div class="sec"><span class="sec-l">YOUR KEYS</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div class="set-sub"><span class="set-sub-k">CONNECTED PLATFORMS</span><span class="set-sub-d" id="ky-plat-n">0</span></div>' +
       '<div id="ky-platforms" class="mc-list"><span class="loading pulse">loading…</span></div>' +
-      '<div class="set-sub"><span class="set-sub-k">UNLISTED PLATFORM KEYS</span><span class="set-sub-d" id="ky-mine-n">0</span></div>' +
+      '<div class="set-sub"><span class="set-sub-k">CONNECTED API KEYS</span><span class="set-sub-d" id="ky-mine-n">0</span></div>' +
       '<div id="ky-list" class="mc-list"></div>' +
       '<div class="sec"><span class="sec-l">ADD A KEY</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div class="mc-form">' +
-        // the directory sits INSIDE the add block and above its first field, because its only job is to
-        // fill that field. Folded shut: it is a browse affordance for the minority who don't know the
-        // platform's exact name, never a step between the list and the form.
-        '<details class="mc-adv ky-pick"><summary>POD &amp; platform catalog — Printify, Printful, Gelato, Prodigi…</summary>' +
-          '<p class="mc-hint">Picking one just fills the form — you still paste your own key. ' +
-            'Anything not listed works too: type its name.</p>' +
-          '<div id="ky-catalog" class="cc-list"><span class="loading pulse">loading platforms…</span></div>' +
-        '</details>' +
         '<input id="ky-name" class="key-input" placeholder="platform name — e.g. Resend" autocomplete="off" spellcheck="false" maxlength="64">' +
         '<input id="ky-key" type="password" class="key-input" placeholder="API key" autocomplete="off" spellcheck="false">' +
         '<input id="ky-docs" class="key-input" placeholder="API docs URL (optional — helps agents use the service)" autocomplete="off" spellcheck="false">' +
@@ -271,8 +262,8 @@
 
     const host = mountConsole(body, 'connectors', [
       { id: 'toolsets', label: 'TOOLSETS', glyph: '▤', desc: 'Every capability your agents can use, grouped and switchable. A prop grants a toolset; the switch is the kill-switch on top.', build: frag(secToolsets) },
-      { id: 'catalog', label: 'CATALOG', glyph: '⊞', desc: 'One-click connectors — browse vetted services (docs, search, automation, payments…) and plug them in as agent tools.', build: frag(secCatalog) },
-      { id: 'keys', label: 'KEYS', glyph: '⊟', desc: 'Your curated POD and platform API catalog, connected keys, and a safe drop for anything else.', build: frag(secKeys) },
+      { id: 'catalog', label: 'CATALOG', glyph: '⊞', desc: 'Browse vetted connectors and platform APIs — including POD services — then plug them into your agents.', build: frag(secCatalog) },
+      { id: 'keys', label: 'KEYS', glyph: '⊟', desc: 'The platform credentials your agents actually hold, plus a safe drop for a custom API the catalog does not list.', build: frag(secKeys) },
       { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) },
       // shortened: the pane's own opening paragraph is the RICHER copy here (concrete moments, the
       // hook-vs-plugin distinction, the sandbox reason) — unusually, this is the one pane where the
@@ -858,12 +849,13 @@
     loadStdioAgents('');
     // NB: setupSpotify(body) is invoked from tsRefresh() above, once the JUKEBOX toolset row has mounted the sp-* markup.
 
-    // ===== CATALOG: one-click browse-and-add over GET /api/connectors/catalog =====
+    // ===== CATALOG: unified discovery over connector and platform API catalogs =====
     // Each card installs by pre-filling the SAME POST /api/connectors upsert the manual form uses; the manager
     // then really connects and reports honest live state, so a card never claims more than the backend proves.
     const ccListEl = body.querySelector('#cc-list');
     const ccMsgEl = body.querySelector('#cc-msg');
     let ccCache = [];   // flat catalog entries, so a click reads the authoritative id/url/name (never re-typed)
+    const ccEntry = id => ccCache.find(x => (x.catalogId || x.id) === id);
     const ccPending = new Set();   // connector ids with an in-flight OAuth sign-in (guards duplicate popups/pollers)
     const ccTimers = new Map();    // id -> live poll interval, so a CANCEL / panel-close can clear it (EL-11 #13)
     const ccPendingWin = new Map();// id -> popup window handle (browser) so a CANCEL can close a still-open consent tab
@@ -895,28 +887,32 @@
       return svg ? '<span class="mkt-coin cc-seal"><span class="mkt-coin-ico">' + svg + '</span></span>' : '';
     }
     function ccCard(e, ci) {
+      const cardId = e.catalogId || e.id;
       const chip = CC_CHIP[e.authType] || CC_CHIP.none;
-      const origin = e.official ? '<span class="cc-badge cc-official" title="first-party server, run by the vendor">✓ official</span>'
-                                : '<span class="cc-badge cc-community" title="community-run server">community</span>';
+      const origin = e.platformApi
+        ? '<span class="cc-badge cc-official" title="first-party REST API documented by the vendor">✓ official API</span>'
+        : (e.official ? '<span class="cc-badge cc-official" title="first-party server, run by the vendor">✓ official</span>'
+                      : '<span class="cc-badge cc-community" title="community-run server">community</span>');
       let action;
       if (e.installed) action = '<button class="bb xs" data-cc-act="added" disabled>✓ ADDED</button>';
+      else if (e.platformApi) action = '<button class="bb xs" data-cc-act="platform" data-id="' + esc(cardId) + '">+ ADD KEY</button>';
       // staticOauth entry still missing its pre-registered app client (Google): a SET UP reveal, never a
       // SIGN IN that can only 428. Once the client is saved, needsClient flips and the card renders SIGN IN.
       else if (e.authType === 'oauth' && e.staticOauth && e.needsClient) action =
-        '<button class="bb xs" data-cc-act="oclient" data-id="' + esc(e.id) + '" title="one-time app setup, then sign-in">▸ SET UP</button>';
+        '<button class="bb xs" data-cc-act="oclient" data-id="' + esc(cardId) + '" title="one-time app setup, then sign-in">▸ SET UP</button>';
       else if (e.authType === 'oauth') action = e.url
-        ? '<button class="bb xs" data-cc-act="signin" data-id="' + esc(e.id) + '" title="opens a secure browser sign-in (OAuth)">▸ SIGN IN</button>'
+        ? '<button class="bb xs" data-cc-act="signin" data-id="' + esc(cardId) + '" title="opens a secure browser sign-in (OAuth)">▸ SIGN IN</button>'
         : (e.via
           // url-less oauth entry reachable through an aggregator: a LIVE jump to that card, never a mute dead button.
-          ? '<button class="bb xs" data-cc-act="via" data-id="' + esc(e.id) + '" data-via="' + esc(e.via) + '" title="no direct endpoint — jump to the connector that reaches it">▸ VIA ' + esc(e.via.toUpperCase()) + '</button>'
+          ? '<button class="bb xs" data-cc-act="via" data-id="' + esc(cardId) + '" data-via="' + esc(e.via) + '" title="no direct endpoint — jump to the connector that reaches it">▸ VIA ' + esc(e.via.toUpperCase()) + '</button>'
           : '<button class="bb xs" data-cc-act="soon" disabled title="not directly wired yet — see the note">SOON</button>');   // an oauth entry with no endpoint and no aggregator is honestly not sign-in-able
-      else if (e.authType === 'apikey') action = '<button class="bb xs" data-cc-act="key" data-id="' + esc(e.id) + '">+ ADD</button>';
-      else action = '<button class="bb sm" data-cc-act="add" data-id="' + esc(e.id) + '">+ ADD</button>';
+      else if (e.authType === 'apikey') action = '<button class="bb xs" data-cc-act="key" data-id="' + esc(cardId) + '">+ ADD</button>';
+      else action = '<button class="bb sm" data-cc-act="add" data-id="' + esc(cardId) + '">+ ADD</button>';
       const keyDelivery = e.keyHeader
         ? '<code>' + esc(e.keyHeader) + ': &hellip;</code>'
         : '<code>Authorization: Bearer &hellip;</code>';
-      const keyField = e.authType === 'apikey'
-        ? '<div class="cc-key" style="display:none"><input type="password" class="key-input" data-cc-key="' + esc(e.id) + '" placeholder="' + esc(e.name) + ' API key / token" autocomplete="off" spellcheck="false">' +
+      const keyField = e.authType === 'apikey' && !e.platformApi
+        ? '<div class="cc-key" style="display:none"><input type="password" class="key-input" data-cc-key="' + esc(cardId) + '" placeholder="' + esc(e.name) + ' API key / token" autocomplete="off" spellcheck="false">' +
             '<div class="mc-hint">Stored locally by the sidecar, sent as ' + keyDelivery + ', never displayed again.</div></div>'
         : '';
       /* The one-time app-client setup for staticOauth entries (Google has no automatic app registration).
@@ -929,8 +925,8 @@
               '1&#41; follow the <a href="' + esc(e.staticOauth.setupUrl) + '" target="_blank" rel="noopener">' + esc(e.staticOauth.setupName || 'vendor setup guide') + ' ↗</a> &middot; ' +
               '2&#41; add this redirect URI exactly: <code>' + esc(redirectUri) + '</code> &middot; ' +
               '3&#41; paste the client ID and secret here.</div>' +
-            '<input type="text" class="key-input" data-cc-oclientid="' + esc(e.id) + '" placeholder="client ID" autocomplete="off" spellcheck="false">' +
-            '<input type="password" class="key-input" data-cc-oclientsecret="' + esc(e.id) + '" placeholder="client secret" autocomplete="off" spellcheck="false">' +
+            '<input type="text" class="key-input" data-cc-oclientid="' + esc(cardId) + '" placeholder="client ID" autocomplete="off" spellcheck="false">' +
+            '<input type="password" class="key-input" data-cc-oclientsecret="' + esc(cardId) + '" placeholder="client secret" autocomplete="off" spellcheck="false">' +
             '<div class="mc-hint">Stored locally by the sidecar, never displayed again. Then the button becomes a normal sign-in.</div>' +
           '</div>'
         : '';
@@ -942,14 +938,19 @@
       const presets = (Array.isArray(e.presets) && e.presets.length)
         ? '<div class="mc-hint">PRESETS · ' + e.presets.map(esc).join(' · ') + '</div>'
         : '';
+      const platformMeta = e.platformApi
+        ? (e.note ? '<div class="mc-hint">' + esc(e.note) + '</div>' : '') +
+          '<div class="mc-url dim"><code>' + esc(e.envVar) + '</code>' +
+            (e.docsUrl ? ' · <a class="dim" href="' + esc(e.docsUrl) + '" target="_blank" rel="noopener">docs ↗</a>' : '') + '</div>'
+        : '';
       // data-auth / data-installed drive the tier filter above. They mirror the chip the card already
       // shows, so the filter can never disagree with what is printed on the card.
-      return '<div class="cc-card' + (e.installed ? ' cc-on' : '') + '" data-id="' + esc(e.id) + '"' + alias +
+      return '<div class="cc-card' + (e.installed ? ' cc-on' : '') + '" data-id="' + esc(cardId) + '"' + alias +
           ' data-auth="' + esc(e.authType || 'none') + '" data-installed="' + (e.installed ? '1' : '0') + '"' +
           ' style="--ci:' + (ci || 0) + '">' +
           '<div class="cc-head">' + ccSeal(e) + '<b>' + esc(e.name) + '</b> ' + origin +
             '<span class="cc-chip" style="color:' + chip[2] + '" title="' + esc(chip[1]) + '">' + (chip[0] ? chip[0] + ' ' : '') + esc(chip[1]) + '</span></div>' +
-          '<div class="cc-blurb dim">' + esc(e.blurb) + '</div>' + presets + keyField + clientField +
+          '<div class="cc-blurb dim">' + esc(e.blurb) + '</div>' + presets + platformMeta + keyField + clientField +
           '<div class="cc-acts">' + action + home + '</div>' +
         '</div>';
     }
@@ -961,9 +962,31 @@
     }
     async function ccRefresh() {
       try {
-        const j = await Harness.api.get('/api/connectors/catalog');
-        ccCache = (j && j.connectors) || [];
-        const groups = (j && j.groups) || [];
+        const pair = await Promise.all([
+          Harness.api.get('/api/connectors/catalog'),
+          Harness.api.get('/api/servicekeys/catalog')
+        ]);
+        const j = pair[0] || {}, keyed = pair[1] || {};
+        // A platform API is catalog-worthy but it is NOT an MCP connector. Normalize only the card grammar;
+        // `platformApi` keeps its action on the KEYS/servicekeys path and prevents ccInstall from ever seeing it.
+        const platformGroups = ((keyed && keyed.groups) || []).map(g => ({
+          category: g.category,
+          connectors: (g.platforms || []).map(p => Object.assign({}, p, {
+            authType: p.unattendedSupported === false ? 'oauth' : 'apikey',
+            official: true,
+            platformApi: true,
+            catalogId: 'platform:' + p.id
+          }))
+        }));
+        // Platform categories lead: a Commander asking for Printify should not have to scroll past the entire
+        // MCP directory. Exact-name categories merge so Developer Tools does not render twice.
+        const groups = [];
+        for (const g of platformGroups.concat((j && j.groups) || [])) {
+          let out = groups.find(x => x.category === g.category);
+          if (!out) { out = { category: g.category, connectors: [] }; groups.push(out); }
+          out.connectors.push.apply(out.connectors, g.connectors || []);
+        }
+        ccCache = groups.flatMap(g => g.connectors);
         ccListEl.innerHTML = groups.map(ccGroupHTML).join('') || '<div class="mc-detail">catalog is empty.</div>';
         ccApplyFilter();   // a refresh re-renders every card, so re-assert the active tier filter
       } catch (_) { ccListEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to browse the catalog.</div>'; }
@@ -1028,7 +1051,7 @@
       if ((ccSearchIn.value || '').trim() && ccFilter !== 'all') ccSetFilter('all');
     });
     async function ccInstall(id, token) {
-      const e = ccCache.find(x => x.id === id);
+      const e = ccEntry(id);
       if (!e || !e.url) { sfx('bad'); return; }
       ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'connecting ' + e.name + '…';
       const payload = { id: e.id, label: e.name, transport: 'http', url: e.url, enabled: true };
@@ -1052,7 +1075,7 @@
       const out = msgOut || ccMsgEl;
       if (ccPending.has(id)) { sfx('bad'); out.classList.remove('ok'); out.textContent = 'a sign-in is already in progress for this connector…'; return; }
       ccPending.add(id);   // one in-flight sign-in per connector — no duplicate popups / concurrent pollers
-      const e = ccCache.find(x => x.id === id); const label = (e && e.name) || id;
+      const e = ccEntry(id); const label = (e && e.name) || id;
       out.classList.remove('ok'); out.textContent = 'starting sign-in for ' + label + '…';
       const attemptId = 'cc_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
       const controller = new AbortController();
@@ -1114,13 +1137,17 @@
       const w = ccPendingWin.get(id); ccPendingWin.delete(id);
       try { if (w && !w.closed) w.close(); } catch (_) {}
       ccResetSignBtn(id);
-      const e = ccCache.find(x => x.id === id); const label = (e && e.name) || id;
+      const e = ccEntry(id); const label = (e && e.name) || id;
       ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'sign-in for ' + label + ' cancelled — press SIGN IN to try again.'; sfx('tick');
     }
     ccListEl.addEventListener('click', async ev => {
       const btn = ev.target.closest('button[data-cc-act]'); if (!btn) return;
       const act = btn.dataset.ccAct, id = btn.dataset.id;
       if (act === 'add') { btn.disabled = true; await ccInstall(id); }
+      else if (act === 'platform') {
+        const entry = ccEntry(id);
+        if (entry) ccPrefillPlatform(entry);
+      }
       else if (act === 'key') {
         // first tap reveals the inline key field; the second (now ▶ CONNECT) submits it — no modal.
         const card = ev.target.closest('.cc-card');
@@ -1143,7 +1170,7 @@
         const cid = ((idIn && idIn.value) || '').trim();
         const secret = ((secIn && secIn.value) || '').trim();
         if (!cid) { sfx('bad'); ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'paste the client ID first'; return; }
-        const entry = ccCache.find(x => x.id === id);
+        const entry = ccEntry(id);
         if (entry && entry.staticOauth && entry.staticOauth.clientSecretRequired && !secret) { sfx('bad'); ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'paste the client secret too'; return; }
         btn.disabled = true;
         try {
@@ -1161,7 +1188,7 @@
         // Jump to the aggregator card that actually reaches this platform (e.g. Atlassian -> Zapier).
         const viaId = btn.dataset.via;
         const target = ccListEl.querySelector('.cc-card[data-id="' + (window.CSS && CSS.escape ? CSS.escape(viaId) : viaId) + '"]');
-        const e = ccCache.find(x => x.id === id), v = ccCache.find(x => x.id === viaId);
+        const e = ccEntry(id), v = ccEntry(viaId);
         ccMsgEl.classList.remove('ok');
         if (!target || !v) { ccMsgEl.textContent = '✕ the "' + viaId + '" connector is not in the catalog'; sfx('bad'); return; }
         ccMsgEl.textContent = ((e && e.name) || id) + ' connects through ' + v.name + ' — add ' + v.name + ' with one API key.';
@@ -1181,6 +1208,23 @@
     const kyNameEl = body.querySelector('#ky-name');
     const kyKeyEl = body.querySelector('#ky-key');
     const kyDocsEl = body.querySelector('#ky-docs');
+    // CATALOG owns discovery; KEYS owns the credential. A platform card lands on the real add form and
+    // carries only public setup metadata from /api/servicekeys/catalog — never a secret or invented state.
+    function ccPrefillPlatform(p) {
+      const tab = body.querySelector('#con-tab-connectors-keys');
+      if (tab) tab.click();
+      kyNameEl.value = p.name;
+      kyDocsEl.value = p.docsUrl || '';
+      kyMsgEl.classList.remove('ok');
+      kyMsgEl.textContent = p.unattendedSupported === false
+        ? p.name + ' is watched/manual only — ' + (p.unattendedReason || 'unattended use is unsupported')
+        : (p.authHint
+          ? 'paste your ' + p.name + ' key — the agent will send it as  ' + p.authHint
+          : 'paste your ' + p.name + ' key — the agent reads ' + (p.docsUrl || 'the docs') + ' for the right header');
+      if (host) host.scrollTop = host.scrollHeight;
+      kyKeyEl.focus();
+      sfx('click');
+    }
     // TOP: platforms whose credential is a saved key/token on a live connector config. Read-only here — each is
     // managed where it was added (its CATALOG card / MCP CONNECTORS row). hasToken/hasHeaders are the backend's honest flags;
     // we never see (or show) the value. OAuth connectors are keyless by design and stay off this list.
@@ -1242,7 +1286,7 @@
         const list = (j && j.keys) || [];
         const n = body.querySelector('#ky-mine-n'); if (n) n.textContent = String(list.length);
         kyListEl.innerHTML = list.length ? list.map(kyRow).join('')
-          : '<div class="mc-detail">Nothing yet — paste a name + key below and any agent with a shell can use that platform.</div>';
+          : '<div class="mc-detail">No API keys connected yet — choose a platform in CATALOG, or add a custom key below.</div>';
       } catch (_) { kyListEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage keys.</div>'; }
     }
     body.querySelector('#ky-add').addEventListener('click', async () => {
@@ -1262,7 +1306,7 @@
         if (j.saved !== false) notify('Key "' + name + '" saved', 'good');
         kyNameEl.value = ''; kyKeyEl.value = ''; kyDocsEl.value = '';
       } catch (e) { kyMsgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
-      kyCatalogRefresh(); kyRefresh();
+      ccRefresh(); kyRefresh();
     });
     kyListEl.addEventListener('click', async ev => {
       const btn = ev.target.closest('button[data-ky-act]'); if (!btn) return;
@@ -1273,7 +1317,7 @@
           if (j.error && !j.ok) { kyMsgEl.classList.remove('ok'); kyMsgEl.textContent = '✕ ' + j.error; sfx('bad'); }
           else { sfx('tick'); notify('Key removed'); }
         } catch (_) { sfx('bad'); }
-        kyCatalogRefresh(); kyRefresh();
+        ccRefresh(); kyRefresh();
       }
     });
     kyListEl.addEventListener('change', async ev => {
@@ -1289,80 +1333,16 @@
         else sfx('tick');
       } catch (_) { cb.checked = !cb.checked; sfx('bad'); }
       cb.disabled = false;
-      kyCatalogRefresh(); kyRefresh();
+      ccRefresh(); kyRefresh();
     });
-    /* PICK A PLATFORM — curated directory from GET /api/servicekeys/catalog. Clicking a card only PREFILLS
-       the add form (name + docs URL) and focuses the key field: the Commander still pastes their own key,
-       so nothing here can create a connection on its own. A platform already keyed shows as ✓ ADDED. */
-    const kyCatEl = body.querySelector('#ky-catalog');
-    async function kyCatalogRefresh() {
-      if (!kyCatEl) return;
-      try {
-        const res = await readJSON('/api/servicekeys/catalog');
-        if (!res.ok) { kyCatEl.innerHTML = readFailLine(res, 'sidecar offline — start it to browse platforms.'); return; }
-        const j = res.json;
-        const groups = (j && j.groups) || [];
-        // Only reachable now when the station genuinely served an empty directory — a real (if odd) answer.
-        if (!groups.length) { kyCatEl.innerHTML = '<div class="mc-detail">no platform directory available.</div>'; return; }
-        // `.cc-grid` (not a bare `.cc-group`): these are the SAME `.cc-card` the CATALOG renders, and
-        // without the grid they stacked one-per-row full width while the catalog's tiled three-up.
-        kyCatEl.innerHTML = groups.map(g =>
-          '<div class="cc-group"><div class="cc-cat">' + esc(g.category) + '</div><div class="cc-grid">' +
-          g.platforms.map((p, i) =>
-            '<div class="cc-card' + (p.installed ? ' added' : '') + '" data-ky-pick="' + esc(p.id) + '"' +
-              ((Array.isArray(p.aliases) && p.aliases.length) ? ' data-search="' + esc(p.aliases.join(' ')) + '"' : '') +
-              ' style="--ci:' + i + '">' +
-              // same hybrid seal the CATALOG cards carry — these ARE the same .cc-card
-              '<div class="cc-top">' + ccSeal(p) + '<b>' + esc(p.name) + '</b>' +
-                (p.installed ? '<span class="cc-tier cc-lg-none">✓ ADDED</span>' : (p.unattendedSupported === false
-                  ? '<span class="cc-tier cc-lg-oauth">MANUAL OAUTH</span>'
-                  : '<span class="cc-tier cc-lg-key">API key</span>')) + '</div>' +
-              '<div class="cc-blurb dim">' + esc(p.blurb || '') + '</div>' +
-              (p.note ? '<div class="mc-hint">' + esc(p.note) + '</div>' : '') +
-              '<div class="mc-url dim"><code>' + esc(p.envVar) + '</code>' +
-                (p.docsUrl ? ' · <a class="dim" href="' + esc(p.docsUrl) + '" target="_blank" rel="noopener">docs ↗</a>' : '') + '</div>' +
-            '</div>').join('') + '</div></div>').join('');
-      } catch (_) { kyCatEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to browse platforms.</div>'; }
-    }
-    if (kyCatEl) kyCatEl.addEventListener('click', async ev => {
-      if (ev.target.closest('a')) return;                       // the docs link is a real link, not a pick
-      const card = ev.target.closest('[data-ky-pick]'); if (!card) return;
-      try {
-        const res = await readJSON('/api/servicekeys/catalog');
-        // A silent `return` on a failed read looks like a dead click. Say why the card did nothing.
-        if (!res.ok) {
-          kyMsgEl.classList.remove('ok');
-          kyMsgEl.textContent = res.offline
-            ? 'sidecar offline — start it to pick a platform.'
-            : 'couldn\'t read the platform directory' + (res.status ? ' (HTTP ' + res.status + ')' : '') + ' — retry.';
-          return;
-        }
-        const j = res.json;
-        const p = ((j && j.groups) || []).flatMap(g => g.platforms).find(x => x.id === card.dataset.kyPick);
-        if (!p) return;
-        kyNameEl.value = p.name;
-        kyDocsEl.value = p.docsUrl || '';
-        kyMsgEl.classList.remove('ok');
-        kyMsgEl.textContent = p.unattendedSupported === false
-          ? p.name + ' is watched/manual only — ' + (p.unattendedReason || 'unattended use is unsupported')
-          : (p.authHint
-            ? 'paste your ' + p.name + ' key — the agent will send it as  ' + p.authHint
-            : 'paste your ' + p.name + ' key — the agent reads ' + (p.docsUrl || 'the docs') + ' for the right header');
-        // the directory is a fold ABOVE the fields it fills, so leaving it open after a pick pushes the
-        // now-prefilled form back off screen — exactly the separation folding it was meant to remove.
-        const pick = kyCatEl.closest('details.ky-pick'); if (pick) pick.open = false;
-        kyKeyEl.focus();
-        sfx('click');
-      } catch (_) { sfx('bad'); }
-    });
-
     kyPlatformsRefresh();
-    kyCatalogRefresh();
     kyRefresh();
     // panes mount once and tab clicks only toggle visibility — re-poll both lists when the Commander
     // lands on KEYS, so a connector keyed on the CATALOG tab moments ago shows up without a window reopen.
     const kyTab = body.querySelector('#con-tab-connectors-keys');
-    if (kyTab) kyTab.addEventListener('click', () => { kyPlatformsRefresh(); kyCatalogRefresh(); kyRefresh(); });
+    if (kyTab) kyTab.addEventListener('click', () => { kyPlatformsRefresh(); kyRefresh(); });
+    const ccTab = body.querySelector('#con-tab-connectors-catalog');
+    if (ccTab) ccTab.addEventListener('click', ccRefresh);
   }
 
   /* ---- SPOTIFY connect (OAuth PKCE): open the consent window, then poll /api/spotify/status until the
