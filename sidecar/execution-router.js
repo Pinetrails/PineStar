@@ -123,6 +123,14 @@ function makeExecutionRouter(deps) {
     refusingCache.set(key, proxy);
     return proxy;
   }
+  // Tools ask this BEFORE checkpointing or touching cwd: a typed error when the command would run somewhere
+  // other than the requested sandbox under 'refuse', else null. A registered-but-unprobed docker/ssh is
+  // NOT refused here — the honest proxy must attempt it so a sandbox that comes up later is honored.
+  function refusalFor(agentId) {
+    const res = resolutionFor(agentId);
+    if (fallbackPolicy !== 'refuse' || res.forcedLocal || res.matched !== false || res.id === res.requested) return null;
+    return sandboxError(res);
+  }
   function forAgent(agentId) {
     const res = resolutionFor(agentId);
     const real = environments[res.id] || environments[defaultBackendId];
@@ -182,6 +190,7 @@ function makeExecutionRouter(deps) {
     backendIdForProfile: backendForProfile,
     resolveBackend,
     resolutionFor,
+    refusalFor,
     sandboxFallback: fallbackPolicy,
     forAgent,
     ensureReady: agentId => callAgent('ensureReady', agentId, []),

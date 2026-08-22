@@ -655,6 +655,7 @@ test/station-recovery-cli.test.js
 test/execution-profiles.test.js
 test/execution-settings.test.js
 test/execution-router.test.js
+test/sandbox-no-silent-fallback.test.js
 test/execution-profiles-ui.test.js
 test/failopen.test.js
 test/failopen-ratchet.test.js
