@@ -2868,7 +2868,7 @@ const Build = (() => {
     const sr = (finSampleRes && finSampleRes.key === c.key) ? finSampleRes : null;
     const sampleOn = finSample === true && crewDone && !(sr && sr.pending);
     const sampleTip = finSample !== true ? 'coming online soon' : (crewDone ? 'feed ONE real, clearly-labeled sample job through the whole line' : 'crew the docks first');
-    const sampleTxt = (sr && sr.pending) ? '③ SAMPLE RIDING THE LINE…' : (sr && sr.view && sr.view.ok) ? '✓ SAMPLE DELIVERED — RUN ANOTHER' : '③ RUN A SAMPLE JOB';
+    const sampleTxt = (sr && sr.pending) ? (sr.phase === 'post' ? '③ POSTING LINE…' : '③ RUNNING — SAMPLE RIDING THE LINE…') : (sr && sr.view && sr.view.ok) ? '✓ SAMPLE DELIVERED — RUN ANOTHER' : '③ RUN A SAMPLE JOB';
     finCardEl.innerHTML = `
       <div class="fl-head"><span class="fl-title">▸ ${lname ? 'FINISH ' + esc(lname.toUpperCase()) : 'FINISH THE LINE'}</span><button type="button" class="bb sm fl-x" title="dismiss for this line">✕</button></div>
       <button type="button" class="bb fl-step${crewDone ? ' done' : ''}" data-act="crew"${crewDone ? ' disabled' : ''}>${esc(crewTxt)}</button>
@@ -2922,17 +2922,40 @@ const Build = (() => {
       + (v.reply ? '<div class="fl-result-reply"><span class="fl-result-k">SAID</span> ' + esc(v.reply) + '</div>' : '')
       + '</div>';
   }
+  /* POST THE LINE BEFORE RUNNING IT (2026-08-22). REFIT freezes the world, so the plan the sidecar routes by
+     is the one posted at the LAST REFIT CLOSE — a sample fired right after an edit ran the OLD line while
+     the floor drew the new one. Now the sample awaits World.syncPlan() (recompile if dirty + the server's
+     verdict on the POST) and dispatches only once the sidecar holds THIS floor; a line with blocking
+     compiler errors, or a POST the sidecar never answered, is REFUSED with the floor's own nag copy. */
+  function finPlanGate(c) {
+    const w = opts.world;
+    if (!w || typeof w.syncPlan !== 'function') return Promise.resolve(null);
+    let p; try { p = w.syncPlan(); } catch (_) { p = null; }
+    return Promise.resolve(p).then(s => {
+      if (!s) return null;
+      const errs = (s.errors || []);
+      if (errs.length) return { refuse: 'line not posted — fix the floor first: ' + errs.map(e => VAL_LABEL[e.code] || e.code).filter((v, i, a) => a.indexOf(v) === i).join(' · ') };
+      if (s.refusedHash && s.refusedHash === s.lastHash) return { refuse: 'the station refused this line — fix the nags on the floor first' };
+      if (s.stale || s.inflight || s.retryPending) return { refuse: 'line not posted — sidecar unreachable, the old line was NOT run' };
+      return null;
+    }, () => ({ refuse: 'line not posted — the old line was NOT run' }));
+  }
   function finRunSample(c) {
     sfx('click');
     const key = c.key;
-    finSampleRes = { key, stamp: Date.now(), pending: true };
+    finSampleRes = { key, stamp: Date.now(), pending: true, phase: 'post' };   // phase: 'post' (posting line…) → 'run' (running)
     finSig = ''; renderFinCard();
     const settle = (view) => { finSampleRes = { key, stamp: Date.now(), view }; finSig = ''; if (running) renderFinCard(); sfx(view.ok ? 'chime' : 'bad'); };
-    try {
-      fetch(finApi('/api/routing/sample'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: key }) })
-        .then(r => r.json().catch(() => null).then(j => settle(sampleResultView(j, r.status, agentLabel))))
-        .catch(() => settle({ ok: false, stages: [], usd: null, reply: '', reason: 'sample failed — sidecar unreachable' }));
-    } catch (e) { settle({ ok: false, stages: [], usd: null, reply: '', reason: 'sample failed — sidecar unreachable' }); }
+    const bad = reason => ({ ok: false, stages: [], usd: null, reply: '', reason });
+    finPlanGate(c).then(gate => {
+      if (gate && gate.refuse) { settle(bad(gate.refuse)); return; }
+      finSampleRes = { key, stamp: Date.now(), pending: true, phase: 'run' }; finSig = ''; if (running) renderFinCard();
+      try {
+        fetch(finApi('/api/routing/sample'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: key }) })
+          .then(r => r.json().catch(() => null).then(j => settle(sampleResultView(j, r.status, agentLabel))))
+          .catch(() => settle(bad('sample failed — sidecar unreachable')));
+      } catch (e) { settle(bad('sample failed — sidecar unreachable')); }
+    });
   }
   // per-frame: hide while anything coach-like is up (same gate family as the first ride), else pin
   // the card beside the line's bounding box in screen space (the flashTip/clientX coordinate basis).
@@ -5262,7 +5285,7 @@ const Build = (() => {
       return { lineId: comp.key, name, docks: ids.length, index: order.indexOf(agentId), order };
     } catch (e) { return null; }
   }
-  const api = { init, open, close, toggle, isOpen, requisition, openAssign, noteLineDelivered, lineOfAgentInfo };
+  const api = { init, open, close, toggle, isOpen, requisition, openAssign, noteLineDelivered, lineOfAgentInfo, nagLabel: code => VAL_LABEL[code] || code };   // nagLabel: the floor's own nag copy for a compiler code (ROUTINES RUN NOW refusal reads it)
   if (typeof window !== 'undefined' && window.__STARNET_DEV__) api.__test__ = __test__;
   return api;
 })();
