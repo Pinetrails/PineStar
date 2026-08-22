@@ -57,6 +57,7 @@
     const s = str(v || 'active').toLowerCase();
     return STATES.has(s) ? s : 'active';
   }
+  const REVIEW_ACTORS = new Set(['background-review', 'skill-review']);   // autonomous writers whose versions must be approved (the 24h curator is deliberately NOT here: it archives narrow siblings into a widened umbrella, and withholding the umbrella would leave the Commander with neither until they clicked)
   function trustSource(createdBy) {
     const source = str(createdBy).trim().toLowerCase();
     if (source === 'user') return 'user';
@@ -135,6 +136,7 @@
       state: stateOf(r.state),
       pinned: bool(r.pinned),
       createdBy: str(r.createdBy || 'agent'),
+      writtenBy: str(r.writtenBy || r.createdBy || 'agent'),   // who wrote THIS version (consistency loop: review writes ask)
       sourceRunId: r.sourceRunId ? str(r.sourceRunId) : null,
       sourceUrl: r.sourceUrl ? str(r.sourceUrl) : '',
       sourceDigest: r.sourceDigest ? str(r.sourceDigest) : '',
@@ -173,7 +175,7 @@
       id: s.id, agentId: s.agentId, name: s.name, summary: s.summary, description: s.description || s.summary || '',
       category: s.category, setup: s.setup || '',
       requires: (s.requires || []).slice(), platforms: (s.platforms || []).slice(), state: s.state, pinned: !!s.pinned,
-      createdBy: s.createdBy, sourceRunId: s.sourceRunId || null,
+      createdBy: s.createdBy, writtenBy: s.writtenBy || s.createdBy, sourceRunId: s.sourceRunId || null,
       sourceUrl: s.sourceUrl || '', sourceDigest: s.sourceDigest || '', sourceFetchedAt: s.sourceFetchedAt || 0,
       sourceVersion: s.sourceVersion || '', sourceAuthor: s.sourceAuthor || '', sourceLicense: s.sourceLicense || '',
       createdAt: s.createdAt || 0, updatedAt: s.updatedAt || 0, lastUsedAt: s.lastUsedAt || null,
@@ -247,6 +249,12 @@
             const policy = guard.shouldAllow(scan, { allowAsk: true });
             entry.guardAction = policy.action || '';
           }
+          /* PROVENANCE ASK (consistency loop, slice 3, 2026-08-22): a version written by the BACKGROUND REVIEW
+             (the quiet aux loop that patches/creates skills after a run or a verdict) is withheld from every
+             prompt until the Commander approves THESE bytes — the same digest-keyed gate a scanner `ask` uses
+             and the same keep/discard the memory turn-in card has always had. Memory proposals were reviewed;
+             skill writes landed straight into the next run's system prompt. A `block` stays a block. */
+          if (REVIEW_ACTORS.has(str(entry.writtenBy)) && entry.guardAction !== 'block') entry.guardAction = 'ask';
         }
       } catch (e) { failNote('skillstore.guard.scan', e); }
       // Stamp the digest of the content that was JUST scanned, so the verdict and the digest can
@@ -309,6 +317,7 @@
         state: stateOf(e.state || (existing && existing.state) || 'active'),
         pinned: e.pinned != null ? !!e.pinned : !!(existing && existing.pinned),
         createdBy: str(e.createdBy || (existing && existing.createdBy) || 'agent'),
+        writtenBy: str(e.createdBy || 'agent'),   // the actor of THIS write, never inherited (a review edit of a user skill is a review write)
         sourceRunId: e.sourceRunId ? str(e.sourceRunId) : ((existing && existing.sourceRunId) || null),
         sourceUrl: e.sourceUrl != null ? str(e.sourceUrl) : ((existing && existing.sourceUrl) || ''),
         sourceDigest: e.sourceDigest != null ? str(e.sourceDigest) : ((existing && existing.sourceDigest) || ''),

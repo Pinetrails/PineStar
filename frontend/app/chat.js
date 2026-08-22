@@ -5063,14 +5063,45 @@ const Chat = (() => {
     if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return true;
     return false;
   }
-  function skillAside(skillName, agentId) {
+  function skillAside(skillName, agentId, skillId) {
     if (!log) return false;
     const who = name || 'the agent';   // the module's live agent name — the aside only renders on this agent's own stream
     const r = row('agent'); r.d.classList.add('nudge'); r.d.classList.add('skill-aside');
     r.body.textContent = '◈ ' + who + ' distilled this run into skill: ' + brief(String(skillName || 'a new skill'));
     autoscroll();
-    // fleeting: fade it out after a beat so it never lingers as a fake unresolved card.
-    setTimeout(() => { try { vanish(r.d); } catch (_) {} }, 9000);
+    /* SKILL TURN-IN (consistency loop, slice 3, 2026-08-22). A version the background/verdict review wrote is
+       WITHHELD by the sidecar (skillstore provenance ask) until the Commander approves those bytes — so this aside
+       is no longer a fleeting FYI: when the sidecar reports the skill as approvable-and-unapproved, the card
+       carries the decision (use it / discard), exactly like the memory turn-in card. Popup law: the chips
+       appear only when a real decision is pending, and each tap changes station state (gate or archive).
+       When nothing is pending (an in-run agent write, already approved) the aside stays the old fleeting line. */
+    let decided = false;
+    const fade = () => { if (!decided) { decided = true; try { vanish(r.d); } catch (_) {} } };
+    (async () => {
+      try {
+        if (!skillId || typeof Harness === 'undefined' || !Harness.agentSkills) { setTimeout(fade, 9000); return; }
+        const skills = await Harness.agentSkills(agentId || 'agent');
+        const sk = (skills || []).find(x => x && String(x.id) === String(skillId));
+        const pending = !!(sk && sk.withheld && sk.guardApprovable);   // sidecar gate annotate(): withheld + approvable = a decision is pending (a block is never approvable)
+        if (!pending) { setTimeout(fade, 9000); return; }
+        r.body.textContent = '◈ ' + who + ' wants to change how this class of task is done — skill “' + brief(String(sk.name || skillName)) + '”. It stays out of every briefing until you decide.';
+        const choiceRow = choices([
+          { label: '✔ use it', value: 'allow' },
+          { label: '✖ discard', value: 'discard', skip: true },
+          { label: 'read it first', value: 'read', quiet: true }
+        ], async item => {
+          if (item.value === 'read') { try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('skills'); } catch (_) {} return; }   // 'skills' aliases into ABILITIES ▸ SKILL LIBRARY, where the body + approve controls live
+          decided = true;
+          let ok = false, flash = '';
+          if (item.value === 'allow') { const res = await Harness.agentSkillAllow({ agentId: agentId || 'agent', id: skillId, allow: true }); ok = !!(res && res.ok); flash = ok ? '✔ in every briefing from now on' : 'could not approve — open ABILITIES › SKILLS'; }
+          else { const res = Harness.agentSkillManage ? await Harness.agentSkillManage({ agentId: agentId || 'agent', action: 'archive', target: skillId, force: true }) : null; ok = !!(res && res.ok); flash = ok ? 'discarded' : 'could not discard — open ABILITIES › SKILLS'; }
+          r.body.textContent = '◈ skill “' + brief(String(sk.name || skillName)) + '” — ' + flash;
+          if (!ok) { try { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(flash, 'warn'); } catch (_) {} }
+          setTimeout(() => { try { vanish(r.d); } catch (_) {} }, 2500);
+        });
+        void choiceRow;
+      } catch (_) { setTimeout(fade, 9000); }
+    })();
     return true;
   }
   function wireSkillAside() {
@@ -5088,7 +5119,7 @@ const Chat = (() => {
       const agentId = p.agentId || 'agent';
       const onAgent = activeWs && (activeWs.agentId || 'agent') === agentId;
       if (!onAgent || skillBeatBusy()) return;
-      skillAside(p.title, agentId);
+      skillAside(p.title, agentId, p.id);
     });
   }
   // P3.2 — CAPTURE FORWARDED CREW SPEND. A team.dispatch worker runs its own agent loop and its agent.run.end is
