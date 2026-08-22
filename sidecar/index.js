@@ -28,7 +28,7 @@ const { makeConcurrencyGate } = require('./concurrency.js');
 const { makeWorkspaceLease } = require('./workspace-lease.js');
 const { makeWorkspaceOwner, defaultBootedAt } = require('./workspace-owner.js');
 const { classifyWorkspace, workspaceCandidates } = require('./workspace-safety.js');
-const { inspectWorkspaceLineage } = require('./workspace-lineage.js');
+const { inspectWorkspaceLineage, startFresh: startFreshWorkspace } = require('./workspace-lineage.js');
 const workspaceRecovery = require('./workspace-recovery.js');
 const { makeUpdatePreparation } = require('./update-preparation.js');
 const { makeAgentLifecycle } = require('./agent-lifecycle.js');
@@ -8315,6 +8315,7 @@ const ROUTES = [
   { m: 'GET', exact: '/api/update/status', h: handleUpdateStatus },
   { m: 'GET', exact: '/api/lineage/report', h: serveWorkspaceRecoveryReport },
   { m: 'POST', exact: '/api/lineage/recover', h: handleWorkspaceRecovery },
+  { m: 'POST', exact: '/api/lineage/start-fresh', h: handleWorkspaceStartFresh },
   { m: 'GET', exact: '/api/lineage', h: serveWorkspaceLineage },
   { m: 'POST', exact: '/api/session', h: handleApiSession },
   // qsplit, not exact: these carry ?provider= so the page can ask about the provider it is actually on.
@@ -8709,6 +8710,27 @@ async function handleWorkspaceRecovery(req, res) {
     json(202, Object.assign({}, result, { desktopWillRestart: DESKTOP_SHELL }));
     // Exit only after the authenticated response is flushed. The desktop guardian respawns automatically;
     // a manual sidecar is explicitly told by the UI to restart it. The next boot applies before store open.
+    setTimeout(() => process.exit(75), 150);
+  } catch (error) {
+    json(409, { ok: false, error: String(error && error.message || error) });
+  }
+}
+
+/* START FRESH (the gate's third exit). The Commander has explicitly chosen a new station over prior-install
+   evidence nothing could recover. Current-workspace state is MOVED to a sibling quarantine folder (never
+   deleted), external evidence roots are acknowledged by marker, then the sidecar exits exactly like a
+   recovery request so the desktop guardian respawns it into clean onboarding. Refused while a verified
+   recovery is pending — that path wins. */
+async function handleWorkspaceStartFresh(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const result = startFreshWorkspace({
+      fs, path, platform: process.platform, workspaceRoot: WORKSPACES,
+      candidateRoots: DEV_MODE ? [] : RECOVERY_CANDIDATE_ROOTS, now: Date.now
+    });
+    if (!result.ok) return json(409, { ok: false, error: result.error, moved: result.moved, quarantine: result.quarantine });
+    console.log('[lineage] START FRESH: moved ' + result.moved.length + ' file(s) to ' + (result.quarantine || '(nothing to quarantine)') + '; acknowledged ' + result.acknowledgedRoots.length + ' external root(s)');
+    json(202, Object.assign({}, result, { desktopWillRestart: DESKTOP_SHELL }));
     setTimeout(() => process.exit(75), 150);
   } catch (error) {
     json(409, { ok: false, error: String(error && error.message || error) });

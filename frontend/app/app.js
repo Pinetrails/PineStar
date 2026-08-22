@@ -4524,6 +4524,48 @@ const App = (() => {
       const input = el('file-import');
       if (input) { input.value = ''; input.click(); }
     };
+    // START FRESH — the third exit. When nothing here is recoverable (a first run whose overseer never woke,
+    // then a manual reset — 2026-08-22 report) RESTORE is dead and RETRY loops forever; this is the way out.
+    // Sidecar-backed: prior state is MOVED to a quarantine folder (never deleted) and external evidence is
+    // acknowledged, then the station service restarts into clean onboarding. Two clicks, never one.
+    const freshBtn = el('btn-lineage-fresh');
+    if (freshBtn) {
+      let armed = false;
+      freshBtn.onclick = async () => {
+        SFX.click && SFX.click();
+        if (!armed) {
+          armed = true;
+          freshBtn.textContent = '✦ CONFIRM — START A NEW STATION';
+          if (status) status.textContent = validCandidates.length
+            ? '＋ a recoverable station exists above — START FRESH sets it aside in a quarantine folder (nothing is deleted). Press again to confirm.'
+            : '＋ nothing here is recoverable. START FRESH moves the leftover files to a quarantine folder (nothing is deleted) and opens a new station. Press again to confirm.';
+          setTimeout(() => { if (armed) { armed = false; freshBtn.textContent = '✦ START FRESH'; } }, 12000);
+          return;
+        }
+        armed = false;
+        freshBtn.disabled = true;
+        if (status) status.textContent = '＋ setting prior state aside…';
+        try {
+          const response = await fetch('/api/lineage/start-fresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || !result.ok) throw new Error(result.error || 'start-fresh request refused');
+          if (status) status.textContent = (result.moved && result.moved.length ? '＋ ' + result.moved.length + ' file(s) set aside in ' + result.quarantine + ' — ' : '＋ ') +
+            (result.desktopWillRestart ? 'station service restarting — opening your new station…' : 'restart the manual sidecar; this screen will continue automatically');
+          // poll until the respawned sidecar answers, then reload: boot re-runs every gate and, with the
+          // evidence gone, lands on the first-run ceremony.
+          const timer = setInterval(async () => {
+            try {
+              const probe = await fetch('/api/lineage', { cache: 'no-store' });
+              const body = probe.ok ? await probe.json() : null;
+              if (body && body.lineage && body.lineage.priorInstallEvidence === false) { clearInterval(timer); location.reload(); }
+            } catch (_) {}
+          }, 1500);
+        } catch (error) {
+          freshBtn.disabled = false; freshBtn.textContent = '✦ START FRESH';
+          if (status) status.textContent = '＋ could not start fresh — ' + String(error && error.message || error);
+        }
+      };
+    }
     show('screen-lineage');
   }
 

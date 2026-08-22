@@ -21,13 +21,32 @@ function meaningfulEntries(fs, path, root) {
   } catch (_) { return []; }
 }
 
+// START FRESH marker: the Commander explicitly chose a new station over external prior-install evidence
+// (legacy roots, update snapshots) that nothing could recover. It lists the acknowledged roots; evidence from
+// those roots no longer gates. It NEVER suppresses current-workspace evidence — real station files in the live
+// workspace are always honored. Not in STATE_EVIDENCE, so the marker itself is never "prior state".
+const FRESH_MARKER = '.fresh-start.json';
+const QUARANTINE_DIR = 'workspace-quarantine';
+
+function readFreshMarker(fs, path, current) {
+  try {
+    const v = JSON.parse(fs.readFileSync(path.join(current, FRESH_MARKER), 'utf8'));
+    if (!v || v.version !== 1 || !Array.isArray(v.acknowledgedRoots)) return null;
+    return v;
+  } catch (_) { return null; }
+}
+
+function sameRoot(a, b, path, platform) {
+  const x = path.resolve(String(a)), y = path.resolve(String(b));
+  return platform === 'win32' ? x.toLowerCase() === y.toLowerCase() : x === y;
+}
+
 function inspectWorkspaceLineage(deps) {
   const d = deps || {}, fs = d.fs, path = d.path;
   const current = path.resolve(String(d.workspaceRoot || ''));
-  const same = (a, b) => {
-    const x = path.resolve(String(a)), y = path.resolve(String(b));
-    return d.platform === 'win32' ? x.toLowerCase() === y.toLowerCase() : x === y;
-  };
+  const same = (a, b) => sameRoot(a, b, path, d.platform);
+  const marker = readFreshMarker(fs, path, current);
+  const acknowledged = root => !!marker && marker.acknowledgedRoots.some(r => same(r, root));
   const evidence = [];
   const currentEntries = meaningfulEntries(fs, path, current);
   if (currentEntries.length) evidence.push({ kind: 'current-workspace', root: current, count: currentEntries.length, examples: currentEntries.map(x => x.name).slice(0, 8) });
@@ -37,13 +56,13 @@ function inspectWorkspaceLineage(deps) {
   for (const root of Array.isArray(d.candidateRoots) ? d.candidateRoots : []) {
     if (!root || same(root, current)) continue;
     const entries = meaningfulEntries(fs, path, root);
-    if (entries.length) evidence.push({ kind: 'legacy-workspace', root: path.resolve(root), count: entries.length, examples: entries.map(x => x.name).slice(0, 8) });
+    if (entries.length && !acknowledged(root)) evidence.push({ kind: 'legacy-workspace', root: path.resolve(root), count: entries.length, examples: entries.map(x => x.name).slice(0, 8) });
   }
   const snapshotsRoot = path.resolve(String(d.snapshotsRoot || path.join(path.dirname(current), 'update-snapshots')));
   try {
     const snapshots = fs.existsSync(snapshotsRoot)
       ? fs.readdirSync(snapshotsRoot).filter(name => /\.starnet-backup\.json$/i.test(name)).slice(0, 12) : [];
-    if (snapshots.length) evidence.push({ kind: 'update-snapshot', root: snapshotsRoot, count: snapshots.length, examples: snapshots });
+    if (snapshots.length && !acknowledged(snapshotsRoot)) evidence.push({ kind: 'update-snapshot', root: snapshotsRoot, count: snapshots.length, examples: snapshots });
   } catch (_) {}
   return {
     version: 1,
@@ -54,4 +73,44 @@ function inspectWorkspaceLineage(deps) {
   };
 }
 
-module.exports = { inspectWorkspaceLineage: inspectWorkspaceLineage, _internals: { meaningfulEntries: meaningfulEntries, STATE_EVIDENCE: STATE_EVIDENCE } };
+/* START FRESH — the gate's third exit (2026-08-22: a first-run whose overseer never woke, then a manual reset,
+   left a user on PRIOR STATION DATA FOUND with nothing recoverable and no way forward). Moves every
+   current-workspace state file into a sibling quarantine folder (NEVER deletes — a wrong click is
+   reversible by hand) and writes the marker acknowledging external evidence roots. Returns what moved.
+   Fails closed: any rename error stops the pass with the files that already moved reported, nothing lost. */
+function startFresh(deps) {
+  const d = deps || {}, fs = d.fs, path = d.path;
+  const now = typeof d.now === 'function' ? d.now : Date.now;
+  const current = path.resolve(String(d.workspaceRoot || ''));
+  const lineage = inspectWorkspaceLineage(d);
+  const stamp = new Date(now()).toISOString().replace(/[^0-9]/g, '').slice(0, 14);
+  const quarantine = path.join(path.dirname(current), QUARANTINE_DIR, stamp);
+  const moved = [];
+  const entries = meaningfulEntries(fs, path, current);
+  if (entries.length) {
+    try { fs.mkdirSync(quarantine, { recursive: true }); }
+    catch (e) { return { ok: false, error: 'could not create quarantine folder: ' + String(e && e.message || e), quarantine, moved }; }
+    for (const entry of entries) {
+      try { fs.renameSync(entry.path, path.join(quarantine, entry.name)); moved.push(entry.name); }
+      catch (e) { return { ok: false, error: 'could not move ' + entry.name + ': ' + String(e && e.message || e), quarantine, moved }; }
+    }
+  }
+  const acknowledgedRoots = lineage.evidence
+    .filter(row => row.kind === 'legacy-workspace' || row.kind === 'update-snapshot')
+    .map(row => row.root);
+  const prior = readFreshMarker(fs, path, current);
+  const marker = {
+    version: 1,
+    at: new Date(now()).toISOString(),
+    acknowledgedRoots: Array.from(new Set((prior ? prior.acknowledgedRoots : []).concat(acknowledgedRoots))),
+    quarantine: moved.length ? quarantine : null,
+    moved
+  };
+  try {
+    try { fs.mkdirSync(current, { recursive: true }); } catch (_) {}
+    fs.writeFileSync(path.join(current, FRESH_MARKER), JSON.stringify(marker, null, 2));
+  } catch (e) { return { ok: false, error: 'could not write the fresh-start marker: ' + String(e && e.message || e), quarantine, moved }; }
+  return { ok: true, quarantine: marker.quarantine, moved, acknowledgedRoots: marker.acknowledgedRoots };
+}
+
+module.exports = { inspectWorkspaceLineage: inspectWorkspaceLineage, startFresh: startFresh, FRESH_MARKER: FRESH_MARKER, _internals: { meaningfulEntries: meaningfulEntries, STATE_EVIDENCE: STATE_EVIDENCE } };

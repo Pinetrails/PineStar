@@ -109,6 +109,35 @@ function station(name, updatedAt, marker) {
     A.eq(fs.readFileSync(path.join(legacyA, 'agent.save.json')).equals(legacyABytes), true, 'unselected source remains byte-exact');
     A.eq(fs.readFileSync(path.join(legacyB, 'agent.save.json')).equals(legacyBBytes), true, 'selected source remains byte-exact');
     A.ok(fs.readdirSync(path.dirname(current)).some(name => name.startsWith('workspaces.recovery-rollback-')), 'empty current generation is retained as rollback');
+
+    // START FRESH over the real route: the recovered station's save is removed (the "manual reset" a stranded
+    // user performs), leftover ledgers remain, legacy roots still exist → the gate fires with nothing chosen.
+    // Start fresh must quarantine the leftovers, acknowledge the legacy roots, exit 75, and the next boot
+    // must allow onboarding — with every legacy source byte-exact.
+    try { second.child.kill('SIGKILL'); } catch (_) {}
+    await waitExit(second.child, 5000);   // release the owner claim before editing the workspace
+    for (const name of fs.readdirSync(current)) if (/^agent\.save\.json/.test(name)) fs.unlinkSync(path.join(current, name));
+    try { fs.unlinkSync(path.join(current, '.starnet-workspace-owner.json')); } catch (_) {}
+    fs.writeFileSync(path.join(current, 'ledger.jsonl'), '{"event":"leftover"}\n');
+    const third = await launch();
+    const gated = await (await fetch('http://127.0.0.1:' + third.port + '/api/save?agent=agent', { headers: { 'X-StarNet-Token': TOKEN } })).json();
+    A.eq(gated.save, null, 'fixture: the active save is gone again');
+    A.eq(gated.lineage.priorInstallEvidence, true, 'fixture: the gate fires on leftovers + legacy roots');
+    const fresh = await fetch('http://127.0.0.1:' + third.port + '/api/lineage/start-fresh', {
+      method: 'POST', headers: { 'X-StarNet-Token': TOKEN, 'Content-Type': 'application/json' }, body: '{}'
+    });
+    const freshBody = await fresh.json();
+    A.eq(fresh.status, 202, 'START FRESH is accepted over the authenticated route');
+    A.ok(freshBody.moved.includes('ledger.jsonl'), 'the leftover ledger was set aside');
+    A.ok(freshBody.quarantine && fs.existsSync(path.join(freshBody.quarantine, 'ledger.jsonl')), 'set-aside files live on in the quarantine folder');
+    const exit3 = await waitExit(third.child, 5000);
+    A.eq(exit3.code, 75, 'sidecar exits with the guardian restart code after starting fresh');
+    const fourth = await launch();
+    const after = await (await fetch('http://127.0.0.1:' + fourth.port + '/api/save?agent=agent', { headers: { 'X-StarNet-Token': TOKEN } })).json();
+    A.eq(after.lineage.priorInstallEvidence, false, 'after START FRESH the next boot finds no gating evidence');
+    A.eq(after.lineage.onboardingAllowed, true, 'onboarding is allowed — the user is no longer stranded');
+    A.eq(fs.readFileSync(path.join(legacyA, 'agent.save.json')).equals(legacyABytes), true, 'legacy A remains byte-exact after START FRESH');
+    A.eq(fs.readFileSync(path.join(legacyB, 'agent.save.json')).equals(legacyBBytes), true, 'legacy B remains byte-exact after START FRESH');
     A.report('workspace-lineage.http.test');
   } finally {
     if (child) {
