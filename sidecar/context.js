@@ -286,7 +286,12 @@
     const lead = opts.prevSummary
       ? 'You maintain a running summary of an agent conversation. MERGE the new earlier-slice into the PREVIOUS SUMMARY (update, do not just append; drop anything now obsolete), keeping ONE summary in this exact structure.'
       : 'You compress an earlier slice of an agent conversation into a structured summary that REPLACES the raw turns. Use this EXACT structure.';
-    return lead + ' Output ONLY these sections, each as "## <name>" on its own line; omit a section only if truly empty; be terse and factual (no pleasantries); keep exact identifiers, paths, values, and sources:\n' +
+    /* COLLECTED RESULTS ARE NEVER OBSOLETE. The fold is a chain of sequential merges (chunk N carries chunk N-1's
+       summary), and a cheap model reading "drop anything now obsolete" dropped the values gathered in early chunks —
+       live-proved 08-21 (1 run in 10): the agent then CONFABULATED 17 of 30 read values. Only superseded plans and
+       answered questions may be dropped; every result the task has gathered so far rides forward verbatim. */
+    const keep = ' Collected results are NEVER obsolete: every value, identifier, path, token, number, or output the task has gathered so far (in the previous summary or in these turns) must be carried forward VERBATIM and complete, listed under "## Completed" — only superseded plans and answered questions may be dropped.';
+    return lead + keep + ' Output ONLY these sections, each as "## <name>" on its own line; omit a section only if truly empty; be terse and factual (no pleasantries); keep exact identifiers, paths, values, and sources:\n' +
       COMPACTION_SECTIONS.map(s => '## ' + s).join('\n');
   }
 

@@ -337,6 +337,7 @@ A.eq(JSON.stringify(compactionMemoryBlock(memRecs, 'replies', { now: 1000 })), J
   const m = compactionSummaryPrompt({ prevSummary: true });
   A.ok(/MERGE/.test(m) && /PREVIOUS SUMMARY/.test(m), 'with a prior summary the template instructs a MERGE-update (H5.2)');
   for (const s of COMPACTION_SECTIONS) A.ok(m.indexOf('## ' + s) >= 0, 'merge template keeps section: ' + s);
+  A.ok(/Collected results are NEVER obsolete/.test(m) && /Collected results are NEVER obsolete/.test(p), 'both templates order collected values carried forward VERBATIM (the chunk-chain merge was dropping them)');
 }
 
 /* ---- tool_calls are part of the prompt. They were not counted at all, and in an agentic loop the call
