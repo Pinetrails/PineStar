@@ -766,6 +766,70 @@ A.eq(JSON.stringify(WM.deserialize({ rooms: {}, order: [], props: [], edges: [{ 
   A.eq(plan.reach.coder, true, 'branch bay reachable through the junction');
 }
 
+/* ---- connectBelt can wire a 1x1 JUNCTION (2026-08-22 stranded-user sweep) ----
+   The old path picked ANY pathable ring tile of a junction (diagonal corners included) and never laid a belt
+   on the junction's own tile, so "CONNECTED" chimed while the compiler reported SPLIT_ONE_LANE /
+   JOIN_ONE_LANE / BAY_NOT_FED. The proof is the compiler's verdict on a floor built PURELY by click-connect. */
+{
+  const Pipeline = require('../frontend/app/pipeline.js');
+  const st = WM.create();
+  const add = (t, x, y, w, h) => st.addProp({ t, x, y, w, h, block: false });
+  // INBOX -> SPLITTER -> (A | B) -> JOINER -> C -> OUTBOX
+  const inbox = add('intake', 0, 4, 2, 2), sp = add('splitter', 3, 5, 1, 1), a = add('bay', 5, 1, 2, 2), b = add('bay', 5, 8, 2, 2);
+  const jn = add('joiner', 9, 5, 1, 1), c = add('bay', 11, 4, 2, 2), ob = add('outbox', 15, 4, 2, 2);
+  st.assignPropAgent(a.id, 'A'); st.assignPropAgent(b.id, 'B'); st.assignPropAgent(c.id, 'C');
+  for (const [f, t] of [[inbox, sp], [sp, a], [sp, b], [a, jn], [b, jn], [jn, c], [c, ob]]) {
+    const r = st.connectBelt(f.id, t.id);
+    A.ok(r.ok, f.t + ' -> ' + t.t + ' connects (' + JSON.stringify(r) + ')');
+  }
+  A.ok(!!st.beltAt(3, 5), 'the lane runs THROUGH the splitter tile (a belt lies under it)');
+  A.ok(!!st.beltAt(9, 5), 'the lane runs THROUGH the joiner tile');
+  const plan = Pipeline.compileRoutingPlan(st.projectGeometry());
+  A.eq(JSON.stringify(plan.errors), '[]', 'a split/join floor built purely by click-connect compiles with NO findings');
+  const js = Object.values(plan.junctions);
+  const split = js.find(j => j.kind === 'split'), join = js.find(j => j.kind === 'join');
+  A.eq(split && split.fanout, true, 'the splitter compiles as a fan-out split (two real out-lanes, joiner downstream)');
+  A.eq(join && join.expect, 2, 'the joiner counts TWO in-lanes');
+  A.eq(plan.chains.A.next.join(','), 'C', 'A chains through the joiner to C');
+  A.eq(plan.chains.B.next.join(','), 'C', 'B chains through the joiner to C');
+  A.eq(plan.reach.A && plan.reach.B, true, 'both branches are reachable from the INBOX');
+  // the joiner's own arrow points at its exit, never into an in-lane
+  const jb = st.beltAt(9, 5);
+  A.eq(jb, 'E', 'the joiner tile aims at its out-lane (' + jb + ')');
+  // the honest failure: a junction boxed in on all four sides cannot be entered — no chime, a message that says so
+  const st2 = WM.create();
+  const i2 = st2.addProp({ t: 'intake', x: 0, y: 4, w: 2, h: 2, block: false });
+  const s2 = st2.addProp({ t: 'splitter', x: 8, y: 5, w: 1, h: 1, block: false });
+  for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) st2.addProp({ t: 'rack', x: 8 + dx, y: 5 + dy, w: 1, h: 1, block: true });
+  const r2 = st2.connectBelt(i2.id, s2.id);
+  A.ok(!r2.ok && /SPLITTER/.test(r2.msg || ''), 'a boxed-in junction refuses honestly and names the machine (' + JSON.stringify(r2) + ')');
+  A.eq(st2.belts().length, 0, '...and lays nothing (never a corner lane the compiler cannot count)');
+}
+{
+  // writer -> reviewer -> LOOP (done -> OUTBOX, back -> writer): the draft/review loop built by click-connect
+  const Pipeline = require('../frontend/app/pipeline.js');
+  const st = WM.create();
+  const add = (t, x, y, w, h) => st.addProp({ t, x, y, w, h, block: false });
+  const inbox = add('intake', 0, 0, 2, 2), w = add('bay', 1, 4, 2, 2), r = add('bay', 6, 4, 2, 2), lp = add('loop', 10, 5, 1, 1), ob = add('outbox', 13, 4, 2, 2);
+  st.assignPropAgent(w.id, 'writer'); st.assignPropAgent(r.id, 'reviewer');
+  for (const [f, t] of [[inbox, w], [w, r], [r, lp], [lp, ob], [lp, w]]) {
+    const res = st.connectBelt(f.id, t.id);
+    A.ok(res.ok, f.t + ' -> ' + t.t + ' connects (' + JSON.stringify(res) + ')');
+  }
+  const plan = Pipeline.compileRoutingPlan(st.projectGeometry());
+  A.ok(!plan.errors.some(e => e.code === 'CHAIN_CYCLE' || e.code === 'CYCLE'), 'a review loop through a LOOP gate is not a cycle: ' + JSON.stringify(plan.errors));
+  A.eq(JSON.stringify(plan.errors), '[]', 'the loop floor compiles with no findings (no LOOP_NO_DONE / LOOP_NO_BACK nag)');
+  const gate = Object.values(plan.junctions).find(j => j.kind === 'loop');
+  A.ok(gate && gate.back && gate.done && gate.done !== gate.back, 'the gate has distinct done and back lanes');
+  A.eq(gate.backTo, 'writer', 'the back lane re-enters the WRITER (the lane does not brush the reviewer ring on its way back)');
+  A.eq(st.propById(lp.id).done, gate.done, 'connecting LOOP -> OUTBOX named that lane the done lane on the prop');
+  A.eq(plan.chains.reviewer.next.length, 0, 'the reviewer is statically terminal (done lane -> OUTBOX)');
+  const step = Pipeline.chainStep(plan, 'reviewer', { lineId: Pipeline.lineOf(plan, 'reviewer') });
+  A.ok(step && step.loop && step.backTo === 'writer' && step.next === null, 'the chain runner will meet the loop gate from the reviewer (' + JSON.stringify(step) + ')');
+  // a second connect of the same pair does not re-route: the first lane is already there
+  A.eq(plan.reach.writer, true, 'the writer is fed by the INBOX');
+}
+
 /* ---- A STATION HAS A DURABLE IDENTITY (2026-08-07 conveyor audit) ----
    `meta.createdAt` is the id every per-station REFIT one-shot namespaces its localStorage on (the first
    ride, the ORDERS dismissal, the finish-the-line registry — build.js stationKeyOf). Nothing ever stamped

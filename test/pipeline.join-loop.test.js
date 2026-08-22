@@ -123,7 +123,47 @@ function loopFloor(gateCfg) {
   // config
   A.eq(P.compileRoutingPlan(loopFloor({ maxIter: 3 })).junctions['12,4'].max, 3, 'maxIter is plan-configurable');
   A.eq(P.compileRoutingPlan(loopFloor({ maxIter: 99 })).junctions['12,4'].max, 20, 'maxIter is hard-capped at 20');
-  A.ok(P.compileRoutingPlan(loopFloor({ done: null })).errors.some(e => e.code === 'LOOP_NO_DONE' && e.warn), 'an unconfigured done lane warns LOOP_NO_DONE');
+  // LOOP_NO_DONE rule (2026-08-22): an unset `done` takes the compiler's own default (first exit in E,S,W,N
+  // order) and is NOT a finding — every user-drawn loop used to nag. Warn only when no exit qualifies, or when
+  // a configured `done` names a lane that is not an exit (the config was silently overridden).
+  A.ok(!P.compileRoutingPlan(loopFloor({ done: null })).errors.some(e => e.code === 'LOOP_NO_DONE'), 'an unset done lane takes the default exit — no LOOP_NO_DONE');
+  A.eq(P.compileRoutingPlan(loopFloor({ done: null })).junctions['12,4'].done, 'E', 'the default done lane is the first exit (E)');
+  A.ok(P.compileRoutingPlan(loopFloor({ done: 'W' })).errors.some(e => e.code === 'LOOP_NO_DONE' && e.warn), 'a configured done that is not an exit warns LOOP_NO_DONE');
+}
+
+/* THE STRANDED-USER FLOOR (2026-08-22): writer -> reviewer -> LOOP{done: E -> OUTBOX, back: N -> writer}.
+   The reviewer's static chain is TERMINAL (its done lane ships out, `next: []`) so chainStep returned null and
+   the runner never met the gate: the line never looped once. */
+function loopToOutboxFloor(gateCfg) {
+  const g = loopFloor(gateCfg);
+  g.props[4] = { id: 'p6', t: 'outbox', x: 15, y: 3, w: 2, h: 2 };   // publisher dock -> OUTBOX
+  return g;
+}
+{
+  const plan = P.compileRoutingPlan(loopToOutboxFloor());
+  A.ok(P.ok(plan), 'loop-then-outbox compiles deployable: ' + JSON.stringify(plan.errors));
+  A.ok(!plan.errors.some(e => e.code === 'CHAIN_CYCLE' || e.code === 'CYCLE'), 'no cycle error on a gated loop that exits to OUTBOX');
+  A.eq(plan.chains.reviewer.next.length, 0, 'statically the reviewer is terminal (done lane -> OUTBOX)');
+  A.eq(plan.chains.reviewer.outbox, true, 'and its lane ships out');
+  A.eq(plan.chains.reviewer.gated, true, 'the lane is marked gated (a loop sits on it)');
+  const st = P.chainStep(plan, 'reviewer', onLine(plan, 'reviewer'));
+  A.ok(st && st.loop === '12,4', 'chainStep from a terminal reviewer STILL meets the loop gate (' + JSON.stringify(st) + ')');
+  A.eq(st.backTo, 'drafter', 'the step carries backTo'); A.eq(st.next, null, 'the done dock is null (ships out)');
+  const back = P.chainStep(plan, 'reviewer', onLine(plan, 'reviewer', { fromTile: { x: 12, y: 4 }, via: 'back' }));
+  A.eq(back && back.agentId, 'drafter', 'the back lane re-enters the drafter');
+  A.eq(P.chainNext(plan, 'reviewer', onLine(plan, 'reviewer')), null, 'chainNext (older surfaces) still reads terminal');
+  A.ok(!plan.chains.drafter.gated, 'an ungated lane carries no gated flag');
+  A.ok(!plan.errors.some(e => e.code === 'LOOP_NO_DONE'), 'default done lane: no LOOP_NO_DONE nag');
+}
+/* the same hole for a JOINER whose exit goes straight to OUTBOX: the branches must still meet the barrier */
+{
+  const g = joinFloor(); g.props[5] = { id: 'p6', t: 'outbox', x: 12, y: 4, w: 2, h: 2 };
+  const plan = P.compileRoutingPlan(g);
+  A.ok(P.ok(plan), 'join-then-outbox compiles deployable: ' + JSON.stringify(plan.errors));
+  A.eq(plan.chains.A.next.length, 0, 'A is statically terminal'); A.eq(plan.chains.A.gated, true, 'A lane is gated by the joiner');
+  const st = P.chainStep(plan, 'A', onLine(plan, 'A'));
+  A.ok(st && st.join === '9,4' && st.expect === 2 && st.next === null, 'chainStep from A meets the joiner barrier with no dock past it (' + JSON.stringify(st) + ')');
+  A.eq(plan.junctions['3,0'].fanout, true, 'the split still fans out');
 }
 
 /* a loop-less cycle is STILL refused (the existing guard is untouched) */

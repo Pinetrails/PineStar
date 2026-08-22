@@ -176,7 +176,11 @@
           cfg.done = ll.done; cfg.back = ll.back;
           // optional verdict tag: re-enter ONLY when the output's tag matches (else every pass loops until max)
           if (typeof p.when === 'string' && /^[A-Za-z0-9_.:-]{1,40}$/.test(p.when)) cfg.when = p.when;
-          if (!p.done || p.done !== ll.done) errors.push({ code: 'LOOP_NO_DONE', propId: p.id, warn: true });
+          // LOOP_NO_DONE (rule fixed 2026-08-22): an UNSET `done` takes the compiler's own default — the first
+          // exit in E,S,W,N order — and that is a working gate, not a finding (every user-drawn loop used to
+          // nag). Warn only when NO exit qualifies, or when a configured `done` names a lane that is not an
+          // exit (the config was silently overridden by the default).
+          if (!ll.done || (p.done && p.done !== ll.done)) errors.push({ code: 'LOOP_NO_DONE', propId: p.id, warn: true });
           if (!ll.back) errors.push({ code: 'LOOP_NO_BACK', propId: p.id, warn: true });
         }
         if (kind === 'filter') {
@@ -469,17 +473,22 @@
     const outAt = {};
     for (const o of (plan.outs || [])) outAt[key(o.tile.x, o.tile.y)] = true;
     const found = {}, seen = {}, q = [];
-    let outbox = false, deadEnd = false;
+    let outbox = false, deadEnd = false, gated = false;
     for (const t of starts) { const k = key(t.x, t.y); if (map[k] && !seen[k]) { seen[k] = true; q.push(t); } }
     while (q.length) {
       const t = q.shift(), k = key(t.x, t.y), owner = bayAt[k];
       if (owner && owner !== agentId) { found[owner] = true; continue; }   // a foreign dock CONSUMES the handoff
       if (outAt[k]) outbox = true;                                          // this lane also ships out
+      // a LOOP gate / JOINER on the lane is a RUNTIME stage even when nothing static lies past it (2026-08-22):
+      // a reviewer whose done lane goes straight to OUTBOX has `next: []`, yet its back lane still re-runs
+      // the line. `gated` keeps that lane a chain step so the runner meets the gate (the draft→review→LOOP
+      // floor that never looped).
+      const jg = junctions[k]; if (jg && (jg.kind === 'loop' || jg.kind === 'join')) gated = true;
       const nts = nextTiles(map, junctions, t);
       if (!nts.length) { if (!outAt[k]) deadEnd = true; continue; }
       for (const nt of nts) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
     }
-    return { next: Object.keys(found).sort(), outbox, deadEnd };
+    return { next: Object.keys(found).sort(), outbox, deadEnd, gated };
   }
 
   /* which ring hookup does a dock SHIP from? A bay can touch several lanes (one in, one out). Pick the tile whose
@@ -488,18 +497,20 @@
      is recorded in ring-scan order. Returns { tile, next, outbox, deadEnd } or null for a beltless dock. */
   function shipFrom(plan, bay) {
     const tiles = (bay.tiles && bay.tiles.length) ? bay.tiles : (bay.tile ? [bay.tile] : []);
-    let viaOutbox = null, first = null;
+    let viaGate = null, viaOutbox = null, first = null;
     for (const t of tiles) {
       // the walk STARTS ON the hookup itself (not its successor): a dock's ring tile is very often ALSO the
       // outbox's ring tile on a short bay->OUTBOX lane, and starting one tile downstream stepped straight over
       // the delivery mouth and reported the ship-out lane as a dead end.
       const r = chainWalk(plan, bay.agentId, [t]);
       const rec = { tile: t, next: r.next, outbox: r.outbox, deadEnd: r.deadEnd };
+      if (r.gated) rec.gated = true;                    // additive: only present when a gate sits on the lane
       if (r.next.length) return rec;                    // feeds another dock — the strongest signal
+      if (r.gated && !viaGate) viaGate = rec;           // a gate (loop/join) lane outranks a plain ship-out lane
       if (r.outbox && !viaOutbox) viaOutbox = rec;
       if (!first) first = rec;
     }
-    return viaOutbox || first;
+    return viaGate || viaOutbox || first;
   }
 
   // { agentId -> { tile, next:[agentId…], outbox, deadEnd } } for every belt-hooked bound bay.
@@ -601,7 +612,9 @@
     const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
     const tag = (ctx && ctx.tag) || 'general';
     const fromTile = ctx && ctx.fromTile;
-    if (!fromTile && (!rec || !rec.tile || !rec.next.length)) return null;
+    // a lane with no static next dock is still a step when a LOOP/JOIN gate sits on it (rec.gated) — the
+    // gate's back lane / barrier is what runs, and only the walk below can see it
+    if (!fromTile && (!rec || !rec.tile || (!rec.next.length && !rec.gated))) return null;
     const walkAgent = r => (r && r.agentId) ? r.agentId : null;
     // walk one lane to the first foreign dock, honouring filters/merges; stops at a join, a loop or a fan-out split
     function walk(start, startDir) {

@@ -117,9 +117,15 @@ const Build = (() => {
   // short human labels for the routing-validation overlay (cost-safety: surfaced before any paid run)
   // every label NAMES THE FIX, in words (mirrors world.js NAG_LABEL — keep the two in sync)
   const VAL_LABEL = {
-    ORPHAN_SOURCE: 'NOT CONNECTED — BELT: CLICK IT, THEN A BAY', ORPHAN_BAY: 'NOT ON THE LINE', BAY_NOT_FED: 'NOT CONNECTED — BELT: CLICK IT, THEN A MACHINE',
+    ORPHAN_SOURCE: 'NOT CONNECTED — BELT: CLICK IT, THEN A BAY', ORPHAN_BAY: 'NOT ON THE LINE',
+    // a belt that only TOUCHES the junction corner feeds nothing: the lane must run THROUGH the junction tile
+    BAY_NOT_FED: 'NOT FED — RUN A BELT INTO IT (THROUGH ANY JUNCTION TILE, NOT PAST ITS CORNER)',
     CYCLE: 'LOOP! — BREAK THE CIRCLE', FILTER_NO_DEFAULT: 'NO DEFAULT LANE — CLICK', DUP_AGENT: 'DUP AGENT — ONE BAY EACH',
-    UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES',
+    UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 OUT-LANES — RUN BELTS THROUGH ITS TILE, IN ONE SIDE, OUT TWO',
+    JOIN_ONE_LANE: 'JOINER NEEDS 2 IN-LANES — RUN A SECOND BELT INTO ITS TILE',
+    // the done lane defaults to the FIRST exit (E, S, W, N order); this only fires with no exit, or a done set to a non-exit
+    LOOP_NO_DONE: 'LOOP HAS NO DONE LANE — RUN A BELT OUT OF ITS TILE (FIRST EXIT E/S/W/N IS DONE)',
+    LOOP_NO_BACK: 'LOOP HAS NO BACK LANE — RUN A SECOND BELT OUT OF ITS TILE BACK TO AN EARLIER BAY',
     ORPHAN_JUNCTION: 'NOT ON A BELT — MOVE IT ONTO THE LINE',
     BELT_BURIED: 'A PROP SITS ON THIS LINE — MOVE IT',
     // the docks feed each OTHER: no belt loop anywhere, but the work line would run forever, paying each lap
