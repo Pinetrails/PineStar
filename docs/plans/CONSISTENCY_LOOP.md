@@ -1,5 +1,23 @@
 # Consistency loop — verdict → correction → skill → golden test
 
+**STATUS 2026-08-22: all four slices BUILT on `agent/momentum-loop`, each live-proved on the mock-comms seed.**
+- S1 `skills(review)`: ok/miss verdict arms the review (`sidecar/verdictreview.js`); `great` never; duplicate never.
+- S3 `skills(turn-in)`: review-written versions are `ask` until approved (`skillstore.js` `writtenBy` + provenance
+  ask); the COMMS skill aside carries use-it / discard / read-it-first.
+- S2 `skills(review)`: 90s grace; chip = non-final, next typed message = final correction, fires the review in the
+  Commander's words (`POST /api/growth/ratings/correction`); the correction run is stamped `correctionOf`.
+- S4 `skills(goldens)`: `great` mints a golden per loaded skill (`sidecar/skills/goldens.js`, own file);
+  `npm run eval:skills` drives goldens through the real run endpoint and reports per-skill pass RATES, naming
+  the model — PLUMBING ONLY when a scripted model answered, never a fake consistency claim.
+- Rule Andrew set: **a `great` verdict freezes, a `miss` rewrites.**
+- NOT verified (needs a live key): that a real model actually writes/patches a skill from the verdict prompt, and a
+  live `eval:skills` pass rate. Both are one keyed run away; the plumbing for each is proved.
+- Deviations from the plan: no `skill.proposed` event was needed — the existing `deliverable` kind:skill event +
+  the gate's `withheld/guardApprovable` annotation carried the card; goldens live in `skill-goldens.json`, not on
+  the skill record; golden minting reads the output off the parked review packet (run rows only carry
+  `deliveryText` for session-scoped runs). Goldens attach only to skills the run LOADED (preload / skill.view) or
+  the review managed — an index-only match mints nothing (honest: no skill governed that run).
+
 **Problem (Andrew, 2026-08-21):** the same task gives different output week to week. StarNet's thesis is
 that it extracts what the user wants and how; today it captures that (dossier, verdicts) but never turns a
 correction into a *tested, reusable procedure*. Hermes' answer is "correction → `skill_manage` write-back".

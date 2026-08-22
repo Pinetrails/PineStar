@@ -1,6 +1,6 @@
 # NEXT.md — current priorities & task queue
 
-## 2026-08-22 — CONSISTENCY LOOP: verdict → correction → skill → golden test (PLANNED, `agent/momentum-loop`)
+## 2026-08-22 — CONSISTENCY LOOP: verdict → correction → skill → golden test (BUILT, `agent/momentum-loop`)
 
 Plan: `docs/plans/CONSISTENCY_LOOP.md`. The user complaint is output consistency; the capture side (verdict,
 dossier belief) landed 08-21, the skill side is unconnected: `skillreview.js` auto-writes skills but triggers on
@@ -8,7 +8,7 @@ run SIZE not on the Commander's verdict, writes are not approval-gated (memory i
 after a miss is never captured, and no skill has a test. Four slices, each shippable: (1) verdict-triggered skill
 review, (3) skill turn-in card mirroring the memory deck, (2) correction capture on the next message, (4) per-skill
 goldens run through the replay-provider eval before a patch is offered. Needs ONE additive event `skill.proposed`
-from the shared-contract owner.
+from the shared-contract owner. **Built same day, all four slices live-proved — status block at the top of the plan.**
 
 ## 2026-08-21 — MOMENTUM LOOP: CONTINUOUS EXTRACTION + USEFUL POPUPS (`agent/momentum-loop`)
 
