@@ -99,6 +99,57 @@ function ctxFor(runId) {
     A.ok(!/\.catch\(/.test(body), 'no promise .catch in the helper (sync try/catch only — nothing to swallow)');
   }
 
+  // ---------- 1e. suggestFor: the beginner case — NOTHING wired, no tool call, the GOAL names the connector ----------
+  {
+    const { makeConnectorTools } = require('../sidecar/tools/builtin/connectors.js');
+    const catalog = require('../sidecar/mcp/catalog.js');   // the REAL catalog (gmail's aliases include "email")
+    const withRows = rows => makeConnectorTools({ connectors: { list: () => rows }, connectorCatalog: catalog, keysCatalog: null, keysOf: () => [] });
+    // gmail NOT connected -> suggested + the same connector_required event on the run ctx
+    {
+      const t = withRows([]);
+      const sg = t.suggestFor('send my newsletter to subscribers');
+      A.eq(sg[0] && sg[0].id, 'gmail', 'newsletter goal suggests gmail FIRST (outranks the aggregators): ' + JSON.stringify(sg));
+      A.ok(sg.length <= 3, 'at most 3 suggestions');
+      A.eq(sg.find(x => x.id === 'gmail').reason, 'needed for: send my newsletter to subscribers', 'reason names the goal');
+      const ctx = ctxFor('run-5');
+      const r = await t.listTool.run({ goal: 'send my newsletter to subscribers', scope: 'available' }, ctx);
+      A.ok(/SUGGESTED for "send my newsletter to subscribers"/.test(r.content) && /- gmail/.test(r.content), 'tool result leads with SUGGESTED gmail');
+      const ev = ctx.emitted.find(e => e.name === 'connector_required' && e.payload.connectorId === 'gmail');
+      A.ok(ev, 'connector_required fired for gmail from connectors.list');
+      A.eq(ev.payload, { runId: 'run-5', connectorId: 'gmail', kind: 'mcp', reason: 'needed for: send my newsletter to subscribers', toolName: 'connectors.list' }, 'same event shape as the manager path');
+      A.ok(events.validate('connector_required', ev.payload).ok, 'validates against shared/events.js');
+      A.ok(/suggested:\d/.test(r.summary), 'summary counts the suggestions');
+    }
+    // gmail CONNECTED (up) -> not suggested, no event
+    {
+      const t = withRows([{ id: 'gmail', label: 'Gmail', state: 'up', enabled: true, toolCount: 3 }]);
+      const sg = t.suggestFor('send my newsletter to subscribers');
+      A.ok(!sg.some(x => x.id === 'gmail'), 'a connected gmail is never suggested: ' + JSON.stringify(sg));
+      const ctx = ctxFor('run-6');
+      await t.listTool.run({ goal: 'send my newsletter to subscribers', scope: 'available' }, ctx);
+      A.ok(!ctx.emitted.some(e => e.name === 'connector_required' && e.payload.connectorId === 'gmail'), 'no gmail event when gmail is up');
+    }
+    // a configured-but-DEAD gmail still counts as not connected (the host read-back, not the config)
+    {
+      const t = withRows([{ id: 'gmail', label: 'Gmail', state: 'error', enabled: true, toolCount: 0 }]);
+      A.ok(t.suggestFor('email my notes to myself').some(x => x.id === 'gmail'), 'a dead gmail is still suggested');
+    }
+    // no goal / no topic -> nothing, and no event; a throwing emit is reported in the result, not swallowed
+    {
+      const t = withRows([]);
+      A.eq(t.suggestFor('summarize this pdf'), [], 'no topic -> no suggestion');
+      const ctx = ctxFor('run-7');
+      await t.listTool.run({ scope: 'available' }, ctx);
+      A.eq(ctx.emitted.length, 0, 'no goal -> no event');
+      const bad = { runId: 'run-8', emit: () => { throw new Error('bus dead'); } };
+      const r = await t.listTool.run({ goal: 'email my notes to myself', scope: 'available' }, bad);
+      A.ok(/could not be raised for: gmail: bus dead/.test(r.content), 'a lost emit is named in the result (catch fires, says so)');
+    }
+    // the lead is TOLD to call it before declining (system-prompt guidance)
+    const manual = fs.readFileSync(path.join(__dirname, '../sidecar/manual.js'), 'utf8');
+    A.ok(/BEFORE DECLINING a task for lack of email, website, calendar, docs/.test(manual) && /connectors\.list/.test(manual), 'manual tells the lead to call connectors.list {goal} before declining');
+  }
+
   // ---------- 2. the chip door (friendlyerror.js is require-able) ----------
   {
     const Friendly = require('../frontend/app/friendlyerror.js');

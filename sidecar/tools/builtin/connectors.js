@@ -48,6 +48,38 @@
     return q.split(/\s+/).filter(Boolean).every(term => hay.indexOf(term) >= 0);
   }
 
+  /* GOAL -> CONNECTOR (beginner seam Lane 1, `suggestFor`). A newcomer with NOTHING wired never triggers a
+     tool-call throw, so the only way the station can say "you need Gmail for that" is to read the GOAL. The
+     goal's words are expanded through a tiny topic table (the words people use for a thing -> the words the
+     catalog names it by) and matched against each catalog entry's id/name/aliases — the SAME alias list the
+     ABILITIES search and the catalog card already match on. Pure + bounded; never a fabricated match. */
+  const GOAL_TOPICS = {
+    email: ['email', 'e-mail', 'emails', 'mail', 'gmail', 'inbox', 'newsletter', 'newsletters', 'subscribers', 'outreach'],
+    calendar: ['calendar', 'schedule', 'meeting', 'meetings', 'appointment', 'appointments', 'invite', 'invites'],
+    docs: ['doc', 'docs', 'document', 'documents', 'google docs'],
+    sheets: ['sheet', 'sheets', 'spreadsheet', 'spreadsheets'],
+    drive: ['drive', 'google drive', 'gdrive'],
+    site: ['site', 'website', 'web page', 'webpage', 'landing page', 'blog', 'webflow', 'wix', 'wordpress'],
+    notion: ['notion'], github: ['github', 'repo', 'repository', 'pull request'], slack: ['slack'],
+    stripe: ['stripe', 'payment', 'payments', 'invoice', 'invoices'], shopify: ['shopify', 'store', 'storefront']
+  };
+  function goalTopics(goal) {
+    const g = ' ' + low(goal).replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ') + ' ';
+    const out = [];
+    for (const topic of Object.keys(GOAL_TOPICS)) {
+      if (GOAL_TOPICS[topic].some(w => g.indexOf(' ' + w + ' ') >= 0)) out.push(topic);
+    }
+    return out;
+  }
+  // score a catalog entry against the goal's topics: a topic word on the entry's id/name/aliases is a hit;
+  // an entry whose id/name IS the topic word (gmail for email) outranks an aggregator that merely lists it.
+  function entryScore(e, topics) {
+    const names = [e.id, e.name].concat(Array.isArray(e.aliases) ? e.aliases : []).map(low).filter(Boolean);
+    let score = 0;
+    for (const t of topics) { if (names.indexOf(t) >= 0) score += 2; if (low(e.id) === t || low(e.name) === t || GOAL_TOPICS[t].indexOf(low(e.id)) >= 0) score += 1; }
+    return score;
+  }
+
   // A live connector, rendered honestly: state comes from the manager's real handshake, never from the catalog.
   function connectedLine(c) {
     const name = str(c.label) || str(c.id);
@@ -142,6 +174,31 @@
       return { label: 'available', count: out.length, head: head, body: shown };
     }
 
+    /* suggestFor(goal) -> [{ id, reason }] (<=3): catalog entries that fit the goal AND are NOT connected per the
+       host's own read-back (the manager's list — a configured-but-dead connector is still "not connected", and
+       one that is up is never suggested). [] when no catalog, no topic, or everything needed is wired. */
+    function suggestFor(goal) {
+      const topics = goalTopics(goal);
+      if (!topics.length || !mcpCatalog || typeof mcpCatalog.browse !== 'function') return [];
+      const up = new Set();
+      const installed = [];
+      if (mgr && typeof mgr.list === 'function') {
+        // a failed read-back means "not connected" cannot be PROVEN for anything — suggest nothing rather than guess.
+        try { for (const c of (mgr.list() || [])) { if (!c) continue; installed.push({ id: str(c.id), url: '' }); if (c.state === 'up') up.add(str(c.id)); } }
+        catch (e) { return []; }
+      }
+      let entries = [];
+      try { entries = (mcpCatalog.browse(installed) || {}).connectors || []; } catch (_) { entries = []; }
+      const scored = [];
+      for (const e of entries) {
+        if (!e || !e.id || up.has(str(e.id))) continue;
+        const score = entryScore(e, topics);
+        if (score > 0) scored.push({ id: str(e.id), score: score });
+      }
+      scored.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+      return scored.slice(0, 3).map(x => ({ id: x.id, reason: 'needed for: ' + str(goal).slice(0, 120) }));
+    }
+
     const listTool = {
       name: 'connectors.list', capability: 'web', scope: 'read', requiresConsent: false, timeoutMs: 8000,
       description: 'List the station\'s INTEGRATIONS: MCP connectors already connected, platform API keys already '
@@ -150,19 +207,41 @@
         + 'Check this BEFORE telling the Commander that StarNet cannot reach a service: it usually can, and the '
         + 'honest answer is "that one is one click away in ABILITIES › CONNECTORS — want me to walk you through '
         + 'it?". Read-only: you cannot install or authenticate anything, and you never see a key\'s value. '
-        + 'Optional `query` filters by service or category; `scope` narrows to connected or available.',
+        + 'Optional `query` filters by service or category; `scope` narrows to connected or available. '
+        + 'Pass `goal` (the Commander\'s task in their words, e.g. "email my notes to myself") to get SUGGESTED: '
+        + 'the not-yet-connected connector(s) that task needs — the station then offers the Commander a one-click '
+        + 'door to connect it. Call it with `goal` BEFORE declining a task for lack of email/site/calendar/docs access.',
       schema: {
         type: 'object', properties: {
           scope: { type: 'string', enum: SCOPES, description: 'all (default), connected (what is live now), or available (what could be added)' },
-          query: { type: 'string', description: 'filter by name, id, or category — e.g. "github", "payments"' }
+          query: { type: 'string', description: 'filter by name, id, or category — e.g. "github", "payments"' },
+          goal: { type: 'string', description: 'the task in the Commander\'s words — returns SUGGESTED: the unconnected connector(s) it needs' }
         }
       },
-      run: async (args) => {
+      run: async (args, ctx) => {
         args = args || {};
         const scope = SCOPES.indexOf(low(args.scope)) >= 0 ? low(args.scope) : 'all';
         const q = low(args.query);
+        const goal = str(args.goal).slice(0, 300);
 
         const parts = [];
+        // SUGGESTED rides first: it is the answer to the question the goal asked. Each suggestion is ALSO the
+        // same connector_required event the MCP manager emits on a dead tool call, so the ONE post-run chip
+        // path ("⇄ CONNECT GMAIL") renders it — no second mechanism. An emit failure is reported, not swallowed.
+        const suggested = goal ? suggestFor(goal) : [];
+        const lost = [];
+        if (suggested.length && ctx && typeof ctx.emit === 'function') {
+          for (const sgg of suggested) {
+            try { ctx.emit('connector_required', { runId: str(ctx.runId), connectorId: sgg.id, kind: 'mcp', reason: sgg.reason, toolName: 'connectors.list' }); }
+            catch (e) { lost.push(sgg.id + ': ' + ((e && e.message) || e)); }
+          }
+        }
+        if (goal) {
+          parts.push(suggested.length
+            ? { label: 'suggested', count: suggested.length, head: 'SUGGESTED for "' + goal + '" — NOT connected yet. The Commander now has a ⇄ CONNECT chip for it under your reply: tell them to tap it (ABILITIES › CATALOG, one sign-in). You cannot connect it yourself.', body: suggested.map(x => '- ' + x.id + ' — ' + x.reason) }
+            : { label: 'suggested', count: 0, head: 'SUGGESTED (0) for "' + goal + '" — nothing unconnected in the catalog matches this goal (or what it needs is already connected).', body: [] });
+          if (lost.length) parts.push({ label: 'suggested-emit-lost', count: lost.length, head: 'NOTE: the connect chip could not be raised for: ' + lost.join('; '), body: [] });
+        }
         if (scope === 'all' || scope === 'connected') { parts.push(sectionConnected(q), sectionKeys(q)); }
         if (scope === 'all' || scope === 'available') { parts.push(sectionAvailable(q)); }
 
@@ -181,7 +260,8 @@
     return {
       listTool: listTool,
       register(reg) { reg.register(listTool); return reg; },
-      _internals: { matches, connectedLine, sectionConnected, sectionKeys, sectionAvailable, MAX_AVAILABLE, MAX_CHARS }
+      suggestFor: suggestFor,
+      _internals: { matches, connectedLine, sectionConnected, sectionKeys, sectionAvailable, suggestFor, goalTopics, MAX_AVAILABLE, MAX_CHARS }
     };
   }
 
