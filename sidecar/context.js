@@ -294,7 +294,11 @@
     opts = opts || {};
     let contextLimit = opts.contextLimit || 0;         // 0 = unknown (never auto-compact); mutable — see setContextLimit
     const compactAt = opts.compactAt || 0.65;
-    const keepTail = opts.keepTail || 6;
+    /* TAIL UNIT. keepTailTurns counts TURNS (an assistant message plus its tool results = 1; any other message =
+       1) — six messages used to be two tool turns, far too short a verbatim window for an agentic run. Callers
+       that pass the legacy keepTail (messages) keep message semantics exactly; default is 6 turns. */
+    const keepTailTurns = opts.keepTailTurns > 0 ? opts.keepTailTurns : 0;
+    const keepTail = keepTailTurns ? 0 : (opts.keepTail || 6);
     const estimateTokens = opts.estimateTokens || defaultEstimate;
 
     /* COUNT THE TOOL CALLS. This summed `content` alone — but in an agentic loop the tool-call ARGUMENTS are
@@ -362,11 +366,24 @@
       return used > compactAt * contextLimit;
     }
 
+    // index of the first message of the last `turns` turn-groups (a tool result belongs to the turn before it)
+    function turnCut(history, turns) {
+      let cut = history.length, n = 0;
+      while (cut > 0 && n < turns) {
+        cut--;
+        while (cut > 0 && history[cut] && history[cut].role === 'tool') cut--;
+        n++;
+      }
+      return cut;
+    }
+    function tailStart(history) { return keepTailTurns ? turnCut(history, keepTailTurns) : Math.max(0, history.length - keepTail); }
+
     function compact(history, summarize) {
       history = history || [];
-      if (history.length <= keepTail) return { summary: '', tail: history.slice() };
-      const older = history.slice(0, history.length - keepTail);
-      const tail = history.slice(history.length - keepTail);
+      const at = tailStart(history);
+      if (at <= 0) return { summary: '', tail: history.slice() };
+      const older = history.slice(0, at);
+      const tail = history.slice(at);
       const summary = summarize ? summarize(older) : '';
       return { summary, tail };
     }
@@ -377,8 +394,8 @@
     // orphan would 400 the next model call. The loop folds `older` into a summary; `tail` is replayed untouched.
     function planCompaction(history) {
       history = history || [];
-      if (history.length <= keepTail) return { older: [], tail: history.slice() };
-      let cut = history.length - keepTail;                 // tail = history.slice(cut)
+      let cut = tailStart(history);                        // tail = history.slice(cut)
+      if (cut <= 0) return { older: [], tail: history.slice() };
       while (cut > 0 && history[cut] && history[cut].role === 'tool') cut--;   // snap to a turn-group start
       if (cut <= 0) return { older: [], tail: history.slice() };
       return { older: history.slice(0, cut), tail: history.slice(cut) };
@@ -398,7 +415,11 @@
       return contextLimit;
     }
 
-    const api = { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, planCompaction, setContextLimit, redact, contextLimit, keepTail };
+    // the proactive-fold threshold in tokens (compactAt × live window); 0 = unknown window. The loop's free
+    // micro-compaction tier re-measures against this before paying for an LLM fold.
+    function thresholdTokens() { return contextLimit ? compactAt * contextLimit : 0; }
+
+    const api = { systemPrompt, assemble, estimateTokens, estimateMessages, fit, shouldCompact, compact, planCompaction, setContextLimit, thresholdTokens, redact, contextLimit, keepTail, keepTailTurns };
     return api;
   }
 
