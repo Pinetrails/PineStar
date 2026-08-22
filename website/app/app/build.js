@@ -232,7 +232,7 @@ const Build = (() => {
     tool = 'select';   // SELECT is the default mode — a fresh REFIT session never opens with a placement tool armed
     ridePending = false; rideAgentId = null; ridePrevReach = null;   // the auto first-ride re-arms (and re-baselines its reach snapshot) from THIS session's compile, never a stale one
     // finish-the-line: fresh session state (the registry itself persists in localStorage) + one seam probe
-    finSample = null; finKeySel = null; finSig = ''; finCardEl = null; finComp = null; valComps = null; lastStampIds = null; finPollTs = 0;
+    finSample = null; finKeySel = null; finSig = ''; finCardEl = null; finComp = null; valComps = null; lastStampIds = null; finPollTs = 0; finSampleRes = null;
     for (const k in stampNameOf) delete stampNameOf[k];   // session-scoped blueprint-name placeholders (line naming)
     clearLineFields();   // a fresh session never inherits a prior floor's "where can this go" answers
     bumpGeo();           // …nor a prior floor's bounds/belts/bay-objects/mount memos (see geoVer)
@@ -870,6 +870,17 @@ const Build = (() => {
   /* ---------- visual prop palette: a scrollable gallery of LIVE animated previews ----------
      Each tile carries its own mini-canvas; paintThumbs() blits the real PropSprites art into it every
      few frames (driven by the main loop) so the screens/LEDs animate exactly like the placed prop. */
+  // one line per WORKFLOW machine — what it DOES, in the words the flow card will repeat (never a footprint)
+  const PALETTE_PURPOSE = {
+    intake: 'the front door — outside work (channels, routines) arrives here and rides the belts in',
+    bay: 'an agent’s dock — work that reaches it runs as that agent; one step of the line',
+    filter: 'sorts work by its content — each kind takes a different out-lane',
+    merger: 'several lanes become one — every crate rides straight through, nothing waits',
+    splitter: 'one lane fans into several — parallel branches of the same job, or load-balanced work',
+    joiner: 'parallel branches WAIT here — one merged crate leaves once every branch has delivered',
+    loop: 'the gate that sends work round again — one lane back upstream, one lane onward when done',
+    outbox: 'the exit — every finished result ships here; click it for the logbook'
+  };
   const THUMB_PAD = 7;   // native-px halo so art that overflows the footprint (monitors, masts, shadows) isn't clipped
   function propTile(c) {
     const b = document.createElement('button');
@@ -878,7 +889,11 @@ const Build = (() => {
     b.dataset.prop = c.id;   // lets the tutorial light a specific gear tile by id
     b.setAttribute('aria-pressed', c.id === propType ? 'true' : 'false');
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(c.id) : null;
-    b.title = c.label + ' · ' + c.w + '×' + c.h + (grant ? ' · grants ' + grant : '');   // native fallback; the rich Fallout-style card is the hover surface
+    /* the station tooltip (tooltip.js adopts this title) is the FIRST thing a hover says, and "JOINER · 1×1"
+       told a Commander nothing a MERGER did not — so every WORKFLOW machine carries a one-line purpose here
+       (PALETTE_PURPOSE), distinguishable before it is placed. The rich card below stays the long form. */
+    const purpose = PALETTE_PURPOSE[c.id] || '';
+    b.title = c.label + ' · ' + c.w + '×' + c.h + (grant ? ' · grants ' + grant : '') + (purpose ? ' — ' + purpose : '');
     // Grid-only re-render: a full renderPalette() here would rebuild the search field and steal focus
     // out of it mid-search. But a pick out of a SEARCH result does change tab state — the prop almost
     // always lives under a different tier/category than the one still selected behind the results. Move
@@ -1560,10 +1575,81 @@ const Build = (() => {
     entry: "The arriving message is the task. This is your station's standing part of it — what this desk always does with arriving work.",
     chain: "Work arrives here as the previous station's output. This is your station's job — your part of every run that reaches you."
   };
+  /* ON <LINE> — n docks, feeds <next> (2026-08-22 sweep): the dock's line fact is DURABLE and LIVE. After a
+     click-connect the only signal used to be a 1.3s flash; this sentence sits on the open STEP card and
+     refreshLineFacts() re-reads it off the recompiled plan (valComps / valPlan.chains) every time the floor
+     changes, so "did that connect?" is answered by the card without reopening it. Every word is a compiled
+     fact: the line from Pipeline.lineComponents, the hand-off from plan.chains (the sidecar's own route). */
+  function lineFactHTML(bayId) {
+    const comp = lineOfProp(bayId);
+    if (!comp) return 'not on a line yet — lay belts (7) or click-connect two machines to put this dock on one';
+    const p = station.propById(bayId), aid = p && p.agentId;
+    const ch = aid && valPlan && valPlan.chains && valPlan.chains[aid];
+    const feeds = !ch ? null
+      : (ch.next && ch.next.length) ? 'feeds <b>' + esc(ch.next.map(agentLabelFor).join(' + ').toUpperCase()) + '</b>'
+      : ch.outbox ? 'ships to <b>OUTBOX</b>'
+      : ch.deadEnd ? 'its output <b>dead-ends</b> — belt it onward' : null;
+    return 'ON <b>' + esc((lineNameOf(comp) || 'an unnamed line').toUpperCase()) + '</b> — ' + comp.bays.length + ' dock' + (comp.bays.length === 1 ? '' : 's')
+      + (feeds ? ', ' + feeds : (aid ? ', feeds nothing yet' : ''));
+  }
+  function refreshLineFacts() {
+    if (!root) return;
+    root.querySelectorAll('[data-linefact]').forEach(el => { if (station.propById(el.dataset.linefact)) el.innerHTML = lineFactHTML(el.dataset.linefact); });
+  }
+  /* THE COMPUTE RULE, SAID PLAINLY (2026-08-22 sweep): the floor's amber "NO COMPUTE — ADD A PC IN THIS ROOM"
+     never said WHOSE PC — bayObjects grants `computer` only from a workstation in the bay's room that is
+     assigned to THIS agent (or unassigned in a one-agent room). The card states exactly that, with the
+     one-click fix: a desk placed IN THIS ROOM and bound to the agent (requisitionPcFor — the same validated
+     addProp path a hand placement takes; never a flag). Reads bayObjectsMemoed — the same truth the nag draws. */
+  function computeFactHTML(bayId) {
+    const p = station.propById(bayId); if (!p || !p.agentId) return '';
+    if (bayObjectsMemoed(p.agentId).indexOf('computer') >= 0) return '<div class="step-fact">✓ <b>COMPUTE</b> — ' + esc(agentLabel(p.agentId)) + ' has a PC in this room</div>';
+    return '<div class="refit-note">NO COMPUTE — needs a PC assigned to <b>' + esc(agentLabel(p.agentId).toUpperCase()) + '</b> in this room, or routed work cannot run here</div>'
+      + '<button type="button" class="bb sm refit-primary refit-summon" id="step-pc">⊕ ADD A PC FOR ' + esc(agentLabel(p.agentId).toUpperCase()) + ' HERE</button>';
+  }
+  function requisitionPcFor(bayId) {
+    const p = station.propById(bayId); if (!p || !p.agentId) return { ok: false, reason: 'uncrewed' };
+    const rid = station.roomAt(p.x, p.y), rm = rid && station.roomById(rid);
+    if (!rm || !rm.rects) return { ok: false, reason: 'no-room' };
+    for (const r of rm.rects)
+      for (let y = r.y1; y <= r.y2; y++)
+        for (let x = r.x1; x <= r.x2; x++) {
+          if (!(station.canPlaceProp('desk', x, y, 2, 1) || {}).ok) continue;
+          const res = station.addProp({ t: 'desk', x, y, w: 2, h: 1, agentId: p.agentId });
+          if (!res || !res.ok) continue;
+          pushFlash([{ x1: x, y1: y, x2: x + 1, y2: y }], false);
+          if (typeof Tutorial !== 'undefined' && Tutorial.onPropPlaced) Tutorial.onPropPlaced('desk');
+          return { ok: true, id: res.id, tile: { tx: x, ty: y } };
+        }
+    return { ok: false, reason: 'no-room-for-a-desk' };
+  }
+  function refreshComputeFact(g, bayId) {
+    const el = g.querySelector('#step-compute'); if (!el) return;
+    el.innerHTML = computeFactHTML(bayId);
+    const b = el.querySelector('#step-pc');
+    if (b) b.onclick = () => {
+      b.disabled = true;
+      const res = requisitionPcFor(bayId);
+      if (res.ok) { sfx('chime'); flashTip(null, 'PC placed + assigned — compute is on', true); bumpGeo(); refreshComputeFact(g, bayId); }
+      else { b.disabled = false; sfx('bad'); flashTip(null, res.reason === 'no-room-for-a-desk' ? 'no clear 2×1 floor in this room — make space first' : 'could not place a PC here', false); }
+    };
+  }
+  /* THE CHECKLIST FOLLOWS THE LINE YOU ARE TOUCHING (2026-08-22 sweep): with two lines on the floor the
+     FINISH card stayed pinned to whichever line it first adopted. Opening any machine's card (STEP / INBOX /
+     OUTBOX / junction) now focuses that machine's line — finKeySel is the same session key finPick honours —
+     and re-renders, so the checklist beside the card is the checklist FOR that line. A line already retired
+     (done/dismissed) stays quiet: finPick filters those before the key is consulted. */
+  function finFocusLine(propId) {
+    const c = lineOfProp(propId);
+    if (!c || c.key === finKeySel) return;
+    finKeySel = c.key; finSig = '';
+    if (running) renderFinCard();
+  }
   function openStepCard(bayId, ev) {
     if (!root) return;
     const p = station.propById(bayId); if (!p || p.t !== 'bay') return;
     cardCloseAll();   // this card REPLACES whatever was up (FINISH ① CREW / the world's NO AGENT nag land here)
+    finFocusLine(bayId);
     const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
     const roleInfo = (p.role && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
     const canSummon = !!(roleInfo && typeof App !== 'undefined' && App.summonAgent);
@@ -1571,9 +1657,7 @@ const Build = (() => {
     // THE STEP zone copy — all provable floor facts: the role from the stamp, the line from the compiled
     // component grouping (Pipeline.lineComponents), its name from the intake's saved label.
     const comp = lineOfProp(bayId);
-    const lineTxt = comp
-      ? 'ON <b>' + esc((lineNameOf(comp) || 'an unnamed line').toUpperCase()) + '</b> — ' + comp.bays.length + ' dock' + (comp.bays.length === 1 ? '' : 's') + ' on this line'
-      : 'not on a line yet — lay belts (7) to put this dock on one';
+    const lineTxt = lineFactHTML(bayId);
     const stepTxt = roleInfo
       ? 'THIS STEP WANTS A <b>' + esc(p.role) + '</b> — ' + esc(roleInfo.desc)
       : 'a dock — work routed here runs as its agent';
@@ -1603,10 +1687,11 @@ const Build = (() => {
         <div class="refit-form">
         <div class="refit-sec">THE STEP</div>
         <div class="step-fact">${stepTxt}</div>
-        <div class="step-fact">${lineTxt}</div>
+        <div class="step-fact" data-linefact="${esc(bayId)}">${lineTxt}</div>
         ${runsTxt ? '<div class="step-fact">' + runsTxt + '</div>' : ''}
         ${restTxt ? '<div class="refit-note">' + esc(restTxt) + '</div>' : ''}
-        <div class="refit-sec">THE AGENT — <span id="step-bound">${cur ? 'crewed by ' + esc(cur) : 'uncrewed'}</span></div>
+        <div class="refit-sec">THE AGENT — <span id="step-bound">${cur ? 'crewed by ' + esc(agentLabel(cur)) : 'uncrewed'}</span></div>
+        <div class="step-compute" id="step-compute"></div>
         ${canSummon ? '<button type="button" class="bb sm refit-primary refit-summon" id="bay-summon">⊕ SUMMON A ' + esc(p.role) + ' HERE</button>' : ''}
         ${agents.length ? '<div class="refit-agents refit-bay-agents" id="step-rows">' + rows + '</div>' : ''}
         <input id="bay-aid" class="refit-input" type="text" maxlength="40" placeholder="${agents.length ? 'or type an agent id' : 'agent id — e.g. coder'}" value="${esc(cur)}" />
@@ -1633,10 +1718,12 @@ const Build = (() => {
     cardRegister(g, closeP);   // ESC closes THROUGH here, so the job brief is saved and never discarded
     // a bind/unbind UPDATES the card in place (the brief draft must survive crewing the dock) — the
     // one-surface law: configure the whole step here, close once.
+    refreshComputeFact(g, bayId);
     const refreshBinding = () => {
       const live = station.propById(bayId), aid = (live && live.agentId) || '';
-      if (boundEl) boundEl.textContent = aid ? 'crewed by ' + aid : 'uncrewed';
+      if (boundEl) boundEl.textContent = aid ? 'crewed by ' + agentLabel(aid) : 'uncrewed';   // the display NAME, never the raw id (the roster chips say RESEARCHER; this said "researcher")
       g.querySelectorAll('.bay-agent').forEach(x => x.classList.toggle('active', x.dataset.aid === aid));
+      refreshComputeFact(g, bayId);
       input.value = aid;
       // a bind can place this dock on the compiled line — re-read its position so the brief placeholder
       // speaks to the right feed (arriving message vs the previous station's output). Best-effort: the plan
@@ -1783,10 +1870,73 @@ const Build = (() => {
       + '<span class="flow-seg desk">DESK</span>' + ar + seg('bay', 'BAY') + ar + seg('outbox', 'OUTBOX')
       + '</div><div class="flow-note">outside work rides IN to an agent’s dock · they work it at their desk · the finished result rides OUT. (COMMS orders skip the ride in — you gave them in person.)</div></div>';
   }
+  /* REFIT-JUNCTION-PURE-BEGIN (extraction marker — test/refit-junction-cards.test.js evals this block with
+     injected deps; PURE: params + locals only, no module state, no DOM). The LOOP card's lane labels and the
+     FINISH card's sample readout are both "what does this do / did that work?" answers, and an answer that
+     lives only inside a browser IIFE is an answer no test can hold to the truthful-telemetry law. */
+  /* a LOOP gate's exits, labelled by DIRECTION and by WHAT THEY LEAD TO — read off the compiled plan (local
+     frame), never guessed from geometry. Walks each out-lane along the belts to the first machine it meets:
+     a dock (-> "to WRITER"), an OUTBOX mouth (-> "OUTBOX"), another junction (-> "a FILTER"), its own tile
+     again (-> "round again"), or nothing (-> "nowhere yet"). `nameOf(agentId)` supplies display names. */
+  function loopExitLabels(plan, tile, nameOf) {
+    const out = [];
+    if (!plan || !plan.belts || !tile) return out;
+    const DIRV = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] }, OPP = { E: 'W', W: 'E', S: 'N', N: 'S' };
+    const map = plan.belts, bayAt = plan.bayTileToAgent || {}, junctions = plan.junctions || {};
+    const outs = {}; for (const o of (plan.outs || [])) if (o && o.tile) outs[o.tile.x + ',' + o.tile.y] = true;
+    const KIND = { split: 'SPLITTER', merge: 'MERGER', join: 'JOINER', loop: 'LOOP', filter: 'FILTER' };
+    const home = tile.x + ',' + tile.y;
+    for (const d of ['E', 'S', 'W', 'N']) {
+      const v = DIRV[d], nb = map[(tile.x + v[0]) + ',' + (tile.y + v[1])];
+      if (!nb || nb === OPP[d]) continue;                       // not an out-lane (no belt, or it flows back in)
+      let t = { x: tile.x + v[0], y: tile.y + v[1] }, to = 'nowhere yet', kind = 'none', guard = 0;
+      const seen = {};
+      while (t && guard++ < 4096) {
+        const k = t.x + ',' + t.y;
+        if (k === home) { to = 'round again'; kind = 'self'; break; }
+        if (bayAt[k]) { to = 'to ' + String(nameOf ? nameOf(bayAt[k]) : bayAt[k]).toUpperCase(); kind = 'bay'; break; }
+        if (outs[k]) { to = 'OUTBOX'; kind = 'outbox'; break; }
+        if (junctions[k]) { to = 'a ' + (KIND[junctions[k].kind] || 'JUNCTION'); kind = 'junction'; break; }
+        if (seen[k]) break;
+        seen[k] = true;
+        const dir = map[k]; if (!dir) break;                    // hookups + mouths are belt tiles, so off-belt = the lane ends
+        const w = DIRV[dir]; t = { x: t.x + w[0], y: t.y + w[1] };
+      }
+      out.push({ dir: d, to: to, kind: kind, label: d + ' → ' + to });
+    }
+    return out;
+  }
+  // the sentence under the DONE picker: which exit is the BACK lane (the other one) and where it re-enters
+  function loopBackTxt(exits, done) {
+    const back = (exits || []).find(x => x.dir !== done) || null;
+    if (!back) return 'no BACK lane yet — the gate needs a second exit that leads upstream, or nothing goes round';
+    if (back.kind === 'bay') return 'BACK lane: ' + back.label + ' — the crate re-enters the line there';
+    return 'BACK lane: ' + back.label + ' — a back lane must lead to an upstream dock';
+  }
+  /* the sample run's readout — ONLY what the server's answer proves. `resp` = the parsed JSON of
+     POST /api/routing/sample (200 or 502 carry the same fields; a 409 carries only {ok,error}); `status`
+     = the HTTP status; `nameOf(agentId)` = display name. Returns { ok, stages:[names], usd, reply, reason }:
+     stages = the recorded runs in line order (the route lists them newest-first), usd = the summed real
+     cost, reply = the first ~80 chars of what the line delivered (the last stage's reply). */
+  function sampleResultView(resp, status, nameOf) {
+    const r = (resp && typeof resp === 'object') ? resp : {};
+    const runs = Array.isArray(r.runs) ? r.runs.slice().reverse() : [];
+    const stages = runs.map(x => String(nameOf ? nameOf(x.agentId) : x.agentId)).filter(Boolean);
+    const usd = (typeof r.totalUsd === 'number' && isFinite(r.totalUsd)) ? r.totalUsd : null;
+    const replies = Array.isArray(r.replies) ? r.replies : [];
+    const last = replies.length ? String(replies[replies.length - 1] || '') : '';
+    const clean = last.replace(/\s+/g, ' ').trim();
+    const reply = clean.length > 80 ? clean.slice(0, 80) + '…' : clean;
+    const ok = !!r.ok && !!r.delivered;
+    const reason = ok ? null : (r.error ? String(r.error) : ('sample refused (HTTP ' + (status == null ? '?' : status) + ')'));
+    return { ok: ok, stages: stages, usd: usd, reply: reply, reason: reason };
+  }
+  /* REFIT-JUNCTION-PURE-END */
   function openFlowCard(propId) {
     if (!root) return;
     const p = station.propById(propId); if (!p) return;
     cardCloseAll();
+    finFocusLine(propId);
     const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger' || p.t === 'joiner' || p.t === 'loop') ? 'junction' : 'bay';
     const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN', splitter: 'SPLITTER — LANES BALANCE', joiner: 'JOINER — BRANCHES WAIT', loop: 'LOOP — GO ROUND AGAIN' };
     const LINE = {
@@ -1836,6 +1986,48 @@ const Build = (() => {
         + limField('lb-msg', 'maxUsdPerMessage', '$ per message, whole line', LD.maxUsdPerMessage.toFixed(2), '0.05')
         + limField('lb-day', 'maxUsdPerDay', '$ per day, this line', 'off', '0.50')
         + '<div class="refit-note lb-note" id="lb-note">' + esc(lbDefaultNote) + '</div>'
+      : '';
+    /* JOINER / LOOP GATE CONFIG (2026-08-22): the two junctions that carry numbers had cards that only
+       DESCRIBED them ("10 minutes at most", "up to 5 times") with no way to set either — every number
+       the copy quoted was a default the Commander could not reach. Both ride the prop exactly like a
+       filter's routes (station.configureJunction -> applyJunctionCfg whitelist: timeoutMin 1..120,
+       maxIter 1..20, done = an out-lane dir, when = a verdict tag) and COMPILE INTO plan.junctions —
+       which is inside plan.hash — so an edit re-POSTs the plan on its own; nothing is added to the
+       poster key. The numbers shown are the ones in force (the compiler's defaults fill the blanks). */
+    const isJoiner = p.t === 'joiner', isLoop = p.t === 'loop';
+    const jnField = (id, label, min, max, step, val, ph) => '<label class="refit-field lb-field" for="' + id + '">' + label
+      + '<input id="' + id + '" class="refit-num lb-num" type="number" min="' + min + '" max="' + max + '" step="' + step + '" placeholder="' + esc(ph) + '" value="' + esc(val) + '" /></label>';
+    const joinerHtml = isJoiner
+      ? '<div class="refit-sec">TIMEOUT — PARTIAL RELEASE</div>'
+        + jnField('jn-timeout', 'minutes to wait for a late branch', 1, 120, 1, p.timeoutMin ? String(p.timeoutMin) : '', '10')
+        + '<div class="refit-note" id="jn-note">if a branch has not delivered after this long, the crate goes on with the branches that did arrive, marked PARTIAL — so one stuck lane never stalls the line. blank = 10 · 1–120 — saved on Enter / blur</div>'
+      : '';
+    // LOOP: the gate's REAL exits, read off the compiled plan in its local frame (junctionBeltTile = the
+    // compiler's attach tile), each labelled by direction AND destination ("E → OUTBOX" / "S → to WRITER").
+    const loopJt = isLoop ? junctionBeltTile(p) : null;
+    const loopO = (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 };
+    const loopExits = (isLoop && loopJt) ? loopExitLabels(valPlan, { x: loopJt.x - loopO.tx, y: loopJt.y - loopO.ty }, agentLabel) : [];
+    const loopMaxDef = (typeof Pipeline !== 'undefined' && Pipeline.LOOP_MAX_DEFAULT) || 5;
+    const loopMaxCeil = (typeof Pipeline !== 'undefined' && Pipeline.LOOP_MAX_CEILING) || 20;
+    const loopDoneCur = (p.done && loopExits.some(x => x.dir === p.done)) ? p.done : (loopExits[0] ? loopExits[0].dir : null);
+    const loopHtml = isLoop
+      ? '<div class="refit-sec">DONE LANE — WHERE THE CRATE LEAVES</div>'
+        + (loopExits.length
+            ? '<div class="refit-agents loop-exits" id="loop-exits">' + loopExits.map(x => '<button type="button" class="bb sm loop-exit' + (x.dir === loopDoneCur ? ' active' : '') + '" data-dir="' + x.dir + '">'
+                + esc(x.label) + '</button>').join('') + '</div>'
+              + '<div class="step-fact" id="loop-back">' + esc(loopBackTxt(loopExits, loopDoneCur)) + '</div>'
+            : '<div class="refit-note bad">lay belts OUT of this gate first — it needs two exits: one onward, one back</div>')
+        + '<div class="refit-sec">HOW MANY TIMES ROUND</div>'
+        + jnField('loop-max', 'MAX PASSES', 1, loopMaxCeil, 1, p.maxIter ? String(p.maxIter) : '', String(loopMaxDef))
+        /* the verdict TAG is a pick, not a free word: the sidecar's loop gate (routing/chain.js) compares the
+           reviewer's output tag — the SAME content classifier a FILTER sorts by (classify.js getTag:
+           code / research / general) — so those three are the only tags that can ever match. A typed
+           "approved" would be a field that can never fire; offering it would be the card asserting a
+           rule the harness does not run. */
+        + '<div class="refit-route-row loop-when-row"><span class="refit-route-lbl">GO ROUND WHILE →</span>'
+        + [['code', 'CODE'], ['research', 'RESEARCH'], ['general', 'GENERAL']].map(([tag, lbl]) => '<button type="button" class="bb sm loop-when' + (p.when === tag ? ' sel' : '') + '" data-tag="' + tag + '">' + lbl + '</button>').join('')
+        + '</div>'
+        + '<div class="refit-note" id="loop-note">the crate goes round again ONLY while the reviewer’s output reads as that kind of work; any other verdict leaves on DONE. no tag picked = every pass goes round until MAX PASSES is spent. blank max = ' + loopMaxDef + ' · ceiling ' + loopMaxCeil + ' — saved on Enter / blur</div>'
       : '';
     /* ---------- THE TRIGGER ZONE (inbox-trigger, 2026-08-05) ----------
        The INBOX card is the workflow's WHY, completing the loop the floor already draws: trigger (INBOX) →
@@ -1901,6 +2093,8 @@ const Build = (() => {
       + '<ul><li>' + line + '</li></ul>'
       + nameHtml
       + budgetHtml
+      + joinerHtml
+      + loopHtml
       + trgHtml
       + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="flow-ok">✓ GOT IT</button></div></div>';
     root.appendChild(g);
@@ -1941,6 +2135,9 @@ const Build = (() => {
         : lbDefaultNote;
       if (next === lbSaved) return;
       lbSaved = next; sfx('click');
+      // the confirmation is DURABLE on the card (a blur-save used to show only the 1.3s flash, which a
+      // Commander tabbing to the next field never saw): the note itself says it landed
+      if (lbNote) lbNote.textContent = (res.limits ? '✓ line budget saved · ' : '✓ cleared — station defaults · ') + lbNote.textContent;
       flashTip(null, res.limits ? 'line budget saved' : 'line budget cleared — station defaults', true);
     };
     for (const el of lbNums) {
@@ -1950,8 +2147,67 @@ const Build = (() => {
         if (e.key === 'Escape') { e.stopPropagation(); el.blur(); }   // leave the field (saving); the next ESC closes the card
       });
     }
-    const closeP = () => { saveName(); saveLimits(); if (g.parentNode) g.parentNode.removeChild(g); };
-    cardRegister(g, closeP);   // ESC closes THROUGH here, so the line name + budget are saved and never discarded
+    /* JOINER / LOOP gate saves — one configureJunction per save (it replaces the prop's gate config wholesale,
+       so every field is sent every time). The answer is re-painted INTO the fields: a clamped number comes
+       back as the number in force. The plan recompiles off station.onChange and re-POSTs by itself. */
+    const jnTimeout = g.querySelector('#jn-timeout'), jnNote = g.querySelector('#jn-note');
+    const loopMax = g.querySelector('#loop-max'), loopNote = g.querySelector('#loop-note'), loopBackEl = g.querySelector('#loop-back');
+    const gate = { done: loopDoneCur, when: p.when || null };
+    let gateSaved = JSON.stringify(isJoiner ? { timeoutMin: p.timeoutMin || null } : isLoop ? { maxIter: p.maxIter || null, done: p.done || null, when: p.when || null } : null);
+    const saveGate = () => {
+      if (!(isJoiner || isLoop) || typeof station.configureJunction !== 'function') return;
+      const cfg = {};
+      if (isJoiner) { const v = +String(jnTimeout && jnTimeout.value || '').trim(); if (isFinite(v) && v >= 1) cfg.timeoutMin = Math.min(120, Math.floor(v)); }
+      if (isLoop) {
+        const v = +String(loopMax && loopMax.value || '').trim(); if (isFinite(v) && v >= 1) cfg.maxIter = Math.min(loopMaxCeil, Math.floor(v));
+        if (gate.done) cfg.done = gate.done;
+        if (gate.when) cfg.when = gate.when;
+      }
+      const res = station.configureJunction(propId, Object.keys(cfg).length ? cfg : null);
+      if (!res || !res.ok) { sfx('bad'); return; }
+      if (jnTimeout) jnTimeout.value = res.timeoutMin ? String(res.timeoutMin) : '';
+      if (loopMax) loopMax.value = res.maxIter ? String(res.maxIter) : '';
+      const next = JSON.stringify(isJoiner ? { timeoutMin: res.timeoutMin || null } : { maxIter: res.maxIter || null, done: res.done || null, when: res.when || null });
+      if (next === gateSaved) return;
+      gateSaved = next; sfx('click');
+      const said = isJoiner
+        ? (res.timeoutMin ? '✓ saved — waits ' + res.timeoutMin + ' min, then releases partial' : '✓ saved — station default (10 min), then releases partial')
+        : '✓ saved — ' + (res.maxIter || loopMaxDef) + ' pass' + ((res.maxIter || loopMaxDef) === 1 ? '' : 'es') + ' max' + (res.done ? ', DONE on ' + res.done : '') + (res.when ? ', round again while ' + res.when.toUpperCase() : '');
+      if (isJoiner && jnNote) jnNote.textContent = said;
+      if (isLoop && loopNote) loopNote.textContent = said;
+      /* THE WRONG DONE LANE IS A CYCLE (live-proved 2026-08-22): pick the back lane as DONE and the static
+         graph has no way out — the compiler refuses the line (CYCLE / CHAIN_CYCLE) and the floor nags
+         "LOOP!" somewhere else. Say it HERE, on the field that caused it, with the lane that fixes it. */
+      if (isLoop && loopNote && typeof Pipeline !== 'undefined') {
+        let errs = []; try { errs = Pipeline.compileRoutingPlan(station.projectGeometry()).errors || []; } catch (e) { errs = []; }
+        if (errs.some(e => e.code === 'CYCLE' || e.code === 'CHAIN_CYCLE')) {
+          const onward = loopExits.find(x => x.dir !== (res.done || gate.done));
+          loopNote.textContent = '⚠ with DONE on ' + (res.done || gate.done) + ' the line goes round with no way out — it is refused until DONE points onward' + (onward ? ' (' + onward.label + ')' : '');
+        }
+      }
+      flashTip(null, isJoiner ? 'joiner timeout saved' : 'loop gate saved', true);
+    };
+    for (const el of [jnTimeout, loopMax]) {
+      if (!el) continue;
+      el.addEventListener('blur', saveGate);
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); saveGate(); }
+        if (e.key === 'Escape') { e.stopPropagation(); el.blur(); }
+      });
+    }
+    g.querySelectorAll('.loop-exit').forEach(b => b.onclick = () => {
+      gate.done = b.dataset.dir;
+      g.querySelectorAll('.loop-exit').forEach(x => x.classList.toggle('active', x.dataset.dir === gate.done));
+      if (loopBackEl) loopBackEl.textContent = loopBackTxt(loopExits, gate.done);
+      saveGate();
+    });
+    g.querySelectorAll('.loop-when').forEach(b => b.onclick = () => {
+      gate.when = (gate.when === b.dataset.tag) ? null : b.dataset.tag;   // click again to clear
+      g.querySelectorAll('.loop-when').forEach(x => x.classList.toggle('sel', x.dataset.tag === gate.when));
+      saveGate();
+    });
+    const closeP = () => { saveName(); saveLimits(); saveGate(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);   // ESC closes THROUGH here, so the line name + budget + gate config are saved and never discarded
     /* ---- trigger-zone wiring (intake only; every claim below is a server answer, never synthesized) ---- */
     if (isIntake) {
       const feedEl = g.querySelector('#trg-feed'), listEl = g.querySelector('#trg-routines');
@@ -2558,7 +2814,7 @@ const Build = (() => {
     // the card is titled with the LINE'S NAME (the intake's saved label — line naming); unnamed lines
     // keep the generic header. In the sig so a rename repaints without a topology edit.
     const lname = lineNameOf(c);
-    const sig = [c.key, st.crewLeft, st.hasIntake, st.feed.known, st.feed.fed, finSample, lname || ''].join('|');
+    const sig = [c.key, st.crewLeft, st.hasIntake, st.feed.known, st.feed.fed, finSample, lname || '', finSampleRes ? finSampleRes.key + ':' + finSampleRes.stamp : ''].join('|');
     if (!finCardEl) {
       finCardEl = document.createElement('div');
       root.appendChild(finCardEl);
@@ -2573,13 +2829,17 @@ const Build = (() => {
     const feedTxt = !st.hasIntake ? '② FEED IT — TASK THE AGENT, OR WIRE A ROUTINE'
       : !st.feed.known ? '② FEED THE INBOX — CHECKING THE WIRES…'
       : st.feed.fed ? '✓ INBOX FED' : '② FEED THE INBOX — CONNECT A CHANNEL OR ROUTINE';
-    const sampleOn = finSample === true && crewDone;
+    // the sample RESULT belongs to the line it rode (finSampleRes.key) — another line's card shows none
+    const sr = (finSampleRes && finSampleRes.key === c.key) ? finSampleRes : null;
+    const sampleOn = finSample === true && crewDone && !(sr && sr.pending);
     const sampleTip = finSample !== true ? 'coming online soon' : (crewDone ? 'feed ONE real, clearly-labeled sample job through the whole line' : 'crew the docks first');
+    const sampleTxt = (sr && sr.pending) ? '③ SAMPLE RIDING THE LINE…' : (sr && sr.view && sr.view.ok) ? '✓ SAMPLE DELIVERED — RUN ANOTHER' : '③ RUN A SAMPLE JOB';
     finCardEl.innerHTML = `
       <div class="fl-head"><span class="fl-title">▸ ${lname ? 'FINISH ' + esc(lname.toUpperCase()) : 'FINISH THE LINE'}</span><button type="button" class="bb sm fl-x" title="dismiss for this line">✕</button></div>
       <button type="button" class="bb fl-step${crewDone ? ' done' : ''}" data-act="crew"${crewDone ? ' disabled' : ''}>${esc(crewTxt)}</button>
       <button type="button" class="bb fl-step${st.feedDone ? ' done' : ''}" data-act="feed"${st.feedDone ? ' disabled' : ''}>${esc(feedTxt)}</button>
-      <button type="button" class="bb fl-step${sampleOn ? '' : ' off'}" data-act="sample" title="${esc(sampleTip)}">③ RUN A SAMPLE JOB</button>`;
+      <button type="button" class="bb fl-step${sampleOn ? '' : ' off'}${sr && sr.view && sr.view.ok ? ' done' : ''}" data-act="sample" title="${esc(sampleTip)}">${esc(sampleTxt)}</button>
+      ${sr && sr.view ? finSampleHTML(sr.view) : ''}`;
     finCardEl.querySelector('.fl-x').onclick = () => { finMark(station, c.key, 'dis'); sfx('click'); renderFinCard(); };
     const bCrew = finCardEl.querySelector('[data-act="crew"]');
     if (bCrew && !crewDone) bCrew.onclick = () => finFocusCrew(c);
@@ -2611,13 +2871,33 @@ const Build = (() => {
   }
   // ③ — Phase 4's seam, fired only when detected present + docks crewed. The card claims nothing the
   // harness didn't answer: success/refusal both surface as the server's own verdict.
+  /* THE RESULT IS RENDERED, NOT FLASHED (2026-08-22 stranded-user sweep): the route answers only after the
+     line DELIVERED (or refused) with the REAL recorded outcome — runs, replies, totalUsd, delivered — and the
+     card used to discard all of it behind a 1.3s "dispatched — watch the line". Now the answer lives on the
+     card: the stages that ran (agent names, line order), the real dollars, the first 80 chars the line
+     delivered, and ③ ticks ONLY on `delivered` (the server's own verdict); a refusal shows the server's
+     reason. Scoped to the line it rode; a new sample replaces the last readout. */
+  let finSampleRes = null;   // { key, stamp, pending } | { key, stamp, view }
+  function finSampleHTML(v) {
+    if (!v) return '';
+    if (!v.ok) return '<div class="fl-result bad"><span class="fl-result-k">REFUSED</span> ' + esc(v.reason || 'no reason given') + '</div>';
+    return '<div class="fl-result">'
+      + '<div><span class="fl-result-k">RAN</span> ' + esc(v.stages.length ? v.stages.join(' ▸ ') : '(no stage recorded)') + '</div>'
+      + (v.usd != null ? '<div><span class="fl-result-k">COST</span> $' + esc(v.usd.toFixed(4)) + '</div>' : '')
+      + (v.reply ? '<div class="fl-result-reply"><span class="fl-result-k">SAID</span> ' + esc(v.reply) + '</div>' : '')
+      + '</div>';
+  }
   function finRunSample(c) {
     sfx('click');
+    const key = c.key;
+    finSampleRes = { key, stamp: Date.now(), pending: true };
+    finSig = ''; renderFinCard();
+    const settle = (view) => { finSampleRes = { key, stamp: Date.now(), view }; finSig = ''; if (running) renderFinCard(); sfx(view.ok ? 'chime' : 'bad'); };
     try {
-      fetch(finApi('/api/routing/sample'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: c.key }) })
-        .then(r => { if (r && r.ok) flashTip(null, 'sample job dispatched — watch the line', true); else flashTip(null, 'sample refused (HTTP ' + (r ? r.status : '?') + ')', false); })
-        .catch(() => flashTip(null, 'sample failed — sidecar unreachable', false));
-    } catch (e) {}
+      fetch(finApi('/api/routing/sample'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: key }) })
+        .then(r => r.json().catch(() => null).then(j => settle(sampleResultView(j, r.status, agentLabel))))
+        .catch(() => settle({ ok: false, stages: [], usd: null, reply: '', reason: 'sample failed — sidecar unreachable' }));
+    } catch (e) { settle({ ok: false, stages: [], usd: null, reply: '', reason: 'sample failed — sidecar unreachable' }); }
   }
   // per-frame: hide while anything coach-like is up (same gate family as the first ride), else pin
   // the card beside the line's bounding box in screen space (the flashTip/clientX coordinate basis).
@@ -2631,9 +2911,18 @@ const Build = (() => {
   let finPosSig = '';
   let uiVer = 1;   // bumped wherever REFIT's own DOM geometry can move — see bumpUi()
   function bumpUi() { uiVer++; finPosSig = ''; }
+  /* the coach's bubble rect (tutorial.js `.tut-coach`, a fixed body child) — VISUAL px. While a coach is up
+     the checklist used to vanish entirely; now it STACKS under the bubble (the first-run guide card is the
+     one surface that still hides it: that card IS the whole screen). */
+  function coachRect() {
+    const el = document.querySelector('.tut-coach'); if (!el) return null;
+    const r = el.getBoundingClientRect(); return (r.width && r.height) ? r : null;
+  }
   function positionFinCard() {
     if (!finCardEl) return;
-    if (tutorialCoaching() || (root && root.querySelector('.refit-firstrun'))) { finCardEl.style.display = 'none'; finPosSig = ''; return; }
+    if (root && root.querySelector('.refit-firstrun')) { finCardEl.style.display = 'none'; finPosSig = ''; return; }
+    const coach = tutorialCoaching() ? coachRect() : null;
+    const coachKey = coach ? '|c' + Math.round(coach.left) + ',' + Math.round(coach.top) + ',' + Math.round(coach.right) + ',' + Math.round(coach.bottom) : '';
     const c = finComp;
     /* ORDERS mode has no line to anchor to (that is the whole point of it), so it parks in the top
        right of the glass — clear of the left dock and of the action deck above. FINISH THE LINE
@@ -2641,14 +2930,17 @@ const Build = (() => {
     if (!c && finCardEl.classList.contains('refit-orders')) {
       if (!cv) return;
       finCardEl.style.display = '';
-      const osig = 'o|' + uiVer + '|' + window.innerWidth + '|' + window.innerHeight + '|' + U.uiZoom();
+      const osig = 'o|' + uiVer + '|' + window.innerWidth + '|' + window.innerHeight + '|' + U.uiZoom() + coachKey;
       if (osig === finPosSig) return;
       const r0 = cv.getBoundingClientRect();
       if (!r0.width) return;
       finPosSig = osig;
       const z = U.uiZoom(), cr0 = finCardEl.getBoundingClientRect();
-      finCardEl.style.left = Math.round((r0.right - (cr0.width || 236 * z) - 14 * z) / z) + 'px';
-      finCardEl.style.top = Math.round((r0.top + 58 * z) / z) + 'px';
+      const ox = r0.right - (cr0.width || 236 * z) - 14 * z;
+      let oy = r0.top + 58 * z;
+      if (coach && coach.right > ox && coach.bottom > oy) oy = coach.bottom + 10 * z;   // stack under the bubble
+      finCardEl.style.left = Math.round(ox / z) + 'px';
+      finCardEl.style.top = Math.round(oy / z) + 'px';
       return;
     }
     if (!c || !c.bbox || !cacheGeo || !cv) return;
@@ -2656,7 +2948,7 @@ const Build = (() => {
     const o = cacheGeo.origin || { tx: 0, ty: 0 }, t = T();
     const lsig = 'l|' + uiVer + '|' + zoom + '|' + panX + '|' + panY + '|' + t + '|' + o.tx + ',' + o.ty
       + '|' + window.innerWidth + '|' + window.innerHeight + '|' + U.uiZoom()
-      + '|' + c.key + '|' + c.bbox.x1 + ',' + c.bbox.y1 + ',' + c.bbox.x2 + ',' + c.bbox.y2;
+      + '|' + c.key + '|' + c.bbox.x1 + ',' + c.bbox.y1 + ',' + c.bbox.x2 + ',' + c.bbox.y2 + coachKey;
     if (lsig === finPosSig) return;
     const r = cv.getBoundingClientRect();
     if (!r.width || !r.height) return;
@@ -2678,6 +2970,10 @@ const Build = (() => {
     else { x = sx((c.bbox.x2 + 1 + o.tx) * t) - w; y = sy((c.bbox.y2 + 1 + o.ty) * t) + 12; }             // no side room — under the line
     x = Math.max(minX, Math.min(x, window.innerWidth - w - 8));
     y = Math.max(56, Math.min(y, window.innerHeight - h - 8));
+    // a coach bubble over the same spot: stack the checklist UNDER it (never hide it, never cover it)
+    if (coach && x < coach.right && x + w > coach.left && y < coach.bottom && y + h > coach.top) {
+      y = Math.min(coach.bottom + 10, window.innerHeight - h - 8);
+    }
     finCardEl.style.left = Math.round(x / uiz) + 'px';
     finCardEl.style.top = Math.round(y / uiz) + 'px';
   }
@@ -3709,6 +4005,7 @@ const Build = (() => {
         lastStampIds = null;
       }
       renderFinCard();
+      refreshLineFacts();   // an open STEP/flow card's "ON <LINE> — feeds …" line follows the recompiled plan
       // ghost projection (Phase 3): same plan, same components, same frame rebase as everything above
       if (ghost) ghost.setContext({ plan: valPlan, comps: valComps, offset: (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 } });
     }
