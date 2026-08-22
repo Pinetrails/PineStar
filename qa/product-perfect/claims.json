@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "2fcb3957862ce1188d854c7e29fddb981dec4b7c",
+    "sourceCommit": "4d6ba27feb86c0293407623195edc95ebca90553",
     "pathSetSha256": "77c7cefbdaf746b68ae98b176644d3d9ddf2519175bb3ed53931be9819e6750c",
     "files": [
       {
@@ -373,8 +373,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 250008,
-        "sha256": "8a9848c2865653b0c434dabeff4d374d7b1aa93b8bf660e8a8bf02f67820d9da"
+        "bytes": 250599,
+        "sha256": "1e8d6cb921bd4396733ea2127d3529b6c45ef8ad96381ddc63298a75aa8f761d"
       },
       {
         "path": "frontend/app/mint.js",
@@ -598,8 +598,8 @@
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 63011,
-        "sha256": "96419811ba69bbb76d02698c4ef1a6eaf5d13ec522226725de7d5ebf9a2310da"
+        "bytes": 63989,
+        "sha256": "eb1d3ca81875546737c26b78cc250b023e22ab433013af5ffe3cc2ca02fb8ef6"
       },
       {
         "path": "frontend/app/recledger.js",
