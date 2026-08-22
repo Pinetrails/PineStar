@@ -37,7 +37,7 @@ A.ok(/j\s*&&\s*j\.halted\s*\?\s*'stopped \(E-STOP\)'/.test(chatSrc),
 /* ROUTINE ROW FEEDBACK (stranded-user sweep, 2026-08-22): a row must survive a job without `skills`
    (an unguarded `j.skills.length` threw and the catch painted "sidecar offline"), must say it runs the
    WHOLE line when the record carries runsLine, and must show the line's recorded spend (lastUsd). */
-A.ok(!/j\.skills\.length/.test(src), 'routine row never dereferences j.skills.length unguarded');
+A.ok((src.match(/j\.skills\.length/g) || []).length === 1 && /Array\.isArray\(j\.skills\) \? j\.skills\.length/.test(src), 'routine row only reads j.skills.length behind the Array.isArray guard');
 A.ok(/Array\.isArray\(j\.skills\)/.test(src), 'routine row guards the skills array');
 A.ok(/runs the <b>/.test(src) && /j\.runsLine !== true\) return 'runs as '/.test(src), "a runsLine routine says it runs the line; others keep 'runs as'");
 A.ok(/Build\.lineOfAgentInfo/.test(src), 'the line name/dock count come from the compiled plan (Build.lineOfAgentInfo), never guessed');
