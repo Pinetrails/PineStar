@@ -20,6 +20,7 @@
   const OPP = { E: 'W', W: 'E', S: 'N', N: 'S' };
   const LANE_ORDER = ['E', 'S', 'W', 'N'];          // fixed order so routing is deterministic (mirrors conveyor.js)
   const key = (x, y) => x + ',' + y;
+  const LOOP_MAX_DEFAULT = 5, LOOP_MAX_CEILING = 20;   // bounded loop (2026-08-21): plan-configurable, hard-capped
 
   const buildBeltMap = belts => { const m = {}; for (const b of (belts || [])) m[key(b.x, b.y)] = b.dir; return m; };
   // a junction's out-lanes: neighbour belts that DON'T flow back into the tile (the lane it came from)
@@ -27,6 +28,22 @@
     const lanes = [];
     for (const d of LANE_ORDER) { const v = DIRV[d], nb = map[key(x + v[0], y + v[1])]; if (nb && nb !== OPP[d]) lanes.push(d); }
     return lanes;
+  }
+  // a junction's IN-lanes: neighbour belts that flow INTO the tile (a JOINER counts these — one per branch)
+  function inLanes(map, x, y) {
+    const lanes = [];
+    for (const d of LANE_ORDER) { const v = DIRV[d], nb = map[key(x + v[0], y + v[1])]; if (nb && nb === OPP[d]) lanes.push(d); }
+    return lanes;
+  }
+  /* a LOOP gate's two exits (2026-08-21): `done` = the lane the crate leaves on when its iteration count is
+     spent (configured, else the FIRST out-lane), `back` = the other lane, which re-enters the line upstream.
+     Static analysis (cycle detection, reachability, chains) follows ONLY `done` — the back edge is the one
+     legal way round, and it is bounded at run time by the iteration cap, never by the belt graph. */
+  function loopLanes(map, x, y, cfg) {
+    const lanes = outLanes(map, x, y);
+    const done = (cfg && cfg.done && lanes.indexOf(cfg.done) >= 0) ? cfg.done : (lanes[0] || null);
+    const back = lanes.find(d => d !== done) || null;
+    return { done, back, lanes };
   }
   // the first belt tile on/adjacent to a footprint (its tiles + a 1-tile ring) — a prop's connection point
   function beltTileNear(map, tx, ty, tw, th) {
@@ -44,7 +61,9 @@
   // the tile(s) a box flows to next from t (a junction fans out to ALL its out-lanes for reachability/cycle)
   function nextTiles(map, junctions, t) {
     if (!map[key(t.x, t.y)]) return [];
-    const dirs = junctions[key(t.x, t.y)] ? outLanes(map, t.x, t.y) : [map[key(t.x, t.y)]];
+    const jc = junctions[key(t.x, t.y)];
+    // a LOOP gate's back lane is NOT a static edge (see loopLanes) — only the done lane counts here
+    const dirs = (jc && jc.kind === 'loop') ? [loopLanes(map, t.x, t.y, jc).done].filter(Boolean) : jc ? outLanes(map, t.x, t.y) : [map[key(t.x, t.y)]];
     const out = [];
     for (const d of dirs) { const v = DIRV[d], nx = t.x + v[0], ny = t.y + v[1]; if (map[key(nx, ny)]) out.push({ x: nx, y: ny }); }
     return out;
@@ -98,14 +117,34 @@
           for (let xx = p.x - 1; xx <= p.x + iw; xx++)
             if (map[key(xx, yy)]) tiles.push({ x: xx, y: yy });
         sources.push({ propId: p.id, tile: t, tiles });
-      } else if (p.t === 'splitter' || p.t === 'filter' || p.t === 'merger') {
+      } else if (p.t === 'splitter' || p.t === 'filter' || p.t === 'merger' || p.t === 'joiner' || p.t === 'loop') {
         const t = map[key(p.x, p.y)] ? { x: p.x, y: p.y } : beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
         // a junction touching NO belt routes nothing — it silently compiled to nothing, which after a MOVE
         // one tile too far read as "my filter stopped working" with zero feedback. Warn (not a blocker: an
         // unattached junction can neither loop nor void work) so REFIT can nag it back onto the line.
         if (!t) { errors.push({ code: 'ORPHAN_JUNCTION', propId: p.id, warn: true }); continue; }
-        const kind = p.t === 'splitter' ? 'split' : p.t === 'merger' ? 'merge' : 'filter';
+        const kind = p.t === 'splitter' ? 'split' : p.t === 'merger' ? 'merge' : p.t === 'joiner' ? 'join' : p.t === 'loop' ? 'loop' : 'filter';
         const cfg = { kind };
+        /* JOINER (2026-08-21) — the real fan-in BARRIER the merger never was: it holds one crate per in-lane
+           for a run, then releases ONE merged crate. `expect` = its in-lane count (the branches it waits for);
+           `timeoutMin` = how long the sidecar barrier waits for a missing branch before releasing partial
+           (default 10, clamped 1..120). Plan-configurable per prop like a filter's routes. */
+        if (kind === 'join') {
+          cfg.expect = inLanes(map, t.x, t.y).length;
+          const tm = +p.timeoutMin;
+          cfg.timeoutMin = (isFinite(tm) && tm >= 1) ? Math.min(120, Math.floor(tm)) : 10;
+          if (cfg.expect < 2) errors.push({ code: 'JOIN_ONE_LANE', propId: p.id, warn: true });
+        }
+        /* LOOP gate (2026-08-21) — the ONE legal way round: a crate re-enters the line upstream on the back
+           lane until its iteration count reaches `max` (default 5, hard ceiling 20), then leaves on `done`. */
+        if (kind === 'loop') {
+          const mx = +p.maxIter;
+          cfg.max = (isFinite(mx) && mx >= 1) ? Math.min(LOOP_MAX_CEILING, Math.floor(mx)) : LOOP_MAX_DEFAULT;
+          const ll = loopLanes(map, t.x, t.y, { done: p.done || null });
+          cfg.done = ll.done; cfg.back = ll.back;
+          if (!p.done || p.done !== ll.done) errors.push({ code: 'LOOP_NO_DONE', propId: p.id, warn: true });
+          if (!ll.back) errors.push({ code: 'LOOP_NO_BACK', propId: p.id, warn: true });
+        }
         if (kind === 'filter') {
           cfg.routes = (p.routes && typeof p.routes === 'object') ? p.routes : {};   // {tag -> out-lane dir}
           cfg.def = p.def || null;                                                    // default out-lane dir
@@ -147,7 +186,7 @@
        sit on/next to the line, and flat decor (block:false) buries nothing. geo already carries `block`
        per prop (worldmodel.projectGeometry emits it) — no contract change; a geo without the field
        (older callers/tests) simply never trips this. Anchored on the first covered belt tile. */
-    const BELT_MACHINES = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
+    const BELT_MACHINES = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1, joiner: 1, loop: 1 };
     for (const p of props) {
       if (p.block !== true || BELT_MACHINES[p.t]) continue;
       const pw = p.w || 1, ph = p.h || 1;
@@ -205,6 +244,21 @@
       for (const ht of tiles) bayTileToAgent[key(ht.x, ht.y)] = p.agentId;
     }
 
+    // LOOP backTo: the first DOCK the back lane reaches (the stage the crate re-enters at). Pre-cycle so the
+    // back edge is resolved on the same pass that cuts it from static flow (nextTiles).
+    for (const jk in junctions) {
+      const jc = junctions[jk];
+      if (jc.kind !== 'loop' || !jc.back) continue;
+      const p0 = jk.split(','), jx = +p0[0], jy = +p0[1];
+      const v = DIRV[jc.back]; let t = { x: jx + v[0], y: jy + v[1] }, guard = 0; const seen = {};
+      jc.backTo = null;
+      while (t && map[key(t.x, t.y)] && guard++ < 4096 && !seen[key(t.x, t.y)]) {
+        const k2 = key(t.x, t.y); seen[k2] = true;
+        if (bayTileToAgent[k2]) { jc.backTo = bayTileToAgent[k2]; break; }
+        const nts = nextTiles(map, junctions, t); t = nts[0] || null;
+      }
+      if (!jc.backTo) errors.push({ code: 'LOOP_NO_BACK', tile: { x: jx, y: jy }, warn: true });
+    }
     const cyc = detectCycle(map, junctions);
     if (cyc) errors.push({ code: 'CYCLE', tile: cyc });
 
@@ -242,6 +296,24 @@
        all read ONE fact — the same reason resolveTarget lives in this module. Compiled BEFORE the BAY_NOT_FED
        pass because it is now one of the three ways a dock can be fed. */
     plan.chains = compileChains(plan);
+    /* FAN-OUT (2026-08-21): a SPLIT whose flow reaches a JOINER runs EVERY lane — the joiner is what makes
+       the branches rejoin, so load-balancing them would be a barrier that waits forever. Marked on the split's
+       compiled cfg so the chain runner, the router and the floor all read one fact. A split with no joiner
+       downstream keeps its round-robin meaning exactly. Hash input by design (topology changed). The walk
+       crosses DOCKS the way work does — in at a hookup, out at the ship tile (plan.chains). */
+    for (const jk in junctions) {
+      const jc = junctions[jk];
+      if (jc.kind !== 'split') continue;
+      const p0 = jk.split(','), seen = {}, q = [{ x: +p0[0], y: +p0[1] }]; seen[jk] = true; let hit = false;
+      while (q.length && !hit) {
+        const t = q.shift(), owner = bayTileToAgent[key(t.x, t.y)];
+        const ship = owner && plan.chains[owner] && plan.chains[owner].tile;
+        // a hookup that is NOT the dock's ship tile is an entrance: work re-emerges at the ship tile
+        const nts = (ship && !(ship.x === t.x && ship.y === t.y)) ? [ship] : nextTiles(map, junctions, t);
+        for (const nt of nts) { const nk = key(nt.x, nt.y); if (seen[nk]) continue; seen[nk] = true; if (junctions[nk] && junctions[nk].kind === 'join') { hit = true; break; } q.push(nt); }
+      }
+      if (hit) jc.fanout = true;
+    }
     const chainFed = {};
     for (const a in plan.chains) for (const n of plan.chains[a].next) chainFed[n] = true;
 
@@ -458,12 +530,81 @@
       } else if (j && j.kind === 'split') {
         const lanes = outLanes(map, t.x, t.y);
         if (lanes.length) { const i = pick ? ((pick(k, lanes.length) % lanes.length) + lanes.length) % lanes.length : 0; d = lanes[i]; }
+      } else if (j && j.kind === 'loop') {
+        d = loopLanes(map, t.x, t.y, j).done || here;           // static reading: the loop is spent, leave on done
       }
       const v = DIRV[d], nx = t.x + v[0], ny = t.y + v[1];
       if (!map[key(nx, ny)]) return null;                       // shipped out / sank with no dock
       t = { x: nx, y: ny };
     }
     return null;
+  }
+
+  /* chainStep(plan, agentId, ctx, pick) -> what this dock's output meets NEXT along its belt (2026-08-21):
+       { agentId }                                   a foreign dock consumes it (== chainNext)
+       { branches: [agentId…], split: key }          a FAN-OUT split: every lane runs (the split feeds a JOINER)
+       { join: key, expect, timeoutMin, next }       a JOINER barrier; `next` = the dock past it (may be null)
+       { loop: key, max, backTo, next }              a LOOP gate; `backTo` = the stage re-entered, `next` = the done dock
+       null                                          terminal / gate refused (same rule as chainNext)
+     Same line gate, same walk, same pick counter as chainNext — the runner calls THIS and chainNext stays the
+     plain single-dock reading every older surface uses. `ctx.fromTile` lets the runner resume the walk from a
+     junction it just released (a join) or re-enter from a loop gate (`ctx.via === 'back'`). */
+  function chainStep(plan, agentId, ctx, pick) {
+    if (!plan || !plan.chains || !plan.belts) return null;
+    const carried = (ctx && ctx.lineId != null && String(ctx.lineId)) || null;
+    const own = lineOf(plan, agentId);
+    if (!carried || !own || carried !== own) return null;
+    const rec = plan.chains[agentId];
+    const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
+    const tag = (ctx && ctx.tag) || 'general';
+    const fromTile = ctx && ctx.fromTile;
+    if (!fromTile && (!rec || !rec.tile || !rec.next.length)) return null;
+    const walkAgent = r => (r && r.agentId) ? r.agentId : null;
+    // walk one lane to the first foreign dock, honouring filters/merges; stops at a join, a loop or a fan-out split
+    function walk(start, startDir) {
+      let t = start, forced = startDir || null, guard = 0; const seen = {};
+      while (t && guard++ < 4096) {
+        const k = key(t.x, t.y);
+        if (bayAt[k] && bayAt[k] !== agentId) return { agentId: bayAt[k] };
+        if (seen[k]) return null;
+        seen[k] = true;
+        const here = map[k]; if (!here) return null;
+        const j = junctions[k];
+        let d = here;
+        if (forced) { d = forced; forced = null; }
+        else if (j && j.kind === 'join') {
+          const ex = outLanes(map, t.x, t.y)[0] || here, v = DIRV[ex];
+          const nt = { x: t.x + v[0], y: t.y + v[1] };
+          return { join: k, expect: j.expect || 0, timeoutMin: j.timeoutMin || 10, next: map[key(nt.x, nt.y)] ? walkAgent(walk(nt)) : null };
+        } else if (j && j.kind === 'loop') {
+          const ll = loopLanes(map, t.x, t.y, j), vd = ll.done ? DIRV[ll.done] : null;
+          const nt = vd ? { x: t.x + vd[0], y: t.y + vd[1] } : null;
+          return { loop: k, max: j.max || LOOP_MAX_DEFAULT, backTo: j.backTo || null, next: (nt && map[key(nt.x, nt.y)]) ? walkAgent(walk(nt)) : null };
+        } else if (j && j.kind === 'split' && j.fanout) {
+          const lanes = outLanes(map, t.x, t.y), branches = [];
+          for (const ld of lanes) { const v = DIRV[ld], nt = { x: t.x + v[0], y: t.y + v[1] }; if (!map[key(nt.x, nt.y)]) continue; const r = walk(nt); if (r && r.agentId && branches.indexOf(r.agentId) < 0) branches.push(r.agentId); }
+          return { branches, split: k };
+        } else if (j && j.kind === 'filter') {
+          const lanes = outLanes(map, t.x, t.y), want = j.routes && j.routes[tag];
+          d = (want && lanes.indexOf(want) >= 0) ? want : (j.def && lanes.indexOf(j.def) >= 0) ? j.def : (lanes[0] || here);
+        } else if (j && j.kind === 'split') {
+          const lanes = outLanes(map, t.x, t.y);
+          if (lanes.length) { const i = pick ? ((pick(k, lanes.length) % lanes.length) + lanes.length) % lanes.length : 0; d = lanes[i]; }
+        }
+        const v = DIRV[d], nx = t.x + v[0], ny = t.y + v[1];
+        if (!map[key(nx, ny)]) return null;
+        t = { x: nx, y: ny };
+      }
+      return null;
+    }
+    if (fromTile) {
+      // resume from a junction: a released JOIN leaves on its single exit; a LOOP re-entry takes the back lane
+      const jk = key(fromTile.x, fromTile.y), j = junctions[jk];
+      if (j && j.kind === 'loop' && ctx.via === 'back') { if (!j.back) return null; return walk(fromTile, j.back); }
+      const ex = outLanes(map, fromTile.x, fromTile.y)[0]; if (!ex) return null;
+      return walk(fromTile, ex);
+    }
+    return walk(rec.tile);
   }
 
   /* ---------- legibility layer: pure readouts of the compiled plan (no routing behavior) ----------
@@ -695,6 +836,45 @@
       + 'output — build on it. Answer with the work itself, not a description of what you would do.';
   }
 
+  /* fanSiblings(plan, agentId) -> the OTHER first docks of the fan-out split that feeds this dock, sorted
+     (2026-08-21). The entry dispatcher (resolveTarget) still names ONE dock for an inbound message — that is
+     the one that ran. When that dock sits on a lane of a split that feeds a JOINER, the remaining lanes are
+     parallel branches the line promised to run; the chain runner runs them from the original text so the
+     joiner barrier can actually fill. [] when the dock is not on a fan-out lane. */
+  function fanSiblings(plan, agentId) {
+    if (!plan || !plan.belts || !plan.junctions || !agentId) return [];
+    const map = plan.belts, junctions = plan.junctions, bayAt = plan.bayTileToAgent || {};
+    function firstDock(start) {
+      const seen = {}; let t = start, guard = 0;
+      while (t && map[key(t.x, t.y)] && guard++ < 4096) {
+        const k = key(t.x, t.y); if (seen[k]) return null; seen[k] = true;
+        if (bayAt[k]) return bayAt[k];
+        const nts = nextTiles(map, junctions, t); if (nts.length !== 1 && !(junctions[k] && junctions[k].kind === 'split')) { if (!nts.length) return null; }
+        t = nts[0] || null;
+      }
+      return null;
+    }
+    for (const jk in junctions) {
+      const j = junctions[jk]; if (j.kind !== 'split' || !j.fanout) continue;
+      const p = jk.split(','), x = +p[0], y = +p[1], docks = [];
+      for (const d of outLanes(map, x, y)) { const v = DIRV[d], a = firstDock({ x: x + v[0], y: y + v[1] }); if (a && docks.indexOf(a) < 0) docks.push(a); }
+      if (docks.indexOf(agentId) >= 0) return docks.filter(a => a !== agentId).sort();
+    }
+    return [];
+  }
+
+  /* joinPayload(parts, missing) -> the ONE merged crate a JOINER releases. `parts` = [{ agentId, text }] in
+     delivery order; `missing` = branch names that never delivered before the timeout (marked, never hidden —
+     a downstream stage must know it is working from a partial set). Shared module so the floor and the
+     sidecar describe the same crate. */
+  function joinPayload(parts, missing) {
+    const ps = parts || [], ms = missing || [], n = ps.length + ms.length;
+    const body = ps.map((p, i) => '=== BRANCH ' + (i + 1) + ' of ' + n + ' — ' + (p.agentId || '?') + ' ===\n' + String(p.text || '').trim());
+    let out = 'JOINED OUTPUT — ' + ps.length + ' of ' + n + ' branch' + (n === 1 ? '' : 'es') + ' delivered.\n\n' + body.join('\n\n');
+    if (ms.length) out += '\n\n=== PARTIAL: ' + ms.length + ' branch' + (ms.length === 1 ? '' : 'es') + ' never delivered before the joiner timed out (' + ms.join(', ') + ') ===';
+    return out;
+  }
+
   const ok = plan => !plan.errors.some(e => !e.warn);   // a plan is deployable iff it has no non-warning errors
 
   /* ---------- LINE COMPONENTS (guided workflows, 2026-08-05) ----------
@@ -727,7 +907,7 @@
   function lineComponents(geo) {
     const props = (geo && geo.props) || [];
     const map = buildBeltMap(geo && geo.belts);
-    const MACH = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
+    const MACH = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1, joiner: 1, loop: 1 };
     // union-find over belt-tile keys
     const parent = {};
     const find = k => { let r = k; while (parent[r] !== r) r = parent[r]; let c = k; while (parent[c] !== r) { const n = parent[c]; parent[c] = r; c = n; } return r; };
@@ -779,5 +959,5 @@
     return out;
   }
 
-  return { compileRoutingPlan, resolveTarget, lineOf, lineOriginOf, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, lineComponents, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom, propIdCmp } };
+  return { compileRoutingPlan, resolveTarget, lineOf, lineOriginOf, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, chainStep, fanSiblings, handoffPrompt, joinPayload, lineComponents, LOOP_MAX_DEFAULT, LOOP_MAX_CEILING, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, inLanes, loopLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom, propIdCmp } };
 });
