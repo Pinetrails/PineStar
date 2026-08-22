@@ -47,6 +47,40 @@ function dodgeRect(box, brief, vw, vh) {
   return box;
 }
 
+/* ================= LANE 2 — CONNECT YOUR WORLD (the tour's last beat) =================
+   Pure (top-level, outside the IIFE like dodgeRect, so the gate can require() it). Topic → connector map. Matching rides TopicMatch.coverage (the ONE matcher every shelf uses) over the
+   Commander's GOALS beliefs; each topic is a handful of single-token labels so "run my newsletter" finds
+   email and "grow the site" finds website. Order is priority order; the list is capped at 3. With no
+   matching goal the generic top-3 (gmail · google-calendar · google-docs) is offered instead. */
+const CONNECT_TOPICS = [
+  { topic: 'email',    words: ['email', 'emails', 'inbox', 'gmail', 'newsletter', 'mailing'], ids: ['gmail'] },
+  { topic: 'website',  words: ['website', 'site', 'landing', 'webflow', 'wix', 'blog'],      ids: ['webflow', 'wix'] },
+  { topic: 'calendar', words: ['calendar', 'schedule', 'scheduling', 'meetings', 'booking'], ids: ['google-calendar'] },
+  { topic: 'docs',     words: ['docs', 'document', 'documents', 'writing', 'notes', 'drafts'], ids: ['google-docs'] }
+];
+const CONNECT_GENERIC = ['gmail', 'google-calendar', 'google-docs'];
+const CONNECT_LABEL = { gmail: 'Gmail', webflow: 'Webflow', wix: 'Wix', 'google-calendar': 'Google Calendar', 'google-docs': 'Google Docs' };
+function wordHits(word, corpus) {
+  if (typeof TopicMatch !== 'undefined' && TopicMatch.coverage) return TopicMatch.coverage(word, corpus) > 0;
+  return String(corpus || '').toLowerCase().indexOf(String(word).toLowerCase()) !== -1;   // node shim / load-order fallback
+}
+// pure: goal texts → ordered connector ids (≤3). Exported on the node shim so the gate pins it.
+function connectOffers(texts) {
+  const corpus = (Array.isArray(texts) ? texts : []).map(t => String(t || '')).join(' ').toLowerCase();
+  const out = [];
+  if (corpus.trim()) {
+    const hit = CONNECT_TOPICS.filter(t => t.words.some(w => wordHits(w, corpus)));
+    // every matched topic gets its FIRST connector before any topic gets a second (wix never crowds out calendar)
+    for (let rank = 0; rank < 2; rank++) for (const t of hit) {
+      const id = t.ids[rank];
+      if (id && out.length < 3 && out.indexOf(id) === -1) out.push(id);
+    }
+  }
+  return out.length ? out : CONNECT_GENERIC.slice();
+}
+// READ-BACK truth: the FIRST STEPS connector step counts only a connector the host lists as `up`.
+function connectorUp(list) { return Array.isArray(list) && list.some(c => c && c.state === 'up'); }
+
 const Tutorial = (() => {
   const KEY = 'starnet.tutorial.v1';
   let state = load();
@@ -667,11 +701,63 @@ const Tutorial = (() => {
     // already delivered), and (2) a coachmark points at the quest log itself — the map says NOTHING glowed
     // at tour end, so a skipper never even learned quests exist. Anchored on the always-visible WORK dock
     // button (never a hidden menu item — the dock-menu spotlight trap).
-    setTimeout(() => {
+    // LANE 2 (2026-08-22): "Connect your world" — ONE beat between the checklist and the starter pitch. It
+    // reads the dossier GOALS and offers ≤3 connectors by topic; a pick routes into the EXISTING catalog
+    // sign-in (no new window, no new visual language). The starter pitch waits for the answer because COMMS
+    // chips are ONE layer — Chat.choices() clears any prior row, so firing both at once would eat the offer.
+    // Replay never runs it (progress unchanged) and a missing Chat/sidecar falls straight through.
+    const afterConnect = () => {
       if (typeof PitchStore !== 'undefined' && PitchStore.offerStarter) PitchStore.offerStarter();
       showCoach('quests', '.bb-group[data-group="work"] .bb-grp',
         'your next moves are pinned under ▤ WORK ▸ ⚑ QUESTS — real progress, tracked as quests. the same dock holds ❒ RECIPES (ready-made jobs), ☑ TASKS (where running work lives) and ∞ AUTOMATION (routines & loops — standing work). nothing in there is ever gated.');
-    }, skipped ? 900 : 1400);
+    };
+    setTimeout(() => beatConnect(afterConnect), skipped ? 900 : 1400);
+  }
+
+  function goalTexts() {
+    try {
+      if (typeof DossierStore === 'undefined' || !DossierStore.beliefs) return [];
+      return (DossierStore.beliefs('goals') || []).map(b => (b && b.text) || '').filter(Boolean);
+    } catch (_) { return []; }
+  }
+  function beatConnect(next) {
+    const done = () => { try { next(); } catch (_) {} };
+    if (!hasChat() || state.connectOffered) return done();
+    state.connectOffered = true; save();                  // one-shot, like every other tour beat
+    const ids = connectOffers(goalTexts());
+    const items = ids.map(id => ({ label: '⧉ ' + (CONNECT_LABEL[id] || id), value: id }))
+      .concat([{ label: 'not now', value: 'skip', skip: true, quiet: true }]);
+    say([seg('one more thing. i can reach further than this room — wire a door and i work inside your real tools. the lamp only goes green when the host proves the link.', 44, 0)], () => {
+      const row = Chat.choices(items, item => {
+        if (!item || item.skip) return done();
+        // the CLICK proves nothing — the FIRST STEPS connector step ticks only from the read-back (watchConnectors).
+        try { if (typeof StationUI !== 'undefined' && StationUI.connectorJump) StationUI.connectorJump(item.value); } catch (_) {}
+        watchConnectors();
+        done();
+      });
+      if (row) {
+        row.classList.add('comms-connect-beat');
+        row.querySelectorAll('.choice').forEach((b, i) => { if (items[i] && !items[i].skip) b.dataset.connector = items[i].value; });
+      }
+    });
+  }
+  // READ-BACK: the `connector` step is marked done only when /api/connectors lists a connector the host
+  // proved `up` — never from a click or a sign-in popup opening. Bounded poll (a sign-in takes a minute, not
+  // an hour), re-armed on every game entry so a connection made later still lands.
+  let connPollTimer = null, connPollLeft = 0;
+  function watchConnectors(polls) {
+    if (briefDone('connector') || typeof Harness === 'undefined' || !Harness.api || !Harness.api.get) return;
+    connPollLeft = Number.isFinite(polls) ? polls : 60;   // ~5 min at 5s after a pick; ONE read on game entry
+    if (connPollTimer) return;
+    const tick = () => {
+      connPollTimer = null;
+      if (briefDone('connector') || connPollLeft-- <= 0) return;
+      Promise.resolve(Harness.api.get('/api/connectors')).then(j => {
+        if (connectorUp(j && j.connectors)) { tickBrief('connector'); return; }
+        connPollTimer = setTimeout(tick, 5000);
+      }, () => { connPollTimer = setTimeout(tick, 5000); });
+    };
+    tick();
   }
 
   function seen(key) { return !!state.seen[key]; }
@@ -1009,6 +1095,7 @@ const Tutorial = (() => {
   function onEnterGame() {
     wireBus();
     if (state.firstCommandDone && !state.briefDismissed && !state.briefComplete) setTimeout(showBrief, 900);
+    if (state.firstCommandDone) watchConnectors(1);   // a connector wired since last visit ticks the step from the read-back
   }
 
   // full teardown for DISCONNECT (app.js): drop every body-appended overlay + its loop/listeners so none
@@ -1016,6 +1103,7 @@ const Tutorial = (() => {
   function teardown() {
     active = false; kitMode = false; clearStall();
     clearKitTimers();
+    if (connPollTimer) { clearTimeout(connPollTimer); connPollTimer = null; }   // the read-back poll can't outlive the session
     clearCoach(); clearSpot(); hideBrief();
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close();
   }
@@ -1028,9 +1116,9 @@ const Tutorial = (() => {
   return {
     firstCommand, replayFirstCommand, spotlight, seen, markSeen, _state: () => state,
     onBuildOpen, onPropPlaced, onBeltPlaced, onConnectorPlaced, onLevelUp, clearCoach,
-    onEnterGame, fillFieldManual, showBrief, tickBrief, teardown, isCoaching
+    onEnterGame, fillFieldManual, showBrief, tickBrief, teardown, isCoaching, watchConnectors
   };
 })();
 
 // browser-safe node shim (guarded exactly like stationui.js) so the gate can unit-test the pure geometry
-if (typeof module !== 'undefined' && module.exports) module.exports = { dodgeRect };
+if (typeof module !== 'undefined' && module.exports) module.exports = { dodgeRect, connectOffers, connectorUp };

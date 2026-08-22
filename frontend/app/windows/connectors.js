@@ -9,6 +9,22 @@
   const esc = H.esc, sfx = H.sfx, notify = H.notify, fmtRel = H.fmtRel;
   const mountConsole = H.mountConsole, openSignIn = H.openSignIn;
 
+  // CATALOG DEEP-LINK (tutorial lane 2, 2026-08-22): StationUI.connectorJump(id) opens ABILITIES on the CATALOG
+  // rail and scrolls/flashes that connector's card (the same cc-jump flash the ▸ VIA action uses) — the
+  // Commander still presses the card's OWN ▸ SIGN IN, so the existing OAuth path stays the only door. The id
+  // parks here until ccRefresh has rendered the cards (the window builds async).
+  let ccJumpPending = null;
+  function ccFlash(target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.classList.remove('cc-jump'); void target.offsetWidth;
+    target.classList.add('cc-jump');
+    setTimeout(() => target.classList.remove('cc-jump'), 2500);
+  }
+  StationUI.connectorJump = function (id) {
+    ccJumpPending = String(id || '') || null;
+    if (typeof StationUI.openTerm === 'function') StationUI.openTerm('connectors', 'catalog');
+  };
+
   /* ============== CONNECTORS — attach MCP servers so agents gain external tools ==============
      A connector is a remote MCP (Model Context Protocol) server. Once added + connected, its tools
      become real agent tools, gated by the same consent prompt as everything else. The server URL +
@@ -991,6 +1007,12 @@
         ccCache = groups.flatMap(g => g.connectors);
         ccListEl.innerHTML = groups.map(ccGroupHTML).join('') || '<div class="mc-detail">catalog is empty.</div>';
         ccApplyFilter();   // a refresh re-renders every card, so re-assert the active tier filter
+        if (ccJumpPending) {
+          const jid = ccJumpPending; ccJumpPending = null;
+          const card = ccListEl.querySelector('.cc-card[data-id="' + (window.CSS && CSS.escape ? CSS.escape(jid) : jid) + '"]');
+          if (card) { if (card.hidden) ccSetFilter('all'); ccFlash(card); }
+          else { ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = '✕ "' + jid + '" is not in the catalog'; }
+        }
       } catch (_) { ccListEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to browse the catalog.</div>'; }
     }
     /* Tier filter. Hides cards, then hides any category group left with nothing visible — a category
