@@ -84,7 +84,7 @@ A.ok(/e\.key !== 'Escape'[\s\S]{0,200}\.refit-overlay'\)[\s\S]{0,80}#terms \.ter
 A.ok(/function dodgeBrief\(/.test(tut), 'the coachmark measures the live FIRST STEPS brief');
 A.ok(/dodgeBrief\(\{ left, top, w: bw, h: bh \}, vw, vh\)/.test(tut), 'placeCoach routes its computed box through the dodge');
 A.ok(/^function dodgeRect\(box, brief, vw, vh\)/m.test(tut), 'the geometry is a pure top-level fn, not trapped in the IIFE');
-A.ok(/typeof module !== 'undefined' && module\.exports\) module\.exports = \{ dodgeRect \}/.test(tut),
+A.ok(/typeof module !== 'undefined' && module\.exports\) module\.exports = \{ dodgeRect\b/.test(tut),
   'and it is exported under the same browser-safe guard stationui.js uses, so the gate can run it');
 
 A.report('kitout.test');
