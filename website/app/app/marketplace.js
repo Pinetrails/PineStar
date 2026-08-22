@@ -3026,7 +3026,10 @@ const Marketplace = (() => {
     editCadence = seed.cadence || null;
     // map any legacy/raw category onto a rail bucket so the CATEGORY <select> (developer/research/creator/ops/
     // general) always has a matching option selected; unknown → general.
-    editCategory = (seed.category && CAT_TO_RAIL[seed.category]) || 'general';
+    // FIX (2026-08-22): `CAT_TO_RAIL` moved into recipes.js on 2026-08-04 (971d475e8) and this one reference was
+    // left behind — every EDIT / TWEAK / bottle of a categorized recipe threw a ReferenceError and the editor never
+    // opened. Fold through the same delegate the rail uses.
+    editCategory = (seed.category && railBucket(seed)) || 'general';
     // R5 bottled-run provenance: a mintFromRun proposal carries sourceRunId; carry it through save. Every other
     // entry (blank create / tweak / import) has none → null. An EDIT preserves whatever the saved record had.
     editSourceRunId = (seed.sourceRunId != null) ? String(seed.sourceRunId) : null;
