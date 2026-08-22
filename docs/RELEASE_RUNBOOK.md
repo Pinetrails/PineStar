@@ -159,10 +159,21 @@ and produces no machine-readable verdict — the first v0.10.0 soak failed after
 before anyone spends those hours, the scripted soak must PASS:
 
 ```
-npm run qa:soak            # 20-minute smoke (same harness, short)
+npm run qa:soak            # 20-minute smoke (same harness, short; ONE heartbeat routine)
+npm run qa:soak:scale      # 10-minute POWER-USER scale soak: 50 overlapping routines, cron cap 8, a 150 s outage
 npm run qa:soak:release    # 720-minute release soak
-# or any length: node scripts/qa/soak.mjs --minutes=N [--out=dir]   · CI: Actions → soak → minutes
+# or any length: node scripts/qa/soak.mjs --minutes=N [--routines=N] [--max-parallel=N] [--outage-seconds=N] [--out=dir]
+#   · CI: Actions → soak → minutes (+ routines / max_parallel / outage_seconds for the scale shape)
 ```
+
+Both `qa:soak` AND `qa:soak:scale` must PASS before the attended soak. The scale run is the machine proof of
+the power-user claim ("30–50 routines a day fire each one"): it seeds 50 routines with deliberately OVERLAPPING
+schedules (1-min / 2-min intervals mixed with `* * * * *`, `*/2`, `*/3`, `*/5` and odd-minute cron patterns,
+many due in the same minute), 3 SLOW routines whose mock answer outlives their period (so the lease must
+produce `already-running` skips), 1 routine paused after arming (the driver must report it `disabled`), and 2
+whose schedules are CORRUPTED in the store under the first restart (the driver must mark them
+`schedule-unfireable` exactly once). The first restart holds the sidecar down 150 s — past the 2-minute misfire
+grace — so the catch-up collapse is exercised for real.
 
 It boots a hermetic SOURCE sidecar (scratch workspace + scratch app-data profile, free port, in-process MOCK
 provider — zero spend, never your real station) and drives it unattended: real `/api/run` conversations, a
@@ -174,8 +185,20 @@ The receipt (`.dogfood/soak/<timestamp>/soak-receipt.json` + `SUMMARY.md`, schem
 `starnet.soak-receipt.v1`) carries one PASS/FAIL per rule WITH the numbers and the threshold's reason: run
 errors (tolerance 0 — the mock never errors), routine never fired, swallowed-error growth over the last third,
 RSS leak trend over the last half, health p95 > 500 ms, any persisted entity (agent / routine / run / turn)
-lost across a restart, an unplanned exit or orphaned child, or an incomplete soak. An unobtainable metric is
-`null` with a reason, never 0. **A FAIL is a finding, not a flaky gate — route it through the ledger; do not
+lost across a restart, an unplanned exit or orphaned child, an incomplete soak, the **routine ACCOUNTING**
+ledger, and the **scheduler TICK** latency. An unobtainable metric is `null` with a reason, never 0.
+
+The accounting rule is the per-routine occurrence ledger (the `## Routine accounting` table in SUMMARY.md):
+for EVERY seeded routine, every occurrence its schedule owes inside the window — enumerated with
+`sidecar/cron.js` `nextFireAt` from the armed `nextRunAt`, the scheduler's own math — must end as exactly one
+of fired / already-running / caught-up / collapsed (a missed occurrence folded into the ONE misfire catch-up,
+visible as the store's `nextRunAt` jumping more than a period) / disabled / unfireable; `at-capacity` deferrals
+are transient and must still reach a terminal. A fire at an instant the schedule never owed, two fires for one
+occurrence (the restart double-fire class), an owed occurrence with no terminal (lost), or a `nextRunAt`
+advance the math does not predict is a FAIL, and the offending routine + instant are named. The tick rule
+bounds p95 of the synchronous scheduler tick (`lastSuccessAt − lastTickAt` from `GET /api/cron`) at 300 ms
+over the last half — the tick does a whole-store fsync + read-back (`saveCronJobs`) per advance, so this is
+where the store write model shows its cost at 50 routines. A breach is a finding against the write model. **A FAIL is a finding, not a flaky gate — route it through the ledger; do not
 re-run until green and do not tune the threshold.**
 
 What it cannot see (so the attended soak still must): the packaged shell and its close/tray branches (that is
