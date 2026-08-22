@@ -3811,6 +3811,8 @@ const chainRunner = makeChainRunner({
   // line that died mid-join (fail-loud; see chain.js — nothing in-flight is durable, so nothing resumes).
   stepAgent: (agentId, ctx) => router.chainStep(agentId, ctx),
   fanSiblings: (agentId) => router.fanSiblings(agentId),
+  // LOOP VERDICTS (2026-08-22): a dock whose lane meets a verdict-keyed LOOP gate is told to end with the VERDICT line
+  loopGateAfter: (agentId, lineId) => router.loopGateAfter(agentId, lineId),
   barrierStore: {
     load: () => { try { return loadResilient(path.join(WORKSPACES, 'join.barriers.json'), 'join-barriers'); } catch (_) { return null; } },
     save: (v) => { try { saveResilient(path.join(WORKSPACES, 'join.barriers.json'), v); } catch (e) { failNote('chain.barriers.save', e); } }

@@ -28,6 +28,7 @@
 'use strict';
 const Pipeline = require('../../frontend/app/pipeline.js');
 const { note: failNote } = require('../failopen.js');   // tagged fail-open: a swallowed ledger/barrier error stays visible
+const Verdict = require('./verdict.js');   // the VERDICT channel (pure parser + reviewer brief)
 
 // the DEFAULT ceilings — a line that sets no LINE BUDGET runs under exactly these. They are the one
 // normalizer's defaults (Pipeline.LINE_LIMIT_DEFAULTS) so the compiler and the executor can never disagree.
@@ -67,6 +68,13 @@ function makeChainRunner(o) {
   const defaultRunAgent = typeof o.runAgent === 'function' ? o.runAgent : null;
   const emit = typeof o.emit === 'function' ? o.emit : function () {};
   const getTag = typeof o.getTag === 'function' ? o.getTag : function () { return undefined; };
+  /* THE VERDICT CHANNEL (2026-08-22): a stage's output may end with `VERDICT: approved|revise` (verdict.js). It
+     rides ctx.verdict BESIDE the classifier tag — a FILTER keyed on code|research|general never sees it, and a
+     LOOP gate whose `when` is a verdict word reads IT, not the classifier. loopGateAfter(agentId, lineId) ->
+     { when } when that dock's own lane meets a LOOP gate (router.loopGateAfter): the dock is told to END with
+     the verdict line, else the model never emits one. Both optional; absent = the pre-verdict runner. */
+  const getVerdict = typeof o.getVerdict === 'function' ? o.getVerdict : Verdict.parseVerdict;
+  const loopGateAfter = typeof o.loopGateAfter === 'function' ? o.loopGateAfter : null;
   // the clock is INJECTED (sidecar determinism law — this module holds no wall-clock of its own). Uninjected it
   // reports 0ms hops rather than inventing a time: honest, and the tests run on a fake clock.
   const now = typeof o.now === 'function' ? o.now : function () { return 0; };
@@ -270,7 +278,7 @@ function makeChainRunner(o) {
       if (forced) {
         target = forced.agentId; entryBranch = !!forced.entry; forced = null;
       } else {
-        const ctx = { tag: getTag(out.text), lineId: lineId, fromTile: fromTile, via: via };
+        const ctx = { tag: getTag(out.text), verdict: getVerdict(out.text), lineId: lineId, fromTile: fromTile, via: via };
         fromTile = null; via = null;
         try { step = stepAgent ? stepAgent(cur, ctx) : null; } catch (_) { step = null; }
         if (step && step.branches) {
@@ -297,14 +305,29 @@ function makeChainRunner(o) {
           if (!step.next) { out.stopped = null; return out; }   // the joiner ships straight out: merged text IS the answer
           hop--; continue;
         } else if (step && step.loop) {
+          /* THE ONE LOOP RULE (2026-08-22, matches the LOOP card word for word):
+               when = a VERDICT word   -> the crate goes BACK while the reviewer's verdict is NOT that word
+                                          (no verdict line = not that word); leaves on DONE the moment it is;
+               when = a classifier tag -> goes back while the output still READS as that kind of work;
+               no when                 -> every pass goes back;
+             and in every case MAX PASSES ends it on DONE. A `when` still unmet when the passes ran out marks the
+             done-lane handoff EXHAUSTED (and out.loopExhausted) so the downstream stage knows nobody approved it. */
           const n = iter[step.loop] || 0;
-          const again = step.backTo && n < step.max && (!step.when || ctx.tag === step.when);
+          const byVerdict = Verdict.isVerdictWord(step.when);
+          const wants = !step.when ? true : byVerdict ? (ctx.verdict !== String(step.when).toLowerCase()) : (ctx.tag === step.when);
+          const again = step.backTo && n < step.max && wants;
           if (again) {
             iter[step.loop] = n + 1; loopHop = true; looping = true;
             target = step.backTo; fromTile = null;
             out.text = '[LOOP — pass ' + (n + 1) + ' of ' + step.max + ' round the gate at ' + step.loop + ']\n' + out.text;
           } else {
             target = step.next; looping = false;   // spent (or the verdict passed): leave on the done lane
+            if (step.when && wants && n >= step.max) {
+              out.loopExhausted = true;
+              out.text = '[LOOP — exhausted: ' + n + ' pass' + (n === 1 ? '' : 'es') + ' round the gate at ' + step.loop
+                + (byVerdict ? ' without VERDICT: ' + String(step.when).toLowerCase() : ' while the output still read as ' + step.when)
+                + ' — leaving on DONE unapproved]\n' + out.text;
+            }
           }
         } else if (step && step.agentId) {
           target = step.agentId;
@@ -352,8 +375,11 @@ function makeChainRunner(o) {
       // exact pre-brief prompt, byte for byte — Pipeline.handoffPrompt only appends when one is present).
       let brief = null;
       if (stageBrief) { try { brief = stageBrief(target); } catch (_) { brief = null; } }
+      // a dock whose lane meets a verdict-keyed LOOP gate is told to end with the verdict line (verdict.js)
+      let verdictWhen = null;
+      if (loopGateAfter) { try { const g = loopGateAfter(target, lineId); verdictWhen = (g && Verdict.isVerdictWord(g.when)) ? g.when : null; } catch (_) { verdictWhen = null; } }
       // an ENTRY branch is stage one of its own lane: it gets the original message, not a handoff turn
-      const turn = entryBranch ? String(originalText || '') : handoffText(originalText, cur, out.text, hop, brief);
+      const turn = entryBranch ? String(originalText || '') : handoffText(originalText, cur, out.text, hop, brief, verdictWhen ? Verdict.verdictBrief(verdictWhen) : '');
       try { r = await runAgent({ agentId: target, text: turn, hop, from: entryBranch ? null : cur, signal: s.signal, workitemId }); }
       catch (e) { r = { error: (e && e.message) || String(e || 'stage failed') }; }
       r = r || {};

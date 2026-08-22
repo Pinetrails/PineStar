@@ -197,6 +197,16 @@ function makeRouter(o) {
     const pick = (k, n) => { const c = rr[k] || 0; rr[k] = (c + 1) % n; return c; };
     return Pipeline.chainStep(p, agentId, ctx || {}, pick);
   }
+  /* loopGateAfter(agentId, lineId) -> { when, max } when this dock's own lane meets a LOOP gate before any other
+     dock (2026-08-22), else null. A PURE read of the same walk chainStep takes, on a no-op pick so the splitter
+     round-robin never moves: the chain runner asks it BEFORE a hop, to tell a reviewer dock to end with the
+     VERDICT line the gate will read. Prompt-shaping only — never a routing decision. */
+  function loopGateAfter(agentId, lineId) {
+    const p = activePlan();
+    if (!p || !agentId || !Pipeline.chainStep) return null;
+    const st = Pipeline.chainStep(p, agentId, { lineId: lineId != null ? lineId : lineOfAgent(agentId), tag: 'general' }, () => 0);
+    return (st && st.loop) ? { when: st.when || null, max: st.max } : null;
+  }
   function fanSiblings(agentId) {
     const p = activePlan();
     if (!p || !agentId || !Pipeline.fanSiblings) return [];
@@ -211,7 +221,7 @@ function makeRouter(o) {
     return !!(rec && rec.outbox && !rec.deadEnd);
   }
 
-  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, lineOfAgent, lineOriginFor, lineLimits, chainNext, chainStep, fanSiblings, chainShipsToOutbox, stationFor, stageBrief };
+  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, lineOfAgent, lineOriginFor, lineLimits, chainNext, chainStep, fanSiblings, loopGateAfter, chainShipsToOutbox, stationFor, stageBrief };
 }
 
 module.exports = { makeRouter };
