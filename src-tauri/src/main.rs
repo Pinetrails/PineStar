@@ -3375,6 +3375,32 @@ struct LifecycleView {
     close_to_tray: bool,
 }
 
+/// User-driven restart of the local station service from the STATION DATA UNREACHABLE screen.
+/// The guardian only heals a child that has EXITED; a sidecar that is alive but not answering (hung
+/// event loop, wedged listener) or one that exits before listening every time it is spawned (a workspace
+/// claim refusal) leaves the page polling a dead port forever. This kills whatever child exists, spawns a
+/// fresh one on the same port, and reports truthfully whether it came up listening. Never touches user data.
+#[tauri::command]
+fn starnet_restart_sidecar(state: State<AppState>) -> Result<bool, String> {
+    let st: &AppState = state.inner();
+    if st.shutting_down.load(Ordering::SeqCst) {
+        return Err("StarNet is shutting down".to_string());
+    }
+    log_startup(&st.startup_log, "restart: user requested a station service restart");
+    // Take the child out under the lock, terminate it after releasing (spawn_sidecar re-takes the lock).
+    let prior = st.sidecar.lock().ok().and_then(|mut g| g.take());
+    if let Some(mut child) = prior {
+        terminate_sidecar_child(&mut child);
+        let _ = child.wait();
+    }
+    let listening = spawn_sidecar(st);
+    log_startup(
+        &st.startup_log,
+        format!("restart: respawned sidecar listening={listening}"),
+    );
+    Ok(listening)
+}
+
 #[tauri::command]
 fn starnet_lifecycle_status(state: State<AppState>) -> LifecycleView {
     let preferences = lifecycle_preferences_snapshot(state.inner());
@@ -3475,6 +3501,7 @@ fn main() {
             starnet_autostart_status,
             starnet_set_autostart,
             starnet_lifecycle_status,
+            starnet_restart_sidecar,
             starnet_set_start_minimized,
             starnet_set_close_to_tray
         ])

@@ -45,4 +45,16 @@ ok(/pickedProvider === 'starnet'[\s\S]{0,240}starnetLinked[\s\S]{0,240}link your
 // Leaving the screen (or switching provider) drops the in-flight pairing poll — no orphan pollers.
 ok(/stopStarnetLinkPoll\(\)/.test(app), 'the pairing poll has a stop, wired on screen exit and provider switch');
 
+// EMPTY WALLET IS SAID HERE (2026-08-22: a first-timer signed in without buying credits; WAKE's real call was
+// refused by managed admission and the screen said "your model didn't answer", so they kept switching models).
+ok(/id="btn-starnet-credits"/.test(index), 'the STARNET block offers ADD CREDITS');
+ok(/function starnetOutOfCredit\(\)/.test(app), 'a linked-but-empty wallet is a named state');
+ok(/no credits yet/.test(app) && /btn-starnet-credits/.test(app), 'the status line names the empty wallet and the button opens the store');
+ok(app.split(/\r?\n/).some(l => l.includes('if (starnetOutOfCredit()) {') && l.includes('no credits yet') && l.includes('return false;')), 'WAKE refuses an empty wallet up front, with the fix one button away — never as a model failure');
+ok(/managed credit\|Managed credits/.test(app), 'a billing refusal from the wire preflight is named as billing, not as "model didn’t answer"');
+// the preflight reads Harness.chat's refusal string — otherwise every up-front refusal collapses to
+// "the provider returned an error" and the real reason never reaches the screen.
+ok(/typeof res\.error === 'string' && res\.error\.trim\(\)\) \? res\.error/.test(app), 'preflightWire surfaces res.error (the refusal reason), not only res.text');
+ok(/stopStarnetBalancePoll\(\)/.test(app), 'the empty-wallet balance poll has a stop, wired on screen exit');
+
 console.log('genesis-starnet-link.test.js OK -', n, 'assertions');

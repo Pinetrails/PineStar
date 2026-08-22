@@ -2116,6 +2116,14 @@ const App = (() => {
      until the sidecar reports a cloud seam (linked or linkable): a build with no cloud must not offer
      a subscription it cannot link, so a CLOUD_LIVE=false install keeps a starnet-free connect screen. */
   let starnetLinked = false;          // last /api/credits truth — the WAKE gate reads this
+  // last known managed balance (null = the service hasn't reported one) + where to buy. WAKE runs a REAL call
+  // through managed admission, which refuses a $0 wallet before any model is reached — so a linked-but-empty
+  // account must be said HERE, with the fix one button away, never as "your model didn't answer" (2026-08-22:
+  // a first-time user signed in without buying credits and kept switching models trying to fix it).
+  let starnetBalanceUsd = null, starnetPurchaseUrl = '';
+  let _starnetBalancePoll = null;
+  function stopStarnetBalancePoll() { if (_starnetBalancePoll) { clearInterval(_starnetBalancePoll); _starnetBalancePoll = null; } }
+  function starnetOutOfCredit() { return starnetLinked && starnetBalanceUsd != null && !(Number(starnetBalanceUsd) > 0); }
   let userPickedProvider = false;     // a real chip click — the auto-promote below must never override it
   let _starnetLinkPoll = null;
   function stopStarnetLinkPoll() { if (_starnetLinkPoll) { clearInterval(_starnetLinkPoll); _starnetLinkPoll = null; } }
@@ -2138,13 +2146,28 @@ const App = (() => {
     let j = null;
     try { j = await Harness.api.get('/api/credits'); } catch (_) {}
     starnetLinked = !!(j && j.configured);
-    if (pickedProvider !== 'starnet') return;   // pick moved on — don't repaint another provider's block
-    if (starnetLinked) {
-      const bal = (j.balanceUsd == null) ? '' : ' · $' + Number(j.balanceUsd).toFixed(2) + ' available';
+    starnetBalanceUsd = (starnetLinked && j.balanceUsd != null && isFinite(Number(j.balanceUsd))) ? Number(j.balanceUsd) : null;
+    starnetPurchaseUrl = (starnetLinked && j.purchaseUrl) ? String(j.purchaseUrl) : '';
+    const creditsBtn = el('btn-starnet-credits');
+    if (pickedProvider !== 'starnet') { stopStarnetBalancePoll(); return; }   // pick moved on — don't repaint another provider's block
+    if (starnetLinked && starnetOutOfCredit()) {
+      // linked, wallet empty: the one state WAKE can never fix. Say it, offer the store, and keep polling the
+      // balance so the moment the purchase lands this line flips green without a restart.
+      statusEl.innerHTML = '<span class="conn-dot"></span>linked to your StarNet account — <b>no credits yet</b>. Waking your agent uses credits right away, so add some first.';
+      statusEl.className = 'codex-status bad';
+      if (linkBtn) linkBtn.classList.add('hidden');
+      if (creditsBtn) { creditsBtn.classList.remove('hidden'); creditsBtn.onclick = () => { SFX.click(); if (starnetPurchaseUrl) openExternalUrl(starnetPurchaseUrl); }; }
+      if (!_starnetBalancePoll) _starnetBalancePoll = setInterval(() => { if (pickedProvider === 'starnet' && starnetOutOfCredit()) refreshStarnetGenesisStatus(); else stopStarnetBalancePoll(); }, 10000);
+    } else if (starnetLinked) {
+      stopStarnetBalancePoll();
+      const bal = (starnetBalanceUsd == null) ? '' : ' · $' + starnetBalanceUsd.toFixed(2) + ' available';
       statusEl.innerHTML = '<span class="conn-dot"></span>linked to your StarNet account' + esc(bal) + ' — your agents run on your subscription';
       statusEl.className = 'codex-status ok';
       if (linkBtn) linkBtn.classList.add('hidden');
+      if (creditsBtn) creditsBtn.classList.add('hidden');
     } else {
+      stopStarnetBalancePoll();
+      if (creditsBtn) creditsBtn.classList.add('hidden');
       statusEl.textContent = 'not linked — connect the subscription you bought on starnetos.com (takes one click + a code)';
       statusEl.className = 'codex-status';
       if (linkBtn) linkBtn.classList.remove('hidden');
@@ -2517,7 +2540,11 @@ const App = (() => {
         .catch(e => ({ error: true, text: String((e && e.message) || e) }));
       const res = await Promise.race([call, new Promise(r => setTimeout(() => r(null), 30000))]);
       if (!res) return { ok: false, why: 'no reply within 30 seconds (network or provider stall)' };
-      if (res.error || !String(res.text || '').trim()) return { ok: false, why: (res && res.text ? String(res.text).replace(/\s+/g, ' ').slice(0, 140) : 'the provider returned an error') };
+      // Harness.chat reports a refusal as a STRING in res.error with text '' (the run never produced output)
+      // — read that first, or every up-front refusal (billing, sign-in, concurrency) collapses to the
+      // useless "the provider returned an error" and the real reason never reaches the screen.
+      const reason = (typeof res.error === 'string' && res.error.trim()) ? res.error : String(res.text || '');
+      if (res.error || !String(res.text || '').trim()) return { ok: false, why: (reason.trim() ? reason.replace(/\s+/g, ' ').slice(0, 160) : 'the provider returned an error') };
       return { ok: true };
     } catch (e) { return { ok: false, why: String((e && e.message) || e).slice(0, 140) }; }
   }
@@ -2527,6 +2554,7 @@ const App = (() => {
     SFX.boot(); SFX.open();
     stopCodexPoll();   // leaving the connect screen — drop any in-flight sign-in poll
     stopStarnetLinkPoll();   // …and any in-flight StarNet pairing poll (same screen-exit rule)
+    stopStarnetBalancePoll();   // …and the empty-wallet balance poll
     // single funnel for agent.name → honor the 18-char design cap (covers the roster-pick path too).
     // A blank/sentinel name mints a station codename (never the bland 'AGENT'), matching the awakening
     // speaker — dialogue.js owns the generator so both surfaces stay consistent.
@@ -2558,6 +2586,7 @@ const App = (() => {
     if (pickedProvider === 'starnet') {
       // the credits admission gate would refuse the run anyway — say it here, where the fix is one button away.
       if (!starnetLinked) { msg.textContent = 'link your StarNet account first — press 🔗 LINK YOUR STARNET ACCOUNT above.'; return false; }
+      if (starnetOutOfCredit()) { msg.className = 'msg bad'; msg.textContent = 'your StarNet account has no credits yet — waking your agent uses credits right away. Press ＄ ADD CREDITS above, then WAKE again.'; refreshStarnetGenesisStatus(); return false; }
       Harness.setModel(model); Harness.setProv('starnet');
     } else if (isOAuthProviderId(pickedProvider)) {
       if (!oauthConnected[pickedProvider]) { msg.textContent = 'sign in with ' + OAUTH_GENESIS[pickedProvider].name + ' first, or switch to OpenRouter.'; return false; }
@@ -2611,6 +2640,15 @@ const App = (() => {
     if (!wire.ok) {
       wakeBtnBusy(false);
       msg.className = 'msg bad';
+      // a BILLING refusal is not a model failure: managed admission refused the run before any model was
+      // reached. Name the real cause and the real fix; "your model didn't answer" sends people model-hopping.
+      if (/managed credit|Managed credits/i.test(wire.why)) {
+        msg.textContent = /Out of managed credit/i.test(wire.why)
+          ? 'your StarNet account has no credits — waking your agent uses credits right away. Press ＄ ADD CREDITS above, then WAKE again.'
+          : 'StarNet couldn’t read your credit balance right now — try WAKE again in a moment, or use your own provider key.';
+        refreshStarnetGenesisStatus();
+        return false;
+      }
       msg.textContent = 'your model didn’t answer — ' + wire.why + '. fix it here, then WAKE again; the awakening won’t start on a dead wire.';
       return false;
     }
@@ -4391,7 +4429,37 @@ const App = (() => {
     };
     const btn = el('btn-unreachable-retry');
     if (btn) btn.onclick = () => { SFX.click && SFX.click(); attempt(); };
-    timer = setInterval(attempt, 5000);
+    // RESTART STATION SERVICE — the desktop shell kills and respawns the sidecar on the same port. This is
+    // the exit the retry loop can never reach on its own: a sidecar that is alive-but-wedged, or one that
+    // exits before listening on every spawn, answers no poll ever (a macOS user sat at attempt 15+ with no
+    // way out, 2026-08-22). Browser mode (no shell) has nothing to restart; the button stays hidden there.
+    const core = tauriCore();
+    const restartBtn = el('btn-unreachable-restart');
+    let restarting = false;
+    const restart = async (auto) => {
+      if (restarting || !core || !core.invoke) return;
+      restarting = true;
+      if (restartBtn) restartBtn.disabled = true;
+      setStatus((auto ? 'still unreachable — ' : '') + 'restarting the station service…');
+      let up = false;
+      try { up = await core.invoke('starnet_restart_sidecar'); } catch (_) { up = false; }
+      if (up) { setStatus('station service restarted — reconnecting…'); attempt(); }
+      else setStatus('the station service could not be restarted — quit StarNet fully (Cmd+Q / tray → Quit) and open it again. Your save is untouched.');
+      restarting = false;
+      if (restartBtn) restartBtn.disabled = false;
+    };
+    if (restartBtn) {
+      if (core && core.invoke) { restartBtn.hidden = false; restartBtn.onclick = () => { SFX.click && SFX.click(); restart(false); }; }
+      else restartBtn.hidden = true;
+    }
+    // one automatic restart after the polls have clearly failed (≈30s), so the common case heals itself
+    // without the user needing to know the button exists. Exactly once — a restart that didn't help must
+    // not loop; the copy then tells them what to do.
+    let autoRestarted = false;
+    timer = setInterval(() => {
+      attempt();
+      if (!autoRestarted && attempts >= 6 && core && core.invoke) { autoRestarted = true; restart(true); }
+    }, 5000);
     show('screen-unreachable');
   }
 
@@ -4494,6 +4562,48 @@ const App = (() => {
       const input = el('file-import');
       if (input) { input.value = ''; input.click(); }
     };
+    // START FRESH — the third exit. When nothing here is recoverable (a first run whose overseer never woke,
+    // then a manual reset — 2026-08-22 report) RESTORE is dead and RETRY loops forever; this is the way out.
+    // Sidecar-backed: prior state is MOVED to a quarantine folder (never deleted) and external evidence is
+    // acknowledged, then the station service restarts into clean onboarding. Two clicks, never one.
+    const freshBtn = el('btn-lineage-fresh');
+    if (freshBtn) {
+      let armed = false;
+      freshBtn.onclick = async () => {
+        SFX.click && SFX.click();
+        if (!armed) {
+          armed = true;
+          freshBtn.textContent = '✦ CONFIRM — START A NEW STATION';
+          if (status) status.textContent = validCandidates.length
+            ? '＋ a recoverable station exists above — START FRESH sets it aside in a quarantine folder (nothing is deleted). Press again to confirm.'
+            : '＋ nothing here is recoverable. START FRESH moves the leftover files to a quarantine folder (nothing is deleted) and opens a new station. Press again to confirm.';
+          setTimeout(() => { if (armed) { armed = false; freshBtn.textContent = '✦ START FRESH'; } }, 12000);
+          return;
+        }
+        armed = false;
+        freshBtn.disabled = true;
+        if (status) status.textContent = '＋ setting prior state aside…';
+        try {
+          const response = await fetch('/api/lineage/start-fresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok || !result.ok) throw new Error(result.error || 'start-fresh request refused');
+          if (status) status.textContent = (result.moved && result.moved.length ? '＋ ' + result.moved.length + ' file(s) set aside in ' + result.quarantine + ' — ' : '＋ ') +
+            (result.desktopWillRestart ? 'station service restarting — opening your new station…' : 'restart the manual sidecar; this screen will continue automatically');
+          // poll until the respawned sidecar answers, then reload: boot re-runs every gate and, with the
+          // evidence gone, lands on the first-run ceremony.
+          const timer = setInterval(async () => {
+            try {
+              const probe = await fetch('/api/lineage', { cache: 'no-store' });
+              const body = probe.ok ? await probe.json() : null;
+              if (body && body.lineage && body.lineage.priorInstallEvidence === false) { clearInterval(timer); location.reload(); }
+            } catch (_) {}
+          }, 1500);
+        } catch (error) {
+          freshBtn.disabled = false; freshBtn.textContent = '✦ START FRESH';
+          if (status) status.textContent = '＋ could not start fresh — ' + String(error && error.message || error);
+        }
+      };
+    }
     show('screen-lineage');
   }
 
