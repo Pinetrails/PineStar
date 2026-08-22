@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f61675fe012a742bb2dd1aeb6e6e7d5b8b1a1fbf",
+    "sourceCommit": "38ba4c70af63f7e2a671ddc61e81fd88d2ce9435",
     "pathSetSha256": "92160ff9edb3cc6cd7deb0d0e0b35e6e60cf470af43886963164d96bbfaccd50",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 333553,
-        "sha256": "079c6e2fbffbc94e11cf6b17df2674b75dd12b9ff98bf03e39a03d968d5d198e"
+        "bytes": 353146,
+        "sha256": "89b954ef59dacdcaa743f7e7891623efb3f932b1154619a49b4eb973cba20890"
       },
       {
         "path": "frontend/app/channels.js",
@@ -663,8 +663,8 @@
       },
       {
         "path": "frontend/app/schedpicker.js",
-        "bytes": 16342,
-        "sha256": "6448ea95ca7f8b4a207c703983bafb8260258dd3725c328fdea2c123d501e41c"
+        "bytes": 15254,
+        "sha256": "292b183ae787b9b9f50bcc2f1391b19d2a016ebcf1e4707ceb81a6f060e4b56f"
       },
       {
         "path": "frontend/app/seedcredit.js",
@@ -903,8 +903,8 @@
       },
       {
         "path": "frontend/app/windows/routines.js",
-        "bytes": 48621,
-        "sha256": "69afed960bcb0f47d56beea0953508582917d6f0c1d1bd1e70ad713e62b46356"
+        "bytes": 46665,
+        "sha256": "c9862882952ac6a4b8782a613836ff483e0272c914554dfea48568998049b5ab"
       },
       {
         "path": "frontend/app/windows/trophies.js",
@@ -943,8 +943,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 687801,
-        "sha256": "015f4757cbaeb634fe4c19094d7cea3729ca1dfe5144fb094124d961e890b23a"
+        "bytes": 687534,
+        "sha256": "68fdb8c1c0f7d3234921bb05bdcd11d3c7a73f8f25948580f25de8323943a7a2"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -968,8 +968,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 382811,
-        "sha256": "b6a3e3723352842c061417f4a54b29a97bb5ddebe743aa50fb3c5567c2d04dee"
+        "bytes": 381980,
+        "sha256": "79ff23f24835b91f4705797dd91fb373fda54f6802fe0a131758844cfdfb59c0"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -998,8 +998,8 @@
       },
       {
         "path": "frontend/css/refit.css",
-        "bytes": 15381,
-        "sha256": "f4d338144ab2cce50400d7d136e87a417b49c2a0cfb6c57eab00bd39e194f806"
+        "bytes": 16672,
+        "sha256": "8f45ef4029cf79d8556d12a93d566e65c46bfc5889f3c4ef0f0a196d81f350c5"
       },
       {
         "path": "frontend/css/safety.css",
