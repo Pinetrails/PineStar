@@ -539,9 +539,27 @@
         try { await post('/api/cron/update', { id, patch: { enabled: !on } }); } catch (_) {} refresh(); return;
       }
       if (act === 'run') {
-        sfx('click'); btn.disabled = true; const old = btn.textContent; btn.textContent = '… running';
+        sfx('click'); btn.disabled = true; const old = btn.textContent; btn.textContent = '… posting line';
         showRunOut(rowEl, id);   // P0 #11: the result panel opens inline right under THIS row (visible ACTIVE pane)
         const ob = outEl.querySelector('.rt-out-b');
+        /* POST THE LINE FIRST (2026-08-22): with REFIT open the world is frozen, so the sidecar still routes by
+           the plan posted at the LAST REFIT close. World.syncPlan() recompiles a dirty floor and resolves on the
+           server's verdict; only then does the run dispatch. Mid-edit (REFIT open) a floor with blocking errors
+           REFUSES — the scheduler would route by a stale line, which is the one lie a RUN NOW can't tell. */
+        try {
+          const W = (typeof World !== 'undefined') ? World : null;
+          const sync = (W && typeof W.syncPlan === 'function') ? await W.syncPlan() : null;
+          const editing = (typeof Build !== 'undefined' && Build.isOpen) ? Build.isOpen() : false;
+          if (sync && editing && sync.errors && sync.errors.length) {
+            ob.innerHTML = '<span style="color:var(--bad)">✕ line not posted — fix the floor first: ' + esc(sync.errors.map(e => (Build && Build.nagLabel) ? Build.nagLabel(e.code) : e.code).filter((v, i, a) => a.indexOf(v) === i).join(' · ')) + '</span>';
+            sfx('bad'); btn.disabled = false; btn.textContent = old; return;
+          }
+          if (sync && (sync.stale || sync.inflight || sync.retryPending)) {
+            ob.innerHTML = '<span style="color:var(--bad)">✕ line not posted — sidecar unreachable, the routine was NOT run</span>';
+            sfx('bad'); btn.disabled = false; btn.textContent = old; return;
+          }
+        } catch (_) {}
+        btn.textContent = '… running';
         try {
           const resp = await post('/api/cron/run', { id });
           if (!resp.ok || !resp.body) { const e = await resp.json().catch(() => ({})); ob.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.error) || ('http ' + resp.status)) + '</span>'; sfx('bad'); }
