@@ -11012,6 +11012,9 @@ async function handleCronRun(req, res) {
           }
         });
         if (line && String(line.text || '').trim()) state.buf = line.text;
+        // THE ROUTINE'S SPEND IS THE WHOLE LINE'S SPEND (2026-08-22): out.usd is hop-only, so add it to the entry
+        // run's reconciled spend exactly as the scheduled fire does (cron-driver `state.usd += line.usd`).
+        if (line && typeof line.usd === 'number' && isFinite(line.usd)) state.usd += line.usd;
       } catch (e) { console.warn('[cron] run-now work line failed after ' + job.agentId + ': ' + ((e && e.message) || e)); }
     }
     runs.delete(runId);
@@ -11021,7 +11024,7 @@ async function handleCronRun(req, res) {
     try {
       // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
       // concurrent advance/CRUD save with a stale in-memory snapshot).
-      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient, output: ok ? String(state.buf || '').trim() : undefined }, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient, output: ok ? String(state.buf || '').trim() : undefined, usd: state.usd || 0 }, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
     try { await deliverCronResult(cronStore.getJob(cronJobs, job.id) || job, { runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), text: String(state.buf || '').trim(), error: state.errMsg || null }); } catch (_) {}
