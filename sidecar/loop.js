@@ -600,6 +600,20 @@
     let vosUsed = 0;
     let vosExternalUsed = 0;
     let vosSourceUsed = 0;
+    /* ACCEPTANCE-ON-STOP (SOP lane, 2026-08-21). A run launched from an SOP recipe carries a typed acceptance
+       contract (task-postconditions) that the HOST evaluates when the run ends. Evaluating it only after the loop
+       returned means the verdict could only ever be reported, never repaired. This turns the contract into a bounded
+       follow-up, exactly like verify-on-stop: when the model tries to finish and the host's probe says a check is
+       still failing, the failing checks are named to the model and it buys one more turn to make them hold. Then
+       the run ends regardless — the final verdict is still the host's (index.js), never the model's word.
+         · o.acceptanceProbe: async () -> { checks:[{ id, type, status, code, path?, command? }] } | null — host-owned.
+         · limits.acceptanceOnStop === false disables; { max } raises the nudge budget (default 1).
+         · Never on the grace turn, never more than ACC_MAX times, and a probe error counts as "no failing checks"
+           (the host still assesses at the end; an unprovable probe must not trap the model in the loop). */
+    const _acc = limits.acceptanceOnStop;
+    const ACC_MAX = (_acc === false) ? 0 : (_acc && _acc.max != null ? _acc.max : 1);
+    const acceptanceProbe = typeof o.acceptanceProbe === 'function' ? o.acceptanceProbe : null;
+    let accUsed = 0;
 
     // NO-OP TURN REFUND (reference-harness iteration-budget parity): a turn that produced NO tool call AND no NEW assistant
     // content (empty/whitespace text, OR text byte-identical to the immediately-prior assistant turn) is wasted work
@@ -743,6 +757,7 @@
       }
       if (extra && extra.failureStage) out.failureStage = String(extra.failureStage).slice(0, 80);
       if (extra && extra.failureCode) out.failureCode = String(extra.failureCode).slice(0, 80);
+      if (accUsed > 0) out.acceptanceNudges = accUsed;   // SOP: how many times the host sent the model back to its checks
       return out;
     }
 
@@ -1352,6 +1367,19 @@
           vosSourceUsed++;
           messages.push({ role: 'system', content: '<verify_sources_before_done>You are ending a sourced/research task after using only a connector search, list, or inspect tool. Discovery metadata and snippets are not source retrieval. Use the connector\'s fetch/read tool to retrieve every source you cite, then make each claim only from what those source reads actually returned. If a source cannot be retrieved, label that claim unverified instead of citing the discovery result as proof.</verify_sources_before_done>' });
           continue;
+        }
+        if (!empty && !graceUsed && acceptanceProbe && accUsed < ACC_MAX) {
+          let failing = [];
+          try {
+            const probe = await acceptanceProbe();
+            failing = (probe && Array.isArray(probe.checks) ? probe.checks : []).filter(c => c && c.status !== 'passed');
+          } catch (_) { failing = []; }
+          if (failing.length) {
+            accUsed++;
+            const lines = failing.slice(0, 20).map(c => '- ' + (c.id || c.type) + ' [' + c.type + (c.path ? ' ' + c.path : '') + (c.command ? ' `' + c.command + '`' : '') + ']: ' + (c.code || 'not_proven'));
+            messages.push({ role: 'system', content: '<acceptance_before_done>You are ending this task but the host\'s acceptance checks for it do not all hold yet. These are mechanical postconditions the Commander attached to this procedure; the task is not done until every one passes:\n' + lines.join('\n') + '\nMake each failing check hold now (produce/fix the named artifact in this run, or run the exact named check command so it passes), then finish. If one genuinely cannot be satisfied, say so plainly and name which — never claim it holds.</acceptance_before_done>' });
+            continue;
+          }
         }
         const continuedTextExists = continuationParts.some(m => String((m && m.content) || '').trim());
         if ((empty || duplicate) && !continuedTextExists && refundsUsed < REFUND_MAX) {
