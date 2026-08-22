@@ -462,12 +462,30 @@
       } finally { if (c.lazyConnectPromise === work) c.lazyConnectPromise = null; }
     }
 
-    async function call(id, toolName, args) {
+    /* connector_required (beginner seam Lane 1): a tool call that needs a connector which is not wired is
+       reported STRUCTURALLY as well as thrown. The throw is unchanged (the model still needs the error text);
+       the event rides the RUN's own emit (ctx.emit — the tool-dispatch context, so it carries runId and lands
+       on the /api/run stream -> U.bus) and the manager's onEvent (host log). Reason is the same string the
+       error carries, so the chip and the narration never disagree. */
+    function notConnected(id, toolName, ctx) {
+      const reason = 'connector "' + id + '" is not connected';
+      const ev = { runId: String((ctx && ctx.runId) || ''), connectorId: String(id), kind: 'mcp', reason: reason, toolName: String(toolName || '') };
+      const err = new Error(reason);
+      // a reporting failure must never change the error the model sees — but it is not swallowed either: it is
+      // pinned on the thrown error (telemetryLost) so a host/test can prove the chip's event was NOT delivered.
+      const lost = [];
+      try { onEvent(Object.assign({ type: 'connector_required' }, ev)); } catch (e) { lost.push('onEvent: ' + ((e && e.message) || e)); }
+      if (ctx && typeof ctx.emit === 'function') { try { ctx.emit('connector_required', ev); } catch (e) { lost.push('emit: ' + ((e && e.message) || e)); } }
+      if (lost.length) err.telemetryLost = lost;
+      return err;
+    }
+
+    async function call(id, toolName, args, ctx) {
       const c = conns.get(String(id));
-      if (!c) throw new Error('connector "' + id + '" is not connected');
+      if (!c) throw notConnected(id, toolName, ctx);
       const issue = configIssue(c); if (issue) throw new Error(issue);
       if (c.transportKind === 'stdio') await ensureLive(c);
-      if (!c.client || c.state !== 'up') throw new Error('connector "' + id + '" is not connected');
+      if (!c.client || c.state !== 'up') throw notConnected(id, toolName, ctx);
       if (!(c.tools || []).some(t => t && t.name === toolName)) throw new Error('connector tool "' + toolName + '" is no longer published by the current server');
       c.lastUsedAt = clock.now();
       const p = c.client.callTool(toolName, args || {});
@@ -495,7 +513,7 @@
     function toolDefsFor(id) {
       const c = conns.get(String(id));
       if (!c || configIssue(c) || (c.state !== 'up' && c.state !== 'cached')) return [];
-      const bound = (toolName, args) => call(c.id, toolName, args);
+      const bound = (toolName, args, ctx) => call(c.id, toolName, args, ctx);   // ctx rides through for connector_required
       const defs = (c.tools || []).map(t => makeToolDef({ connectorId: c.id, label: c.label, mcpTool: t, call: bound, localProcess: c.transportKind === 'stdio' }));
       /* The resources/prompts tools are projected ONLY for a server that actually publishes them, so a
          tools-only connector's catalogue is byte-identical to before — nobody pays schema bytes for a

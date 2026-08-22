@@ -442,6 +442,53 @@
       if (StationUI.openTerm) StationUI.openTerm('settings');
     } catch (_) { try { if (StationUI.openTerm) StationUI.openTerm('settings'); } catch (_) {} }
   }
+  /* connector_required (beginner seam Lane 1, 2026-08-22): the bus event the MCP manager emits alongside its
+     "connector X is not connected" throw becomes ONE post-run chip that opens the ABILITIES window ALREADY
+     ROUTED at that connector — the CATALOG section with the console search pre-filled, so the card (SIGN IN /
+     ADD) is the next click. Same door family as OPEN ABILITIES above (same openTerm, same chip row); the only
+     addition is the pre-route. Label: "⇄ CONNECT GMAIL — 2 clicks" — this chip + the card's own button.
+     connectorDoor(ev) -> { label, run, connectorId } or null when the event names no connector. */
+  function connectorChipLabel(ev) {
+    const id = ev && ev.connectorId ? String(ev.connectorId).trim() : '';
+    if (!id) return '';
+    return '⇄ CONNECT ' + id.replace(/[-_]+/g, ' ').toUpperCase() + ' — 2 clicks';
+  }
+  // prefill the ABILITIES console search with the connector name so the catalog card is the thing on screen.
+  // The catalog loads async (ccRefresh), so the filter is re-asserted until a card exists (bounded ~3s); the
+  // search input itself is what the Commander sees, so an early fill is never wrong, only incomplete.
+  function routeConsoleSearch(doc, query, setTimeoutImpl) {
+    const st = setTimeoutImpl || (typeof setTimeout === 'function' ? setTimeout : null);
+    let tries = 0;
+    const apply = () => {
+      const list = doc.querySelector('#cc-list');
+      const term = list ? (list.closest ? list.closest('.term') : null) : null;
+      const input = term ? term.querySelector('.con-search-in') : null;
+      if (input) {
+        input.value = query;
+        try { input.dispatchEvent(new (doc.defaultView || globalThis).Event('input', { bubbles: true })); } catch (_) {}
+      }
+      const hasCard = !!(list && list.querySelector('.cc-card'));
+      if (!hasCard && st && ++tries < 12) st(apply, 250);
+      return !!input;
+    };
+    return apply();
+  }
+  function connectorDoor(ev) {
+    const label = connectorChipLabel(ev);
+    if (!label) return null;
+    const id = String(ev.connectorId).trim();
+    return {
+      label: label, connectorId: id, kind: ev.kind || 'mcp',
+      run: () => {
+        try {
+          if (typeof StationUI === 'undefined' || !StationUI.openTerm) return false;
+          StationUI.openTerm('connectors', 'catalog');
+          if (typeof document !== 'undefined') routeConsoleSearch(document, id);
+          return true;
+        } catch (_) { return false; }
+      }
+    };
+  }
   function actionButton(verdict) {
     if (!verdict) return null;
     switch (verdict.action) {
@@ -498,6 +545,6 @@
     }
   }
 
-  return { friendlyError, actionButton, KINDS, CAP_INFO,
+  return { friendlyError, actionButton, connectorDoor, connectorChipLabel, routeConsoleSearch, KINDS, CAP_INFO,
     _internals: { kindFromRaw, isTransportLoss, isUpstreamFetchFailure, isUserAbort, REASON_TO_KIND, capFromRaw, capdeniedMessage, codexConnected, transportMessage } };
 });

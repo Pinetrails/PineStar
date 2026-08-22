@@ -242,6 +242,22 @@
       "toSnapshotId"
     ]
   },
+  "connector_required": {
+    "required": [
+      "connectorId",
+      "kind",
+      "reason",
+      "runId",
+      "toolName"
+    ],
+    "properties": [
+      "connectorId",
+      "kind",
+      "reason",
+      "runId",
+      "toolName"
+    ]
+  },
   "cost.estimate": {
     "required": [
       "agentId",

@@ -698,6 +698,7 @@ const Chat = (() => {
     wireThreads();     // NS-6: after a mined task run, offer ONE thread turn-in (Keep/Edit/Discard) at the lowest beat priority — study wins the moment first (registers once)
     wireCrewCapture(); // P3.2: record each dispatched worker's forwarded run-end spend so a 👍 on a crew run splits XP honestly (registers once)
     wireCuriosity();   // Commander Dossier: one gentle "tell me about X" nudge after a clean run (registers once)
+    wireConnectorRequired();   // beginner seam Lane 1: a run that hit an unwired connector earns the ⇄ CONNECT chip
     wireBgExit();      // E6: surface shell.bg.exit (a background dev-server/watcher ended) as a terse COMMS system line — was a zero-listener event (registers once)
     wireSkillAside();  // A2: after a background review distills a skill, ONE quiet "distilled this run…" aside (registers once)
     wireIdBar();       // COMMS agent selector: a change switches to (or mints) a workstream bound to that agent (registers once)
@@ -6197,6 +6198,33 @@ const Chat = (() => {
   }
   // The shared plain recovery action for an intentional Stop and unknown retryable faults. It delegates to the
   // same guarded retryLast path as `/retry`, so an inactive/busy stream cannot start a duplicate run.
+  /* connector_required (beginner seam Lane 1, 2026-08-22). The MCP manager emits this on the run stream ALONGSIDE
+     its "connector X is not connected" throw — the model narrates the error as before, and the station ALSO
+     drops one chip under the reply that opens ABILITIES pre-routed at that connector (Friendly.connectorDoor).
+     Collected per run here; OFFERED at the run's end from send() (one post-run beat, the same choices() row
+     offerRetry uses) — never mid-run, so it can't collide with a live tool rail or a task question. First
+     event per run wins: a retried tool call names the same connector twice. */
+  const CONNECTOR_NEEDED = new Map();   // runId -> connector_required payload (bounded; cleared on offer)
+  let connectorRequiredWired = false;
+  function wireConnectorRequired() {
+    if (connectorRequiredWired || typeof U === 'undefined' || !U.bus) return;
+    connectorRequiredWired = true;
+    U.bus.on('connector_required', p => {
+      if (!p || !p.runId || !p.connectorId || CONNECTOR_NEEDED.has(p.runId)) return;
+      CONNECTOR_NEEDED.set(p.runId, p);
+      if (CONNECTOR_NEEDED.size > 40) CONNECTOR_NEEDED.delete(CONNECTOR_NEEDED.keys().next().value);
+    });
+  }
+  // returns true iff a chip was rendered (the bool aids testing)
+  function offerConnectorDoor(runId) {
+    if (!log || !runId) return false;
+    const ev = CONNECTOR_NEEDED.get(runId); if (!ev) return false;
+    CONNECTOR_NEEDED.delete(runId);
+    const door = (typeof Friendly !== 'undefined' && Friendly.connectorDoor) ? Friendly.connectorDoor(ev) : null;
+    if (!door) return false;
+    choices([{ label: door.label, value: 'connect' }], () => door.run());
+    return true;
+  }
   function offerTryAgain() {
     choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast());
   }
@@ -8055,6 +8083,9 @@ const Chat = (() => {
           if (isActiveWs(ws)) breakLive(), toolLine('⚠ completion was not proven — typed postconditions returned ' + (completionVerdict || 'not_assessed') + ' (' + (effectVerdict || 'no effect evidence') + ')');
           if (typeof StationUI !== 'undefined') StationUI.notify('completion needs verification', 'warn');
         }
+        // a CLEAN end that hit an unwired connector mid-run: the reply already says "not connected" — the chip is
+        // the door. Only on a clean end: a stopped run owns the slot with its retry/budget chip above.
+        if (isActiveWs(ws) && !taskQuestion && (!endReason || endReason === 'done')) offerConnectorDoor(thisRunId);
         // GOLDEN-RUN DRIFT (2026-08-22): a recipe-launched run is compared by the sidecar against that recipe's own
         // good history; a drifted run is a failure class, so it earns the bell ONCE (keyed by the run). The durable
         // row lands a beat after run end, so the read waits; it is advisory and never blocks the turn.
