@@ -3044,7 +3044,9 @@ const Marketplace = (() => {
     // SOP fields: plain editable copies (a blank create starts with none).
     editSteps = (Array.isArray(seed.steps) ? seed.steps : []).map(x => String(x || ''));
     editAcceptance = (Array.isArray(seed.acceptance) ? seed.acceptance : []).map(a => ({
-      type: (a && a.type) || 'artifact_exists', path: (a && a.path) || '', text: (a && a.text) || '', sha256: (a && a.sha256) || '', command: (a && a.command) || ''
+      type: (a && a.type) || 'artifact_exists', path: (a && a.path) || '', text: (a && a.text) || '', sha256: (a && a.sha256) || '', command: (a && a.command) || '',
+      // connector read-back fields; args live as the raw JSON text the author types (normAcceptance parses on save)
+      connector: (a && a.connector) || '', tool: (a && a.tool) || '', args: (a && a.args) ? (typeof a.args === 'string' ? a.args : JSON.stringify(a.args)) : '', contains: (a && a.contains) || ''
     }));
     view = 'recipesave'; renderStage();
   }
@@ -3110,11 +3112,27 @@ const Marketplace = (() => {
     { id: 'artifact_exists', label: 'file exists' },
     { id: 'artifact_contains', label: 'file contains text' },
     { id: 'artifact_sha256', label: 'file sha256 =' },
-    { id: 'verification_passed', label: 'check command passes' }
+    { id: 'verification_passed', label: 'check command passes' },
+    { id: 'connector_readback', label: 'connector shows (host re-reads)' }
   ];
   function acceptRowHTML(a, i) {
     const type = a.type || 'artifact_exists';
     const isCmd = type === 'verification_passed';
+    const isRb = type === 'connector_readback';
+    if (isRb) {
+      // connector read-back: connector id + READ tool + optional args JSON + the text the read must show. The
+      // host refuses a non-read tool at run end, so the hint says READ up front.
+      return '<div class="mkt-r-prow mkt-r-arow" data-i="' + i + '" data-type="' + esc(type) + '">' +
+        '<select class="mkt-in mkt-r-atype" data-i="' + i + '" aria-label="check type">' +
+          ACC_TYPE_OPTS.map(t => '<option value="' + esc(t.id) + '"' + (type === t.id ? ' selected' : '') + '>' + esc(t.label) + '</option>').join('') +
+        '</select>' +
+        '<input class="mkt-in mkt-r-aconn" data-i="' + i + '" maxlength="80" value="' + esc(a.connector || '') + '" placeholder="connector id, e.g. gmail" aria-label="connector id">' +
+        '<input class="mkt-in mkt-r-atool" data-i="' + i + '" maxlength="80" value="' + esc(a.tool || '') + '" placeholder="READ tool, e.g. search_messages" aria-label="read tool">' +
+        '<input class="mkt-in mkt-r-aargs mkt-grow" data-i="' + i + '" maxlength="2000" value="' + esc(a.args || '') + '" placeholder="args JSON, e.g. {&quot;q&quot;:&quot;{client} invoice&quot;}" aria-label="read args">' +
+        '<input class="mkt-in mkt-r-atext mkt-grow" data-i="' + i + '" maxlength="500" value="' + esc(a.contains || '') + '" placeholder="the read must show this text" aria-label="expected text">' +
+        '<button type="button" class="bb xs danger mkt-r-arm" data-i="' + i + '" aria-label="remove check">✕</button>' +
+        '</div>';
+    }
     return '<div class="mkt-r-prow mkt-r-arow" data-i="' + i + '" data-type="' + esc(type) + '">' +
       '<select class="mkt-in mkt-r-atype" data-i="' + i + '" aria-label="check type">' +
         ACC_TYPE_OPTS.map(t => '<option value="' + esc(t.id) + '"' + (type === t.id ? ' selected' : '') + '>' + esc(t.label) + '</option>').join('') +
@@ -3220,7 +3238,12 @@ const Marketplace = (() => {
       stage.querySelectorAll('.mkt-r-arow').forEach(row => {
         const i = +row.dataset.i; if (!editAcceptance[i]) return;
         const ty = row.querySelector('.mkt-r-atype'), pa = row.querySelector('.mkt-r-apath'), tx = row.querySelector('.mkt-r-atext'), sh = row.querySelector('.mkt-r-asha'), cm = row.querySelector('.mkt-r-acmd');
+        const cn = row.querySelector('.mkt-r-aconn'), tl = row.querySelector('.mkt-r-atool'), ag = row.querySelector('.mkt-r-aargs');
         if (ty) editAcceptance[i].type = ty.value || 'artifact_exists';
+        if (cn) editAcceptance[i].connector = (cn.value || '').trim();
+        if (tl) editAcceptance[i].tool = (tl.value || '').trim();
+        if (ag) editAcceptance[i].args = (ag.value || '').trim();
+        if (tx && cn) { editAcceptance[i].contains = (tx.value || '').trim(); }
         if (pa) editAcceptance[i].path = (pa.value || '').trim();
         if (tx) editAcceptance[i].text = (tx.value || '').trim();
         if (sh) editAcceptance[i].sha256 = (sh.value || '').trim();
@@ -3276,12 +3299,12 @@ const Marketplace = (() => {
     const wireAcceptRows = () => {
       if (!agrid) return;
       agrid.querySelectorAll('.mkt-r-arm').forEach(b => b.addEventListener('click', () => { syncAcceptFromDOM(); editAcceptance.splice(+b.dataset.i, 1); sfx('click'); rerenderAccept(); }));
-      agrid.querySelectorAll('.mkt-r-apath, .mkt-r-atext, .mkt-r-asha, .mkt-r-acmd').forEach(inp => inp.addEventListener('input', paintPreview));
+      agrid.querySelectorAll('.mkt-r-apath, .mkt-r-atext, .mkt-r-asha, .mkt-r-acmd, .mkt-r-aconn, .mkt-r-atool, .mkt-r-aargs').forEach(inp => inp.addEventListener('input', paintPreview));
       agrid.querySelectorAll('.mkt-r-atype').forEach(sel => sel.addEventListener('change', () => { syncAcceptFromDOM(); sfx('click'); rerenderAccept(); }));
     };
     wireAcceptRows();
     const aadd = stage.querySelector('.mkt-r-aadd');
-    if (aadd) aadd.addEventListener('click', () => { syncAcceptFromDOM(); editAcceptance.push({ type: 'artifact_exists', path: '', text: '', sha256: '', command: '' }); sfx('click'); rerenderAccept(); });
+    if (aadd) aadd.addEventListener('click', () => { syncAcceptFromDOM(); editAcceptance.push({ type: 'artifact_exists', path: '', text: '', sha256: '', command: '', connector: '', tool: '', args: '', contains: '' }); sfx('click'); rerenderAccept(); });
 
     // gear chips (toggle in/out of editGear).
     stage.querySelectorAll('#mkt-r-gear .mkt-chip.pick').forEach(b => b.addEventListener('click', () => {
@@ -3308,7 +3331,8 @@ const Marketplace = (() => {
       const explicit = editParams.filter(p => p.key).map(paramOut);
       // an acceptance row that is still blank (no path / no command) is not a check — drop it rather than save a
       // row recipes.js would discard anyway, so the author never sees a phantom "◇ 1 check".
-      const accepts = editAcceptance.filter(a => (a.type === 'verification_passed' ? a.command : a.path));
+      const accepts = editAcceptance.filter(a => a.type === 'verification_passed' ? a.command : a.type === 'connector_readback' ? (a.connector && a.tool && a.contains) : a.path)
+        .map(a => a.type === 'connector_readback' ? { type: a.type, connector: a.connector, tool: a.tool, args: a.args || null, contains: a.contains } : a);
       const rec = {
         name, emoji: (stage.querySelector('#mkt-r-emoji').value || '✦').trim() || '✦',
         tagline: (stage.querySelector('#mkt-r-tag').value || '').trim(), task,

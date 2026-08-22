@@ -202,14 +202,19 @@
                         artifact_contains    { path, text }      ...and it contains the text
                         artifact_sha256      { path, sha256 }    ...and its digest matches exactly
                         verification_passed  { command }         that exact check command ran green in the run
-                      path/text/command may carry {param} tokens; postconditionsFor() fills them at launch and the
+                        connector_readback   { connector, tool, args?, contains|regex }
+                                                                 the HOST re-reads the connector itself (a read tool only)
+                                                                 after the run acted on it, and the text must match
+                      path/text/command/args/contains may carry {param} tokens; postconditionsFor() fills them at launch and the
                       contract rides the run body as `postconditions` — the host evaluates it when the run ends and
                       the loop gets ONE bounded turn to repair a failing check (acceptance-on-stop). Malformed rows
                       drop silently (author error is never a crash); a recipe with none launches exactly as before.
      Bounds mirror the sidecar's (20 requirements, 260-char path, 500-char text, 1000-char command). */
   const STEPS_MAX = 12, STEP_MAX_LEN = 240;
   const ACCEPTANCE_MAX = 20, ACC_PATH_MAX = 260, ACC_TEXT_MAX = 500, ACC_CMD_MAX = 1000;
-  const ACCEPTANCE_TYPES = Object.freeze(['artifact_exists', 'artifact_contains', 'artifact_sha256', 'verification_passed']);
+  const ACCEPTANCE_TYPES = Object.freeze(['artifact_exists', 'artifact_contains', 'artifact_sha256', 'verification_passed', 'connector_readback']);
+  const ACC_SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/;   // connector ids + tool names (mirrors the sidecar)
+  const ACC_ARGS_MAX = 2000;
   function normSteps(arr) {
     return Object.freeze((Array.isArray(arr) ? arr : [])
       .map(s => String(s == null ? '' : (typeof s === 'object' ? (s.text || '') : s)).replace(/\s+/g, ' ').trim().slice(0, STEP_MAX_LEN))
@@ -238,6 +243,30 @@
         out.push(Object.freeze({ type, command, label }));
         return;
       }
+      if (type === 'connector_readback') {
+        const connector = String(e.connector || '').trim(), tool = String(e.tool || '').trim();
+        if (!ACC_SLUG_RE.test(connector) || !ACC_SLUG_RE.test(tool)) return;
+        const contains = String(e.contains == null ? '' : e.contains).trim().slice(0, ACC_TEXT_MAX);
+        const regex = String(e.regex == null ? '' : e.regex).trim().slice(0, ACC_TEXT_MAX);
+        if (!contains && !regex) return;
+        if (regex) { try { new RegExp(regex); } catch (_) { return; } }
+        // args: a plain object (authored as JSON text in the editor), bounded; a {token} may live in any string value.
+        let args = null;
+        if (e.args != null) {
+          let obj = e.args;
+          if (typeof obj === 'string') { try { obj = JSON.parse(obj); } catch (_) { return; } }
+          if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
+          let json = ''; try { json = JSON.stringify(obj); } catch (_) { return; }
+          if (json.length > ACC_ARGS_MAX) return;
+          args = JSON.parse(json);
+        }
+        const row = { type, connector, tool, label };
+        if (args) row.args = Object.freeze(args);
+        if (contains) row.contains = contains;
+        if (regex) row.regex = regex;
+        out.push(Object.freeze(row));
+        return;
+      }
       const path = saneAccPath(e.path);
       if (!path) return;
       const row = { type, path, label };
@@ -263,6 +292,7 @@
     if (a.type === 'artifact_contains') return a.path + ' contains "' + a.text + '"';
     if (a.type === 'artifact_sha256') return a.path + ' sha256 = ' + a.sha256;
     if (a.type === 'verification_passed') return 'check passes: ' + a.command;
+    if (a.type === 'connector_readback') return a.connector + ' › ' + a.tool + (a.args ? ' ' + JSON.stringify(a.args) : '') + (a.contains ? ' shows "' + a.contains + '"' : ' matches /' + a.regex + '/');
     return a.type;
   }
 
@@ -509,6 +539,15 @@
     if (a.text != null) out.text = fillTokens(a.text, r, v);
     if (a.sha256 != null) out.sha256 = fillTokens(a.sha256, r, v).toLowerCase();
     if (a.command != null) out.command = fillTokens(a.command, r, v);
+    if (a.connector != null) out.connector = a.connector;
+    if (a.tool != null) out.tool = a.tool;
+    if (a.contains != null) out.contains = fillTokens(a.contains, r, v);
+    if (a.regex != null) out.regex = a.regex;
+    if (a.args != null) {
+      // tokens fill inside STRING values only; shape and non-string values are carried verbatim.
+      const fillDeep = x => (typeof x === 'string') ? fillTokens(x, r, v) : (Array.isArray(x) ? x.map(fillDeep) : (x && typeof x === 'object') ? Object.keys(x).reduce((o, k) => { o[k] = fillDeep(x[k]); return o; }, {}) : x);
+      out.args = fillDeep(a.args);
+    }
     return out;
   }
   /* the run-body `postconditions` contract for a launch: the recipe's acceptance rows with their tokens filled,
@@ -523,7 +562,12 @@
       const f = fillAcceptance(a, r, v);
       const row = { id: 'sop-' + (i + 1), type: f.type };
       if (f.type === 'verification_passed') row.command = f.command;
-      else {
+      else if (f.type === 'connector_readback') {
+        row.connector = f.connector; row.tool = f.tool;
+        if (f.args) row.args = f.args;
+        if (f.contains) row.contains = f.contains;
+        if (f.regex) row.regex = f.regex;
+      } else {
         row.path = f.path;
         if (f.type === 'artifact_contains') row.text = f.text;
         if (f.type === 'artifact_sha256') row.sha256 = f.sha256;

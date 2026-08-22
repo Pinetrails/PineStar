@@ -95,4 +95,26 @@ const { normalizeContract } = require('../sidecar/task-postconditions.js');
   A.eq(R.acceptanceLabel({ type: 'artifact_exists', path: 'a.md', label: 'the brief exists' }), 'the brief exists', 'an authored label wins');
 }
 
+// ---- connector read-back rows (2026-08-22) ----
+{
+  const r = R.saveCustom(R.draft({ name: 'Invoice mail', task: 'Email the invoice to {client}', params: [{ key: 'client' }], acceptance: [
+    { type: 'connector_readback', connector: 'gmail', tool: 'search_messages', args: '{"q":"to:{client} Invoice"}', contains: 'Invoice for {client}' },
+    { type: 'connector_readback', connector: 'sheets', tool: 'get_values', args: { range: 'A1:B9' }, regex: '^{client},' },
+    { type: 'connector_readback', connector: 'bad id!', tool: 'x', contains: 'y' },                     // bad slug -> dropped
+    { type: 'connector_readback', connector: 'gmail', tool: 'search_messages' },                         // no expectation -> dropped
+    { type: 'connector_readback', connector: 'gmail', tool: 'search_messages', contains: 'x', args: '{not json' },   // bad args -> dropped
+    { type: 'connector_readback', connector: 'gmail', tool: 'search_messages', regex: '(' }              // bad regex -> dropped
+  ] }));
+  A.eq(r.acceptance.length, 2, 'only the two well-formed read-back rows survive');
+  A.eq(r.acceptance[0].args, { q: 'to:{client} Invoice' }, 'JSON-text args are parsed into an object');
+  A.ok(Object.isFrozen(r.acceptance[0].args), 'args are frozen with the row');
+  const pcs = R.postconditionsFor(r, { client: 'acme' });
+  A.eq(pcs.requirements[0], { id: 'sop-1', type: 'connector_readback', connector: 'gmail', tool: 'search_messages', args: { q: 'to:acme Invoice' }, contains: 'Invoice for acme' }, 'tokens fill inside args string values AND contains');
+  A.eq(pcs.requirements[1], { id: 'sop-2', type: 'connector_readback', connector: 'sheets', tool: 'get_values', args: { range: 'A1:B9' }, regex: '^{client},' }, 'regex is carried verbatim (no token fill: a regex is a pattern)');
+  A.eq(normalizeContract(pcs).errors, [], 'the sidecar normalizer accepts both read-back rows');
+  A.ok(R.fillTask(r, { client: 'acme' }).indexOf('gmail › search_messages {"q":"to:acme Invoice"} shows "Invoice for acme"') >= 0, 'the directive states the read-back in plain words');
+  const ex = R.validateImport(JSON.parse(JSON.stringify(R.exportRecipe(r))));
+  A.eq(R.saveCustom(Object.assign({}, ex.recipe, { id: undefined })).acceptance.length, 2, 'read-back rows survive export/import');
+}
+
 A.report('recipes.sop');
