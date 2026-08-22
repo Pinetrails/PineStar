@@ -40,6 +40,38 @@
   const srcTiles = s => (s.tiles && s.tiles.length) ? s.tiles : (s.tile ? [s.tile] : []);
   // small deterministic FNV-1a hash of the plan topology (frontend<->sidecar agree they hold the same plan)
   function hashStr(s) { let h = 0x811c9dc5; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 0x01000193) >>> 0; } return ('0000000' + h.toString(16)).slice(-8); }
+  /* LINE BUDGET (per-line limits, 2026-08-21). A line's INBOX prop may carry `limits` — the Commander's
+     ceilings for work that enters THROUGH that line: { maxHops, maxUsdPerMessage, maxUsdPerDay }. This is
+     the ONE normalizer both surfaces use (REFIT writes through it, the compiler attaches it, the sidecar's
+     chain executor reads it), so a floor can never carry a limit the executor reads differently.
+       defaults  = the executor's historical constants (6 stages after the first, $2.00 per message) and
+                   NO daily cap (null = off) — a floor with no limits set runs exactly as before.
+       ceilings  = hard: maxHops <= 24, $ per message <= 50, $ per day <= 500. Anything above is CLAMPED and
+                   the clamp is RECORDED (`clamped: ['maxHops>24', …]`) so a surface can say why the number
+                   the Commander typed is not the number in force. The global budget pool is a SIDECAR fact
+                   (router.lineLimits clamps to it at read time) — the compiler never knows it.
+     Returns null for no/garbage input (absent = defaults everywhere, and nothing rides the plan). */
+  const LINE_LIMIT_DEFAULTS = { maxHops: 6, maxUsdPerMessage: 2.00, maxUsdPerDay: null };
+  const LINE_LIMIT_CEILINGS = { maxHops: 24, maxUsdPerMessage: 50, maxUsdPerDay: 500 };
+  function normalizeLineLimits(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const out = { clamped: [] };
+    const num = v => (typeof v === 'number' && isFinite(v)) ? v : (typeof v === 'string' && v.trim() !== '' && isFinite(+v) ? +v : null);
+    let any = false;
+    const h = num(raw.maxHops);
+    if (h != null) { any = true; let v = Math.max(0, Math.floor(h)); if (v > LINE_LIMIT_CEILINGS.maxHops) { v = LINE_LIMIT_CEILINGS.maxHops; out.clamped.push('maxHops>' + LINE_LIMIT_CEILINGS.maxHops); } out.maxHops = v; }
+    else out.maxHops = LINE_LIMIT_DEFAULTS.maxHops;
+    const m = num(raw.maxUsdPerMessage);
+    if (m != null && m > 0) { any = true; let v = Math.round(m * 100) / 100; if (v > LINE_LIMIT_CEILINGS.maxUsdPerMessage) { v = LINE_LIMIT_CEILINGS.maxUsdPerMessage; out.clamped.push('maxUsdPerMessage>' + LINE_LIMIT_CEILINGS.maxUsdPerMessage); } out.maxUsdPerMessage = v; }
+    else out.maxUsdPerMessage = LINE_LIMIT_DEFAULTS.maxUsdPerMessage;
+    const d = num(raw.maxUsdPerDay);
+    if (d != null && d > 0) { any = true; let v = Math.round(d * 100) / 100; if (v > LINE_LIMIT_CEILINGS.maxUsdPerDay) { v = LINE_LIMIT_CEILINGS.maxUsdPerDay; out.clamped.push('maxUsdPerDay>' + LINE_LIMIT_CEILINGS.maxUsdPerDay); } out.maxUsdPerDay = v; }
+    else out.maxUsdPerDay = LINE_LIMIT_DEFAULTS.maxUsdPerDay;
+    if (!any) return null;
+    if (!out.clamped.length) delete out.clamped;
+    return out;
+  }
+
 
   // the tile(s) a box flows to next from t (a junction fans out to ALL its out-lanes for reachability/cycle)
   function nextTiles(map, junctions, t) {
@@ -285,15 +317,24 @@
        Attached AFTER the hash inputs are fixed, and only onto the LEGIBILITY list (`dockBays`) plus these
        lookup maps — the dispatch topology is unchanged, so the same floor keeps the same plan.hash it had
        before line identity existed and no station needlessly re-arms on upgrade. */
-    const lines = [], lineOfProp = {}, lineOfAgent = {};
+    const lines = [], lineOfProp = {}, lineOfAgent = {}, lineLimits = {};
     for (const c of lineComponents(geo)) {
       const lineId = c.key, rec = { lineId, propIds: c.props.slice(), intakes: c.intakes.slice(), outboxes: c.outboxes.slice(), agents: [] };
       for (const pid of c.props) lineOfProp[pid] = lineId;
       for (const b of c.bays) if (b.agentId && !lineOfAgent[b.agentId]) { lineOfAgent[b.agentId] = lineId; rec.agents.push(b.agentId); }
       rec.agents.sort();
+      // LINE BUDGET rides the line's INBOX prop (the line's front door — same home as its name). The first
+      // intake (component order = oldest first) carrying limits speaks; normalized HERE so the plan never
+      // carries a raw, unclamped number. Legibility+policy list only: outside plan.hash (not topology).
+      for (const iid of c.intakes) {
+        const ip = props.find(q => q.id === iid);
+        const lim = ip ? normalizeLineLimits(ip.limits) : null;
+        if (lim) { rec.limits = lim; lineLimits[lineId] = lim; break; }
+      }
       lines.push(rec);
     }
     plan.lines = lines;
+    plan.lineLimits = lineLimits;     // lineId -> normalized { maxHops, maxUsdPerMessage, maxUsdPerDay, clamped? } (only lines that set one)
     plan.lineOfProp = lineOfProp;     // propId  -> lineId
     plan.lineOfAgent = lineOfAgent;   // agentId -> the lineId of the dock it crews
     for (const d of dockBays) { const l = lineOfProp[d.propId]; if (l) d.lineId = l; }
@@ -779,5 +820,14 @@
     return out;
   }
 
-  return { compileRoutingPlan, resolveTarget, lineOf, lineOriginOf, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, lineComponents, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom, propIdCmp } };
+  /* lineLimitsOf(plan, lineId) -> the normalized LINE BUDGET for this line, or null (= the executor's
+     defaults). The ONE reader (router.lineLimits, the chain route) — never re-derived from props. */
+  function lineLimitsOf(plan, lineId) {
+    if (!plan || lineId == null) return null;
+    const m = plan.lineLimits;
+    const rec = m && typeof m === 'object' ? m[String(lineId)] : null;
+    return rec && typeof rec === 'object' ? rec : null;
+  }
+
+  return { compileRoutingPlan, resolveTarget, lineOf, lineOriginOf, lineLimitsOf, normalizeLineLimits, LINE_LIMIT_DEFAULTS, LINE_LIMIT_CEILINGS, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, lineComponents, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom, propIdCmp } };
 });

@@ -1812,6 +1812,26 @@ const Build = (() => {
         + '<input id="line-name" class="refit-input" type="text" maxlength="48" placeholder="' + esc(namePh) + '" value="' + esc(p.label || '') + '" />'
         + '<div class="refit-note">names this whole line (shown on its checklist + this INBOX\'s glance) — saved on Enter / blur</div>'
       : '';
+    /* LINE BUDGET (2026-08-21): the line's own ceilings, set at its front door like its name. Rides the intake
+       prop as `limits` (worldmodel.setPropLimits -> migrate() whitelist), compiles onto plan.lines[].limits
+       (outside plan.hash; the poster key carries it) and the sidecar's chain executor reads it by lineId
+       (router.lineLimits). Blank = the executor's defaults (6 stages / $2.00 per message / no daily cap).
+       The numbers shown are the ones IN FORCE: the shared normalizer clamps (24 / $50 / $500) and the card
+       says so, so the field never claims a ceiling the harness will not apply. */
+    const LD = (typeof Pipeline !== 'undefined' && Pipeline.LINE_LIMIT_DEFAULTS) || { maxHops: 6, maxUsdPerMessage: 2, maxUsdPerDay: null };
+    const LC = (typeof Pipeline !== 'undefined' && Pipeline.LINE_LIMIT_CEILINGS) || { maxHops: 24, maxUsdPerMessage: 50, maxUsdPerDay: 500 };
+    const lim0 = (isIntake && p.limits && typeof p.limits === 'object') ? p.limits : {};
+    const limVal = (k) => (typeof lim0[k] === 'number' && isFinite(lim0[k]) && lim0[k] > 0) ? String(lim0[k]) : '';
+    const lbDefaultNote = 'blank = station default · ceilings ' + LC.maxHops + ' stages / $' + LC.maxUsdPerMessage + ' / $' + LC.maxUsdPerDay + ' a day, never above the global pool — saved on Enter / blur';
+    const limField = (id, k, label, ph, step) => '<label class="refit-field lb-field" for="' + id + '">' + label
+      + '<input id="' + id + '" class="refit-num lb-num" type="number" min="0" step="' + step + '" data-k="' + k + '" placeholder="' + esc(ph) + '" value="' + esc(limVal(k)) + '" /></label>';
+    const budgetHtml = isIntake
+      ? '<div class="refit-sec">LINE BUDGET</div>'
+        + limField('lb-hops', 'maxHops', 'max stages after the first', String(LD.maxHops), '1')
+        + limField('lb-msg', 'maxUsdPerMessage', '$ per message, whole line', LD.maxUsdPerMessage.toFixed(2), '0.05')
+        + limField('lb-day', 'maxUsdPerDay', '$ per day, this line', 'off', '0.50')
+        + '<div class="refit-note lb-note" id="lb-note">' + esc(lbDefaultNote) + '</div>'
+      : '';
     /* ---------- THE TRIGGER ZONE (inbox-trigger, 2026-08-05) ----------
        The INBOX card is the workflow's WHY, completing the loop the floor already draws: trigger (INBOX) →
        steps (docks + briefs) → result (OUTBOX). Before this the floor shipped the SHAPE of a workflow while
@@ -1875,6 +1895,7 @@ const Build = (() => {
       + flowStripHTML(hot)
       + '<ul><li>' + line + '</li></ul>'
       + nameHtml
+      + budgetHtml
       + trgHtml
       + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="flow-ok">✓ GOT IT</button></div></div>';
     root.appendChild(g);
@@ -1896,8 +1917,36 @@ const Build = (() => {
         if (e.key === 'Escape') { e.stopPropagation(); nameIn.blur(); }   // leave the field (saving); the next ESC closes the card
       });
     }
-    const closeP = () => { saveName(); if (g.parentNode) g.parentNode.removeChild(g); };
-    cardRegister(g, closeP);   // ESC closes THROUGH here, so the line name is saved and never discarded
+    // LINE BUDGET fields: one save for the three (the prop holds one `limits` object). The saved answer is
+    // re-painted INTO the fields — a clamped number comes back as the number in force, never as what was typed.
+    const lbNums = Array.prototype.slice.call(g.querySelectorAll('.lb-num'));
+    const lbNote = g.querySelector('#lb-note');
+    let lbSaved = JSON.stringify(Object.keys(lim0).length ? lim0 : null);
+    const lbName = k => k === 'maxHops' ? 'stages' : k === 'maxUsdPerMessage' ? '$ per message' : '$ per day';
+    const saveLimits = () => {
+      if (!lbNums.length || typeof station.setPropLimits !== 'function') return;
+      const raw = {};
+      for (const el of lbNums) { const v = String(el.value || '').trim(); if (v !== '' && isFinite(+v) && +v > 0) raw[el.dataset.k] = +v; }
+      const res = station.setPropLimits(propId, Object.keys(raw).length ? raw : null);
+      if (!res || !res.ok) { sfx('bad'); return; }
+      const next = JSON.stringify(res.limits || null);
+      for (const el of lbNums) { const k = el.dataset.k, v = res.limits && res.limits[k]; el.value = (typeof v === 'number' && v > 0) ? String(v) : ''; }
+      if (lbNote) lbNote.textContent = (res.clamped && res.clamped.length)
+        ? 'clamped to the ceiling — ' + res.clamped.map(c => lbName(c.split('>')[0])).join(', ') + ' (the numbers shown are the ones in force)'
+        : lbDefaultNote;
+      if (next === lbSaved) return;
+      lbSaved = next; sfx('click');
+      flashTip(null, res.limits ? 'line budget saved' : 'line budget cleared — station defaults', true);
+    };
+    for (const el of lbNums) {
+      el.addEventListener('blur', saveLimits);
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); saveLimits(); }
+        if (e.key === 'Escape') { e.stopPropagation(); el.blur(); }   // leave the field (saving); the next ESC closes the card
+      });
+    }
+    const closeP = () => { saveName(); saveLimits(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);   // ESC closes THROUGH here, so the line name + budget are saved and never discarded
     /* ---- trigger-zone wiring (intake only; every claim below is a server answer, never synthesized) ---- */
     if (isIntake) {
       const feedEl = g.querySelector('#trg-feed'), listEl = g.querySelector('#trg-routines');

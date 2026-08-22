@@ -536,6 +536,7 @@ test/routing-nag-parity.test.js
 test/crate-honesty.test.js
 test/plan-poster.test.js
 test/chain.test.js
+test/chain.limits.test.js
 test/refit-card-stack.test.js
 test/step-brief.test.js
 test/propanchor.test.js
