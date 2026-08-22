@@ -3232,6 +3232,93 @@ const PropSprites = (() => {
     if (on) glow(x, y + 1, w, 5, c, 0.10);
   };
 
+  F.joiner = (x, y, w, h, f) => {
+    // JOINER (1x1, 2026-08-21) — the real fan-in BARRIER: one crate per in-lane is HELD until every branch of
+    // a run has arrived, then ONE merged crate leaves. Rebuilt from the merger's deck box (same steel, same
+    // horns-west/outlet-east silhouette) with the one idea the merger lacks: a LATCH BAR across the well —
+    // the two inputs pile up BEHIND it, both lamps fill, the bar drops, and a single fat crate leaves.
+    const r = RAMP.steel, on = !!(f && f.work), c = '#ff8a4a', ph = (f && f.x) || 0;
+    shadow2(x + 1, y + h - 1, w - 2);
+    for (const ny of [y + 2, y + 6]) {                          // twin intake horns, west (the merger's)
+      px(x - 2, ny - 1, 3, 4, LINE);
+      px(x - 2, ny, 2, 2, r.face); px(x - 2, ny, 2, 1, r.lit);
+    }
+    px(x + w - 1, y + 2, 3, 5, LINE);                           // one FAT outlet, east
+    px(x + w, y + 3, 2, 3, r.face); px(x + w, y + 3, 2, 1, r.lit);
+    chamf(x - 1, y + 5, w + 2, 6, LINE, 1);
+    chamf(x, y + 6, w, 4, r.face, 1);
+    px(x + 1, y + 6, w - 2, 1, r.lit); keyEdge(x + 2, y + 6, 5, 1, 0.16);
+    px(x + 1, y + 9, w - 2, 1, r.ao);
+    px(x + 2, y + 8, 1, 1, '#caa84a'); px(x + w - 3, y + 8, 1, 1, '#caa84a');
+    chamf(x - 1, y, w + 2, 7, LINE, 1);
+    chamf(x, y + 1, w, 5, r.top, 1);
+    px(x + 1, y + 1, w - 2, 1, r.sheen); keyEdge(x + 1, y + 1, 4, 1, 0.26);
+    px(x, y + 2, 1, 3, r.lit); px(x + w - 1, y + 2, 1, 3, r.dk); rimEdge(x + w - 1, y + 2, 1, 3, 0.20);
+    px(x + 1, y + 5, w - 2, 1, U.shade(r.top, -0.18));
+    px(x + 1, y + 2, w - 2, 3, '#1e120c'); px(x + 1, y + 2, w - 2, 1, '#140c08');   // lane well, ember-dark
+    const dim = U.shade(c, -0.55), lc = on ? U.shade(c, 0.22) : U.shade(c, -0.12);
+    px(x + 1, y + 2, 5, 1, dim); px(x + 1, y + 4, 5, 1, dim);   // two inputs
+    px(x + 7, y + 3, 4, 1, dim);                                // the single out lane
+    const per = on ? 1300 : 2200, t = (now % per) / per;
+    const held = t < 0.7;                                       // the barrier phase: both crates wait at the bar
+    px(x + 6, y + 2, 1, 3, held ? lc : U.shade(c, -0.35));      // THE LATCH BAR — lit while holding, dark when dropped
+    if (held) {
+      const a = Math.min(1, t / 0.35), p1 = x + 1 + Math.floor(a * 4);   // crate 1 arrives first...
+      px(p1, y + 2, 1, 1, '#ffc9a0'); bloom(p1, y + 2, 1, 1, c, 0.24);
+      if (t > 0.3) { const b = Math.min(1, (t - 0.3) / 0.35), p2 = x + 1 + Math.floor(b * 4);   // ...crate 2 later
+        px(p2, y + 4, 1, 1, '#ffc9a0'); bloom(p2, y + 4, 1, 1, c, 0.24); }
+    } else {                                                    // bar down: ONE fat crate leaves
+      const p = x + 7 + Math.floor(((t - 0.7) / 0.3) * 4);
+      px(p, y + 3, 2, 1, '#ffc9a0'); bloom(p, y + 3, 2, 1, c, on ? 0.42 : 0.26);
+    }
+    px(x + w, y + 4, 2, 1, held ? dim : lc);                    // outlet tip
+    px(x + 2, y + 7, 1, 1, held && blink(300, ph) ? '#ffc9a0' : U.shade(c, -0.5));   // WAITING lamp blinks while held
+    if (on) glow(x, y + 1, w, 5, c, 0.10);
+  };
+
+  F.loop = (x, y, w, h, f) => {
+    // LOOP gate (1x1, 2026-08-21) — the one legal way round: a crate re-enters the line upstream on the back
+    // lane until its pass count hits the cap, then leaves on the done lane. Rebuilt from the splitter's deck
+    // box (one in, two out — a gate IS a fork) with the filter's height trick: a COUNTER PILLAR standing on
+    // the box whose tally lamps fill one per pass, so "how many times round" is readable from across the room.
+    const r = RAMP.steel, on = !!(f && f.work), c = ACC.data, ph = (f && f.x) || 0;
+    shadow2(x + 1, y + h - 1, w - 2);
+    px(x + w - 1, y + 1, 3, 3, LINE); px(x + w, y + 2, 2, 1, r.face);      // done nozzle, east-high
+    px(x + w - 1, y + 5, 3, 3, LINE); px(x + w, y + 6, 2, 1, r.face);      // back nozzle, east-low (the return)
+    chamf(x - 1, y + 5, w + 2, 6, LINE, 1);
+    chamf(x, y + 6, w, 4, r.face, 1);
+    px(x + 1, y + 6, w - 2, 1, r.lit); keyEdge(x + 2, y + 6, 5, 1, 0.16);
+    px(x + 1, y + 9, w - 2, 1, r.ao);
+    px(x + 2, y + 8, 1, 1, '#caa84a'); px(x + w - 3, y + 8, 1, 1, '#caa84a');
+    chamf(x - 1, y, w + 2, 7, LINE, 1);
+    chamf(x, y + 1, w, 5, r.top, 1);
+    px(x + 1, y + 1, w - 2, 1, r.sheen); keyEdge(x + 1, y + 1, 4, 1, 0.26);
+    px(x, y + 2, 1, 3, r.lit); px(x + w - 1, y + 2, 1, 3, r.dk); rimEdge(x + w - 1, y + 2, 1, 3, 0.20);
+    px(x + 1, y + 5, w - 2, 1, U.shade(r.top, -0.18));
+    px(x + 1, y + 2, w - 2, 3, '#0c1a20'); px(x + 1, y + 2, w - 2, 1, '#08121a');   // cold lane well
+    const dim = U.shade(c, -0.55), lc = on ? U.shade(c, 0.22) : U.shade(c, -0.12);
+    px(x + 1, y + 3, 5, 1, dim);                                // trunk in
+    px(x + 6, y + 2, 5, 1, dim); px(x + 6, y + 4, 5, 1, dim);   // done (high) and back (low)
+    px(x + 6, y + 3, 1, 1, lc);                                 // the gate node
+    // the moving idea: a packet rides in, takes the BACK lane N times, then the DONE lane once
+    const per = on ? 640 : 1100, pass = Math.floor(now / per) % 4, t = (now % per) / per, last = pass === 3;
+    const pxp = t < 0.5 ? x + 1 + Math.floor(t * 10) : x + 6 + Math.floor((t - 0.5) * 10);
+    const pyp = t < 0.5 ? y + 3 : (last ? y + 2 : y + 4);
+    px(pxp, pyp, 2, 1, '#bfefff'); bloom(pxp, pyp, 2, 1, c, on ? 0.40 : 0.24);
+    px(x + w, y + 2, 2, 1, last && t >= 0.5 ? lc : dim); px(x + w, y + 6, 2, 1, !last && t >= 0.5 ? lc : dim);   // nozzle tips
+    // COUNTER PILLAR — the silhouette that names it; collar ties it to the box so it can't float
+    const dx0 = x + 3, dt = y - 6;
+    px(x + 2, y, 8, 2, LINE); px(x + 3, y, 6, 1, U.shade(r.top, 0.10)); px(x + 3, y + 1, 6, 1, r.ao);   // collar
+    chamf(dx0 - 1, dt - 1, 8, 9, LINE, 2);
+    chamf(dx0, dt, 6, 7, r.face, 2);
+    px(dx0 + 1, dt, 4, 1, r.top); keyEdge(dx0 + 1, dt, 3, 1, 0.28);
+    px(dx0, dt + 2, 1, 4, r.lit); px(dx0 + 5, dt + 2, 1, 4, r.dk); rimEdge(dx0 + 5, dt + 2, 1, 4, 0.20);
+    px(dx0 + 1, dt + 2, 4, 4, '#08141a');                       // tally window
+    for (let i = 0; i < 4; i++) px(dx0 + 1 + i, dt + 4, 1, 1, i <= pass ? (i === 3 ? '#bfefff' : c) : U.shade(c, -0.62));   // one lamp per pass
+    px(dx0 + 1 + pass, dt + 3, 1, 1, blink(260, ph) ? '#bfefff' : U.shade(c, -0.3));   // the pass in progress
+    bloom(dx0 + 1, dt + 2, 4, 4, c, on ? 0.24 : 0.12);
+  };
+
   F.bay = (x, y, w, h, f) => {
     /* v71 BAY (2x2) — upgrade pass. Anatomy unchanged: a berth between two hazard-banded GUIDE ARMS
        carrying a gantry NAMEPLATE, so the dock reads as a berth from across the room and the bound
@@ -10308,6 +10395,8 @@ const PropSprites = (() => {
     { id: "filter", label: "FILTER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "FILTER — sorts UNADDRESSED work by its content, sending each kind down a different belt lane. Work already bound to an agent rides straight home past it. Click it to set the routes." },
     { id: "merger", label: "MERGER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "MERGER — a lane funnel: several belt lanes converge into one, and every crate rides straight on (K in, K out). It tidies the lanes — it never combines the jobs riding them; each still runs on its own. Nothing to configure." },
     { id: "splitter", label: "SPLITTER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "SPLITTER — fans one work stream across its lanes to run several agents in parallel (load-balance)." },
+    { id: "joiner", label: "JOINER", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "JOINER — the fan-in barrier. Every lane feeding it is a branch of the same job: it HOLDS each branch's result until all of them have arrived (or 10 minutes pass), then sends ONE merged crate on, each branch's output clearly labelled. Draw a SPLITTER upstream and its lanes run in parallel instead of taking turns." },
+    { id: "loop", label: "LOOP", cat: "workflow", tier: "functional", w: 1, h: 1, animated: true, blocks: false, desc: "LOOP — the gate that makes a cycle legal. Belt its BACK lane to an upstream dock and its DONE lane onward: work goes round again (up to 5 passes by default, 20 at most), then leaves on DONE. Spend stays inside the line's dollar cap. Any cycle without a LOOP is still refused." },
     { id: "outbox", label: "OUTBOX", cat: "workflow", tier: "functional", w: 2, h: 2, animated: true, blocks: true, desc: "OUTBOX — the dispatch chute where an agent's finished reply leaves the station. Click it to read and rate every finished run waiting for you." },
     // NOTE: the old "CONVEYOR" palette prop (beltH) is retired — it was inert scenery that LOOKED like the
     // routing system and taught users the wrong model (you can't assign or route through it). Real belts are
@@ -10615,7 +10704,7 @@ const PropSprites = (() => {
     'wartable', 'bridge_tacscreen', 'bridge_orderqueue', 'war_threatcore', 'vat',
     'research_corelens', 'research_trendpillar', 'etsy_dyevat', 'etsy_kiln',
     'gigs_thumbwall', 'gigs_amp', 'pub_outboundchute', 'treasury_pnl_holo',
-    'intake', 'bay', 'outbox', 'filter', 'merger', 'splitter', 'beltH',                  // flow
+    'intake', 'bay', 'outbox', 'filter', 'merger', 'splitter', 'joiner', 'loop', 'beltH', // flow
   ];
   const NOMIR_SET = NO_MIRROR.reduce((o, id) => (o[id] = 1, o), {});
 

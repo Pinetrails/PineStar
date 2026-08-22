@@ -105,7 +105,7 @@ const Build = (() => {
 
   const SEEN_KEY = 'starnet.refit.seen';
   // machines the BELT tool connects with two clicks (mirrors worldmodel CONNECTABLE)
-  const CONNECT_TYPES = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
+  const CONNECT_TYPES = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1, joiner: 1, loop: 1 };
 
   let opts = null, station = null, unsub = null;
   let connectFrom = null;   // connect-mode state: the armed FROM machine's propId (null = not connecting)
@@ -1054,8 +1054,8 @@ const Build = (() => {
         for (const k of Object.keys(p.routes || {})) { paint(p.x, p.y, p.routes[k], SCHEME.cyan); dirs.push({ d: p.routes[k], col: SCHEME.cyan }); }
         if (p.def) { paint(p.x, p.y, p.def, SCHEME.neutral); dirs.push({ d: p.def, col: SCHEME.neutral }); }
         fans.push({ p, dirs });
-      } else if (p.t === 'splitter' || p.t === 'merger') {
-        const col = p.t === 'splitter' ? SCHEME.green : SCHEME.merge, dirs = [];
+      } else if (p.t === 'splitter' || p.t === 'merger' || p.t === 'joiner' || p.t === 'loop') {
+        const col = p.t === 'splitter' ? SCHEME.green : p.t === 'loop' ? SCHEME.cyan : SCHEME.merge, dirs = [];
         for (const d of ['N', 'E', 'S', 'W']) {
           const b = at[(p.x + LINE_DIR[d][0]) + ',' + (p.y + LINE_DIR[d][1])];
           if (b && b.d === d) { paint(p.x, p.y, d, col); dirs.push({ d, col }); }   // points AWAY = out-lane
@@ -1127,9 +1127,9 @@ const Build = (() => {
         x.fillStyle = SCHEME.chute; x.fillRect(X + m, Y + m, W - m * 2, H - m * 2);
         x.fillStyle = SCHEME.greenHot; x.fillRect(X + W - m - u * 2, Y + m + 1, u * 2, u);
         x.fillStyle = SCHEME.green; x.fillRect(X + m + 1, Y + H - m - u - 1, u * 2, u);
-      } else {                               // junction (filter/splitter/merger) — node + tinted arms
-        const core = p.t === 'filter' ? SCHEME.violet : (p.t === 'splitter' ? SCHEME.green : SCHEME.merge);
-        const hot = p.t === 'filter' ? SCHEME.violetHot : (p.t === 'splitter' ? '#c8f4e6' : '#ffd488');
+      } else {                               // junction (filter/splitter/merger/joiner/loop) — node + tinted arms
+        const core = p.t === 'filter' ? SCHEME.violet : (p.t === 'splitter' ? SCHEME.green : p.t === 'loop' ? SCHEME.cyan : SCHEME.merge);
+        const hot = p.t === 'filter' ? SCHEME.violetHot : (p.t === 'splitter' ? '#c8f4e6' : p.t === 'loop' ? '#bfefff' : p.t === 'joiner' ? '#ffc9a0' : '#ffd488');
         lineBody(x, X + 1, Y + 1, W - 2, H - 2, st.top, st.face, st.lit, st.dk);
         const cx = X + (W >> 1), cy = Y + (H >> 1);
         const fan = lanes.fans.find(f => f.p === p);
@@ -1787,8 +1787,8 @@ const Build = (() => {
     if (!root) return;
     const p = station.propById(propId); if (!p) return;
     cardCloseAll();
-    const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger') ? 'junction' : 'bay';
-    const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN', splitter: 'SPLITTER — LANES BALANCE' };
+    const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger' || p.t === 'joiner' || p.t === 'loop') ? 'junction' : 'bay';
+    const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN', splitter: 'SPLITTER — LANES BALANCE', joiner: 'JOINER — BRANCHES WAIT', loop: 'LOOP — GO ROUND AGAIN' };
     const LINE = {
       intake: 'This is where OUTSIDE work — a channel DM, a scheduled routine — physically arrives on the floor. Its TRIGGERS below decide why this line runs; wire one right here.',
       outbox: 'Every job the crew actually FINISHES ships a green crate here; the pallet is today’s output. Click it (when quiet) for the LOGBOOK.',
@@ -1797,7 +1797,12 @@ const Build = (() => {
       merger: 'Where several belt lanes join into one. Every crate rides straight through — a merger tidies the LANES, it does not combine the jobs on them (each still runs on its own). Nothing to configure.',
       // the splitter's counterpart card: it balances UNOWNED work across its out-lanes; addressed
       // jobs still ride home (junctionLaneOwners). Nothing to configure — topology does the work.
-      splitter: 'Where one lane fans into several. Unowned work balances across the out-lanes; addressed jobs (crons, bound chats) still take the lane that leads to their owner’s bay. Nothing to configure.'
+      splitter: 'Where one lane fans into several. Unowned work balances across the out-lanes; addressed jobs (crons, bound chats) still take the lane that leads to their owner’s bay. Nothing to configure.',
+      // the joiner is the barrier the merger never was: one crate per in-lane is HELD per job until every branch
+      // has delivered (or the timeout passes), then ONE merged crate leaves — the sidecar chain runner performs it.
+      joiner: 'Where parallel branches of ONE job come back together. Each branch’s result is held here until every in-lane has delivered (10 minutes at most — then it goes on, marked partial), and a single merged crate continues. A SPLITTER upstream of a JOINER runs all its lanes, not one.',
+      // a bounded cycle: the gate is the only legal way round; the runner counts passes per job
+      loop: 'The gate that lets a line go round again. One lane leads BACK to an upstream dock, the other is DONE. Work re-enters up to 5 times (the line’s dollar cap still binds), then leaves on DONE. A cycle drawn without a LOOP is refused.'
     };
     const line = LINE[p.t] || LINE.outbox;
     /* LINE NAMING (workflow studio, 2026-08-05): the INTAKE is a line's front door, so its card names the
@@ -3093,13 +3098,13 @@ const Build = (() => {
     if (t === 'filter') return openJunctionEditor(p.id, ev);
     if (t === 'airlock') return openDoorPicker(p.id, ev);
     if (t === 'connector_portal') return openConnectorEditor(p.id, ev);
-    if (t === 'intake' || t === 'outbox' || t === 'merger' || t === 'splitter') return openFlowCard(p.id);
+    if (t === 'intake' || t === 'outbox' || t === 'merger' || t === 'splitter' || t === 'joiner' || t === 'loop') return openFlowCard(p.id);
     // no config surface: answer the click honestly instead of doing nothing
     const sp = propSpec(t);
     flashTip(ev, ((sp.label || t) + '').toUpperCase() + ' — MOVE (4) relocates · DELETE (5) removes', true);
   }
   const openPropEditor = (id, t, ev) => { const p = station && station.propById(id); if (p) onInspect(p, ev); };
-  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, splitter: 1, airlock: 1, connector_portal: 1, intake: 1, outbox: 1 };   // merger/splitter = flow card only (no config)
+  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, splitter: 1, joiner: 1, loop: 1, airlock: 1, connector_portal: 1, intake: 1, outbox: 1 };   // merger/splitter = flow card only (no config)
   const isEditableProp = t => !!PROP_EDITABLE[t] || !!WORKSTATION_TYPES[t];   // a workstation binds an agent + opens its picker on place/click
   function commitPropStamp(d, ev) {
     // CLICK-ON-MACHINE WINS: a click (no drag) on ANY existing prop inspects it instead of attempting
@@ -3116,7 +3121,7 @@ const Build = (() => {
     // JUNCTION SNAP (connect-mode UX): a filter/splitter/merger only works ON a line — if it's dropped
     // NEXT to one, snap it onto the nearest belt tile instead of leaving an inert junction (the exact
     // silent failure of the 2026-07-05 playtest). Dropped ON a belt already? Unchanged.
-    if ((propType === 'filter' || propType === 'splitter' || propType === 'merger') && !station.beltAt(px, py)) {
+    if ((propType === 'filter' || propType === 'splitter' || propType === 'merger' || propType === 'joiner' || propType === 'loop') && !station.beltAt(px, py)) {
       let snapped = null;
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
         if (station.beltAt(px + dx, py + dy)) { snapped = { x: px + dx, y: py + dy }; break; }
@@ -3176,7 +3181,7 @@ const Build = (() => {
     // tiles off, went silently inert. If the snapped tile is blocked, fall back to the plain move.
     const mp = station.propById(d.propId);
     let okMsg = 'relocated';
-    if (mp && (mp.t === 'filter' || mp.t === 'splitter' || mp.t === 'merger') && !station.beltAt(mp.x + dx, mp.y + dy)) {
+    if (mp && (mp.t === 'filter' || mp.t === 'splitter' || mp.t === 'merger' || mp.t === 'joiner' || mp.t === 'loop') && !station.beltAt(mp.x + dx, mp.y + dy)) {
       for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
         if (station.beltAt(mp.x + dx + ox, mp.y + dy + oy) && station.canPlaceProp(mp.t, mp.x + dx + ox, mp.y + dy + oy, mp.w, mp.h, mp.id).ok) {
           dx += ox; dy += oy; okMsg = 'snapped onto the line'; break;
