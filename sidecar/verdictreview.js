@@ -14,6 +14,8 @@
    (node-testable); index.js owns the provider objects and the loop. */
 'use strict';
 
+const { note: failNote } = require('./failopen.js');   // a swallowed error stays visible (repo fail-open ratchet)
+
 const VERDICTS_THAT_TEACH = new Set(['ok', 'miss']);
 
 function makeVerdictReview(opts) {
@@ -74,8 +76,9 @@ function makeVerdictReview(opts) {
   function fireHeld(id, why) {
     const h = held.get(id); if (!h) return false;
     held.delete(id);
-    try { clearT(h.timer); } catch (_) {}
-    try { h.fire(Object.assign({}, h.packet, { runId: id, verdict: h.verdict, correction: h.correction, correctionSource: h.correctionSource || '', firedBy: why })); } catch (_) {}
+    try { clearT(h.timer); } catch (e) { failNote('verdictreview.clearTimer', e); }
+    // the fire fn is the caller's review launcher; an exception here is a lost review — noted, never silent
+    try { h.fire(Object.assign({}, h.packet, { runId: id, verdict: h.verdict, correction: h.correction, correctionSource: h.correctionSource || '', firedBy: why })); } catch (e) { failNote('verdictreview.fire', e); }
     return true;
   }
   // arm: take the packet for this verdict and hold it for the grace window. Returns false when nothing to review.
