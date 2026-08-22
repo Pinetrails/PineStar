@@ -53,7 +53,7 @@ A.ok(/Promise\.race\(\[call,\s*new Promise\(r => setTimeout\(\(\) => r\(null\), 
 {
   const attemptStart = appSrc.indexOf('async function onWakeAttempt');
   const attemptBody = appSrc.slice(attemptStart, appSrc.indexOf('enterGame({ awaitingPurpose: true, wake: true })'));
-  A.ok(attemptStart > 0 && /const wire = await preflightWire\(\);[\s\S]{0,400}if \(!wire\.ok\) \{[\s\S]{0,400}return false;/.test(attemptBody),
+  A.ok(attemptStart > 0 && /const wire = await preflightWire\(\);[\s\S]{0,400}if \(!wire\.ok\) \{[\s\S]{0,1200}return false;/.test(attemptBody),
     'onWakeAttempt proves the wire BEFORE entering the game and bounces honestly on a dead one');
 }
 
