@@ -4391,7 +4391,37 @@ const App = (() => {
     };
     const btn = el('btn-unreachable-retry');
     if (btn) btn.onclick = () => { SFX.click && SFX.click(); attempt(); };
-    timer = setInterval(attempt, 5000);
+    // RESTART STATION SERVICE — the desktop shell kills and respawns the sidecar on the same port. This is
+    // the exit the retry loop can never reach on its own: a sidecar that is alive-but-wedged, or one that
+    // exits before listening on every spawn, answers no poll ever (a macOS user sat at attempt 15+ with no
+    // way out, 2026-08-22). Browser mode (no shell) has nothing to restart; the button stays hidden there.
+    const core = tauriCore();
+    const restartBtn = el('btn-unreachable-restart');
+    let restarting = false;
+    const restart = async (auto) => {
+      if (restarting || !core || !core.invoke) return;
+      restarting = true;
+      if (restartBtn) restartBtn.disabled = true;
+      setStatus((auto ? 'still unreachable — ' : '') + 'restarting the station service…');
+      let up = false;
+      try { up = await core.invoke('starnet_restart_sidecar'); } catch (_) { up = false; }
+      if (up) { setStatus('station service restarted — reconnecting…'); attempt(); }
+      else setStatus('the station service could not be restarted — quit StarNet fully (Cmd+Q / tray → Quit) and open it again. Your save is untouched.');
+      restarting = false;
+      if (restartBtn) restartBtn.disabled = false;
+    };
+    if (restartBtn) {
+      if (core && core.invoke) { restartBtn.hidden = false; restartBtn.onclick = () => { SFX.click && SFX.click(); restart(false); }; }
+      else restartBtn.hidden = true;
+    }
+    // one automatic restart after the polls have clearly failed (≈30s), so the common case heals itself
+    // without the user needing to know the button exists. Exactly once — a restart that didn't help must
+    // not loop; the copy then tells them what to do.
+    let autoRestarted = false;
+    timer = setInterval(() => {
+      attempt();
+      if (!autoRestarted && attempts >= 6 && core && core.invoke) { autoRestarted = true; restart(true); }
+    }, 5000);
     show('screen-unreachable');
   }
 
