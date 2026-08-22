@@ -7525,17 +7525,38 @@ const Chat = (() => {
     if (!seed.lineId) return out;
     const visited = {}; visited[seed.fromAgentId] = true;
     let cur = seed.fromAgentId;
-    for (let hop = 1; hop <= LINE_MAX_HOPS; hop++) {
+    // LINE BUDGET (2026-08-21): the sidecar answers each /api/routing/chain ask with the EFFECTIVE ceilings
+    // for this line (its INBOX's limits, clamped to the global pool) — the browser bounds itself by the same
+    // numbers the sidecar executor would. An older sidecar answers none: the mirrored constants hold.
+    let maxHops = LINE_MAX_HOPS, maxUsd = LINE_MAX_USD, maxUsdPerDay = null, spentToday = 0;
+    for (let hop = 1; hop <= maxHops + 1; hop++) {   // +1 so a stage PAST the ceiling is named, as the sidecar names it
       if (seed.signal && seed.signal.aborted) return out;
       if (interrupted.has(ws.id)) return out;                       // the Commander pressed Stop — the line stops
       const nxr = await nextStageOf(cur, lineTag(out.text), seed.lineId);
       const nx = nxr && nxr.next;
       if (!nx || visited[nx]) return out;                           // terminal stage, or a loop the plan let through
+      const lim = nxr && nxr.limits;
+      if (lim && typeof lim === 'object') {
+        if (typeof lim.maxHops === 'number' && lim.maxHops >= 0) maxHops = lim.maxHops;
+        if (typeof lim.maxUsd === 'number' && lim.maxUsd > 0) maxUsd = lim.maxUsd;
+        maxUsdPerDay = (typeof lim.maxUsdPerDay === 'number' && lim.maxUsdPerDay > 0) ? lim.maxUsdPerDay : null;
+        spentToday = (typeof lim.spentToday === 'number' && lim.spentToday > 0) ? lim.spentToday : 0;
+      }
+      if (hop > maxHops) {
+        if (isActiveWs(ws)) toolLine('⚠ the work line stopped early — the line is longer than ' + maxHops + ' stages.', true);
+        return out;
+      }
       // THE LINE'S SPEND CEILING — the same pre-hop check as the sidecar executor (chain.js: out.usd >= maxUsd
       // before the next stage buys a run). out.usd is REAL reconciled spend: each hop's agent.run.end carries
       // the run's reconciled total (loop.js), never an estimate — so this cap measures what was actually billed.
-      if (out.usd >= LINE_MAX_USD) {
-        if (isActiveWs(ws)) toolLine('⚠ the work line stopped early — the line reached its $' + LINE_MAX_USD.toFixed(2) + ' limit.', true);
+      if (out.usd >= maxUsd) {
+        if (isActiveWs(ws)) toolLine('⚠ the work line stopped early — the line reached its $' + maxUsd.toFixed(2) + ' limit.', true);
+        return out;
+      }
+      // THE DAILY CAP — the sidecar's durable per-line day ledger (line-spend.json) plus what this line spent
+      // so far; the sidecar is the only one that can prove the day, so this only ever repeats its number.
+      if (maxUsdPerDay != null && spentToday + out.usd >= maxUsdPerDay) {
+        if (isActiveWs(ws)) toolLine('⚠ the work line stopped early — the line reached its $' + maxUsdPerDay.toFixed(2) + ' daily limit.', true);
         return out;
       }
       const sys = (typeof App !== 'undefined' && App.systemFor) ? App.systemFor(nx) : null;
