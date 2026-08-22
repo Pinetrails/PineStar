@@ -540,4 +540,17 @@ A.eq(thin[0].id, 'summarize', 'the genuinely matched recipe still leads the row'
 A.ok(!thin.some(r => r.id === 'fix-bug'), 'the top-up never readmits a recipe the Commander rated down');
 const thinIds = {}; thin.forEach(r => { A.ok(!thinIds[r.id], 'the topped-up row has no duplicates'); thinIds[r.id] = true; });
 
+/* painText (momentum loop, 2026-08-21): the PAIN + AMBITION dossier dims rank the FOR YOU row with the same weight as
+   goals, and the card's why names them honestly. A pain point the Commander stated must surface the recipe that
+   removes it even when the goals dim is silent — and a silent painText must change nothing (byte-identical rank). */
+const mlPain = R.rankRecipesExplained(items, { painText: 'I keep having to fix the same bug every week', goalText: '', limit: 3 });
+A.ok(mlPain.personalized, 'a pain point alone is real signal (not cold start)');
+A.ok(mlPain.items.some(r => r.id === 'fix-bug'), 'the pain point "fix the same bug" surfaces the fix-bug recipe with no goal text at all');
+A.eq(R.rankRecipes(items, { painText: '', goalText: 'ship code and fix bugs', limit: 3 }).map(r => r.id).join(','), gRank.map(r => r.id).join(','), 'an empty painText leaves the goal ranking byte-identical');
+A.eq(R.rankRecipes(items, { painText: 'fix bugs', goalText: '', limit: 3 }).map(r => r.id).join(','), R.rankRecipes(items, { goalText: 'fix bugs', painText: '', limit: 3 }).map(r => r.id).join(','), 'pain and goal words carry the same weight');
+const mlWhy = R.forYouReason(R.get('fix-bug'), { painText: 'I keep having to fix the same bug', goalText: '' });
+A.ok(/off your plate/.test(mlWhy) && /“(fix|bug)”/.test(mlWhy), 'the why names the pain-point match honestly, never as a goal: ' + mlWhy);
+A.ok(/your goal/.test(R.forYouReason(R.get('fix-bug'), { painText: 'fix bug', goalText: 'fix bug' })), 'a goal match outranks the pain phrasing when both hit');
+A.eq(R.forYouReason(R.get('fix-bug'), { painText: 'the the and', goalText: '' }), '', 'stoplist words never earn a pain reason');
+
 A.report('recipes');

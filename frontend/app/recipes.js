@@ -750,6 +750,10 @@
     if (m && TopicMatch && TopicMatch.reason) { const r = TopicMatch.reason(m); if (r) return r; }
     const gh = namableGoalHits(goalKeywordHits(recipe, opts.goalText || ''));
     if (gh.length) return 'it matches your goal: “' + gh[0] + '”';
+    // the PAIN/AMBITION term (momentum loop, 2026-08-21): the same word-wise matcher over what the Commander said
+    // eats their time / what they keep meaning to do — the two highest-signal "automate this for me" dossier dims.
+    const ph = namableGoalHits(goalKeywordHits(recipe, opts.painText || ''));
+    if (ph.length) return 'it matches something you want off your plate: “' + ph[0] + '”';
     const u = (opts.launches && typeof opts.launches === 'object') ? opts.launches[recipe.id] : null;
     const rated = (u && typeof u === 'object' && u.rated && typeof u.rated === 'object') ? u.rated : null;
     const great = rated && Number.isFinite(rated.great) && rated.great > 0 ? Math.floor(rated.great) : 0;
@@ -762,6 +766,10 @@
   // RANK the "FOR YOU" row deterministically. `opts`:
   //   score(itemTags) -> number  — the profile affinity scorer (ProfileStore.score), or null when learning is off/thin.
   //   goalText        -> string  — the user's goals belief text (keyword-matched into the ranking as a small nudge).
+  //   painText        -> string  — the user's PAIN + AMBITION belief text (dossier dims `pain`, `ambition`: what eats
+  //                      their time / what they never find time for). Same word-wise matcher and weight as goals —
+  //                      these are the dims that literally name the work the Commander wants taken off their
+  //                      shoulders, and the shelf used to ignore them entirely (momentum loop, 2026-08-21).
   //   launches        -> {id: {n, rated?}} or {id: n} — REAL per-recipe launch counts (the scout usage read), each
   //                      optionally carrying rate-the-work outcome counters {great, ok, miss}. Launching ranks a
   //                      recipe up (capped nudge); the Commander's own verdicts rank what actually HELPED.
@@ -806,6 +814,7 @@
     const limit = opts.limit != null ? opts.limit : 4;
     const scoreFn = typeof opts.score === 'function' ? opts.score : null;
     const goalText = opts.goalText || '';
+    const painText = opts.painText || '';
     const launches = (opts.launches && typeof opts.launches === 'object') ? opts.launches : null;
     const launchCount = (id) => {
       if (!launches || !id) return 0;
@@ -840,7 +849,7 @@
     let anySignal = false;
     const scored = pool.map((r, idx) => {
       const aff = scoreFn ? (Number(scoreFn(r.tags || {})) || 0) : 0;
-      const goal = goalKeywordScore(r, goalText);
+      const goal = goalKeywordScore(r, goalText) + goalKeywordScore(r, painText);   // goals + pain/ambition, same weight
       const use = launchCount(r.id);
       // a WARM learned topic is real evidence in its own right (it is only ever folded from observed activity),
       // so it counts as signal — a station that has learned a habit but launched nothing is NOT cold-start.
