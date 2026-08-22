@@ -30,6 +30,10 @@
     opts = opts || {};
     if (opts.enabled === false) return false;
     if (!result || result.reason !== 'done') return false;
+    // VERDICT-TRIGGERED (consistency loop, 2026-08-22): the Commander rating the work `ok` or `miss` is a lesson
+    // regardless of run size — a two-turn run they called short of the mark teaches MORE than a forty-tool run
+    // nobody rated. `great` never triggers here; praise is not a procedure change.
+    if (opts.verdict === 'ok' || opts.verdict === 'miss') return true;
     const s = stats(result.messages);
     const minToolCalls = opts.minToolCalls == null ? 4 : opts.minToolCalls;
     const minTurns = opts.minTurns == null ? 8 : opts.minTurns;
@@ -60,6 +64,21 @@
     const loadedLines = loaded.length ? loaded.map(s => '- ' + s.name + (s.summary ? ' -- ' + s.summary : '')).join('\n') : '(none)';
     const managedLines = managed.length ? managed.map(s => '- ' + s.name + ' (' + s.action + ')').join('\n') : '(none)';
     const memoryLines = memories.length ? memories.map(m => '- ' + (m.kind || 'note') + ': ' + str(m.content || m.body || '').replace(/\s+/g, ' ').slice(0, 220)).join('\n') : '(none)';
+    // the COMMANDER VERDICT block (consistency loop): when this review was triggered by a rating, the reviewer is
+    // told so, told what was rated, and pointed at the one job that matters — make the governing skill prevent a
+    // repeat. `correction` is the Commander's own words when captured (slice 2); absent = verdict only.
+    const verdict = str(input.verdict);
+    const correction = str(input.correction).replace(/\s+/g, ' ').trim().slice(0, 600);
+    const verdictBlock = (verdict === 'ok' || verdict === 'miss') ? [
+      '',
+      'COMMANDER VERDICT ON THIS RUN: ' + (verdict === 'miss' ? 'MISSED the mark' : 'CLOSE, but short of the mark') + '.',
+      (correction ? 'Commander correction, in their words: "' + correction + '"' : 'No written correction was given; infer the gap from the transcript and the verdict.'),
+      'Your one job in this pass: make sure the NEXT run of this class of task does not repeat the shortfall.',
+      '- Find the skill that governs this class of task (loaded first, then existing umbrellas). Patch it with the concrete rule that would have produced the right output.',
+      '- If NO skill governs this class of task, create one class-level umbrella whose body states how this Commander wants this class done.',
+      '- Write the rule as a procedure ("for weekly briefs: bullets, <=150 words, lead with decisions"), never as a complaint about this run.',
+      ''
+    ] : [];
     return [
       'You are StarNet background skill review. Improve the agent skillbase after a completed run.',
       '',
@@ -88,6 +107,7 @@
       '',
       'Recent durable memory context; do not duplicate this into skills unless it changes procedure:',
       memoryLines,
+      ...verdictBlock,
       '',
       'Completed run transcript:',
       transcript(input.messages, input.cap || 12000)

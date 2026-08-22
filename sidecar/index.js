@@ -261,6 +261,8 @@ const { makeSkillDocumentFetcher, makeSkillPackageFetcher } = require('./skills/
 const { makeSkillRegistry } = require('./skills/registry.js');
 const { makeSkillMetrics } = require('./skills/metrics.js');
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
+const { makeVerdictReview } = require('./verdictreview.js');   // consistency loop: a rated ok/miss run earns a skill review
+const verdictReview = makeVerdictReview({ cap: num(process.env.SKYNET_VERDICT_REVIEW_CAP, 40), ttlMs: num(process.env.SKYNET_VERDICT_REVIEW_TTL_MS, 6 * 60 * 60 * 1000) });
 const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
 const { makeUserCommands } = require('./usercommands.js');  // Commander-defined slash commands (alias/exec)
@@ -2616,7 +2618,7 @@ const SKILL_CURATOR_INTERVAL_MS = num(process.env.SKYNET_SKILL_CURATOR_INTERVAL_
 const SKILL_CURATOR_MAX_COST_USD = num(process.env.SKYNET_SKILL_CURATOR_MAX_USD, 0.12);
 const skillCuratorLastRun = new Map();
 async function runBackgroundSkillReview(o) {
-  const { agentId, runId, messages, provider, model, cost, loadedSkills, managedSkills } = o || {};
+  const { agentId, runId, messages, provider, model, cost, loadedSkills, managedSkills, verdict, correction } = o || {};
   const unmetered = !!(o && o.unmetered);   // Codex/unmetered parity: mirror reflection/study so a Codex-only user's budget isn't drained by phantom aux spend
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, SKILL_REVIEW_TIMEOUT_MS);
@@ -2662,7 +2664,7 @@ async function runBackgroundSkillReview(o) {
     };
     const reviewNotebook = notebookStore.get('notebook:' + agentId);
     const prompt = skillReview.buildPrompt({
-      agentId, runId, messages,
+      agentId, runId, messages, verdict, correction,
       loadedSkills: loadedSkills || [],
       managedSkills: managedSkills || [],
       // top-12 by rank() against the run's directive (was: last 12 in raw store order) — the reviewer sees the
@@ -15985,6 +15987,12 @@ async function runOnce(o) {
   }
   if (_auxSpend.has('skill-review')) {
     runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model: _auxSkillModel, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(swallow('aux.skillreview.envelope'));
+  } else if (process.env.SKYNET_SKILL_REVIEW !== '0' && _auxDone && isTask && !internal) {
+    // CONSISTENCY LOOP (2026-08-22): this real task run did NOT earn a size-review. Park its review packet so that
+    // if the Commander rates it `ok`/`miss` (POST /api/growth/ratings) the SAME quiet review runs with the verdict
+    // in the prompt — a small run they called short of the mark is the best lesson the skillbase ever gets.
+    // Bounded LRU + TTL in verdictreview.js; a `great` verdict never spends it; taken once.
+    verdictReview.stash(runId, { agentId, messages: result.messages.slice(), provider, model: _auxSkillModel, cost, loadedSkills, managedSkills, unmetered: providerUnmetered });
   }
   if (_auxSpend.has('skill-curator')) {
     runSkillCurator({ agentId, runId, provider, model: _auxSkillModel, cost, unmetered: providerUnmetered }).catch(swallow('aux.skillcurator.envelope'));
@@ -18204,7 +18212,19 @@ async function handleGrowthRatings(req, res) {
   const result = growthRatings.record(canonical);
   if (result && result.unavailable) return json(503, { ok: false, error: result.error, growthUnavailable: true });
   if (!result || result.error) return json(400, { ok: false, error: (result && result.error) || 'rating failed' });
-  return json(200, { ok: true, duplicate: !!result.duplicate, rating: result.rating });
+  // CONSISTENCY LOOP: a first-time `ok`/`miss` verdict on a run that was parked at run end fires the quiet skill
+  // review NOW, with the verdict (and the Commander's correction when the body carries one) in the prompt. Never
+  // on a duplicate rating, never on `great`. Reported truthfully in the response so the UI can say it happened.
+  let skillReviewArmed = false;
+  if (!result.duplicate && process.env.SKYNET_SKILL_REVIEW !== '0') {
+    const packet = verdictReview.take(runId, canonical.verdict);
+    if (packet) {
+      skillReviewArmed = true;
+      console.log('[skills] verdict-triggered review armed run=' + runId + ' verdict=' + canonical.verdict);
+      runBackgroundSkillReview(Object.assign({ runId, verdict: canonical.verdict, correction: String(body.correction || '').slice(0, 600) }, packet)).catch(swallow('aux.skillreview.verdict'));
+    }
+  }
+  return json(200, { ok: true, duplicate: !!result.duplicate, rating: result.rating, skillReviewArmed });
 }
 // GET /api/runs?agent=<id>&limit=<n>&since=<ms>[&runId=<id>] — the agent's run history (M-save P4), newest-first.
 // Rows carry the run's `artifacts` ledger (work-visibility); an explicit runId narrows to that single run's

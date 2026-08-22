@@ -339,6 +339,7 @@ test/dialogue.test.js
 test/wakemind.test.js
 test/curiosity.test.js
 test/verdictfollowup.test.js
+test/verdictreview.test.js
 test/dossierinject.test.js
 test/recipes.test.js
 test/recipefit.test.js
