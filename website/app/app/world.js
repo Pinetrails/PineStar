@@ -7374,7 +7374,14 @@ const World = (() => {
     let pendingHash = null;   // the hash currently being delivered (in flight or awaiting a retry tick)
     let inflight = false, timer = null, seq = 0;
     let stale = false;        // honest flag: the sidecar may still route by an older floor than the one drawn
+    let waiters = [];         // flush() callers awaiting the NEXT server answer (run-now ordering, 2026-08-22)
     function state() { return { lastHash: lastHash, refusedHash: refusedHash, pendingHash: pendingHash, inflight: inflight, retryPending: timer != null, stale: stale }; }
+    function settle() { const w = waiters; waiters = []; const s = state(); for (const f of w) { try { f(s); } catch (_) {} } }
+    /* flush(): a promise of the poster's state once the in-flight delivery has a verdict — resolved at once
+       when nothing is pending. A run trigger (sample / RUN NOW) awaits THIS before dispatching so the sidecar
+       routes the line the user just drew, not the last one it heard about. A failed attempt resolves too
+       (stale=true, retries continue in the background): the caller refuses rather than running a stale floor. */
+    function flush() { return new Promise(resolve => { if (!inflight && timer == null) resolve(state()); else waiters.push(resolve); }); }
     function offer(plan, hash) {
       if (hash === lastHash) return false;                                   // server already answered this exact floor
       if (hash === pendingHash && (inflight || timer != null)) return false; // same floor already being delivered
@@ -7391,6 +7398,7 @@ const World = (() => {
         deps.warn('[routing] plan post failed (' + why + ') — sidecar routing may be stale' +
           (attempt < MAX_RETRIES ? '; retrying in ' + RETRY_MS + 'ms' : '; will retry on the next floor change'));
         if (attempt < MAX_RETRIES) timer = deps.delay(() => { timer = null; send(plan, hash, attempt + 1, mySeq); }, RETRY_MS);
+        settle();
       };
       let p = null;
       inflight = true;
@@ -7398,12 +7406,12 @@ const World = (() => {
       Promise.resolve(p).then(res => {
         if (mySeq !== seq) return;   // superseded — never let a stale response commit or clear flags
         inflight = false;
-        if (res && res.ok) { lastHash = hash; refusedHash = null; pendingHash = null; stale = false; return; }
-        if (res && res.status === 422) { lastHash = hash; refusedHash = hash; pendingHash = null; stale = false; return; }
+        if (res && res.ok) { lastHash = hash; refusedHash = null; pendingHash = null; stale = false; settle(); return; }
+        if (res && res.status === 422) { lastHash = hash; refusedHash = hash; pendingHash = null; stale = false; settle(); return; }
         fail('http ' + (res ? res.status : '?'));
       }, () => fail('network'));
     }
-    return { offer: offer, state: state };
+    return { offer: offer, state: state, flush: flush };
   }
   /* PLAN-POSTER-END */
   // one poster for the module; on transient failure it warns and keeps `stale` true. No new UI surface:
@@ -8849,6 +8857,16 @@ const World = (() => {
     // FEED RE-CHECK on demand (2026-08-22): the INBOX card's CREATE ROUTINE path awaits this so the card, the
     // NO FEED nag and the finish checklist flip on the server's answer NOW, not on the next 60s poll / reload.
     pollFeed: () => pollFeedState(),
+    /* PLAN SYNC on demand (run-now ordering, 2026-08-22): REFIT freezes the sim (world.stop), so a floor edit
+       sets geoDirty but the recompile + POST only ran at the NEXT frame — i.e. on REFIT close. A sample / RUN
+       NOW fired mid-session therefore ran the LAST POSTED line. Every run trigger awaits THIS first: recompile
+       now if the floor is dirty, then resolve with the poster's verdict + the compiled plan's BLOCKING errors
+       (the same codes the floor nags with), so the caller can refuse instead of running a stale or broken line. */
+    syncPlan: () => {
+      if (station && (geoDirty || !geo)) rederive();
+      const errors = (routingPlan && routingPlan.errors ? routingPlan.errors : []).filter(e => !e.warn);
+      return planPoster.flush().then(s => Object.assign({ errors: errors, hash: routingPlan ? routingPlan.hash : null }, s));
+    },
     loadStation, spawn, spawnAgent, despawnAgent, setSkin, relabel, setActivityFor, agentRunsLive, dropRun: noteRunEnd, focusBody, lockBody, cameraMode, setCinecamIdle, setChatFocus, chatFocusPing, start, stop, setActivity, wakeIn, beginAwakening, setWakeProgress, igniteSpark, armKindle, kindleHold, camPushIn, camCreep, camPunch, camPullBack, awakenTurn, truthPulse, beginFlood, collapseFlood, endAwakening, releaseAwakening, say, focusAgent, getActivity: () => activity, getUse: () => (agent ? agent.usingProp : null), setOnClick, setOnArcade, setOnOutbox, setOnMissionBoard, setOnTrophyCase, setOnBayAssign, setOnIntakeFeed, setOnIntakeSample, refit, pauseBridge, resumeBridge, linkState, _dbgSeedRun, _dbgAgeRun, _dbgReconcile, _dbgSweep, _dbgLinkState, _dbgDropBridge, _dbgCurveState, _dbgLoseCurveContext, _dbgLoseCanvases, _dbgCanvasLoss, _dbgBeltLegibility, _dbgPropClientPoint, _dbgSleep, _dbgUseProp, _dbgArrive, _dbgLeisure,
     // AGENT GROWTH: XpStore pushes pre-computed Xp.compute() snapshots here; pulseLevelUp fires
     // the addressed body's gold ring. The colony headline is the top-bar STATION chip.
