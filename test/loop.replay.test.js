@@ -494,7 +494,7 @@ function chatFixture() {
     {
       const { seq, emit } = setup();
       const reg = makeRegistry();
-      reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async () => 'w'.repeat(2000) });
+      reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async () => 'w' });   // tiny results: the free micro tier cannot shrink them, so the paid fold is attempted
       let calls = 0;
       const toolT = (id) => [{ type: 'tool_start', index: 0, id, name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: '{"path":"a.md","content":"x"}' }, { type: 'usage', usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 } }, { type: 'done', finishReason: 'tool_calls' }];
       const provider = { async *stream() { calls++; if (calls <= 2) { for (const ev of toolT('c' + calls)) yield ev; return; } if (calls === 3) throw new Error('prompt is too long'); for (const ev of okTurn) yield ev; },
@@ -503,7 +503,7 @@ function chatFixture() {
       let attempts = 0;
       const summarize = async () => { attempts++; throw new Error('summarizer down'); };
       const res = await runAgentLoop({
-        messages: [{ role: 'user', content: 'directive' }, { role: 'user', content: 'old-a' }, { role: 'assistant', content: 'old-b' }],
+        messages: [{ role: 'user', content: 'directive' }, { role: 'user', content: 'old-a ' + 'x'.repeat(3000) }, { role: 'assistant', content: 'old-b ' + 'y'.repeat(3000) }],   // real-sized history: the fallback digest must actually shrink it
         provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'm1', agentId: 'a', runId: 'r',
         tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(),
         context: ctxMgr, summarize, approxTokens: 100, contextLimit: 10

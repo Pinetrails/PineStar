@@ -124,9 +124,26 @@ function reg() { const r = makeRegistry(); r.register({ name: 'noop', schema: { 
     A.eq(llm, 0, 'the paid summarizer was NOT called when micro cleared the threshold');
     const elided = messages.filter(m => m.role === 'tool' && /^\[tool result elided at compaction/.test(String(m.content)));
     A.ok(elided.length >= 1, 'older tool results carry the elision marker');
-    A.ok(/noop, 20000 bytes; re-run the tool if needed\]/.test(elided[0].content), 'marker names the tool and the byte size');
+    A.ok(elided[0].content.indexOf('noop, 20000 bytes; first 240 chars kept below; re-run the tool for the full output]') > 0, 'marker names the tool, the byte size, and what was kept');
+    A.ok(/\]\nC{240}…$/.test(elided[0].content), 'the head of the result survives the elision (the fact usually lives there)');
     A.eq(messages[0], { role: 'user', content: 'read things' }, 'directive untouched by the micro tier');
     for (let k = 0; k < messages.length; k++) if (messages[k].role === 'tool') { let j = k - 1; while (j >= 0 && messages[j].role === 'tool') j--; A.eq(messages[j].role, 'assistant', 'tool result ' + k + ' still paired'); }
+  }
+
+  // ---- 4b. microCompaction:false (STARNET_COMPACT_MICRO=0) -> the free tier is skipped, the paid fold runs ----
+  {
+    const { seq, emit } = setup();
+    const R = makeRegistry(); R.register({ name: 'noop', schema: { type: 'object' }, run: async () => 'C'.repeat(20000) });
+    const provider = makeReplayProvider({ turns: [toolTurn('c1', 6000), toolTurn('c2', 11000), toolTurn('c3', 14000), stopTurn] });
+    const ctx = makeContext({ contextLimit: 20000, compactAt: 0.65, keepTailTurns: 1 });
+    let llm = 0;
+    const summarize = async () => { llm++; return { summary: 'S', usd: 0, tokens: 0, chunks: 3 }; };
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'read things' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: R.wireFormat(), dispatch: (c, ctx2) => R.dispatch(c, ctx2), capCtx: openCtx(), context: ctx, summarize, microCompaction: false });
+    A.eq(res.reason, 'done', 'run completes');
+    const ev = seq.filter(e => e.name === 'agent.compact');
+    A.ok(llm >= 1 && ev.length >= 1 && ev[0].payload.reason === 'context', 'with the micro tier off the first compaction is the paid fold');
+    A.eq(ev[0].payload.chunks, 3, 'agent.compact carries the summarizer\'s chunk count (additive field)');
   }
 
   // ---- 5. BREAKER TRIPPED -> FALLBACK NOTE, NOT A DEAD RUN: two summarizer throws flip compactionOff; the next

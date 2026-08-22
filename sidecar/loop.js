@@ -504,6 +504,7 @@
     // OPTIONAL context manager (sidecar/context.js) + summarizer for auto-compaction; both absent = never compact.
     const context = o.context;
     const summarize = o.summarize;
+    const microCompaction = o.microCompaction !== false;   // the free elision tier (STARNET_COMPACT_MICRO=0 turns it off at the host)
     // OPTIONAL provider FALLBACK chain — the consumer for errorClass's shouldFallback/shouldRotateCredential hints
     // (previously computed then discarded). On a classified failover (overloaded/5xx/auth/billing/rate-limit/
     // model-not-found) the loop advances to the next entry and RETRIES the same turn instead of dying — the
@@ -742,6 +743,11 @@
        local estimator; if that alone clears the threshold commit it and skip the LLM fold. Pairing stays intact
        (the tool message remains, only its content changes). When it does NOT clear, the original bodies are
        kept so the paid summarizer still sees the full content (Lane A: the fold keeps the run's memory). */
+    /* KEEP THE HEAD. A bare "[elided]" marker was live-proved (08-21, real model, 30-file read) to make the
+       model CONFABULATE what the results had said — 20 of 30 values invented. The first lines of a tool result
+       are where its fact usually sits (path, status line, the matched text), so the elision keeps ELIDE_HEAD
+       chars of it and the marker says exactly what was dropped. ~60 tokens per result; still a 10-50x shrink. */
+    const ELIDE_HEAD = 240;
     const ELIDED = '[tool result elided at compaction — ';
     const isElided = (m) => m && m.role === 'tool' && typeof m.content === 'string' && m.content.indexOf(ELIDED) === 0;
     function elideTools(older) {
@@ -753,7 +759,8 @@
         const body = typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '');
         const name = names.get(m.tool_call_id) || 'tool';
         elided++;
-        return Object.assign({}, m, { content: ELIDED + name + ', ' + Buffer.byteLength(body, 'utf8') + ' bytes; re-run the tool if needed]' });
+        const head = body.length > ELIDE_HEAD ? body.slice(0, ELIDE_HEAD).replace(/\s+$/, '') + '…' : body;
+        return Object.assign({}, m, { content: ELIDED + name + ', ' + Buffer.byteLength(body, 'utf8') + ' bytes; first ' + Math.min(ELIDE_HEAD, body.length) + ' chars kept below; re-run the tool for the full output]' + String.fromCharCode(10) + head });
       });
       return { older: out, elided };
     }
@@ -791,12 +798,20 @@
       const threshold = (typeof context.thresholdTokens === 'function') ? context.thresholdTokens() : 0;
       const appendTodo = (arr) => { if (todoNote) { try { const tn = todoNote(); if (tn) return arr.concat([{ role: 'system', content: String(tn) }]); } catch (e) { failNote('loop.compaction.todoNote', e); } } return arr; };
       // ---- micro tier: free; measured on a copy; committed only if it clears the threshold on its own ----
-      if (threshold > 0) {
+      if (microCompaction && threshold > 0) {
         const micro = elideTools(plan.older);
         if (micro.elided > 0) {
           const trial = appendTodo(prefix.concat(prevSummary ? [{ role: 'system', content: '<conversation_summary>\n' + prevSummary + '\n</conversation_summary>' }] : [], micro.older, plan.tail));
           const afterTokens = context.estimateMessages(trial);
-          if (afterTokens < threshold && afterTokens < beforeTokens) {
+          /* PROJECT AGAINST THE PROVIDER'S RULER. The local estimator does not see tool schemas or provider
+             overhead (live: ~12k local vs 32k real), so "afterTokens < threshold" alone declared the prompt
+             cleared while the real count still sat 2x over it — a free tier that thrashed one elision per turn
+             and starved the LLM fold. Scale the REAL count by the LOCAL shrink ratio to decide (scale-invariant
+             in both directions); the emitted numbers stay one-unit (both local). force (overflow) has no usage:
+             fall back to the local number. */
+          const realBefore = (lastUsage && (lastUsage.prompt_tokens || lastUsage.promptTokens)) || beforeTokens;
+          const projected = beforeTokens > 0 ? realBefore * (afterTokens / beforeTokens) : afterTokens;
+          if (projected < threshold && afterTokens < beforeTokens) {
             messages.length = 0; for (const mm of trial) messages.push(mm);
             lastUsage = null;
             emit('agent.compact', { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'micro', elided: micro.elided });
@@ -806,15 +821,16 @@
       }
       // ---- summarizer unavailable (breaker tripped): micro-elide + deterministic note, no LLM, never end the run ----
       if (compactionOff || !summarize) {
-        const micro = elideTools(plan.older);
+        // digest the ORIGINAL messages: a tool result's first line is usually the fact worth keeping — an elided body would
+        // reduce every read to "[elided]" and the run forgets what it saw (live-proved 08-21 against a real model)
         if (summarize && typeof summarize.drain === 'function') { try { summarize.drain(plan.older); } catch (e) { failNote('loop.compaction.fallbackDrain', e); return false; } }
-        const note = { role: 'system', content: '<conversation_summary>\n' + fallbackNote(micro.older, prevSummary) + '\n</conversation_summary>' };
+        const note = { role: 'system', content: '<conversation_summary>\n' + fallbackNote(plan.older, prevSummary) + '\n</conversation_summary>' };
         const rebuilt = appendTodo(prefix.concat([note], plan.tail));
         const afterTokens = context.estimateMessages(rebuilt);
         if (afterTokens >= beforeTokens) return false;                  // didn't shrink — don't spin the overflow retry
         messages.length = 0; for (const mm of rebuilt) messages.push(mm);
         lastUsage = null;
-        emit('agent.compact', { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'fallback', elided: micro.elided });
+        emit('agent.compact', { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'fallback' });
         return true;
       }
       /* MEASURE BOTH SIDES WITH THE SAME RULER. `before` used to be the provider's real prompt_tokens while

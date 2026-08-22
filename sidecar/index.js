@@ -14640,7 +14640,11 @@ async function runOnce(o) {
   // now with the proactive fold still armed. The error classifier deliberately still receives the RAW 0 (see the
   // runAgentLoop call) so a bare 400 is never mislabelled as overflow — that design is unchanged.
   const COLD_CATALOG_CONTEXT_TOKENS = 131072;
-  const ctxMgr = makeContext({ contextLimit: provider.contextLimit(model) || COLD_CATALOG_CONTEXT_TOKENS, compactAt: 0.65, keepTailTurns: 6 });   // TURNS, not messages (assistant + its tool results = 1)
+  // STARNET_CONTEXT_LIMIT_OVERRIDE (test/soak only): pretend the window is N tokens so a real model folds on a
+  // small run — the ONLY way to live-prove compaction against a production model without a 130k-token prompt.
+  // Never set in a packaged build; unset/invalid = the catalog's real window exactly as before.
+  const CONTEXT_LIMIT_OVERRIDE = Math.max(0, parseInt(String(ENV('CONTEXT_LIMIT_OVERRIDE') || ''), 10) || 0);
+  const ctxMgr = makeContext({ contextLimit: CONTEXT_LIMIT_OVERRIDE || provider.contextLimit(model) || COLD_CATALOG_CONTEXT_TOKENS, compactAt: 0.65, keepTailTurns: 6 });   // TURNS, not messages (assistant + its tool results = 1)
   // PER-RUN TOOL-OUTPUT CAP, scaled to the window. The flat 120KB cap (~30k tokens) sat far BELOW the compaction
   // threshold (0.65 × window — ~130k tokens on a 200k model), so the one event that resets the budget
   // (agent.compact, see loopEmit) could never fire: after ~120KB of reads the agent went blind — every later
@@ -15514,6 +15518,7 @@ async function runOnce(o) {
       // operator's narrowly authorized continuation and make the recovery non-idempotent.
       limits: { maxIters: runMaxIters, maxCostUsd: runCapUsd, failureRecovery: o.recovery ? false : undefined },
       budget: runBudget, context: ctxMgr, summarize, fallbacks, initialFallback,
+      microCompaction: !/^(0|false|off|no)$/i.test(String(ENV('COMPACT_MICRO') || '').trim()),   // free elision tier before any paid fold (off: STARNET_COMPACT_MICRO=0)
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
       // activePrimaryKey, NOT runKey: when the run's own key was still cooling we STARTED on a warm pool key,
