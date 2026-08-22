@@ -108,6 +108,12 @@
 
     // ---- capability / permission ----
     'capdenied': obj(['agentId', 'need', 'reason'], { agentId: str, need: str, reason: str }),
+    // ADDITIVE (beginner seam Lane 1, 2026-08-22): a tool call needed a connector that is not wired. Emitted by
+    // the MCP manager ALONGSIDE its throw (the model still sees the error text); the frontend turns it into the
+    // post-run "⇄ CONNECT <X>" chip. kind names the subsystem the fix lives in; runId is '' outside a run.
+    'connector_required': obj(['runId', 'connectorId', 'kind', 'reason', 'toolName'], {
+      runId: str, connectorId: str, kind: { enum: ['mcp', 'servicekey'] }, reason: str, toolName: str
+    }),
     'permission.prompt': obj(['promptId', 'agentId', 'tool', 'scope'], {
       promptId: str, agentId: str, tool: str, scope: str, argsSummary: str
     }),
