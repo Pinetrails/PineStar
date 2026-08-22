@@ -85,12 +85,48 @@ function jsonResp(obj, status) { return { status: status || 200, json: async () 
   A.eq(arCall.body.image_config, { aspect_ratio: '16:9' }, 'aspect_ratio:"16:9" is sent as image_config.aspect_ratio');
   A.eq(genFetch.calls[0].body.image_config, undefined, 'no aspect_ratio -> no image_config field (provider default 1:1)');
   A.ok(/16:9/.test(T1.generateTool.description) && /widescreen/i.test(T1.generateTool.description), 'the tool teaches the aspect_ratio dial for widescreen asks');
-  A.ok(Array.isArray(T1.generateTool.schema.properties.aspect_ratio.enum) && T1.generateTool.schema.properties.aspect_ratio.enum.indexOf('9:16') >= 0, 'schema enumerates the allowed ratios');
+  A.eq(T1.generateTool.schema.properties.aspect_ratio.enum, undefined, 'aspect_ratio is NOT an enum — any shape is accepted');
+  A.ok(T1.generateTool.schema.properties.width && T1.generateTool.schema.properties.height, 'schema exposes exact width/height');
+  // ---- B1c. any ratio/size snaps to the nearest provider ratio; exact pixels get fitted ----
   {
+    const rs = T1._internals.resolveShape;
+    A.eq(rs('99:1').ratio, '21:9', 'an off-menu ratio snaps to the nearest provider ratio (99:1 -> 21:9)');
+    A.eq(rs('16/9').ratio, '16:9', 'slash separator accepted');
+    A.eq(rs('1.5').ratio, '3:2', 'a bare decimal ratio works');
+    A.eq(rs('landscape').ratio, '3:2', 'shape words work');
+    A.eq(rs('Portrait').ratio, '2:3', 'shape words are case-insensitive');
+    A.eq(rs('1920x1080'), { ratio: '16:9', width: 1920, height: 1080, exact: true }, 'WxH in aspect_ratio = exact size request');
+    A.eq(rs('', 1080, 1350), { ratio: '4:5', width: 1080, height: 1350, exact: true }, 'width+height alone pick the nearest ratio');
+    A.eq(rs('1:1', 800, 600).ratio, '1:1', 'an explicit ratio wins over the pixel ratio for generation');
+    A.eq(rs(''), { ratio: '', width: 0, height: 0, exact: false }, 'nothing asked -> provider default, no image_config');
+    A.eq(rs('banana'), null, 'garbage is refused');
+    A.eq(rs('', 100, 0), null, 'width without height is refused');
+    A.eq(rs('', 99999, 10), null, 'absurd pixel sizes are refused');
     const before = genFetch.calls.length;
-    let badAr = null; try { await T1.generateTool.run({ prompt: 'x', aspect_ratio: '99:1' }, ctx); } catch (e) { badAr = e.message; }
-    A.ok(/aspect_ratio must be one of/.test(badAr) && /no image was produced/.test(badAr), 'an unknown ratio is refused with an honest, actionable error');
-    A.eq(genFetch.calls.length, before, 'the bad-ratio refusal fires BEFORE any network call');
+    let badAr = null; try { await T1.generateTool.run({ prompt: 'x', aspect_ratio: 'banana' }, ctx); } catch (e) { badAr = e.message; }
+    A.ok(/could not understand the requested image shape/.test(badAr) && /no image was produced/.test(badAr), 'an unparseable shape is refused with an honest, actionable error');
+    A.eq(genFetch.calls.length, before, 'the bad-shape refusal fires BEFORE any network call');
+    const gSnap = await T1.generateTool.run({ prompt: 'ultra wide', aspect_ratio: '32:9' }, ctx);
+    A.eq(genFetch.calls[genFetch.calls.length - 1].body.image_config, { aspect_ratio: '21:9' }, '32:9 is sent to the provider as the nearest 21:9');
+    A.ok(/21:9/.test(gSnap.content), 'the result names the ratio actually rendered');
+    // the stub PNG is a hand-rolled fixture the resizer can't decode -> the tool must say so, not lie
+    const gNoFit = await T1.generateTool.run({ prompt: 'wallpaper', width: 64, height: 36, path: 'art/nofit' }, ctx);
+    A.eq(genFetch.calls[genFetch.calls.length - 1].body.image_config, { aspect_ratio: '16:9' }, 'exact 64x36 generates at 16:9');
+    A.ok(/NOT resized to 64x36/.test(gNoFit.content), 'an un-resizable render is shipped with an honest NOT-resized note');
+    let sharp = null; try { sharp = require('sharp'); } catch (_) {}
+    if (sharp) {
+      const realPng = await sharp({ create: { width: 160, height: 90, channels: 3, background: '#336699' } }).png().toBuffer();
+      const realFetch = stubFetch(() => jsonResp({ choices: [{ message: { images: [{ image_url: { url: 'data:image/png;base64,' + realPng.toString('base64') } }] } }] }));
+      const TR = makeImageTools({ openrouter: { apiKey: 'k' }, fsp, pathMod: path, root: ROOT, fetchImpl: realFetch });
+      const gExact = await TR.generateTool.run({ prompt: 'wallpaper', width: 64, height: 36, path: 'art/exact' }, ctx);
+      A.ok(/fitted to 64x36/.test(gExact.content), 'exact-size result reports the fit');
+      const meta = await sharp(path.join(ROOT, 'hero', 'art', 'exact.png')).metadata();
+      A.eq([meta.width, meta.height], [64, 36], 'the saved file is EXACTLY 64x36');
+      const gTall = await TR.generateTool.run({ prompt: 'poster', aspect_ratio: '1000x1500', path: 'art/tall' }, ctx);
+      A.eq(realFetch.calls[realFetch.calls.length - 1].body.image_config, { aspect_ratio: '2:3' }, '"1000x1500" generates at 2:3');
+      const m2 = await sharp(path.join(ROOT, 'hero', 'art', 'tall.png')).metadata();
+      A.eq([m2.width, m2.height], [1000, 1500], 'a WxH string in aspect_ratio yields that exact pixel size');
+    }
   }
 
   // ---- B2. custom output path + content-addressed idempotency (same bytes -> same default name) ----
