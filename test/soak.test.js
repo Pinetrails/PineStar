@@ -254,5 +254,235 @@ function healthyInput(samples, extra) {
     A.ok(/grace/.test(zRec.rules.process.actual.orphanCheck), 'the receipt says a grace re-check happened');
   }
 
+  // ---- ROUTINE SCALE: plan, cron-log parsing, occurrence math, the per-routine accounting verdict
+  {
+    const cronLib = require('../sidecar/cron.js');
+    const iso = (ms) => new Date(ms).toISOString();
+    const MIN = 60_000;
+    const T0 = Date.UTC(2026, 7, 22, 12, 0, 0);           // 12:00:00Z — a whole minute so cron patterns line up
+
+    // buildRoutinePlan
+    {
+      A.eq(M.buildRoutinePlan(1).map((p) => p.role), ['fireable'], 'n=1 is the single heartbeat');
+      A.eq(M.buildRoutinePlan(1)[0].schedule, 'every 1 minute', 'heartbeat cadence unchanged');
+      const p50 = M.buildRoutinePlan(50);
+      const roles = p50.reduce((m, p) => { m[p.role] = (m[p.role] || 0) + 1; return m; }, {});
+      A.eq(roles, { disabled: 1, unfireable: 2, slow: 3, fireable: 44 }, 'n=50 roles: 1 disabled, 2 unfireable, 3 slow, rest fireable');
+      A.eq(new Set(p50.map((p) => p.label)).size, 50, 'labels unique');
+      const scheds = new Set(p50.filter((p) => p.role === 'fireable').map((p) => p.schedule));
+      A.ok(scheds.has('every 1 minute') && scheds.has('every 2 minutes') && [...scheds].some((s) => /^\*\/2 /.test(s)), 'overlapping cadences: intervals + cron minute patterns');
+      for (const p of p50) A.ok(cronLib.parseSchedule(p.schedule, T0), 'every planned schedule parses: ' + p.schedule);
+      A.ok(p50.some((p) => p.misfire === 'skip') && p50.some((p) => p.misfire === 'fire_once'), 'both misfire policies are seeded');
+      A.eq(M.buildRoutinePlan(3).map((p) => p.role), ['disabled', 'fireable', 'fireable'], 'a tiny plan has no unfireable/slow roles');
+    }
+
+    // parseCronLog
+    {
+      const log = 'boot\n[cron] cron.fire {"jobId":"a","runId":"r1","scheduledFor":1000}\r\nnoise [cron] x\n[cron] cron.skipped {"jobId":"a","reason":"already-running"}\n[cron] cron.tick {"fired":1}\n[cron] cron.result {"jobId":"a","runId":"r1","outcome":"ok","reason":"done"}\n[cron] cron.fire not-json\n';
+      const ev = M.parseCronLog(log);
+      A.eq(ev.map((e) => e.name), ['cron.fire', 'cron.skipped', 'cron.tick', 'cron.result'], 'only well-formed [cron] lines parse, in order');
+      A.eq(ev[0].payload.scheduledFor, 1000, 'payload parsed');
+      A.eq(ev.map((e) => e.seq), [0, 1, 2, 3], 'sequence numbers');
+      A.eq(M.parseCronLog(''), [], 'empty log');
+    }
+
+    // occurrencesBetween — the scheduler's own math
+    {
+      const every1 = cronLib.parseSchedule('every 1 minute', T0);
+      A.eq(M.occurrencesBetween(cronLib, every1, T0, T0 + 3 * MIN, 'UTC'), [T0, T0 + MIN, T0 + 2 * MIN], 'interval occurrences from..to (to exclusive)');
+      const star2 = cronLib.parseSchedule('*/2 * * * *', T0);
+      A.eq(M.occurrencesBetween(cronLib, star2, T0, T0 + 5 * MIN, 'UTC'), [T0, T0 + 2 * MIN, T0 + 4 * MIN], 'cron */2 occurrences');
+      A.eq(M.occurrencesBetween(cronLib, every1, T0, T0, 'UTC'), [], 'empty window');
+    }
+
+    // accountRoutines — synthetic event streams → verdict
+    const every1 = cronLib.parseSchedule('every 1 minute', T0);
+    const fire = (id, at, runId) => ({ name: 'cron.fire', payload: { jobId: id, runId: runId || ('run' + at), scheduledFor: at } });
+    const skip = (id, reason) => ({ name: 'cron.skipped', payload: { jobId: id, reason } });
+    const result = (id, reason) => ({ name: 'cron.result', payload: { jobId: id, runId: 'x', outcome: 'failed', reason } });
+    const snap = (at, jobs) => ({ at, jobs });
+    const job = (nextAt, extra) => Object.assign({ nextRunAt: iso(nextAt), enabled: true, lastError: null }, extra || {});
+    const routine = (id, role, sched, first) => ({ id, label: id + '-' + role, role, schedule: sched || every1, misfire: 'fire_once', firstNextRunAt: iso(first == null ? T0 + MIN : first) });
+    const account = (routines, events, trail, endAt) => M.accountRoutines({ routines, events, trail, endAt: endAt || (T0 + 10 * MIN), cronLib, defaultTz: 'UTC' });
+    // a 1-min routine armed for T0+1m, observed advancing three times (polls every 15s) — the store trail
+    const trail3 = [snap(T0 + 70_000, { a: job(T0 + 2 * MIN) }), snap(T0 + 85_000, { a: job(T0 + 2 * MIN) }), snap(T0 + 130_000, { a: job(T0 + 3 * MIN) }), snap(T0 + 190_000, { a: job(T0 + 4 * MIN) })];
+
+    {
+      const r = account([routine('a', 'fireable')], [fire('a', T0 + MIN), fire('a', T0 + 2 * MIN), fire('a', T0 + 3 * MIN)], trail3);
+      A.eq(r.pass, true, 'clean: three owed, three fired → PASS ' + JSON.stringify(r.problems));
+      A.eq([r.totals.owed, r.totals.fired, r.totals.lost, r.totals.collapsed], [3, 3, 0, 0], 'clean totals');
+    }
+    {
+      const r = account([routine('a', 'slow')], [fire('a', T0 + MIN), skip('a', 'already-running'), fire('a', T0 + 3 * MIN)], trail3);
+      A.eq(r.pass, true, 'an already-running skip is the terminal for the unfired head: ' + JSON.stringify(r.problems));
+      A.eq([r.totals.fired, r.totals.alreadyRunning, r.totals.lost], [2, 1, 0], 'skip accounted');
+    }
+    {
+      const r = account([routine('a', 'fireable')], [fire('a', T0 + MIN), fire('a', T0 + 3 * MIN)], trail3);
+      A.eq(r.pass, false, 'an advanced occurrence with no terminal is LOST');
+      A.eq(r.routines[0].lost, [iso(T0 + 2 * MIN)], 'the lost occurrence is named');
+    }
+    {
+      const r = account([routine('a', 'fireable')], [fire('a', T0 + MIN, 'r1'), fire('a', T0 + MIN, 'r2'), fire('a', T0 + 2 * MIN), fire('a', T0 + 3 * MIN)], trail3);
+      A.eq(r.pass, false, 'two fires for one occurrence is a DOUBLE-FIRE');
+      A.eq(r.routines[0].doubled, [iso(T0 + MIN)], 'the doubled occurrence is named');
+    }
+    {
+      const r = account([routine('a', 'fireable')], [fire('a', T0 + MIN), fire('a', T0 + 2 * MIN), fire('a', T0 + 3 * MIN), fire('a', T0 + 90_000)], trail3);
+      A.eq(r.pass, false, 'a fire at an instant the schedule never owed is UNEXPECTED');
+      A.eq(r.routines[0].unexpected, [iso(T0 + 90_000)], 'named');
+    }
+    {
+      // misfire collapse: the store jumps T0+1m → T0+4m in one advance (outage), one catch-up fire for the head
+      const trailJump = [snap(T0 + 200_000, { a: job(T0 + 4 * MIN) })];
+      const r = account([routine('a', 'fireable')], [fire('a', T0 + MIN)], trailJump);
+      A.eq(r.pass, true, 'fire_once catch-up: one fire, the rest collapsed: ' + JSON.stringify(r.problems));
+      A.eq([r.totals.owed, r.totals.fired, r.totals.collapsed], [3, 1, 2], 'owed 3 = 1 head + 2 collapsed');
+      const rs = account([routine('a', 'fireable')], [skip('a', 'caught-up')], trailJump);
+      A.eq(rs.pass, true, 'misfire=skip catch-up: a caught-up skip is the terminal');
+      A.eq([rs.totals.caughtUp, rs.totals.collapsed], [1, 2], 'caught-up + collapsed');
+      const rb = account([routine('a', 'fireable')], [fire('a', T0 + MIN), fire('a', T0 + 2 * MIN)], trailJump);
+      A.eq(rb.pass, false, 'a burst (firing a collapsed occurrence) is UNEXPECTED — the policy promises ONE catch-up');
+      const rn = account([routine('a', 'fireable')], [], trailJump);
+      A.eq(rn.pass, false, 'a jump with no terminal at all is LOST');
+    }
+    {
+      const trailOff = [snap(T0 + 70_000, { a: job(T0 + 150_000) })];
+      const r = account([routine('a', 'fireable')], [fire('a', T0 + MIN)], trailOff);
+      A.eq(r.pass, false, 'a nextRunAt the schedule math does not predict is OFF-SCHEDULE');
+      A.ok(/predicts/.test(r.routines[0].offSchedule[0]), 'the prediction is in the message: ' + r.routines[0].offSchedule[0]);
+      const back = account([routine('a', 'fireable')], [], [snap(T0 + 70_000, { a: job(T0) })]);
+      A.eq(back.pass, false, 'a nextRunAt that moves backwards fails');
+    }
+    {
+      const r = account([routine('a', 'fireable')], [skip('a', 'at-capacity'), skip('a', 'at-capacity'), fire('a', T0 + MIN), fire('a', T0 + 2 * MIN), fire('a', T0 + 3 * MIN)], trail3);
+      A.eq(r.pass, true, 'at-capacity deferrals are transient: the occurrence still fires');
+      A.eq(r.totals.deferred, 2, 'deferrals counted');
+    }
+    {
+      const flat = [snap(T0 + 70_000, { d: job(T0 + MIN, { enabled: false }) }), snap(T0 + 200_000, { d: job(T0 + MIN, { enabled: false }) })];
+      A.eq(account([routine('d', 'disabled')], [skip('d', 'disabled')], flat).pass, true, 'paused + due + reported once → ok');
+      A.eq(account([routine('d', 'disabled')], [], flat).pass, false, 'paused + due but never reported → FAIL');
+      A.eq(account([routine('d', 'disabled')], [skip('d', 'disabled'), fire('d', T0 + MIN)], flat).pass, false, 'a paused routine that fires → FAIL');
+    }
+    {
+      const marked = [snap(T0 + 70_000, { u: job(T0 + MIN) }), snap(T0 + 200_000, { u: job(T0 + MIN, { lastError: M.UNFIREABLE_ERROR }) })];
+      A.eq(account([routine('u', 'unfireable')], [result('u', M.UNFIREABLE_ERROR)], marked).pass, true, 'corrupt schedule marked once + lastError set → ok');
+      A.eq(account([routine('u', 'unfireable')], [], marked).pass, false, 'never marked → FAIL');
+      A.eq(account([routine('u', 'unfireable')], [result('u', M.UNFIREABLE_ERROR), fire('u', T0 + MIN)], marked).pass, false, 'fired AFTER the mark → FAIL');
+      A.eq(account([routine('u', 'unfireable')], [result('u', M.UNFIREABLE_ERROR), result('u', M.UNFIREABLE_ERROR)], marked).pass, false, 'marked twice → FAIL (the mark must dedupe)');
+      const unmarkedStore = [snap(T0 + 200_000, { u: job(T0 + MIN) })];
+      A.eq(account([routine('u', 'unfireable')], [result('u', M.UNFIREABLE_ERROR)], unmarkedStore).pass, false, 'event without the durable lastError → FAIL');
+    }
+    {
+      const r = account([routine('a', 'fireable')], [], [snap(T0 + 70_000, { a: job(T0 + MIN) })]);
+      A.eq(r.pass, false, 'a fireable routine owed nothing in the window is inconclusive → FAIL');
+      A.ok(/owed nothing/.test(r.problems[0]), 'says so: ' + r.problems[0]);
+      A.eq(account([], [], []).pass, false, 'zero routines never passes');
+    }
+    {
+      // the open tail: a fire for the pending (last-seen) nextRunAt after the final store read is not unexpected
+      const r = account([routine('a', 'fireable')], [fire('a', T0 + MIN), fire('a', T0 + 2 * MIN), fire('a', T0 + 3 * MIN), fire('a', T0 + 4 * MIN)], trail3);
+      A.eq(r.pass, true, 'tail fire accepted: ' + JSON.stringify(r.problems));
+      A.eq(r.totals.tail, 1, 'tail counted');
+      // a surplus skip likewise lands in the tail, never as a loss
+      const s = account([routine('a', 'slow')], [fire('a', T0 + MIN), fire('a', T0 + 2 * MIN), fire('a', T0 + 3 * MIN), skip('a', 'already-running')], trail3);
+      A.eq([s.pass, s.totals.tail], [true, 1], 'surplus skip → tail');
+    }
+    {
+      // cron minute pattern: */2 from 12:02, advancing two minutes at a time — exact schedule math, no tolerance
+      const star2 = cronLib.parseSchedule('*/2 * * * *', T0);
+      const first = T0 + 2 * MIN;
+      const trail2 = [snap(first + 10_000, { c: job(first + 2 * MIN) }), snap(first + 130_000, { c: job(first + 4 * MIN) })];
+      const r = account([routine('c', 'fireable', star2, first)], [fire('c', first), fire('c', first + 2 * MIN)], trail2);
+      A.eq(r.pass, true, 'cron */2 accounts exactly: ' + JSON.stringify(r.problems));
+      const bad = account([routine('c', 'fireable', star2, first)], [fire('c', first), fire('c', first + MIN)], trail2);
+      A.eq(bad.pass, false, 'a */2 fire on an odd minute is unexpected');
+    }
+    {
+      // many routines: one bad row fails the whole ledger and is named; totals aggregate
+      const rs = [routine('a', 'fireable'), routine('b', 'fireable')];
+      const trailAB = trail3.map((s) => snap(s.at, { a: s.jobs.a, b: s.jobs.a }));
+      const r = account(rs, [fire('a', T0 + MIN), fire('a', T0 + 2 * MIN), fire('a', T0 + 3 * MIN), fire('b', T0 + MIN), fire('b', T0 + 3 * MIN)], trailAB);
+      A.eq(r.pass, false, 'one lost occurrence anywhere fails');
+      A.eq(r.problems.length, 1, 'exactly the bad routine is a problem');
+      A.ok(/^b-fireable: lost 1/.test(r.problems[0]), 'named: ' + r.problems[0]);
+      A.eq([r.totals.owed, r.totals.fired, r.totals.lost], [6, 5, 1], 'totals aggregate across routines');
+    }
+
+    // evaluate: the accounting + tick rules ride the receipt like every other rule
+    {
+      const s = series(40);
+      const accOk = account([routine('a', 'fireable')], [fire('a', T0 + MIN), fire('a', T0 + 2 * MIN), fire('a', T0 + 3 * MIN)], trail3);
+      const ok = M.evaluate(healthyInput(s, { accounting: accOk }));
+      A.eq(ok.rules.accounting.pass, true, 'accounting rule passes on a clean ledger');
+      A.eq(ok.rules.accounting.actual.owed, 3, 'the receipt carries the totals');
+      const accBad = account([routine('a', 'fireable')], [fire('a', T0 + MIN)], trail3);
+      const bad = M.evaluate(healthyInput(s, { accounting: accBad }));
+      A.eq(bad.verdict, 'FAIL', 'a lost occurrence fails the soak');
+      A.ok(bad.failedRules.includes('accounting') && bad.rules.accounting.actual.problems.length === 1, 'accounting is the failed rule with its problem list');
+      const none = M.evaluate(healthyInput(s, { accounting: { reason: 'log unreadable' } }));
+      A.eq([none.rules.accounting.pass, none.rules.accounting.actual.reason, none.rules.accounting.actual.routines], [true, 'log unreadable', null], 'no ledger → null with the reason, never a fake PASS count');
+      A.eq(M.evaluate(healthyInput(s)).rules.accounting.actual.routines, null, 'absent accounting → null');
+      // tick latency
+      const slowTicks = M.evaluate(healthyInput(series(40, (i) => ({ tickMs: i >= 20 ? 450 : 20 }))));
+      A.eq(slowTicks.rules.tick.pass, false, 'a 450 ms scheduler tick p95 in the last half fails the tick rule');
+      A.eq(slowTicks.rules.tick.actual.p95Ms, 450, 'p95 reported');
+      const fastTicks = M.evaluate(healthyInput(series(40, (i) => ({ tickMs: i === 25 ? 900 : 15 }))));
+      A.eq(fastTicks.rules.tick.pass, true, 'one boot-spike tick does not fail p95');
+      A.eq(fastTicks.rules.tick.actual.maxMs, 900, 'but the max is reported');
+      const boot = M.evaluate(healthyInput(series(40, (i) => ({ tickMs: i === 30 ? 800 : 20 }), { epoch: (i) => (i >= 30 ? 1 : 0) })));
+      A.eq([boot.rules.tick.pass, boot.rules.tick.actual.catchUpMs, boot.rules.tick.actual.maxMs], [true, 800, 20], 'the first tick after a restart is the catch-up burst: reported, excluded from p95');
+      const noTicks = M.evaluate(healthyInput(s));
+      A.eq([noTicks.rules.tick.pass, noTicks.rules.tick.actual.p95Ms], [true, null], 'no tick samples → null with reason');
+      A.ok(/tick samples/.test(noTicks.rules.tick.actual.reason), 'reason given');
+      // summary renders the per-routine table
+      const rec = M.buildReceipt(healthyInput(s, { accounting: accOk, options: { minutes: 10, routines: 1 } }));
+      const md = M.renderSummary(rec);
+      A.ok(md.indexOf('## Routine accounting') >= 0 && md.indexOf('| a-fireable |') >= 0, 'summary has the routine ledger table');
+      A.ok(/\| accounting \| PASS/.test(md) && /\| tick \| PASS/.test(md), 'both new rules are rows in the summary');
+    }
+
+    // parseArgs: the scale knobs
+    {
+      const d = M.parseArgs([]);
+      A.eq([d.routines, d.maxParallel, d.outageSeconds, d.slowRunMs], [1, 0, 0, M.DEFAULTS.slowRunMs], 'scale knobs default off (the 20-min run is unchanged)');
+      const sc = M.parseArgs(['--minutes=10', '--routines=50', '--max-parallel=8', '--outage-seconds=150']);
+      A.eq([sc.routines, sc.maxParallel, sc.outageSeconds], [50, 8, 150], 'scale overrides');
+      A.throws(() => M.parseArgs(['--routines=0']), 'routines must be ≥ 1');
+    }
+
+    // the orchestrator seeds N routines through the fake world (create + pause + arm), reads the store every tick
+    {
+      let t = 1_000_000; const created = [];
+      const world = {
+        stopMode: 'fake', pid: () => 1, async boot() { return { pid: 1 }; }, async restart() { t += 500; return { pid: 2 }; }, async stop() {}, isAlive: () => true, childrenOf: async () => [],
+        async json(m, r, body) {
+          const key = m + ' ' + r.split('?')[0];
+          if (key === 'POST /api/cron') { created.push(body); return { status: 200, body: { ok: true, job: { id: 'j' + created.length, schedule: { kind: 'interval', minutes: 1, display: 'every 1m' }, nextRunAt: new Date(t + 60_000).toISOString() } } }; }
+          if (key === 'POST /api/cron/update') return { status: 200, body: { ok: true } };
+          if (key === 'POST /api/roster' || key === 'POST /api/cron/arm') return { status: 200, body: { ok: true } };
+          if (key === 'GET /api/health') { t += 1; return { status: 200, body: 'ok' }; }
+          if (key === 'GET /api/diagnostics') return { status: 200, body: { report: { agentCount: 1, swallowed: { present: true, total: 0, tags: [] }, errors: [] } } };
+          if (key === 'GET /api/state/snapshot') return { status: 200, body: {} };
+          if (key === 'GET /api/cron') return { status: 200, body: { jobs: created.map((c, i) => ({ id: 'j' + (i + 1), nextRunAt: new Date(t + 60_000).toISOString(), enabled: i !== 0 })), health: { lastTickAt: t - 40, lastSuccessAt: t - 10 } } };
+          if (r.startsWith('/api/runs')) return { status: 200, body: { runs: [] } };
+          if (r.startsWith('/api/transcript')) return { status: 200, body: { turns: [] } };
+          throw new Error('no fake route ' + key);
+        },
+        async runConversation() { t += 100; return { reason: 'done', toolOk: true }; },
+        rss: async () => 90 * 1048576, workspaceBytes: () => 1, now: () => t, sleep: async (ms) => { t += ms; }, log: () => {},
+      };
+      const res = await M.runSoak(world, M.parseArgs(['--minutes=2', '--tick-seconds=15', '--routines=12']));
+      A.eq(created.length, 12, 'twelve routines created');
+      A.eq(new Set(created.map((c) => c.name)).size, 12, 'distinct names (the mint gate near-dups similar names)');
+      A.ok(created.some((c) => c.prompt.indexOf(M.SLOW_MARKER) === 0), 'slow routines carry the slow marker');
+      A.eq(res.routines.length, 12, 'the result carries the seeded routine specs');
+      A.eq(res.routines[0].role, 'disabled', 'first is the paused one');
+      A.ok(res.samples.every((s) => s.tickMs === 30), 'tick duration sampled from GET /api/cron health: ' + JSON.stringify(res.samples.map((s) => s.tickMs)));
+      A.ok(/cronEvents/.test(res.accounting.reason), 'no cron log driver in this world → accounting null with reason');
+    }
+  }
+
   A.report('soak.test');
 })().catch((e) => { console.error(e && e.stack || e); process.exit(1); });
