@@ -1,5 +1,6 @@
 /* sidecar/workspace-lineage.js — bounded evidence that this machine had StarNet state before this boot. */
 'use strict';
+const { note: failNote } = require('./failopen.js');
 
 // The desktop migration transaction seals even an empty first-run generation with a receipt. The receipt is
 // bookkeeping, not user state; any files it actually migrated are scanned independently below.
@@ -107,7 +108,7 @@ function startFresh(deps) {
     moved
   };
   try {
-    try { fs.mkdirSync(current, { recursive: true }); } catch (_) {}
+    try { fs.mkdirSync(current, { recursive: true }); } catch (e) { failNote('lineage.startFresh.mkdir', e); }   // the write below reports the real failure
     fs.writeFileSync(path.join(current, FRESH_MARKER), JSON.stringify(marker, null, 2));
   } catch (e) { return { ok: false, error: 'could not write the fresh-start marker: ' + String(e && e.message || e), quarantine, moved }; }
   return { ok: true, quarantine: marker.quarantine, moved, acknowledgedRoots: marker.acknowledgedRoots };
