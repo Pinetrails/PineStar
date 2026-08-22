@@ -35,7 +35,7 @@ const prices = require('../sidecar/providers/prices.js');
   //         rough number keeps the seatbelt connected where null silently unbuckles it ----
   {
     A.eq(prices.priceOf('anthropic', 'claude-sonnet-9-future').in, 3.00, 'an unseen sonnet falls back to the sonnet family rate');
-    A.eq(prices.priceOf('gemini', 'gemini-9.0-flash-preview').in, 0.30, 'an unseen flash falls back to the flash family rate');
+    A.eq(prices.priceOf('gemini', 'gemini-9.0-flash-preview').in, 1.50, 'an unseen flash falls back to the flash family rate (3.5 flash tier, 2026-08-21)');
   }
 
   // ---- D. HONESTY PRESERVED: nothing recognizable stays unpriced rather than being guessed at ----

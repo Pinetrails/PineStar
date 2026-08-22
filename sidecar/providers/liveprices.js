@@ -24,8 +24,15 @@ const path = require('node:path');
 const SOURCE_URL = 'https://models.dev/api.json';
 const REFRESH_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 20000;
-// our price family -> models.dev provider key
-const FAMILY_TO_PROVIDER = { anthropic: 'anthropic', gemini: 'google' };
+// our price family -> models.dev provider key. Keys probed against https://models.dev/api.json on
+// 2026-08-21: the aggregate has NO `together` or `fireworks` key — Together is `togetherai` and Fireworks is
+// `fireworks-ai` (ids there carry the accounts/fireworks/models/ prefix, same as the wire). The extractor and
+// the disk-cache revalidation both iterate THIS map, so adding a family here is the whole change.
+const FAMILY_TO_PROVIDER = {
+  anthropic: 'anthropic', gemini: 'google',
+  openai: 'openai', xai: 'xai', groq: 'groq', mistral: 'mistral', deepseek: 'deepseek',
+  together: 'togetherai', fireworks: 'fireworks-ai'
+};
 
 function saneRate(n) { return Number.isFinite(n) && n >= 0 && n <= 10000; }
 
