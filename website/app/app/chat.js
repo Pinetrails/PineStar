@@ -2763,7 +2763,10 @@ const Chat = (() => {
       btns.remove();
       const tag = document.createElement('span'); tag.className = 'consent-result' + (isDeny ? ' err' : ''); tag.textContent = accepted.duplicate ? 'already rated' : flash;
       host.appendChild(tag);
-      if (onSettle) setTimeout(onSettle, 700);   // flash the verdict, then let the caller fade the beat
+      // flash the verdict, let the caller fade the beat, THEN (momentum loop) give a short-of-the-mark verdict its
+      // consequence: the follow-up beat asks what missed and writes the answer into the dossier. Rides every
+      // rate path (standalone beat, turn-in card, outbox) because it hangs off settle, not off any one caller.
+      setTimeout(() => { try { if (onSettle) onSettle(verdict); } finally { verdictFollowupBeat(agentId, runId, verdict); } }, 700);
     }
     function mk(label, cls, verdict, flash, isDeny) {
       const b = document.createElement('button'); b.className = 'consent-btn' + (cls ? ' ' + cls : ''); b.textContent = label;
@@ -4787,6 +4790,41 @@ const Chat = (() => {
     if (a.beat && a.beat.isCurrent()) { a.beat.decide(); a.beat.finish(); }
     else vanish(a.row);
   }
+  /* VERDICT FOLLOW-UP (momentum loop, 2026-08-21). `◆ close` / `▼ missed` used to end in the word "noted" — the
+     Commander said the work fell short and nothing changed. Now the beat asks ONE thing — what missed? — and every
+     chip is a Commander Dossier belief (VerdictFollowup.belief), so the answer rides into every later agent's
+     briefing. Popup law: never on `▲ nailed it`, never twice for one run, skip writes nothing. Same gold-inset
+     post-run slot + one-beat-at-a-time discipline as the curiosity nudge (it IS a nudge, keyed to a run). */
+  const followedUp = new Set();   // runIds already asked — one follow-up per run, ever (page lifetime)
+  function verdictFollowupBeat(agentId, runId, verdict) {
+    try {
+      if (!log || typeof VerdictFollowup === 'undefined' || !VerdictFollowup.shouldAsk(verdict)) return false;
+      if (!runId || followedUp.has(runId)) return false;
+      if (typeof DossierStore === 'undefined' || !DossierStore.upsert) return false;   // nowhere to write → no question (a question with no consequence is the bug)
+      if (taskQuestionLive()) return false;
+      followedUp.add(runId);
+      clearNudge();
+      const r = row('agent'); r.d.classList.add('nudge');
+      r.body.textContent = (verdict === 'miss' ? '▼ what missed?' : '◆ what would have made it a hit?') + ' — one tap and every agent here works that way from now on.';
+      autoscroll();
+      const meta = runMeta(runId);
+      const choiceRow = choices(VerdictFollowup.chips(verdict), item => {
+        const a = activeNudge; activeNudge = null;
+        if (a && a.beat && a.beat.isCurrent()) { a.beat.decide(); a.beat.finish(); }
+        else if (a) vanish(a.row);
+        const b = VerdictFollowup.belief(item.value, { directive: meta && meta.directive, now: Date.now() });
+        if (!b) return;   // skip → nothing written, nothing claimed
+        DossierStore.upsert(b.dim, { text: b.text, source: b.source, weight: b.weight, observedAt: b.observedAt, sourceRunId: String(runId) });
+        briefingReceipt(b.dim);   // the answer visibly pays off — the same receipt the curiosity path earns
+        try { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('commander'); } catch (_) {}
+      });
+      const beat = beatCards && beatCards.claim({ kind: 'nudge', node: r.d, data: { verdictFollowup: runId } });
+      if (!beat) { if (choiceRow) { activeChoiceRows.delete(choiceRow); choiceRow.remove(); } vanish(r.d); return false; }
+      activeNudge = { row: r.d, choiceRow: choiceRow, dim: null, beat: beat };
+      return true;
+    } catch (e) { try { console.warn('[comms] verdict follow-up failed', e); } catch (_) {} return false; }
+  }
+
   function curiosityNudge(dim) {
     if (!log) return;
     if (taskQuestionLive()) return;   // an unanswered task question owns the moment — never steal its answer chips
