@@ -27,6 +27,7 @@
      This module holds no policy of its own here: it TRANSPORTS the origin, the compiled plan decides. */
 'use strict';
 const Pipeline = require('../../frontend/app/pipeline.js');
+const { note: failNote } = require('../failopen.js');   // tagged fail-open: a swallowed ledger error stays visible
 
 // the DEFAULT ceilings — a line that sets no LINE BUDGET runs under exactly these. They are the one
 // normalizer's defaults (Pipeline.LINE_LIMIT_DEFAULTS) so the compiler and the executor can never disagree.
@@ -157,7 +158,7 @@ function makeChainRunner(o) {
     // the entry run's spend lands in the line's DAY bucket here — the caller never sees this ledger
     // (out.usd stays HOP-ONLY; the ledger is the only place entry + hops are summed across messages).
     const dayLedger = (daySpend && lineId) ? daySpend : null;
-    if (dayLedger && entryUsd) { try { dayLedger.note(lineId, entryUsd); } catch (_) {} }
+    if (dayLedger && entryUsd) { try { dayLedger.note(lineId, entryUsd); } catch (e) { failNote('chain.dayLedger.entry', e); } }
 
     const visited = { [startAgent]: true };
     let spent = entryUsd;   // entry + hops — what the $ ceiling is actually measured against
@@ -208,7 +209,7 @@ function makeChainRunner(o) {
       r = r || {};
       const usd = (typeof r.usd === 'number' && isFinite(r.usd) && r.usd > 0) ? r.usd : 0;
       out.usd += usd; spent += usd;
-      if (dayLedger && usd) { try { dayLedger.note(lineId, usd); } catch (_) {} }
+      if (dayLedger && usd) { try { dayLedger.note(lineId, usd); } catch (e) { failNote('chain.dayLedger.hop', e); } }
 
       // A FAILED STAGE KEEPS THE LAST GOOD ANSWER. The reply the user gets is still real work by a real agent;
       // the note says the line stopped short, so the floor and the channel tell the same story.

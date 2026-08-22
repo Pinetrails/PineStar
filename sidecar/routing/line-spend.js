@@ -11,6 +11,7 @@
    must not gate a reply (chain.js's first law); it degrades to "cannot prove, does not refuse". */
 'use strict';
 
+const { note: failNote } = require('../failopen.js');   // tagged fail-open: a failed ledger write must never be invisible
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 function makeLineSpend(o) {
@@ -35,7 +36,7 @@ function makeLineSpend(o) {
     return out;
   }
   function ensure() { if (!table) { try { table = clean(load()); } catch (_) { table = {}; } } return table; }
-  function persist() { try { save(clean(table)); } catch (_) {} }
+  function persist() { try { save(clean(table)); } catch (e) { failNote('line-spend.persist', e); } }
 
   // $ this line has spent TODAY (0 when nothing, or the bucket is from an earlier day)
   function spentToday(lineId) {
