@@ -99,7 +99,12 @@
         '<span class="sp-lbl">of each month</span></div>' +
       '<div class="sp-pane" data-show="interval"><span class="sp-lbl">run every</span>' +
         '<input type="number" class="sp-num" data-f="every" min="1" max="999" step="1" value="2" aria-label="how often">' +
-        '<select data-f="unit" aria-label="unit">' + optionsHTML([{ v: 'm', t: 'minutes' }, { v: 'h', t: 'hours' }, { v: 'd', t: 'days' }], 'h') + '</select></div>' +
+        // the UNIT is three visible keys, never a dropdown: "2" next to a closed select read as "every 2"
+        // and the preview's "every 2 hours" surprised people (stranded-user sweep, 2026-08-22). A hidden
+        // select still carries the value so f('unit') / setFromSpec keep one source of truth.
+        '<div class="sp-units" role="group" aria-label="unit">' + [{ v: 'm', t: 'minutes' }, { v: 'h', t: 'hours' }, { v: 'd', t: 'days' }].map(u =>
+          '<button type="button" class="sp-unit' + (u.v === 'h' ? ' on' : '') + '" data-unit="' + u.v + '" aria-pressed="' + (u.v === 'h' ? 'true' : 'false') + '">' + u.t + '</button>').join('') + '</div>' +
+        '<select data-f="unit" aria-label="unit" hidden>' + optionsHTML([{ v: 'm', t: 'minutes' }, { v: 'h', t: 'hours' }, { v: 'd', t: 'days' }], 'h') + '</select></div>' +
       '<div class="sp-pane" data-show="once"><span class="sp-lbl">on</span>' +
         '<select data-f="date" aria-label="date">' + optionsHTML(dateOpts(now), dateOpts(now)[0].v) + '</select></div>' +
       timeRow +
@@ -203,6 +208,12 @@
         b.classList.toggle('on', on);
         b.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
+      const unitNow = f('unit') ? f('unit').value : 'h';
+      el.querySelectorAll('.sp-unit').forEach(b => {
+        const on = b.dataset.unit === unitNow;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
     }
 
     el.addEventListener('click', ev => {
@@ -217,6 +228,8 @@
         if (typeof opts.onPick === 'function') opts.onPick(mode);
         return;
       }
+      const ub = ev.target.closest('.sp-unit');
+      if (ub) { if (f('unit')) f('unit').value = ub.dataset.unit || 'h'; paint(); emit(); return; }
       const db = ev.target.closest('.sp-day');
       if (db) {
         const d = parseInt(db.dataset.day, 10);
