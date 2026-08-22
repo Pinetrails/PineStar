@@ -603,7 +603,7 @@
           let marked = false;
           try { const next = cronStore.markUnfireable(getJobs(), job.id, { now: nowMs }); marked = next !== getJobs() && setJobs(next) !== false; }
           catch (e) { failNote('cron.markUnfireable', e); }
-          if (marked) try { emit('cron.result', { jobId: job.id, runId: newId(), outcome: 'failed', reason: cronStore.UNFIREABLE_ERROR }); } catch (_) {}
+          if (marked) try { emit('cron.result', { jobId: job.id, runId: newId(), outcome: 'failed', reason: cronStore.UNFIREABLE_ERROR }); } catch (e) { failNote('cron.unfireable.emit', e); }
         }
       }
 

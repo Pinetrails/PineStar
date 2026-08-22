@@ -135,7 +135,7 @@ const { readBody, readBodyBuffer } = require('./http-body.js');
 const { MIME, CHANNEL_UPLOAD_MAX_BYTES, mimeForPath, safeDownloadName, isActiveDeliverable, parseRange } = require('./file-response.js');
 const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } = require('./reflect.js');
 const Failreview = require('./failreview.js');   // failure-review aux pass: PURE lesson producer for FAILED runs (reflect.js mold)
-const { swallow, summary: failopenSummary, setClock: failopenSetClock } = require('./failopen.js');    // tagged fail-open: a swallowed error stays visible (throttled warn + counter + diagnostics summary)
+const { swallow, note: failNote, summary: failopenSummary, setClock: failopenSetClock } = require('./failopen.js');    // tagged fail-open: a swallowed error stays visible (throttled warn + counter + diagnostics summary)
 failopenSetClock(() => Date.now());   // composition root injects ambient time (lint-determinism keeps failopen.js pure)
 // GROWTH Tier 1 — the pure STUDY ENGINE (the dossier's Phase B). A UMD frontend module that also exports under
 // node, so the sidecar reuses the SAME parse/salience/dedup the browser consent path uses. Fail-open: if it can't
@@ -10550,7 +10550,7 @@ function handleCronDegradedClear(req, res) {
     cronHealth.lastTickError = null;
     console.warn('[cron] degraded store ACKNOWLEDGED by the Commander — quarantined copy left at ' + (was.quarantinePath || 'unknown'));
     json(200, { ok: true, degraded: null, quarantinePath: was.quarantinePath || null });
-  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (e) { failNote('cron.degraded.clear.reply', e); } });
 }
 
 // POST /api/cron — create a routine. body: { name, prompt, schedule:<string>, agentId?, model?, provider?, deliver?, enabled?, repeat?, meta? }
