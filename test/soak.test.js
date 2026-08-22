@@ -431,6 +431,8 @@ function healthyInput(samples, extra) {
       const fastTicks = M.evaluate(healthyInput(series(40, (i) => ({ tickMs: i === 25 ? 900 : 15 }))));
       A.eq(fastTicks.rules.tick.pass, true, 'one boot-spike tick does not fail p95');
       A.eq(fastTicks.rules.tick.actual.maxMs, 900, 'but the max is reported');
+      const boot = M.evaluate(healthyInput(series(40, (i) => ({ tickMs: i === 30 ? 800 : 20 }), { epoch: (i) => (i >= 30 ? 1 : 0) })));
+      A.eq([boot.rules.tick.pass, boot.rules.tick.actual.catchUpMs, boot.rules.tick.actual.maxMs], [true, 800, 20], 'the first tick after a restart is the catch-up burst: reported, excluded from p95');
       const noTicks = M.evaluate(healthyInput(s));
       A.eq([noTicks.rules.tick.pass, noTicks.rules.tick.actual.p95Ms], [true, null], 'no tick samples → null with reason');
       A.ok(/tick samples/.test(noTicks.rules.tick.actual.reason), 'reason given');

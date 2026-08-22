@@ -118,7 +118,7 @@ export const RULES = Object.freeze({
   tick: {
     title: 'scheduler tick latency with N routines (whole-store verified write per advance)',
     maxP95Ms: 300,
-    why: 'the cron tick runs SYNCHRONOUSLY under the process lock: planTick over every job, then saveCronJobs — a full-envelope fsync write + read-back verification of ALL routines — for each advance, and again in markRun for each result. That cost is O(routines) per tick and blocks the event loop while it runs. p95 of (lastSuccessAt − lastTickAt) sampled from GET /api/cron over the LAST HALF must stay under 300 ms at the scale the product claims (50 routines); above that the tick is visibly stalling every run and chat in the station. A breach here is a finding against the store write model (index.js saveCronJobs), not a tuning knob',
+    why: 'the cron tick runs SYNCHRONOUSLY under the process lock: planTick over every job, then saveCronJobs — a full-envelope fsync write + read-back verification of ALL routines — for each advance, and again in markRun for each result. That cost is O(routines) per tick and blocks the event loop while it runs. p95 of (lastSuccessAt − lastTickAt) sampled from GET /api/cron over the LAST HALF must stay under 300 ms at the scale the product claims (50 routines); above that the tick is visibly stalling every run and chat in the station. The first tick after a boot (the post-outage catch-up burst: every missed routine fires at once) is reported as catchUpMs and excluded from p95 — it is a one-time cost, not the steady one. A breach here is a finding against the store write model (index.js saveCronJobs), not a tuning knob',
   },
 });
 
@@ -438,13 +438,22 @@ export function evaluate(input) {
     }
   }
 
-  // tick: p95 of the scheduler tick duration over the last half
+  // tick: p95 of the STEADY-STATE scheduler tick duration over the last half. The first sample of each boot epoch
+  // is the catch-up tick (every routine missed during the outage fires at once — a one-time burst, not the
+  // steady cost) and is reported separately as catchUpMs, never folded into p95.
   {
-    const half = tail(samples, 1 / 2).map((s) => s.tickMs).filter((v) => Number.isFinite(v));
+    const seen = new Set(); const catchUp = [];
+    const steady = [];
+    for (const s of samples) {
+      const first = !seen.has(s.epoch); seen.add(s.epoch);
+      if (!Number.isFinite(s.tickMs)) continue;
+      if (first && s.epoch > 0) catchUp.push(s.tickMs); else steady.push(s);
+    }
+    const half = tail(steady, 1 / 2).map((s) => s.tickMs);
     const p95 = percentile(half, 95);
     rules.tick = {
       pass: p95 === null ? true : p95 <= RULES.tick.maxP95Ms,
-      actual: { p95Ms: p95, maxMs: half.length ? Math.max(...half) : null, medianMs: percentile(half, 50), points: half.length, routines: input.options && input.options.routines || null, reason: p95 === null ? 'no scheduler tick samples in the last half (GET /api/cron lastTickAt/lastSuccessAt unavailable)' : undefined },
+      actual: { p95Ms: p95, maxMs: half.length ? Math.max(...half) : null, medianMs: percentile(half, 50), points: half.length, catchUpMs: catchUp.length ? Math.max(...catchUp) : null, routines: input.options && input.options.routines || null, reason: p95 === null ? 'no scheduler tick samples in the last half (GET /api/cron lastTickAt/lastSuccessAt unavailable)' : undefined },
       expected: { p95Ms: `<= ${RULES.tick.maxP95Ms}` }, why: RULES.tick.why,
     };
   }
