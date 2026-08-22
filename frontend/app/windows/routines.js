@@ -165,6 +165,27 @@
     }
     outEl.addEventListener('click', ev => { if (ev.target.closest('.rt-out-x')) { outEl.hidden = true; outEl.innerHTML = ''; lastRunId = null; sfx('click'); } });
 
+    /* WHAT THIS ROUTINE RUNS. A routine whose record carries `runsLine` (minted from a line's INBOX trigger
+       zone) fires the WHOLE line from its dock — say so, naming the line and the dock count, read off the
+       same compiled plan the sidecar routes by (Build.lineOfAgentInfo). No line resolvable (floor edited,
+       REFIT not loaded) -> the plain "runs as" copy: never claim a line the harness can't prove. */
+    function runsLine(j) {
+      const who = esc(agentLabel(j.agentId || 'agent'));
+      if (j.runsLine !== true) return 'runs as ' + who;
+      const info = (typeof Build !== 'undefined' && Build.lineOfAgentInfo) ? Build.lineOfAgentInfo(j.agentId) : null;
+      if (!info) return 'runs as ' + who;
+      return 'runs the <b>' + esc((info.name || 'unnamed').toUpperCase()) + '</b> line from ' + who + ' (' + info.docks + ' dock' + (info.docks === 1 ? '' : 's') + ')';
+    }
+    /* THE LAST RUN'S SPEND — the routine's own record (`lastUsd`), which for a runsLine routine is the WHOLE
+       line's spend (entry run + every hop; cron-driver / Run Now both add the chain's usd before markRun).
+       Shown only once a run has settled; $0 is printed honestly when the provider was unmetered. */
+    function spendLine(j) {
+      if (!j.lastRunAt) return '';
+      const usd = Number(j.lastUsd);
+      if (!isFinite(usd)) return '';
+      const txt = usd >= 0.01 ? ('$' + usd.toFixed(2)) : usd > 0 ? ('$' + usd.toFixed(4)) : '$0';
+      return ' · <span class="mc-spend" title="' + (j.runsLine === true ? 'what the whole line spent on its last run (entry + every hop)' : 'what the last run spent') + '">' + txt + (j.runsLine === true ? ' line' : '') + '</span>';
+    }
     function lastResult(j) {
       if (!j.lastRunAt) return '<span class="dim">never run</span>';
       const ok = j.lastStatus === 'ok';
@@ -242,10 +263,13 @@
       const termBadge =
         grantBadge(grantsOf.indexOf('workbench') >= 0, '⌘ terminal', 'this routine may run shell commands unattended') +
         grantBadge(grantsOf.indexOf('connectors') >= 0, '⧉ connected tools', 'this routine may call your MCP connectors unattended');
+      const skillCount = Array.isArray(j.skills) ? j.skills.length : 0;
       const runtimeBadge =
         grantBadge(!!j.noAgent, '⚙ script only', 'this routine completes without calling a model') +
         grantBadge(!!j.script && !j.noAgent, '⚙ pre-check', 'a script decides whether the agent should wake') +
-        grantBadge(!!(j.skills && j.skills.length), '✦ ' + j.skills.length + ' skill' + (j.skills.length === 1 ? '' : 's'), 'saved skills preload on every run') +
+        // `skills` may be absent on a hand-seeded / older job — an undefined read here threw and the catch painted
+        // "sidecar offline" over a perfectly live panel (stranded-user sweep, 2026-08-22). Guard every array read.
+        grantBadge(skillCount > 0, '✦ ' + skillCount + ' skill' + (skillCount === 1 ? '' : 's'), 'saved skills preload on every run') +
         grantBadge(!!(j.contextFrom && j.contextFrom.length), '⇢ pipeline', 'uses successful output from upstream routines') +
         grantBadge(j.enabledToolsets != null, '⊣ restricted tools', 'this routine has an explicit per-job toolset intersection') +
         grantBadge(String(j.deliver || 'local') !== 'local', '↗ delivery', 'results are delivered to approved destinations');
@@ -256,7 +280,7 @@
       return '<div class="mc-row" data-id="' + esc(j.id) + '" data-on="' + (on ? '1' : '0') + '" data-sched="' + esc(sched) + '">' +
         '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim"' +
           (schedHuman !== sched ? ' title="' + esc(sched) + '"' : '') + '>' + esc(schedHuman) + '</span> ' + stateBadge + termBadge + runtimeBadge + fromRecipe + '</div>' +
-        '<div class="mc-url dim">runs as ' + esc(agentLabel(j.agentId || 'agent')) + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
+        '<div class="mc-url dim">' + runsLine(j) + ' · next ' + next + ' · last ' + lastResult(j) + spendLine(j) + '</div>' +
         (j.lastError ? '<div class="mc-detail">' + esc(j.lastError === 'schedule-unfireable' ? 'schedule can never fire — reschedule this routine' : j.lastError) + '</div>' : '') +
         failureStreakLine(j) +
         deliveryLine(j) +
