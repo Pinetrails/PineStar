@@ -1634,10 +1634,22 @@ const Build = (() => {
       else { b.disabled = false; sfx('bad'); flashTip(null, res.reason === 'no-room-for-a-desk' ? 'no clear 2×1 floor in this room — make space first' : 'could not place a PC here', false); }
     };
   }
+  /* THE CHECKLIST FOLLOWS THE LINE YOU ARE TOUCHING (2026-08-22 sweep): with two lines on the floor the
+     FINISH card stayed pinned to whichever line it first adopted. Opening any machine's card (STEP / INBOX /
+     OUTBOX / junction) now focuses that machine's line — finKeySel is the same session key finPick honours —
+     and re-renders, so the checklist beside the card is the checklist FOR that line. A line already retired
+     (done/dismissed) stays quiet: finPick filters those before the key is consulted. */
+  function finFocusLine(propId) {
+    const c = lineOfProp(propId);
+    if (!c || c.key === finKeySel) return;
+    finKeySel = c.key; finSig = '';
+    if (running) renderFinCard();
+  }
   function openStepCard(bayId, ev) {
     if (!root) return;
     const p = station.propById(bayId); if (!p || p.t !== 'bay') return;
     cardCloseAll();   // this card REPLACES whatever was up (FINISH ① CREW / the world's NO AGENT nag land here)
+    finFocusLine(bayId);
     const agents = (opts && typeof opts.agents === 'function' && opts.agents()) || [];
     const roleInfo = (p.role && typeof WorldModel !== 'undefined' && WorldModel.bayRoleInfo) ? WorldModel.bayRoleInfo(p.role) : null;
     const canSummon = !!(roleInfo && typeof App !== 'undefined' && App.summonAgent);
@@ -1924,6 +1936,7 @@ const Build = (() => {
     if (!root) return;
     const p = station.propById(propId); if (!p) return;
     cardCloseAll();
+    finFocusLine(propId);
     const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger' || p.t === 'joiner' || p.t === 'loop') ? 'junction' : 'bay';
     const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN', splitter: 'SPLITTER — LANES BALANCE', joiner: 'JOINER — BRANCHES WAIT', loop: 'LOOP — GO ROUND AGAIN' };
     const LINE = {
@@ -2885,9 +2898,18 @@ const Build = (() => {
   let finPosSig = '';
   let uiVer = 1;   // bumped wherever REFIT's own DOM geometry can move — see bumpUi()
   function bumpUi() { uiVer++; finPosSig = ''; }
+  /* the coach's bubble rect (tutorial.js `.tut-coach`, a fixed body child) — VISUAL px. While a coach is up
+     the checklist used to vanish entirely; now it STACKS under the bubble (the first-run guide card is the
+     one surface that still hides it: that card IS the whole screen). */
+  function coachRect() {
+    const el = document.querySelector('.tut-coach'); if (!el) return null;
+    const r = el.getBoundingClientRect(); return (r.width && r.height) ? r : null;
+  }
   function positionFinCard() {
     if (!finCardEl) return;
-    if (tutorialCoaching() || (root && root.querySelector('.refit-firstrun'))) { finCardEl.style.display = 'none'; finPosSig = ''; return; }
+    if (root && root.querySelector('.refit-firstrun')) { finCardEl.style.display = 'none'; finPosSig = ''; return; }
+    const coach = tutorialCoaching() ? coachRect() : null;
+    const coachKey = coach ? '|c' + Math.round(coach.left) + ',' + Math.round(coach.top) + ',' + Math.round(coach.right) + ',' + Math.round(coach.bottom) : '';
     const c = finComp;
     /* ORDERS mode has no line to anchor to (that is the whole point of it), so it parks in the top
        right of the glass — clear of the left dock and of the action deck above. FINISH THE LINE
@@ -2895,14 +2917,17 @@ const Build = (() => {
     if (!c && finCardEl.classList.contains('refit-orders')) {
       if (!cv) return;
       finCardEl.style.display = '';
-      const osig = 'o|' + uiVer + '|' + window.innerWidth + '|' + window.innerHeight + '|' + U.uiZoom();
+      const osig = 'o|' + uiVer + '|' + window.innerWidth + '|' + window.innerHeight + '|' + U.uiZoom() + coachKey;
       if (osig === finPosSig) return;
       const r0 = cv.getBoundingClientRect();
       if (!r0.width) return;
       finPosSig = osig;
       const z = U.uiZoom(), cr0 = finCardEl.getBoundingClientRect();
-      finCardEl.style.left = Math.round((r0.right - (cr0.width || 236 * z) - 14 * z) / z) + 'px';
-      finCardEl.style.top = Math.round((r0.top + 58 * z) / z) + 'px';
+      const ox = r0.right - (cr0.width || 236 * z) - 14 * z;
+      let oy = r0.top + 58 * z;
+      if (coach && coach.right > ox && coach.bottom > oy) oy = coach.bottom + 10 * z;   // stack under the bubble
+      finCardEl.style.left = Math.round(ox / z) + 'px';
+      finCardEl.style.top = Math.round(oy / z) + 'px';
       return;
     }
     if (!c || !c.bbox || !cacheGeo || !cv) return;
@@ -2910,7 +2935,7 @@ const Build = (() => {
     const o = cacheGeo.origin || { tx: 0, ty: 0 }, t = T();
     const lsig = 'l|' + uiVer + '|' + zoom + '|' + panX + '|' + panY + '|' + t + '|' + o.tx + ',' + o.ty
       + '|' + window.innerWidth + '|' + window.innerHeight + '|' + U.uiZoom()
-      + '|' + c.key + '|' + c.bbox.x1 + ',' + c.bbox.y1 + ',' + c.bbox.x2 + ',' + c.bbox.y2;
+      + '|' + c.key + '|' + c.bbox.x1 + ',' + c.bbox.y1 + ',' + c.bbox.x2 + ',' + c.bbox.y2 + coachKey;
     if (lsig === finPosSig) return;
     const r = cv.getBoundingClientRect();
     if (!r.width || !r.height) return;
@@ -2932,6 +2957,10 @@ const Build = (() => {
     else { x = sx((c.bbox.x2 + 1 + o.tx) * t) - w; y = sy((c.bbox.y2 + 1 + o.ty) * t) + 12; }             // no side room — under the line
     x = Math.max(minX, Math.min(x, window.innerWidth - w - 8));
     y = Math.max(56, Math.min(y, window.innerHeight - h - 8));
+    // a coach bubble over the same spot: stack the checklist UNDER it (never hide it, never cover it)
+    if (coach && x < coach.right && x + w > coach.left && y < coach.bottom && y + h > coach.top) {
+      y = Math.min(coach.bottom + 10, window.innerHeight - h - 8);
+    }
     finCardEl.style.left = Math.round(x / uiz) + 'px';
     finCardEl.style.top = Math.round(y / uiz) + 'px';
   }
