@@ -1376,7 +1376,7 @@
           } catch (_) { failing = []; }
           if (failing.length) {
             accUsed++;
-            const lines = failing.slice(0, 20).map(c => '- ' + (c.id || c.type) + ' [' + c.type + (c.path ? ' ' + c.path : '') + (c.command ? ' `' + c.command + '`' : '') + ']: ' + (c.code || 'not_proven'));
+            const lines = failing.slice(0, 20).map(c => '- ' + (c.id || c.type) + ' [' + c.type + (c.path ? ' ' + c.path : '') + (c.command ? ' `' + c.command + '`' : '') + (c.connector ? ' ' + c.connector + (c.tool ? '/' + c.tool : '') : '') + ']: ' + (c.code || 'not_proven'));
             messages.push({ role: 'system', content: '<acceptance_before_done>You are ending this task but the host\'s acceptance checks for it do not all hold yet. These are mechanical postconditions the Commander attached to this procedure; the task is not done until every one passes:\n' + lines.join('\n') + '\nMake each failing check hold now (produce/fix the named artifact in this run, or run the exact named check command so it passes), then finish. If one genuinely cannot be satisfied, say so plainly and name which — never claim it holds.</acceptance_before_done>' });
             continue;
           }

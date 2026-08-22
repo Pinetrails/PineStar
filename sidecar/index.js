@@ -15652,6 +15652,30 @@ async function runOnce(o) {
       }
       return observed;
     };
+    // TYPED CONNECTOR READ-BACK (2026-08-22) — the host's OWN fresh read through the connector for a
+    // `connector_readback` postcondition. Never the model's observation. Refuses anything but an observe-role
+    // tool (the loop's verb classifier, or the server's readOnlyHint as a second opinion) — a mutation can never
+    // be its own proof. Bounded by a 30 s timeout; every failure is a named code, never a pass.
+    const readPostconditionConnector = async requirement => {
+      const cid = String(requirement.connector), tool = String(requirement.tool);
+      const info = connectors.toolInfo(cid, tool);
+      if (!info) return { ok: false, code: 'connector_tool_unavailable' };
+      const role = LoopInternals.vosExternalRole('mcp__' + cid + '__' + tool);
+      if (role !== 'observe' && !info.readOnlyHint) return { ok: false, code: 'connector_tool_not_readonly' };
+      let timer = null;
+      try {
+        const res = await Promise.race([
+          connectors.call(cid, tool, requirement.args || {}),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('read-back timed out')), 30000); })
+        ]);
+        if (!res || res.isError) return { ok: false, code: 'connector_readback_error' };
+        const parts = Array.isArray(res.content) ? res.content : [];
+        const textOut = parts.map(p => (p && typeof p.text === 'string') ? p.text : '').filter(Boolean).join('\n');
+        return { ok: true, text: textOut || (res.structuredContent ? JSON.stringify(res.structuredContent) : '') };
+      } catch (e) {
+        return { ok: false, code: 'connector_readback_error', error: String(e && e.message || e).slice(0, 200) };
+      } finally { if (timer) clearTimeout(timer); }
+    };
     // ACCEPTANCE PROBE (SOP lane): the loop asks "would the contract hold if the run ended now?" when the model
     // tries to finish, and sends it back once to repair what fails. Same predicates, same reader, same evidence as
     // the final verdict — a PREVIEW of the host's judgment, never a substitute for it. Absent when no contract.
@@ -15660,12 +15684,14 @@ async function runOnce(o) {
       const assessed = await TaskPostconditions.assessPostconditions({
         contract: o.postconditions, reason: 'done',
         artifacts: execution.artifactList(), uncertainMutations: execution.uncertainMutations(),
-        evidence: snap && Array.isArray(snap.evidence) ? snap.evidence : [], effectVerdict: snap && snap.effectVerdict,
-        readArtifact: readPostconditionArtifact
+        evidence: snap && Array.isArray(snap.evidence) ? snap.evidence : [], effects: snap && Array.isArray(snap.effects) ? snap.effects : [],
+        effectVerdict: snap && snap.effectVerdict,
+        readArtifact: readPostconditionArtifact, readConnector: readPostconditionConnector
       });
       const byId = {};
       for (const req of ((assessed.contract && assessed.contract.requirements) || [])) byId[req.id] = req;
-      const checks = (assessed.checks || []).map(c => Object.assign({}, c, { path: byId[c.id] && byId[c.id].path, command: byId[c.id] && byId[c.id].command }));
+      const checks = (assessed.checks || []).map(c => Object.assign({}, c, { path: byId[c.id] && byId[c.id].path, command: byId[c.id] && byId[c.id].command,
+        connector: byId[c.id] && byId[c.id].connector, tool: byId[c.id] && byId[c.id].tool }));
       // an INVALID contract has no checks to repair — surface it as one failing row so the model (and the
       // Commander, via the final verdict) sees the contract itself is the problem, not the work.
       if (!assessed.contract && assessed.contractErrors && assessed.contractErrors.length) {
@@ -15763,7 +15789,7 @@ async function runOnce(o) {
         reason: (result && result.reason) || 'error',
         artifacts: execution.artifactList(),
         uncertainMutations: execution.uncertainMutations(),
-        readArtifact: readPostconditionArtifact
+        readArtifact: readPostconditionArtifact, readConnector: readPostconditionConnector
       });
     } catch (_) {
       finalCompletionEvidence = execution.completionEvidence();
