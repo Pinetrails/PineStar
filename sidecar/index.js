@@ -14,7 +14,7 @@ const crypto = require('node:crypto');
 const os = require('node:os');
 const dns = require('node:dns');
 
-const { runAgentLoop } = require('./loop.js');
+const { runAgentLoop, _internals: LoopInternals } = require('./loop.js');
 const DomainTask = require('./domain-task.js');
 const ImageTask = require('./image-task.js');
 const { makeCostEngine } = require('./cost.js');
@@ -228,6 +228,8 @@ const MemoryStore = require('./memory-store.js');                               
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = MemoryStore;
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
+const { makeIdempotencyLedger } = require('./idempotency-ledger.js'); // SOP lane: durable connector-WRITE idempotency (no double-send on retry/resume)
+const TaskPostconditions = require('./task-postconditions.js');        // SOP lane: the typed acceptance authority (mid-run probe + end-of-run verdict)
 const { makeProvenanceIndex } = require('./deliverable-provenance.js'); // WHO made a deliverable + WHAT project it belongs to, derived from the run log
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
 const { makeJourneyStore } = require('./journey-store.js'); // Commander journey: verified outcomes -> mastery/adaptation/evolution (never XP or gating)
@@ -1620,6 +1622,16 @@ const deliverableStore = makeDeliverableStore({
   fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
   onRecover: (key, file) => console.warn('[deliverables] recovered ' + file + ' from .bak last-known-good.'),
   onCorrupt: (key, file) => quarantineCorrupt(file, 'deliverables')
+});
+// IDEMPOTENCY LEDGER (SOP lane, 2026-08-21): every successful custom-connector WRITE is recorded under
+// (work-item scope, tool, canonical args); a byte-identical repeat inside the same scope is answered from the
+// ledger instead of re-sent. The classifier is loop.js's own verify-on-stop one, so "what counts as a write"
+// has exactly one definition in the sidecar.
+const idempotencyLedger = makeIdempotencyLedger({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable, clock: () => Date.now(),
+  classify: LoopInternals.vosExternalRole,
+  onRecover: (key, file) => console.warn('[idempotency] recovered ' + file + ' from .bak last-known-good.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'idempotency')
 });
 function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
 
@@ -10915,6 +10927,8 @@ async function handleCronRun(req, res) {
       // Run Now must exercise the REAL unattended posture, grant included — otherwise "test it now" would
       // prove a capability set the scheduled fire does not get (the whole point of this route).
       unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : [],
+      // SOP recipes: Run Now is held to the same host-checked acceptance contract as the scheduled fire.
+      postconditions: (job.meta && job.meta.postconditions != null) ? job.meta.postconditions : undefined,
       preloadSkills: Array.isArray(job.skills) ? job.skills.slice() : [], requiredPreloads: true, cronScript: job.script || null,
       scriptTimeoutMs: job.scriptTimeoutMs,
       noAgent: job.noAgent === true, workdir: job.workdir || null,
@@ -14844,6 +14858,9 @@ async function runOnce(o) {
   // ordinary capability/consent path exactly as before.
   const grantedSet = new Set(resolved.tools || []);
   const recoveryReplayBarrier = RunRecovery.makeReplayBarrier(o.recovery && o.recovery.blockedFingerprints);
+  // IDEMPOTENCY SCOPE — the work item this run belongs to (cron tick > recovered source run > this run). Empty
+  // only when there is no run identity at all, in which case the gate is inert.
+  const idempotencyScope = idempotencyLedger.scopeFor({ idempotencyScope: o.idempotencyScope, recovery: o.recovery, runId });
 
   /* PARALLEL-SAFE PREDICATE — the host half of loop.js's batch planner. The loop sees a name and args; only
      here does the registry exist to say what a tool actually IS. A batch runs concurrently only when EVERY
@@ -14880,6 +14897,18 @@ async function runOnce(o) {
         content: 'BLOCKED: this mutating call exactly matches an operator-reviewed call from the interrupted run. '
           + 'The host will not execute or retry it. Continue without repeating that effect, or stop and report what remains.'
       };
+    }
+    // IDEMPOTENT CONNECTOR WRITES. A mutate-role custom-connector call whose (scope, tool, canonical args) already
+    // SUCCEEDED for this work item is not sent again: the model gets the recorded result, plainly labelled. This sits
+    // with the recovery barrier — before capability withholding and before the journal's intent boundary — because a
+    // replayed write is not a dispatch at all. Fail-open on a ledger read error (the write executes as before).
+    let idemKey = null;
+    if (idempotencyScope && idempotencyLedger.isWrite(c.name)) {
+      try {
+        idemKey = idempotencyLedger.keyFor(idempotencyScope, c.name, c.argsRaw || JSON.stringify(c.args || {}));
+        const prior = idempotencyLedger.lookup(idemKey);
+        if (prior) return idempotencyLedger.replayResult(prior);   // the loop's own agent.tool_result carries summary 'idempotent-replay'
+      } catch (e) { failNote('idempotency.lookup', e); idemKey = null; }
     }
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: realName });   // wire -> real (dotted) name
     else if (!grantedSet.has(c.name) && registry.get(allWire.get(c.name) || c.name)) {
@@ -15092,6 +15121,11 @@ async function runOnce(o) {
         content: r && r.content != null ? r.content : '', summary: r && r.summary ? r.summary : ''
       });
       if (execution.journalStarted() && !execution.journalFailed()) execution.markToolSettled(c.id);
+      // record the SUCCESSFUL write (only successes protect anything); a ledger write failure never fails the run.
+      if (idemKey && r && r.ok && !r.isError) {
+        idempotencyLedger.record(idemKey, { scope: idempotencyScope, runId, tool: c.name, summary: r.summary, content: r.content })
+          .catch(e => failNote('idempotency.record', e));
+      }
     } catch (e) {
       if (execution.journalStarted()) throw fatalToolBoundary('result', e);
       throw e;
@@ -15598,8 +15632,50 @@ async function runOnce(o) {
     // HOST defines it (agent, model, surface, trigger), and the loop deliberately knows nothing about the
     // surface it was launched from. Observe-only: a hook cannot refuse a run the Commander started.
     try { await hookSpine.invoke('on_session_start', { session_id: runId, cwd: WORKSPACES, extra: { agent_id: agentId, model, platform: surface, trigger: o.trigger || 'directive' } }); } catch (_) {}
+    // TYPED POSTCONDITIONS READER — one host reader for both the mid-run acceptance probe and the end-of-run
+    // verdict: every artifact predicate resolves through the workspace jail, reads are bounded, digests streamed.
+    const readPostconditionArtifact = async requirement => {
+      const resolved = await fsJail.resolveInside(agentId, requirement.path, { scope: 'read' });
+      const stat = await fsp.stat(resolved.abs);
+      if (!stat.isFile()) return { exists: true, isFile: false };
+      const observed = { exists: true, isFile: true, bytes: stat.size };
+      if (requirement.type === 'artifact_contains') {
+        if (stat.size > (8 << 20)) return observed; // bounded read; absence of proof is not failure of the run host
+        observed.contains = (await fsp.readFile(resolved.abs, 'utf8')).includes(requirement.text);
+      } else if (requirement.type === 'artifact_sha256') {
+        const hash = crypto.createHash('sha256');
+        await new Promise((resolve, reject) => {
+          const stream = fs.createReadStream(resolved.abs);
+          stream.on('data', chunk => hash.update(chunk)); stream.once('error', reject); stream.once('end', resolve);
+        });
+        observed.sha256 = hash.digest('hex');
+      }
+      return observed;
+    };
+    // ACCEPTANCE PROBE (SOP lane): the loop asks "would the contract hold if the run ended now?" when the model
+    // tries to finish, and sends it back once to repair what fails. Same predicates, same reader, same evidence as
+    // the final verdict — a PREVIEW of the host's judgment, never a substitute for it. Absent when no contract.
+    const acceptanceProbe = (o.postconditions != null) ? async () => {
+      const snap = execution.completionEvidence();
+      const assessed = await TaskPostconditions.assessPostconditions({
+        contract: o.postconditions, reason: 'done',
+        artifacts: execution.artifactList(), uncertainMutations: execution.uncertainMutations(),
+        evidence: snap && Array.isArray(snap.evidence) ? snap.evidence : [], effectVerdict: snap && snap.effectVerdict,
+        readArtifact: readPostconditionArtifact
+      });
+      const byId = {};
+      for (const req of ((assessed.contract && assessed.contract.requirements) || [])) byId[req.id] = req;
+      const checks = (assessed.checks || []).map(c => Object.assign({}, c, { path: byId[c.id] && byId[c.id].path, command: byId[c.id] && byId[c.id].command }));
+      // an INVALID contract has no checks to repair — surface it as one failing row so the model (and the
+      // Commander, via the final verdict) sees the contract itself is the problem, not the work.
+      if (!assessed.contract && assessed.contractErrors && assessed.contractErrors.length) {
+        return { checks: [{ id: 'contract', type: 'contract', status: 'failed', code: 'invalid_contract: ' + assessed.contractErrors.join('; ').slice(0, 300) }] };
+      }
+      return { checks };
+    } : null;
     result = await runAgentLoop({
       messages: msgs, provider, emit: loopEmit, cost, tools: toolDefs, dispatch, capCtx,
+      acceptanceProbe,
       // Granted but unadvertised: held out of the request until tool.search reveals one (see loop.js).
       deferredTools: deferredToolDefs,
       hiddenTools: ['brief_ask', 'brief_proceed'],
@@ -15687,24 +15763,7 @@ async function runOnce(o) {
         reason: (result && result.reason) || 'error',
         artifacts: execution.artifactList(),
         uncertainMutations: execution.uncertainMutations(),
-        readArtifact: async requirement => {
-          const resolved = await fsJail.resolveInside(agentId, requirement.path, { scope: 'read' });
-          const stat = await fsp.stat(resolved.abs);
-          if (!stat.isFile()) return { exists: true, isFile: false };
-          const observed = { exists: true, isFile: true, bytes: stat.size };
-          if (requirement.type === 'artifact_contains') {
-            if (stat.size > (8 << 20)) return observed; // bounded read; absence of proof is not failure of the run host
-            observed.contains = (await fsp.readFile(resolved.abs, 'utf8')).includes(requirement.text);
-          } else if (requirement.type === 'artifact_sha256') {
-            const hash = crypto.createHash('sha256');
-            await new Promise((resolve, reject) => {
-              const stream = fs.createReadStream(resolved.abs);
-              stream.on('data', chunk => hash.update(chunk)); stream.once('error', reject); stream.once('end', resolve);
-            });
-            observed.sha256 = hash.digest('hex');
-          }
-          return observed;
-        }
+        readArtifact: readPostconditionArtifact
       });
     } catch (_) {
       finalCompletionEvidence = execution.completionEvidence();
