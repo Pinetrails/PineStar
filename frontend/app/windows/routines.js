@@ -197,9 +197,30 @@
       return '<div class="mc-detail" style="color:var(--bad)">✕ delivery failed — ' + esc(j.lastDeliveryError || 'notification could not be sent') +
         ' <span class="dim">' + esc(fmtRel(j.lastDeliveryAt)) + '</span></div>';
     }
+    // CONSECUTIVE-FAILURE AUTO-PAUSE (routine hardening, 2026-08-21): the store counts terminal failures in a row
+    // and disables the job at the ceiling with disabledReason:'consecutive-failures'. Both fields come straight
+    // off GET /api/cron (real store state) — a paused-by-failures row says so, and a still-enabled row with a
+    // streak shows how close it is to the ceiling. Nothing is rendered for a clean job (honest no-signal).
+    let maxConsecutive = 0;   // GET /api/cron .maxConsecutiveFailures (0 = the ceiling is off)
+    function failureStreakLine(j) {
+      const n = Number(j.consecutiveFailures) || 0;
+      if (j.enabled === false && j.disabledReason === 'consecutive-failures') {
+        return '<div class="mc-detail" style="color:var(--bad)">paused automatically after ' + n + ' failure' + (n === 1 ? '' : 's') + ' in a row' +
+          (j.disabledAt ? ' <span class="dim">' + esc(fmtRel(j.disabledAt)) + '</span>' : '') +
+          ' <span class="dim">— fix it, then ENABLE to clear the streak</span></div>';
+      }
+      if (n > 0 && j.enabled !== false) {
+        return '<div class="mc-detail dim">' + n + ' failure' + (n === 1 ? '' : 's') + ' in a row' +
+          (maxConsecutive > 0 ? ' — pauses at ' + maxConsecutive : '') + '</div>';
+      }
+      return '';
+    }
     function row(j) {
       const on = j.enabled;
-      const stateBadge = on ? '<span style="color:var(--gold)">● scheduled</span>' : '<span class="dim">○ paused</span>';
+      const autoPaused = !on && j.disabledReason === 'consecutive-failures';
+      const stateBadge = on ? '<span style="color:var(--gold)">● scheduled</span>'
+        : autoPaused ? '<span style="color:var(--bad)">○ paused — failing</span>'
+        : '<span class="dim">○ paused</span>';
       // A routine can remain scheduled while E-STOP has durably stood down the global scheduler. Keep the saved
       // scheduled badge, but never run a moving countdown for work the host has proven will not fire.
       const next = on && schedulerArmed && j.nextRunAt ? esc(fmtRel(j.nextRunAt)) : '—';
@@ -236,7 +257,8 @@
         '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim"' +
           (schedHuman !== sched ? ' title="' + esc(sched) + '"' : '') + '>' + esc(schedHuman) + '</span> ' + stateBadge + termBadge + runtimeBadge + fromRecipe + '</div>' +
         '<div class="mc-url dim">runs as ' + esc(agentLabel(j.agentId || 'agent')) + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
-        (j.lastError ? '<div class="mc-detail">' + esc(j.lastError) + '</div>' : '') +
+        (j.lastError ? '<div class="mc-detail">' + esc(j.lastError === 'schedule-unfireable' ? 'schedule can never fire — reschedule this routine' : j.lastError) + '</div>' : '') +
+        failureStreakLine(j) +
         deliveryLine(j) +
         '<div class="mc-acts">' +
           '<button class="bb xs" data-act="run">▶ RUN NOW</button>' +
@@ -257,6 +279,21 @@
         // the live cronArmed — feeds the create-confirm's honest arm-state line. A HALTED scheduler is not armed no
         // matter what the intent flag says, or the create-confirm promises a fire that an E-STOP is holding down.
         schedulerArmed = !!(j && j.enabled && !j.halted);
+        maxConsecutive = (j && Number(j.maxConsecutiveFailures)) || 0;
+        // DEGRADED STORE (routine hardening, 2026-08-21): GET /api/cron carries `degraded` when cron.jobs.json AND
+        // its .bak were both unreadable at boot. The sidecar quarantined the file, froze the scheduler, and refuses
+        // to persist an empty list until the Commander accepts the loss. Say so loudly; the one action is explicit.
+        const degraded = j && j.degraded;
+        const degradedBlock = degraded
+          ? '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +
+              '<div class="brief-k" style="color:var(--bad)">✕ ROUTINE STORE IS DAMAGED</div>' +
+              '<div class="brief-v">The saved routines file could not be read and no backup was usable. It was moved aside, <b>not erased</b>, and ' +
+              'routines are frozen so nothing is overwritten.' +
+              (degraded.quarantinePath ? '<div class="dim" style="margin-top:4px;font-size:11px;word-break:break-all">quarantined copy: ' + esc(degraded.quarantinePath) + '</div>' : '') +
+              '<div class="dim" style="margin-top:4px;font-size:11px">Restore that file as cron.jobs.json and restart, or accept the loss to start over.</div>' +
+              '<div style="margin-top:8px"><button class="bb xs danger" id="rt-degraded-clear">✕ ACCEPT LOSS AND CONTINUE</button></div>' +
+            '</div></div>'
+          : '';
         // HONEST disabled-state + one-click ENABLE (G4.6): when the scheduler is OFF, say plainly that routines
         // will NOT fire and offer a one-click ENABLE that arms the live timer (no env edit / restart). When ON,
         // show the armed state + a DISABLE control. `enabled` comes straight from GET /api/cron (the live
@@ -270,7 +307,7 @@
         // `enabled` alone printed "● scheduler armed — routines fire automatically" over a frozen timer. Say the
         // truth loudly and offer the one-click lift (POST /api/cron/arm {enabled:true} clears the halt server-side,
         // which is exactly what the existing #rt-arm data-arm="1" handler already does). Mirrors windows/loops.js.
-        gateEl.innerHTML = j && j.halted
+        gateEl.innerHTML = degradedBlock + (j && j.halted
           ? '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +
               '<div class="brief-k" style="color:var(--bad)">✕ SCHEDULING IS STOPPED (E-STOP)</div>' +
               '<div class="brief-v">Your routines are saved but <b>will not fire</b> — an emergency stop is engaged and it survives a restart.' +
@@ -284,7 +321,17 @@
               '<div class="brief-v">Your routines are saved but <b>will not fire</b> — the scheduler is disarmed. ' +
               'Enable scheduling to arm the live timer now (no restart needed).' +
               '<div style="margin-top:8px"><button class="bb xs" id="rt-arm" data-arm="1">▶ ENABLE SCHEDULING</button></div>' +
-            '</div></div>';
+            '</div></div>');
+        const degradedBtn = gateEl.querySelector('#rt-degraded-clear');
+        if (degradedBtn) degradedBtn.addEventListener('click', async () => {
+          degradedBtn.disabled = true; degradedBtn.textContent = '… accepting';
+          try {
+            const r = await (await post('/api/cron/degraded/clear', { confirm: true })).json();
+            if (r && r.ok) { notify('routine store reset — the damaged copy stays on disk', 'warn'); sfx('click'); }
+            else { notify((r && r.error) || 'could not reset the routine store', 'warn'); sfx('bad'); }
+          } catch (_) { notify('could not reach the sidecar', 'warn'); sfx('bad'); }
+          refresh();
+        });
         const armBtn = gateEl.querySelector('#rt-arm');
         if (armBtn) armBtn.addEventListener('click', async () => {
           const want = armBtn.dataset.arm === '1';
