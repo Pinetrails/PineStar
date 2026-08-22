@@ -1500,6 +1500,14 @@ const Marketplace = (() => {
       return (DossierStore.beliefs('goals') || []).map(b => b && b.text).filter(Boolean).join(' ');
     } catch (_) { return ''; }
   }
+  // the PAIN + AMBITION dims — what eats the Commander's time and what they never get to. Read exactly like
+  // goals; the ranker gives them the same weight and names them honestly in the card's why (momentum loop).
+  function painText() {
+    try {
+      if (typeof DossierStore === 'undefined' || !DossierStore.beliefs) return '';
+      return ['pain', 'ambition'].map(d => (DossierStore.beliefs(d) || []).map(b => b && b.text).filter(Boolean).join(' ')).filter(Boolean).join(' ');
+    } catch (_) { return ''; }
+  }
   function forYouShelfHTML() {
     if (!hasRecipes()) return '';
     if (catFilter !== 'all' || query) return '';   // only in the clean top-level view
@@ -1517,6 +1525,7 @@ const Marketplace = (() => {
     // too, so the positive filter was already engaged and an additive term can only ever ADD survivors.
     const topics = learningOff ? [] : learnedTopics();
     const gt = ready ? goalText() : '';
+    const pt = ready ? painText() : '';
     // THREE, not four: the rail wraps to a second row at four cards on a standard bay, and a shelf that spends
     // two rows above the library is the thing that pushed the catalog off screen. Three also matches the
     // specialists shelf next door, so both tabs speak the same visual language.
@@ -1525,7 +1534,7 @@ const Marketplace = (() => {
     // visits repeat two of three cards and it takes twelve visits to see the whole library. Striding by 3
     // makes each visit a disjoint set and surfaces all twelve buckets in four. This shelf exists for someone
     // who cannot yet name a use case, so three NEW domains beats one new and two they already skipped.
-    const rankOpts = { score: scoreFn, goalText: gt, launches: launches, topics: topics, preferenceModel: preferenceModel, limit: 3, spreadOffset: recipeVisits() * 3 };
+    const rankOpts = { score: scoreFn, goalText: gt, painText: pt, launches: launches, topics: topics, preferenceModel: preferenceModel, limit: 3, spreadOffset: recipeVisits() * 3 };
     // ASK THE RANKER WHAT IT ACTUALLY DID. `ready` only says the station has learned enough to be asked; it does
     // NOT say this row used any of it. A ready Commander whose profile, goals, launches and topics all come up
     // silent gets a catalog-order category spread — and used to get "◈ FOR YOU" printed over it.
@@ -1543,7 +1552,7 @@ const Marketplace = (() => {
     // reason, and truthful telemetry means the flagship row should too.
     const reasonFor = (r) => {
       let why = '';
-      try { why = Recipes.forYouReason ? (Recipes.forYouReason(r, { topics: topics, goalText: gt, launches: launches }) || '') : ''; } catch (_) { why = ''; }
+      try { why = Recipes.forYouReason ? (Recipes.forYouReason(r, { topics: topics, goalText: gt, painText: pt, launches: launches }) || '') : ''; } catch (_) { why = ''; }
       const raw = why || (scoreFn ? becauseText(r) : '');   // affinity copy lives in ONE place (BECAUSE) — fall back to it
       // ONE grammar for every recommendation the station makes: the shelf speaks the same "because …" line
       // the COMMS offer cards do (recommend.js whyLine). Fail-open — the raw reason if the spine isn't loaded.
