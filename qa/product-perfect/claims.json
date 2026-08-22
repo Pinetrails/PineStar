@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "05460bb27e428ba04de37528939e75954e8bf1f8",
+    "sourceCommit": "5fd3c5d9bb756c5e4ec750835fb792e90639d001",
     "pathSetSha256": "77c7cefbdaf746b68ae98b176644d3d9ddf2519175bb3ed53931be9819e6750c",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 357837,
-        "sha256": "fa24707a7289d5df46086d8966ec633422adb3a41b6fe06f7a0d66f617a0a10d"
+        "bytes": 359934,
+        "sha256": "6a612d2d63dfe74c65809204b2fb6ebc5c30a0f119530f98815caface5a1fdab"
       },
       {
         "path": "frontend/app/channels.js",
@@ -908,8 +908,8 @@
       },
       {
         "path": "frontend/app/windows/routines.js",
-        "bytes": 48621,
-        "sha256": "69afed960bcb0f47d56beea0953508582917d6f0c1d1bd1e70ad713e62b46356"
+        "bytes": 50136,
+        "sha256": "20f19c05e037a5fed40b4b536513dcfbac21bd81df7ebeb531de2a72794b8605"
       },
       {
         "path": "frontend/app/windows/trophies.js",
@@ -948,8 +948,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 687954,
-        "sha256": "2e19ad94c12b51fd08dd4217879362e559d655026680b37c728571b205644d66"
+        "bytes": 689703,
+        "sha256": "a91a9750c2fe802f36911695c74bccfc3731563108f24bb3c4fe34a2a25fa3ae"
       },
       {
         "path": "frontend/app/worldmodel.js",
