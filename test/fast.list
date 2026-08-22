@@ -42,6 +42,7 @@ test/tool-dispatch-boundary.test.js
 test/completion-evidence.test.js
 test/task-postconditions.test.js
 test/connector-readback.test.js
+test/recipe-drift.test.js
 test/task-postconditions-ui.test.js
 test/recovery-policy.test.js
 test/tool-recovery.test.js

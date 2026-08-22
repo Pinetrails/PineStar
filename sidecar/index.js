@@ -230,6 +230,7 @@ const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-age
 const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
 const { makeIdempotencyLedger } = require('./idempotency-ledger.js'); // SOP lane: durable connector-WRITE idempotency (no double-send on retry/resume)
 const TaskPostconditions = require('./task-postconditions.js');        // SOP lane: the typed acceptance authority (mid-run probe + end-of-run verdict)
+const RecipeDrift = require('./recipe-drift.js');                      // golden-run drift: latest recipe run vs its own good history (pure, from run rows)
 const { makeProvenanceIndex } = require('./deliverable-provenance.js'); // WHO made a deliverable + WHAT project it belongs to, derived from the run log
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
 const { makeJourneyStore } = require('./journey-store.js'); // Commander journey: verified outcomes -> mastery/adaptation/evolution (never XP or gating)
@@ -8610,6 +8611,7 @@ const ROUTES = [
   { m: 'GET', qsplit: '/api/run-recoveries', h: serveRunRecoveries },
   { m: ['GET', 'POST'], qsplit: '/api/growth/ratings', h: handleGrowthRatings },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
+  { m: 'GET', qsplit: '/api/recipes/drift', h: serveRecipeDrift },   // qsplit: ?recipeId= narrows
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
   { m: 'POST', exact: '/api/channels/handoff', h: handleChannelHandoff },
@@ -18283,6 +18285,22 @@ function withRunTruth(row) {
   // Rows written before the explicit marker existed still carry canonical internal stream prefixes.
   out.internal = !!out.internal || contextpack.isInternalStream(out.streamId);
   return out;
+}
+/* GOLDEN-RUN DRIFT (2026-08-22): every recipe's latest run compared against its own good history, computed from
+   the durable run rows (newest-first) — never a second ledger. `?recipeId=` narrows to one; default every recipe
+   seen in the newest 500 rows. Per-agent scoping deliberately absent: a recipe is station-wide provenance. */
+function serveRecipeDrift(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const want = String(u.searchParams.get('recipeId') || '').slice(0, 60);
+    if (want && !/^[A-Za-z0-9_-]{1,60}$/.test(want)) return json(400, { error: 'bad recipeId' });
+    const rows = runStore.list(null, { limit: 500 }).filter(r => r && r.recipeId && (!want || r.recipeId === want));
+    const all = RecipeDrift.assessAll(rows);
+    return json(200, want ? { recipeId: want, drift: all[want] || RecipeDrift.assessDrift([]) } : { drift: all });
+  } catch (e) {
+    return json(500, { error: 'run history unreadable: ' + String(e && e.message || e).slice(0, 200) });
+  }
 }
 function serveRuns(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
