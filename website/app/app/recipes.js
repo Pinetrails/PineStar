@@ -292,7 +292,11 @@
     if (a.type === 'artifact_contains') return a.path + ' contains "' + a.text + '"';
     if (a.type === 'artifact_sha256') return a.path + ' sha256 = ' + a.sha256;
     if (a.type === 'verification_passed') return 'check passes: ' + a.command;
-    if (a.type === 'connector_readback') return a.connector + ' › ' + a.tool + (a.args ? ' ' + JSON.stringify(a.args) : '') + (a.contains ? ' shows "' + a.contains + '"' : ' matches /' + a.regex + '/');
+    if (a.type === 'connector_readback') {
+      // the editor's live preview hands args as the raw JSON text the author is typing — show it as JSON, not as a quoted string
+      let args = a.args; if (typeof args === 'string') { try { args = JSON.parse(args); } catch (_) { /* keep the text */ } }
+      return a.connector + ' › ' + a.tool + (args ? ' ' + (typeof args === 'string' ? args : JSON.stringify(args)) : '') + (a.contains ? ' shows "' + a.contains + '"' : ' matches /' + a.regex + '/');
+    }
     return a.type;
   }
 
