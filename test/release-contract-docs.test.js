@@ -10,6 +10,8 @@ const releaseTrain = read('.github/workflows/release-train.yml');
 const install = read('INSTALL.md');
 const readme = read('README.md');
 const download = read('docs/DOWNLOAD_PAGE.md');
+const runbook = read('docs/RELEASE_RUNBOOK.md');
+const hostVerifier = read('scripts/verify-update-host.mjs');
 const website = [
   read('website/index.html'),
   read('website/docs/getting-started.html'),
@@ -32,6 +34,13 @@ assert.match(install, /release-pipeline requirements[\s\S]{0,180}not installed p
   'install guide does not turn release workflow code into installed proof');
 assert.match(download, /pipeline contract, not installed proof/i,
   'download copy preserves the evidence boundary');
+assert.match(hostVerifier,
+  /const DEFAULT_REQUIRE = 'windows-x86_64,darwin-aarch64,darwin-x86_64';/,
+  'the canonical updater verifier defaults to the same three supported targets as the train');
+assert.match(runbook, /all three supported platform keys[\s\S]{0,180}windows-x86_64, darwin-aarch64, and darwin-x86_64/i,
+  'the release runbook requires the same three supported targets');
+assert.doesNotMatch(runbook, /all five platform keys/i,
+  'the release runbook does not restore the retired five-platform public contract');
 assert.match(website, /public-train requirements are not installed proof/i,
   'website preserves the evidence boundary');
 

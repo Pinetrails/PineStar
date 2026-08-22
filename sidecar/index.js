@@ -1219,7 +1219,7 @@ function persistSkillApprovals(next) {
   skillApprovals = candidate;
   return true;
 }
-/* SKILL GOLDENS (consistency loop, slice 4): great-rated runs frozen per skill — { "<agentId> <skillId>": [golden] }.
+/* SKILL GOLDENS (consistency loop, slice 4): great-rated runs frozen per skill — { "<agentId>\x00<skillId>": [golden] }.
    Its own file so a golden never touches the skill's content digest (an approval must not expire because the
    Commander liked a run). Read once at boot, written through; one sidecar owns the save dir. */
 const SKILL_GOLDENS_FILE = path.join(WORKSPACES, 'skill-goldens.json');
@@ -1229,7 +1229,7 @@ try {
   const loaded = loadResilient(SKILL_GOLDENS_FILE, 'skill goldens');
   if (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) goldensByKey = loaded;
 } catch (e) { console.warn('[skills] goldens load failed:', (e && e.message) || e); }
-function goldensFor(agentId, skillId) { const l = goldensByKey[String(agentId || 'agent') + ' ' + String(skillId)]; return Array.isArray(l) ? l : []; }
+function goldensFor(agentId, skillId) { const l = goldensByKey[String(agentId || 'agent') + '\x00' + String(skillId)]; return Array.isArray(l) ? l : []; }
 function persistGoldens(next) { saveResilient(SKILL_GOLDENS_FILE, next); goldensByKey = next; }
 const skillGate = makeSkillGate({
   guard: skillGuard,
@@ -13278,7 +13278,7 @@ function serveSkillGoldens(req, res) {
   const id = String(u.searchParams.get('id') || '').trim();
   if (id) return json(200, { agentId, skillId: id, goldens: goldensFor(agentId, id) });
   const out = {};
-  for (const key of Object.keys(goldensByKey)) { const parts = key.split(' '); if (parts[0] === agentId) out[parts[1]] = goldensByKey[key]; }
+  for (const key of Object.keys(goldensByKey)) { const parts = key.split('\x00'); if (parts[0] === agentId) out[parts[1]] = goldensByKey[key]; }
   return json(200, { agentId, bySkill: out });
 }
 function serveAgentSkills(req, res) {
@@ -18352,7 +18352,7 @@ async function handleGrowthRatings(req, res) {
         const g0 = skillGoldens.mint({ runId, agentId: lead.agentId || 'agent', directive, outputText }, Date.now());
         if (g0) {
           const next = Object.assign({}, goldensByKey);
-          for (const id of ids) { const key = String(lead.agentId || 'agent') + ' ' + id; next[key] = skillGoldens.fold(next[key], Object.assign({}, g0, { skillId: id })); goldensMinted++; }
+          for (const id of ids) { const key = String(lead.agentId || 'agent') + '\x00' + id; next[key] = skillGoldens.fold(next[key], Object.assign({}, g0, { skillId: id })); goldensMinted++; }
           persistGoldens(next);
           console.log('[skills] golden minted run=' + runId + ' skills=' + ids.join(',') + ' words=' + g0.reference.words);
         }

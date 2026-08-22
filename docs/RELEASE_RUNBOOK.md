@@ -294,8 +294,8 @@ C4 it runs four jobs in sequence; each must go green before the next starts:
 
 1. **gate** (ubuntu) — `npm ci` + `npm run test:fast`. Red here = the code is broken; nothing
    builds. Fix the code, cut a new patch tag. Do not proceed.
-2. **build** (matrix: windows nsis / ubuntu-22.04 deb+appimage / macOS arm64 dmg / macOS x64
-   dmg) — updater signing is **required** here; a leg fails if it did not produce its updater
+2. **build** (matrix: Windows NSIS / macOS arm64 app+dmg / macOS x64 app+dmg) — updater
+   signing is **required** here; a leg fails if it did not produce its updater
    artifact + `.sig`. All four legs must be green.
 3. **assemble** (ubuntu) — downloads every leg's artifacts, runs
    `release-assemble-manifest.mjs` to build ONE multi-platform `latest.json`, then runs
@@ -319,7 +319,6 @@ Checklist — eyeball all of these before you publish:
   - Windows: `StarNet_0.2.0_x64-setup.exe` + its `.sig`
   - macOS Apple Silicon: an `.app.tar.gz` (aarch64) + its `.sig`, and the `.dmg`
   - macOS Intel: an `.app.tar.gz` (x64) + its `.sig`, and the `.dmg`
-  - Linux: the `.AppImage` + its `.sig` (and the `.deb`)
   - Rule of thumb: **every updater artifact has a matching `.sig`** and **there is exactly one
     `latest.json`**. A `.sig` with no artifact, or an artifact with no `.sig`, is a red flag —
     do not publish; re-run **stage-draft** (section 2.2).
@@ -611,11 +610,11 @@ right answer is: **don't lose the key** (4.1).
 3. **The robocopy in-place hot-patch is DEV-ONLY.** It's a developer convenience for patching a
    local install; it is **never** a user-facing update path. Users update only through the
    signed updater feed.
-4. **Verify green on all five platform keys before you Publish.** The draft must have
-   windows-x86_64, darwin-aarch64, darwin-x86_64, linux-x86_64, and linux-x86_64-deb (the key
-   .deb installs resolve — without it every .deb user downloads the AppImage and fails at
-   install) all present and signed, and `verify-update-host` (run against the manifest) must
-   pass for all of them. A missing platform strands every user on that OS.
+4. **Verify green on all three supported platform keys before you Publish.** The draft must
+   have windows-x86_64, darwin-aarch64, and darwin-x86_64 present and signed, and
+   `verify-update-host` (run against the manifest) must pass for all three. Linux packages are
+   internal/manual artifacts, not a supported public release target; if support is restored,
+   add both linux-x86_64 and linux-x86_64-deb to the train and verifier together.
 5. **`release.yml` is emergency-fallback only.** It's the old Windows-only, publish-immediately
    path (carries a deprecation header). Do **not** run it with `publish=true` unless the release
    train itself is broken and you must ship. The normal path is always the train.
@@ -631,8 +630,9 @@ being built by parallel lanes when the runbook was first written:
   and the 4-job **`.github/workflows/release-train.yml`** (gate → build → assemble → stage-draft) all
   exist on trunk now. Sections 1–2 describe real scripts/jobs, not pending ones.
 - **`verify-update-host.mjs`** now supports `--manifest <file>`, `--expect-version X.Y.Z`,
-  `--require-platforms <list>`, and `--check-urls`, and validates the full platform set — not
-  `windows-x86_64` alone (`npm run release:verify-host` is wired in `package.json`).
+  `--require-platforms <list>`, and `--check-urls`, and validates the full supported public
+  platform set — Windows plus both macOS architectures (`npm run release:verify-host` is wired
+  in `package.json`). Linux/manual manifests can opt into both Linux keys explicitly.
 
 **Still unverified — do not trust these until proven:**
 
