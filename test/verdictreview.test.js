@@ -56,4 +56,51 @@ A.eq(vr.has('d'), false, 'a packet past its TTL is gone (a day-old verdict never
 A.eq(vr.size(), 0, 'sweep drains everything stale');
 A.ok(VERDICTS_THAT_TEACH.has('ok') && VERDICTS_THAT_TEACH.has('miss') && !VERDICTS_THAT_TEACH.has('great'), 'the teaching set is exactly ok+miss');
 
+/* ---------- slice 2: correction grace (fake timers, injected) ---------- */
+{
+  const timers = []; let tick = 0;
+  const fakeSet = (fn, ms) => { const h = { fn, ms, id: ++tick, live: true }; timers.push(h); return h; };
+  const fakeClear = (h) => { if (h) h.live = false; };
+  const runTimers = () => { for (const h of timers.splice(0)) if (h.live) h.fn(); };
+  const fired = [];
+  const g = makeVerdictReview({ now: () => 1, graceMs: 5000, setTimeout: fakeSet, clearTimeout: fakeClear });
+  g.stash('r1', { agentId: 'a' }); g.stash('r2', { agentId: 'a' }); g.stash('r3', { agentId: 'a' });
+  A.eq(g.arm('r1', 'great', j => fired.push(j)), false, 'great never arms');
+  A.eq(g.arm('r1', 'miss', null), false, 'no fire fn → no arm');
+  A.eq(g.arm('r1', 'miss', j => fired.push(j)), true, 'a miss arms a held review');
+  A.eq(fired.length, 0, 'RATCHET: the review does NOT fire on the verdict alone — it waits for the correction');
+  A.eq(g.holding('r1'), true, 'held');
+  A.eq(g.arm('r1', 'miss', j => fired.push(j)), false, 'a duplicate verdict never double-arms');
+  A.eq(g.correct('r1', 'too long — tighter', false, 'chip').fired, false, 'a chip attaches but keeps waiting');
+  A.eq(g.correct('r1', '  shorter, bullets   only ', true, 'message').fired, true, 'the typed message fires NOW');
+  A.eq(fired.length, 1, 'exactly one review fired');
+  A.eq(fired[0].runId, 'r1', 'with the run id');
+  A.eq(fired[0].verdict, 'miss', 'with the verdict');
+  A.eq(fired[0].correction, 'shorter, bullets only', 'the typed message REPLACES the chip (their words win), whitespace collapsed');
+  A.eq(fired[0].correctionSource, 'message', 'source names the message');
+  A.eq(fired[0].firedBy, 'correction', 'fired by the correction');
+  A.eq(fired[0].agentId, 'a', 'the packet rides through');
+  A.eq(g.holding('r1'), false, 'no longer held');
+  A.eq(g.correct('r1', 'again', true).ok, false, 'a correction after firing changes nothing (single-shot)');
+  runTimers();
+  A.eq(fired.length, 1, 'the cancelled timer never fires a second review');
+  // grace expiry with only a chip
+  g.arm('r2', 'ok', j => fired.push(j));
+  g.correct('r2', 'wrong audience / tone', false, 'chip');
+  runTimers();
+  A.eq(fired.length, 2, 'the grace timer fires the review');
+  A.eq(fired[1].correction, 'wrong audience / tone', 'with the chip as the correction');
+  A.eq(fired[1].firedBy, 'grace', 'fired by grace');
+  // initial correction from the ratings body, then nothing
+  g.arm('r3', 'miss', j => fired.push(j), 'from body');
+  runTimers();
+  A.eq(fired[2].correction, 'from body', 'a correction carried on the rating body survives to the grace fire');
+  A.eq(fired[2].correctionSource, 'verdict', 'source = verdict');
+  // graceMs 0 = immediate (the old behaviour, opt-in)
+  const g0 = makeVerdictReview({ now: () => 1, graceMs: 0, setTimeout: fakeSet, clearTimeout: fakeClear });
+  g0.stash('x', {}); const f0 = []; g0.arm('x', 'miss', j => f0.push(j));
+  A.eq(f0.length === 1 && f0[0].firedBy, 'immediate', 'graceMs 0 fires immediately');
+  A.eq(makeVerdictReview({ now: () => 1 }).graceMs, 90000, 'default grace is 90s');
+}
+
 A.report('verdictreview');

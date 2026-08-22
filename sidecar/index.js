@@ -2613,7 +2613,7 @@ async function runThreadMine(o) {
 
 const SKILL_REVIEW_TIMEOUT_MS = num(process.env.SKYNET_SKILL_REVIEW_TIMEOUT_MS, 45000);
 const SKILL_REVIEW_MAX_COST_USD = num(process.env.SKYNET_SKILL_REVIEW_MAX_USD, 0.08);
-const verdictReview = makeVerdictReview({ cap: num(process.env.SKYNET_VERDICT_REVIEW_CAP, 40), ttlMs: num(process.env.SKYNET_VERDICT_REVIEW_TTL_MS, 6 * 60 * 60 * 1000), now: () => Date.now() });
+const verdictReview = makeVerdictReview({ cap: num(process.env.SKYNET_VERDICT_REVIEW_CAP, 40), ttlMs: num(process.env.SKYNET_VERDICT_REVIEW_TTL_MS, 6 * 60 * 60 * 1000), graceMs: num(process.env.SKYNET_VERDICT_REVIEW_GRACE_MS, 90 * 1000), now: () => Date.now() });
 const SKILL_CURATOR_INTERVAL_MS = num(process.env.SKYNET_SKILL_CURATOR_INTERVAL_MS, 24 * 60 * 60 * 1000);
 const SKILL_CURATOR_MAX_COST_USD = num(process.env.SKYNET_SKILL_CURATOR_MAX_USD, 0.12);
 const skillCuratorLastRun = new Map();
@@ -8591,6 +8591,7 @@ const ROUTES = [
   // The recovery reader owns bounded pagination (?limit=&offset=). Match the query-stripped path so COMMS can
   // request its explicit ceiling instead of receiving a misleading static 404 before the handler is reached.
   { m: 'GET', qsplit: '/api/run-recoveries', h: serveRunRecoveries },
+  { m: 'POST', exact: '/api/growth/ratings/correction', h: handleGrowthRatingCorrection },   // consistency loop: the Commander's words after a short-of-the-mark verdict
   { m: ['GET', 'POST'], qsplit: '/api/growth/ratings', h: handleGrowthRatings },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
@@ -18220,14 +18221,30 @@ async function handleGrowthRatings(req, res) {
   // on a duplicate rating, never on `great`. Reported truthfully in the response so the UI can say it happened.
   let skillReviewArmed = false;
   if (!result.duplicate && process.env.SKYNET_SKILL_REVIEW !== '0') {
-    const packet = verdictReview.take(runId, canonical.verdict);
-    if (packet) {
-      skillReviewArmed = true;
-      console.log('[skills] verdict-triggered review armed run=' + runId + ' verdict=' + canonical.verdict);
-      runBackgroundSkillReview(Object.assign({ runId, verdict: canonical.verdict, correction: String(body.correction || '').slice(0, 600) }, packet)).catch(swallow('aux.skillreview.verdict'));
-    }
+    // ARM, don't fire (slice 2): hold the review for a grace window so the Commander's correction — a follow-up
+    // chip or the next typed message (POST /api/growth/ratings/correction) — rides into the prompt in their words.
+    skillReviewArmed = verdictReview.arm(runId, canonical.verdict, (job) => {
+      console.log('[skills] verdict-triggered review fired run=' + runId + ' verdict=' + job.verdict + ' by=' + job.firedBy + (job.correction ? ' correction=' + JSON.stringify(job.correction.slice(0, 80)) : ''));
+      runBackgroundSkillReview(job).catch(swallow('aux.skillreview.verdict'));
+    }, String(body.correction || ''));
+    if (skillReviewArmed) console.log('[skills] verdict-triggered review armed run=' + runId + ' verdict=' + canonical.verdict + ' grace=' + verdictReview.graceMs + 'ms');
   }
   return json(200, { ok: true, duplicate: !!result.duplicate, rating: result.rating, skillReviewArmed });
+}
+// POST /api/growth/ratings/correction { runId, text, final } — the Commander's CORRECTION of a run they rated short
+// (consistency loop, slice 2). Attaches their words to the held verdict review: a follow-up chip (final:false) keeps
+// the grace window open for the typed message; the typed message (final:true) fires the review now. Truthful: the
+// response says whether anything was held — a correction with no held review changes nothing and says so.
+async function handleGrowthRatingCorrection(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 16 << 10)) || {}; }
+  catch (_) { return json(400, { ok: false, error: 'bad json' }); }
+  const runId = String(body.runId || '').trim();
+  if (!runId) return json(400, { ok: false, error: 'runId required' });
+  const r = verdictReview.correct(runId, String(body.text || ''), body.final === true, String(body.source || ''));
+  if (!r.ok) return json(200, { ok: true, held: false, fired: false, reason: r.reason });
+  return json(200, { ok: true, held: true, fired: !!r.fired });
 }
 // GET /api/runs?agent=<id>&limit=<n>&since=<ms>[&runId=<id>] — the agent's run history (M-save P4), newest-first.
 // Rows carry the run's `artifacts` ledger (work-visibility); an explicit runId narrows to that single run's

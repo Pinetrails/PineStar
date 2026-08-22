@@ -60,7 +60,50 @@ function makeVerdictReview(opts) {
   function size() { sweep(); return packets.size; }
   function has(runId) { sweep(); return packets.has(String(runId || '').trim()); }
 
-  return { stash, shouldTrigger, take, size, has, cap, ttlMs };
+  /* ---- CORRECTION GRACE (slice 2, 2026-08-22) ----
+     A verdict alone says "this fell short"; the Commander's NEXT words say HOW. Firing the review the instant the
+     verdict lands threw those words away. arm() takes the packet and holds it for `graceMs`; correct() attaches
+     the Commander's correction — a chip tap (final:false) keeps waiting for the typed message, a typed message
+     (final:true) fires the review NOW with their words; the timer fires with whatever arrived. One review per
+     run either way (held map is keyed by runId; fire is single-shot). Timers are INJECTED (determinism law). */
+  const setT = typeof opts.setTimeout === 'function' ? opts.setTimeout : (fn, ms) => setTimeout(fn, ms);
+  const clearT = typeof opts.clearTimeout === 'function' ? opts.clearTimeout : (h) => clearTimeout(h);
+  const graceMs = Number.isFinite(opts.graceMs) && opts.graceMs >= 0 ? opts.graceMs : 90 * 1000;
+  const held = new Map();   // runId -> { packet, verdict, correction, timer, fire }
+
+  function fireHeld(id, why) {
+    const h = held.get(id); if (!h) return false;
+    held.delete(id);
+    try { clearT(h.timer); } catch (_) {}
+    try { h.fire(Object.assign({}, h.packet, { runId: id, verdict: h.verdict, correction: h.correction, correctionSource: h.correctionSource || '', firedBy: why })); } catch (_) {}
+    return true;
+  }
+  // arm: take the packet for this verdict and hold it for the grace window. Returns false when nothing to review.
+  //   fire(job) — the caller's review launcher; job = packet + { runId, verdict, correction, firedBy }
+  function arm(runId, verdict, fire, initialCorrection) {
+    const id = String(runId || '').trim();
+    if (typeof fire !== 'function') return false;
+    if (held.has(id)) return false;   // already armed (a duplicate verdict never double-arms)
+    const packet = take(id, verdict);
+    if (!packet) return false;
+    const h = { packet, verdict: String(verdict), correction: String(initialCorrection || '').slice(0, 600), correctionSource: initialCorrection ? 'verdict' : '', timer: null, fire };
+    held.set(id, h);
+    if (graceMs === 0) { fireHeld(id, 'immediate'); return true; }
+    h.timer = setT(() => fireHeld(id, 'grace'), graceMs);
+    return true;
+  }
+  // correct: attach the Commander's words. final=true (a typed message) fires now; final=false (a chip) keeps waiting.
+  function correct(runId, text, final, source) {
+    const id = String(runId || '').trim();
+    const h = held.get(id); if (!h) return { ok: false, reason: 'nothing held for this run' };
+    const t = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 600);
+    if (t) { h.correction = h.correction && !final ? (h.correction + ' · ' + t).slice(0, 600) : t; h.correctionSource = String(source || (final ? 'message' : 'chip')); }
+    if (final) { fireHeld(id, 'correction'); return { ok: true, fired: true }; }
+    return { ok: true, fired: false };
+  }
+  function holding(runId) { return held.has(String(runId || '').trim()); }
+
+  return { stash, shouldTrigger, take, size, has, cap, ttlMs, arm, correct, holding, graceMs };
 }
 
 module.exports = { makeVerdictReview, VERDICTS_THAT_TEACH };
