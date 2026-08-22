@@ -106,8 +106,18 @@
       return { status };
     }
 
+    // The token THIS process linked (or last read from the file). On desktop the shell adopts a fresh link
+    // within seconds — it moves deviceToken into the OS keychain and STRIPS it from the file — but the
+    // running sidecar was spawned BEFORE the link, so its envToken is empty. Without this memory the very
+    // next request resolved no token and no base URL: model catalog "offline", WAKE refused, until a full
+    // app restart re-spawned the sidecar with STARNET_CREDITS_TOKEN (2026-08-22, the first-run reports).
+    // Cleared by an unlink; replaced by a fresh link. The keychain copy is the durable home; this is only
+    // the live process keeping what it already proved.
+    let sessionToken = '';
+
     async function persist(rec) {
       if (!file) throw new Error('no dir');
+      sessionToken = str(rec && rec.deviceToken).trim() || sessionToken;
       await fsp.mkdir(DIR, { recursive: true });
       const tmp = file + '.tmp';
       await fsp.writeFile(tmp, JSON.stringify(rec), { encoding: 'utf8', mode: 0o600 });
@@ -132,7 +142,9 @@
       try {
         const raw = fs.readFileSync(file, 'utf8');
         const j = JSON.parse(raw);
-        const token = str(j && j.deviceToken).trim() || envToken;
+        const fileToken = str(j && j.deviceToken).trim();
+        if (fileToken) sessionToken = fileToken;   // pre-adoption read: remember it before the shell strips the file
+        const token = fileToken || envToken || sessionToken;
         if (j && j.url && token) {
           return { url: trimSlash(j.url), deviceToken: token, accountId: str(j.accountId), linkedAt: j.linkedAt || 0 };
         }
@@ -149,7 +161,7 @@
       let onDisk = false;
       try { onDisk = !!str(JSON.parse(fs.readFileSync(file, 'utf8')).deviceToken).trim(); } catch (_) { onDisk = false; }
       if (onDisk) return 'file';
-      if (envToken && hasSaved()) return 'keychain';
+      if ((envToken || sessionToken) && hasSaved()) return 'keychain';
       return 'none';
     }
 
@@ -160,7 +172,7 @@
     // because only the shell can reach the OS credential store — so the UI must call BOTH. Marking `unlinked`
     // here means the running sidecar stops honouring the injected token immediately either way.
     async function clearSaved() {
-      unlinked = true;
+      unlinked = true; sessionToken = '';   // an unlink forgets the live token too — nothing may outlive the user's choice
       if (!file) return { ok: true, removed: false };
       try { await fsp.unlink(file); return { ok: true, removed: true }; }
       catch (e) { if (e && e.code === 'ENOENT') return { ok: true, removed: false }; return { ok: false, error: (e && e.message) || String(e) }; }
