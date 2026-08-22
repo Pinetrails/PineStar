@@ -15,6 +15,9 @@
   // Wire-hint fields on openai-compatible profiles (all sourced from the provider's official API docs,
   // verified 2026-07; the adapter also self-heals by dropping any optional param a provider 400s on):
   //   wireReasoningEffort — endpoint documents the `reasoning_effort` chat-completions param.
+  //   priceFamily — prices.js list-rate table to price runs with when /models carries no pricing block
+  //                 (openai/xai/groq/mistral/deepseek/together/fireworks). Absent = honestly unpriced (ollama,
+  //                 custom, perplexity, cerebras) — the loop's unpriced-token ceiling is the seatbelt there.
   //   wireStreamOptions: false — endpoint does not accept `stream_options` (usage still arrives:
   //     these providers report usage in the stream by default).
   const PROFILES = [
@@ -170,6 +173,7 @@
     },
     {
       id: 'openai',
+      priceFamily: 'openai',   // prices.js table — this endpoint's /models publishes no pricing
       aliases: ['openai-api'],
       name: 'OpenAI API',
       label: 'OPENAI API',
@@ -249,6 +253,7 @@
       // Grok profile below. This api.x.ai/v1 profile is the API-KEY Grok ('XAI'), a separate id, exactly as
       // 'openai' (API key) and 'codex' (OAuth) coexist. Users choosing "GROK OAUTH" vs "XAI" pick their auth.
       id: 'xai',
+      priceFamily: 'xai',   // prices.js table — this endpoint's /models publishes no pricing
       aliases: ['x-ai'],
       name: 'xAI',
       label: 'XAI',
@@ -274,6 +279,7 @@
     },
     {
       id: 'groq',
+      priceFamily: 'groq',   // prices.js table — this endpoint's /models publishes no pricing
       aliases: [],
       name: 'Groq',
       label: 'GROQ',
@@ -299,6 +305,7 @@
     },
     {
       id: 'mistral',
+      priceFamily: 'mistral',   // prices.js table — this endpoint's /models publishes no pricing
       aliases: ['mistralai'],
       name: 'Mistral AI',
       label: 'MISTRAL',
@@ -327,6 +334,7 @@
     },
     {
       id: 'deepseek',
+      priceFamily: 'deepseek',   // prices.js table — this endpoint's /models publishes no pricing
       aliases: [],
       name: 'DeepSeek',
       label: 'DEEPSEEK',
@@ -352,6 +360,7 @@
     },
     {
       id: 'together',
+      priceFamily: 'together',   // prices.js table — this endpoint's /models publishes no pricing
       aliases: ['together-ai'],
       name: 'Together AI',
       label: 'TOGETHER',
@@ -377,6 +386,7 @@
     },
     {
       id: 'fireworks',
+      priceFamily: 'fireworks',   // prices.js table — this endpoint's /models publishes no pricing
       aliases: ['fireworks-ai'],
       name: 'Fireworks AI',
       label: 'FIREWORKS',
