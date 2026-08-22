@@ -2926,7 +2926,9 @@ const Build = (() => {
      is the one posted at the LAST REFIT CLOSE — a sample fired right after an edit ran the OLD line while
      the floor drew the new one. Now the sample awaits World.syncPlan() (recompile if dirty + the server's
      verdict on the POST) and dispatches only once the sidecar holds THIS floor; a line with blocking
-     compiler errors, or a POST the sidecar never answered, is REFUSED with the floor's own nag copy. */
+     compiler errors, or a POST the sidecar never answered, is REFUSED with the floor's own nag copy.
+     RUN-GATE-PURE-BEGIN (extraction marker — test/refit-run-gate.test.js evals finPlanGate with a stubbed
+     `opts.world` + VAL_LABEL; keep it free of other module state). */
   function finPlanGate(c) {
     const w = opts.world;
     if (!w || typeof w.syncPlan !== 'function') return Promise.resolve(null);
@@ -2940,6 +2942,7 @@ const Build = (() => {
       return null;
     }, () => ({ refuse: 'line not posted — the old line was NOT run' }));
   }
+  /* RUN-GATE-PURE-END */
   function finRunSample(c) {
     sfx('click');
     const key = c.key;
