@@ -27,6 +27,7 @@
      This module holds no policy of its own here: it TRANSPORTS the origin, the compiled plan decides. */
 'use strict';
 const Pipeline = require('../../frontend/app/pipeline.js');
+const { note: failNote } = require('../failopen.js');   // tagged fail-open: a swallowed barrier error stays visible
 
 const MAX_HOPS = 6;            // stages AFTER the first (a drawn floor with more is a design smell, not a run)
 const MAX_CHAIN_USD = 2.00;    // the WHOLE chain's spend ceiling, entry run included (seed.entryUsd) — one message must not become an open tab
@@ -118,7 +119,7 @@ function makeChainRunner(o) {
     if (!barrierStore) return;
     const snap = {};
     for (const [k, b] of barriers) snap[k] = { expect: b.expect, parts: b.parts.map(p => ({ agentId: p.agentId, workitemId: p.workitemId })), ts: b.ts };
-    try { barrierStore.save(snap); } catch (_) {}
+    try { barrierStore.save(snap); } catch (e) { failNote('chain.barrier.persist', e); }
   }
   const barrier = {
     deliver(k, expect, agentId, text, timeoutMin) {
@@ -157,10 +158,10 @@ function makeChainRunner(o) {
     const keys = left && typeof left === 'object' ? Object.keys(left) : [];
     for (const k of keys) {
       const b = left[k] || {};
-      try { console.warn('[chain] join barrier lost on restart: ' + k + ' (' + ((b.parts || []).length) + '/' + (b.expect || '?') + ' branches had delivered) — the line will not resume'); } catch (_) {}
+      try { console.warn('[chain] join barrier lost on restart: ' + k + ' (' + ((b.parts || []).length) + '/' + (b.expect || '?') + ' branches had delivered) — the line will not resume'); } catch (e) { failNote('chain.barrier.restartWarn', e); }
       for (const p of (b.parts || [])) if (p && p.workitemId) say('workitem.superseded', { workitemId: p.workitemId, agentId: p.agentId || '', ts: now() });
     }
-    if (keys.length) { try { barrierStore.save({}); } catch (_) {} }
+    if (keys.length) { try { barrierStore.save({}); } catch (e) { failNote('chain.barrier.clear', e); } }
   }
 
   const preview = s => String(s || '').replace(/\s+/g, ' ').slice(0, PREVIEW);
