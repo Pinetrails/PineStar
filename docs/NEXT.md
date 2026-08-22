@@ -1,5 +1,39 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-08-21 — MOMENTUM LOOP: CONTINUOUS EXTRACTION + USEFUL POPUPS (`agent/momentum-loop`)
+
+Thesis check (Andrew, 08-21): the interview is a ONE-TIME extraction of what the user wants and how;
+the station must keep extracting through the work itself, and turn what it learns into automation
+that takes work off the user. Audit of interview → dossier → quests → recommendations found the loop
+leaks in seven places; the rate beat (`chat.js` ~2770, `▲ nailed it / ◆ close / ▼ missed`) only mints
+XP and asks nothing. Popups must carry real power or not appear.
+
+**Critical (before 0.9.0):**
+1. **Verdicts feed ranking.** `Recipes.rankRecipes` has no outcome term; raw `launches` counts UP-rank
+   a recipe the user rated `miss`. Add a verdict term sourced from `growthratings` / `recqualitystore`;
+   ratchet test: a `miss`-rated recipe must rank below an unrated peer.
+
+**Lane body:**
+2. **Extraction at delivery.** The rate beat becomes ONE targeted question drawn from the weakest
+   dossier dim for that run's task-class (e.g. "shorter next time, or this depth?"), with chip answers
+   + free text. Answers write `observed` beliefs into `dossier.dims` (today only goal milestones do,
+   `goalstore.js:378`). No question when the dim is already `stated` — the beat must never fire for
+   no reason. Budget: ≤1 question per run, none on runs the user already rated this session.
+3. **Pain/ambition → automation proposals.** Quest minting reads `pain` + `ambition` dims and the
+   "same recipe/directive launched ≥3×" signal to propose ROUTINES ("Monday brief ran twice — run it
+   every Monday 07:00?"). Accepting mints the routine in place; declining lands in `deniedTitles`.
+4. **All dims → rankOpts.** `marketplace.js:1497 goalText()` reads only `goals`; pass pain/ambition/
+   stack/people/schedule to `rankRecipes` (keyword + affinity, honesty law intact).
+5. **Quest-log dismissals → sidecar `deniedTitles`** so a refresh can't re-mint the same quest.
+6. Interview `stack`/`identity` seeds `Profile.seed` (today never wired).
+
+**Popup law (new):** a popup earns its pixels only if the answer CHANGES something observable
+(ranking, a belief, a routine). "close"/"noted" that writes nothing is a dead question — remove it
+or give it a consequence. Verify live: rate a run, reopen FOR YOU, the rated recipe moved.
+
+Reference: Hermes does correction→`skill_manage` write-back with a `pending/` approval gate; StarNet
+already has the richer intake, it lacks the write-back.
+
 ## 2026-08-21 — RELEASE CUT IS TWO COMMANDS (`agent/rel-cut-ritual`)
 
 Reliability item 3 (ship cadence): the cut was a long manual ritual across the runbook, memory notes
