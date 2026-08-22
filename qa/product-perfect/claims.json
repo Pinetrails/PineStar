@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "43ffa88c4c9c5c138302f43dadc4ef86d7c8787c",
-    "pathSetSha256": "92160ff9edb3cc6cd7deb0d0e0b35e6e60cf470af43886963164d96bbfaccd50",
+    "sourceCommit": "2fcb3957862ce1188d854c7e29fddb981dec4b7c",
+    "pathSetSha256": "77c7cefbdaf746b68ae98b176644d3d9ddf2519175bb3ed53931be9819e6750c",
     "files": [
       {
         "path": "INSTALL.md",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 607171,
-        "sha256": "22406ebad2b43ac71144e90841438f4183e0f1a8ceb5cd20ec8ab64a5fcd62dd"
+        "bytes": 610261,
+        "sha256": "e8c9327c79060835cc711660d8cd81aa0e750ca098e3bd57609deff7744fdcb0"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -837,6 +837,11 @@
         "sha256": "23aafa786148895ec5d92174ef83cf86ba8910529f2a387be3ba3720d1e96e41"
       },
       {
+        "path": "frontend/app/verdictfollowup.js",
+        "bytes": 4418,
+        "sha256": "1a0b766e8cb217fcb0d9f2b412d02b6bcaf997fa056256e0755d6724d63ea12f"
+      },
+      {
         "path": "frontend/app/voice-live.js",
         "bytes": 83643,
         "sha256": "57cbeafbaf95d90e7a27c247036ee007a0488b06afd3d7371f2f4858aee53668"
@@ -1038,8 +1043,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 76135,
-        "sha256": "5ecf157e0325a2f0a16fff76e1f4d944de60a0cf0d77723d68ff1181ff0cc718"
+        "bytes": 76182,
+        "sha256": "176cc218fc457eca4e3b78dbd6a05eccbdfc81c72a608818a4df75be6482fdf3"
       },
       {
         "path": "frontend/js/arcade.js",
