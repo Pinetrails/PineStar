@@ -2204,6 +2204,22 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const id = String((a && a.executionProfile) || '');
     return EXECUTION_PROFILES.some(p => p.id === id) ? id : EXECUTION_PROFILE_DEFAULT;
   }
+  // SANDBOX UNAVAILABLE chip (truthful telemetry): the sidecar's /api/execution-profiles row carries
+  // environment.backendMatched from the router's real resolution. When the requested sandbox (Docker /
+  // SSH) is not there, the router REFUSES commands rather than quietly running them on the host — so the
+  // pane must say so, and name the fix. Absent row = unknown = no chip (never assert what isn't proven).
+  function sandboxChip(row) {
+    const env = row && row.environment;
+    if (!env || env.backendMatched !== false) return '';
+    const requested = String(env.requestedBackend || '').toUpperCase();
+    const fix = env.requestedBackend === 'docker' ? 'Start Docker, or change the execution profile.'
+      : env.requestedBackend === 'ssh' ? 'Save & probe an SSH target, or change the execution profile.'
+      : 'Change the execution profile.';
+    const why = String(env.mismatchReason || (requested + ' backend unavailable'));
+    const mode = env.refusing === false ? 'commands are running on this computer instead' : 'commands are REFUSED until it is fixed';
+    return '<span class="sandbox-chip" data-sandbox-unavailable="' + esc(String(env.requestedBackend || '')) + '" title="' + esc(why + ' — ' + mode + '. ' + fix) + '">▲ SANDBOX UNAVAILABLE</span>' +
+      '<span class="sandbox-chip-fix">' + esc(why) + ' — ' + esc(mode) + '. ' + esc(fix) + '</span>';
+  }
   function executionProfileCard(a) {
     const current = executionProfileId(a);
     const p = executionProfileOf(current);
@@ -2390,7 +2406,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const p = executionProfileOf(executionProfileId(a));
         const routed = String((row && row.profile && row.profile.effectiveBackend) || 'unknown').toUpperCase();
         const availability = String((row && row.environment && row.environment.availability && row.environment.availability.state) || 'unknown').toUpperCase();
-        if (epTruth) epTruth.innerHTML = 'ROUTES NEXT COMMAND TO <b>' + esc(routed) + '</b> · AVAILABILITY <b>' + esc(availability) + '</b>' +
+        if (epTruth) epTruth.innerHTML = sandboxChip(row) + 'ROUTES NEXT COMMAND TO <b>' + esc(routed) + '</b> · AVAILABILITY <b>' + esc(availability) + '</b>' +
           ' · FILES: ' + esc(p.files) + ' · TOOLS: ' + esc(p.tools) + ' · DESKTOP: ' + esc(p.desktop);
       };
       Harness.api.get('/api/execution-profiles').then(j => paintBackendTruth((j && j.agents || []).find(x => x.agentId === (a && a.id)))).catch(() => paintBackendTruth(null));
@@ -6823,7 +6839,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               // the only thing you could not read as one. (CSS-only; the chips themselves are unchanged.)
               (can ? '<div class="ov-vchips pc-chips pc-reach-chips">' + reachChips + '</div>' : '<span class="pc-plain">' + esc(p.label) + '</span>') +
               '<p class="pc-plain">' + (effFull ? 'Full Power currently overrides this stored reach profile; the profile applies again when Full Power is turned off.' : esc(p.plain)) + '</p>' +
-              '<p class="mc-hint pc-truth">routes next command to <b>' + esc(routed) + '</b> · availability <b>' + esc(availability) + '</b> · files: ' + esc(p.files) + ' · tools: ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</p>' +
+              '<p class="mc-hint pc-truth">' + sandboxChip(row) + 'routes next command to <b>' + esc(routed) + '</b> · availability <b>' + esc(availability) + '</b> · files: ' + esc(p.files) + ' · tools: ' + esc(p.tools) + ' · desktop ' + esc(p.desktop) + '</p>' +
             '</div>' +
             '<div class="pc-axis pc-ask-axis">' +
               '<span class="pc-q">AUTHORITY' + (overridden ? ' <span class="pc-ovr">— OVERRIDDEN BY WHOLE-STATION FULL POWER</span>' : '') + '</span>' +

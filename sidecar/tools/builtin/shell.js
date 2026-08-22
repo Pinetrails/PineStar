@@ -713,6 +713,12 @@
     });
   }
 
+  // Lane C (no silent fallback): when the agent's profile asks for a sandbox the router cannot honor, the
+  // router hands back a typed refusal. Ask BEFORE checkpointing or resolving cwd so nothing touches the host.
+  function sandboxRefusal(environment, aid) {
+    if (!environment || typeof environment.refusalFor !== 'function') return null;
+    try { return environment.refusalFor(aid) || null; } catch (_) { return null; }
+  }
   function makeShellTool(deps) {
     deps = deps || {};
     const environment = deps.environment || null;
@@ -756,6 +762,8 @@
           : null;
         const cmd = String((args && args.cmd) || '').trim();
         if (!cmd) throw new Error('empty command');
+        const refusal = sandboxRefusal(environment, aid);
+        if (refusal) throw refusal;
         const deny = remoteOwner ? null : escapesWorkspace(cmd);
         if (deny) throw new Error('refused: ' + deny);
         const jailRoot = environment ? environment.ensureWorkspace(aid) : P.join(ROOT, aid);
@@ -966,5 +974,5 @@
     };
   }
 
-  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, commandSafetyRisk: commandSafetyRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd, unrestrictedHost: unrestrictedHost };
+  return { makeShellTool: makeShellTool, runCommand: runCommand, escapesWorkspace: escapesWorkspace, opensVisibleWindow: opensVisibleWindow, inputIsolationRisk: inputIsolationRisk, commandSafetyRisk: commandSafetyRisk, workspaceCapturesInput: workspaceCapturesInput, projectScanRoot: projectScanRoot, breaksMachineState: breaksMachineState, exposesNetwork: exposesNetwork, safeAgentId: safeAgentId, buildMarkedCmd: buildMarkedCmd, parseMarker: parseMarker, withinJail: withinJail, normalizeWinCwd: normalizeWinCwd, resolveShellCwd: resolveShellCwd, unrestrictedHost: unrestrictedHost, sandboxRefusal: sandboxRefusal };
 });
