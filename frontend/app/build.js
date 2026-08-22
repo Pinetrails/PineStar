@@ -1575,6 +1575,65 @@ const Build = (() => {
     entry: "The arriving message is the task. This is your station's standing part of it — what this desk always does with arriving work.",
     chain: "Work arrives here as the previous station's output. This is your station's job — your part of every run that reaches you."
   };
+  /* ON <LINE> — n docks, feeds <next> (2026-08-22 sweep): the dock's line fact is DURABLE and LIVE. After a
+     click-connect the only signal used to be a 1.3s flash; this sentence sits on the open STEP card and
+     refreshLineFacts() re-reads it off the recompiled plan (valComps / valPlan.chains) every time the floor
+     changes, so "did that connect?" is answered by the card without reopening it. Every word is a compiled
+     fact: the line from Pipeline.lineComponents, the hand-off from plan.chains (the sidecar's own route). */
+  function lineFactHTML(bayId) {
+    const comp = lineOfProp(bayId);
+    if (!comp) return 'not on a line yet — lay belts (7) or click-connect two machines to put this dock on one';
+    const p = station.propById(bayId), aid = p && p.agentId;
+    const ch = aid && valPlan && valPlan.chains && valPlan.chains[aid];
+    const feeds = !ch ? null
+      : (ch.next && ch.next.length) ? 'feeds <b>' + esc(ch.next.map(agentLabelFor).join(' + ').toUpperCase()) + '</b>'
+      : ch.outbox ? 'ships to <b>OUTBOX</b>'
+      : ch.deadEnd ? 'its output <b>dead-ends</b> — belt it onward' : null;
+    return 'ON <b>' + esc((lineNameOf(comp) || 'an unnamed line').toUpperCase()) + '</b> — ' + comp.bays.length + ' dock' + (comp.bays.length === 1 ? '' : 's')
+      + (feeds ? ', ' + feeds : (aid ? ', feeds nothing yet' : ''));
+  }
+  function refreshLineFacts() {
+    if (!root) return;
+    root.querySelectorAll('[data-linefact]').forEach(el => { if (station.propById(el.dataset.linefact)) el.innerHTML = lineFactHTML(el.dataset.linefact); });
+  }
+  /* THE COMPUTE RULE, SAID PLAINLY (2026-08-22 sweep): the floor's amber "NO COMPUTE — ADD A PC IN THIS ROOM"
+     never said WHOSE PC — bayObjects grants `computer` only from a workstation in the bay's room that is
+     assigned to THIS agent (or unassigned in a one-agent room). The card states exactly that, with the
+     one-click fix: a desk placed IN THIS ROOM and bound to the agent (requisitionPcFor — the same validated
+     addProp path a hand placement takes; never a flag). Reads bayObjectsMemoed — the same truth the nag draws. */
+  function computeFactHTML(bayId) {
+    const p = station.propById(bayId); if (!p || !p.agentId) return '';
+    if (bayObjectsMemoed(p.agentId).indexOf('computer') >= 0) return '<div class="step-fact">✓ <b>COMPUTE</b> — ' + esc(agentLabel(p.agentId)) + ' has a PC in this room</div>';
+    return '<div class="refit-note">NO COMPUTE — needs a PC assigned to <b>' + esc(agentLabel(p.agentId).toUpperCase()) + '</b> in this room, or routed work cannot run here</div>'
+      + '<button type="button" class="bb sm refit-primary refit-summon" id="step-pc">⊕ ADD A PC FOR ' + esc(agentLabel(p.agentId).toUpperCase()) + ' HERE</button>';
+  }
+  function requisitionPcFor(bayId) {
+    const p = station.propById(bayId); if (!p || !p.agentId) return { ok: false, reason: 'uncrewed' };
+    const rid = station.roomAt(p.x, p.y), rm = rid && station.roomById(rid);
+    if (!rm || !rm.rects) return { ok: false, reason: 'no-room' };
+    for (const r of rm.rects)
+      for (let y = r.y1; y <= r.y2; y++)
+        for (let x = r.x1; x <= r.x2; x++) {
+          if (!(station.canPlaceProp('desk', x, y, 2, 1) || {}).ok) continue;
+          const res = station.addProp({ t: 'desk', x, y, w: 2, h: 1, agentId: p.agentId });
+          if (!res || !res.ok) continue;
+          pushFlash([{ x1: x, y1: y, x2: x + 1, y2: y }], false);
+          if (typeof Tutorial !== 'undefined' && Tutorial.onPropPlaced) Tutorial.onPropPlaced('desk');
+          return { ok: true, id: res.id, tile: { tx: x, ty: y } };
+        }
+    return { ok: false, reason: 'no-room-for-a-desk' };
+  }
+  function refreshComputeFact(g, bayId) {
+    const el = g.querySelector('#step-compute'); if (!el) return;
+    el.innerHTML = computeFactHTML(bayId);
+    const b = el.querySelector('#step-pc');
+    if (b) b.onclick = () => {
+      b.disabled = true;
+      const res = requisitionPcFor(bayId);
+      if (res.ok) { sfx('chime'); flashTip(null, 'PC placed + assigned — compute is on', true); bumpGeo(); refreshComputeFact(g, bayId); }
+      else { b.disabled = false; sfx('bad'); flashTip(null, res.reason === 'no-room-for-a-desk' ? 'no clear 2×1 floor in this room — make space first' : 'could not place a PC here', false); }
+    };
+  }
   function openStepCard(bayId, ev) {
     if (!root) return;
     const p = station.propById(bayId); if (!p || p.t !== 'bay') return;
@@ -1586,9 +1645,7 @@ const Build = (() => {
     // THE STEP zone copy — all provable floor facts: the role from the stamp, the line from the compiled
     // component grouping (Pipeline.lineComponents), its name from the intake's saved label.
     const comp = lineOfProp(bayId);
-    const lineTxt = comp
-      ? 'ON <b>' + esc((lineNameOf(comp) || 'an unnamed line').toUpperCase()) + '</b> — ' + comp.bays.length + ' dock' + (comp.bays.length === 1 ? '' : 's') + ' on this line'
-      : 'not on a line yet — lay belts (7) to put this dock on one';
+    const lineTxt = lineFactHTML(bayId);
     const stepTxt = roleInfo
       ? 'THIS STEP WANTS A <b>' + esc(p.role) + '</b> — ' + esc(roleInfo.desc)
       : 'a dock — work routed here runs as its agent';
@@ -1618,10 +1675,11 @@ const Build = (() => {
         <div class="refit-form">
         <div class="refit-sec">THE STEP</div>
         <div class="step-fact">${stepTxt}</div>
-        <div class="step-fact">${lineTxt}</div>
+        <div class="step-fact" data-linefact="${esc(bayId)}">${lineTxt}</div>
         ${runsTxt ? '<div class="step-fact">' + runsTxt + '</div>' : ''}
         ${restTxt ? '<div class="refit-note">' + esc(restTxt) + '</div>' : ''}
-        <div class="refit-sec">THE AGENT — <span id="step-bound">${cur ? 'crewed by ' + esc(cur) : 'uncrewed'}</span></div>
+        <div class="refit-sec">THE AGENT — <span id="step-bound">${cur ? 'crewed by ' + esc(agentLabel(cur)) : 'uncrewed'}</span></div>
+        <div class="step-compute" id="step-compute"></div>
         ${canSummon ? '<button type="button" class="bb sm refit-primary refit-summon" id="bay-summon">⊕ SUMMON A ' + esc(p.role) + ' HERE</button>' : ''}
         ${agents.length ? '<div class="refit-agents refit-bay-agents" id="step-rows">' + rows + '</div>' : ''}
         <input id="bay-aid" class="refit-input" type="text" maxlength="40" placeholder="${agents.length ? 'or type an agent id' : 'agent id — e.g. coder'}" value="${esc(cur)}" />
@@ -1648,10 +1706,12 @@ const Build = (() => {
     cardRegister(g, closeP);   // ESC closes THROUGH here, so the job brief is saved and never discarded
     // a bind/unbind UPDATES the card in place (the brief draft must survive crewing the dock) — the
     // one-surface law: configure the whole step here, close once.
+    refreshComputeFact(g, bayId);
     const refreshBinding = () => {
       const live = station.propById(bayId), aid = (live && live.agentId) || '';
-      if (boundEl) boundEl.textContent = aid ? 'crewed by ' + aid : 'uncrewed';
+      if (boundEl) boundEl.textContent = aid ? 'crewed by ' + agentLabel(aid) : 'uncrewed';   // the display NAME, never the raw id (the roster chips say RESEARCHER; this said "researcher")
       g.querySelectorAll('.bay-agent').forEach(x => x.classList.toggle('active', x.dataset.aid === aid));
+      refreshComputeFact(g, bayId);
       input.value = aid;
       // a bind can place this dock on the compiled line — re-read its position so the brief placeholder
       // speaks to the right feed (arriving message vs the previous station's output). Best-effort: the plan
@@ -3903,6 +3963,7 @@ const Build = (() => {
         lastStampIds = null;
       }
       renderFinCard();
+      refreshLineFacts();   // an open STEP/flow card's "ON <LINE> — feeds …" line follows the recompiled plan
       // ghost projection (Phase 3): same plan, same components, same frame rebase as everything above
       if (ghost) ghost.setContext({ plan: valPlan, comps: valComps, offset: (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 } });
     }
