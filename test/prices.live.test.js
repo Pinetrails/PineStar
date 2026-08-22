@@ -20,6 +20,14 @@ const PAYLOAD = {
   google: { models: {
     'gemini-test-9': { cost: { input: 1.5, output: 9 } }
   } },
+  // 2026-08-21: the other metered families ride the same seam (keys as models.dev spells them)
+  openai: { models: {
+    'gpt-test-9': { cost: { input: 2.5, output: 15, cache_read: 0.25 } },
+    'gpt-garbage': { cost: { input: -1, output: 'x' } }
+  } },
+  xai: { models: { 'grok-test-9': { cost: { input: 2, output: 6 } } } },
+  togetherai: { models: { 'org/Model-Test-9': { cost: { input: 0.5, output: 1.5 } } } },
+  'fireworks-ai': { models: { 'accounts/fireworks/models/test-9': { cost: { input: 1, output: 4 } } } },
   'some-other-provider': { models: { x: { cost: { input: 1, output: 1 } } } }
 };
 
@@ -39,6 +47,13 @@ const PAYLOAD = {
     A.eq(lp.lookup('anthropic', 'claude-test-9-20991231'), { in: 7, out: 42 }, 'a dated/suffixed local id prefix-matches its base entry');
     A.eq(lp.lookup('gemini', 'models/gemini-test-9'), { in: 1.5, out: 9 }, 'the models/ prefix Google APIs carry is stripped');
     A.eq(lp.lookup('anthropic', 'entirely-unknown'), null, 'an unknown model stays unpriced here (the snapshot answers downstream)');
+    // the 2026-08-21 families
+    A.eq(lp.lookup('openai', 'gpt-test-9'), { in: 2.5, out: 15 }, 'an openai rate resolves');
+    A.eq(lp.lookup('openai', 'gpt-garbage'), null, 'openai garbage is dropped');
+    A.eq(lp.lookup('xai', 'grok-test-9'), { in: 2, out: 6 }, 'an xai rate resolves');
+    A.eq(lp.lookup('together', 'org/Model-Test-9'), { in: 0.5, out: 1.5 }, 'together maps to the togetherai key, case-insensitive org-prefixed id');
+    A.eq(lp.lookup('fireworks', 'accounts/fireworks/models/test-9'), { in: 1, out: 4 }, 'fireworks maps to the fireworks-ai key');
+    A.eq(lp.lookup('groq', 'anything'), null, 'a family absent from the payload answers null, not a guess');
   }
 
   // ---- B. the disk cache warms a fresh instance with no fetch at all ----
@@ -46,6 +61,8 @@ const PAYLOAD = {
     const lp2 = makeLivePrices({ file, fetchImpl: async () => { throw new Error('offline'); } });
     A.eq(lp2.state().loaded, true, 'a new instance boots warm from the disk cache');
     A.eq(lp2.lookup('anthropic', 'claude-test-9'), { in: 7, out: 42 }, 'cached rates answer offline');
+    A.eq(lp2.lookup('openai', 'gpt-test-9'), { in: 2.5, out: 15 }, 'disk-cache revalidation keeps the new families (openai)');
+    A.eq(lp2.lookup('fireworks', 'accounts/fireworks/models/test-9'), { in: 1, out: 4 }, 'disk-cache revalidation keeps the new families (fireworks)');
     A.eq(await lp2.refresh(true), false, 'a failed forced refresh reports false and keeps last-good');
     A.eq(lp2.lookup('anthropic', 'claude-test-9'), { in: 7, out: 42 }, 'last-good survives a dead network');
   }

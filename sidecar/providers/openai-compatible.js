@@ -3,9 +3,9 @@
    It implements the same LLMProvider seam as OpenRouter and Codex. */
 'use strict';
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'));
-  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.openaiCompatible = factory(root.SK.providers.provider, root.SK.providers.errorClass); }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (provider, errorClass) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'), require('./prices.js'));
+  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.openaiCompatible = factory(root.SK.providers.provider, root.SK.providers.errorClass, root.SK.providers.prices); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (provider, errorClass, prices) {
   'use strict';
 
   const normalizeFinish = provider.normalizeFinish;
@@ -85,6 +85,13 @@
     // keyed-provider "＋ Add a key" door for a keyless subscription sign-in.
     const errLabel = String(opts.label || 'openai-compatible');
     const profileSupportsTools = (typeof opts.supportsTools === 'boolean') ? opts.supportsTools : null;
+    /* PRICE FAMILY (2026-08-21). OpenAI's /v1/models — and every vendor that clones it — carries NO pricing
+       block, so priceOf() returned null on openai/xai/groq/mistral/deepseek/together/fireworks and cost.js
+       priced every turn at $0: the per-run spend cap could never fire on any of them. The registry profile
+       names the prices.js table to fall back to (null for ollama/custom/perplexity — genuinely unpriced, and
+       the run stays honestly 'unpriced' there). Catalog pricing, when an endpoint DOES publish it, still wins. */
+    const priceFamily = (typeof opts.priceFamily === 'string' && opts.priceFamily.trim()) ? opts.priceFamily.trim() : null;
+    const listPrices = (prices && typeof prices.priceOf === 'function') ? prices : null;
     const defaultEffort = String(opts.reasoningEffort || '');
     // Static catalog fallback for endpoints with no usable /models (e.g. Perplexity, whose
     // /v1/models lists Agent-API models, not its chat-completions roster). Used only when the
@@ -300,14 +307,29 @@
       }
       return catalog;
     }
-    async function listModels() { return (await loadCatalog()).map(m => Object.assign({}, m)); }
+    // A model the wire left unpriced gets the list-rate pricing block the same way anthropic.js publishes it,
+    // so the connect screen and priceOf() can never disagree about what a turn will cost.
+    async function listModels() {
+      return (await loadCatalog()).map(m => {
+        const copy = Object.assign({}, m);
+        if (!copy.pricing && priceFamily && listPrices && typeof listPrices.pricingBlock === 'function') copy.pricing = listPrices.pricingBlock(priceFamily, copy.id);
+        return copy;
+      });
+    }
     function findModel(id) { return catalog ? catalog.find(m => m.id === id) : null; }
     function contextLimit(id) { const m = findModel(id); return (m && m.context_length) || defaultContext; }
-    function priceOf(id) {
+    function catalogPriceOf(id) {
       const m = findModel(id);
       if (!m || !m.pricing) return null;
       const i = parseFloat(m.pricing.prompt) * 1e6, o = parseFloat(m.pricing.completion) * 1e6;
       return (isFinite(i) && isFinite(o)) ? { in: i, out: o } : null;
+    }
+    // catalog pricing (the wire said so) -> list-rate table for the profile's family -> null (honest 'unpriced')
+    function priceOf(id) {
+      const fromCatalog = catalogPriceOf(id);
+      if (fromCatalog) return fromCatalog;
+      if (priceFamily && listPrices) return listPrices.priceOf(priceFamily, id);
+      return null;
     }
     // Catalog capability wins when it exists; otherwise fall back to the provider profile's assertion
     // (e.g. Perplexity documents no function calling). null = genuinely unknown, never a guess.

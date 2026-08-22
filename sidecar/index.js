@@ -564,7 +564,9 @@ function knobEnvLocked(envSuffix) { const e = envSuffix ? ENV(envSuffix) : null;
 // maxToolBytes: the per-run tool-output FLOOR — the effective cap scales with the model's context window
 // (toolBytesCapFor at the run seam) UNLESS SKYNET_MAX_TOOL_BYTES is explicitly set, which pins the cap
 // absolutely (deterministic tests + locked-down deploys).
-const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 0), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: resolveKnob('MAX_TOOL_BYTES', 'maxToolBytes', 120000) };
+// maxUnpricedTokens: per-run TOKEN ceiling for turns no catalog/table could price on a METERED provider (the $ cap
+// is blind to them). SKYNET_MAX_UNPRICED_TOKENS overrides; 0 disables. OAuth/unmetered providers are exempt.
+const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 0), maxCostUsd: 1.00, maxRepeat: 3, toolTimeoutMs: 30000, maxToolBytes: resolveKnob('MAX_TOOL_BYTES', 'maxToolBytes', 120000), maxUnpricedTokens: resolveKnob('MAX_UNPRICED_TOKENS', 'maxUnpricedTokens', 2000000) };
 const MAX_TOOL_BYTES_PINNED = knobEnvLocked('MAX_TOOL_BYTES');
 // Optional spend governance: per-run, per-agent, per-day, and global ceilings all default OFF.
 // num() passes a parsed value through (including 0 -> UNGOVERNED via budget.js capOf, e.g. SKYNET_BUDGET_PER_DAY=0
@@ -15648,7 +15650,11 @@ async function runOnce(o) {
       // An operator-reviewed recovery continuation already has a durable, one-shot resolution plan. Its job is
       // to synthesize that checkpoint and settle once; starting fresh alternate-path attempts would exceed the
       // operator's narrowly authorized continuation and make the recovery non-idempotent.
-      limits: { maxIters: runMaxIters, maxCostUsd: runCapUsd, failureRecovery: o.recovery ? false : undefined },
+      limits: {
+        maxIters: runMaxIters, maxCostUsd: runCapUsd, failureRecovery: o.recovery ? false : undefined,
+        // unpriced-token seatbelt: metered API-key providers only — a subscription/OAuth/unmetered run bills nothing
+        maxUnpricedTokens: (providerUnmetered || usingCodex || usingDeviceOAuth) ? Infinity : CAPS.maxUnpricedTokens
+      },
       budget: runBudget, context: ctxMgr, summarize, fallbacks, initialFallback,
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.

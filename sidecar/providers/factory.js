@@ -90,6 +90,8 @@
         // wireStreamOptions:false = endpoint rejects/lacks stream_options (usage streams by default there)
         includeUsage: profile.wireStreamOptions === false ? false : opts.includeUsage,
         staticModels: profile.staticModels,
+        // prices.js family for endpoints whose /models carries no pricing (null = stays honestly unpriced)
+        priceFamily: (typeof profile.priceFamily === 'string') ? profile.priceFamily : null,
         defaultContext: opts.defaultContext,
         headers: mergedHeaders
       });
