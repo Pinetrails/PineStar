@@ -15987,11 +15987,14 @@ async function runOnce(o) {
   }
   if (_auxSpend.has('skill-review')) {
     runBackgroundSkillReview({ agentId, runId, messages: result.messages.slice(), provider, model: _auxSkillModel, cost, loadedSkills, managedSkills, unmetered: providerUnmetered }).catch(swallow('aux.skillreview.envelope'));
-  } else if (process.env.SKYNET_SKILL_REVIEW !== '0' && _auxDone && isTask && !internal) {
-    // CONSISTENCY LOOP (2026-08-22): this real task run did NOT earn a size-review. Park its review packet so that
-    // if the Commander rates it `ok`/`miss` (POST /api/growth/ratings) the SAME quiet review runs with the verdict
-    // in the prompt — a small run they called short of the mark is the best lesson the skillbase ever gets.
-    // Bounded LRU + TTL in verdictreview.js; a `great` verdict never spends it; taken once.
+  }
+  if (process.env.SKYNET_SKILL_REVIEW !== '0' && _auxDone && isTask && !internal) {
+    // CONSISTENCY LOOP (2026-08-22): park this real task run's review packet so that if the Commander rates it
+    // `ok`/`miss` (POST /api/growth/ratings) the SAME quiet review runs again WITH THE VERDICT in the prompt.
+    // Parked even when the size-review above already fired: that pass ran before the verdict existed and is
+    // blind to it (live-proved 2026-08-22 — the chars gate counts the system prompt, so it fires on nearly every
+    // run). The verdict pass is the one that knows the work fell short. Bounded LRU + TTL in verdictreview.js;
+    // `great` never spends it; taken once; one extra aux pass per rated-short run, a Commander-initiated signal.
     verdictReview.stash(runId, { agentId, messages: result.messages.slice(), provider, model: _auxSkillModel, cost, loadedSkills, managedSkills, unmetered: providerUnmetered });
   }
   if (_auxSpend.has('skill-curator')) {
