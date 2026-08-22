@@ -448,6 +448,12 @@
           // Host-minted recovery identity. The active-run journal can now tie an interrupted headless run back
           // to the routine that launched it without trusting model text or guessing from the stream id.
           cronJobId: job.id, cronJobName: job.name || '',
+          // SOP recipes: a routine minted from a recipe with acceptance rows carries the typed postconditions
+          // contract in its meta bag; the host evaluates it at run end exactly as for an interactive launch.
+          postconditions: (job.meta && job.meta.postconditions != null) ? job.meta.postconditions : undefined,
+          // IDEMPOTENCY SCOPE: the same scheduled tick retried/resumed must not re-send a connector write, but the
+          // NEXT tick of the same routine legitimately may — so the scope is job + scheduled fire time.
+          idempotencyScope: 'cron:' + job.id + ':' + String(scheduledFor == null ? '' : scheduledFor),
           // a scheduled run does real work; what it learns is durable memory, not scratch. Bounded downstream by
           // the aux budget + per-agent reflection cooldown, and stamped origin:'schedule' (see index.js /api/run).
           reflect: true,

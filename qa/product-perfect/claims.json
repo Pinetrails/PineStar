@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b687c526accd9af7c3c269ac105466729eecdbb3",
+    "sourceCommit": "8482ed84b1bacc17f8f989dd4d2675576455fe31",
     "pathSetSha256": "92160ff9edb3cc6cd7deb0d0e0b35e6e60cf470af43886963164d96bbfaccd50",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 345297,
-        "sha256": "b0d548952f1286837e7210a617c8d3ad6a961d2e970eac8be1a0e94b2b3e1990"
+        "bytes": 345685,
+        "sha256": "5351e4501718e086ae5a07f4f8e3d99044b5a72ca523743274843fa6d1cfc18a"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -373,8 +373,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 250008,
-        "sha256": "8a9848c2865653b0c434dabeff4d374d7b1aa93b8bf660e8a8bf02f67820d9da"
+        "bytes": 258036,
+        "sha256": "8a41fecbc6240177d11ed7d5fc91b68aa55592e116cfeb3106bbf122b739eaf0"
       },
       {
         "path": "frontend/app/mint.js",
@@ -598,8 +598,8 @@
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 63011,
-        "sha256": "96419811ba69bbb76d02698c4ef1a6eaf5d13ec522226725de7d5ebf9a2310da"
+        "bytes": 71954,
+        "sha256": "d68df10f21beebd7464579d5e45cb72be0249f4f39aac72eea39f21aa7c0cd5d"
       },
       {
         "path": "frontend/app/recledger.js",
