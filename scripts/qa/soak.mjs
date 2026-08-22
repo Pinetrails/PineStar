@@ -59,7 +59,14 @@ export const DEFAULTS = Object.freeze({
   restartEvery: 10,     // minutes between restart cycles (clamped to fit ≥1 cycle in short soaks)
   maxSamples: 600,      // receipt tick samples are downsampled to this many points
   cronTickMs: 10_000,   // the sidecar's scheduler tick while soaking (routine is "every 1 minute")
+  routines: 1,          // routines seeded; --routines=50 is the power-user SCALE soak (see buildRoutinePlan)
+  maxParallel: 0,       // SKYNET_CRON_MAX_PARALLEL (0 = uncapped); the scale run caps it so at-capacity deferrals occur
+  outageSeconds: 0,     // the FIRST restart holds the sidecar down this long: > the 2-min misfire grace proves the catch-up collapse
+  slowRunMs: 75_000,    // a SOAK_SLOW routine's mock answer takes this long (> its 1-min period) so already-running skips occur
 });
+
+export const SLOW_MARKER = 'SOAK_SLOW';
+export const UNFIREABLE_ERROR = 'schedule-unfireable';   // cron-store.UNFIREABLE_ERROR — the driver's mark for a schedule that can never fire
 
 /* THE RULES — thresholds + why. Every number here is printed into the receipt beside the measurement. */
 export const RULES = Object.freeze({
@@ -104,6 +111,15 @@ export const RULES = Object.freeze({
     title: 'sidecar never died and never orphaned a child',
     why: 'an unplanned exit is a crash; a child process STILL alive 3s after the sidecar stopped is the close-zombie class (0.10.5/0.10.6). A child seen at the instant of the stop but gone within the grace is recorded as transient (a measurement, not a failure)',
   },
+  accounting: {
+    title: 'every due occurrence of every routine is accounted for exactly once',
+    why: 'the power-user claim is "30–50 routines a day fire each one". For EVERY seeded routine, every occurrence its schedule owes inside the soak window (enumerated with sidecar/cron.js nextFireAt from the armed nextRunAt — the scheduler\'s own math, never a re-implementation) must end as exactly ONE of: fired (cron.fire with that scheduledFor), skipped already-running (the previous run still held the lease), caught-up (misfire=skip past the grace), collapsed (a missed occurrence folded into the ONE catch-up by the misfire policy — visible only as the store\'s nextRunAt jumping more than one period), disabled (paused routine reported once per due window), or unfireable (a corrupt schedule marked once). At-capacity deferrals are transient (the occurrence stays due and must still reach a terminal). A fire whose scheduledFor is not an owed occurrence, two fires for one occurrence (a double-fire, the restart class), an owed occurrence with no terminal (lost), or a nextRunAt advance the schedule math does not predict is a FAIL. Judged only when the cron event log is readable; a soak in which a fireable routine is owed nothing is inconclusive and FAILS (the window measured no scheduling)',
+  },
+  tick: {
+    title: 'scheduler tick latency with N routines (whole-store verified write per advance)',
+    maxP95Ms: 300,
+    why: 'the cron tick runs SYNCHRONOUSLY under the process lock: planTick over every job, then saveCronJobs — a full-envelope fsync write + read-back verification of ALL routines — for each advance, and again in markRun for each result. That cost is O(routines) per tick and blocks the event loop while it runs. p95 of (lastSuccessAt − lastTickAt) sampled from GET /api/cron over the LAST HALF must stay under 300 ms at the scale the product claims (50 routines); above that the tick is visibly stalling every run and chat in the station. A breach here is a finding against the store write model (index.js saveCronJobs), not a tuning knob',
+  },
 });
 
 export function parseArgs(argv) {
@@ -129,6 +145,10 @@ export function parseArgs(argv) {
     toolEvery: num('tool-every', DEFAULTS.toolEvery, 1),
     restartEvery,
     maxSamples: num('max-samples', DEFAULTS.maxSamples, 10),
+    routines: num('routines', DEFAULTS.routines, 1),
+    maxParallel: num('max-parallel', DEFAULTS.maxParallel, 0),
+    outageSeconds: num('outage-seconds', DEFAULTS.outageSeconds, 0),
+    slowRunMs: num('slow-run-ms', DEFAULTS.slowRunMs, 1000),
     out: typeof o.out === 'string' && o.out ? o.out : null,
     aux: o.aux === true || o.aux === 'true',
     help: o.help === true,
@@ -166,9 +186,142 @@ export function boundSamples(samples, max) {
 function tail(xs, fraction) { return xs.slice(Math.floor(xs.length * (1 - fraction))); }
 function minutesFrom(t0, t) { return (t - t0) / 60_000; }
 
+/* ─────────────────────────────── ROUTINE SCALE: plan + accounting ───────────────────────────────
+   buildRoutinePlan(n) — the N routines a scale soak seeds, with deliberately OVERLAPPING schedules:
+   1-min and 2-min intervals mixed with cron minute patterns (every `*`/`*\/2`/`*\/3`/`*\/5` minute, odd
+   minutes), so many come due in the same minute. Roles: 'disabled' (created enabled, then paused, so its
+   nextRunAt ages into the past and the driver must report it), 'unfireable' (the store is corrupted under the
+   first restart so the driver must mark it), 'slow' (its mock answer outlives its 1-min period, so the lease
+   forces already-running skips), else 'fireable'. n=1 is the classic single heartbeat. */
+export function buildRoutinePlan(n) {
+  n = Math.max(1, Math.floor(Number(n) || 1));
+  if (n === 1) return [{ label: 'r00-heartbeat', schedule: 'every 1 minute', misfire: 'fire_once', role: 'fireable' }];
+  const disabledCount = 1, unfireableCount = n >= 4 ? 2 : 0, slowCount = n >= 8 ? 3 : (n >= 5 ? 1 : 0);
+  const cadences = ['every 1 minute', '* * * * *', 'every 2 minutes', '*/2 * * * *', 'every 1 minute', '*/3 * * * *', '1-59/2 * * * *', 'every 1 minute', '*/2 * * * *', '*/5 * * * *'];
+  const plan = [];
+  for (let i = 0; i < n; i++) {
+    let role = 'fireable';
+    if (i < disabledCount) role = 'disabled';
+    else if (i < disabledCount + unfireableCount) role = 'unfireable';
+    else if (i < disabledCount + unfireableCount + slowCount) role = 'slow';
+    plan.push({ label: `r${String(i).padStart(2, '0')}-${role}`, schedule: role === 'fireable' ? cadences[i % cadences.length] : 'every 1 minute', misfire: i % 2 ? 'skip' : 'fire_once', role });
+  }
+  return plan;
+}
+
+/** Parse the sidecar console for the validated cron telemetry lines (`[cron] <name> <json>`), in order. */
+export function parseCronLog(text) {
+  const out = [];
+  const re = /^\[cron\] (cron\.[a-z_.]+) (\{.*\})\s*$/;
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const m = re.exec(line);
+    if (!m) continue;
+    let payload; try { payload = JSON.parse(m[2]); } catch (e) { continue; }
+    out.push({ seq: out.length, name: m[1], payload });
+  }
+  return out;
+}
+
+/** The occurrences a schedule owes from `fromMs` (inclusive) up to `toMs` (exclusive) — the scheduler's own math. */
+export function occurrencesBetween(cronLib, schedule, fromMs, toMs, defaultTz) {
+  const out = [];
+  let t = fromMs;
+  for (let guard = 0; guard < 100_000 && t != null && t < toMs; guard++) {
+    out.push(t);
+    t = cronLib.nextFireAt(schedule, new Date(t).toISOString(), t, { defaultTz: defaultTz || 'UTC' });
+  }
+  return out;
+}
+
+/* accountRoutines({ routines, events, trail, endAt, cronLib, defaultTz }) — the per-routine ledger.
+     routines : [{ id, label, role, schedule(obj), misfire, firstNextRunAt(iso) }]
+     events   : parseCronLog() output (ordered)
+     trail    : [{ at, jobs: { id: { nextRunAt, enabled, lastError } } }] — GET /api/cron snapshots, ordered
+     endAt    : ms — the last instant the store was read (occurrences after it are the open tail)
+   An occurrence is CONSUMED when the store's nextRunAt moves past it; the occurrence at the old nextRunAt is
+   the HEAD (it owes exactly one terminal event), the ones between old and new are COLLAPSED by the misfire
+   policy. Fires carry scheduledFor and are matched to heads exactly; skips carry no scheduledFor and fill the
+   remaining heads in order. Returns { pass, routines:[...], totals, problems } — never throws. */
+export function accountRoutines(input) {
+  const cronLib = input.cronLib;
+  const tz = input.defaultTz || 'UTC';
+  const events = Array.isArray(input.events) ? input.events : [];
+  const trail = Array.isArray(input.trail) ? input.trail : [];
+  const endAt = Number(input.endAt) || 0;
+  const byJob = new Map();
+  for (const e of events) { const id = e.payload && e.payload.jobId; if (!id) continue; if (!byJob.has(id)) byJob.set(id, []); byJob.get(id).push(e); }
+  const totals = { routines: 0, owed: 0, fired: 0, alreadyRunning: 0, caughtUp: 0, collapsed: 0, deferred: 0, disabled: 0, unfireable: 0, tail: 0, lost: 0, doubled: 0, unexpected: 0, offSchedule: 0 };
+  const problems = [];
+  const rows = [];
+  for (const r of input.routines || []) {
+    totals.routines++;
+    const ev = byJob.get(r.id) || [];
+    const fires = ev.filter((e) => e.name === 'cron.fire');
+    const skipsOf = (reason) => ev.filter((e) => e.name === 'cron.skipped' && e.payload.reason === reason);
+    const row = { id: r.id, label: r.label, role: r.role, schedule: r.schedule && r.schedule.display || null, owed: 0, fired: 0, alreadyRunning: skipsOf('already-running').length, caughtUp: skipsOf('caught-up').length, collapsed: 0, deferred: skipsOf('at-capacity').length, disabled: skipsOf('disabled').length, unfireable: ev.filter((e) => e.name === 'cron.result' && e.payload.reason === UNFIREABLE_ERROR).length, tail: 0, lost: [], doubled: [], unexpected: [], offSchedule: [], otherSkips: ev.filter((e) => e.name === 'cron.skipped' && ['already-running', 'caught-up', 'at-capacity', 'disabled'].indexOf(e.payload.reason) < 0).map((e) => e.payload.reason), ok: true, note: null };
+    // 1. the store's nextRunAt advances → heads + collapsed
+    const seq = [];
+    let prev = r.firstNextRunAt || null;
+    for (const snap of trail) {
+      const j = snap.jobs && snap.jobs[r.id];
+      if (!j) continue;
+      if (j.nextRunAt && j.nextRunAt !== prev) { seq.push({ from: prev, to: j.nextRunAt }); prev = j.nextRunAt; }
+    }
+    const heads = [];
+    for (const adv of seq) {
+      const from = Date.parse(adv.from), to = Date.parse(adv.to);
+      if (!Number.isFinite(from) || !Number.isFinite(to) || !r.schedule) { row.offSchedule.push(`${adv.from}→${adv.to}`); continue; }
+      if (to <= from) { row.offSchedule.push(`${adv.from}→${adv.to} (moved backwards)`); continue; }
+      const occ = occurrencesBetween(cronLib, r.schedule, from, to, tz);
+      const predictedNext = occ.length ? cronLib.nextFireAt(r.schedule, new Date(occ[occ.length - 1]).toISOString(), occ[occ.length - 1], { defaultTz: tz }) : null;
+      if (predictedNext !== to) row.offSchedule.push(`${adv.from}→${adv.to} (schedule math predicts ${predictedNext == null ? 'null' : new Date(predictedNext).toISOString()})`);
+      heads.push(from);
+      row.collapsed += Math.max(0, occ.length - 1);
+    }
+    row.owed = heads.length + row.collapsed;
+    // 2. match fires to heads by scheduledFor; skips fill the rest in order
+    const headSet = new Map(heads.map((h) => [h, 0]));
+    const pending = prev ? Date.parse(prev) : null;
+    for (const f of fires) {
+      const sf = Number(f.payload.scheduledFor);
+      if (headSet.has(sf)) { headSet.set(sf, headSet.get(sf) + 1); row.fired++; }
+      else if (pending != null && sf === pending) { row.tail++; }   // fired after the last store read: the open tail occurrence
+      else row.unexpected.push(new Date(sf).toISOString());
+    }
+    for (const [h, n] of headSet) if (n > 1) row.doubled.push(new Date(h).toISOString());
+    const unfiredHeads = [...headSet].filter(([, n]) => n === 0).length;
+    const skipTerminals = row.alreadyRunning + row.caughtUp;
+    // skips have no scheduledFor: they account for the unfired heads (any surplus is a skip for the open tail)
+    if (skipTerminals < unfiredHeads) row.lost = [...headSet].filter(([, n]) => n === 0).slice(0, unfiredHeads - skipTerminals).map(([h]) => new Date(h).toISOString());
+    else if (skipTerminals > unfiredHeads) row.tail += skipTerminals - unfiredHeads;
+    // 3. role expectations
+    if (r.role === 'disabled') {
+      if (fires.length) row.note = 'a paused routine fired';
+      else if (!row.disabled) row.note = 'paused + due but the driver never reported cron.skipped{disabled}';
+      if (heads.length) row.note = (row.note ? row.note + '; ' : '') + 'a paused routine advanced its nextRunAt';
+    } else if (r.role === 'unfireable') {
+      const markIdx = ev.findIndex((e) => e.name === 'cron.result' && e.payload.reason === UNFIREABLE_ERROR);
+      if (markIdx < 0) row.note = 'corrupt schedule was never marked ' + UNFIREABLE_ERROR;
+      else if (row.unfireable > 1) row.note = 'marked unfireable more than once';
+      else if (ev.slice(markIdx + 1).some((e) => e.name === 'cron.fire')) row.note = 'fired AFTER being marked unfireable';
+      const lastSnap = [...trail].reverse().find((s) => s.jobs && s.jobs[r.id]);
+      if (lastSnap && lastSnap.jobs[r.id].lastError !== UNFIREABLE_ERROR) row.note = (row.note ? row.note + '; ' : '') + 'store lastError is not ' + UNFIREABLE_ERROR;
+    } else {
+      if (!heads.length) row.note = 'owed nothing in the window (no nextRunAt advance observed)';
+      if (r.role === 'slow' && !row.alreadyRunning) row.note = (row.note ? row.note + '; ' : '') + 'slow routine never produced an already-running skip';
+    }
+    row.ok = !row.lost.length && !row.doubled.length && !row.unexpected.length && !row.offSchedule.length && !row.note;
+    for (const k of ['owed', 'fired', 'alreadyRunning', 'caughtUp', 'collapsed', 'deferred', 'disabled', 'unfireable', 'tail']) totals[k] += row[k];
+    totals.lost += row.lost.length; totals.doubled += row.doubled.length; totals.unexpected += row.unexpected.length; totals.offSchedule += row.offSchedule.length;
+    if (!row.ok) problems.push(`${row.label}: ${[row.lost.length && `lost ${row.lost.length} (${row.lost[0]})`, row.doubled.length && `double-fired ${row.doubled[0]}`, row.unexpected.length && `unexpected fire ${row.unexpected[0]}`, row.offSchedule.length && `off-schedule advance ${row.offSchedule[0]}`, row.note].filter(Boolean).join('; ')}`);
+    rows.push(row);
+  }
+  return { pass: totals.routines > 0 && problems.length === 0, totals, problems, routines: rows, endAt: endAt ? new Date(endAt).toISOString() : null };
+}
+
 /* A tick sample:
    { at, epoch, rssBytes|null, rssReason?, healthMs:{median,max}|null, swallowedTotal|null, swallowedTags:{tag:n}|null,
-     errorRing:[ts...]|null, workspaceBytes|null, runs:{ok,failed}, routineFires } */
+     errorRing:[ts...]|null, workspaceBytes|null, runs:{ok,failed}, routineFires, tickMs|null } */
 
 export function evaluate(input) {
   const samples = Array.isArray(input.samples) ? input.samples : [];
@@ -270,6 +423,32 @@ export function evaluate(input) {
   // process
   rules.process = { pass: (process.unexpectedExits || 0) === 0 && (process.orphans || []).length === 0, actual: { unexpectedExits: process.unexpectedExits || 0, orphans: (process.orphans || []).slice(0, 20), transientChildren: (process.transientChildren || []).slice(0, 20), orphanCheck: process.orphanCheck || null }, expected: { unexpectedExits: 0, orphans: 0 }, why: RULES.process.why };
 
+  // accounting: the per-routine occurrence ledger (computed by runSoak via accountRoutines; null when the cron log was unreadable)
+  {
+    const acc = input.accounting || null;
+    if (!acc || !acc.totals) {
+      rules.accounting = { pass: true, actual: { reason: (acc && acc.reason) || 'cron event log not available to this run (no cronEvents driver)', routines: null }, expected: { lost: 0, doubled: 0, unexpected: 0, offSchedule: 0 }, why: RULES.accounting.why };
+    } else {
+      const t = acc.totals;
+      rules.accounting = {
+        pass: acc.pass === true,
+        actual: { routines: t.routines, owed: t.owed, fired: t.fired, alreadyRunning: t.alreadyRunning, caughtUp: t.caughtUp, collapsed: t.collapsed, deferred: t.deferred, disabled: t.disabled, unfireable: t.unfireable, tail: t.tail, lost: t.lost, doubled: t.doubled, unexpected: t.unexpected, offSchedule: t.offSchedule, problems: (acc.problems || []).slice(0, 20), detail: acc.routines },
+        expected: { lost: 0, doubled: 0, unexpected: 0, offSchedule: 0, 'every fireable routine': 'owed >= 1' }, why: RULES.accounting.why,
+      };
+    }
+  }
+
+  // tick: p95 of the scheduler tick duration over the last half
+  {
+    const half = tail(samples, 1 / 2).map((s) => s.tickMs).filter((v) => Number.isFinite(v));
+    const p95 = percentile(half, 95);
+    rules.tick = {
+      pass: p95 === null ? true : p95 <= RULES.tick.maxP95Ms,
+      actual: { p95Ms: p95, maxMs: half.length ? Math.max(...half) : null, medianMs: percentile(half, 50), points: half.length, routines: input.options && input.options.routines || null, reason: p95 === null ? 'no scheduler tick samples in the last half (GET /api/cron lastTickAt/lastSuccessAt unavailable)' : undefined },
+      expected: { p95Ms: `<= ${RULES.tick.maxP95Ms}` }, why: RULES.tick.why,
+    };
+  }
+
   const failed = Object.keys(rules).filter((k) => !rules[k].pass);
   return { verdict: failed.length ? 'FAIL' : 'PASS', failedRules: failed, rules };
 }
@@ -321,6 +500,15 @@ export function renderSummary(r) {
     L.push(`| ${k} | ${v.pass ? 'PASS' : 'FAIL'} | \`${JSON.stringify(actual)}\` | \`${JSON.stringify(v.expected)}\` |`);
   }
   L.push('');
+  const acc = r.rules.accounting && r.rules.accounting.actual;
+  if (acc && Array.isArray(acc.detail)) {
+    L.push(`## Routine accounting (${acc.routines} routines · owed ${acc.owed} · fired ${acc.fired} · already-running ${acc.alreadyRunning} · caught-up ${acc.caughtUp} · collapsed ${acc.collapsed} · deferred(at-capacity) ${acc.deferred} · disabled ${acc.disabled} · unfireable ${acc.unfireable} · tail ${acc.tail})`);
+    L.push('');
+    L.push('| routine | schedule | owed | fired | already-running | caught-up | collapsed | deferred | disabled | unfireable | tail | verdict |');
+    L.push('|---|---|---|---|---|---|---|---|---|---|---|---|');
+    for (const x of acc.detail) L.push(`| ${x.label} | ${x.schedule || '?'} | ${x.owed} | ${x.fired} | ${x.alreadyRunning} | ${x.caughtUp} | ${x.collapsed} | ${x.deferred} | ${x.disabled} | ${x.unfireable} | ${x.tail} | ${x.ok ? 'ok' : 'FAIL — ' + [x.lost.length && 'lost ' + x.lost.length, x.doubled.length && 'doubled ' + x.doubled.length, x.unexpected.length && 'unexpected ' + x.unexpected.length, x.offSchedule.length && 'off-schedule ' + x.offSchedule.length, x.note].filter(Boolean).join(', ')} |`);
+    L.push('');
+  }
   L.push('## Measurements (no rule)');
   L.push(`- workspace bytes: ${JSON.stringify(r.measurements.workspaceBytes)}`);
   L.push(`- diagnostics error ring entries seen: ${r.measurements.errorRingSeen}`);
@@ -356,7 +544,9 @@ export async function runSoak(drivers, opts, hooks) {
   const startedAt = now();
   const endAt = startedAt + opts.minutes * 60_000;
   let lastRestartAt = startedAt;
-  let routineId = null;
+  const routines = [];          // seeded routine specs: { id, label, role, schedule(obj), misfire, firstNextRunAt }
+  const trail = [];             // GET /api/cron store snapshots: { at, jobs: { id: { nextRunAt, enabled, lastError } } }
+  let lastStoreReadAt = null;
 
   const entities = async () => {
     const out = { agents: [], routines: [], runs: [], turns: [] };
@@ -371,11 +561,43 @@ export async function runSoak(drivers, opts, hooks) {
   const seed = async () => {
     const roster = await drivers.json('POST', '/api/roster', { updatedAt: now(), agents: [{ agentId: SOAK_AGENT, name: 'SOAK', system: 'You are the soak agent. Answer briefly.', provider: 'openrouter', model: MOCK_MODEL, approvalMode: 'full', executionProfile: 'trusted-project' }] });
     if (!(roster.body && roster.body.ok)) throw new Error('roster seed failed: ' + JSON.stringify(roster.body).slice(0, 300));
-    const cron = await drivers.json('POST', '/api/cron', { name: 'soak heartbeat routine', prompt: 'Soak routine: reply with one line.', schedule: 'every 1 minute', agentId: SOAK_AGENT, model: MOCK_MODEL, provider: 'openrouter', deliver: 'local', enabled: true, misfire: 'fire_once' });
-    if (!(cron.body && cron.body.ok && cron.body.job)) throw new Error('routine create failed: ' + JSON.stringify(cron.body).slice(0, 300));
-    routineId = cron.body.job.id;
+    const plan = buildRoutinePlan(opts.routines);
+    for (const spec of plan) {
+      const prompt = spec.role === 'slow' ? `${SLOW_MARKER} Soak routine ${spec.label}: reply with one line.` : `Soak routine ${spec.label}: reply with one line.`;
+      const cron = await drivers.json('POST', '/api/cron', { name: spec.label, prompt, schedule: spec.schedule, agentId: SOAK_AGENT, model: MOCK_MODEL, provider: 'openrouter', deliver: 'local', enabled: true, misfire: spec.misfire });
+      if (!(cron.body && cron.body.ok && cron.body.job && !cron.body.duplicate)) throw new Error(`routine ${spec.label} create failed: ` + JSON.stringify(cron.body).slice(0, 300));
+      const job = cron.body.job;
+      if (spec.role === 'disabled') {
+        // pause AFTER creation so the armed nextRunAt stays on the record and ages into the past (a routine created
+        // paused has no nextRunAt and can never be "due", so the driver would have nothing to report)
+        const paused = await drivers.json('POST', '/api/cron/update', { id: job.id, patch: { enabled: false } });
+        if (!(paused.body && paused.body.ok)) throw new Error(`routine ${spec.label} pause failed: ` + JSON.stringify(paused.body).slice(0, 300));
+      }
+      routines.push({ id: job.id, label: spec.label, role: spec.role, schedule: job.schedule || null, misfire: spec.misfire, firstNextRunAt: job.nextRunAt || null });
+    }
     const armed = await drivers.json('POST', '/api/cron/arm', { enabled: true });
-    log(`[soak] seeded agent ${SOAK_AGENT}, routine ${routineId} (arm → ${armed.status})`);
+    const roles = Object.entries(plan.reduce((m, p) => { m[p.role] = (m[p.role] || 0) + 1; return m; }, {})).map(([k, v]) => `${k}=${v}`).join(' ');
+    log(`[soak] seeded agent ${SOAK_AGENT}, ${routines.length} routine(s) [${roles}] (arm → ${armed.status})`);
+  };
+
+  // one GET /api/cron read: counts new routine runs (any routine), snapshots the store for the accounting trail,
+  // and samples the scheduler tick duration. Called every tick and once more right before every stop.
+  const readStore = async (s) => {
+    try {
+      const c = await drivers.json('GET', '/api/cron');
+      const jobs = (c.body && c.body.jobs) || [];
+      const snap = { at: now(), jobs: {} };
+      for (const job of jobs) {
+        if (!job || !job.id) continue;
+        snap.jobs[job.id] = { nextRunAt: job.nextRunAt || null, enabled: job.enabled !== false, lastError: job.lastError || null };
+        const key = job.id + '|' + job.lastRunId;
+        if (job.lastRunId && !seenRoutineRuns.has(key)) { seenRoutineRuns.add(key); state.routineFires++; if (s) { s.routineFires = state.routineFires; s.routineLast = { id: job.id, status: job.lastStatus, reason: job.lastReason }; } }
+      }
+      trail.push(snap); lastStoreReadAt = snap.at;
+      const h = c.body && c.body.health;
+      if (s && h && Number.isFinite(h.lastTickAt) && Number.isFinite(h.lastSuccessAt) && h.lastSuccessAt >= h.lastTickAt) s.tickMs = h.lastSuccessAt - h.lastTickAt;
+      else if (s) s.tickReason = h ? 'last tick had not completed at read time' : 'GET /api/cron carries no health block';
+    } catch (e) { if (s) s.storeReason = 'GET /api/cron failed: ' + (e && e.message); }
   };
 
   const sample = async (tick) => {
@@ -397,11 +619,8 @@ export async function runSoak(drivers, opts, hooks) {
     try { await drivers.json('GET', '/api/state/snapshot'); } catch (e) { s.snapshotError = String(e && e.message); }
     try { const pid = drivers.pid(); const r = await drivers.rss(pid); if (Number.isFinite(r)) s.rssBytes = r; else s.rssReason = 'OS memory probe returned nothing for pid ' + pid; } catch (e) { s.rssReason = 'OS memory probe failed: ' + (e && e.message); }
     try { const b = drivers.workspaceBytes(); s.workspaceBytes = Number.isFinite(b) ? b : null; } catch (e) { s.workspaceBytes = null; }
-    try {
-      const c = await drivers.json('GET', '/api/cron');
-      const job = (c.body && c.body.jobs || []).find((j) => j.id === routineId);
-      if (job && job.lastRunId && !seenRoutineRuns.has(job.lastRunId)) { seenRoutineRuns.add(job.lastRunId); state.routineFires++; s.routineFires = state.routineFires; s.routineLast = { status: job.lastStatus, reason: job.lastReason }; }
-    } catch (e) { /* measurement only */ }
+    s.tickMs = null;
+    await readStore(s);
     state.samples.push(s);
     if (hooks && hooks.onSample) hooks.onSample(s);
     return s;
@@ -438,9 +657,18 @@ export async function runSoak(drivers, opts, hooks) {
     const rec = { at: now(), epoch: state.epoch, before: null, after: null, bootMs: null, stopMode: drivers.stopMode || null, error: null };
     try {
       rec.before = await entities();
+      await readStore(null);
       const pid = drivers.pid();
       await drivers.stop();
       await orphanProbe(pid, false);
+      if (state.restarts.length === 0) {
+        // FIRST restart only: (a) corrupt the unfireable routines' schedules in the store while the sidecar is down
+        // (the only way a can-never-fire schedule reaches the driver — the API validates every schedule it accepts);
+        // (b) hold the outage so missed occurrences age past the misfire grace and the catch-up collapse is exercised.
+        const corrupt = routines.filter((r) => r.role === 'unfireable').map((r) => r.id);
+        if (corrupt.length && typeof drivers.corruptSchedules === 'function') { await drivers.corruptSchedules(corrupt); rec.corrupted = corrupt; log(`[soak] corrupted ${corrupt.length} routine schedule(s) in the store under the outage`); }
+        if (opts.outageSeconds > 0) { rec.outageMs = opts.outageSeconds * 1000; log(`[soak] holding the sidecar down for ${opts.outageSeconds}s (misfire grace is 2 min)`); await drivers.sleep(rec.outageMs); }
+      }
       const t = now();
       const booted = await drivers.restart();
       rec.bootMs = now() - t;
@@ -475,17 +703,28 @@ export async function runSoak(drivers, opts, hooks) {
     state.stopReason = 'harness error: ' + (e && e.stack || e);
     log(state.stopReason);
   } finally {
+    try { if (drivers.isAlive()) await readStore(null); } catch (e) { /* measurement only */ }
     try { const pid = drivers.pid(); await drivers.stop(); await orphanProbe(pid, true); } catch (e) { /* teardown */ }
   }
   const endedAt = now();
+  // the per-routine occurrence ledger — needs the cron event log (console `[cron]` lines) and the scheduler's own math
+  if (typeof drivers.cronEvents === 'function' && drivers.cronLib) {
+    try {
+      const events = parseCronLog(await drivers.cronEvents());
+      state.accounting = accountRoutines({ routines, events, trail, endAt: lastStoreReadAt, cronLib: drivers.cronLib, defaultTz: 'UTC' });
+      state.accounting.events = events.length;
+    } catch (e) { state.accounting = { reason: 'accounting failed: ' + (e && e.message) }; }
+  } else state.accounting = { reason: 'cron event log not available to this run (no cronEvents/cronLib driver)' };
+  state.routines = routines;
   return Object.assign({}, state, { startedAt, endedAt, plannedMinutes: opts.minutes, options: opts, maxSamples: opts.maxSamples });
 }
 
 /* ─────────────────────────────── REAL DRIVERS (ambient) ─────────────────────────────── */
 
 /** In-process OpenRouter double: deterministic text; a TOOL_MARKER prompt is steered into one shell_exec. */
-export function startMockProvider() {
-  const calls = { total: 0 };
+export function startMockProvider(mockOpts) {
+  const slowRunMs = mockOpts && Number.isFinite(mockOpts.slowRunMs) ? mockOpts.slowRunMs : DEFAULTS.slowRunMs;
+  const calls = { total: 0, slow: 0 };
   const server = http.createServer((req, res) => {
     if (req.url.indexOf('/models') >= 0) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -517,6 +756,21 @@ export function startMockProvider() {
         toolCall('soak_brief_1', 'brief_proceed', { objective: 'run the soak command', deliverable: 'the command output', assumptions: ['use the host shell'] });
       } else if (wantsTool && toolResults.length === (hasBrief ? 1 : 0) && hasShell) {
         toolCall('soak_shell_1', 'shell_exec', { cmd: `node -e "process.stdout.write('${TOOL_STDOUT}')"` });
+      } else if (last.indexOf(SLOW_MARKER) >= 0) {
+        // a SLOW routine: the answer arrives after slowRunMs (keepalive comments every 5s so the provider idle
+        // watchdog sees bytes) — the run outlives the routine's period, so its next occurrence meets the lease
+        calls.slow++;
+        const ka = setInterval(() => { try { res.write(': keepalive\n\n'); } catch (e) { clearInterval(ka); } }, 5000);
+        const fin = setTimeout(() => {
+          clearInterval(ka);
+          try {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: CONVERSATION_REPLY } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage }) + '\n\n');
+            res.write('data: [DONE]\n\n'); res.end();
+          } catch (e) { /* client gone */ }
+        }, slowRunMs);
+        res.on('close', () => { clearInterval(ka); clearTimeout(fin); });
+        return;
       } else {
         res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: CONVERSATION_REPLY } }] }) + '\n\n');
         res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage }) + '\n\n');
@@ -570,9 +824,22 @@ function gitHead(cwd) {
   try { return execFileSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' }).trim(); } catch (e) { return null; }
 }
 
-export function makeRealDrivers({ fixture, logFile }) {
+export function makeRealDrivers({ fixture, logFile, cronLib }) {
   const flushLog = () => { try { const o = fixture.output(); if (o) { fs.appendFileSync(logFile, o); fixture._output = ''; } } catch (e) { /* best effort */ } };
   return {
+    cronLib: cronLib || null,
+    // the complete sidecar console so far (flushed log + the live buffer) — the `[cron] <event> <json>` lines are the ledger's input
+    async cronEvents() { flushLog(); try { return fs.readFileSync(logFile, 'utf8'); } catch (e) { return ''; } },
+    // while the sidecar is DOWN: rewrite the given routines' schedule kind in the store (main + .bak, so the
+    // resilient reader cannot recover the good copy) — the only way a can-never-fire schedule reaches the driver
+    async corruptSchedules(ids) {
+      const file = path.join(fixture.workspace, 'cron.jobs.json');
+      const env = JSON.parse(fs.readFileSync(file, 'utf8'));
+      for (const j of env.jobs || []) if (ids.indexOf(j.id) >= 0 && j.schedule) j.schedule = Object.assign({}, j.schedule, { kind: 'soak-corrupt' });
+      const data = JSON.stringify(env);
+      fs.writeFileSync(file, data);
+      try { if (fs.existsSync(file + '.bak')) fs.writeFileSync(file + '.bak', data); } catch (e) { /* best effort */ }
+    },
     stopMode: process.platform === 'win32' ? 'terminate (TerminateProcess, as the desktop shell stops it)' : 'SIGTERM (graceful shutdown path)',
     pid: () => (fixture.child ? fixture.child.pid : null),
     async boot() { await fixture.start(); return { pid: fixture.child.pid }; },
@@ -617,7 +884,7 @@ export function makeRealDrivers({ fixture, logFile }) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
-    console.log('node scripts/qa/soak.mjs --minutes=N [--tick-seconds=15] [--run-every=2] [--tool-every=4] [--restart-every=10] [--max-samples=600] [--out=dir] [--aux]');
+    console.log('node scripts/qa/soak.mjs --minutes=N [--tick-seconds=15] [--run-every=2] [--tool-every=4] [--restart-every=10] [--max-samples=600] [--routines=1] [--max-parallel=0] [--outage-seconds=0] [--slow-run-ms=75000] [--out=dir] [--aux]');
     return process.exit(0);
   }
   const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -627,25 +894,28 @@ async function main() {
   const logFile = path.join(outDir, 'sidecar.log');
   const require = createRequire(import.meta.url);
   const { SidecarFixture } = require(path.join(repo, 'test', 'helpers', 'sidecar-fixture.js'));
-  const mock = await startMockProvider();
+  const cronLib = require(path.join(repo, 'sidecar', 'cron.js'));
+  const mock = await startMockProvider({ slowRunMs: opts.slowRunMs });
   const env = {
     SKYNET_OPENROUTER_BASE: mock.baseUrl, STARNET_OPENROUTER_BASE: mock.baseUrl,
     SKYNET_OPENROUTER_KEY: 'sk-or-v1-soak-mock', STARNET_OPENROUTER_KEY: 'sk-or-v1-soak-mock',
     SKYNET_DEFAULT_MODEL: MOCK_MODEL, STARNET_DEFAULT_MODEL: MOCK_MODEL,
     SKYNET_CRON_ENABLED: '1', STARNET_CRON_ENABLED: '1',
     SKYNET_CRON_TICK_MS: String(DEFAULTS.cronTickMs), STARNET_CRON_TICK_MS: String(DEFAULTS.cronTickMs),
+    SKYNET_CRON_TZ: 'UTC', STARNET_CRON_TZ: 'UTC',                     // the accounting enumerates occurrences in UTC
     SKYNET_CONSENT_TIMEOUT_MS: '2000',
   };
+  if (opts.maxParallel > 0) { env.SKYNET_CRON_MAX_PARALLEL = String(opts.maxParallel); env.STARNET_CRON_MAX_PARALLEL = String(opts.maxParallel); }
   if (!opts.aux) { env.SKYNET_AUX_BUDGET = '0'; env.STARNET_AUX_BUDGET = '0'; }   // aux passes off by default: deterministic mock answers feed them garbage
   const fixture = SidecarFixture.create({ prefix: 'starnet-soak-', timeoutMs: 20000, env });
-  const drivers = makeRealDrivers({ fixture, logFile });
+  const drivers = makeRealDrivers({ fixture, logFile, cronLib });
   let interrupted = false;
   process.on('SIGINT', () => { interrupted = true; });
-  console.log(`[soak] ${opts.minutes} min · tick ${opts.tickSeconds}s · restart every ${opts.restartEvery} min · out ${outDir}`);
+  console.log(`[soak] ${opts.minutes} min · tick ${opts.tickSeconds}s · restart every ${opts.restartEvery} min · routines ${opts.routines}${opts.maxParallel ? ' · cron max-parallel ' + opts.maxParallel : ''}${opts.outageSeconds ? ' · first-restart outage ' + opts.outageSeconds + 's' : ''} · out ${outDir}`);
   console.log(`[soak] hermetic: workspace=${fixture.workspace} profile=${fixture.profile} provider=mock@${mock.baseUrl}`);
   const result = await runSoak(drivers, opts, { shouldStop: () => interrupted });
   mock.close();
-  const meta = { sidecarHead: gitHead(repo), platform: `${process.platform} ${os.release()} ${os.arch()}`, node: process.version, host: os.hostname(), stopMode: drivers.stopMode, provider: 'mock (in-process OpenRouter double)', mockCalls: mock.calls.total, workspace: fixture.workspace, auxPasses: opts.aux ? 'default' : 'disabled (SKYNET_AUX_BUDGET=0)' };
+  const meta = { sidecarHead: gitHead(repo), platform: `${process.platform} ${os.release()} ${os.arch()}`, node: process.version, host: os.hostname(), stopMode: drivers.stopMode, provider: 'mock (in-process OpenRouter double)', mockCalls: mock.calls.total, mockSlowCalls: mock.calls.slow, cronEvents: result.accounting && result.accounting.events || null, workspace: fixture.workspace, auxPasses: opts.aux ? 'default' : 'disabled (SKYNET_AUX_BUDGET=0)' };
   const receipt = buildReceipt(Object.assign({}, result, { meta }));
   fs.writeFileSync(path.join(outDir, 'soak-receipt.json'), JSON.stringify(receipt, null, 2));
   fs.writeFileSync(path.join(outDir, 'SUMMARY.md'), renderSummary(receipt));
