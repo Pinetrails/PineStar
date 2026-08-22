@@ -47,7 +47,10 @@ function effectiveLimits(raw, fallback, poolCap) {
   const n = Pipeline.normalizeLineLimits(raw);
   if (n) {
     out.maxHops = n.maxHops; out.maxUsd = n.maxUsdPerMessage; out.maxUsdPerDay = n.maxUsdPerDay;
-    if (Array.isArray(n.clamped)) out.clamped = n.clamped.slice();
+    // a plan carries ALREADY-clamped numbers plus the record of that clamp — re-normalizing sees no excess,
+    // so the record is carried forward from the input rather than recomputed (never lost, never doubled).
+    const prior = (raw && Array.isArray(raw.clamped)) ? raw.clamped : [];
+    for (const c of prior.concat(Array.isArray(n.clamped) ? n.clamped : [])) if (out.clamped.indexOf(c) < 0) out.clamped.push(c);
   }
   const pool = (typeof poolCap === 'number' && isFinite(poolCap) && poolCap > 0) ? poolCap : null;
   if (pool != null) {

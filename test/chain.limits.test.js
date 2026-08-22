@@ -70,6 +70,7 @@ let T = 0; const clock = () => (T += 10);
     A.eq(res.stopped, 'the line reached its $0.15 limit', 'the runner enforces the pool-clamped ceiling');
     A.eq(res.limits.clamped[0], 'maxUsdPerMessage>pool:0.15', 'and reports why the number is not the one typed');
     A.eq(effectiveLimits({ maxHops: 'garbage' }, {}, null).maxHops, 6, 'garbage input falls back to the default');
+    A.eq(effectiveLimits({ clamped: ['maxHops>24'], maxHops: 24, maxUsdPerMessage: 3 }, {}, null).clamped.join(','), 'maxHops>24', "a plan's recorded clamp is carried forward, not lost on re-normalization");
   }
 
   /* ---- the DAILY cap: refuses with a reason, measured off a ledger that survives a "restart" ---- */
