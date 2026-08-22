@@ -5236,6 +5236,11 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
    it answers "is this actually happening", which is the second question, never the first. */
 .perm-crew-row .pc-truth { margin-top: 5px; opacity: 0.6; }
 .perm-crew-row .pc-truth b { color: var(--ph); }
+/* SANDBOX UNAVAILABLE chip — the router refused (or, under allow, is running on the host) because the requested
+   sandbox is not there. Red inset chip in the house chip language; the fix line sits on its own row under it. */
+.sandbox-chip { display: inline-block; font-family: inherit; font-size: 11px; letter-spacing: 1px; color: var(--bad); border: 1px solid var(--bad); padding: 1px 6px; margin: 0 8px 3px 0; background: rgba(255,90,90,.08); box-shadow: inset 0 0 6px rgba(255,90,90,.18); opacity: 1; }
+.sandbox-chip-fix { display: block; color: var(--bad); opacity: .9; margin: 0 0 4px; }
+.perm-crew-row .pc-truth .sandbox-chip, .perm-crew-row .pc-truth .sandbox-chip-fix { opacity: 1; }
 .perm-crew-row .pc-more { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--ph-faint); }
 .perm-crew-row .pc-more .mc-acts { margin: 0 0 6px; }
 .perm-crew-row .pc-more .mc-acts:last-child { margin-bottom: 0; }
