@@ -41,6 +41,47 @@ try {
   A.eq(malformed.ok, false, 'a malformed holder claim is never guessed stale');
   A.eq(malformed.code, 'WORKSPACE_BUSY', 'unprovable ownership fails closed');
 
+  // REBOOT RECLAIM (2026-08-22 macOS dead-end): PIDs restart at boot, so a crash + reboot leaves a stamp whose
+  // PID now belongs to some unrelated LIVE process. kill(0) alone said "busy" forever. A claim stamped before
+  // the current boot is provably dead regardless of who owns that PID today.
+  fs.unlinkSync(lockfile);
+  const BOOT = 10_000_000;
+  const preReboot = makeWorkspaceOwner({ fs, path, pid: 41006, now: () => BOOT - 3_600_000, nonce: () => 'prereboot', pidAlive: () => true, bootedAt: () => BOOT });
+  A.eq(preReboot.acquire(root).ok, true, 'pre-reboot holder claims (fixture)');
+  const reused = makeWorkspaceOwner({ fs, path, pid: 41007, now: () => BOOT + 5_000, nonce: () => 'afterboot', pidAlive: () => true, bootedAt: () => BOOT });
+  const afterBoot = reused.acquire(root);
+  A.eq(afterBoot.ok, true, 'a claim stamped before this boot is reclaimed even though its PID is live (reused)');
+  A.eq(JSON.parse(fs.readFileSync(lockfile, 'utf8')).pid, 41007, 'the post-boot sidecar owns the workspace');
+  reused.release();
+
+  // within one boot, a live PID is still busy — the boot rule never weakens the same-boot guarantee.
+  const sameBootA = makeWorkspaceOwner({ fs, path, pid: 41008, now: () => BOOT + 10_000, nonce: () => 'sbA', pidAlive: () => true, bootedAt: () => BOOT });
+  A.eq(sameBootA.acquire(root).ok, true, 'same-boot holder claims');
+  const sameBootB = makeWorkspaceOwner({ fs, path, pid: 41009, now: () => BOOT + 20_000, nonce: () => 'sbB', pidAlive: () => true, bootedAt: () => BOOT });
+  A.eq(sameBootB.acquire(root).code, 'WORKSPACE_BUSY', 'a live same-boot holder still blocks');
+  // a holder stamped within the 60s slack after boot is NOT treated as pre-boot.
+  sameBootA.release();
+  const nearBoot = makeWorkspaceOwner({ fs, path, pid: 41010, now: () => BOOT - 30_000, nonce: () => 'near', pidAlive: () => true, bootedAt: () => BOOT });
+  A.eq(nearBoot.acquire(root).ok, true, 'near-boot holder claims');
+  A.eq(sameBootB.acquire(root).code, 'WORKSPACE_BUSY', 'a holder inside the boot slack is still busy (clock skew is not death)');
+  nearBoot.release();
+
+  // a torn/empty lock left by a crash mid-write: reclaimable only when the FILE predates boot.
+  fs.writeFileSync(lockfile, '');
+  const tornRecent = makeWorkspaceOwner({ fs, path, pid: 41011, now: () => BOOT + 30_000, nonce: () => 'torn1', pidAlive: () => true, bootedAt: () => BOOT });
+  A.eq(tornRecent.acquire(root).code, 'WORKSPACE_BUSY', 'a torn lock written this boot stays busy (unprovable)');
+  const farFuture = Date.now() + 365 * 24 * 3600 * 1000;   // "boot" after the file's real mtime ⇒ file predates boot
+  const tornOld = makeWorkspaceOwner({ fs, path, pid: 41012, now: () => farFuture + 1000, nonce: () => 'torn2', pidAlive: () => true, bootedAt: () => farFuture });
+  A.eq(tornOld.acquire(root).ok, true, 'a torn lock from before this boot is reclaimed');
+  tornOld.release();
+
+  // unknown boot time (0) ⇒ the rule is inert and only kill(0) decides (the factory default).
+  const inertA = makeWorkspaceOwner({ fs, path, pid: 41013, now: () => 1, nonce: () => 'inA', pidAlive: () => true });
+  A.eq(inertA.acquire(root).ok, true, 'inert-boot holder claims');
+  const inertB = makeWorkspaceOwner({ fs, path, pid: 41014, now: () => Date.now(), nonce: () => 'inB', pidAlive: () => true });
+  A.eq(inertB.acquire(root).code, 'WORKSPACE_BUSY', 'with no boot time a live PID is busy (no guessing)');
+  inertA.release();
+
   A.report('workspace-owner.test');
 } finally {
   fs.rmSync(root, { recursive: true, force: true });

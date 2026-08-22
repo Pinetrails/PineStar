@@ -5,8 +5,14 @@
    other's later changes. This owner claim makes the existing "one sidecar per WORKSPACES" invariant real.
 
    There is deliberately NO time-based stale break. A healthy sidecar may run for weeks; age is not proof
-   that its claim is abandoned. We reclaim only when process.kill(pid, 0) proves the stamped PID is gone.
-   PID reuse can therefore cause a safe false-busy, never an unsafe double-writer.
+   that its claim is abandoned. We reclaim when process.kill(pid, 0) proves the stamped PID is gone, OR when
+   the claim was stamped BEFORE the current OS boot (no process survives a reboot, so the holder is provably
+   dead no matter who owns that PID now). That second rule exists because of a real dead-end: PIDs restart at
+   boot, so after a crash + reboot the stamped PID almost always belongs to some unrelated live process and
+   the kill(0) probe alone reported "busy" forever — every sidecar spawn exited before listening and the
+   desktop sat on STATION DATA UNREACHABLE with no way out (2026-08-22 macOS report). A malformed lock (a
+   crash mid-write leaves an empty/torn file) is reclaimable by the same rule when its mtime predates boot.
+   Within one boot, PID reuse can still cause a safe false-busy, never an unsafe double-writer.
 
    The claim uses O_EXCL creation plus read-back verification. Crash recovery atomically renames a
    proven-dead holder's file before attempting a fresh O_EXCL claim, so concurrent reclaimers still yield
@@ -30,6 +36,15 @@ function defaultPidAlive(pid) {
   }
 }
 
+function defaultBootedAt() {
+  try {
+    const os = require('node:os');
+    const up = Number(os.uptime());
+    if (!(up > 0)) return 0;
+    return Date.now() - up * 1000;
+  } catch (_) { return 0; }
+}
+
 function makeWorkspaceOwner(deps) {
   const d = deps || {};
   const fs = d.fs;
@@ -38,6 +53,27 @@ function makeWorkspaceOwner(deps) {
   const now = typeof d.now === 'function' ? d.now : function () { return 0; };
   const nonce = typeof d.nonce === 'function' ? d.nonce : defaultNonce;
   const pidAlive = typeof d.pidAlive === 'function' ? d.pidAlive : defaultPidAlive;
+  // bootedAt: wall-clock ms of the current OS boot. OPT-IN (host passes defaultBootedAt): the factory default
+  // is inert (0) so an injected fake clock in tests is never compared against the real machine's boot time.
+  // A 60s slack absorbs clock skew between os.uptime() and the stamp so a holder that started seconds after
+  // boot is never misjudged as pre-boot.
+  const bootedAt = typeof d.bootedAt === 'function' ? d.bootedAt : function () { return 0; };
+  const BOOT_SLACK_MS = 60 * 1000;
+  function predatesBoot(ms) {
+    const b = Number(bootedAt()) || 0;
+    const t = Number(ms) || 0;
+    return b > 0 && t > 0 && t < (b - BOOT_SLACK_MS);
+  }
+  function lockMtime(lockfile) {
+    try { return Number(fs.statSync(lockfile).mtimeMs) || 0; } catch (_) { return 0; }
+  }
+  // provably dead: the stamped process predates this boot, or (for a valid stamp) its PID is gone.
+  // A malformed stamp is dead only when the FILE predates boot — otherwise it is unprovable, i.e. busy.
+  function holderDead(holder, lockfile) {
+    if (!holder.valid) return predatesBoot(lockMtime(lockfile));
+    if (predatesBoot(holder.startedAt)) return true;
+    return !pidAlive(holder.pid);
+  }
   const filename = String(d.filename || '.starnet-workspace-owner.json');
   if (!fs || typeof fs.openSync !== 'function' || typeof fs.renameSync !== 'function') {
     throw new Error('workspace-owner: an injected fs with openSync/renameSync is required');
@@ -102,11 +138,11 @@ function makeWorkspaceOwner(deps) {
     if (!created.exists) return { ok: false, code: 'WORKSPACE_OWNER_UNAVAILABLE', root: resolved, lockfile: lockfile, error: created.error };
 
     const holder = readHolder(lockfile);
-    if (!holder.valid || pidAlive(holder.pid)) {
+    if (!holderDead(holder, lockfile)) {
       return { ok: false, code: 'WORKSPACE_BUSY', root: resolved, lockfile: lockfile, holder: holder };
     }
 
-    // The stamped process is provably gone. Rename is the atomic reclaim election; only its winner
+    // The stamped process is provably gone (PID dead, or the claim predates this boot). Rename is the atomic reclaim election; only its winner
     // gets to create the replacement. A loser reports busy and retries on its next normal launch.
     const reclaim = lockfile + '.dead-' + pid + '-' + String(nonce());
     try { fs.renameSync(lockfile, reclaim); }
@@ -132,4 +168,4 @@ function makeWorkspaceOwner(deps) {
   return { acquire: acquire, release: release, current: function () { return held && held.claim; } };
 }
 
-module.exports = { makeWorkspaceOwner: makeWorkspaceOwner, _internals: { defaultPidAlive: defaultPidAlive } };
+module.exports = { makeWorkspaceOwner: makeWorkspaceOwner, defaultBootedAt: defaultBootedAt, _internals: { defaultPidAlive: defaultPidAlive } };
