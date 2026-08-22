@@ -8,13 +8,23 @@ that takes work off the user. Audit of interview → dossier → quests → reco
 leaks in seven places; the rate beat (`chat.js` ~2770, `▲ nailed it / ◆ close / ▼ missed`) only mints
 XP and asks nothing. Popups must carry real power or not appear.
 
-**Critical (before 0.9.0):**
-1. **Verdicts feed ranking.** `Recipes.rankRecipes` has no outcome term; raw `launches` counts UP-rank
-   a recipe the user rated `miss`. Add a verdict term sourced from `growthratings` / `recqualitystore`;
-   ratchet test: a `miss`-rated recipe must rank below an unrated peer.
+**Re-grepped on trunk (doctrine: the audit was stale):**
+1. ~~Verdicts feed ranking~~ — ALREADY SHIPPED (recipe lane B): `chat.js rateWork` → `ProspectStore.noteRated`
+   → `POST /api/scout/telemetry recipe.rated` → `Scout.noteRated` → `rankRecipes` OUTCOME term
+   (`min(great,3) − 2·min(miss,3)`, can sink a recipe out of the row). Only recipe-launched runs carry a
+   `recipeId`; that is the correct scope.
+   Also already built: the just-in-time curiosity nudge (`chat.js curiosityNudge`, `curiosity.js`) — but it
+   asks only about BLANK dims, so once the interview fills all nine the station never refines again.
 
-**Lane body:**
-2. **Extraction at delivery.** The rate beat becomes ONE targeted question drawn from the weakest
+**BUILT in this lane — verdict follow-up (`frontend/app/verdictfollowup.js`, `test/verdictfollowup.test.js`):**
+`◆ close` / `▼ missed` no longer end in "noted": the beat asks "what missed?" with chips that each map to a
+dossier dim (length/depth → style, audience → people, approach → stack, off-goal → goals, timing →
+schedule); a tap writes an `observed` belief (source `verdict`, `sourceRunId`, directive cited) and shows the
+BRIEFING receipt. Never on `▲ nailed it`, once per run, skip writes nothing, stands down when a task
+question is live or the one post-run slot is taken.
+
+**Lane body (remaining):**
+2. **Extraction at delivery (refinement).** The rate beat becomes ONE targeted question drawn from the weakest
    dossier dim for that run's task-class (e.g. "shorter next time, or this depth?"), with chip answers
    + free text. Answers write `observed` beliefs into `dossier.dims` (today only goal milestones do,
    `goalstore.js:378`). No question when the dim is already `stated` — the beat must never fire for
