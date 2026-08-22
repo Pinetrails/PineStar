@@ -41,6 +41,8 @@ test/tool-progress-guard.test.js
 test/tool-dispatch-boundary.test.js
 test/completion-evidence.test.js
 test/task-postconditions.test.js
+test/connector-readback.test.js
+test/recipe-drift.test.js
 test/task-postconditions-ui.test.js
 test/recovery-policy.test.js
 test/tool-recovery.test.js
@@ -52,6 +54,7 @@ test/file-response.test.js
 test/test-list-runner.test.js
 test/runroute.test.js
 test/checkpoint.test.js
+test/checkpoint-default-on.test.js
 test/module-scope-shadowing.test.js
 test/verify.test.js
 test/lsp-edit-feedback.test.js
@@ -105,6 +108,7 @@ test/plugins.test.js
 test/loop.replay.test.js
 test/loop.steer.test.js
 test/loop.verify-on-stop.test.js
+test/loop.acceptance-on-stop.test.js
 test/loop.parallel-tools.test.js
 test/loop.tool-images.test.js
 test/loop.turn-budget.test.js
@@ -112,6 +116,7 @@ test/loop.provider-recovery.test.js
 test/loop.failure-recovery.test.js
 test/output-continuation.test.js
 test/compaction.test.js
+test/compaction-summarizer.test.js
 test/loopguard.test.js
 test/loopguard.dispatch.test.js
 test/continuation-guard.test.js
@@ -244,6 +249,7 @@ test/longhaul-retention.test.js
 test/autonomy-ledger.test.js
 test/artifacts.test.js
 test/deliverable-store.test.js
+test/idempotency-ledger.test.js
 test/deliverable-provenance.test.js
 test/deliverable-note.test.js
 test/deliverables-ui.test.js
@@ -345,6 +351,7 @@ test/skill-goldens.test.js
 test/eval-skills-runner.test.js
 test/dossierinject.test.js
 test/recipes.test.js
+test/recipes.sop.test.js
 test/recipefit.test.js
 test/loop-templates.test.js
 test/launchmemory.test.js
@@ -533,6 +540,7 @@ test/stationbake.hull.test.js
 test/canvas-loss-recovery.test.js
 test/conveyor.test.js
 test/pipeline.test.js
+test/pipeline.join-loop.test.js
 test/blueprints.test.js
 test/guidedline.test.js
 test/ghostline.test.js
@@ -541,8 +549,10 @@ test/routing-nag-parity.test.js
 test/crate-honesty.test.js
 test/plan-poster.test.js
 test/chain.test.js
+test/chain.join-loop.test.js
 test/chain.limits.test.js
 test/refit-card-stack.test.js
+test/refit-junction-cards.test.js
 test/step-brief.test.js
 test/propanchor.test.js
 test/prop-mount.test.js
@@ -663,6 +673,7 @@ test/station-recovery-cli.test.js
 test/execution-profiles.test.js
 test/execution-settings.test.js
 test/execution-router.test.js
+test/sandbox-no-silent-fallback.test.js
 test/execution-profiles-ui.test.js
 test/failopen.test.js
 test/failopen-ratchet.test.js

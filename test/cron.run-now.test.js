@@ -71,4 +71,10 @@ A.ok(!/key:\s*key,/.test(runNowHopRun), "and never the routine's resolved key");
 A.ok(/entryUsd:\s*o\.entryUsd/.test(seamBlock), "the scheduled seam forwards the entry run's spend into the chain ceiling");
 A.ok(/entryUsd:\s*state\.usd/.test(runNowBlock), "Run Now seeds the chain ceiling with stage one's reconciled spend");
 
+/* THE ROUTINE'S RECORDED SPEND IS THE WHOLE LINE'S (2026-08-22): a Run Now line that cost real money showed
+   `lastUsd 0` — the hop-only chain spend was dropped and markRun never received usd at all. Both fire paths must
+   add line.usd to the entry spend and hand it to markRun. */
+A.ok(/state\.usd \+= line\.usd/.test(runNowBlock), "Run Now adds the line's hop spend to the entry run's spend");
+A.ok(/cronStore\.markRun\([^;]*usd:\s*state\.usd/.test(runNowBlock), "Run Now records the line total on the routine (markRun usd)");
+
 if (require.main === module) A.report('cron.run-now.test');

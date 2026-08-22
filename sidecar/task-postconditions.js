@@ -11,7 +11,15 @@ const MAX_REQUIREMENTS = 20;
 const MAX_PATH = 260;
 const MAX_TEXT = 500;
 const MAX_COMMAND = 1000;
-const TYPES = new Set(['artifact_exists', 'artifact_contains', 'artifact_sha256', 'verification_passed']);
+const TYPES = new Set(['artifact_exists', 'artifact_contains', 'artifact_sha256', 'verification_passed', 'connector_readback']);
+/* connector_readback (2026-08-22) — the first typed EXTERNAL predicate. { connector, tool, args?, contains | regex }.
+   Proof is a FRESH host read-back through the connector (input.readConnector), never the model's own observation,
+   and only after the run actually ACTED on that connector (an effect row exists) — a pre-existing external state
+   is not proof this run did the work, exactly as a pre-existing file is not. The host refuses to run anything but
+   an observe-role tool as a check (a mutation can never be its own proof). */
+const MAX_ARGS_JSON = 2000;
+const MAX_SLUG = 80;
+const SLUG_RE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/;
 
 function bounded(v, n) { return String(v == null ? '' : v).trim().slice(0, n); }
 function samePath(a, b) {
@@ -52,6 +60,23 @@ function normalizeContract(raw) {
       }
       requirements.push(out); return;
     }
+    if (type === 'connector_readback') {
+      const connector = bounded(item.connector, MAX_SLUG), tool = bounded(item.tool, MAX_SLUG);
+      if (!SLUG_RE.test(connector)) { errors.push(id + ': connector id required'); return; }
+      if (!SLUG_RE.test(tool)) { errors.push(id + ': connector tool name required'); return; }
+      const out = { id, type, connector, tool };
+      if (item.args != null) {
+        if (!item.args || typeof item.args !== 'object' || Array.isArray(item.args)) { errors.push(id + ': args must be an object'); return; }
+        let json = ''; try { json = JSON.stringify(item.args); } catch (_) { errors.push(id + ': args must be plain JSON'); return; }
+        if (json.length > MAX_ARGS_JSON) { errors.push(id + ': args exceed ' + MAX_ARGS_JSON + ' chars'); return; }
+        out.args = JSON.parse(json);
+      }
+      const contains = bounded(item.contains, MAX_TEXT), regex = bounded(item.regex, MAX_TEXT);
+      if (!contains && !regex) { errors.push(id + ': contains or regex required'); return; }
+      if (contains) out.contains = contains;
+      if (regex) { try { new RegExp(regex); } catch (_) { errors.push(id + ': regex does not compile'); return; } out.regex = regex; }
+      requirements.push(out); return;
+    }
     const command = bounded(item.command, MAX_COMMAND);
     if (!command) { errors.push(id + ': exact verification command required'); return; }
     requirements.push({ id, type, command });
@@ -81,7 +106,9 @@ async function assessPostconditions(input) {
   }
   const artifacts = Array.isArray(input.artifacts) ? input.artifacts : [];
   const evidence = Array.isArray(input.evidence) ? input.evidence : [];
+  const effects = Array.isArray(input.effects) ? input.effects : [];
   const readArtifact = typeof input.readArtifact === 'function' ? input.readArtifact : null;
+  const readConnector = typeof input.readConnector === 'function' ? input.readConnector : null;
 
   for (const req of normalized.contract.requirements) {
     let passed = false, code = 'not_proven';
@@ -89,6 +116,22 @@ async function assessPostconditions(input) {
       passed = evidence.some(ev => ev && ev.kind === 'deterministic_check' && ev.strength === 'mechanical'
         && sameCommand(ev.target, req.command));
       code = passed ? 'matching_verification_passed' : 'matching_verification_missing';
+    } else if (req.type === 'connector_readback') {
+      const acted = effects.some(e => e && e.domain === 'external' && String(e.connector || '') === req.connector);
+      if (!acted) code = 'connector_not_acted_on_by_run';
+      else if (!readConnector) code = 'connector_reader_unavailable';
+      else {
+        let observed = null;
+        try { observed = await readConnector(req); } catch (e) { observed = { ok: false, code: 'connector_readback_error', error: String(e && e.message || e).slice(0, 200) }; }
+        if (!observed || observed.ok !== true) code = (observed && observed.code) || 'connector_readback_error';
+        else {
+          const txt = String(observed.text == null ? '' : observed.text);
+          let hit = true;
+          if (req.contains) hit = hit && txt.indexOf(req.contains) >= 0;
+          if (req.regex) { try { hit = hit && new RegExp(req.regex).test(txt); } catch (_) { hit = false; } }
+          passed = hit; code = hit ? 'connector_readback_matched' : 'connector_readback_mismatch';
+        }
+      }
     } else {
       // A pre-existing file is not proof this run completed the request. The run must have produced/touched the
       // exact artifact, then a fresh host read must prove its terminal state.
@@ -121,4 +164,4 @@ async function assessPostconditions(input) {
   return base;
 }
 
-module.exports = { normalizeContract, assessPostconditions, _internals: { samePath, sameCommand, TYPES, MAX_REQUIREMENTS } };
+module.exports = { normalizeContract, assessPostconditions, _internals: { samePath, sameCommand, TYPES, MAX_REQUIREMENTS, SLUG_RE } };

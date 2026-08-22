@@ -224,7 +224,8 @@ function fakeStack(tools) {
   // The matcher must read the off-screen data-search attribute, and the card must emit it.
   A.ok(/dataset\.search/.test(stationCore), 'console search also matches the off-screen data-search aliases');
   A.ok(/data-search="/.test(station), 'catalog cards emit data-search from their aliases');
-  A.ok(/e\.aliases/.test(station) && /p\.aliases/.test(station), 'both the CATALOG and the KEYS platform card carry aliases');
+  A.ok(/e\.aliases/.test(station) && /Object\.assign\(\{\}, p,/.test(station),
+    'the unified CATALOG search carries aliases from both connector and platform rows');
 
   /* ---------- 5. SEARCH + FILTER ACCESSIBILITY ----------
      A zero-hit global search used to hide every pane and clear every tab's selected state, leaving a
@@ -249,8 +250,18 @@ function fakeStack(tools) {
     'KEYS labels custom-header credentials truthfully instead of calling every credential a token');
   A.ok(/k\.unattendedSupported !== false/.test(station) && /k\.enabled && unattendedSupported \? '' : ' disabled'/.test(station),
     'KEYS disables the unattended control for watched-only integrations');
-  A.ok(/MANUAL OAUTH/.test(station) && /p\.unattendedSupported === false/.test(station),
-    'KEYS labels watched-only catalog entries as manual OAuth instead of API-key automation');
+  A.ok(/p\.unattendedSupported === false \? 'oauth' : 'apikey'/.test(station),
+    'watched-only platform rows enter the unified catalog under OAuth rather than API-key automation');
+  A.ok(/Harness\.api\.get\('\/api\/servicekeys\/catalog'\)/.test(station) && /platformApi:\s*true/.test(station),
+    'CATALOG consumes the keyed-platform directory while keeping those rows explicitly distinct from MCP connectors');
+  A.ok(/data-cc-act="platform"/.test(station) && /function ccPrefillPlatform/.test(station),
+    'platform catalog cards route to the existing KEYS setup form instead of calling the MCP installer');
+  A.ok(/catalogId:\s*'platform:' \+ p\.id/.test(station) && /const cardId = e\.catalogId \|\| e\.id/.test(station),
+    'platform cards are identity-namespaced so GitHub/Notion/Stripe cannot collide with same-id MCP cards');
+  A.ok(!/id="ky-catalog"/.test(station) && /CONNECTED API KEYS/.test(station),
+    'KEYS shows connected credentials and no longer hides the curated platform catalog inside its add form');
+  A.ok(/to: 'catalog', title: 'Connect a platform API or POD service'/.test(station) && /Choose the platform here, then paste its key/.test(station),
+    'the ABILITIES front door routes POD discovery through CATALOG before the KEYS setup path');
 
   A.report('connectors-ui');
 })().catch(e => { console.log('FAIL: threw ' + (e && e.stack || e)); process.exit(1); });

@@ -14,7 +14,7 @@ const crypto = require('node:crypto');
 const os = require('node:os');
 const dns = require('node:dns');
 
-const { runAgentLoop } = require('./loop.js');
+const { runAgentLoop, _internals: LoopInternals } = require('./loop.js');
 const DomainTask = require('./domain-task.js');
 const ImageTask = require('./image-task.js');
 const { makeCostEngine } = require('./cost.js');
@@ -129,6 +129,7 @@ const oauthTokenStore = require('./providers/oauth-token-store.js');
 const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
+const { makeSummarizer } = require('./compaction-summarizer.js');   // chunked context-compaction fold (Lane A)
 const { runRouteFailure } = require('./runroute.js');   // a failure escaping handleRun must never read as an empty 200
 const { json: respondJson, readJsonBody, isAgentId } = require('./respond.js');   // canonical json()/body/agent-id helpers — adopt incrementally, don't mass-migrate
 const { readBody, readBodyBuffer } = require('./http-body.js');
@@ -227,6 +228,9 @@ const MemoryStore = require('./memory-store.js');                               
 const { makeMemoryStore, resetAgentMemory, restoreDeclined } = MemoryStore;
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
+const { makeIdempotencyLedger } = require('./idempotency-ledger.js'); // SOP lane: durable connector-WRITE idempotency (no double-send on retry/resume)
+const TaskPostconditions = require('./task-postconditions.js');        // SOP lane: the typed acceptance authority (mid-run probe + end-of-run verdict)
+const RecipeDrift = require('./recipe-drift.js');                      // golden-run drift: latest recipe run vs its own good history (pure, from run rows)
 const { makeProvenanceIndex } = require('./deliverable-provenance.js'); // WHO made a deliverable + WHAT project it belongs to, derived from the run log
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
 const { makeJourneyStore } = require('./journey-store.js'); // Commander journey: verified outcomes -> mastery/adaptation/evolution (never XP or gating)
@@ -1632,6 +1636,16 @@ const deliverableStore = makeDeliverableStore({
   fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable,
   onRecover: (key, file) => console.warn('[deliverables] recovered ' + file + ' from .bak last-known-good.'),
   onCorrupt: (key, file) => quarantineCorrupt(file, 'deliverables')
+});
+// IDEMPOTENCY LEDGER (SOP lane, 2026-08-21): every successful custom-connector WRITE is recorded under
+// (work-item scope, tool, canonical args); a byte-identical repeat inside the same scope is answered from the
+// ledger instead of re-sent. The classifier is loop.js's own verify-on-stop one, so "what counts as a write"
+// has exactly one definition in the sidecar.
+const idempotencyLedger = makeIdempotencyLedger({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable, clock: () => Date.now(),
+  classify: LoopInternals.vosExternalRole,
+  onRecover: (key, file) => console.warn('[idempotency] recovered ' + file + ' from .bak last-known-good.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'idempotency')
 });
 function workshopOf(agentId) { try { return workshopStore.hasGrant(String(agentId || '')); } catch (_) { return false; } }
 
@@ -7251,11 +7265,17 @@ function armQuestRefresh() {
 
 /* ---- execution spine: the checkpoint rollback net (Commit 1). A per-agent shadow-git store under
    WORKSPACES/.checkpoints/<agentId>/ — a SIBLING of the fs jail, so the agent's own fs.* and shell tools can
-   neither read nor rewrite its own history. The auto-snapshot-before-a-mutating-tool hook (in dispatch) is OPT-IN
-   via SKYNET_CHECKPOINTS (default OFF = the existing run path is byte-identical) and FAIL-OPEN (a git problem
-   never breaks a run); the restore route is always available. The pure index/rollback math is checkpoint.js;
-   the git/fs is here, the one ambient-I/O edge. ---- */
-const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CHECKPOINTS') || '').trim());
+   neither read nor rewrite its own history. The auto-snapshot-before-a-mutating-tool hook (in dispatch) is ON BY
+   DEFAULT (reliability program, 2026-08-21: a rollback net nobody switched on caught nothing) and FAIL-OPEN (a git
+   problem never breaks a run); STARNET_CHECKPOINTS=0 / SKYNET_CHECKPOINTS=0 (or false/no/off) opts out. The
+   restore route is always available. The pure index/rollback math is checkpoint.js; the git/fs is here, the one
+   ambient-I/O edge. ---- */
+const CHECKPOINTS_ENABLED = checkpointsEnabledFromEnv(ENV('CHECKPOINTS'));
+function checkpointsEnabledFromEnv(raw) {
+  const v = String(raw == null ? '' : raw).trim().toLowerCase();
+  if (!v) return true;
+  return !/^(0|false|no|off)$/.test(v);
+}
 // fs.patch belongs here with the other writers: it is the WIDEST-blast-radius fs tool (multi-hunk, multi-file,
 // and the one the system prompt actively recommends over fs.edit for real edits), so leaving it out meant the
 // single most destructive tool ran with NO workspace lease and NO checkpoint snapshot — the exact combination
@@ -8607,6 +8627,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/growth/ratings/correction', h: handleGrowthRatingCorrection },   // consistency loop: the Commander's words after a short-of-the-mark verdict
   { m: ['GET', 'POST'], qsplit: '/api/growth/ratings', h: handleGrowthRatings },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
+  { m: 'GET', qsplit: '/api/recipes/drift', h: serveRecipeDrift },   // qsplit: ?recipeId= narrows
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
   { m: 'POST', exact: '/api/channels/handoff', h: handleChannelHandoff },
@@ -10924,6 +10945,8 @@ async function handleCronRun(req, res) {
       // Run Now must exercise the REAL unattended posture, grant included — otherwise "test it now" would
       // prove a capability set the scheduled fire does not get (the whole point of this route).
       unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : [],
+      // SOP recipes: Run Now is held to the same host-checked acceptance contract as the scheduled fire.
+      postconditions: (job.meta && job.meta.postconditions != null) ? job.meta.postconditions : undefined,
       preloadSkills: Array.isArray(job.skills) ? job.skills.slice() : [], requiredPreloads: true, cronScript: job.script || null,
       scriptTimeoutMs: job.scriptTimeoutMs,
       noAgent: job.noAgent === true, workdir: job.workdir || null,
@@ -11007,6 +11030,9 @@ async function handleCronRun(req, res) {
           }
         });
         if (line && String(line.text || '').trim()) state.buf = line.text;
+        // THE ROUTINE'S SPEND IS THE WHOLE LINE'S SPEND (2026-08-22): out.usd is hop-only, so add it to the entry
+        // run's reconciled spend exactly as the scheduled fire does (cron-driver `state.usd += line.usd`).
+        if (line && typeof line.usd === 'number' && isFinite(line.usd)) state.usd += line.usd;
       } catch (e) { console.warn('[cron] run-now work line failed after ' + job.agentId + ': ' + ((e && e.message) || e)); }
     }
     runs.delete(runId);
@@ -11016,7 +11042,7 @@ async function handleCronRun(req, res) {
     try {
       // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
       // concurrent advance/CRUD save with a stale in-memory snapshot).
-      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient, output: ok ? String(state.buf || '').trim() : undefined }, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient, output: ok ? String(state.buf || '').trim() : undefined, usd: state.usd || 0 }, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
     try { await deliverCronResult(cronStore.getJob(cronJobs, job.id) || job, { runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), text: String(state.buf || '').trim(), error: state.errMsg || null }); } catch (_) {}
@@ -14769,7 +14795,11 @@ async function runOnce(o) {
   // now with the proactive fold still armed. The error classifier deliberately still receives the RAW 0 (see the
   // runAgentLoop call) so a bare 400 is never mislabelled as overflow — that design is unchanged.
   const COLD_CATALOG_CONTEXT_TOKENS = 131072;
-  const ctxMgr = makeContext({ contextLimit: provider.contextLimit(model) || COLD_CATALOG_CONTEXT_TOKENS, compactAt: 0.65, keepTail: 6 });
+  // STARNET_CONTEXT_LIMIT_OVERRIDE (test/soak only): pretend the window is N tokens so a real model folds on a
+  // small run — the ONLY way to live-prove compaction against a production model without a 130k-token prompt.
+  // Never set in a packaged build; unset/invalid = the catalog's real window exactly as before.
+  const CONTEXT_LIMIT_OVERRIDE = Math.max(0, parseInt(String(ENV('CONTEXT_LIMIT_OVERRIDE') || ''), 10) || 0);
+  const ctxMgr = makeContext({ contextLimit: CONTEXT_LIMIT_OVERRIDE || provider.contextLimit(model) || COLD_CATALOG_CONTEXT_TOKENS, compactAt: 0.65, keepTailTurns: 6 });   // TURNS, not messages (assistant + its tool results = 1)
   // PER-RUN TOOL-OUTPUT CAP, scaled to the window. The flat 120KB cap (~30k tokens) sat far BELOW the compaction
   // threshold (0.65 × window — ~130k tokens on a 200k model), so the one event that resets the budget
   // (agent.compact, see loopEmit) could never fire: after ~120KB of reads the agent went blind — every later
@@ -14793,63 +14823,25 @@ async function runOnce(o) {
      also kept hammering the exact credential credPool had just cooled. The failover was fixed at one producer
      and did not generalize to the injected summarizer. Optional and additive: a caller that passes nothing
      (every existing test's fake summarizer) behaves exactly as before. */
-  async function summarize(older, prevSummary, live) {
-    const sProvider = (live && live.provider) || provider;
-    const sCost = (live && live.cost) || cost;
-    // aux tier: a configured cheap model serves the fold, riding the loop's LIVE provider/credential (so the
-    // rotation/fallback fix above still holds). No aux model -> the run's live model, byte-identical to before.
-    const runModel = (live && live.model) || model;
-    const auxModel = resolveAuxModel();
-    const sModel = auxModel || runModel;
-    // TRANSCRIPT DRAIN (before the fold): `older` is the exact slice compaction is about to delete from the live
-    // messages array. Turns THIS run produced that land in the fold would otherwise never reach the durable
-    // transcript at all — the run-end append can only see what SURVIVED the fold. The drain is STRICT: if fsync or
-    // read-back proof fails, throw before the loop replaces the live message array. maybeCompact then leaves the
-    // history unfolded and continues safely. Marker-keyed/idempotent, so a partial strict drain can retry without
-    // duplicating rows and the run-end drain writes only what remains. A sourceRunId makes restart reconciliation
-    // attributable without exposing tool arguments.
-    transcriptStore.appendNewStrict(o.streamId, agentId, older, { sourceRunId: runId });
-    const transcript = older.map(mm => {
-      const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
-      return (mm && mm.role ? mm.role : 'msg') + ': ' + c;
-    }).join('\n').slice(0, 16000);
-    // on_pre_compress (MEMORY-CORTEX): rank the agent's durable memory against the slice being folded and PREPEND
-    // it, so beliefs like "user prefers X" survive when the raw turns are discarded. '' when nothing to preserve
-    // (prepend nothing → byte-identical compaction). Fail-open: a memory hiccup must never block the summary.
-    let memBlock = '';
-    try {
-      const recs = notebookStore.get('notebook:' + agentId);
-      if (Array.isArray(recs) && recs.length) memBlock = compactionMemoryBlock(recs, transcript, { now: Date.now(), k: 5, limit: 800, streamId: o.streamId || null });
-    } catch (_) {}
-    const prev = (typeof prevSummary === 'string' && prevSummary.trim()) ? prevSummary.trim() : '';   // H5.2: a prior fold's running summary to merge into
-    const prevBlock = prev ? 'PREVIOUS SUMMARY (update this — merge the new turns in, drop anything now obsolete):\n' + prev + '\n\n' : '';
-    const userMsg = (memBlock ? memBlock + '\n\n' : '') + prevBlock + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
-    async function attempt(useModel) {
-      const req = { model: useModel, stream: true, signal, messages: [
-        { role: 'system', content: compactionSummaryPrompt({ prevSummary: !!prev }) },   // H5.1 structured template; H5.2 merge-update variant when a prior summary exists
-        { role: 'user', content: userMsg }
-      ] };
-      const effort = auxReasoningEffort(sProvider, useModel);   // per-request 'low' (or STARNET_AUX_EFFORT) only when the aux tier is engaged AND the provider verifiably offers it
-      if (effort) req.reasoningEffort = effort;
-      let out = '', usage = null;
-      for await (const ev of sProvider.stream(req)) {
-        if (ev && ev.type === 'text') out += ev.delta;
-        else if (ev && ev.type === 'usage') usage = ev.usage;
-      }
-      const c = sCost.reconcile(usage, useModel);
-      emit('agent.cost', { agentId, runId, usd: c.usd || 0, model: useModel, reconciled: true });   // display-only; no token fields (gauge-safe)
-      const r = { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
-      if (c.unpriced) r.unpricedUsage = [{ model: useModel, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 }];
-      return r;
+  // The summarizer body lives in compaction-summarizer.js (chunked full-slice fold; no 16k input truncation).
+  // This is thin wiring: the run's provider/model/cost fallbacks, the aux tier, the STRICT transcript drain and
+  // the durable-memory prepend are injected; `live` still overrides provider/model/cost per call (fallback-safe).
+  const summarize = makeSummarizer({
+    provider, model, cost, signal, emit, agentId, runId,
+    auxModelFor: resolveAuxModel,
+    auxEffortFor: auxReasoningEffort,
+    summaryPrompt: compactionSummaryPrompt,
+    transcriptDrain: (older) => transcriptStore.appendNewStrict(o.streamId, agentId, older, { sourceRunId: runId }),
+    memoryBlockFor: (transcript) => {
+      // on_pre_compress (MEMORY-CORTEX): rank durable memory against the slice being folded and PREPEND it.
+      // '' when nothing to preserve. Fail-open: a memory hiccup must never block the summary.
+      try {
+        const recs = notebookStore.get('notebook:' + agentId);
+        if (Array.isArray(recs) && recs.length) return compactionMemoryBlock(recs, transcript, { now: Date.now(), k: 5, limit: 800, streamId: o.streamId || null });
+      } catch (_) {}
+      return '';
     }
-    /* AUX-TIER RELIABILITY FLOOR: a configured cheap model must never make compaction LESS reliable than
-       today. The loop's contract (loop.js maybeCompact: a throw counts a compactionFail; two flip
-       compactionOff, after which a context_overflow can kill the run) is preserved by retrying the fold ONCE
-       on the run's own live model before any failure surfaces. An abort is a cancel, never retried. */
-    if (sModel === runModel) return attempt(sModel);
-    try { return await attempt(sModel); }
-    catch (e) { if (signal.aborted) throw e; return attempt(runModel); }
-  }
+  });
   // per-run adapter onto the shared cross-run budget: the loop calls check(spentThisRun) each turn; the budget
   // emits any threshold crossing down THIS run's bus and returns a block when a soft pool cap is hit.
   // An unmetered (OAuth-subscription) run is exempt from the cross-run $ pools too — its estimates would
@@ -14900,6 +14892,9 @@ async function runOnce(o) {
   // ordinary capability/consent path exactly as before.
   const grantedSet = new Set(resolved.tools || []);
   const recoveryReplayBarrier = RunRecovery.makeReplayBarrier(o.recovery && o.recovery.blockedFingerprints);
+  // IDEMPOTENCY SCOPE — the work item this run belongs to (cron tick > recovered source run > this run). Empty
+  // only when there is no run identity at all, in which case the gate is inert.
+  const idempotencyScope = idempotencyLedger.scopeFor({ idempotencyScope: o.idempotencyScope, recovery: o.recovery, runId });
 
   /* PARALLEL-SAFE PREDICATE — the host half of loop.js's batch planner. The loop sees a name and args; only
      here does the registry exist to say what a tool actually IS. A batch runs concurrently only when EVERY
@@ -14936,6 +14931,18 @@ async function runOnce(o) {
         content: 'BLOCKED: this mutating call exactly matches an operator-reviewed call from the interrupted run. '
           + 'The host will not execute or retry it. Continue without repeating that effect, or stop and report what remains.'
       };
+    }
+    // IDEMPOTENT CONNECTOR WRITES. A mutate-role custom-connector call whose (scope, tool, canonical args) already
+    // SUCCEEDED for this work item is not sent again: the model gets the recorded result, plainly labelled. This sits
+    // with the recovery barrier — before capability withholding and before the journal's intent boundary — because a
+    // replayed write is not a dispatch at all. Fail-open on a ledger read error (the write executes as before).
+    let idemKey = null;
+    if (idempotencyScope && idempotencyLedger.isWrite(c.name)) {
+      try {
+        idemKey = idempotencyLedger.keyFor(idempotencyScope, c.name, c.argsRaw || JSON.stringify(c.args || {}));
+        const prior = idempotencyLedger.lookup(idemKey);
+        if (prior) return idempotencyLedger.replayResult(prior);   // the loop's own agent.tool_result carries summary 'idempotent-replay'
+      } catch (e) { failNote('idempotency.lookup', e); idemKey = null; }
     }
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: realName });   // wire -> real (dotted) name
     else if (!grantedSet.has(c.name) && registry.get(allWire.get(c.name) || c.name)) {
@@ -15048,7 +15055,7 @@ async function runOnce(o) {
       }
     }
     // CHECKPOINT NET: snapshot the workspace BEFORE a mutating tool so the turn is one rollback away. The general
-    // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
+    // fs.* net is on by default (STARNET_CHECKPOINTS=0 opts out); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
     // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
     // or a git hiccup costs nothing and never throws into the run.
     const preciseCheckpoint = /^fs\.(write|append|edit|patch)$/.test(c.name) || /^(shell\.exec|verify\.run|terminal\.(?:start|write))$/.test(c.name);
@@ -15148,6 +15155,11 @@ async function runOnce(o) {
         content: r && r.content != null ? r.content : '', summary: r && r.summary ? r.summary : ''
       });
       if (execution.journalStarted() && !execution.journalFailed()) execution.markToolSettled(c.id);
+      // record the SUCCESSFUL write (only successes protect anything); a ledger write failure never fails the run.
+      if (idemKey && r && r.ok && !r.isError) {
+        idempotencyLedger.record(idemKey, { scope: idempotencyScope, runId, tool: c.name, summary: r.summary, content: r.content })
+          .catch(e => failNote('idempotency.record', e));
+      }
     } catch (e) {
       if (execution.journalStarted()) throw fatalToolBoundary('result', e);
       throw e;
@@ -15654,8 +15666,76 @@ async function runOnce(o) {
     // HOST defines it (agent, model, surface, trigger), and the loop deliberately knows nothing about the
     // surface it was launched from. Observe-only: a hook cannot refuse a run the Commander started.
     try { await hookSpine.invoke('on_session_start', { session_id: runId, cwd: WORKSPACES, extra: { agent_id: agentId, model, platform: surface, trigger: o.trigger || 'directive' } }); } catch (_) {}
+    // TYPED POSTCONDITIONS READER — one host reader for both the mid-run acceptance probe and the end-of-run
+    // verdict: every artifact predicate resolves through the workspace jail, reads are bounded, digests streamed.
+    const readPostconditionArtifact = async requirement => {
+      const resolved = await fsJail.resolveInside(agentId, requirement.path, { scope: 'read' });
+      const stat = await fsp.stat(resolved.abs);
+      if (!stat.isFile()) return { exists: true, isFile: false };
+      const observed = { exists: true, isFile: true, bytes: stat.size };
+      if (requirement.type === 'artifact_contains') {
+        if (stat.size > (8 << 20)) return observed; // bounded read; absence of proof is not failure of the run host
+        observed.contains = (await fsp.readFile(resolved.abs, 'utf8')).includes(requirement.text);
+      } else if (requirement.type === 'artifact_sha256') {
+        const hash = crypto.createHash('sha256');
+        await new Promise((resolve, reject) => {
+          const stream = fs.createReadStream(resolved.abs);
+          stream.on('data', chunk => hash.update(chunk)); stream.once('error', reject); stream.once('end', resolve);
+        });
+        observed.sha256 = hash.digest('hex');
+      }
+      return observed;
+    };
+    // TYPED CONNECTOR READ-BACK (2026-08-22) — the host's OWN fresh read through the connector for a
+    // `connector_readback` postcondition. Never the model's observation. Refuses anything but an observe-role
+    // tool (the loop's verb classifier, or the server's readOnlyHint as a second opinion) — a mutation can never
+    // be its own proof. Bounded by a 30 s timeout; every failure is a named code, never a pass.
+    const readPostconditionConnector = async requirement => {
+      const cid = String(requirement.connector), tool = String(requirement.tool);
+      const info = connectors.toolInfo(cid, tool);
+      if (!info) return { ok: false, code: 'connector_tool_unavailable' };
+      const role = LoopInternals.vosExternalRole('mcp__' + cid + '__' + tool);
+      if (role !== 'observe' && !info.readOnlyHint) return { ok: false, code: 'connector_tool_not_readonly' };
+      let timer = null;
+      try {
+        const res = await Promise.race([
+          connectors.call(cid, tool, requirement.args || {}),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('read-back timed out')), 30000); })
+        ]);
+        if (!res || res.isError) return { ok: false, code: 'connector_readback_error' };
+        const parts = Array.isArray(res.content) ? res.content : [];
+        const textOut = parts.map(p => (p && typeof p.text === 'string') ? p.text : '').filter(Boolean).join('\n');
+        return { ok: true, text: textOut || (res.structuredContent ? JSON.stringify(res.structuredContent) : '') };
+      } catch (e) {
+        return { ok: false, code: 'connector_readback_error', error: String(e && e.message || e).slice(0, 200) };
+      } finally { if (timer) clearTimeout(timer); }
+    };
+    // ACCEPTANCE PROBE (SOP lane): the loop asks "would the contract hold if the run ended now?" when the model
+    // tries to finish, and sends it back once to repair what fails. Same predicates, same reader, same evidence as
+    // the final verdict — a PREVIEW of the host's judgment, never a substitute for it. Absent when no contract.
+    const acceptanceProbe = (o.postconditions != null) ? async () => {
+      const snap = execution.completionEvidence();
+      const assessed = await TaskPostconditions.assessPostconditions({
+        contract: o.postconditions, reason: 'done',
+        artifacts: execution.artifactList(), uncertainMutations: execution.uncertainMutations(),
+        evidence: snap && Array.isArray(snap.evidence) ? snap.evidence : [], effects: snap && Array.isArray(snap.effects) ? snap.effects : [],
+        effectVerdict: snap && snap.effectVerdict,
+        readArtifact: readPostconditionArtifact, readConnector: readPostconditionConnector
+      });
+      const byId = {};
+      for (const req of ((assessed.contract && assessed.contract.requirements) || [])) byId[req.id] = req;
+      const checks = (assessed.checks || []).map(c => Object.assign({}, c, { path: byId[c.id] && byId[c.id].path, command: byId[c.id] && byId[c.id].command,
+        connector: byId[c.id] && byId[c.id].connector, tool: byId[c.id] && byId[c.id].tool }));
+      // an INVALID contract has no checks to repair — surface it as one failing row so the model (and the
+      // Commander, via the final verdict) sees the contract itself is the problem, not the work.
+      if (!assessed.contract && assessed.contractErrors && assessed.contractErrors.length) {
+        return { checks: [{ id: 'contract', type: 'contract', status: 'failed', code: 'invalid_contract: ' + assessed.contractErrors.join('; ').slice(0, 300) }] };
+      }
+      return { checks };
+    } : null;
     result = await runAgentLoop({
       messages: msgs, provider, emit: loopEmit, cost, tools: toolDefs, dispatch, capCtx,
+      acceptanceProbe,
       // Granted but unadvertised: held out of the request until tool.search reveals one (see loop.js).
       deferredTools: deferredToolDefs,
       hiddenTools: ['brief_ask', 'brief_proceed'],
@@ -15685,6 +15765,7 @@ async function runOnce(o) {
         maxUnpricedTokens: (providerUnmetered || usingCodex || usingDeviceOAuth) ? Infinity : CAPS.maxUnpricedTokens
       },
       budget: runBudget, context: ctxMgr, summarize, fallbacks, initialFallback,
+      microCompaction: !/^(0|false|off|no)$/i.test(String(ENV('COMPACT_MICRO') || '').trim()),   // free elision tier before any paid fold (off: STARNET_COMPACT_MICRO=0)
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
       // activePrimaryKey, NOT runKey: when the run's own key was still cooling we STARTED on a warm pool key,
@@ -15742,24 +15823,7 @@ async function runOnce(o) {
         reason: (result && result.reason) || 'error',
         artifacts: execution.artifactList(),
         uncertainMutations: execution.uncertainMutations(),
-        readArtifact: async requirement => {
-          const resolved = await fsJail.resolveInside(agentId, requirement.path, { scope: 'read' });
-          const stat = await fsp.stat(resolved.abs);
-          if (!stat.isFile()) return { exists: true, isFile: false };
-          const observed = { exists: true, isFile: true, bytes: stat.size };
-          if (requirement.type === 'artifact_contains') {
-            if (stat.size > (8 << 20)) return observed; // bounded read; absence of proof is not failure of the run host
-            observed.contains = (await fsp.readFile(resolved.abs, 'utf8')).includes(requirement.text);
-          } else if (requirement.type === 'artifact_sha256') {
-            const hash = crypto.createHash('sha256');
-            await new Promise((resolve, reject) => {
-              const stream = fs.createReadStream(resolved.abs);
-              stream.on('data', chunk => hash.update(chunk)); stream.once('error', reject); stream.once('end', resolve);
-            });
-            observed.sha256 = hash.digest('hex');
-          }
-          return observed;
-        }
+        readArtifact: readPostconditionArtifact, readConnector: readPostconditionConnector
       });
     } catch (_) {
       finalCompletionEvidence = execution.completionEvidence();
@@ -18316,6 +18380,22 @@ function withRunTruth(row) {
   // Rows written before the explicit marker existed still carry canonical internal stream prefixes.
   out.internal = !!out.internal || contextpack.isInternalStream(out.streamId);
   return out;
+}
+/* GOLDEN-RUN DRIFT (2026-08-22): every recipe's latest run compared against its own good history, computed from
+   the durable run rows (newest-first) — never a second ledger. `?recipeId=` narrows to one; default every recipe
+   seen in the newest 500 rows. Per-agent scoping deliberately absent: a recipe is station-wide provenance. */
+function serveRecipeDrift(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const want = String(u.searchParams.get('recipeId') || '').slice(0, 60);
+    if (want && !/^[A-Za-z0-9_-]{1,60}$/.test(want)) return json(400, { error: 'bad recipeId' });
+    const rows = runStore.list(null, { limit: 500 }).filter(r => r && r.recipeId && (!want || r.recipeId === want));
+    const all = RecipeDrift.assessAll(rows);
+    return json(200, want ? { recipeId: want, drift: all[want] || RecipeDrift.assessDrift([]) } : { drift: all });
+  } catch (e) {
+    return json(500, { error: 'run history unreadable: ' + String(e && e.message || e).slice(0, 200) });
+  }
 }
 function serveRuns(req, res) {
   const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)

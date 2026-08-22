@@ -1220,7 +1220,10 @@ const App = (() => {
     // already IS one). chat.js records it into RUN_META at onRunId; BottleStore reads it via runBottleInfo below.
     // recipeId is the provenance SPINE: it rides RUN_META → the /api/run body → the durable run row, so the
     // outcome loop (rate-the-work → recipe rank) can attribute a rating to the recipe that launched the run.
-    Chat.send(text, { fromRecipe: true, recipeId: recipe.id });   // kicks off the run on the fresh stream
+    // SOP recipes: the recipe's typed acceptance rows (tokens filled) ride the run body as `postconditions` — the
+    // host evaluates them when the run ends (sidecar/task-postconditions.js); null when the recipe declares none.
+    const postconditions = Recipes.postconditionsFor ? Recipes.postconditionsFor(recipe, values || {}) : null;
+    Chat.send(text, { fromRecipe: true, recipeId: recipe.id, postconditions: postconditions || undefined });   // kicks off the run on the fresh stream
     persist();
     return true;
   }

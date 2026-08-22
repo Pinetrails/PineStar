@@ -23,9 +23,14 @@ const WorldModel = (() => {
   function setPropRules(fn) { propRules = (typeof fn === 'function') ? fn : null; }
   // the ONE line-budget normalizer (pipeline.js): the browser global, or the module in node tests. Absent
   // (no compiler loaded) -> limits are dropped rather than stored raw: a number no executor normalized never rides a save.
-  function normalizeLimits(raw) {
+  // the ONE compiler (browser global or node require) — read lazily so load order never matters
+  function pipelineModule() {
     let P = (typeof Pipeline !== 'undefined') ? Pipeline : null;
     if (!P && typeof require === 'function') { try { P = require('./pipeline.js'); } catch (_) { P = null; } }
+    return P;
+  }
+  function normalizeLimits(raw) {
+    const P = pipelineModule();
     return (P && typeof P.normalizeLineLimits === 'function') ? P.normalizeLineLimits(raw) : null;
   }
   const TILE = 12;
@@ -1100,14 +1105,30 @@ const WorldModel = (() => {
        the tile-perfect wiring rules (ring adjacency, junction-on-line, direction) unlearnable-by-necessity:
        the user clicks INBOX then BAY, and the path knows the rules for them. */
     const CONNECTABLE = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1, joiner: 1, loop: 1 };
+    /* 1x1 JUNCTIONS ARE ON-LINE MACHINES (2026-08-22 stranded-user fix). The compiler (pipeline.js) reads a
+       splitter/joiner/loop/filter/merger by the belt UNDER its own tile: in-lanes are 4-neighbours flowing
+       INTO that tile, out-lanes are 4-neighbours flowing away. The old connect path treated a junction like a
+       dock — any pathable ring tile (corners included) was a goal and the junction's own tile was never laid
+       — so the UI chimed CONNECTED while the compiler reported SPLIT_ONE_LANE / JOIN_ONE_LANE / BAY_NOT_FED.
+       Now: a beltless junction is ENTERED/LEFT through its own tile (the lane runs through it, the junction
+       tile takes the lane's heading); a junction already on a line is reached only by its 4-neighbours with
+       the last tile aimed INTO it (an in-lane — a corner can never be one), or left from a free 4-neighbour
+       (an out-lane). The would-be lane is checked against the compiler's own lane readers BEFORE a tile is
+       written — a lane the compiler would not count is refused (honest failure, no chime), never laid. */
+    const JUNCTION = { filter: 1, splitter: 1, merger: 1, joiner: 1, loop: 1 };
+    const isJunction = p => !!JUNCTION[p.t] && (p.w || 1) === 1 && (p.h || 1) === 1;
     function connectBelt(fromId, toId) {
       const A = doc.props.find(p => p.id === fromId), B = doc.props.find(p => p.id === toId);
       if (!A || !B) return fail('NOT_FOUND', 'no such prop');
       if (A.id === B.id) return fail('SAME_PROP', 'pick two different machines');
       if (!CONNECTABLE[A.t] || !CONNECTABLE[B.t]) return fail('NOT_CONNECTABLE', 'connect workflow machines (INBOX/BAY/OUTBOX/junctions)');
       const inFoot = (p, x, y) => x >= p.x && x < p.x + (p.w || 1) && y >= p.y && y < p.y + (p.h || 1);
-      // a path tile: on deck, not an existing belt, not under ANY prop (docks hook via ring adjacency)
-      const pathable = (x, y) => !doc.belts[beltKey(x, y)] && !propAt(x, y) && !!roomAt(x, y);
+      const aJ = isJunction(A), bJ = isJunction(B);
+      const aOn = !!doc.belts[beltKey(A.x, A.y)], bOn = !!doc.belts[beltKey(B.x, B.y)];
+      // a path tile: on deck, not an existing belt, not under ANY prop (docks hook via ring adjacency) —
+      // EXCEPT a beltless 1x1 junction endpoint's own tile: the lane must run THROUGH it
+      const pathable = (x, y) => !doc.belts[beltKey(x, y)] && !!roomAt(x, y)
+        && (!propAt(x, y) || (aJ && !aOn && x === A.x && y === A.y) || (bJ && !bOn && x === B.x && y === B.y));
       // the 1-tile ring around a footprint (the expanded rect minus the footprint) — matches beltTileNear's hookup scan
       const ring = p => {
         const out = [], w = p.w || 1, h = p.h || 1;
@@ -1115,57 +1136,122 @@ const WorldModel = (() => {
           if (!inFoot(p, x, y)) out.push({ x, y });
         return out;
       };
-      // START set: a junction already ON a line branches from a free 4-neighbor of its own tile;
-      // anything else starts from a pathable ring tile.
+      const N4 = [[1, 0, 'E'], [-1, 0, 'W'], [0, 1, 'S'], [0, -1, 'N']];
+      const dirTo = (a, b) => (b.x > a.x ? 'E' : b.x < a.x ? 'W' : b.y > a.y ? 'S' : 'N');
+      // START set: a beltless junction starts ON its own tile; a machine already ON a line branches from a
+      // free 4-neighbor of its tile (an out-lane); anything else starts from a pathable ring tile.
       const starts = [];
-      if (doc.belts[beltKey(A.x, A.y)]) {
-        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const x = A.x + dx, y = A.y + dy; if (pathable(x, y)) starts.push({ x, y }); }
-      } else {
-        for (const t of ring(A)) if (pathable(t.x, t.y)) starts.push(t);
-      }
-      if (!starts.length) return fail('FROM_BLOCKED', 'no free tile beside the start machine');
-      // GOAL set: pathable ring tiles of B — EDGE tiles preferred over corners, so the lane's last tile
-      // can aim straight INTO the footprint and the crate visibly sinks at the dock (a corner end works
-      // but sinks diagonally beside it; corners are the fallback when every edge is taken)
+      if (aJ && !aOn) { if (pathable(A.x, A.y)) starts.push({ x: A.x, y: A.y }); }
+      else if (aOn) { for (const [dx, dy] of N4) { const x = A.x + dx, y = A.y + dy; if (pathable(x, y)) starts.push({ x, y }); } }
+      else for (const t of ring(A)) if (pathable(t.x, t.y)) starts.push(t);
+      if (!starts.length) return fail('FROM_BLOCKED', aJ ? 'no free tile beside the ' + A.t.toUpperCase() + ' to leave from — clear one of its four sides' : 'no free tile beside the start machine');
+      // GOAL set: a beltless junction is entered THROUGH its own tile; a junction already on a line only via a
+      // free 4-neighbour (the last tile aims INTO it = an in-lane); for docks, pathable ring tiles — EDGE tiles
+      // preferred over corners, so the lane's last tile can aim straight INTO the footprint and the crate
+      // visibly sinks at the dock (corners are the fallback when every edge is taken)
       const goalEdge = new Set(), goalCorner = new Set();
-      for (const t of ring(B)) {
+      if (bJ && !bOn) {
+        // its own tile is the goal — but only reachable through one of its four sides (or straight out of A)
+        const open = N4.some(([dx, dy]) => pathable(B.x + dx, B.y + dy) || inFoot(A, B.x + dx, B.y + dy));
+        if (open && pathable(B.x, B.y)) goalEdge.add(B.x + ',' + B.y);
+      }
+      else if (bJ) { for (const [dx, dy] of N4) { const x = B.x + dx, y = B.y + dy; if (pathable(x, y)) goalEdge.add(x + ',' + y); } }
+      else for (const t of ring(B)) {
         if (!pathable(t.x, t.y)) continue;
         const corner = (t.x < B.x || t.x >= B.x + (B.w || 1)) && (t.y < B.y || t.y >= B.y + (B.h || 1));
         (corner ? goalCorner : goalEdge).add(t.x + ',' + t.y);
       }
       const goals = goalEdge.size ? goalEdge : goalCorner;
-      if (!goals.size) return fail('TO_BLOCKED', 'no free tile beside the destination');
-      // BFS, multi-source → any goal (shortest orthogonal path; deterministic neighbor order)
-      const prev = new Map(), q = [];
-      for (const s of starts) { const k = s.x + ',' + s.y; if (!prev.has(k)) { prev.set(k, null); q.push(s); } }
-      let hit = null, head = 0;
-      while (head < q.length && !hit) {
-        const t = q[head++];
-        const tk = t.x + ',' + t.y;
-        if (goals.has(tk)) { hit = t; break; }
-        for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
-          const x = t.x + dx, y = t.y + dy, k = x + ',' + y;
-          if (prev.has(k) || !pathable(x, y)) continue;
-          prev.set(k, tk); q.push({ x, y });
-        }
-        if (q.length > 4096) return fail('NO_PATH', 'no route found (path too long)');
+      if (!goals.size) return fail('TO_BLOCKED', bJ ? 'no free tile beside the ' + B.t.toUpperCase() + ' to enter it from — clear one of its four sides' : 'no free tile beside the destination');
+      /* A LANE THAT BRUSHES A THIRD MACHINE HOOKS IT (2026-08-22): the compiler treats EVERY belt tile in a
+         machine's 1-tile ring as a hookup, so a shortest path that hugged the reviewer's ring on its way back
+         to the writer made the reviewer its own next stage (CHAIN_CYCLE) — a lane the user never drew. The
+         ring tiles of every machine that is neither endpoint are avoided on the first pass; only when no
+         route exists without them are they allowed (the old behaviour, and still an honest belt). */
+      const foreignRing = new Set();
+      for (const p of doc.props) {
+        if (!CONNECTABLE[p.t] || p.id === A.id || p.id === B.id) continue;
+        for (const t of ring(p)) foreignRing.add(t.x + ',' + t.y);
       }
+      function bfs(avoid) {
+        const prev = new Map(), q = [];
+        for (const s of starts) { const k = s.x + ',' + s.y; if (!prev.has(k) && !(avoid && foreignRing.has(k))) { prev.set(k, null); q.push(s); } }
+        let hit = null, head = 0;
+        while (head < q.length && !hit) {
+          const t = q[head++];
+          const tk = t.x + ',' + t.y;
+          if (goals.has(tk)) { hit = t; break; }
+          for (const [dx, dy] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+            const x = t.x + dx, y = t.y + dy, k = x + ',' + y;
+            if (prev.has(k) || !pathable(x, y)) continue;
+            if (avoid && foreignRing.has(k) && !goals.has(k)) continue;
+            prev.set(k, tk); q.push({ x, y });
+          }
+          if (q.length > 4096) return { err: fail('NO_PATH', 'no route found (path too long)') };
+        }
+        return { hit, prev };
+      }
+      let found = bfs(true);
+      if (found.err) return found.err;
+      if (!found.hit) { found = bfs(false); if (found.err) return found.err; }
+      const hit = found.hit, prev = found.prev;
       if (!hit) return fail('NO_PATH', 'no clear route between these machines');
       // rebuild the path start→goal
       const path = [];
       let ck = hit.x + ',' + hit.y;
       while (ck) { const pp = ck.split(','); path.unshift({ x: +pp[0], y: +pp[1] }); ck = prev.get(ck); }
       // orient each tile at the next; the LAST tile aims into B's footprint (open-end sink at the dock)
-      const dirTo = (a, b) => (b.x > a.x ? 'E' : b.x < a.x ? 'W' : b.y > a.y ? 'S' : 'N');
       const dirs = [];
       for (let i = 0; i < path.length - 1; i++) dirs.push(dirTo(path[i], path[i + 1]));
       const last = path[path.length - 1];
       let endDir = null;
-      for (const [dx, dy, d] of [[1, 0, 'E'], [-1, 0, 'W'], [0, 1, 'S'], [0, -1, 'N']]) if (inFoot(B, last.x + dx, last.y + dy)) { endDir = d; break; }
+      if (bJ && !bOn) {
+        // the lane runs THROUGH the junction: its tile keeps the lane's heading (away from where it came)
+        if (dirs.length) endDir = dirs[dirs.length - 1];
+        else for (const [dx, dy, d] of N4) if (inFoot(A, last.x - dx, last.y - dy)) { endDir = d; break; }
+      } else for (const [dx, dy, d] of N4) if (inFoot(B, last.x + dx, last.y + dy)) { endDir = d; break; }
       dirs.push(endDir || (dirs.length ? dirs[dirs.length - 1] : 'E'));
+      // PROVE THE LANE BEFORE LAYING IT: read the would-be map with the compiler's own lane readers
+      // (Pipeline._internals) — the junction must count this lane exactly the way the chime will claim.
+      const exitTile = aJ ? (aOn ? path[0] : (path.length > 1 ? path[1] : null)) : null;
+      const P = (aJ || bJ) ? pipelineModule() : null;
+      if (P && P._internals) {
+        const map = {};
+        for (const k in doc.belts) map[k] = doc.belts[k];
+        for (let i = 0; i < path.length; i++) map[path[i].x + ',' + path[i].y] = dirs[i];
+        if (bJ) {
+          const entry = path.length > 1 ? path[path.length - 2] : null;   // the tile that feeds the junction
+          const sideIn = entry ? dirTo({ x: B.x, y: B.y }, entry) : null;
+          const ins = P._internals.inLanes(map, B.x, B.y);
+          if (!map[B.x + ',' + B.y] || (sideIn && ins.indexOf(sideIn) < 0))
+            return fail('JUNCTION_NO_IN', 'that lane would not enter the ' + B.t.toUpperCase() + ' — the belt must run INTO its tile');
+        }
+        if (aJ) {
+          const sideOut = exitTile ? dirTo({ x: A.x, y: A.y }, exitTile) : null;
+          const outs = P._internals.outLanes(map, A.x, A.y);
+          if (!map[A.x + ',' + A.y] || (sideOut && outs.indexOf(sideOut) < 0) || (!sideOut && !bJ))
+            return fail('JUNCTION_NO_OUT', 'that lane would not leave the ' + A.t.toUpperCase() + ' — the belt must run OUT of its tile');
+        }
+      }
       snapshot();   // one undo slot for the whole connection
       const dirty = [];
       for (let i = 0; i < path.length; i++) { doc.belts[beltKey(path[i].x, path[i].y)] = dirs[i]; dirty.push({ x1: path[i].x, y1: path[i].y, x2: path[i].x, y2: path[i].y }); }
+      /* a LOOP gate's DONE lane: connecting the gate to an OUTBOX names that lane `done` (unless the
+         Commander already chose one). The compiler otherwise defaults to the first exit in E,S,W,N order,
+         which on a floor whose back lane happens to sit east would send every spent crate BACK round. */
+      if (A.t === 'loop' && B.t === 'outbox' && !A.done && exitTile) {
+        A.done = dirTo({ x: A.x, y: A.y }, exitTile);
+        dirty.push({ x1: A.x, y1: A.y, x2: A.x, y2: A.y });
+      }
+      /* a junction tile's own arrow must point at an OUT-lane: a joiner entered from the south while its tile
+         still aimed south (the heading of the first lane that reached it) drew an arrow INTO an in-lane. The
+         compiler never reads that arrow, but the floor does — re-aim it at the first out-lane. */
+      if (P && P._internals) for (const J of [A, B]) {
+        if (!isJunction(J)) continue;
+        const jk = beltKey(J.x, J.y), cur = doc.belts[jk]; if (!cur) continue;
+        const outs = P._internals.outLanes(doc.belts, J.x, J.y);
+        if (outs.length && outs.indexOf(cur) < 0) { doc.belts[jk] = outs[0]; dirty.push({ x1: J.x, y1: J.y, x2: J.x, y2: J.y }); }
+      }
       emit(dirty);
       return { ok: true, count: path.length, from: A.t, to: B.t };
     }

@@ -154,7 +154,10 @@
           schemaVersion: src.contract.schemaVersion, authority: 'commander',
           requirements: src.contract.requirements.slice(0, 20).filter(x => x && typeof x === 'object').map(x => ({
             id: str(x.id).slice(0, 80), type: str(x.type).slice(0, 40), path: str(x.path).slice(0, ARTIFACT_STR_MAX),
-            text: str(x.text).slice(0, 500), command: str(x.command).slice(0, 1000), sha256: str(x.sha256).slice(0, 64)
+            text: str(x.text).slice(0, 500), command: str(x.command).slice(0, 1000), sha256: str(x.sha256).slice(0, 64),
+            // typed connector read-back (2026-08-22): the durable row names WHAT was read back, never the args
+            // payload (it may carry user data) and never the observed text.
+            connector: str(x.connector).slice(0, 80), tool: str(x.tool).slice(0, 80), contains: str(x.contains).slice(0, 500), regex: str(x.regex).slice(0, 500)
           }))
         } : null;
     const checks = (Array.isArray(src.checks) ? src.checks : []).slice(0, 20).filter(x => x && typeof x === 'object').map(x => ({

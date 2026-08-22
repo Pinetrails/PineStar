@@ -176,6 +176,35 @@ function rig(floor, script, opts) {
     A.eq(res.hops.length, 7, 'seven hops bought — more than the 6-stage cap, because loop passes are bounded by max, not by the stage cap');
   }
 
+  /* ---- THE STRANDED-USER FLOOR (2026-08-22): the loop's done lane goes straight to OUTBOX (no publisher dock).
+          The reviewer is statically TERMINAL, so chainStep used to return null and the line never looped once.
+          Now it iterates up to max and exits on the done lane with the reviewer's last word. ---- */
+  {
+    const floor = loopFloor({ maxIter: 2 });
+    floor.props[4] = { id: 'p6', t: 'outbox', x: 15, y: 3, w: 2, h: 2 };
+    let reviews = 0;
+    const R = rig(floor, {
+      drafter: { text: 'redraft', usd: 0.01 },
+      reviewer: () => ({ text: 'review ' + (++reviews), usd: 0.01 })
+    });
+    A.ok(R.plan.outs.length > 0 && R.plan.chains.reviewer.next.length === 0, 'fixture: the reviewer ships to an OUTBOX, no dock past the gate');
+    const res = await R.c.advance({ agentId: 'reviewer', text: 'review 0', originalText: 'write a post', lineId: R.lineId, runId: 'run6b' });
+    A.eq(res.stopped, null, 'a loop that exits to OUTBOX runs to its end (' + res.stopped + ')');
+    A.eq(res.hops.map(h => h.agentId).join(','), 'drafter,reviewer,drafter,reviewer', 'two passes round the gate (>1 pass), then the done lane ships out');
+    A.eq(res.text, 'review 2', 'the reviewer last verdict is the delivered answer');
+    A.ok(/\[LOOP — pass 1 of 2/.test(R.log[0].text) && /\[LOOP — pass 2 of 2/.test(R.log[2].text), 're-entries are numbered');
+  }
+  /* ---- the same hole for a JOINER whose exit is OUTBOX: both branches still meet the barrier and the merged crate is the answer ---- */
+  {
+    const floor = joinFloor();
+    floor.props[5] = { id: 'p6', t: 'outbox', x: 12, y: 4, w: 2, h: 2 };
+    const R = rig(floor, { B: { text: 'beta findings', usd: 0.02 } });
+    const res = await R.c.advance({ agentId: 'A', text: 'alpha findings', originalText: 'research X', lineId: R.lineId, runId: 'run1b' });
+    A.eq(res.stopped, null, 'join-then-outbox runs to its end (' + res.stopped + ')');
+    A.eq(res.hops.map(h => h.agentId).join(','), 'B', 'sibling B ran; nothing past the joiner');
+    A.ok(/2 of 2 branches delivered/.test(res.text) && /alpha findings/.test(res.text) && /beta findings/.test(res.text), 'the merged crate is the delivered answer');
+  }
+
   /* ---- the chain USD cap still bounds a loop ---- */
   {
     const R = rig(loopFloor({ maxIter: 20 }), {

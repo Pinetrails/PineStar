@@ -293,7 +293,9 @@ function chatFixture() {
     const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });   // 8 prompt tokens > 6.5 -> compact
     let summarizedOlder = null;
     const summarize = async (older) => { summarizedOlder = older; return 'SUMMARY'; };
-    const messages = [{ role: 'user', content: 'do it' }];
+    // the DIRECTIVE (first non-system message) is pinned verbatim through a fold; the two earlier turns after it
+    // are the foldable history
+    const messages = [{ role: 'user', content: 'do it' }, { role: 'user', content: 'earlier context' }, { role: 'assistant', content: 'noted' }];
     const res = await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
       model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(), context: ctxMgr, summarize });
 
@@ -313,9 +315,10 @@ function chatFixture() {
     // negative saving.
     A.eq(comp[0].payload.reason, 'context', 'compaction reason tagged context');
     A.eq(res.reason, 'done', 'the run completes after compacting');
-    A.eq(summarizedOlder.length, 1, 'only the original user turn was folded; the assistant+tool group stayed in the tail');
-    A.eq(messages[0].role, 'system', 'compacted history now leads with a system summary note');
-    A.ok(messages[0].content.indexOf('<conversation_summary>') === 0 && messages[0].content.indexOf('SUMMARY') >= 0, 'the summary was folded into the leading note');
+    A.eq(summarizedOlder.length, 2, 'the two earlier turns were folded; the directive and the assistant+tool group stayed verbatim');
+    A.eq(messages[0], { role: 'user', content: 'do it' }, 'the directive is pinned byte-identical at the head');
+    A.eq(messages[1].role, 'system', 'the summary note follows the pinned directive');
+    A.ok(messages[1].content.indexOf('<conversation_summary>') === 0 && messages[1].content.indexOf('SUMMARY') >= 0, 'the summary was folded into the note');
   }
 
   // ---- compaction summarizer that REPORTS its own {usd,tokens} -> the spend folds into the run total (so the
@@ -331,7 +334,7 @@ function chatFixture() {
     const provider = makeReplayProvider(fixture);
     const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });
     const summarize = async () => ({ summary: 'SUMMARY', usd: 0.01, tokens: 50 });   // reports its own reconciled cost
-    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'do it' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'do it' }, { role: 'user', content: 'earlier' }, { role: 'assistant', content: 'noted' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
       model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(), context: ctxMgr, summarize });
     A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'compaction happened');
     A.ok(res.usd > 0.009, "the summarizer's $0.01 folded into the run total (would be ~0 without the fold; got $" + res.usd + ')');
@@ -351,7 +354,7 @@ function chatFixture() {
     const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });
     let called = 0;
     const summarize = async () => { called++; return ''; };   // degraded model
-    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'do it' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'do it' }, { role: 'user', content: 'earlier' }, { role: 'assistant', content: 'noted' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
       model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(), context: ctxMgr, summarize });
     A.eq(seq.filter(e => e.name === 'agent.compact').length, 0, 'empty summary -> no compaction');
     A.ok(called >= 1, 'the summarizer was attempted');
@@ -378,7 +381,7 @@ function chatFixture() {
     ] };
     const provider = makeReplayProvider(fixture);
     const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });
-    const messages = [{ role: 'user', content: 'do it' }];
+    const messages = [{ role: 'user', content: 'do it' }, { role: 'user', content: 'earlier' }, { role: 'assistant', content: 'noted' }];   // directive pinned; two foldable turns
     let injectCalls = 0;
     const todoNote = () => { injectCalls++; return '[Your active task list was preserved across context compaction]\n- [>] 1. keep building (in_progress)'; };
     const res = await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
@@ -400,7 +403,7 @@ function chatFixture() {
     ] };
     const provider = makeReplayProvider(fixture);
     const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 2 });
-    const messages = [{ role: 'user', content: 'do it' }];
+    const messages = [{ role: 'user', content: 'do it' }, { role: 'user', content: 'earlier' }, { role: 'assistant', content: 'noted' }];   // directive pinned; two foldable turns
     await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
       model: 'replay/model', agentId: 'a', runId: 'r', tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(), context: ctxMgr, summarize: async () => 'SUMMARY' });
     A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'compaction still happens without todoNote');
@@ -485,6 +488,32 @@ function chatFixture() {
       A.eq(calls, 2, 'one overflow attempt + one post-compaction retry');
       A.ok(summarized >= 1, 'the summarizer ran as part of the overflow recovery');
       A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'exactly one compaction during recovery');
+    }
+    // context_overflow AFTER the summarizer breaker tripped: used to be a dead run (compactionOff -> maybeCompact
+    // false -> end 'error'). Now the no-LLM fallback fold shrinks the prompt and the retry proceeds to 'done'.
+    {
+      const { seq, emit } = setup();
+      const reg = makeRegistry();
+      reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async () => 'w' });   // tiny results: the free micro tier cannot shrink them, so the paid fold is attempted
+      let calls = 0;
+      const toolT = (id) => [{ type: 'tool_start', index: 0, id, name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: '{"path":"a.md","content":"x"}' }, { type: 'usage', usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 } }, { type: 'done', finishReason: 'tool_calls' }];
+      const provider = { async *stream() { calls++; if (calls <= 2) { for (const ev of toolT('c' + calls)) yield ev; return; } if (calls === 3) throw new Error('prompt is too long'); for (const ev of okTurn) yield ev; },
+        priceOf: () => ({ prompt: '0', completion: '0' }), contextLimit: () => 10 };
+      const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 1 });   // 8 > 6.5 -> a proactive fold is attempted at the top of turns 2 and 3
+      let attempts = 0;
+      const summarize = async () => { attempts++; throw new Error('summarizer down'); };
+      const res = await runAgentLoop({
+        messages: [{ role: 'user', content: 'directive' }, { role: 'user', content: 'old-a ' + 'x'.repeat(3000) }, { role: 'assistant', content: 'old-b ' + 'y'.repeat(3000) }],   // real-sized history: the fallback digest must actually shrink it
+        provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'm1', agentId: 'a', runId: 'r',
+        tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(),
+        context: ctxMgr, summarize, approxTokens: 100, contextLimit: 10
+      });
+      A.eq(attempts, 2, 'the summarizer failed twice -> breaker tripped before the overflow');
+      A.eq(res.reason, 'done', 'context_overflow after compactionOff no longer ends the run');
+      A.eq(calls, 4, 'the overflowing turn was retried once after the fallback fold');
+      const comps = seq.filter(e => e.name === 'agent.compact');
+      A.ok(comps.length >= 1 && comps[comps.length - 1].payload.reason === 'fallback', 'the recovery fold is the deterministic fallback (' + comps.map(e => e.payload.reason).join(',') + ')');
+      A.eq(seq.filter(e => e.name === 'agent.run.error').length, 0, 'no run error');
     }
   }
 
