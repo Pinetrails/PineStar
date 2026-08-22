@@ -227,7 +227,7 @@ const Marketplace = (() => {
     importScan = null; importOrigin = null; importName = ''; importErr = '';
     laneFilter = 'all'; catFilter = 'all'; query = '';
     lastDecodedHero = null;   // a fresh bay open replays the hero decode beat once
-    recipeRuns = null;        // re-read the run log on every open: work done since the last visit shows up
+    recipeRuns = null; recipeDrift = null;   // re-read the run log (+ drift) on every open: work done since the last visit shows up
     invalidateFit();          // …and so does a folder granted or a channel connected in another panel since
     // SCOUT: re-read server truth on open (fresh drafts/interests land) and push the browser-only dedup context.
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) { ProspectStore.pushContext(); ProspectStore.refresh(); } } catch (_) {}
@@ -875,6 +875,8 @@ const Marketplace = (() => {
     // from "a procedure the station holds itself to".
     const na = (r.acceptance || []).length;
     const sop = na ? '<span class="mkt-chip" title="host-checked acceptance">◇ ' + na + ' check' + (na === 1 ? '' : 's') + '</span>' : '';
+    const dr = recipeDrift && recipeDrift[r.id];
+    const drift = (dr && dr.status === 'drift') ? '<span class="mkt-chip bad" title="the latest run differs from its good history">⚠ DRIFT</span>' : '';
     // no `--accent` — same one-phosphor rule as the class rows above (see the note on mkt-card there).
     // The recipe library was the worse offender: not ONE of its seals was the station's colour.
     return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(r.id) + '" style="--ci:' + (i || 0) + '">' +
@@ -885,7 +887,7 @@ const Marketplace = (() => {
       '</div>' +
       '<div class="mkt-card-side">' +
         '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(laneLabelOf(r)) + '</span>' +
-          '<span class="mkt-chip">' + setup + '</span>' + sop + recipeLifeChip(r) + '</div>' +
+          '<span class="mkt-chip">' + setup + '</span>' + sop + drift + recipeLifeChip(r) + '</div>' +
         '<span class="mkt-card-code">' + esc(codeOf(r)) + '</span>' +
       '</div>' +
     '</button>';
@@ -985,9 +987,13 @@ const Marketplace = (() => {
      Read-only, best-effort, and strictly what the log says: no run rows = no line at all (never an invented one).
      agent=* because a recipe may have been launched by any crew member, or fired unattended as a routine. */
   let recipeRuns = null, recipeRunsPending = null;
+  // GOLDEN-RUN DRIFT: recipeId -> the sidecar's drift verdict for its latest run (read with the run log; null = not read)
+  let recipeDrift = null;
   function loadRecipeRuns(force) {
     if (recipeRuns && !force) return Promise.resolve(recipeRuns);
     if (recipeRunsPending) return recipeRunsPending;
+    // the drift read rides alongside (advisory; a failed read asserts nothing)
+    fetch('/api/recipes/drift', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(d => { recipeDrift = (d && d.drift) || {}; }).catch(() => { recipeDrift = recipeDrift || {}; });
     recipeRunsPending = fetch('/api/runs?agent=*&limit=200', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : { runs: [] })
       .then(d => {
@@ -1020,6 +1026,16 @@ const Marketplace = (() => {
     return '';
   }
   const RUN_REASON_WORD = { done: 'done', max_iters: 'hit its turn limit', budget: 'hit its budget', cancelled: 'cancelled', error: 'errored', refusal: 'refused' };
+  // GOLDEN-RUN DRIFT line: the last 5 outcomes as marks, and the named signal when the latest run drifted from the
+  // recipe's own good history. Says 'insufficient' nothing — a recipe with no baseline shows only its streak.
+  function driftHTML(r) {
+    const d = recipeDrift && recipeDrift[r.id]; if (!d || !d.streak || !d.streak.length) return '';
+    const marks = d.streak.map(m => '<span class="mkt-drift-mark' + (m === 'pass' ? ' ok' : ' bad') + '" aria-label="' + m + '">' + (m === 'pass' ? '✓' : '✗') + '</span>').join('');
+    let line = '<div class="mkt-r-drift' + (d.status === 'drift' ? ' bad' : '') + '"><span class="mkt-r-lastrun-k" aria-hidden="true">◫</span> last ' + d.streak.length + ' run' + (d.streak.length === 1 ? '' : 's') + ' ' + marks;
+    if (d.status === 'drift') line += ' · <b>DRIFT</b> — ' + d.signals.slice(0, 2).map(s => esc(s.detail)).join('; ') + (d.signals.length > 2 ? ' <span class="dim">+' + (d.signals.length - 2) + '</span>' : '');
+    else if (d.status === 'steady') line += ' · steady vs ' + d.baselineRuns + ' prior';
+    return line + '</div>';
+  }
   function lastRunHTML(r) {
     if (!recipeRuns) return '';                       // no read yet — assert nothing
     const row = recipeRuns[r.id]; if (!row) return '';
@@ -1187,7 +1203,7 @@ const Marketplace = (() => {
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
           '<div class="mkt-dos-tag">' + esc(r.tagline) + '</div>' +
           '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span>' + recipeLifeChip(r) + '</div></div></div>' +
-      lastRunHTML(r) + liveRoutineBadgeHTML(r) + forkLine + cadHint +
+      lastRunHTML(r) + driftHTML(r) + liveRoutineBadgeHTML(r) + forkLine + cadHint +
       '<div class="mkt-block"><div class="bh">WHAT IT SENDS</div><pre>' + esc(r.task) + '</pre></div>' +
       inputs + steps + accept +
       recipeGearHTML(r) +

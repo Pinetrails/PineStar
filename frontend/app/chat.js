@@ -7964,6 +7964,27 @@ const Chat = (() => {
           if (isActiveWs(ws)) breakLive(), toolLine('⚠ completion was not proven — typed postconditions returned ' + (completionVerdict || 'not_assessed') + ' (' + (effectVerdict || 'no effect evidence') + ')');
           if (typeof StationUI !== 'undefined') StationUI.notify('completion needs verification', 'warn');
         }
+        // GOLDEN-RUN DRIFT (2026-08-22): a recipe-launched run is compared by the sidecar against that recipe's own
+        // good history; a drifted run is a failure class, so it earns the bell ONCE (keyed by the run). The durable
+        // row lands a beat after run end, so the read waits; it is advisory and never blocks the turn.
+        if (opts && opts.recipeId && typeof StationUI !== 'undefined') {
+          const rid = String(opts.recipeId);
+          setTimeout(() => {
+            fetch('/api/recipes/drift?recipeId=' + encodeURIComponent(rid), { cache: 'no-store' })
+              .then(r => r.ok ? r.json() : null)
+              .then(d => {
+                const drift = d && d.drift;
+                if (!drift || drift.status !== 'drift' || !drift.latestRunId) return;
+                let seen = []; try { seen = JSON.parse(localStorage.getItem('starnet.recipeDrift.notified') || '[]'); } catch (_) { seen = []; }
+                if (seen.indexOf(drift.latestRunId) >= 0) return;
+                seen.push(drift.latestRunId); try { localStorage.setItem('starnet.recipeDrift.notified', JSON.stringify(seen.slice(-50))); } catch (_) {}
+                const name = (typeof Recipes !== 'undefined' && Recipes.get && Recipes.get(rid)) ? Recipes.get(rid).name : rid;
+                const first = drift.signals[0];
+                StationUI.notify('⚠ recipe drift: ' + name + ' — ' + (first ? first.detail : 'this run differs from its last ' + drift.baselineRuns), 'bad');
+              })
+              .catch(() => {});
+          }, 1500);
+        }
         if (isActiveWs(ws) && activeLiveRow) activeLiveRow.done();
         if (isActiveWs(ws) && taskQuestion) presentTaskQuestion(ws, taskQuestion);   // enriches with the stored recommendation, then renders
         // Belt-and-braces (live-caught 2026-07-16): a run can end 'clarifying' with the marker unparseable
