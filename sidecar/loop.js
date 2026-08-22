@@ -485,6 +485,13 @@
     const graceEnabled = (limits.grace !== false);
     let graceUsed = false;
     const maxCostUsd = (limits.maxCostUsd != null) ? limits.maxCostUsd : Infinity;
+    // UNPRICED SEATBELT (2026-08-21). A metered provider whose model prices to nothing (no catalog pricing,
+    // no prices.js row) reconciles every turn at $0, so maxCostUsd above can never fire — the run is
+    // structurally uncapped. The host passes a TOKEN ceiling for exactly that case (index.js
+    // CAPS.maxUnpricedTokens; Infinity for OAuth/unmetered providers where nothing is being billed).
+    // Missing/0/non-finite = off (every existing caller byte-identical).
+    const maxUnpricedTokens = (typeof limits.maxUnpricedTokens === 'number' && isFinite(limits.maxUnpricedTokens) && limits.maxUnpricedTokens > 0)
+      ? Math.floor(limits.maxUnpricedTokens) : Infinity;
     const signal = o.signal || { aborted: false };
     const clock = o.clock;
     let cost = o.cost;   // swappable: a cross-provider fallback entry can carry its own cost engine (fb.cost) so
@@ -606,6 +613,9 @@
 
     let spentUsd = 0, turns = 0, spentTokens = 0;
     const unpricedUsage = [];
+    let unpricedTokens = 0;          // tokens reconciled at $0 on a model nothing could price (feeds maxUnpricedTokens)
+    let unpricedFlagged = false;     // agent.cost carries unpriced:true ONCE per run — the first turn it happens
+    let unpricedModel = '';
     let lastUsage = null;   // the previous turn's usage, used to decide compaction before the next paid call
     let lastFinishReason = null;   // the last done-event finishReason ('length'/'content_filter' surfaced at run end)
     // SEMANTIC OUTPUT CONTINUATION. Unlike a broken transport (`truncated:true`), finishReason:length is a valid,
@@ -693,6 +703,8 @@
     function noteUnpriced(modelId, c) {
       if (!c || !c.unpriced) return;
       unpricedUsage.push({ model: modelId || '(unknown)', tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 });
+      unpricedTokens += (c.tokensIn || 0) + (c.tokensOut || 0);
+      if (!unpricedModel) unpricedModel = modelId || '(unknown)';
     }
     function end(reason, extra) {
       // A3/Lane5: surface WHY the model stopped when it's a truncation/policy stop, ADDITIVELY — on BOTH the return
@@ -710,6 +722,13 @@
       if (reason === 'budget' && (bs === 'run' || bs === 'agent' || bs === 'day' || bs === 'global')) {
         endPayload.budgetScope = bs;
         if (typeof extra.budgetCapUsd === 'number' && isFinite(extra.budgetCapUsd)) endPayload.budgetCapUsd = extra.budgetCapUsd;
+        // the UNPRICED-token ceiling: name the model the seatbelt could not price so the stop is legible
+        // ("hit the 2,000,000-token ceiling for unpriced model X") instead of a $-cap with no dollar figure.
+        if (extra.unpricedModel) {
+          endPayload.unpricedModel = String(extra.unpricedModel).slice(0, 120);
+          endPayload.unpricedTokens = Number(extra.unpricedTokens) || 0;
+          endPayload.unpricedCapTokens = Number(extra.unpricedCapTokens) || 0;
+        }
       }
       emit('agent.run.end', endPayload);
       const tail = messages[messages.length - 1];
@@ -717,6 +736,10 @@
       const out = { reason, messages, text: terminalText, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
       if (cut) out.finishReason = cut;
       if (endPayload.budgetScope) { out.budgetScope = endPayload.budgetScope; if (endPayload.budgetCapUsd != null) out.budgetCapUsd = endPayload.budgetCapUsd; }
+      if (endPayload.unpricedModel) {
+        out.unpricedModel = endPayload.unpricedModel; out.unpricedTokens = endPayload.unpricedTokens; out.unpricedCapTokens = endPayload.unpricedCapTokens;
+        out.budgetNote = 'stopped: ' + endPayload.unpricedTokens.toLocaleString('en-US') + ' tokens on unpriced model ' + endPayload.unpricedModel + ' reached the ' + endPayload.unpricedCapTokens.toLocaleString('en-US') + '-token ceiling (no published rate - set SKYNET_MODEL_PRICES or SKYNET_MAX_UNPRICED_TOKENS)';
+      }
       if (extra && extra.failureStage) out.failureStage = String(extra.failureStage).slice(0, 80);
       if (extra && extra.failureCode) out.failureCode = String(extra.failureCode).slice(0, 80);
       return out;
@@ -815,6 +838,10 @@
         // fall through: the grace turn runs below; if it still calls tools, the next pass ends max_iters.
       }
       if (spentUsd >= maxCostUsd) return end('budget', { budgetScope: 'run', budgetCapUsd: maxCostUsd });   // per-RUN hard ceiling
+      // per-RUN token ceiling for turns nothing could price (the $ ceiling above is blind to them — see maxUnpricedTokens)
+      if (unpricedTokens >= maxUnpricedTokens) {
+        return end('budget', { budgetScope: 'run', unpricedModel: unpricedModel || model, unpricedTokens, unpricedCapTokens: maxUnpricedTokens });
+      }
       // CROSS-RUN BUDGET: day/global pool over the ledger. check() emits any threshold crossing itself and
       // returns a block descriptor when a soft cap is reached (no resume headroom left) -> stop as 'budget'.
       if (budget) {
@@ -956,7 +983,21 @@
             // notify BEFORE switching: activeCredKey is still the OUTGOING key that just failed (cool it if rotate).
             if (onFallback) { try { onFallback({ reason: cls.reason, rotate: !!cls.shouldRotateCredential, credKey: activeCredKey, retryAfterMs: cls.retryAfterMs, resetAtMs: cls.resetAtMs }); } catch (e) { failNote('loop.onFallback', e); } }   // H6.1: pass the server-stated wait so the cooldown honors it
             // observable failover telemetry (P3.1): which model we left, which we moved to, and why.
-            emit('provider.fallback', { agentId, runId, fromModel: model, toModel: (fb.model || model), reason: cls.reason, rotate: !!cls.shouldRotateCredential });
+            /* FOREIGN THINKING BLOCKS DO NOT SURVIVE A MODEL SWAP (2026-08-21). anthropic.js replays
+               msg.reasoning verbatim because Anthropic signs each thinking block against the MODEL that
+               produced it; a block signed by model A replayed to model B (or to another provider entirely)
+               fails signature validation with a 400 and the "recovered" run dies on its first retried turn.
+               Strip `reasoning` from every assistant message when the model OR provider changes — text and
+               tool_calls stay, so the transcript keeps its meaning and only the unverifiable proof goes. */
+            let reasoningDropped = 0;
+            if (fb.provider !== provider || (fb.model && fb.model !== model)) {
+              for (const m of messages) {
+                if (m && m.role === 'assistant' && m.reasoning != null) { delete m.reasoning; reasoningDropped++; }
+              }
+            }
+            const fbPayload = { agentId, runId, fromModel: model, toModel: (fb.model || model), reason: cls.reason, rotate: !!cls.shouldRotateCredential };
+            if (reasoningDropped) fbPayload.reasoningDropped = reasoningDropped;   // additive; schema declares no additionalProperties
+            emit('provider.fallback', fbPayload);
             if (fb.credKey != null) activeCredKey = fb.credKey;   // the entry we switch TO becomes the live credential
             if (fb.cost) cost = fb.cost;                          // cross-provider: price subsequent turns by the new provider's catalog
             provider = fb.provider;
@@ -1047,10 +1088,14 @@
       spentTokens += (final.tokensIn || 0) + (final.tokensOut || 0);
       noteUnpriced(model, final);
       lastUsage = usage;   // feeds the next turn's compaction decision (shouldCompact reads prompt_tokens)
-      emit('agent.cost', {
+      const costPayload = {
         agentId, runId, usd: final.usd || 0, tokensIn: final.tokensIn || 0, tokensOut: final.tokensOut || 0,
         reasoningTokens: final.reasoningTokens || 0, cachedTokens: final.cachedTokens || 0, model, reconciled: true
-      });
+      };
+      // once per run: the first $0-because-unpriced turn says so on the wire (shared/schema.js obj() declares no
+      // additionalProperties, so the extra field validates; consumers that don't know it ignore it).
+      if (final.unpriced && !unpricedFlagged) { unpricedFlagged = true; costPayload.unpriced = true; }
+      emit('agent.cost', costPayload);
 
       // HOOKS — post_llm_call. Deliberately here rather than after tool execution: it must fire once per MODEL
       // CALL, including the final tool-free turn, and a site further down would silently skip exactly the turn
