@@ -154,7 +154,8 @@
     "release:verify-sig": "node scripts/minisign-verify.mjs",
     "release:canary": "node scripts/update-canary.mjs",
     "release:promotion-gate": "node scripts/release-promotion-gate.mjs",
-    "security:secrets": "node scripts/scan-history-secrets.mjs"
+    "security:secrets": "node scripts/scan-history-secrets.mjs",
+    "eval:skills": "node scripts/eval/skills.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

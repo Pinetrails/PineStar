@@ -102,8 +102,11 @@ function makeVerdictReview(opts) {
     return { ok: true, fired: false };
   }
   function holding(runId) { return held.has(String(runId || '').trim()); }
+  // peek: read a parked packet WITHOUT consuming it (slice 4: a `great` verdict reads which skills the run loaded
+  // to mint a golden; it never spends the packet — praise is not a review).
+  function peek(runId) { sweep(); const row = packets.get(String(runId || '').trim()); return row ? row.packet : null; }
 
-  return { stash, shouldTrigger, take, size, has, cap, ttlMs, arm, correct, holding, graceMs };
+  return { stash, shouldTrigger, take, size, has, cap, ttlMs, arm, correct, holding, peek, graceMs };
 }
 
 module.exports = { makeVerdictReview, VERDICTS_THAT_TEACH };

@@ -1215,6 +1215,18 @@ function persistSkillApprovals(next) {
   skillApprovals = candidate;
   return true;
 }
+/* SKILL GOLDENS (consistency loop, slice 4): great-rated runs frozen per skill — { "<agentId> <skillId>": [golden] }.
+   Its own file so a golden never touches the skill's content digest (an approval must not expire because the
+   Commander liked a run). Read once at boot, written through; one sidecar owns the save dir. */
+const SKILL_GOLDENS_FILE = path.join(WORKSPACES, 'skill-goldens.json');
+const skillGoldens = require('./skills/goldens.js');
+let goldensByKey = {};
+try {
+  const loaded = loadResilient(SKILL_GOLDENS_FILE, 'skill goldens');
+  if (loaded && typeof loaded === 'object' && !Array.isArray(loaded)) goldensByKey = loaded;
+} catch (e) { console.warn('[skills] goldens load failed:', (e && e.message) || e); }
+function goldensFor(agentId, skillId) { const l = goldensByKey[String(agentId || 'agent') + ' ' + String(skillId)]; return Array.isArray(l) ? l : []; }
+function persistGoldens(next) { saveResilient(SKILL_GOLDENS_FILE, next); goldensByKey = next; }
 const skillGate = makeSkillGate({
   guard: skillGuard,
   approvals: { get: (agentId, id) => skillApprovals[String(agentId) + '\x00' + String(id)] || null }
@@ -8469,6 +8481,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/skill-exchange/generations', h: handleSkillExchangeGenerations },
   { m: 'POST', exact: '/api/skill-exchange/rollback', h: handleSkillExchangeRollback },
   { m: 'POST', exact: '/api/agent-skills/manage', h: handleAgentSkillManage },
+  { m: 'GET', prefix: '/api/agent-skills/goldens', h: serveSkillGoldens },   // consistency loop: the great-rated references per skill (before the bare prefix route)
   { m: 'POST', exact: '/api/agent-skills/allow', h: handleAgentSkillAllow },   // the Commander's review decision on a guard-withheld skill
   { m: 'GET', prefix: '/api/agent-skills', h: serveAgentSkills },
   { m: 'GET', prefix: '/api/skills', h: serveSkills },
@@ -13205,6 +13218,19 @@ async function handleSkillExchangeRollback(req, res) {
 // GET /api/agent-skills?agent=<id>&archived=1&body=1 - runtime-created skills for the selected agent.
 // Distinct from /api/skills, which is the bundled recipe catalog. This endpoint is for the human-visible
 // owned skillbase; the model still sees only the prompt index and must use skill.view for bodies.
+// GET /api/agent-skills/goldens?agent=<id>&id=<skillId> — the frozen great-rated references for one skill (or all
+// of the agent's skills when id is omitted). Read-only; the eval runner (scripts/eval/skills.mjs) reads this too.
+function serveSkillGoldens(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let u; try { u = new URL(req.url, 'http://x'); } catch (_) { return json(400, { error: 'bad url' }); }
+  const agentId = String(u.searchParams.get('agent') || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+  const id = String(u.searchParams.get('id') || '').trim();
+  if (id) return json(200, { agentId, skillId: id, goldens: goldensFor(agentId, id) });
+  const out = {};
+  for (const key of Object.keys(goldensByKey)) { const parts = key.split(' '); if (parts[0] === agentId) out[parts[1]] = goldensByKey[key]; }
+  return json(200, { agentId, bySkill: out });
+}
 function serveAgentSkills(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   try {
@@ -13224,7 +13250,7 @@ function serveAgentSkills(req, res) {
     /* verify (not decide) whenever bodies were loaded: the panel is where "Approved by you for this
        exact content" is printed, and only a re-digest of the delivered bytes can tell whether that is
        still true. Without it the card blesses a package whose SKILL.md was rewritten after review. */
-    skills = skillGate.annotate(skills, { verify: includeBody }).map(s => Object.assign({}, s, { guardDigest: skillGate.stampOf(s) }));
+    skills = skillGate.annotate(skills, { verify: includeBody }).map(s => Object.assign({}, s, { guardDigest: skillGate.stampOf(s), goldens: goldensFor(agentId, s.id).length }));
     json(200, { agentId, skills, withheld: skills.filter(s => s.withheld).length });
   } catch (e) { json(200, { skills: [] }); }
 }
@@ -18219,6 +18245,32 @@ async function handleGrowthRatings(req, res) {
   // CONSISTENCY LOOP: a first-time `ok`/`miss` verdict on a run that was parked at run end fires the quiet skill
   // review NOW, with the verdict (and the Commander's correction when the body carries one) in the prompt. Never
   // on a duplicate rating, never on `great`. Reported truthfully in the response so the UI can say it happened.
+  // GOLDEN (slice 4): a first-time `great` FREEZES this run for every skill it loaded — the reference a later run
+  // of the same directive is measured against (skills/goldens.js check). Praise never spends the review packet.
+  let goldensMinted = 0;
+  if (!result.duplicate && canonical.verdict === 'great') {
+    try {
+      const packet = verdictReview.peek(runId);
+      const ids = []; const seenIds = new Set();
+      for (const sk of [].concat((packet && packet.loadedSkills) || [], (packet && packet.managedSkills) || [])) { const id = sk && String(sk.id || sk.target || ''); if (id && !seenIds.has(id)) { seenIds.add(id); ids.push(id); } }
+      if (ids.length) {
+        // the output: the run row's deliveryText exists only for session-scoped runs; the parked packet carries the
+        // full transcript for every task run, so read the last assistant turn from it (same rule deliveryText uses).
+        let outputText = lead.deliveryText || '';
+        if (!outputText && packet && Array.isArray(packet.messages)) {
+          for (let i = packet.messages.length - 1; i >= 0; i--) { const m = packet.messages[i]; if (m && m.role === 'assistant' && typeof m.content === 'string' && m.content.trim()) { outputText = m.content.trim(); break; } }
+        }
+        const directive = lead.deliveryPrompt || (packet && Array.isArray(packet.messages) ? latestUserText(packet.messages) : '') || lead.title || '';
+        const g0 = skillGoldens.mint({ runId, agentId: lead.agentId || 'agent', directive, outputText }, Date.now());
+        if (g0) {
+          const next = Object.assign({}, goldensByKey);
+          for (const id of ids) { const key = String(lead.agentId || 'agent') + ' ' + id; next[key] = skillGoldens.fold(next[key], Object.assign({}, g0, { skillId: id })); goldensMinted++; }
+          persistGoldens(next);
+          console.log('[skills] golden minted run=' + runId + ' skills=' + ids.join(',') + ' words=' + g0.reference.words);
+        }
+      }
+    } catch (e) { console.warn('[skills] golden mint failed:', (e && e.message) || e); }
+  }
   let skillReviewArmed = false;
   if (!result.duplicate && process.env.SKYNET_SKILL_REVIEW !== '0') {
     // ARM, don't fire (slice 2): hold the review for a grace window so the Commander's correction — a follow-up
@@ -18229,7 +18281,7 @@ async function handleGrowthRatings(req, res) {
     }, String(body.correction || ''));
     if (skillReviewArmed) console.log('[skills] verdict-triggered review armed run=' + runId + ' verdict=' + canonical.verdict + ' grace=' + verdictReview.graceMs + 'ms');
   }
-  return json(200, { ok: true, duplicate: !!result.duplicate, rating: result.rating, skillReviewArmed });
+  return json(200, { ok: true, duplicate: !!result.duplicate, rating: result.rating, skillReviewArmed, goldensMinted });
 }
 // POST /api/growth/ratings/correction { runId, text, final } — the Commander's CORRECTION of a run they rated short
 // (consistency loop, slice 2). Attaches their words to the held verdict review: a follow-up chip (final:false) keeps
