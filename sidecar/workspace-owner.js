@@ -36,13 +36,17 @@ function defaultPidAlive(pid) {
   }
 }
 
-function defaultBootedAt() {
-  try {
-    const os = require('node:os');
-    const up = Number(os.uptime());
-    if (!(up > 0)) return 0;
-    return Date.now() - up * 1000;
-  } catch (_) { return 0; }
+// bootedAt from an injected wall clock (determinism law: no Date.now inside sidecar modules).
+function makeBootedAt(now) {
+  return function () {
+    try {
+      const os = require('node:os');
+      const up = Number(os.uptime());
+      const t = Number(typeof now === 'function' ? now() : 0);
+      if (!(up > 0) || !(t > 0)) return 0;
+      return t - up * 1000;
+    } catch (_) { return 0; }
+  };
 }
 
 function makeWorkspaceOwner(deps) {
@@ -168,4 +172,4 @@ function makeWorkspaceOwner(deps) {
   return { acquire: acquire, release: release, current: function () { return held && held.claim; } };
 }
 
-module.exports = { makeWorkspaceOwner: makeWorkspaceOwner, defaultBootedAt: defaultBootedAt, _internals: { defaultPidAlive: defaultPidAlive } };
+module.exports = { makeWorkspaceOwner: makeWorkspaceOwner, makeBootedAt: makeBootedAt, _internals: { defaultPidAlive: defaultPidAlive } };

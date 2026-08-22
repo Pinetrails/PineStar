@@ -26,7 +26,7 @@ const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) 
 const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved) + validate patch — SETTINGS→Models fallback chain (P0-3)
 const { makeConcurrencyGate } = require('./concurrency.js');
 const { makeWorkspaceLease } = require('./workspace-lease.js');
-const { makeWorkspaceOwner, defaultBootedAt } = require('./workspace-owner.js');
+const { makeWorkspaceOwner, makeBootedAt } = require('./workspace-owner.js');
 const { classifyWorkspace, workspaceCandidates } = require('./workspace-safety.js');
 const { inspectWorkspaceLineage, startFresh: startFreshWorkspace } = require('./workspace-lineage.js');
 const workspaceRecovery = require('./workspace-recovery.js');
@@ -446,7 +446,7 @@ if (devWorkspaceSafety.protected) {
 // is read. A second writer fails closed; a crash-killed holder is reclaimed only when its PID is provably
 // dead (never merely because the claim is old). The desktop shell's uncatchable Windows force-kill leaves
 // this file behind by design; the next legitimate boot performs that proven-dead recovery.
-const workspaceOwner = makeWorkspaceOwner({ fs: fs, path: path, now: () => Date.now(), bootedAt: defaultBootedAt });
+const workspaceOwner = makeWorkspaceOwner({ fs: fs, path: path, now: () => Date.now(), bootedAt: makeBootedAt(() => Date.now()) });
 const workspaceOwnerClaim = workspaceOwner.acquire(WORKSPACES);
 if (!workspaceOwnerClaim.ok) {
   const holderPid = workspaceOwnerClaim.holder && workspaceOwnerClaim.holder.valid

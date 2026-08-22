@@ -80,7 +80,7 @@ function inspectWorkspaceLineage(deps) {
    Fails closed: any rename error stops the pass with the files that already moved reported, nothing lost. */
 function startFresh(deps) {
   const d = deps || {}, fs = d.fs, path = d.path;
-  const now = typeof d.now === 'function' ? d.now : Date.now;
+  const now = typeof d.now === 'function' ? d.now : function () { return 0; };   // host injects the wall clock (determinism law)
   const current = path.resolve(String(d.workspaceRoot || ''));
   const lineage = inspectWorkspaceLineage(d);
   const stamp = new Date(now()).toISOString().replace(/[^0-9]/g, '').slice(0, 14);
