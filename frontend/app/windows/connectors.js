@@ -159,7 +159,7 @@
         // the directory sits INSIDE the add block and above its first field, because its only job is to
         // fill that field. Folded shut: it is a browse affordance for the minority who don't know the
         // platform's exact name, never a step between the list and the form.
-        '<details class="mc-adv ky-pick"><summary>pick from common platforms — fills the name &amp; docs below</summary>' +
+        '<details class="mc-adv ky-pick"><summary>POD &amp; platform catalog — Printify, Printful, Gelato, Prodigi…</summary>' +
           '<p class="mc-hint">Picking one just fills the form — you still paste your own key. ' +
             'Anything not listed works too: type its name.</p>' +
           '<div id="ky-catalog" class="cc-list"><span class="loading pulse">loading platforms…</span></div>' +
@@ -240,8 +240,8 @@
     const ROUTES = [
       { glyph: '⊞', to: 'catalog', title: 'Pick a ready-made service',
         blurb: 'Notion, GitHub, Linear, Stripe… Vetted servers that connect in one click or one sign-in. <b>Start here.</b>' },
-      { glyph: '⊟', to: 'keys', title: 'Paste an API key',
-        blurb: 'For a platform with an API but no MCP server — Printify, Shopify, Resend. Your agent calls it directly.' },
+      { glyph: '⊟', to: 'keys', title: 'Connect a platform API or POD service',
+        blurb: 'Printify, Printful, Gelato, Prodigi, Shopify… Paste a key; your agent calls the official REST API directly.' },
       { glyph: '⧉', to: 'mcp', title: 'Add a server by URL',
         blurb: 'You already have an MCP endpoint and want to point the station at it.' },
       { glyph: '▤', to: 'toolsets', title: 'Switch a built-in on or off',
@@ -272,7 +272,7 @@
     const host = mountConsole(body, 'connectors', [
       { id: 'toolsets', label: 'TOOLSETS', glyph: '▤', desc: 'Every capability your agents can use, grouped and switchable. A prop grants a toolset; the switch is the kill-switch on top.', build: frag(secToolsets) },
       { id: 'catalog', label: 'CATALOG', glyph: '⊞', desc: 'One-click connectors — browse vetted services (docs, search, automation, payments…) and plug them in as agent tools.', build: frag(secCatalog) },
-      { id: 'keys', label: 'KEYS', glyph: '⊟', desc: 'Every platform API key your agents hold, in one place — and a safe drop for any service the catalog doesn’t list.', build: frag(secKeys) },
+      { id: 'keys', label: 'KEYS', glyph: '⊟', desc: 'Your curated POD and platform API catalog, connected keys, and a safe drop for anything else.', build: frag(secKeys) },
       { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) },
       // shortened: the pane's own opening paragraph is the RICHER copy here (concrete moments, the
       // hook-vs-plugin distinction, the sandbox reason) — unusually, this is the one pane where the

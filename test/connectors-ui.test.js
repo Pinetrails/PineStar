@@ -251,6 +251,10 @@ function fakeStack(tools) {
     'KEYS disables the unattended control for watched-only integrations');
   A.ok(/MANUAL OAUTH/.test(station) && /p\.unattendedSupported === false/.test(station),
     'KEYS labels watched-only catalog entries as manual OAuth instead of API-key automation');
+  A.ok(/POD &amp; platform catalog — Printify, Printful, Gelato, Prodigi/.test(station),
+    'the folded platform directory visibly names the supported POD providers instead of hiding them behind generic copy');
+  A.ok(/title: 'Connect a platform API or POD service'/.test(station) && /official REST API directly/.test(station),
+    'the ABILITIES front door routes POD intent to the honest REST/API-key path');
 
   A.report('connectors-ui');
 })().catch(e => { console.log('FAIL: threw ' + (e && e.stack || e)); process.exit(1); });

@@ -20,7 +20,7 @@ const K = require('../sidecar/servicekeys.js');
 const RESERVED = new Set(['OPENROUTER_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY',
   'STARNET_OPENROUTER_API_KEY', 'SKYNET_OPENROUTER_API_KEY']);
 
-A.ok(C.PLATFORMS.length >= 8, 'the directory is seeded (' + C.PLATFORMS.length + ' platforms)');
+A.ok(C.PLATFORMS.length >= 15, 'the directory is seeded (' + C.PLATFORMS.length + ' platforms)');
 
 // ---- A. per-row invariants ----
 const ids = new Set();
@@ -55,11 +55,21 @@ for (const p of C.PLATFORMS) {
 // ---- C. the commerce gap this whole lane came from is actually covered ----
 {
   const byId = id => C.PLATFORMS.find(p => p.id === id);
-  for (const id of ['printify', 'printful', 'shopify', 'etsy']) {
+  for (const id of ['printify', 'printful', 'gelato', 'prodigi', 'shopify', 'etsy']) {
     A.ok(!!byId(id), 'the directory covers ' + id + ' — the case with no MCP server anywhere');
   }
   A.eq(byId('printify').envVar, 'PRINTIFY_API_KEY', 'Printify resolves to the env var the docs promise');
   A.ok(/Bearer/.test(byId('printify').authHint || ''), 'Printify carries its verified bearer hint');
+  A.eq(byId('printful').envVar, 'PRINTFUL_API_KEY', 'Printful resolves to the env var the docs promise');
+  A.ok(/Bearer/.test(byId('printful').authHint || ''), 'Printful carries its verified bearer hint');
+  A.eq(byId('gelato').apiBase, 'https://order.gelatoapis.com', 'Gelato points at its current order API host');
+  A.ok(/^X-API-KEY:/.test(byId('gelato').authHint || ''), 'Gelato carries its verified API-key header');
+  A.eq(byId('prodigi').apiBase, 'https://api.prodigi.com/v4.0', 'Prodigi points at its current live v4 API');
+  A.ok(/^X-API-Key:/.test(byId('prodigi').authHint || ''), 'Prodigi carries its verified API-key header');
+  A.ok(/sandbox/i.test(byId('prodigi').note || ''), 'Prodigi points users to the non-fulfilling sandbox for tests');
+  for (const id of ['printify', 'printful', 'gelato', 'prodigi']) {
+    A.ok((byId(id).aliases || []).includes('pod'), id + ' is discoverable by the POD acronym');
+  }
   // Etsy needs OAuth for most endpoints — it must SAY so rather than imply a key is enough
   A.ok(/OAuth/i.test(byId('etsy').note || ''), 'Etsy warns that a keystring alone is not enough');
   A.eq(byId('etsy').unattendedSupported, false, 'Etsy explicitly disables unattended mode until OAuth refresh is managed');
@@ -77,6 +87,7 @@ for (const p of C.PLATFORMS) {
   A.eq(flat.length, C.PLATFORMS.length, 'grouping loses no platform');
   A.eq(flat.find(p => p.id === 'printify').installed, true, 'an existing key marks its platform installed');
   A.eq(flat.find(p => p.id === 'printful').installed, false, 'others are not marked installed');
+  A.eq(flat.find(p => p.id === 'gelato').installed, false, 'new POD rows participate in installed-state grouping');
   A.ok(groups[0].category === C.CATEGORY_ORDER[0], 'declared category order leads');
   // no secret-bearing FIELD may ride the payload (the word "key" legitimately appears in blurbs/notes,
   // so assert on property names, not on the serialized text).
