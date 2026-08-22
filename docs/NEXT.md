@@ -23,19 +23,17 @@ schedule); a tap writes an `observed` belief (source `verdict`, `sourceRunId`, d
 BRIEFING receipt. Never on `▲ nailed it`, once per run, skip writes nothing, stands down when a task
 question is live or the one post-run slot is taken.
 
-**Lane body (remaining):**
-2. **Extraction at delivery (refinement).** The rate beat becomes ONE targeted question drawn from the weakest
-   dossier dim for that run's task-class (e.g. "shorter next time, or this depth?"), with chip answers
-   + free text. Answers write `observed` beliefs into `dossier.dims` (today only goal milestones do,
-   `goalstore.js:378`). No question when the dim is already `stated` — the beat must never fire for
-   no reason. Budget: ≤1 question per run, none on runs the user already rated this session.
-3. **Pain/ambition → automation proposals.** Quest minting reads `pain` + `ambition` dims and the
-   "same recipe/directive launched ≥3×" signal to propose ROUTINES ("Monday brief ran twice — run it
-   every Monday 07:00?"). Accepting mints the routine in place; declining lands in `deniedTitles`.
-4. **All dims → rankOpts.** `marketplace.js:1497 goalText()` reads only `goals`; pass pain/ambition/
-   stack/people/schedule to `rankRecipes` (keyword + affinity, honesty law intact).
-5. **Quest-log dismissals → sidecar `deniedTitles`** so a refresh can't re-mint the same quest.
-6. Interview `stack`/`identity` seeds `Profile.seed` (today never wired).
+**Re-grepped the rest of the plan (2026-08-22) — two of three were ALREADY on trunk:**
+- ~~Pain/ambition → routine proposals~~ — the chain exists as two proactive hops through the Recommend
+  spine (`chat.js ~5800`): a directive shape repeated ≥3× → `Mint` proposes a recipe; a recipe launched ≥3×
+  (and not miss-heavy) → `RoutineNudgeStore` offers a schedule. Decline is durable in both.
+- ~~Quest-log dismissals → sidecar `deniedTitles`~~ — ledger quests already dismiss through
+  `POST /api/quests/dismiss` (their own durable denylist); `queststate.js` only denylists local projection quests.
+- **BUILT: pain + ambition → FOR YOU rank** (`recipes.js painText`, `marketplace.js painText()`): same word-wise
+  matcher and weight as goals; the card's why reads "something you want off your plate: “…”", never a
+  fabricated goal. Live-proved on the real shelf DOM. Still not ranked: stack/people/schedule (keyword-matching
+  a timezone or a cofounder's name against recipe copy would be noise, not signal — needs a different term).
+- Open: interview `stack`/`identity` → `Profile.seed` (affinity stays 3 tags wide).
 
 **Popup law (new):** a popup earns its pixels only if the answer CHANGES something observable
 (ranking, a belief, a routine). "close"/"noted" that writes nothing is a dead question — remove it
