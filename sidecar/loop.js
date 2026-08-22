@@ -511,6 +511,7 @@
     // OPTIONAL context manager (sidecar/context.js) + summarizer for auto-compaction; both absent = never compact.
     const context = o.context;
     const summarize = o.summarize;
+    const microCompaction = o.microCompaction !== false;   // the free elision tier (STARNET_COMPACT_MICRO=0 turns it off at the host)
     // OPTIONAL provider FALLBACK chain — the consumer for errorClass's shouldFallback/shouldRotateCredential hints
     // (previously computed then discarded). On a classified failover (overloaded/5xx/auth/billing/rate-limit/
     // model-not-found) the loop advances to the next entry and RETRIES the same turn instead of dying — the
@@ -760,8 +761,48 @@
     // force=true skips the threshold gate (used by the context_overflow error-recovery path: compact, then retry
     // the turn instead of dying). Returns true iff history was actually folded — the caller only retries on true,
     // so a no-foldable-history overflow can't spin. Existing callers pass no arg and ignore the return.
+    /* MICRO-COMPACTION (free tier, before any paid fold). Tool results older than the kept tail are the bulk of a
+       long prompt and are re-derivable (the tool can be re-run). Elide their bodies in a COPY, re-measure with the
+       local estimator; if that alone clears the threshold commit it and skip the LLM fold. Pairing stays intact
+       (the tool message remains, only its content changes). When it does NOT clear, the original bodies are
+       kept so the paid summarizer still sees the full content (Lane A: the fold keeps the run's memory). */
+    /* KEEP THE HEAD. A bare "[elided]" marker was live-proved (08-21, real model, 30-file read) to make the
+       model CONFABULATE what the results had said — 20 of 30 values invented. The first lines of a tool result
+       are where its fact usually sits (path, status line, the matched text), so the elision keeps ELIDE_HEAD
+       chars of it and the marker says exactly what was dropped. ~60 tokens per result; still a 10-50x shrink. */
+    const ELIDE_HEAD = 240;
+    const ELIDED = '[tool result elided at compaction — ';
+    const isElided = (m) => m && m.role === 'tool' && typeof m.content === 'string' && m.content.indexOf(ELIDED) === 0;
+    function elideTools(older) {
+      const names = new Map();
+      let elided = 0;
+      const out = older.map(m => {
+        if (m && m.role === 'assistant' && Array.isArray(m.tool_calls)) for (const c of m.tool_calls) names.set(c && c.id, (c && c.function && c.function.name) || 'tool');
+        if (!m || m.role !== 'tool' || isElided(m)) return m;
+        const body = typeof m.content === 'string' ? m.content : JSON.stringify(m.content || '');
+        const name = names.get(m.tool_call_id) || 'tool';
+        elided++;
+        const head = body.length > ELIDE_HEAD ? body.slice(0, ELIDE_HEAD).replace(/\s+$/, '') + '…' : body;
+        return Object.assign({}, m, { content: ELIDED + name + ', ' + Buffer.byteLength(body, 'utf8') + ' bytes; first ' + Math.min(ELIDE_HEAD, body.length) + ' chars kept below; re-run the tool for the full output]' + String.fromCharCode(10) + head });
+      });
+      return { older: out, elided };
+    }
+    // NO-LLM FALLBACK fold: a deterministic bullet note from the oldest messages (first 160 chars each). Lossy and
+    // says so — but a run that can no longer summarize must shrink rather than die on context_overflow.
+    function fallbackNote(older, prevSummary) {
+      const lines = [];
+      if (prevSummary) lines.push(prevSummary);
+      lines.push('[compaction fallback — the summarizer was unavailable; ' + older.length + ' older messages reduced to one line each]');
+      for (const m of older) {
+        let c = (m && typeof m.content === 'string') ? m.content : JSON.stringify((m && m.content) || '');
+        if (m && Array.isArray(m.tool_calls) && m.tool_calls.length) c = 'called ' + m.tool_calls.map(t => (t && t.function && t.function.name) || 'tool').join(', ') + (c ? ' — ' + c : '');
+        c = c.replace(/\s+/g, ' ').trim();
+        lines.push('- ' + (m && m.role ? m.role : 'msg') + ': ' + (c.length > 160 ? c.slice(0, 160) + '…' : c));
+      }
+      return lines.join('\n');
+    }
     async function maybeCompact(force) {
-      if (compactionOff || !context) return false;
+      if (!context) return false;
       if (!force && (!lastUsage || !context.shouldCompact(lastUsage))) return false;
       // H5.2: lift any prior summary OUT of the working set first — its text seeds the merge, and the rebuild below
       // re-inserts exactly ONE note, so successive folds keep a single running summary instead of stacking notes.
@@ -770,9 +811,51 @@
       for (const m of messages) { if (isSummaryNote(m)) { if (!prevSummary) prevSummary = summaryInner(m.content); } else working.push(m); }
       let i = 0;
       while (i < working.length && working[i].role === 'system') i++;   // leading system prefix kept verbatim
+      // THE DIRECTIVE IS PINNED: the first non-system message is the task itself. It used to sit inside the
+      // foldable slice, so after one fold the agent worked from a paraphrase of its own orders. Kept byte-identical.
+      if (i < working.length && working[i].role !== 'system') i++;
       const prefix = working.slice(0, i);
       const plan = context.planCompaction(working.slice(i));
       if (!plan.older.length) return false;                               // nothing safely foldable yet (no paid call)
+      const beforeTokens = context.estimateMessages(messages);
+      const threshold = (typeof context.thresholdTokens === 'function') ? context.thresholdTokens() : 0;
+      const appendTodo = (arr) => { if (todoNote) { try { const tn = todoNote(); if (tn) return arr.concat([{ role: 'system', content: String(tn) }]); } catch (e) { failNote('loop.compaction.todoNote', e); } } return arr; };
+      // ---- micro tier: free; measured on a copy; committed only if it clears the threshold on its own ----
+      if (microCompaction && threshold > 0) {
+        const micro = elideTools(plan.older);
+        if (micro.elided > 0) {
+          const trial = appendTodo(prefix.concat(prevSummary ? [{ role: 'system', content: '<conversation_summary>\n' + prevSummary + '\n</conversation_summary>' }] : [], micro.older, plan.tail));
+          const afterTokens = context.estimateMessages(trial);
+          /* PROJECT AGAINST THE PROVIDER'S RULER. The local estimator does not see tool schemas or provider
+             overhead (live: ~12k local vs 32k real), so "afterTokens < threshold" alone declared the prompt
+             cleared while the real count still sat 2x over it — a free tier that thrashed one elision per turn
+             and starved the LLM fold. Scale the REAL count by the LOCAL shrink ratio to decide (scale-invariant
+             in both directions); the emitted numbers stay one-unit (both local). force (overflow) has no usage:
+             fall back to the local number. */
+          const realBefore = (lastUsage && (lastUsage.prompt_tokens || lastUsage.promptTokens)) || beforeTokens;
+          const projected = beforeTokens > 0 ? realBefore * (afterTokens / beforeTokens) : afterTokens;
+          if (projected < threshold && afterTokens < beforeTokens) {
+            messages.length = 0; for (const mm of trial) messages.push(mm);
+            lastUsage = null;
+            emit('agent.compact', { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'micro', elided: micro.elided });
+            return true;
+          }
+        }
+      }
+      // ---- summarizer unavailable (breaker tripped): micro-elide + deterministic note, no LLM, never end the run ----
+      if (compactionOff || !summarize) {
+        // digest the ORIGINAL messages: a tool result's first line is usually the fact worth keeping — an elided body would
+        // reduce every read to "[elided]" and the run forgets what it saw (live-proved 08-21 against a real model)
+        if (summarize && typeof summarize.drain === 'function') { try { summarize.drain(plan.older); } catch (e) { failNote('loop.compaction.fallbackDrain', e); return false; } }
+        const note = { role: 'system', content: '<conversation_summary>\n' + fallbackNote(plan.older, prevSummary) + '\n</conversation_summary>' };
+        const rebuilt = appendTodo(prefix.concat([note], plan.tail));
+        const afterTokens = context.estimateMessages(rebuilt);
+        if (afterTokens >= beforeTokens) return false;                  // didn't shrink — don't spin the overflow retry
+        messages.length = 0; for (const mm of rebuilt) messages.push(mm);
+        lastUsage = null;
+        emit('agent.compact', { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'fallback' });
+        return true;
+      }
       /* MEASURE BOTH SIDES WITH THE SAME RULER. `before` used to be the provider's real prompt_tokens while
          `after` is a local estimate, so `removed` mixed two units: the emitted agent.compact reported a
          fabricated saving (truthful-telemetry law), and `savings` below sat near 1.0 forever, which meant the
@@ -780,7 +863,6 @@
          and a degraded run kept paying for a summarizer call every single turn. The provider's count is the
          honest one for DECIDING to compact (shouldCompact still uses it); for measuring what a fold SAVED,
          both ends must come from the same estimator. */
-      const beforeTokens = context.estimateMessages(messages);
       /* HOOKS — on_pre_compress. The last moment history still exists in full. This is the seam a Commander
          uses to keep something the summarizer would flatten (archive the transcript, extract decisions to a
          file). Observe-only by construction in hooks.js: a hook that could VETO compaction could pin a run
@@ -791,7 +873,7 @@
       let r;
       // Pass the loop's CURRENT provider/model/cost: after a rotation or a cross-provider fallback these are the
       // only live ones, and the injected summarizer captured its own bindings before the run started.
-      try { r = summarize ? await summarize(plan.older, prevSummary, { provider, model, cost }) : ''; }   // prevSummary => the summarizer MERGE-updates it (H5.2)
+      try { r = await summarize(plan.older, prevSummary, { provider, model, cost }); }   // prevSummary => the summarizer MERGE-updates it (H5.2)
       catch (e) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return false; }   // summarizer threw -> skip
       if (signal.aborted) return false;
       const summary = (typeof r === 'string') ? r : ((r && r.summary) || '');
@@ -808,7 +890,12 @@
         if (Array.isArray(r.unpricedUsage)) for (const u of r.unpricedUsage) unpricedUsage.push(u);
       }
       lastUsage = null;   // the next turn re-measures against the compacted prompt before considering another fold
-      emit('agent.compact', { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'context' });
+      const compactEv = { agentId, runId, beforeTokens, afterTokens, removed: Math.max(0, beforeTokens - afterTokens), reason: 'context' };
+      if (r && typeof r === 'object') {   // chunked-fold telemetry (additive): how many summarizer calls, and whether the input was cut
+        if (r.chunks > 0) compactEv.chunks = r.chunks;
+        if (r.truncatedChars > 0) compactEv.truncatedChars = r.truncatedChars;
+      }
+      emit('agent.compact', compactEv);
       // H5.2 anti-thrash: a fold that barely shrinks the prompt isn't worth another paid summarizer call. After two
       // folds in a row that each freed <10% of the prompt, stop compacting for the rest of the run (same
       // circuit-breaker shape as compactionFails) — bounds wasted spend when the kept tail/summary already dominate.

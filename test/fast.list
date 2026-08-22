@@ -113,6 +113,7 @@ test/loop.provider-recovery.test.js
 test/loop.failure-recovery.test.js
 test/output-continuation.test.js
 test/compaction.test.js
+test/compaction-summarizer.test.js
 test/loopguard.test.js
 test/loopguard.dispatch.test.js
 test/continuation-guard.test.js

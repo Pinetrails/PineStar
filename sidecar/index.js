@@ -129,6 +129,7 @@ const oauthTokenStore = require('./providers/oauth-token-store.js');
 const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
+const { makeSummarizer } = require('./compaction-summarizer.js');   // chunked context-compaction fold (Lane A)
 const { runRouteFailure } = require('./runroute.js');   // a failure escaping handleRun must never read as an empty 200
 const { json: respondJson, readJsonBody, isAgentId } = require('./respond.js');   // canonical json()/body/agent-id helpers — adopt incrementally, don't mass-migrate
 const { readBody, readBodyBuffer } = require('./http-body.js');
@@ -14746,7 +14747,11 @@ async function runOnce(o) {
   // now with the proactive fold still armed. The error classifier deliberately still receives the RAW 0 (see the
   // runAgentLoop call) so a bare 400 is never mislabelled as overflow — that design is unchanged.
   const COLD_CATALOG_CONTEXT_TOKENS = 131072;
-  const ctxMgr = makeContext({ contextLimit: provider.contextLimit(model) || COLD_CATALOG_CONTEXT_TOKENS, compactAt: 0.65, keepTail: 6 });
+  // STARNET_CONTEXT_LIMIT_OVERRIDE (test/soak only): pretend the window is N tokens so a real model folds on a
+  // small run — the ONLY way to live-prove compaction against a production model without a 130k-token prompt.
+  // Never set in a packaged build; unset/invalid = the catalog's real window exactly as before.
+  const CONTEXT_LIMIT_OVERRIDE = Math.max(0, parseInt(String(ENV('CONTEXT_LIMIT_OVERRIDE') || ''), 10) || 0);
+  const ctxMgr = makeContext({ contextLimit: CONTEXT_LIMIT_OVERRIDE || provider.contextLimit(model) || COLD_CATALOG_CONTEXT_TOKENS, compactAt: 0.65, keepTailTurns: 6 });   // TURNS, not messages (assistant + its tool results = 1)
   // PER-RUN TOOL-OUTPUT CAP, scaled to the window. The flat 120KB cap (~30k tokens) sat far BELOW the compaction
   // threshold (0.65 × window — ~130k tokens on a 200k model), so the one event that resets the budget
   // (agent.compact, see loopEmit) could never fire: after ~120KB of reads the agent went blind — every later
@@ -14770,63 +14775,25 @@ async function runOnce(o) {
      also kept hammering the exact credential credPool had just cooled. The failover was fixed at one producer
      and did not generalize to the injected summarizer. Optional and additive: a caller that passes nothing
      (every existing test's fake summarizer) behaves exactly as before. */
-  async function summarize(older, prevSummary, live) {
-    const sProvider = (live && live.provider) || provider;
-    const sCost = (live && live.cost) || cost;
-    // aux tier: a configured cheap model serves the fold, riding the loop's LIVE provider/credential (so the
-    // rotation/fallback fix above still holds). No aux model -> the run's live model, byte-identical to before.
-    const runModel = (live && live.model) || model;
-    const auxModel = resolveAuxModel();
-    const sModel = auxModel || runModel;
-    // TRANSCRIPT DRAIN (before the fold): `older` is the exact slice compaction is about to delete from the live
-    // messages array. Turns THIS run produced that land in the fold would otherwise never reach the durable
-    // transcript at all — the run-end append can only see what SURVIVED the fold. The drain is STRICT: if fsync or
-    // read-back proof fails, throw before the loop replaces the live message array. maybeCompact then leaves the
-    // history unfolded and continues safely. Marker-keyed/idempotent, so a partial strict drain can retry without
-    // duplicating rows and the run-end drain writes only what remains. A sourceRunId makes restart reconciliation
-    // attributable without exposing tool arguments.
-    transcriptStore.appendNewStrict(o.streamId, agentId, older, { sourceRunId: runId });
-    const transcript = older.map(mm => {
-      const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
-      return (mm && mm.role ? mm.role : 'msg') + ': ' + c;
-    }).join('\n').slice(0, 16000);
-    // on_pre_compress (MEMORY-CORTEX): rank the agent's durable memory against the slice being folded and PREPEND
-    // it, so beliefs like "user prefers X" survive when the raw turns are discarded. '' when nothing to preserve
-    // (prepend nothing → byte-identical compaction). Fail-open: a memory hiccup must never block the summary.
-    let memBlock = '';
-    try {
-      const recs = notebookStore.get('notebook:' + agentId);
-      if (Array.isArray(recs) && recs.length) memBlock = compactionMemoryBlock(recs, transcript, { now: Date.now(), k: 5, limit: 800, streamId: o.streamId || null });
-    } catch (_) {}
-    const prev = (typeof prevSummary === 'string' && prevSummary.trim()) ? prevSummary.trim() : '';   // H5.2: a prior fold's running summary to merge into
-    const prevBlock = prev ? 'PREVIOUS SUMMARY (update this — merge the new turns in, drop anything now obsolete):\n' + prev + '\n\n' : '';
-    const userMsg = (memBlock ? memBlock + '\n\n' : '') + prevBlock + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
-    async function attempt(useModel) {
-      const req = { model: useModel, stream: true, signal, messages: [
-        { role: 'system', content: compactionSummaryPrompt({ prevSummary: !!prev }) },   // H5.1 structured template; H5.2 merge-update variant when a prior summary exists
-        { role: 'user', content: userMsg }
-      ] };
-      const effort = auxReasoningEffort(sProvider, useModel);   // per-request 'low' (or STARNET_AUX_EFFORT) only when the aux tier is engaged AND the provider verifiably offers it
-      if (effort) req.reasoningEffort = effort;
-      let out = '', usage = null;
-      for await (const ev of sProvider.stream(req)) {
-        if (ev && ev.type === 'text') out += ev.delta;
-        else if (ev && ev.type === 'usage') usage = ev.usage;
-      }
-      const c = sCost.reconcile(usage, useModel);
-      emit('agent.cost', { agentId, runId, usd: c.usd || 0, model: useModel, reconciled: true });   // display-only; no token fields (gauge-safe)
-      const r = { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
-      if (c.unpriced) r.unpricedUsage = [{ model: useModel, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 }];
-      return r;
+  // The summarizer body lives in compaction-summarizer.js (chunked full-slice fold; no 16k input truncation).
+  // This is thin wiring: the run's provider/model/cost fallbacks, the aux tier, the STRICT transcript drain and
+  // the durable-memory prepend are injected; `live` still overrides provider/model/cost per call (fallback-safe).
+  const summarize = makeSummarizer({
+    provider, model, cost, signal, emit, agentId, runId,
+    auxModelFor: resolveAuxModel,
+    auxEffortFor: auxReasoningEffort,
+    summaryPrompt: compactionSummaryPrompt,
+    transcriptDrain: (older) => transcriptStore.appendNewStrict(o.streamId, agentId, older, { sourceRunId: runId }),
+    memoryBlockFor: (transcript) => {
+      // on_pre_compress (MEMORY-CORTEX): rank durable memory against the slice being folded and PREPEND it.
+      // '' when nothing to preserve. Fail-open: a memory hiccup must never block the summary.
+      try {
+        const recs = notebookStore.get('notebook:' + agentId);
+        if (Array.isArray(recs) && recs.length) return compactionMemoryBlock(recs, transcript, { now: Date.now(), k: 5, limit: 800, streamId: o.streamId || null });
+      } catch (_) {}
+      return '';
     }
-    /* AUX-TIER RELIABILITY FLOOR: a configured cheap model must never make compaction LESS reliable than
-       today. The loop's contract (loop.js maybeCompact: a throw counts a compactionFail; two flip
-       compactionOff, after which a context_overflow can kill the run) is preserved by retrying the fold ONCE
-       on the run's own live model before any failure surfaces. An abort is a cancel, never retried. */
-    if (sModel === runModel) return attempt(sModel);
-    try { return await attempt(sModel); }
-    catch (e) { if (signal.aborted) throw e; return attempt(runModel); }
-  }
+  });
   // per-run adapter onto the shared cross-run budget: the loop calls check(spentThisRun) each turn; the budget
   // emits any threshold crossing down THIS run's bus and returns a block when a soft pool cap is hit.
   // An unmetered (OAuth-subscription) run is exempt from the cross-run $ pools too — its estimates would
@@ -15662,6 +15629,7 @@ async function runOnce(o) {
         maxUnpricedTokens: (providerUnmetered || usingCodex || usingDeviceOAuth) ? Infinity : CAPS.maxUnpricedTokens
       },
       budget: runBudget, context: ctxMgr, summarize, fallbacks, initialFallback,
+      microCompaction: !/^(0|false|off|no)$/i.test(String(ENV('COMPACT_MICRO') || '').trim()),   // free elision tier before any paid fold (off: STARNET_COMPACT_MICRO=0)
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
       // activePrimaryKey, NOT runKey: when the run's own key was still cooling we STARTED on a warm pool key,
