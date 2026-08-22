@@ -2175,6 +2175,16 @@ const Build = (() => {
         : '✓ saved — ' + (res.maxIter || loopMaxDef) + ' pass' + ((res.maxIter || loopMaxDef) === 1 ? '' : 'es') + ' max' + (res.done ? ', DONE on ' + res.done : '') + (res.when ? ', round again while ' + res.when.toUpperCase() : '');
       if (isJoiner && jnNote) jnNote.textContent = said;
       if (isLoop && loopNote) loopNote.textContent = said;
+      /* THE WRONG DONE LANE IS A CYCLE (live-proved 2026-08-22): pick the back lane as DONE and the static
+         graph has no way out — the compiler refuses the line (CYCLE / CHAIN_CYCLE) and the floor nags
+         "LOOP!" somewhere else. Say it HERE, on the field that caused it, with the lane that fixes it. */
+      if (isLoop && loopNote && typeof Pipeline !== 'undefined') {
+        let errs = []; try { errs = Pipeline.compileRoutingPlan(station.projectGeometry()).errors || []; } catch (e) { errs = []; }
+        if (errs.some(e => e.code === 'CYCLE' || e.code === 'CHAIN_CYCLE')) {
+          const onward = loopExits.find(x => x.dir !== (res.done || gate.done));
+          loopNote.textContent = '⚠ with DONE on ' + (res.done || gate.done) + ' the line goes round with no way out — it is refused until DONE points onward' + (onward ? ' (' + onward.label + ')' : '');
+        }
+      }
       flashTip(null, isJoiner ? 'joiner timeout saved' : 'loop gate saved', true);
     };
     for (const el of [jnTimeout, loopMax]) {
