@@ -231,8 +231,8 @@
     const ROUTES = [
       { glyph: '⊞', to: 'catalog', title: 'Pick a ready-made service',
         blurb: 'Notion, GitHub, Linear, Stripe… Vetted servers that connect in one click or one sign-in. <b>Start here.</b>' },
-      { glyph: '⊟', to: 'keys', title: 'Connect a platform API or POD service',
-        blurb: 'Printify, Printful, Gelato, Prodigi, Shopify… Paste a key; your agent calls the official REST API directly.' },
+      { glyph: '⊞', to: 'catalog', title: 'Connect a platform API or POD service',
+        blurb: 'Printify, Printful, Gelato, Prodigi, Shopify… Choose the platform here, then paste its key.' },
       { glyph: '⧉', to: 'mcp', title: 'Add a server by URL',
         blurb: 'You already have an MCP endpoint and want to point the station at it.' },
       { glyph: '▤', to: 'toolsets', title: 'Switch a built-in on or off',

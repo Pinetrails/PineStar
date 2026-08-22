@@ -260,8 +260,8 @@ function fakeStack(tools) {
     'platform cards are identity-namespaced so GitHub/Notion/Stripe cannot collide with same-id MCP cards');
   A.ok(!/id="ky-catalog"/.test(station) && /CONNECTED API KEYS/.test(station),
     'KEYS shows connected credentials and no longer hides the curated platform catalog inside its add form');
-  A.ok(/title: 'Connect a platform API or POD service'/.test(station) && /official REST API directly/.test(station),
-    'the ABILITIES front door routes POD intent to the honest REST/API-key path');
+  A.ok(/to: 'catalog', title: 'Connect a platform API or POD service'/.test(station) && /Choose the platform here, then paste its key/.test(station),
+    'the ABILITIES front door routes POD discovery through CATALOG before the KEYS setup path');
 
   A.report('connectors-ui');
 })().catch(e => { console.log('FAIL: threw ' + (e && e.stack || e)); process.exit(1); });
