@@ -234,6 +234,15 @@
 .refit-finline .fl-step.done { color: var(--ok); opacity: .8; }
 /* an OFF step keeps pointer events so the station tooltip ("coming online soon") still speaks */
 .refit-finline .fl-step.off { opacity: .45; cursor: default; }
+/* the SAMPLE readout (2026-08-22): the server's recorded outcome under ③ — stages ▸ cost ▸ the first line the
+   line delivered. Matte inset, dim voice; REFUSED reads in the bad colour with the server's own reason. */
+.refit-finline .fl-result {
+  margin-top: 5px; padding: 5px 7px; font-size: 13.5px; line-height: 1.25; letter-spacing: .4px; color: var(--text);
+  background: rgba(0, 0, 0, .35); border: 1px solid var(--ph-dim); border-radius: 4px; word-break: break-word;
+}
+.refit-finline .fl-result.bad { color: var(--bad); border-color: rgba(255, 92, 77, .45); }
+.refit-finline .fl-result-k { color: var(--ph-dim); letter-spacing: 1px; font-size: 11.5px; margin-right: 3px; }
+.refit-finline .fl-result-reply { color: var(--ph-bright); }
 .refit-guide.refit-swap .refit-guide-card { animation: refit-rise var(--t-med, .22s) var(--ease-out, cubic-bezier(.2, .7, .3, 1)); }
 @keyframes refit-rise {
   from { opacity: 0; transform: translateY(8px) scale(.985); }

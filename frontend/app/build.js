@@ -232,7 +232,7 @@ const Build = (() => {
     tool = 'select';   // SELECT is the default mode — a fresh REFIT session never opens with a placement tool armed
     ridePending = false; rideAgentId = null; ridePrevReach = null;   // the auto first-ride re-arms (and re-baselines its reach snapshot) from THIS session's compile, never a stale one
     // finish-the-line: fresh session state (the registry itself persists in localStorage) + one seam probe
-    finSample = null; finKeySel = null; finSig = ''; finCardEl = null; finComp = null; valComps = null; lastStampIds = null; finPollTs = 0;
+    finSample = null; finKeySel = null; finSig = ''; finCardEl = null; finComp = null; valComps = null; lastStampIds = null; finPollTs = 0; finSampleRes = null;
     for (const k in stampNameOf) delete stampNameOf[k];   // session-scoped blueprint-name placeholders (line naming)
     clearLineFields();   // a fresh session never inherits a prior floor's "where can this go" answers
     bumpGeo();           // …nor a prior floor's bounds/belts/bay-objects/mount memos (see geoVer)
@@ -2728,7 +2728,7 @@ const Build = (() => {
     // the card is titled with the LINE'S NAME (the intake's saved label — line naming); unnamed lines
     // keep the generic header. In the sig so a rename repaints without a topology edit.
     const lname = lineNameOf(c);
-    const sig = [c.key, st.crewLeft, st.hasIntake, st.feed.known, st.feed.fed, finSample, lname || ''].join('|');
+    const sig = [c.key, st.crewLeft, st.hasIntake, st.feed.known, st.feed.fed, finSample, lname || '', finSampleRes ? finSampleRes.key + ':' + finSampleRes.stamp : ''].join('|');
     if (!finCardEl) {
       finCardEl = document.createElement('div');
       root.appendChild(finCardEl);
@@ -2743,13 +2743,17 @@ const Build = (() => {
     const feedTxt = !st.hasIntake ? '② FEED IT — TASK THE AGENT, OR WIRE A ROUTINE'
       : !st.feed.known ? '② FEED THE INBOX — CHECKING THE WIRES…'
       : st.feed.fed ? '✓ INBOX FED' : '② FEED THE INBOX — CONNECT A CHANNEL OR ROUTINE';
-    const sampleOn = finSample === true && crewDone;
+    // the sample RESULT belongs to the line it rode (finSampleRes.key) — another line's card shows none
+    const sr = (finSampleRes && finSampleRes.key === c.key) ? finSampleRes : null;
+    const sampleOn = finSample === true && crewDone && !(sr && sr.pending);
     const sampleTip = finSample !== true ? 'coming online soon' : (crewDone ? 'feed ONE real, clearly-labeled sample job through the whole line' : 'crew the docks first');
+    const sampleTxt = (sr && sr.pending) ? '③ SAMPLE RIDING THE LINE…' : (sr && sr.view && sr.view.ok) ? '✓ SAMPLE DELIVERED — RUN ANOTHER' : '③ RUN A SAMPLE JOB';
     finCardEl.innerHTML = `
       <div class="fl-head"><span class="fl-title">▸ ${lname ? 'FINISH ' + esc(lname.toUpperCase()) : 'FINISH THE LINE'}</span><button type="button" class="bb sm fl-x" title="dismiss for this line">✕</button></div>
       <button type="button" class="bb fl-step${crewDone ? ' done' : ''}" data-act="crew"${crewDone ? ' disabled' : ''}>${esc(crewTxt)}</button>
       <button type="button" class="bb fl-step${st.feedDone ? ' done' : ''}" data-act="feed"${st.feedDone ? ' disabled' : ''}>${esc(feedTxt)}</button>
-      <button type="button" class="bb fl-step${sampleOn ? '' : ' off'}" data-act="sample" title="${esc(sampleTip)}">③ RUN A SAMPLE JOB</button>`;
+      <button type="button" class="bb fl-step${sampleOn ? '' : ' off'}${sr && sr.view && sr.view.ok ? ' done' : ''}" data-act="sample" title="${esc(sampleTip)}">${esc(sampleTxt)}</button>
+      ${sr && sr.view ? finSampleHTML(sr.view) : ''}`;
     finCardEl.querySelector('.fl-x').onclick = () => { finMark(station, c.key, 'dis'); sfx('click'); renderFinCard(); };
     const bCrew = finCardEl.querySelector('[data-act="crew"]');
     if (bCrew && !crewDone) bCrew.onclick = () => finFocusCrew(c);
@@ -2781,13 +2785,33 @@ const Build = (() => {
   }
   // ③ — Phase 4's seam, fired only when detected present + docks crewed. The card claims nothing the
   // harness didn't answer: success/refusal both surface as the server's own verdict.
+  /* THE RESULT IS RENDERED, NOT FLASHED (2026-08-22 stranded-user sweep): the route answers only after the
+     line DELIVERED (or refused) with the REAL recorded outcome — runs, replies, totalUsd, delivered — and the
+     card used to discard all of it behind a 1.3s "dispatched — watch the line". Now the answer lives on the
+     card: the stages that ran (agent names, line order), the real dollars, the first 80 chars the line
+     delivered, and ③ ticks ONLY on `delivered` (the server's own verdict); a refusal shows the server's
+     reason. Scoped to the line it rode; a new sample replaces the last readout. */
+  let finSampleRes = null;   // { key, stamp, pending } | { key, stamp, view }
+  function finSampleHTML(v) {
+    if (!v) return '';
+    if (!v.ok) return '<div class="fl-result bad"><span class="fl-result-k">REFUSED</span> ' + esc(v.reason || 'no reason given') + '</div>';
+    return '<div class="fl-result">'
+      + '<div><span class="fl-result-k">RAN</span> ' + esc(v.stages.length ? v.stages.join(' ▸ ') : '(no stage recorded)') + '</div>'
+      + (v.usd != null ? '<div><span class="fl-result-k">COST</span> $' + esc(v.usd.toFixed(4)) + '</div>' : '')
+      + (v.reply ? '<div class="fl-result-reply"><span class="fl-result-k">SAID</span> ' + esc(v.reply) + '</div>' : '')
+      + '</div>';
+  }
   function finRunSample(c) {
     sfx('click');
+    const key = c.key;
+    finSampleRes = { key, stamp: Date.now(), pending: true };
+    finSig = ''; renderFinCard();
+    const settle = (view) => { finSampleRes = { key, stamp: Date.now(), view }; finSig = ''; if (running) renderFinCard(); sfx(view.ok ? 'chime' : 'bad'); };
     try {
-      fetch(finApi('/api/routing/sample'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: c.key }) })
-        .then(r => { if (r && r.ok) flashTip(null, 'sample job dispatched — watch the line', true); else flashTip(null, 'sample refused (HTTP ' + (r ? r.status : '?') + ')', false); })
-        .catch(() => flashTip(null, 'sample failed — sidecar unreachable', false));
-    } catch (e) {}
+      fetch(finApi('/api/routing/sample'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ line: key }) })
+        .then(r => r.json().catch(() => null).then(j => settle(sampleResultView(j, r.status, agentLabel))))
+        .catch(() => settle({ ok: false, stages: [], usd: null, reply: '', reason: 'sample failed — sidecar unreachable' }));
+    } catch (e) { settle({ ok: false, stages: [], usd: null, reply: '', reason: 'sample failed — sidecar unreachable' }); }
   }
   // per-frame: hide while anything coach-like is up (same gate family as the first ride), else pin
   // the card beside the line's bounding box in screen space (the flashTip/clientX coordinate basis).
