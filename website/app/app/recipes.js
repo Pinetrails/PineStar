@@ -191,6 +191,81 @@
     }).filter(Boolean).slice(0, 3));
   }
 
+  /* SOP RECIPES (2026-08-21) — a recipe can carry a PROCEDURE and an ACCEPTANCE CONTRACT so the same business
+     workflow comes out the same way on run 50 as on run 1.
+       steps[]      — ordered plain-text procedure lines. They ride the directive verbatim (fillTask appends them),
+                      so the agent is told the order; they are advisory prose, never host-checked.
+       acceptance[] — typed, HOST-CHECKED predicates. Each row mirrors ONE sidecar task-postconditions type
+                      (sidecar/task-postconditions.js — the single acceptance authority; this module never grows
+                      a second predicate engine):
+                        artifact_exists      { path }            the run produced that workspace file
+                        artifact_contains    { path, text }      ...and it contains the text
+                        artifact_sha256      { path, sha256 }    ...and its digest matches exactly
+                        verification_passed  { command }         that exact check command ran green in the run
+                      path/text/command may carry {param} tokens; postconditionsFor() fills them at launch and the
+                      contract rides the run body as `postconditions` — the host evaluates it when the run ends and
+                      the loop gets ONE bounded turn to repair a failing check (acceptance-on-stop). Malformed rows
+                      drop silently (author error is never a crash); a recipe with none launches exactly as before.
+     Bounds mirror the sidecar's (20 requirements, 260-char path, 500-char text, 1000-char command). */
+  const STEPS_MAX = 12, STEP_MAX_LEN = 240;
+  const ACCEPTANCE_MAX = 20, ACC_PATH_MAX = 260, ACC_TEXT_MAX = 500, ACC_CMD_MAX = 1000;
+  const ACCEPTANCE_TYPES = Object.freeze(['artifact_exists', 'artifact_contains', 'artifact_sha256', 'verification_passed']);
+  function normSteps(arr) {
+    return Object.freeze((Array.isArray(arr) ? arr : [])
+      .map(s => String(s == null ? '' : (typeof s === 'object' ? (s.text || '') : s)).replace(/\s+/g, ' ').trim().slice(0, STEP_MAX_LEN))
+      .filter(Boolean)
+      .slice(0, STEPS_MAX));
+  }
+  // a relative workspace path — no absolute roots, no `..` hops, no NUL. Same rule as the sidecar normalizer, so a
+  // row that survives here survives there (a {token} may still make it absolute at launch; the host rejects that).
+  function saneAccPath(p) {
+    const path = String(p == null ? '' : p).trim().slice(0, ACC_PATH_MAX);
+    if (!path || path.indexOf('\0') >= 0) return '';
+    if (path.replace(/\\/g, '/').split('/').indexOf('..') >= 0) return '';
+    if (/^(?:[a-z]:[\\/]|[\\/])/i.test(path)) return '';
+    return path;
+  }
+  function normAcceptance(arr) {
+    const out = [];
+    (Array.isArray(arr) ? arr : []).forEach(e => {
+      if (!e || typeof e !== 'object' || out.length >= ACCEPTANCE_MAX) return;
+      const type = String(e.type || '').trim();
+      if (ACCEPTANCE_TYPES.indexOf(type) < 0) return;
+      const label = String(e.label || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      if (type === 'verification_passed') {
+        const command = String(e.command || '').trim().slice(0, ACC_CMD_MAX);
+        if (!command) return;
+        out.push(Object.freeze({ type, command, label }));
+        return;
+      }
+      const path = saneAccPath(e.path);
+      if (!path) return;
+      const row = { type, path, label };
+      if (type === 'artifact_contains') {
+        const text = String(e.text == null ? '' : e.text).trim().slice(0, ACC_TEXT_MAX);
+        if (!text) return;
+        row.text = text;
+      } else if (type === 'artifact_sha256') {
+        const sha256 = String(e.sha256 || '').trim().toLowerCase();
+        // a {token} is allowed (filled at launch); otherwise it must already be a 64-hex digest.
+        if (!/^[a-f0-9]{64}$/.test(sha256) && !/\{\w+\}/.test(sha256)) return;
+        row.sha256 = sha256;
+      }
+      out.push(Object.freeze(row));
+    });
+    return Object.freeze(out);
+  }
+  // one-line human reading of an acceptance row (dossier / editor / the directive's ACCEPTANCE block).
+  function acceptanceLabel(a) {
+    if (!a) return '';
+    if (a.label) return a.label;
+    if (a.type === 'artifact_exists') return 'file exists: ' + a.path;
+    if (a.type === 'artifact_contains') return a.path + ' contains "' + a.text + '"';
+    if (a.type === 'artifact_sha256') return a.path + ' sha256 = ' + a.sha256;
+    if (a.type === 'verification_passed') return 'check passes: ' + a.command;
+    return a.type;
+  }
+
   // humanize a param key into a form label: snake_case / camelCase -> Title-cased words ('look_back' -> 'Look Back').
   // (Tokens are \w+ — see the fillTask/paramsFromTemplate regex — so hyphens never reach here.)
   function humanize(key) {
@@ -235,6 +310,8 @@
       task: r.task || '',                             // the directive TEMPLATE; {key} tokens get param values
       // ---- schema v2 (all ADVISORY; never gate execution) ----
       intake: normIntake(r.intake),                   // TASK BRIEF v2: material decisions offered as one-tap chips at launch
+      steps: normSteps(r.steps),                      // SOP: ordered procedure lines (prose, rides the directive)
+      acceptance: normAcceptance(r.acceptance),       // SOP: typed host-checked postconditions (see normAcceptance)
       gear: Object.freeze(normGear(r.gear)),          // capability objectTypes this use case draws on (WANT badge)
       skills: Object.freeze(normSkills(r.skills)),    // bundled-skill references (pairs-with hints)
       cadence: normCadence(r.cadence),                // suggested cadence id, or null (one-shot by nature)
@@ -310,6 +387,8 @@
       params: (function () { const np = normParams(r.params); return np.length ? np : normParams(paramsFromTemplate(task)); })(),
       task,
       // ---- schema v2 (all ADVISORY; never gate execution) ----
+      steps: normSteps(r.steps),                      // SOP procedure (prose)
+      acceptance: normAcceptance(r.acceptance),       // SOP typed acceptance (host-checked at run end)
       gear: normGear(r.gear),                         // capability objectTypes this custom draws on
       skills: normSkills(r.skills),                   // bundled-skill references
       cadence: normCadence(r.cadence),                // suggested cadence id (for MAKE ROUTINE), or null
@@ -402,7 +481,56 @@
         .map(e => '- ' + e.dimension + ': ' + intake[e.dimension].trim().slice(0, 72));
       if (lines.length) out += '\n\nDecisions (chosen at launch — treat these as answered; do not re-ask them):\n' + lines.join('\n');
     }
+    // SOP: the procedure rides the directive so the agent follows the Commander's order, and the acceptance
+    // contract is STATED so the agent knows exactly what the host will check (the host checks it regardless).
+    if (out && r.steps && r.steps.length) {
+      out += '\n\nProcedure (follow in this order; do not skip or reorder steps):\n'
+        + r.steps.map((s, i) => (i + 1) + '. ' + fillTokens(s, r, v)).join('\n');
+    }
+    if (out && r.acceptance && r.acceptance.length) {
+      out += '\n\nAcceptance (the host checks these when you finish — the task is not done until every one holds):\n'
+        + r.acceptance.map(a => '- ' + acceptanceLabel(fillAcceptance(a, r, v))).join('\n');
+    }
     return out;
+  }
+  // {token} substitution for a short SOP field: same param semantics as the template (filled value verbatim, blank
+  // optional -> default, foreign token left as-is). No seam-whitespace trimming — these are single fields.
+  function fillTokens(str, r, v) {
+    const byKey = {};
+    (r.params || []).forEach(p => { byKey[p.key] = p; });
+    return String(str == null ? '' : str).replace(/\{(\w+)\}/g, (m, key) => {
+      if (!Object.prototype.hasOwnProperty.call(byKey, key)) return m;
+      return (typeof v[key] === 'string' && v[key].trim()) ? v[key] : (byKey[key].default || '');
+    });
+  }
+  function fillAcceptance(a, r, v) {
+    const out = { type: a.type, label: a.label ? fillTokens(a.label, r, v) : '' };
+    if (a.path != null) out.path = fillTokens(a.path, r, v);
+    if (a.text != null) out.text = fillTokens(a.text, r, v);
+    if (a.sha256 != null) out.sha256 = fillTokens(a.sha256, r, v).toLowerCase();
+    if (a.command != null) out.command = fillTokens(a.command, r, v);
+    return out;
+  }
+  /* the run-body `postconditions` contract for a launch: the recipe's acceptance rows with their tokens filled,
+     in the exact shape sidecar/task-postconditions.js normalizeContract() accepts. Returns null when the recipe
+     has no acceptance (the run body then carries no contract and the host reports `not_assessed`, as today).
+     Row ids are stable (`sop-<n>`) so a dossier / COMMS line can name which check failed. */
+  function postconditionsFor(idOrRecipe, values) {
+    const r = typeof idOrRecipe === 'string' ? get(idOrRecipe) : idOrRecipe;
+    if (!r || !r.acceptance || !r.acceptance.length) return null;
+    const v = values || {};
+    const requirements = r.acceptance.map((a, i) => {
+      const f = fillAcceptance(a, r, v);
+      const row = { id: 'sop-' + (i + 1), type: f.type };
+      if (f.type === 'verification_passed') row.command = f.command;
+      else {
+        row.path = f.path;
+        if (f.type === 'artifact_contains') row.text = f.text;
+        if (f.type === 'artifact_sha256') row.sha256 = f.sha256;
+      }
+      return row;
+    });
+    return { schemaVersion: 'starnet.task-postconditions.v1', authority: 'commander', requirements };
   }
 
   // build a DRAFT custom recipe from a launched one (P3 "save what you keep asking for" seam). Returns a plain
@@ -419,6 +547,8 @@
       tags: over.tags || null,
       params: over.params || [],
       task: over.task || '',
+      steps: Array.isArray(over.steps) ? over.steps.slice() : [],
+      acceptance: Array.isArray(over.acceptance) ? over.acceptance.map(a => Object.assign({}, a)) : [],
       gear: Array.isArray(over.gear) ? over.gear.slice() : [],
       skills: Array.isArray(over.skills) ? over.skills.slice() : [],
       cadence: over.cadence != null ? over.cadence : null,
@@ -444,6 +574,8 @@
       // copy params as plain objects (the source's are frozen); the editor mutates these freely.
       params: (r.params || []).map(p => ({ key: p.key, label: p.label, placeholder: p.placeholder, required: p.required, default: p.default, type: p.type, options: (p.options || []).slice() })),
       task: r.task,
+      steps: (r.steps || []).slice(),
+      acceptance: (r.acceptance || []).map(a => Object.assign({}, a)),
       gear: (r.gear || []).slice(), skills: (r.skills || []).slice(),
       cadence: r.cadence || null, category: r.category || null,
       source: 'fork', forkedFrom: r.id
@@ -568,7 +700,7 @@
   const EXPORT_FORMAT = 1;
   // the fields an exported recipe carries — the v2 authoring surface, nothing runtime/derived. `custom`,
   // `seedborn`, timestamps and any live-routine state are deliberately NOT exported (they're local provenance).
-  const EXPORT_FIELDS = ['id', 'name', 'emoji', 'tagline', 'blurb', 'accent', 'tags', 'params', 'task', 'gear', 'skills', 'cadence', 'category', 'source', 'forkedFrom'];
+  const EXPORT_FIELDS = ['id', 'name', 'emoji', 'tagline', 'blurb', 'accent', 'tags', 'params', 'task', 'steps', 'acceptance', 'gear', 'skills', 'cadence', 'category', 'source', 'forkedFrom'];
 
   // EXPORT: a plain, JSON-serializable object for ONE recipe (built-in or custom), stamped with a format marker.
   // Returns null for an unknown id. The result is a deep copy (never a live/frozen ref) so a caller can pretty-print
@@ -583,7 +715,8 @@
       if (v == null) { out[k] = (k === 'cadence' || k === 'forkedFrom') ? null : v; continue; }
       if (k === 'tags') out.tags = Object.assign({}, v);
       else if (k === 'params') out.params = (Array.isArray(v) ? v : []).map(p => ({ key: p.key, label: p.label, placeholder: p.placeholder, required: p.required, default: p.default, type: p.type || 'text', options: (Array.isArray(p.options) ? p.options : []).slice() }));
-      else if (k === 'gear' || k === 'skills') out[k] = (Array.isArray(v) ? v : []).slice();
+      else if (k === 'gear' || k === 'skills' || k === 'steps') out[k] = (Array.isArray(v) ? v : []).slice();
+      else if (k === 'acceptance') out.acceptance = (Array.isArray(v) ? v : []).map(a => Object.assign({}, a));
       else out[k] = v;
     }
     return out;
@@ -631,6 +764,10 @@
       accent: typeof obj.accent === 'string' ? obj.accent : '',
       tags: (obj.tags && typeof obj.tags === 'object' && !Array.isArray(obj.tags)) ? obj.tags : null,
       params,
+      // SOP fields ride the portable format; normSteps/normAcceptance re-validate on save (a hand-edited file can
+      // never smuggle an unknown predicate type or an absolute/`..` path past the sidecar's own rules).
+      steps: Array.isArray(obj.steps) ? obj.steps.filter(x => typeof x === 'string') : [],
+      acceptance: Array.isArray(obj.acceptance) ? obj.acceptance.filter(a => a && typeof a === 'object' && !Array.isArray(a)) : [],
       gear: Array.isArray(obj.gear) ? obj.gear : [],
       skills: Array.isArray(obj.skills) ? obj.skills : [],
       cadence: obj.cadence != null ? obj.cadence : null,
@@ -912,6 +1049,8 @@
     TAGS, GEAR_TYPES, CADENCES, CATEGORIES, SOURCES, PARAM_TYPES, RAIL_BUCKETS, railBucket,
     list, builtins, customs: customList, get, exists,
     fillTask, requiredMissing, paramsFromTemplate, draft, forkFrom, mintFromRun, saveCustom, removeCustom, impliesOutbound,
+    // SOP recipes: typed acceptance -> run-body postconditions contract; prose helpers for the dossier/editor
+    ACCEPTANCE_TYPES, STEPS_MAX, ACCEPTANCE_MAX, postconditionsFor, acceptanceLabel,
     // R6 marketplace surface
     EXPORT_FORMAT, exportRecipe, validateImport, importRecipe, rankRecipes, rankRecipesExplained, goalKeywordScore,
     goalKeywordHits, forYouReason, topicScore, TOPIC_SCALE, TOPIC_CAP

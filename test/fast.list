@@ -106,6 +106,7 @@ test/plugins.test.js
 test/loop.replay.test.js
 test/loop.steer.test.js
 test/loop.verify-on-stop.test.js
+test/loop.acceptance-on-stop.test.js
 test/loop.parallel-tools.test.js
 test/loop.tool-images.test.js
 test/loop.turn-budget.test.js
@@ -113,6 +114,7 @@ test/loop.provider-recovery.test.js
 test/loop.failure-recovery.test.js
 test/output-continuation.test.js
 test/compaction.test.js
+test/compaction-summarizer.test.js
 test/loopguard.test.js
 test/loopguard.dispatch.test.js
 test/continuation-guard.test.js
@@ -244,6 +246,7 @@ test/longhaul-retention.test.js
 test/autonomy-ledger.test.js
 test/artifacts.test.js
 test/deliverable-store.test.js
+test/idempotency-ledger.test.js
 test/deliverable-provenance.test.js
 test/deliverable-note.test.js
 test/deliverables-ui.test.js
@@ -341,6 +344,7 @@ test/wakemind.test.js
 test/curiosity.test.js
 test/dossierinject.test.js
 test/recipes.test.js
+test/recipes.sop.test.js
 test/recipefit.test.js
 test/loop-templates.test.js
 test/launchmemory.test.js
