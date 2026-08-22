@@ -30,6 +30,8 @@ test/e2e.subagent-background.test.js
 test/e2e.mcp-connector.test.js
 test/e2e.idempotency.test.js
 test/e2e.acceptance-nudge.test.js
+test/e2e.connector-readback.test.js
+test/recipe-drift.http.test.js
 test/cron.api.test.js
 test/cron.run-now.e2e.test.js
 test/cron.degraded.e2e.test.js

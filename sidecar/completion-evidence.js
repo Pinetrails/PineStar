@@ -131,11 +131,38 @@ function makeCompletionEvidence(options) {
 
   async function assess(input) {
     input = input || {};
-    const current = snapshot();
-    assessment = await assessPostconditions(Object.assign({}, input, {
+    // TYPED CONNECTOR READ-BACK (2026-08-22): a fresh host read through the connector is memoized per requirement
+    // for this assessment, because a passed read-back SETTLES that connector's effects (judgment_required ->
+    // mechanically_verified) and the completion verdict must then be recomputed against the settled effect
+    // verdict — without paying for a second network read.
+    const reads = new Map();
+    const readConnector = typeof input.readConnector === 'function' ? (req => {
+      const k = String(req && req.id);
+      if (!reads.has(k)) reads.set(k, Promise.resolve().then(() => input.readConnector(req)));
+      return reads.get(k);
+    }) : undefined;
+    const run = () => assessPostconditions(Object.assign({}, input, {
+      readConnector,
       evidence: evidence.map(e => Object.assign({}, e)),
-      effectVerdict: current.effectVerdict
+      effects: effects.map(e => Object.assign({}, e)),
+      effectVerdict: snapshot().effectVerdict
     }));
+    assessment = await run();
+    const settled = (assessment.checks || []).filter(c => c && c.type === 'connector_readback' && c.status === 'passed');
+    if (settled.length && assessment.contract) {
+      let changed = false;
+      for (const c of settled) {
+        const req = assessment.contract.requirements.find(r => r.id === c.id);
+        if (!req) continue;
+        const id = addEvidence({ callId: '', tool: 'mcp__' + req.connector + '__' + req.tool, kind: 'typed_connector_readback', strength: 'mechanical', summary: text('host read-back matched: ' + c.id, 120), target: req.connector });
+        for (const effect of effects) {
+          if (effect.domain !== 'external' || effect.connector !== req.connector || effect.state === 'mechanically_verified') continue;
+          effect.state = 'mechanically_verified'; changed = true;
+          if (id && effect.evidence.indexOf(id) < 0) effect.evidence.push(id);
+        }
+      }
+      if (changed) assessment = await run();   // reads are memoized: no second network call
+    }
     return snapshot();
   }
 

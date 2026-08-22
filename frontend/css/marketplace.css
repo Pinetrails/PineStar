@@ -518,6 +518,18 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-r-lastrun .dim { color: var(--ph-dim); }
 .mkt-r-lastrun-k { color: var(--ph-dim); }
 .mkt-r-lastrun.bad { color: var(--bad); border-left-color: var(--bad); }
+/* GOLDEN-RUN DRIFT (2026-08-22): the last 5 outcomes as marks + the named signal when the latest run drifted
+   from this recipe's own good history. Same slab as the last-run line; red only when drifted (a failure class). */
+.mkt-r-drift { font-size: 11.5px; letter-spacing: .3px; color: var(--ph); background: rgba(0,0,0,.18);
+  border-left: 3px solid var(--ph-dim); border-radius: 3px; padding: 6px 10px; margin: 4px 0 6px; }
+.mkt-r-drift b { color: var(--ph-bright); }
+.mkt-r-drift .dim { color: var(--ph-dim); }
+.mkt-r-drift.bad { color: var(--bad); border-left-color: var(--bad); }
+.mkt-r-drift.bad b { color: var(--bad); }
+.mkt-drift-mark { display: inline-block; min-width: 11px; text-align: center; margin-right: 1px; }
+.mkt-drift-mark.ok { color: var(--ph-bright); }
+.mkt-drift-mark.bad { color: var(--bad); }
+.mkt-chip.bad { color: var(--bad); border-color: var(--bad); }
 /* FOR YOU: the named reason a card is in the row (a matched goal keyword / affinity / your own launches). */
 /* the reason line is the ARGUMENT for the card, not a footnote — it was 10.5px and unreadable at a glance.
    Sized above the tagline (11.5px) so the eye lands on the evidence, which is the point of these shelves. */

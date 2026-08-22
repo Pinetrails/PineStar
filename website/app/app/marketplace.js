@@ -227,7 +227,7 @@ const Marketplace = (() => {
     importScan = null; importOrigin = null; importName = ''; importErr = '';
     laneFilter = 'all'; catFilter = 'all'; query = '';
     lastDecodedHero = null;   // a fresh bay open replays the hero decode beat once
-    recipeRuns = null;        // re-read the run log on every open: work done since the last visit shows up
+    recipeRuns = null; recipeDrift = null;   // re-read the run log (+ drift) on every open: work done since the last visit shows up
     invalidateFit();          // …and so does a folder granted or a channel connected in another panel since
     // SCOUT: re-read server truth on open (fresh drafts/interests land) and push the browser-only dedup context.
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) { ProspectStore.pushContext(); ProspectStore.refresh(); } } catch (_) {}
@@ -875,6 +875,8 @@ const Marketplace = (() => {
     // from "a procedure the station holds itself to".
     const na = (r.acceptance || []).length;
     const sop = na ? '<span class="mkt-chip" title="host-checked acceptance">◇ ' + na + ' check' + (na === 1 ? '' : 's') + '</span>' : '';
+    const dr = recipeDrift && recipeDrift[r.id];
+    const drift = (dr && dr.status === 'drift') ? '<span class="mkt-chip bad" title="the latest run differs from its good history">⚠ DRIFT</span>' : '';
     // no `--accent` — same one-phosphor rule as the class rows above (see the note on mkt-card there).
     // The recipe library was the worse offender: not ONE of its seals was the station's colour.
     return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(r.id) + '" style="--ci:' + (i || 0) + '">' +
@@ -885,7 +887,7 @@ const Marketplace = (() => {
       '</div>' +
       '<div class="mkt-card-side">' +
         '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(laneLabelOf(r)) + '</span>' +
-          '<span class="mkt-chip">' + setup + '</span>' + sop + recipeLifeChip(r) + '</div>' +
+          '<span class="mkt-chip">' + setup + '</span>' + sop + drift + recipeLifeChip(r) + '</div>' +
         '<span class="mkt-card-code">' + esc(codeOf(r)) + '</span>' +
       '</div>' +
     '</button>';
@@ -985,9 +987,13 @@ const Marketplace = (() => {
      Read-only, best-effort, and strictly what the log says: no run rows = no line at all (never an invented one).
      agent=* because a recipe may have been launched by any crew member, or fired unattended as a routine. */
   let recipeRuns = null, recipeRunsPending = null;
+  // GOLDEN-RUN DRIFT: recipeId -> the sidecar's drift verdict for its latest run (read with the run log; null = not read)
+  let recipeDrift = null;
   function loadRecipeRuns(force) {
     if (recipeRuns && !force) return Promise.resolve(recipeRuns);
     if (recipeRunsPending) return recipeRunsPending;
+    // the drift read rides alongside (advisory; a failed read asserts nothing)
+    fetch('/api/recipes/drift', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(d => { recipeDrift = (d && d.drift) || {}; }).catch(() => { recipeDrift = recipeDrift || {}; });
     recipeRunsPending = fetch('/api/runs?agent=*&limit=200', { cache: 'no-store' })
       .then(r => r.ok ? r.json() : { runs: [] })
       .then(d => {
@@ -1020,6 +1026,16 @@ const Marketplace = (() => {
     return '';
   }
   const RUN_REASON_WORD = { done: 'done', max_iters: 'hit its turn limit', budget: 'hit its budget', cancelled: 'cancelled', error: 'errored', refusal: 'refused' };
+  // GOLDEN-RUN DRIFT line: the last 5 outcomes as marks, and the named signal when the latest run drifted from the
+  // recipe's own good history. Says 'insufficient' nothing — a recipe with no baseline shows only its streak.
+  function driftHTML(r) {
+    const d = recipeDrift && recipeDrift[r.id]; if (!d || !d.streak || !d.streak.length) return '';
+    const marks = d.streak.map(m => '<span class="mkt-drift-mark' + (m === 'pass' ? ' ok' : ' bad') + '" aria-label="' + m + '">' + (m === 'pass' ? '✓' : '✗') + '</span>').join('');
+    let line = '<div class="mkt-r-drift' + (d.status === 'drift' ? ' bad' : '') + '"><span class="mkt-r-lastrun-k" aria-hidden="true">◫</span> last ' + d.streak.length + ' run' + (d.streak.length === 1 ? '' : 's') + ' ' + marks;
+    if (d.status === 'drift') line += ' · <b>DRIFT</b> — ' + d.signals.slice(0, 2).map(s => esc(s.detail)).join('; ') + (d.signals.length > 2 ? ' <span class="dim">+' + (d.signals.length - 2) + '</span>' : '');
+    else if (d.status === 'steady') line += ' · steady vs ' + d.baselineRuns + ' prior';
+    return line + '</div>';
+  }
   function lastRunHTML(r) {
     if (!recipeRuns) return '';                       // no read yet — assert nothing
     const row = recipeRuns[r.id]; if (!row) return '';
@@ -1187,7 +1203,7 @@ const Marketplace = (() => {
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
           '<div class="mkt-dos-tag">' + esc(r.tagline) + '</div>' +
           '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span>' + recipeLifeChip(r) + '</div></div></div>' +
-      lastRunHTML(r) + liveRoutineBadgeHTML(r) + forkLine + cadHint +
+      lastRunHTML(r) + driftHTML(r) + liveRoutineBadgeHTML(r) + forkLine + cadHint +
       '<div class="mkt-block"><div class="bh">WHAT IT SENDS</div><pre>' + esc(r.task) + '</pre></div>' +
       inputs + steps + accept +
       recipeGearHTML(r) +
@@ -3044,7 +3060,9 @@ const Marketplace = (() => {
     // SOP fields: plain editable copies (a blank create starts with none).
     editSteps = (Array.isArray(seed.steps) ? seed.steps : []).map(x => String(x || ''));
     editAcceptance = (Array.isArray(seed.acceptance) ? seed.acceptance : []).map(a => ({
-      type: (a && a.type) || 'artifact_exists', path: (a && a.path) || '', text: (a && a.text) || '', sha256: (a && a.sha256) || '', command: (a && a.command) || ''
+      type: (a && a.type) || 'artifact_exists', path: (a && a.path) || '', text: (a && a.text) || '', sha256: (a && a.sha256) || '', command: (a && a.command) || '',
+      // connector read-back fields; args live as the raw JSON text the author types (normAcceptance parses on save)
+      connector: (a && a.connector) || '', tool: (a && a.tool) || '', args: (a && a.args) ? (typeof a.args === 'string' ? a.args : JSON.stringify(a.args)) : '', contains: (a && a.contains) || ''
     }));
     view = 'recipesave'; renderStage();
   }
@@ -3110,11 +3128,27 @@ const Marketplace = (() => {
     { id: 'artifact_exists', label: 'file exists' },
     { id: 'artifact_contains', label: 'file contains text' },
     { id: 'artifact_sha256', label: 'file sha256 =' },
-    { id: 'verification_passed', label: 'check command passes' }
+    { id: 'verification_passed', label: 'check command passes' },
+    { id: 'connector_readback', label: 'connector shows (host re-reads)' }
   ];
   function acceptRowHTML(a, i) {
     const type = a.type || 'artifact_exists';
     const isCmd = type === 'verification_passed';
+    const isRb = type === 'connector_readback';
+    if (isRb) {
+      // connector read-back: connector id + READ tool + optional args JSON + the text the read must show. The
+      // host refuses a non-read tool at run end, so the hint says READ up front.
+      return '<div class="mkt-r-prow mkt-r-arow" data-i="' + i + '" data-type="' + esc(type) + '">' +
+        '<select class="mkt-in mkt-r-atype" data-i="' + i + '" aria-label="check type">' +
+          ACC_TYPE_OPTS.map(t => '<option value="' + esc(t.id) + '"' + (type === t.id ? ' selected' : '') + '>' + esc(t.label) + '</option>').join('') +
+        '</select>' +
+        '<input class="mkt-in mkt-r-aconn" data-i="' + i + '" maxlength="80" value="' + esc(a.connector || '') + '" placeholder="connector id, e.g. gmail" aria-label="connector id">' +
+        '<input class="mkt-in mkt-r-atool" data-i="' + i + '" maxlength="80" value="' + esc(a.tool || '') + '" placeholder="READ tool, e.g. search_messages" aria-label="read tool">' +
+        '<input class="mkt-in mkt-r-aargs mkt-grow" data-i="' + i + '" maxlength="2000" value="' + esc(a.args || '') + '" placeholder="args JSON, e.g. {&quot;q&quot;:&quot;{client} invoice&quot;}" aria-label="read args">' +
+        '<input class="mkt-in mkt-r-atext mkt-grow" data-i="' + i + '" maxlength="500" value="' + esc(a.contains || '') + '" placeholder="the read must show this text" aria-label="expected text">' +
+        '<button type="button" class="bb xs danger mkt-r-arm" data-i="' + i + '" aria-label="remove check">✕</button>' +
+        '</div>';
+    }
     return '<div class="mkt-r-prow mkt-r-arow" data-i="' + i + '" data-type="' + esc(type) + '">' +
       '<select class="mkt-in mkt-r-atype" data-i="' + i + '" aria-label="check type">' +
         ACC_TYPE_OPTS.map(t => '<option value="' + esc(t.id) + '"' + (type === t.id ? ' selected' : '') + '>' + esc(t.label) + '</option>').join('') +
@@ -3220,7 +3254,12 @@ const Marketplace = (() => {
       stage.querySelectorAll('.mkt-r-arow').forEach(row => {
         const i = +row.dataset.i; if (!editAcceptance[i]) return;
         const ty = row.querySelector('.mkt-r-atype'), pa = row.querySelector('.mkt-r-apath'), tx = row.querySelector('.mkt-r-atext'), sh = row.querySelector('.mkt-r-asha'), cm = row.querySelector('.mkt-r-acmd');
+        const cn = row.querySelector('.mkt-r-aconn'), tl = row.querySelector('.mkt-r-atool'), ag = row.querySelector('.mkt-r-aargs');
         if (ty) editAcceptance[i].type = ty.value || 'artifact_exists';
+        if (cn) editAcceptance[i].connector = (cn.value || '').trim();
+        if (tl) editAcceptance[i].tool = (tl.value || '').trim();
+        if (ag) editAcceptance[i].args = (ag.value || '').trim();
+        if (tx && cn) { editAcceptance[i].contains = (tx.value || '').trim(); }
         if (pa) editAcceptance[i].path = (pa.value || '').trim();
         if (tx) editAcceptance[i].text = (tx.value || '').trim();
         if (sh) editAcceptance[i].sha256 = (sh.value || '').trim();
@@ -3276,12 +3315,12 @@ const Marketplace = (() => {
     const wireAcceptRows = () => {
       if (!agrid) return;
       agrid.querySelectorAll('.mkt-r-arm').forEach(b => b.addEventListener('click', () => { syncAcceptFromDOM(); editAcceptance.splice(+b.dataset.i, 1); sfx('click'); rerenderAccept(); }));
-      agrid.querySelectorAll('.mkt-r-apath, .mkt-r-atext, .mkt-r-asha, .mkt-r-acmd').forEach(inp => inp.addEventListener('input', paintPreview));
+      agrid.querySelectorAll('.mkt-r-apath, .mkt-r-atext, .mkt-r-asha, .mkt-r-acmd, .mkt-r-aconn, .mkt-r-atool, .mkt-r-aargs').forEach(inp => inp.addEventListener('input', paintPreview));
       agrid.querySelectorAll('.mkt-r-atype').forEach(sel => sel.addEventListener('change', () => { syncAcceptFromDOM(); sfx('click'); rerenderAccept(); }));
     };
     wireAcceptRows();
     const aadd = stage.querySelector('.mkt-r-aadd');
-    if (aadd) aadd.addEventListener('click', () => { syncAcceptFromDOM(); editAcceptance.push({ type: 'artifact_exists', path: '', text: '', sha256: '', command: '' }); sfx('click'); rerenderAccept(); });
+    if (aadd) aadd.addEventListener('click', () => { syncAcceptFromDOM(); editAcceptance.push({ type: 'artifact_exists', path: '', text: '', sha256: '', command: '', connector: '', tool: '', args: '', contains: '' }); sfx('click'); rerenderAccept(); });
 
     // gear chips (toggle in/out of editGear).
     stage.querySelectorAll('#mkt-r-gear .mkt-chip.pick').forEach(b => b.addEventListener('click', () => {
@@ -3308,7 +3347,8 @@ const Marketplace = (() => {
       const explicit = editParams.filter(p => p.key).map(paramOut);
       // an acceptance row that is still blank (no path / no command) is not a check — drop it rather than save a
       // row recipes.js would discard anyway, so the author never sees a phantom "◇ 1 check".
-      const accepts = editAcceptance.filter(a => (a.type === 'verification_passed' ? a.command : a.path));
+      const accepts = editAcceptance.filter(a => a.type === 'verification_passed' ? a.command : a.type === 'connector_readback' ? (a.connector && a.tool && a.contains) : a.path)
+        .map(a => a.type === 'connector_readback' ? { type: a.type, connector: a.connector, tool: a.tool, args: a.args || null, contains: a.contains } : a);
       const rec = {
         name, emoji: (stage.querySelector('#mkt-r-emoji').value || '✦').trim() || '✦',
         tagline: (stage.querySelector('#mkt-r-tag').value || '').trim(), task,

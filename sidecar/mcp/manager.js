@@ -482,6 +482,16 @@
       );
     }
 
+    // READ-ONLY tool lookup for the host's typed connector read-back (task-postconditions): the raw published
+    // tool + whether the server self-declares readOnlyHint. Null when the connector is not up or the tool is
+    // not published. Never executes anything.
+    function toolInfo(id, toolName) {
+      const c = conns.get(String(id));
+      if (!c || configIssue(c) || (c.state !== 'up' && c.state !== 'cached')) return null;
+      const t = (c.tools || []).find(x => x && x.name === String(toolName));
+      if (!t) return null;
+      return { name: t.name, readOnlyHint: !!(t.annotations && t.annotations.readOnlyHint === true), state: c.state };
+    }
     function toolDefsFor(id) {
       const c = conns.get(String(id));
       if (!c || configIssue(c) || (c.state !== 'up' && c.state !== 'cached')) return [];
@@ -559,7 +569,7 @@
       return upConn(id).client.getPrompt(name, args);
     };
 
-    return { configure, remove, refresh, close, status, list, has, ids, toolDefsFor, toolDefsForObjects, call, resourcesFor, promptsFor, readResource, getPrompt, sweepLifecycle, _internals: { connectorIdOf } };
+    return { configure, remove, refresh, close, status, list, has, ids, toolDefsFor, toolDefsForObjects, toolInfo, call, resourcesFor, promptsFor, readResource, getPrompt, sweepLifecycle, _internals: { connectorIdOf } };
   }
 
   return { makeConnectorManager, _internals: { connectorIdOf } };
