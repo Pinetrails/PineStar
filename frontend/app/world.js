@@ -7425,7 +7425,10 @@ const World = (() => {
     // (it compiles into `bays`), but a LONE dock's brief lives only in dockBays — outside the hash — and
     // editing it must still reach the sidecar's copy or stageBrief() serves a stale duty line.
     const hash = plan ? ((plan.hash || '') + '|' + (plan.bays || []).map(b => b.agentId + ':' + ((b.objects || []).map(objKey).join(','))).join(';')
-      + '|' + (plan.dockBays || []).map(b => b.propId + ':' + (b.brief || '')).join(';')) : '';
+      + '|' + (plan.dockBays || []).map(b => b.propId + ':' + (b.brief || '')).join(';')
+      // LINE BUDGET rides the key too (2026-08-21): limits live on `lines`, outside plan.hash (policy, not
+      // topology — splitter balance must survive a cap edit), but the sidecar's copy must re-read them.
+      + '|' + JSON.stringify(plan.lineLimits || {})) : '';
     planPoster.offer(plan, hash);
   }
   // junction props (splitter/filter/merger) keyed by tile — derived from the compiled plan so the VISUAL engine

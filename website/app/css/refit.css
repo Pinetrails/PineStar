@@ -59,6 +59,12 @@
 /* an inline field label (MERGER's "combine K =") */
 .refit-field { display: block; margin: 6px 0; font-family: 'VT323', monospace; font-size: 15px; letter-spacing: .5px; color: var(--text); }
 
+/* LINE BUDGET (INBOX flow card): three inline fields in the .refit-field voice, numbers right-aligned so
+   the column of ceilings reads as one panel. Fields are .refit-num (skinned above) — never OS paint. */
+.lb-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0; }
+.lb-field .lb-num { width: 72px; margin-left: 0; }
+.lb-note { margin-top: 4px; }
+
 /* a soft note line (no-active-agents / lay-belts-first) — warn-amber, in-vocabulary */
 .refit-note { color: var(--warn); font-family: 'VT323', monospace; font-size: 14px; letter-spacing: .5px; margin: 6px 0; }
 .refit-note.bad { color: var(--gold); }
