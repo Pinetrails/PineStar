@@ -79,6 +79,7 @@ test/prices.live.test.js
 test/provider.gemini.test.js
 test/provider.toolschema.test.js
 test/provider.prices.test.js
+test/prices.all-providers.test.js
 test/provider.timeouts.test.js
 test/provider.registry.test.js
 test/ratelimits.test.js
