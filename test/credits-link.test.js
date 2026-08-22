@@ -144,6 +144,29 @@ function fakeCloud(opts) {
     A.eq(withEnv.tokenAtRest(), 'keychain', 'reports the token now rests in the keychain');
   }
 
+  // ---- SAME-SESSION ADOPTION (2026-08-22): the process that performed the link was spawned BEFORE the link,
+  //      so it has NO envToken. Seconds later the shell strips deviceToken from the file. That process must
+  //      keep resolving the token it already proved — otherwise the managed provider has no bearer and no
+  //      base URL until a full app restart ("catalog offline", WAKE refused right after linking). ----
+  {
+    const sDir = path.join(tmp, 'same'); const sFile = path.join(sDir, 'credits.json');
+    fs.mkdirSync(sDir, { recursive: true });
+    fs.writeFileSync(sFile, JSON.stringify({ url: 'https://cloud.example', deviceToken: 'snd_linked_now', accountId: 'acct_s', linkedAt: 11 }));
+    const live = makeCreditsLink({ cloudUrl: 'https://cloud.example', fetch: fakeCloud().fetch, fsp, fs, pathMod: path, dir: sDir, now: () => 7000 });
+    A.eq(live.loadSavedSync().deviceToken, 'snd_linked_now', 'pre-adoption: the file token is read (and remembered)');
+    // the shell adopts: keychain holds it, file is stripped — same running process, still no envToken
+    fs.writeFileSync(sFile, JSON.stringify({ url: 'https://cloud.example', accountId: 'acct_s', linkedAt: 11 }));
+    const afterAdopt = live.loadSavedSync();
+    A.ok(!!afterAdopt && afterAdopt.deviceToken === 'snd_linked_now', 'after adoption the SAME process still resolves the token it linked with (no restart needed)');
+    A.eq(live.tokenAtRest(), 'keychain', 'and reports the token at rest in the keychain');
+    // a DIFFERENT process with no injected token never inherits it — the memory is per-process, not a file
+    const fresh = makeCreditsLink({ cloudUrl: 'https://cloud.example', fetch: fakeCloud().fetch, fsp, fs, pathMod: path, dir: sDir, now: () => 7000 });
+    A.eq(fresh.hasSaved(), false, 'a fresh process without the keychain injection is NOT linked (nothing leaks through the file)');
+    // unlink forgets the live token too
+    await live.clearSaved();
+    A.eq(live.hasSaved(), false, 'unlink in the linking process forgets the remembered token');
+  }
+
   // ---- PRE-ADOPTION PRECEDENCE: between the link and the desktop's adopt call the token IS in the file.
   //      The file copy must win, so a relink cannot be shadowed by a stale injected token. ----
   {
