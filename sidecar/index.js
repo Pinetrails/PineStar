@@ -2613,7 +2613,7 @@ async function runThreadMine(o) {
 
 const SKILL_REVIEW_TIMEOUT_MS = num(process.env.SKYNET_SKILL_REVIEW_TIMEOUT_MS, 45000);
 const SKILL_REVIEW_MAX_COST_USD = num(process.env.SKYNET_SKILL_REVIEW_MAX_USD, 0.08);
-const verdictReview = makeVerdictReview({ cap: num(process.env.SKYNET_VERDICT_REVIEW_CAP, 40), ttlMs: num(process.env.SKYNET_VERDICT_REVIEW_TTL_MS, 6 * 60 * 60 * 1000) });
+const verdictReview = makeVerdictReview({ cap: num(process.env.SKYNET_VERDICT_REVIEW_CAP, 40), ttlMs: num(process.env.SKYNET_VERDICT_REVIEW_TTL_MS, 6 * 60 * 60 * 1000), now: () => Date.now() });
 const SKILL_CURATOR_INTERVAL_MS = num(process.env.SKYNET_SKILL_CURATOR_INTERVAL_MS, 24 * 60 * 60 * 1000);
 const SKILL_CURATOR_MAX_COST_USD = num(process.env.SKYNET_SKILL_CURATOR_MAX_USD, 0.12);
 const skillCuratorLastRun = new Map();

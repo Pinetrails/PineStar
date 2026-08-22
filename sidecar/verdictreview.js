@@ -20,7 +20,7 @@ function makeVerdictReview(opts) {
   opts = opts || {};
   const cap = Number.isFinite(opts.cap) && opts.cap > 0 ? Math.floor(opts.cap) : 40;
   const ttlMs = Number.isFinite(opts.ttlMs) && opts.ttlMs > 0 ? opts.ttlMs : 6 * 60 * 60 * 1000;
-  const now = typeof opts.now === 'function' ? opts.now : () => Date.now();
+  const now = typeof opts.now === 'function' ? opts.now : () => 0;   // clock is INJECTED (repo determinism law); index.js passes the real one
   const packets = new Map();   // runId -> { at, packet }  (Map keeps insertion order = LRU by arrival)
 
   function sweep() {
