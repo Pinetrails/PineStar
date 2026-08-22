@@ -142,6 +142,8 @@
           cfg.max = (isFinite(mx) && mx >= 1) ? Math.min(LOOP_MAX_CEILING, Math.floor(mx)) : LOOP_MAX_DEFAULT;
           const ll = loopLanes(map, t.x, t.y, { done: p.done || null });
           cfg.done = ll.done; cfg.back = ll.back;
+          // optional verdict tag: re-enter ONLY when the output's tag matches (else every pass loops until max)
+          if (typeof p.when === 'string' && /^[A-Za-z0-9_.:-]{1,40}$/.test(p.when)) cfg.when = p.when;
           if (!p.done || p.done !== ll.done) errors.push({ code: 'LOOP_NO_DONE', propId: p.id, warn: true });
           if (!ll.back) errors.push({ code: 'LOOP_NO_BACK', propId: p.id, warn: true });
         }
@@ -579,7 +581,7 @@
         } else if (j && j.kind === 'loop') {
           const ll = loopLanes(map, t.x, t.y, j), vd = ll.done ? DIRV[ll.done] : null;
           const nt = vd ? { x: t.x + vd[0], y: t.y + vd[1] } : null;
-          return { loop: k, max: j.max || LOOP_MAX_DEFAULT, backTo: j.backTo || null, next: (nt && map[key(nt.x, nt.y)]) ? walkAgent(walk(nt)) : null };
+          return { loop: k, max: j.max || LOOP_MAX_DEFAULT, backTo: j.backTo || null, when: j.when || null, next: (nt && map[key(nt.x, nt.y)]) ? walkAgent(walk(nt)) : null };
         } else if (j && j.kind === 'split' && j.fanout) {
           const lanes = outLanes(map, t.x, t.y), branches = [];
           for (const ld of lanes) { const v = DIRV[ld], nt = { x: t.x + v[0], y: t.y + v[1] }; if (!map[key(nt.x, nt.y)]) continue; const r = walk(nt); if (r && r.agentId && branches.indexOf(r.agentId) < 0) branches.push(r.agentId); }

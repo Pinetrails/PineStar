@@ -179,6 +179,20 @@ function makeRouter(o) {
     return Pipeline.chainNext(p, agentId, ctx || {}, pick);
   }
 
+  /* chainStep / fanSiblings (2026-08-21) — the JOINER + LOOP reading of the same plan, same pick counter, for the
+     chain runner. chainNext above stays the plain single-dock reading every older surface uses. */
+  function chainStep(agentId, ctx) {
+    const p = activePlan();
+    if (!p || !agentId || !Pipeline.chainStep) return null;
+    const pick = (k, n) => { const c = rr[k] || 0; rr[k] = (c + 1) % n; return c; };
+    return Pipeline.chainStep(p, agentId, ctx || {}, pick);
+  }
+  function fanSiblings(agentId) {
+    const p = activePlan();
+    if (!p || !agentId || !Pipeline.fanSiblings) return [];
+    return Pipeline.fanSiblings(p, agentId);
+  }
+
   // A clean model run is not necessarily a shipped work line. This reports whether the final dock's compiled
   // outbound lane actually reaches OUTBOX rather than terminating at an open belt end.
   function chainShipsToOutbox(agentId) {
@@ -187,7 +201,7 @@ function makeRouter(o) {
     return !!(rec && rec.outbox && !rec.deadEnd);
   }
 
-  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, lineOfAgent, lineOriginFor, chainNext, chainShipsToOutbox, stationFor, stageBrief };
+  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, lineOfAgent, lineOriginFor, chainNext, chainStep, fanSiblings, chainShipsToOutbox, stationFor, stageBrief };
 }
 
 module.exports = { makeRouter };

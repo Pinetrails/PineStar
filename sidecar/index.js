@@ -3750,6 +3750,15 @@ const chainRunner = makeChainRunner({
   // REFUSED this work" and say so honestly. Without it chain.js stays silent rather than guess (never a
   // false note) — which is exactly why the refusal was invisible before.
   lineOfAgent: (agentId) => router.lineOfAgent(agentId),
+  // JOINER + LOOP (2026-08-21): the richer step reading (barriers, fan-out, bounded loops) and the fan-out
+  // siblings of an entry dock. Parked join barriers are written beside the plan so a restart can REPORT a
+  // line that died mid-join (fail-loud; see chain.js — nothing in-flight is durable, so nothing resumes).
+  stepAgent: (agentId, ctx) => router.chainStep(agentId, ctx),
+  fanSiblings: (agentId) => router.fanSiblings(agentId),
+  barrierStore: {
+    load: () => { try { return loadResilient(path.join(WORKSPACES, 'join.barriers.json'), 'join-barriers'); } catch (_) { return null; } },
+    save: (v) => { try { saveResilient(path.join(WORKSPACES, 'join.barriers.json'), v); } catch (_) {} }
+  },
   emit: (name, payload) => { try { chanEmit(name, payload); } catch (_) {} },
   newId: () => 'wi_' + crypto.randomUUID().slice(0, 8),
   now: () => Date.now(),

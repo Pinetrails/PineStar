@@ -72,6 +72,11 @@ const WorldModel = (() => {
     const routes = cleanRoutes(src.routes); if (routes) dst.routes = routes;
     const def = cleanDir(src.def); if (def) dst.def = def;
     const buf = cleanBuf(src.bufferSize); if (buf) dst.bufferSize = buf;
+    // JOINER / LOOP gate config (2026-08-21): bounded ints + a lane dir + a tag, same sanitizing discipline
+    const tm = Math.floor(+src.timeoutMin); if (isFinite(tm) && tm >= 1 && tm <= 120) dst.timeoutMin = tm;
+    const mx = Math.floor(+src.maxIter); if (isFinite(mx) && mx >= 1 && mx <= 20) dst.maxIter = mx;
+    const done = cleanDir(src.done); if (done) dst.done = done;
+    if (typeof src.when === 'string' && /^[A-Za-z0-9_.:-]{1,40}$/.test(src.when)) dst.when = src.when;
     return dst;
   }
 
@@ -1087,7 +1092,7 @@ const WorldModel = (() => {
        a free neighbor (the out-lane forms naturally). All-or-nothing, one undo slot. This is what makes
        the tile-perfect wiring rules (ring adjacency, junction-on-line, direction) unlearnable-by-necessity:
        the user clicks INBOX then BAY, and the path knows the rules for them. */
-    const CONNECTABLE = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
+    const CONNECTABLE = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1, joiner: 1, loop: 1 };
     function connectBelt(fromId, toId) {
       const A = doc.props.find(p => p.id === fromId), B = doc.props.find(p => p.id === toId);
       if (!A || !B) return fail('NOT_FOUND', 'no such prop');
@@ -1376,6 +1381,7 @@ const WorldModel = (() => {
         if (p.brief) lp.brief = p.brief;   // a dock's standing job brief -> the compiled plan (step editor; prompt text only)
         if (p.label) lp.label = p.label;   // an INTAKE's line name (step editor; legibility only, never routing)
         if (p.routes) lp.routes = p.routes; if (p.def) lp.def = p.def; if (p.bufferSize) lp.bufferSize = p.bufferSize;   // junction config -> the bake/pipeline
+        if (p.timeoutMin) lp.timeoutMin = p.timeoutMin; if (p.maxIter) lp.maxIter = p.maxIter; if (p.done) lp.done = p.done; if (p.when) lp.when = p.when;   // joiner / loop gate config
         if (p.door) lp.door = p.door;   // an AIRLOCK's seal state -> the prop sprite's status light / jam spark
         if (p.connectorId) lp.connectorId = p.connectorId;   // a CONNECTOR PORTAL's bound server -> live state + firing pulse on the sprite
         propsLocal.push(lp);
@@ -1517,10 +1523,10 @@ const WorldModel = (() => {
       const p = doc.props.find(q => q.id === propId);
       if (!p) return fail('NOT_FOUND', 'no such prop');
       snapshot();
-      delete p.routes; delete p.def; delete p.bufferSize;   // replace wholesale
+      delete p.routes; delete p.def; delete p.bufferSize; delete p.timeoutMin; delete p.maxIter; delete p.done; delete p.when;   // replace wholesale
       if (cfg) applyJunctionCfg(p, cfg);
       emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
-      return { ok: true, id: propId, routes: p.routes || null, def: p.def || null, bufferSize: p.bufferSize || null };
+      return { ok: true, id: propId, routes: p.routes || null, def: p.def || null, bufferSize: p.bufferSize || null, timeoutMin: p.timeoutMin || null, maxIter: p.maxIter || null, done: p.done || null, when: p.when || null };
     }
     // bind/clear the connectorId on a CONNECTOR PORTAL — WHICH MCP server this gateway grants (per-instance).
     // A blank id unbinds (the portal grants nothing until bound; bayObjects emits it only when bound). Mirrors
