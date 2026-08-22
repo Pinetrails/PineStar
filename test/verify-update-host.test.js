@@ -56,7 +56,8 @@ function writeManifest(name, obj) {
 }
 
 try {
-  // 1. Good 4-platform manifest → PASS (exit 0).
+  // 1. Good supported-platform manifest → PASS (exit 0). Extra internal Linux
+  // artifacts are allowed, but they are not part of the public default contract.
   {
     const f = writeManifest('good.json', fullPlatform());
     const res = run(['--manifest', f]);
@@ -65,26 +66,37 @@ try {
     assert.match(res.stdout, /required platform present: darwin-aarch64/);
   }
 
-  // 2. Missing a required platform → FAIL (exit 1).
+  // 2. Missing a supported public platform → FAIL (exit 1).
   {
     const m = fullPlatform();
-    delete m.platforms['linux-x86_64'];
+    delete m.platforms['darwin-aarch64'];
     const f = writeManifest('missing.json', m);
     const res = run(['--manifest', f]);
     assert.equal(res.status, 1, 'missing platform should fail\n' + res.stdout);
-    assert.match(res.stdout, /FAIL required platform present: linux-x86_64/);
+    assert.match(res.stdout, /FAIL required platform present: darwin-aarch64/);
   }
 
-  // 2b. Missing platform but opted-down via --require-platforms → PASS.
+  // 2b. Unsupported Linux targets may be absent from the public manifest by default.
   {
     const m = fullPlatform();
     delete m.platforms['linux-x86_64'];
-    delete m.platforms['darwin-aarch64'];
-    delete m.platforms['darwin-x86_64'];
-    const f = writeManifest('winonly.json', m);
-    const res = run(['--manifest', f, '--require-platforms', 'windows-x86_64']);
-    assert.equal(res.status, 0, 'windows-only with opt-down should pass\n' + res.stdout);
+    delete m.platforms['linux-x86_64-deb'];
+    const f = writeManifest('supported-public.json', m);
+    const res = run(['--manifest', f]);
+    assert.equal(res.status, 0, 'Windows + both macOS targets should pass by default\n' + res.stdout);
     assert.match(res.stdout, /ALL CHECKS PASSED/);
+  }
+
+  // 2c. Internal Linux validation remains available as an explicit opt-in.
+  {
+    const m = fullPlatform();
+    delete m.platforms['linux-x86_64'];
+    delete m.platforms['linux-x86_64-deb'];
+    const f = writeManifest('missing-linux-opt-in.json', m);
+    const res = run(['--manifest', f, '--require-platforms',
+      'windows-x86_64,darwin-aarch64,darwin-x86_64,linux-x86_64,linux-x86_64-deb']);
+    assert.equal(res.status, 1, 'explicit Linux requirement should fail when Linux artifacts are absent\n' + res.stdout);
+    assert.match(res.stdout, /FAIL required platform present: linux-x86_64/);
   }
 
   // 3. Bad signature (empty / too short) → FAIL.
@@ -128,4 +140,4 @@ try {
   fs.rmSync(tmp, { recursive: true, force: true });
 }
 
-console.log('verify-update-host.test: OK (13 assertions)');
+console.log('verify-update-host.test: OK (15 assertions)');
