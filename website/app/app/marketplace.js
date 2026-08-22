@@ -33,6 +33,8 @@ const Marketplace = (() => {
   // R5 handoff: the run this editor session is bottling (a mintFromRun proposal's sourceRunId), preserved through
   // save so a bottled recipe keeps honest provenance. null for every other entry point (create / tweak / edit / import).
   let editSourceRunId = null;
+  // SOP recipes: the PROCEDURE (one step per line) + the typed ACCEPTANCE rows the editor is working on.
+  let editSteps = [], editAcceptance = [];
   // R3 launch/routine state: the live cron jobs (fetched once when the recipes dossier renders) so a recipe can
   // show a "● live — every morning" indicator, and whether the launch pane is in RUN-NOW or MAKE-ROUTINE mode.
   let cronJobs = null, cronArmed = false, launchMode = 'run', launchCadence = null;
@@ -869,6 +871,10 @@ const Marketplace = (() => {
     const sel = (focusRecipe === r.id);
     const n = (r.params || []).length;
     const setup = n ? ('▤ ' + n + ' input' + (n === 1 ? '' : 's')) : '◷ no setup';
+    // SOP: a recipe with host-checked acceptance says so on the card — the one glance that separates "a prompt"
+    // from "a procedure the station holds itself to".
+    const na = (r.acceptance || []).length;
+    const sop = na ? '<span class="mkt-chip" title="host-checked acceptance">◇ ' + na + ' check' + (na === 1 ? '' : 's') + '</span>' : '';
     // no `--accent` — same one-phosphor rule as the class rows above (see the note on mkt-card there).
     // The recipe library was the worse offender: not ONE of its seals was the station's colour.
     return '<button class="mkt-card' + (sel ? ' sel' : '') + '" type="button" data-id="' + esc(r.id) + '" style="--ci:' + (i || 0) + '">' +
@@ -879,7 +885,7 @@ const Marketplace = (() => {
       '</div>' +
       '<div class="mkt-card-side">' +
         '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(laneLabelOf(r)) + '</span>' +
-          '<span class="mkt-chip">' + setup + '</span>' + recipeLifeChip(r) + '</div>' +
+          '<span class="mkt-chip">' + setup + '</span>' + sop + recipeLifeChip(r) + '</div>' +
         '<span class="mkt-card-code">' + esc(codeOf(r)) + '</span>' +
       '</div>' +
     '</button>';
@@ -1157,6 +1163,11 @@ const Marketplace = (() => {
     // (a file chooser, a pick-one, the live connector list) before you commit to opening it.
     const inputs = n ? '<div class="mkt-block"><div class="bh">INPUTS</div><ul class="mkt-starters">' +
       r.params.map(p => '<li>' + esc(p.label) + paramKindHTML(p) + (p.required ? '' : ' <i>(optional)</i>') + '</li>').join('') + '</ul></div>' : '';
+    // SOP: the procedure the agent is told to follow, and the acceptance checks the HOST evaluates at run end.
+    const steps = (r.steps && r.steps.length) ? '<div class="mkt-block"><div class="bh">PROCEDURE — in this order</div><ol class="mkt-starters mkt-sop-steps">' +
+      r.steps.map(x => '<li>' + esc(x) + '</li>').join('') + '</ol></div>' : '';
+    const accept = (r.acceptance && r.acceptance.length) ? '<div class="mkt-block"><div class="bh">ACCEPTANCE — host-checked when the run ends</div><ul class="mkt-starters mkt-sop-accept">' +
+      r.acceptance.map(a => '<li>◇ ' + esc(Recipes.acceptanceLabel(a)) + '</li>').join('') + '</ul></div>' : '';
     // fork provenance: a forked custom names its parent (a live jump would be nice but the parent may be gone).
     const parent = (r.source === 'fork' && r.forkedFrom) ? Recipes.get(r.forkedFrom) : null;
     const forkLine = (r.source === 'fork')
@@ -1178,7 +1189,7 @@ const Marketplace = (() => {
           '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span>' + recipeLifeChip(r) + '</div></div></div>' +
       lastRunHTML(r) + liveRoutineBadgeHTML(r) + forkLine + cadHint +
       '<div class="mkt-block"><div class="bh">WHAT IT SENDS</div><pre>' + esc(r.task) + '</pre></div>' +
-      inputs +
+      inputs + steps + accept +
       recipeGearHTML(r) +
       recipeSkillsHTML(r) +
       '<div class="mkt-dos-cta">' + custActs +
@@ -2980,6 +2991,10 @@ const Marketplace = (() => {
       enabled: true, deliver: 'local', repeat: { times: null },
       meta: { recipeId: r.id }
     };
+    // SOP recipes: the acceptance contract rides the routine's meta bag (additive provenance) so every scheduled
+    // tick is held to the same host-checked postconditions as an interactive launch (cron-driver passes it through).
+    const pcs = Recipes.postconditionsFor ? Recipes.postconditionsFor(r, values) : null;
+    if (pcs) body.meta.postconditions = pcs;
     const btn = root && root.querySelector('.mkt-do-routine'); if (btn) { btn.disabled = true; btn.textContent = '… scheduling'; }
     fetch('/api/cron', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(res => res.json().catch(() => ({})).then(d => ({ ok: res.ok, d })))
@@ -3022,6 +3037,11 @@ const Marketplace = (() => {
       // typed fill-ins carry through every editor entry (create / tweak / edit / bottle / scout draft). `options`
       // lives as the raw comma line the author types; normParamOptions splits + cleans it on save.
       type: p.type || 'text', options: (Array.isArray(p.options) ? p.options : []).join(', ')
+    }));
+    // SOP fields: plain editable copies (a blank create starts with none).
+    editSteps = (Array.isArray(seed.steps) ? seed.steps : []).map(x => String(x || ''));
+    editAcceptance = (Array.isArray(seed.acceptance) ? seed.acceptance : []).map(a => ({
+      type: (a && a.type) || 'artifact_exists', path: (a && a.path) || '', text: (a && a.text) || '', sha256: (a && a.sha256) || '', command: (a && a.command) || ''
     }));
     view = 'recipesave'; renderStage();
   }
@@ -3081,6 +3101,36 @@ const Marketplace = (() => {
       '<button type="button" class="bb xs mkt-r-padd">＋ ADD FILL-IN</button>' +
       '<span class="mkt-hint mkt-r-phint"> — or leave empty and STARNET derives them from the {tokens} in your directive.</span>';
   }
+  // SOP acceptance rows: one typed check per row. The TYPE picks which second box applies (path / command) and
+  // whether a third (text / sha256) exists — the same swap-a-box discipline the fill-in grid uses for 'pick one'.
+  const ACC_TYPE_OPTS = [
+    { id: 'artifact_exists', label: 'file exists' },
+    { id: 'artifact_contains', label: 'file contains text' },
+    { id: 'artifact_sha256', label: 'file sha256 =' },
+    { id: 'verification_passed', label: 'check command passes' }
+  ];
+  function acceptRowHTML(a, i) {
+    const type = a.type || 'artifact_exists';
+    const isCmd = type === 'verification_passed';
+    return '<div class="mkt-r-prow mkt-r-arow" data-i="' + i + '" data-type="' + esc(type) + '">' +
+      '<select class="mkt-in mkt-r-atype" data-i="' + i + '" aria-label="check type">' +
+        ACC_TYPE_OPTS.map(t => '<option value="' + esc(t.id) + '"' + (type === t.id ? ' selected' : '') + '>' + esc(t.label) + '</option>').join('') +
+      '</select>' +
+      (isCmd
+        ? '<input class="mkt-in mkt-r-acmd mkt-grow" data-i="' + i + '" maxlength="1000" value="' + esc(a.command || '') + '" placeholder="exact command, e.g. npm test" aria-label="check command">'
+        : '<input class="mkt-in mkt-r-apath mkt-grow" data-i="' + i + '" maxlength="260" value="' + esc(a.path || '') + '" placeholder="workspace path, e.g. out/{client}-invoice.md" aria-label="artifact path">') +
+      (type === 'artifact_contains'
+        ? '<input class="mkt-in mkt-r-atext mkt-grow" data-i="' + i + '" maxlength="500" value="' + esc(a.text || '') + '" placeholder="must contain this text" aria-label="required text">' : '') +
+      (type === 'artifact_sha256'
+        ? '<input class="mkt-in mkt-r-asha mkt-grow" data-i="' + i + '" maxlength="64" value="' + esc(a.sha256 || '') + '" placeholder="64-hex digest (or a {token})" aria-label="sha256">' : '') +
+      '<button type="button" class="bb xs danger mkt-r-arm" data-i="' + i + '" aria-label="remove check">✕</button>' +
+      '</div>';
+  }
+  function acceptGridHTML() {
+    return '<div class="mkt-r-params" id="mkt-r-accept">' + editAcceptance.map(acceptRowHTML).join('') + '</div>' +
+      '<button type="button" class="bb xs mkt-r-aadd">＋ ADD CHECK</button>' +
+      '<span class="mkt-hint mkt-r-phint"> — mechanical, host-checked at run end; paths are relative to the workspace and may use {tokens}.</span>';
+  }
   function recipeSaveFormHTML() {
     const editing = editingRecipeId && hasRecipes() ? Recipes.get(editingRecipeId) : null;
     const minting = !editing && !!pendingMintTemplate;
@@ -3116,6 +3166,10 @@ const Marketplace = (() => {
       '<div class="mkt-r-tokens" id="mkt-r-tokens"></div>' +
       '<label class="mkt-lbl">FILL-INS <span class="mkt-lbl-hint">— the blanks filled at launch</span></label>' +
       paramsGridHTML() +
+      '<label class="mkt-lbl">PROCEDURE <span class="mkt-lbl-hint">— optional; one step per line, followed in order</span>' +
+        '<textarea class="mkt-in mkt-r-steps" id="mkt-r-steps" rows="3" placeholder="e.g.\nPull this week\'s orders from {source}\nDraft the summary\nSave it to out/{client}-weekly.md">' + esc(editSteps.join('\n')) + '</textarea></label>' +
+      '<label class="mkt-lbl">ACCEPTANCE CHECKS <span class="mkt-lbl-hint">— optional; the run is not done until every one holds</span></label>' +
+      acceptGridHTML() +
       '<label class="mkt-lbl">LIVE PREVIEW <span class="mkt-lbl-hint">— what your agent receives</span></label>' +
       '<pre class="mkt-r-preview" id="mkt-r-preview"></pre>' +
       '<label class="mkt-lbl">GEAR IT DRAWS ON <span class="mkt-lbl-hint">— advisory; a WANT badge if the station lacks it, never a lock</span></label>' +
@@ -3156,11 +3210,26 @@ const Marketplace = (() => {
       if (explicit.length) return explicit.map(paramOut);
       return Recipes.paramsFromTemplate(task);
     };
+    // SOP: read the procedure textarea + acceptance rows back into editor state (the preview + save read these).
+    const stepsIn = stage.querySelector('#mkt-r-steps');
+    const syncStepsFromDOM = () => { if (stepsIn) editSteps = String(stepsIn.value || '').split(/\r?\n/).map(x => x.trim()).filter(Boolean); };
+    const syncAcceptFromDOM = () => {
+      stage.querySelectorAll('.mkt-r-arow').forEach(row => {
+        const i = +row.dataset.i; if (!editAcceptance[i]) return;
+        const ty = row.querySelector('.mkt-r-atype'), pa = row.querySelector('.mkt-r-apath'), tx = row.querySelector('.mkt-r-atext'), sh = row.querySelector('.mkt-r-asha'), cm = row.querySelector('.mkt-r-acmd');
+        if (ty) editAcceptance[i].type = ty.value || 'artifact_exists';
+        if (pa) editAcceptance[i].path = (pa.value || '').trim();
+        if (tx) editAcceptance[i].text = (tx.value || '').trim();
+        if (sh) editAcceptance[i].sha256 = (sh.value || '').trim();
+        if (cm) editAcceptance[i].command = (cm.value || '').trim();
+      });
+    };
     const paintPreview = () => {
       if (!preview || !taskIn) return;
       const task = taskIn.value || '';
       // preview through the REAL fillTask primitive against a throwaway recipe shape (never persisted).
-      const draft = Recipes.draft({ task: task, params: effectiveParams(task) });
+      syncAcceptFromDOM(); syncStepsFromDOM();
+      const draft = Recipes.draft({ task: task, params: effectiveParams(task), steps: editSteps, acceptance: editAcceptance });
       const vals = {};
       (draft.params || []).forEach(p => { if (p.required) vals[p.key] = '[' + (p.label || p.key) + ']'; });
       const filled = Recipes.fillTask(draft, vals);
@@ -3192,6 +3261,25 @@ const Marketplace = (() => {
     const padd = stage.querySelector('.mkt-r-padd');
     if (padd) padd.addEventListener('click', () => { syncParamsFromDOM(); editParams.push({ key: '', label: '', placeholder: '', required: true, type: 'text', options: '' }); sfx('click'); rerenderGrid(); });
 
+    // SOP: procedure textarea tracks the preview; acceptance grid adds/removes rows and re-renders on a type swap.
+    if (stepsIn) stepsIn.addEventListener('input', paintPreview);
+    const agrid = stage.querySelector('#mkt-r-accept');
+    const rerenderAccept = () => {
+      if (!agrid) return;
+      agrid.innerHTML = editAcceptance.map(acceptRowHTML).join('');
+      wireAcceptRows();
+      paintPreview();
+    };
+    const wireAcceptRows = () => {
+      if (!agrid) return;
+      agrid.querySelectorAll('.mkt-r-arm').forEach(b => b.addEventListener('click', () => { syncAcceptFromDOM(); editAcceptance.splice(+b.dataset.i, 1); sfx('click'); rerenderAccept(); }));
+      agrid.querySelectorAll('.mkt-r-apath, .mkt-r-atext, .mkt-r-asha, .mkt-r-acmd').forEach(inp => inp.addEventListener('input', paintPreview));
+      agrid.querySelectorAll('.mkt-r-atype').forEach(sel => sel.addEventListener('change', () => { syncAcceptFromDOM(); sfx('click'); rerenderAccept(); }));
+    };
+    wireAcceptRows();
+    const aadd = stage.querySelector('.mkt-r-aadd');
+    if (aadd) aadd.addEventListener('click', () => { syncAcceptFromDOM(); editAcceptance.push({ type: 'artifact_exists', path: '', text: '', sha256: '', command: '' }); sfx('click'); rerenderAccept(); });
+
     // gear chips (toggle in/out of editGear).
     stage.querySelectorAll('#mkt-r-gear .mkt-chip.pick').forEach(b => b.addEventListener('click', () => {
       const t = b.dataset.gear, i = editGear.indexOf(t);
@@ -3213,13 +3301,17 @@ const Marketplace = (() => {
       const task = (stage.querySelector('#mkt-r-task').value || '').trim();
       if (!name) { sfx('bad'); note('give your recipe a name', 'bad'); stage.querySelector('#mkt-r-name').focus(); return; }
       if (!task) { sfx('bad'); note('write the directive your agent should run', 'bad'); stage.querySelector('#mkt-r-task').focus(); return; }
-      syncParamsFromDOM();
+      syncParamsFromDOM(); syncStepsFromDOM(); syncAcceptFromDOM();
       const explicit = editParams.filter(p => p.key).map(paramOut);
+      // an acceptance row that is still blank (no path / no command) is not a check — drop it rather than save a
+      // row recipes.js would discard anyway, so the author never sees a phantom "◇ 1 check".
+      const accepts = editAcceptance.filter(a => (a.type === 'verification_passed' ? a.command : a.path));
       const rec = {
         name, emoji: (stage.querySelector('#mkt-r-emoji').value || '✦').trim() || '✦',
         tagline: (stage.querySelector('#mkt-r-tag').value || '').trim(), task,
         gear: editGear.slice(), cadence: editCadence, category: editCategory,
-        params: explicit   // empty → normCustom derives from the template tokens
+        params: explicit,   // empty → normCustom derives from the template tokens
+        steps: editSteps.slice(), acceptance: accepts
       };
       // provenance: an EDIT keeps its id (and its existing source); a FORK stamps source:'fork' + forkedFrom.
       if (editing) rec.id = editing.id;
