@@ -132,6 +132,11 @@
     // injected host tz (G4.1): a tz-LESS cron schedule is planned on this LOCAL wall-clock; a schedule's
     // own tz always wins. A string dep — the pure cron-math owns the Intl formatting, so this stays clean.
     const defaultTz = d.defaultTz != null ? d.defaultTz : null;
+    // CONSECUTIVE-FAILURE AUTO-DISABLE ceiling (host-injected from SKYNET_CRON_MAX_CONSECUTIVE_FAILURES; 0 = off).
+    const maxConsecutiveFailures = (function () {
+      const n = parseInt(d.maxConsecutiveFailures, 10);
+      return Number.isFinite(n) && n >= 0 ? n : cronStore.DEFAULT_MAX_CONSECUTIVE_FAILURES;
+    })();
     /* THE WORK LINE, for scheduled work. A routine fires at ONE dock; if the Commander drew stages past that
        dock, those stages are the routine — "every morning research it, then write it up" is the shape people
        actually want from a floor. Optional: absent, a fire is a single run exactly as before. Called AFTER the
@@ -236,7 +241,7 @@
             reason: state.reason || (ok ? 'done' : 'error'),
             error: errMsg || undefined, transient: transient, output: ok ? reply : undefined, usd: state.usd || 0,
             monitorHash: ok ? state.monitorHash : undefined
-          }, { now: at });
+          }, { now: at, maxConsecutiveFailures: maxConsecutiveFailures });
           committed = setJobs(next) !== false;
         } catch (_) { committed = false; }
         if (!committed) {
@@ -253,7 +258,15 @@
       }
       // job-level outcome: a FAILED run always reports (never silent); SILENT only on a clean, exactly-"[SILENT]" reply.
       const outcome = !ok ? 'failed' : (reply === SILENT_MARKER ? 'silent' : 'ok');
-      const baseReason = state.reason || (errMsg ? 'error' : 'done');
+      let baseReason = state.reason || (errMsg ? 'error' : 'done');
+      // AUTO-PAUSE telemetry: when THIS settlement tripped the consecutive-failure ceiling the job is now
+      // disabled — say so on the governed reason string (the payload shape is unchanged; reason is free text).
+      if (owned && committed) {
+        const settled = cronStore.getJob(getJobs(), jobId);
+        if (settled && settled.enabled === false && settled.disabledReason === 'consecutive-failures' && (settled.disabledAt === iso(at))) {
+          baseReason = baseReason + ' (paused: consecutive-failures x' + settled.consecutiveFailures + ')';
+        }
+      }
       if (!owned || committed) try { emit('cron.result', { jobId: jobId, runId: runId, outcome: outcome, reason: owned ? baseReason : (baseReason + ' (stale-lease)') }); } catch (_) {}
       const continueAfterCommit = !(owned && committed && afterFinalizationCommitted && afterFinalizationCommitted(cronStore.getJob(getJobs(), jobId)) === false);
       if (owned && committed && continueAfterCommit) {
@@ -576,6 +589,22 @@
         }
         // prune dedupe entries for jobs that vanished (removed) so the map can't grow unbounded over a long run.
         for (const id of Array.from(disabledNotified.keys())) if (!seen.has(id)) disabledNotified.delete(id);
+      }
+
+      // 1c. MALFORMED-SCHEDULE VISIBILITY: planTick silently ignores a job whose schedule can never fire, so a
+      //     routine with a corrupt/unknown schedule kind looked merely "idle" forever. Mark it ONCE (the durable
+      //     lastError sentinel is the dedup key — markUnfireable returns the same array when already marked)
+      //     and emit ONE cron.result{failed, schedule-unfireable} on the marking transition only.
+      {
+        const before = getJobs();
+        for (const job of before.slice()) {
+          if (!job || job.enabled === false || cron.isFireable(job.schedule)) continue;
+          if (job.lastError === cronStore.UNFIREABLE_ERROR) continue;
+          let marked = false;
+          try { const next = cronStore.markUnfireable(getJobs(), job.id, { now: nowMs }); marked = next !== getJobs() && setJobs(next) !== false; }
+          catch (e) { failNote('cron.markUnfireable', e); }
+          if (marked) try { emit('cron.result', { jobId: job.id, runId: newId(), outcome: 'failed', reason: cronStore.UNFIREABLE_ERROR }); } catch (_) {}
+        }
       }
 
       // 2. the PURE plan: which jobs fire / are fast-forward-skipped, and the advanced next-fires to persist.

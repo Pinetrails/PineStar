@@ -545,7 +545,17 @@
       // recurring (interval or cron)
       const lateness = now - dueAt;
       if (lateness <= computeGraceMs(sched, dueAt, defaultTz)) {
-        const nextAt = nextRecurringAt(sched, now, defaultTz);
+        // DRIFT FIX: an INTERVAL advances from the SCHEDULED instant (dueAt + k*period, smallest k that lands
+        // in the future), never from the tick instant — anchoring on `now` walked an hourly routine later by
+        // up to one tick per fire. A cron schedule is wall-clock-anchored already, so `now` is exact for it.
+        let nextAt = null;
+        if (sched.kind === 'interval') {
+          const p = periodMs(sched);
+          if (p <= 0) continue;
+          nextAt = dueAt + (Math.floor(lateness / p) + 1) * p;
+        } else {
+          nextAt = nextRecurringAt(sched, now, defaultTz);
+        }
         if (nextAt == null) continue;
         fire.push({ jobId: job.id, scheduledFor: dueAt });
         next.push({ jobId: job.id, nextAt: nextAt, prevAt: dueAt });
@@ -592,6 +602,7 @@
     misfirePolicy: misfirePolicy,
     periodMs: periodMs,
     isValidTz: isValidTz,
+    isFireable: isFireable,
     _internals: {
       normalizeUnit: normalizeUnit,
       humanDuration: humanDuration,

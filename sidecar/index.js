@@ -649,6 +649,8 @@ const CRON_HOST_TZ = (function () {
 const CRON_MAX_RUN_MS = num(ENV('CRON_MAX_RUN_MS'), 480000);   // operational lease/timeout, independent of user-work quotas
 // Optional routine-specific concurrency ceiling. The station-wide opt-in agent ceiling still applies.
 const CRON_MAX_PARALLEL = num(ENV('CRON_MAX_PARALLEL'), 0);
+// terminal failures IN A ROW before a recurring routine auto-pauses (0 = never). Default 5.
+const CRON_MAX_CONSECUTIVE_FAILURES = num(ENV('CRON_MAX_CONSECUTIVE_FAILURES'), 5);
 // NS-0 LEASE HEARTBEAT knobs. The lease sweep + one-shot fireClaim now reclaim on a STALE HEARTBEAT rather than a
 // fixed wall-clock age, so a genuinely-long run that keeps emitting progress fires exactly once (the duplicate-fire
 // fix). CRON_STALENESS_MULT scales maxRunMs into the no-heartbeat staleness ceiling (default 1 = pre-NS-0 timing for
@@ -733,7 +735,9 @@ function quarantineCorrupt(file, tag) {
     const dest = file + '.corrupt-' + process.pid + '-' + (++_quarantineSeq);
     fs.renameSync(file, dest);
     console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered from .bak — quarantined to ' + dest + ' and loading empty (data NOT silently wiped).');
+    return dest;
   } catch (e) { console.error('[' + (tag || 'store') + '] CORRUPT store ' + file + ' could not be recovered and could not be quarantined:', (e && e.message) || e); }
+  return null;
 }
 // load a single-file JSON store with last-known-good recovery; returns undefined for absent/corrupt.
 function loadResilient(file, tag) {
@@ -4120,16 +4124,35 @@ function disabledCapsSet() {
    unconditionally (cheap, no I/O), but it only ever runs when the boot block below arms the timer behind the
    SKYNET_CRON_ENABLED gate — so with cron off this is dead weight, never a behavior change. ---- */
 const CRON_FILE = path.join(WORKSPACES, 'cron.jobs.json');
+/* DEGRADED STORE (EMPTY-STORE FAIL-LOUD): when cron.jobs.json AND its .bak are BOTH unreadable the old path
+   loaded an empty list behind a console warn, and the next write persisted the wipe as if it were truth. Now
+   the corrupt main is quarantined (as before) AND the sidecar remembers it is DEGRADED: { quarantinePath, since }.
+   While degraded: the scheduler does NOT tick (a boot reconcile over a phantom-empty list must not fire or
+   advance anything), any write that would persist an EMPTY envelope is refused unless the caller passes an
+   explicit override (POST /api/cron/degraded/clear), and GET /api/cron + the ROUTINES panel show the state.
+   A write that ADDS a routine is allowed (it cannot destroy what is already gone) but the flag stays until
+   the Commander acknowledges it or restores the quarantined file and restarts. Sticky for the process. */
+let cronDegraded = null;
+let cronJobs = [];
 function loadCronJobs() {
   try {
-    const raw = loadResilient(CRON_FILE, 'cron');   // missing -> empty; torn/corrupt main -> recover .bak or quarantine loudly
-    return cronStore.loadEnvelope(raw).jobs;
+    const r = readJsonResilient({ fs: fs }, CRON_FILE);
+    if (r.status === 'recovered') console.warn('[cron] recovered ' + CRON_FILE + ' from .bak last-known-good after a torn/corrupt main.');
+    else if (r.status === 'corrupt') {
+      const dest = quarantineCorrupt(CRON_FILE, 'cron');
+      if (!cronDegraded) cronDegraded = { quarantinePath: dest || null, since: new Date().toISOString() };
+      console.error('[cron] store DEGRADED — routines frozen until acknowledged (POST /api/cron/degraded/clear) or the quarantined file is restored.');
+    } else if (r.status === 'unreadable') {
+      console.error('[cron] ' + CRON_FILE + ' exists but is unreadable (' + ((r.err && r.err.code) || r.err) + ') — keeping the in-memory list, not treating as empty.');
+      if (Array.isArray(cronJobs)) return cronJobs;
+    }
+    return cronStore.loadEnvelope((r.status === 'ok' || r.status === 'recovered') ? r.value : undefined).jobs;
   } catch (e) {
     console.warn('[cron] load failed:', (e && e.message) || e);
-    return [];
+    return Array.isArray(cronJobs) ? cronJobs : [];
   }
 }
-let cronJobs = loadCronJobs();
+cronJobs = loadCronJobs();
 /* W6 ONE-TIME SWEEP — on boot, collapse any accidental double-mints (jobs identical in agentId + normalized name
    + prompt), keeping the OLDEST, logging each removal plainly. This cleans up the pre-fix duplicate "ULTRON daily
    operating loop" pair the mint gate now prevents going forward. Only ever removes a true exact-triple dup, never
@@ -4144,6 +4167,7 @@ let cronJobs = loadCronJobs();
     }
   } catch (e) { console.warn('[mint] sweep failed:', (e && e.message) || e); }
 })();
+let _cronWriteOverride = false;   // set ONLY inside clearCronDegraded() for the one acknowledged empty write
 function saveCronJobs() {   // throws on failure (the CRUD routes let it surface); the driver's setJobs catches+logs
   // G4.2: crash-SAFE persistence. The advance-before-run window (cron-driver persists the ADVANCED nextRunAt
   // BEFORE launching a fire) is the one place a lost/zero-length write would DOUBLE-FIRE a routine on restart,
@@ -4152,6 +4176,11 @@ function saveCronJobs() {   // throws on failure (the CRUD routes let it surface
   // durability the ledger/runs appends already get; the protected-state helper also snapshots the prior good
   // envelope to cron.jobs.json.bak before replacing main, so a torn/corrupt main never boots as amnesiac.
   const intended = cronStore.toEnvelope(cronJobs);
+  // DEGRADED GUARD: never persist an EMPTY envelope over a quarantined store without an explicit override —
+  // that write is exactly how a recoverable corruption became a permanent, silent wipe.
+  if (cronDegraded && intended.jobs.length === 0 && !_cronWriteOverride) {
+    throw new Error('cron store is degraded (quarantined ' + (cronDegraded.quarantinePath || 'unknown') + '); refusing to persist an empty routine list — restore the file or POST /api/cron/degraded/clear to accept the loss');
+  }
   const proofText = JSON.stringify(intended);
   const saved = saveJsonVerified({
     save: () => saveResilient(CRON_FILE, intended),
@@ -4592,7 +4621,7 @@ const cronDriver = makeCronDriver({
   getKey: (provider) => cronKeyFor(provider),
   providerForJob: (job) => cronProviderFor(job),
   hasCredential: (provider, key) => cronHasCredential(provider, key),
-  defaultModel: CRON_DEFAULT_MODEL, maxRunMs: CRON_MAX_RUN_MS,
+  defaultModel: CRON_DEFAULT_MODEL, maxRunMs: CRON_MAX_RUN_MS, maxConsecutiveFailures: CRON_MAX_CONSECUTIVE_FAILURES,
   // NS-0 lease heartbeat: reclaim on stale-heartbeat, not fixed wall-clock age (a live long run fires exactly once).
   heartbeatStaleMs: CRON_HEARTBEAT_STALE_MS, stalenessMult: CRON_STALENESS_MULT, durableHeartbeatMs: CRON_DURABLE_HEARTBEAT_MS,
   maxParallel: CRON_MAX_PARALLEL,                          // G4.4 global concurrency cap: at most N cron runs in-flight; the rest defer
@@ -4697,6 +4726,12 @@ let cronTimer = null;
 const cronHealth = { lastTickAt: null, lastSuccessAt: null, lastTickError: null };
 function cronTickHealthy() {
   cronHealth.lastTickAt = Date.now();
+  if (cronDegraded) {
+    // a degraded store must not tick: the list in RAM is a phantom of what was on disk, and a reconcile over
+    // it would fire/advance/settle against state that no longer exists. Honest health: an error, not idle.
+    cronHealth.lastTickError = 'cron store degraded — routines frozen (quarantined ' + (cronDegraded.quarantinePath || 'unknown') + ')';
+    return { ran: false, degraded: true };
+  }
   try {
     const r = cronLock.withLock(() => cronDriver.applyTick(Date.now()));
     cronHealth.lastSuccessAt = Date.now();
@@ -5873,7 +5908,7 @@ function armCron() {
   // boot reconcile UNDER the lock. If we do NOT acquire, another live sidecar (or a not-yet-reclaimed lock) holds
   // it — surface that instead of silently muting the boot catch-up (the pid-check now reclaims a crash-dead holder
   // immediately, so a persistent not-acquired here means a genuinely LIVE peer, which is worth a log line).
-  try { const r = cronTickHealthy(); if (r && !r.ran) console.warn('[cron] boot reconcile skipped — cron.lock held by another live process (no catch-up tick this boot)'); }
+  try { const r = cronTickHealthy(); if (r && r.degraded) console.error('[cron] boot reconcile SKIPPED — store degraded; no routine will fire until acknowledged'); else if (r && !r.ran) console.warn('[cron] boot reconcile skipped — cron.lock held by another live process (no catch-up tick this boot)'); }
   catch (e) { console.warn('[cron] reconcile error:', (e && e.message) || e); }
   cronTimer = setInterval(() => { try { cronTickHealthy(); } catch (e) { console.warn('[cron] tick error:', (e && e.message) || e); } }, CRON_TICK_MS);
   if (cronTimer.unref) cronTimer.unref();   // the http server keeps the process alive; the ticker alone shouldn't
@@ -8416,6 +8451,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/cron/remove', h: handleCronRemove },
   { m: 'POST', exact: '/api/cron/preview', h: handleCronPreview },
   { m: 'POST', exact: '/api/cron/arm', h: handleCronArm },
+  { m: 'POST', exact: '/api/cron/degraded/clear', h: handleCronDegradedClear },
   { m: 'POST', exact: '/api/cron/run', h: handleCronRun },
   // ---- LOOPS (standing objectives): the review gate is /verdict, and it is also the loop's trigger ----
   { m: 'GET', exact: '/api/loops', h: handleLoopsList },
@@ -10267,7 +10303,9 @@ function cronStateSnapshot(now) {
   };
   // `halted` (additive, Lane 4D): the durable E-STOP stand-down — enabled records the user's arm INTENT while
   // halted says the timer is frozen anyway, so the panel can say "paused by E-STOP" instead of a false "armed".
-  return { jobs: cronJobs, enabled: cronArmed, halted: cronHalted, tickMs: CRON_TICK_MS, health: health };
+  return { jobs: cronJobs, enabled: cronArmed, halted: cronHalted, tickMs: CRON_TICK_MS, health: health,
+    degraded: cronDegraded ? { quarantinePath: cronDegraded.quarantinePath, since: cronDegraded.since } : null,
+    maxConsecutiveFailures: CRON_MAX_CONSECUTIVE_FAILURES };
 }
 
 function handleCronList(req, res) {
@@ -10491,6 +10529,27 @@ function handleCronArm(req, res) {
     cronArmed = want;                                  // live in-memory state (GET /api/cron reflects this)
     if (want) armCron(); else disarmCron();            // start/stop the live tick NOW — a due job fires within one tick
     json(200, { ok: true, enabled: cronArmed, halted: cronHalted, tickMs: CRON_TICK_MS });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/cron/degraded/clear — the EXPLICIT override for a degraded store. body: { confirm: true }. Accepts
+// the loss: persists whatever is in RAM (possibly empty) as the new truth, clears the degraded flag, and lets
+// the scheduler tick again. The quarantined file is left on disk for manual recovery.
+function handleCronDegradedClear(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  readBody(req, 4096).then(async raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    if (body.confirm !== true) return json(400, { error: 'confirm:true is required to accept the loss of the quarantined routine store' });
+    if (!cronDegraded) return json(200, { ok: true, degraded: null });
+    const was = cronDegraded;
+    try {
+      _cronWriteOverride = true;
+      try { await withCronWrite(jobs => jobs); } finally { _cronWriteOverride = false; }
+    } catch (e) { return json(500, { error: 'could not persist: ' + ((e && e.message) || e) }); }
+    cronDegraded = null;
+    cronHealth.lastTickError = null;
+    console.warn('[cron] degraded store ACKNOWLEDGED by the Commander — quarantined copy left at ' + (was.quarantinePath || 'unknown'));
+    json(200, { ok: true, degraded: null, quarantinePath: was.quarantinePath || null });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
 

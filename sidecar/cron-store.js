@@ -53,6 +53,7 @@
   'use strict';
 
   const ENVELOPE_VERSION = 1;
+  const DEFAULT_MAX_CONSECUTIVE_FAILURES = 5;   // terminal failures in a row before a recurring job auto-pauses
   const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;      // a single safe path component (matches index.js agentId guard)
   const iso = cron._internals.iso;            // ms(arg) -> ISO; deterministic (no zero-arg new Date)
 
@@ -288,13 +289,18 @@
   }
 
   function pauseJob(jobs, id) {
-    return mapJob(jobs, id, (job) => Object.assign({}, job, { enabled: false, state: 'paused' }));
+    return mapJob(jobs, id, (job) => Object.assign({}, job, { enabled: false, state: 'paused', disabledReason: 'paused', disabledAt: null }));
   }
 
   function resumeJob(jobs, id, ctx) {
     const now = (ctx && ctx.now) || 0;
     return mapJob(jobs, id, (job) =>
-      Object.assign({}, job, { enabled: true, state: 'scheduled', nextRunAt: armAt(job.schedule, null, now, ctx && ctx.defaultTz) }));
+      Object.assign({}, job, {
+        enabled: true, state: 'scheduled', nextRunAt: armAt(job.schedule, null, now, ctx && ctx.defaultTz),
+        // a deliberate re-enable forgives the failure streak: the counter restarts from zero and the
+        // auto-disable reason is cleared (otherwise one more failure would re-pause it instantly).
+        consecutiveFailures: 0, disabledReason: null, disabledAt: null
+      }));
   }
 
   /* triggerJob — make a job DUE on the very next scheduler tick, without running it inline.
@@ -414,6 +420,19 @@
     });
   }
 
+  /* markUnfireable — a job whose schedule can never fire (malformed/unknown kind). Idempotent: the mark is
+     applied ONCE (the lastError sentinel is the durable dedup key) so a tick never re-writes it. Returns the
+     same array reference when nothing changed, so the host can tell "marked now" from "already marked". */
+  const UNFIREABLE_ERROR = 'schedule-unfireable';
+  function markUnfireable(jobs, id, ctx) {
+    ctx = ctx || {};
+    const cur = getJob(jobs, id);
+    if (!cur || cur.lastError === UNFIREABLE_ERROR) return jobs;
+    return mapJob(jobs, id, (job) => Object.assign({}, job, {
+      lastStatus: 'error', lastError: UNFIREABLE_ERROR, state: 'error', lastErrorAt: iso(ctx.now || 0)
+    }));
+  }
+
   function setNotepad(jobs, id, text, ctx) {
     ctx = ctx || {};
     return mapJob(jobs, id, (job) => Object.assign({}, job, {
@@ -438,6 +457,7 @@
     const now = ctx.now || 0;
     const maxRetries = ctx.maxRetries != null ? ctx.maxRetries : 3;
     const backoffMs = ctx.backoffMs != null ? ctx.backoffMs : 90000;
+    const maxConsecutive = ctx.maxConsecutiveFailures != null ? ctx.maxConsecutiveFailures : DEFAULT_MAX_CONSECUTIVE_FAILURES;
     return mapJob(jobs, id, (job) => {
       const ok = result.status === 'ok';
       const isOnce = !!(job.schedule && job.schedule.kind === 'once');
@@ -478,6 +498,8 @@
         destination: String(job.deliver || 'local'), committedAt: iso(now), attempts: 0
       };
       next.retryCount = 0;
+      // CONSECUTIVE-FAILURE COUNTER (durable): terminal failures in a row; any ok/silent settlement resets it.
+      next.consecutiveFailures = ok ? 0 : ((Number(job.consecutiveFailures) || 0) + 1);
       next.lastRunAt = iso(now);
       next.repeat = Object.assign({}, job.repeat, { completed: ((job.repeat && job.repeat.completed) || 0) + 1 });
       const exhausted = next.repeat.times != null && next.repeat.completed >= next.repeat.times;
@@ -491,6 +513,17 @@
       // recurring continues
       if (ok) {
         next.state = 'scheduled';              // nextRunAt left as planTick advanced it (advance-before-run)
+      } else if (maxConsecutive > 0 && next.consecutiveFailures >= maxConsecutive) {
+        // AUTO-DISABLE: N terminal failures in a row means the routine is broken, not unlucky — re-arming it
+        // forever would spend forever. Pause it durably with a governed reason; the finalization (which rides
+        // the normal delivery path) tells the Commander, and resumeJob clears the streak on re-enable.
+        next.enabled = false;
+        next.nextRunAt = null;
+        next.state = 'error';
+        next.disabledReason = 'consecutive-failures';
+        next.disabledAt = iso(now);
+        next.finalization.error = String(next.finalization.error || 'The run failed.')
+          + '\n\nRoutine paused after ' + next.consecutiveFailures + ' consecutive failures. Fix it, then re-enable it from ROUTINES.';
       } else {
         next.nextRunAt = armAt(job.schedule, next.lastRunAt, now, ctx && ctx.defaultTz) || job.nextRunAt;  // re-arm defensively
         next.state = 'error';                  // visible, but enabled stays true
@@ -527,6 +560,9 @@
     clearBlockedConfig: clearBlockedConfig,
     markMonitorCheck: markMonitorCheck,
     setNotepad: setNotepad,
+    markUnfireable: markUnfireable,
+    UNFIREABLE_ERROR: UNFIREABLE_ERROR,
+    DEFAULT_MAX_CONSECUTIVE_FAILURES: DEFAULT_MAX_CONSECUTIVE_FAILURES,
     removeJob: removeJob,
     getJob: getJob,
     loadEnvelope: loadEnvelope,
