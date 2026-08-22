@@ -1854,6 +1854,23 @@ const Build = (() => {
     let trgDock = (entryDocks[0] || docks[0] || {}).agentId || null;
     const dockChip = b => '<button type="button" class="bb sm trg-dock' + (b.agentId === trgDock ? ' active' : '') + '" data-aid="' + esc(b.agentId) + '">'
       + esc((b.role ? b.role + ' · ' : '') + agentLabelFor(b.agentId)) + '</button>';
+    /* the line's STAGE ORDER, read off the compiled plan (entry docks first, then each dock's chain `next`),
+       so the FIRES AT picker can say which stages a later dock SKIPS — a routine that fires at dock 3 runs
+       the line FROM dock 3; stages 1–2 never see that work. Docks the plan can't place trail in bay order. */
+    const dockOrder = (() => {
+      const ids = docks.map(b => b.agentId), seen = {}, out = [];
+      const q = entryDocks.map(b => b.agentId);
+      const chains = (valPlan && valPlan.chains) || {};
+      while (q.length) { const a = q.shift(); if (seen[a] || ids.indexOf(a) < 0) continue; seen[a] = true; out.push(a); for (const n of ((chains[a] && chains[a].next) || [])) q.push(n); }
+      for (const a of ids) if (!seen[a]) { seen[a] = true; out.push(a); }
+      return out;
+    })();
+    const dockHint = aid => {
+      const i = dockOrder.indexOf(aid);
+      const skipped = i > 0 ? dockOrder.slice(0, i) : [];
+      if (!skipped.length) return 'starts at the first dock — the whole line runs, ' + docks.length + ' stage' + (docks.length === 1 ? '' : 's');
+      return 'skips ' + skipped.map(a => agentLabelFor(a)).join(' and ') + ' — the line runs from ' + agentLabelFor(aid) + ' on (' + (docks.length - i) + ' of ' + docks.length + ' stages)';
+    };
     const trgHtml = isIntake
       ? '<div class="refit-sec">TRIGGERS — WHY THIS LINE RUNS</div>'
         // WORK BELONGS TO A LINE (2026-08-07): the trigger zone is where the Commander decides WHY this line
@@ -1885,6 +1902,7 @@ const Build = (() => {
           + '<div class="trg-preview" id="trg-preview"></div>'
           + (docks.length > 1
               ? '<div class="refit-sec">FIRES AT</div><div class="refit-agents" id="trg-docks">' + docks.map(dockChip).join('') + '</div>'
+                + '<div class="step-fact trg-dock-hint" id="trg-dock-hint">' + esc(dockHint(trgDock)) + '</div>'
               : docks.length === 1
               ? '<div class="step-fact">fires at <b>' + esc((docks[0].role ? docks[0].role + ' · ' : '') + agentLabelFor(docks[0].agentId)) + '</b> — this line’s ' + (entryDocks.length ? 'entry dock' : 'dock') + '</div>'
               : '<div class="refit-note">crew a dock first — a routine fires at an agent</div>')
@@ -1973,10 +1991,14 @@ const Build = (() => {
         : String(d == null ? '' : d));
       // the channel/routine FEED TRUTH — the same World.feedState the NO FEED nag keys on. Floor-global by
       // construction (that is what the server proves), said in floor-global words.
-      const feed = (opts && opts.world && opts.world.feedState) ? opts.world.feedState() : { known: false, fed: false };
-      feedEl.innerHTML = !feed.known ? 'CHANNEL FEED — checking the wires…'
-        : feed.fed ? '<b>✓ FED</b> — a channel or an armed routine is wired to drop work on this floor'
-        : '<b>NO FEED</b> — nothing is wired to drop work here yet';
+      const paintFeed = () => {
+        const feed = (opts && opts.world && opts.world.feedState) ? opts.world.feedState() : { known: false, fed: false };
+        if (!feedEl.isConnected) return;
+        feedEl.innerHTML = !feed.known ? 'CHANNEL FEED — checking the wires…'
+          : feed.fed ? '<b>✓ FED</b> — a channel or an armed routine is wired to drop work on this floor'
+          : '<b>NO FEED</b> — nothing is wired to drop work here yet';
+      };
+      paintFeed();
       // routines targeting THIS line's dock agents — straight off the cron store, name + schedule + state
       function trgRefresh() {
         listEl.innerHTML = '<span class="dim">reading routines…</span>';
@@ -2027,6 +2049,7 @@ const Build = (() => {
       g.querySelectorAll('.trg-dock').forEach(b => b.onclick = () => {
         trgDock = b.dataset.aid; sfx('click');
         g.querySelectorAll('.trg-dock').forEach(x => x.classList.toggle('active', x.dataset.aid === trgDock));
+        const hintEl = g.querySelector('#trg-dock-hint'); if (hintEl) hintEl.textContent = dockHint(trgDock);
       });
       // ONE opener, one closer: while the form is up the ⊕ button steps aside (the form's own CANCEL closes
       // it), so a card that is already tall never shows two controls for the same door.
@@ -2068,6 +2091,12 @@ const Build = (() => {
             // while it was in fact still armed on the same cadence.
             promptEl.value = '';
             trgRefresh();
+            // the routine just persisted is a FEED: re-ask the server NOW (World.pollFeed — the same poll the
+            // NO FEED nag keys on) and repaint this card's feed line, so the card, the world nag and the finish
+            // checklist stop asserting NO FEED the moment the answer lands — not on the next 60s poll / reload.
+            if (opts && opts.world && typeof opts.world.pollFeed === 'function') {
+              try { Promise.resolve(opts.world.pollFeed()).then(paintFeed).catch(() => {}); } catch (e) {}
+            }
           }).catch(() => { btn.disabled = false; sfx('bad'); say('✕ could not reach the sidecar — nothing was created', true); });
       };
       // the two doors: the SAME openers the finish card / NO FEED nag promise. Both leave REFIT (saving).
@@ -4906,7 +4935,31 @@ const Build = (() => {
     openPropEditor(propId, p.t, { clientX: (window.innerWidth / 2) | 0, clientY: 120 });   // synthetic anchor for the action tip
   }
 
-  const api = { init, open, close, toggle, isOpen, requisition, openAssign, noteLineDelivered };
+  /* lineOfAgentInfo(agentId) -> { lineId, name, docks, index, order:[agentId…] } or null (2026-08-22).
+     WHICH LINE DOES THIS DOCK'S AGENT RUN, read the way the sidecar reads it: the SAME Pipeline compile of
+     the SAME station geometry (Pipeline.lineOf is what router.lineOfAgent quotes when a runsLine routine
+     fires), never a guess from prop adjacency. The ROUTINES rows use it to say "runs the <NAME> line from
+     <dock> (N docks)" for a routine whose record carries runsLine — the line itself is looked up live, so a
+     floor edit that drops the dock honestly returns null and the row falls back to "runs as". */
+  function lineOfAgentInfo(agentId) {
+    try {
+      const st = station || (opts && typeof opts.getStation === 'function' ? opts.getStation() : null);
+      if (!st || !agentId || typeof Pipeline === 'undefined' || !Pipeline.lineComponents) return null;
+      const geo = st.projectGeometry();
+      const plan = Pipeline.compileRoutingPlan(geo);
+      const comp = (Pipeline.lineComponents(geo) || []).find(c => c.bays.some(b => b.agentId === agentId));
+      if (!comp) return null;
+      let name = null;
+      for (const iid of comp.intakes) { const ip = st.propById(iid); if (ip && ip.label) { name = ip.label; break; } }
+      const ids = comp.bays.filter(b => b.agentId).map(b => b.agentId), seen = {}, order = [];
+      const q = ids.filter(a => plan && plan.reach && plan.reach[a]);
+      const chains = (plan && plan.chains) || {};
+      while (q.length) { const a = q.shift(); if (seen[a] || ids.indexOf(a) < 0) continue; seen[a] = true; order.push(a); for (const n of ((chains[a] && chains[a].next) || [])) q.push(n); }
+      for (const a of ids) if (!seen[a]) { seen[a] = true; order.push(a); }
+      return { lineId: comp.key, name, docks: ids.length, index: order.indexOf(agentId), order };
+    } catch (e) { return null; }
+  }
+  const api = { init, open, close, toggle, isOpen, requisition, openAssign, noteLineDelivered, lineOfAgentInfo };
   if (typeof window !== 'undefined' && window.__STARNET_DEV__) api.__test__ = __test__;
   return api;
 })();
