@@ -118,7 +118,10 @@ A.ok(/jnField\('loop-max', 'MAX PASSES', 1, loopMaxCeil, 1, [^,]+, String\(loopM
 A.ok(/class="bb sm loop-exit/.test(flow) && /loopExitLabels\(valPlan/.test(flow), 'LOOP card: DONE lane picker lists the compiled plan\'s real exits');
 A.ok(/loop-when/.test(flow) && /\['code', 'CODE'\], \['research', 'RESEARCH'\], \['general', 'GENERAL'\]/.test(flow),
   'LOOP verdict tag is a pick of the ONLY tags the classifier can produce (a typed "approved" could never match)');
-A.ok(/goes round again ONLY while/.test(flow), 'the loop copy states the harness rule: the tag keeps it looping, anything else leaves on DONE');
+A.ok(/\['approved', 'APPROVED'\], \['revise', 'REVISE'\]/.test(flow) && /loop-verdict/.test(flow), 'LOOP verdict picks: APPROVED / REVISE (the words routing/verdict.js parses) sit beside the classifier tags (2026-08-22)');
+A.ok(/loopRuleTxt\(p\.when, loopMaxDef\)/.test(flow) && /loopRuleTxt\(res\.when/.test(flow), 'the card copy AND the saved-note read the ONE rule text (loopRuleTxt) — never two wordings of the gate');
+A.ok(/goes round until the reviewer’s last line says VERDICT: ' \+ when/.test(build) && /or MAX PASSES/.test(build) && /marked unapproved/.test(build), 'the verdict rule copy: round until VERDICT: <word> or MAX PASSES, then DONE marked unapproved — what chain.js runs');
+A.ok(/goes round again ONLY while the reviewer’s output reads as/.test(build), 'the classifier-tag rule copy is unchanged: the tag keeps it looping, anything else leaves on DONE');
 A.ok(/station\.configureJunction\(propId, Object\.keys\(cfg\)\.length \? cfg : null\)/.test(flow), 'gate saves go through configureJunction (the validated model path)');
 A.ok(/const closeP = \(\) => \{ saveName\(\); saveLimits\(\); saveGate\(\);/.test(flow), 'closing the flow card saves the gate config (ESC never discards it)');
 A.ok(/for \(const el of \[jnTimeout, loopMax\]\)[\s\S]{0,300}addEventListener\('blur', saveGate\)[\s\S]{0,200}e\.key === 'Enter'/.test(flow), 'number fields save on blur AND Enter');
