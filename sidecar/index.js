@@ -7169,11 +7169,17 @@ function armQuestRefresh() {
 
 /* ---- execution spine: the checkpoint rollback net (Commit 1). A per-agent shadow-git store under
    WORKSPACES/.checkpoints/<agentId>/ — a SIBLING of the fs jail, so the agent's own fs.* and shell tools can
-   neither read nor rewrite its own history. The auto-snapshot-before-a-mutating-tool hook (in dispatch) is OPT-IN
-   via SKYNET_CHECKPOINTS (default OFF = the existing run path is byte-identical) and FAIL-OPEN (a git problem
-   never breaks a run); the restore route is always available. The pure index/rollback math is checkpoint.js;
-   the git/fs is here, the one ambient-I/O edge. ---- */
-const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CHECKPOINTS') || '').trim());
+   neither read nor rewrite its own history. The auto-snapshot-before-a-mutating-tool hook (in dispatch) is ON BY
+   DEFAULT (reliability program, 2026-08-21: a rollback net nobody switched on caught nothing) and FAIL-OPEN (a git
+   problem never breaks a run); STARNET_CHECKPOINTS=0 / SKYNET_CHECKPOINTS=0 (or false/no/off) opts out. The
+   restore route is always available. The pure index/rollback math is checkpoint.js; the git/fs is here, the one
+   ambient-I/O edge. ---- */
+const CHECKPOINTS_ENABLED = checkpointsEnabledFromEnv(ENV('CHECKPOINTS'));
+function checkpointsEnabledFromEnv(raw) {
+  const v = String(raw == null ? '' : raw).trim().toLowerCase();
+  if (!v) return true;
+  return !/^(0|false|no|off)$/.test(v);
+}
 // fs.patch belongs here with the other writers: it is the WIDEST-blast-radius fs tool (multi-hunk, multi-file,
 // and the one the system prompt actively recommends over fs.edit for real edits), so leaving it out meant the
 // single most destructive tool ran with NO workspace lease and NO checkpoint snapshot — the exact combination
@@ -14918,7 +14924,7 @@ async function runOnce(o) {
       }
     }
     // CHECKPOINT NET: snapshot the workspace BEFORE a mutating tool so the turn is one rollback away. The general
-    // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
+    // fs.* net is on by default (STARNET_CHECKPOINTS=0 opts out); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
     // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
     // or a git hiccup costs nothing and never throws into the run.
     const preciseCheckpoint = /^fs\.(write|append|edit|patch)$/.test(c.name) || /^(shell\.exec|verify\.run|terminal\.(?:start|write))$/.test(c.name);

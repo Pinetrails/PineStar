@@ -443,6 +443,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const ckOk = await j('GET', '/api/checkpoint?agent=agent');
     A.eq(ckOk.status, 200, 'GET /api/checkpoint happy path stays 200');
     A.ok(Array.isArray(ckOk.body.snapshots), '/api/checkpoint 200 body carries {snapshots:[...]}');
+    A.eq(ckOk.body.enabled, true, 'checkpoints are ON by default (no STARNET_/SKYNET_CHECKPOINTS set) — Lane C5');
     // the truthful-failure branch itself (structural: the catch now reports 500, never a masking 200-empty)
     const idxSrcHonesty = fs.readFileSync(INDEX, 'utf8');
     const serveRunsSrc = idxSrcHonesty.slice(idxSrcHonesty.indexOf('function serveRuns'), idxSrcHonesty.indexOf('function serveInsights'));
