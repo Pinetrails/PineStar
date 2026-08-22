@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "92149d761b763eeeb03d24d824af93571a6bb220",
+    "sourceCommit": "4631f3a075a85a3d0d80c1b4c8fcbf05d6fd62e5",
     "pathSetSha256": "92160ff9edb3cc6cd7deb0d0e0b35e6e60cf470af43886963164d96bbfaccd50",
     "files": [
       {
@@ -128,8 +128,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 324088,
-        "sha256": "175c0f22585e27975a8c10e28c952512e1d178a3aba36702e31d392027c6583e"
+        "bytes": 328164,
+        "sha256": "90cbbc3073c50c79ddd9355f546a38d37d72d12fa2687e80cfb3459bb19a5230"
       },
       {
         "path": "frontend/app/channels.js",
@@ -138,8 +138,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 605565,
-        "sha256": "ece182f82e173e518a9713d7d009a1680bb8899151ff54c12dcdb6e29612f904"
+        "bytes": 607171,
+        "sha256": "22406ebad2b43ac71144e90841438f4183e0f1a8ceb5cd20ec8ab64a5fcd62dd"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -438,8 +438,8 @@
       },
       {
         "path": "frontend/app/pipeline.js",
-        "bytes": 51043,
-        "sha256": "c0d96a6acdb1e51ec8f8dc45fc27f0f99600b94b6567d4e6f77cf65f2ce78d1c"
+        "bytes": 55045,
+        "sha256": "97ead8d56db85d8aca8aa55cf0ef9ecf6c37e7bd25aff9746a22dd5a763533e5"
       },
       {
         "path": "frontend/app/pitch.js",
@@ -943,13 +943,13 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 687267,
-        "sha256": "41d0a604de465b5ae5e8235652390f8fe3d59c2917cb1ce67d348ea5f3125d7c"
+        "bytes": 687534,
+        "sha256": "68fdb8c1c0f7d3234921bb05bdcd11d3c7a73f8f25948580f25de8323943a7a2"
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 117034,
-        "sha256": "99a63ca7eecb12b91ddff0fc55fa990938fd99484fa3b5d6f568d02629adf1ab"
+        "bytes": 119257,
+        "sha256": "550417eb9d58a8119360da813e219b86e927387969d6e50c9afbd984c1b5c123"
       },
       {
         "path": "frontend/app/xp.js",
@@ -998,8 +998,8 @@
       },
       {
         "path": "frontend/css/refit.css",
-        "bytes": 14979,
-        "sha256": "f3fef3d794b3357badfa35643c800685782a9b7244c274928988f6d7f5ada26c"
+        "bytes": 15381,
+        "sha256": "f4d338144ab2cce50400d7d136e87a417b49c2a0cfb6c57eab00bd39e194f806"
       },
       {
         "path": "frontend/css/safety.css",
