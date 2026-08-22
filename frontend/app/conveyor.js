@@ -357,6 +357,26 @@ const Conveyor = (() => {
         if (onAdvance) onAdvance(bx, { kind: 'filter', tile: { x, y }, lane: dir, tag });
         return dir;
       }
+      if (jt.kind === 'join') {
+        // the BARRIER is performed by the sidecar chain runner (one merged crate per run leaves it as a real
+        // workitem.placed); on the floor a crate reaching the joiner simply rides on out its single exit —
+        // K in, one out is the server's doing, and the sprite's latch bar is what says so.
+        mergeFx.push({ x, y, t0: nowMs });
+        if (onAdvance) onAdvance(bx, { kind: 'join', tile: { x, y }, lane: bx.dir });
+        return null;
+      }
+      if (jt.kind === 'loop') {
+        // the gate: an addressed crate already took the owner's lane above (the runner's re-entry crate is
+        // addressed to the upstream dock, its done crate to the downstream one). An unowned crate counts its
+        // own passes: back lane while under the cap, done lane after.
+        const n = (bx.payload && bx.payload.iteration) | 0, max = jt.max || 5;
+        const done = (jt.done && lanes.indexOf(jt.done) >= 0) ? jt.done : lanes[0];
+        const back = lanes.find(d => d !== done) || null;
+        const dir = (back && n < max) ? back : done;
+        if (dir === back && bx.payload) bx.payload.iteration = n + 1;
+        if (onAdvance) onAdvance(bx, { kind: 'loop', tile: { x, y }, lane: dir, iteration: n });
+        return dir;
+      }
       if (jt.kind === 'merge') {
         // a funnel: nothing is buffered, nothing is consumed. The crate takes the belt's own direction (a
         // merge tile has exactly ONE out-lane by construction — the inbound neighbours flow INTO it, so
