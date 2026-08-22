@@ -1783,6 +1783,68 @@ const Build = (() => {
       + '<span class="flow-seg desk">DESK</span>' + ar + seg('bay', 'BAY') + ar + seg('outbox', 'OUTBOX')
       + '</div><div class="flow-note">outside work rides IN to an agent’s dock · they work it at their desk · the finished result rides OUT. (COMMS orders skip the ride in — you gave them in person.)</div></div>';
   }
+  /* REFIT-JUNCTION-PURE-BEGIN (extraction marker — test/refit-junction-cards.test.js evals this block with
+     injected deps; PURE: params + locals only, no module state, no DOM). The LOOP card's lane labels and the
+     FINISH card's sample readout are both "what does this do / did that work?" answers, and an answer that
+     lives only inside a browser IIFE is an answer no test can hold to the truthful-telemetry law. */
+  /* a LOOP gate's exits, labelled by DIRECTION and by WHAT THEY LEAD TO — read off the compiled plan (local
+     frame), never guessed from geometry. Walks each out-lane along the belts to the first machine it meets:
+     a dock (-> "to WRITER"), an OUTBOX mouth (-> "OUTBOX"), another junction (-> "a FILTER"), its own tile
+     again (-> "round again"), or nothing (-> "nowhere yet"). `nameOf(agentId)` supplies display names. */
+  function loopExitLabels(plan, tile, nameOf) {
+    const out = [];
+    if (!plan || !plan.belts || !tile) return out;
+    const DIRV = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] }, OPP = { E: 'W', W: 'E', S: 'N', N: 'S' };
+    const map = plan.belts, bayAt = plan.bayTileToAgent || {}, junctions = plan.junctions || {};
+    const outs = {}; for (const o of (plan.outs || [])) if (o && o.tile) outs[o.tile.x + ',' + o.tile.y] = true;
+    const KIND = { split: 'SPLITTER', merge: 'MERGER', join: 'JOINER', loop: 'LOOP', filter: 'FILTER' };
+    const home = tile.x + ',' + tile.y;
+    for (const d of ['E', 'S', 'W', 'N']) {
+      const v = DIRV[d], nb = map[(tile.x + v[0]) + ',' + (tile.y + v[1])];
+      if (!nb || nb === OPP[d]) continue;                       // not an out-lane (no belt, or it flows back in)
+      let t = { x: tile.x + v[0], y: tile.y + v[1] }, to = 'nowhere yet', kind = 'none', guard = 0;
+      const seen = {};
+      while (t && guard++ < 4096) {
+        const k = t.x + ',' + t.y;
+        if (k === home) { to = 'round again'; kind = 'self'; break; }
+        if (bayAt[k]) { to = 'to ' + String(nameOf ? nameOf(bayAt[k]) : bayAt[k]).toUpperCase(); kind = 'bay'; break; }
+        if (outs[k]) { to = 'OUTBOX'; kind = 'outbox'; break; }
+        if (junctions[k]) { to = 'a ' + (KIND[junctions[k].kind] || 'JUNCTION'); kind = 'junction'; break; }
+        if (seen[k]) break;
+        seen[k] = true;
+        const dir = map[k]; if (!dir) break;                    // hookups + mouths are belt tiles, so off-belt = the lane ends
+        const w = DIRV[dir]; t = { x: t.x + w[0], y: t.y + w[1] };
+      }
+      out.push({ dir: d, to: to, kind: kind, label: d + ' → ' + to });
+    }
+    return out;
+  }
+  // the sentence under the DONE picker: which exit is the BACK lane (the other one) and where it re-enters
+  function loopBackTxt(exits, done) {
+    const back = (exits || []).find(x => x.dir !== done) || null;
+    if (!back) return 'no BACK lane yet — the gate needs a second exit that leads upstream, or nothing goes round';
+    if (back.kind === 'bay') return 'BACK lane: ' + back.label + ' — the crate re-enters the line there';
+    return 'BACK lane: ' + back.label + ' — a back lane must lead to an upstream dock';
+  }
+  /* the sample run's readout — ONLY what the server's answer proves. `resp` = the parsed JSON of
+     POST /api/routing/sample (200 or 502 carry the same fields; a 409 carries only {ok,error}); `status`
+     = the HTTP status; `nameOf(agentId)` = display name. Returns { ok, stages:[names], usd, reply, reason }:
+     stages = the recorded runs in line order (the route lists them newest-first), usd = the summed real
+     cost, reply = the first ~80 chars of what the line delivered (the last stage's reply). */
+  function sampleResultView(resp, status, nameOf) {
+    const r = (resp && typeof resp === 'object') ? resp : {};
+    const runs = Array.isArray(r.runs) ? r.runs.slice().reverse() : [];
+    const stages = runs.map(x => String(nameOf ? nameOf(x.agentId) : x.agentId)).filter(Boolean);
+    const usd = (typeof r.totalUsd === 'number' && isFinite(r.totalUsd)) ? r.totalUsd : null;
+    const replies = Array.isArray(r.replies) ? r.replies : [];
+    const last = replies.length ? String(replies[replies.length - 1] || '') : '';
+    const clean = last.replace(/\s+/g, ' ').trim();
+    const reply = clean.length > 80 ? clean.slice(0, 80) + '…' : clean;
+    const ok = !!r.ok && !!r.delivered;
+    const reason = ok ? null : (r.error ? String(r.error) : ('sample refused (HTTP ' + (status == null ? '?' : status) + ')'));
+    return { ok: ok, stages: stages, usd: usd, reply: reply, reason: reason };
+  }
+  /* REFIT-JUNCTION-PURE-END */
   function openFlowCard(propId) {
     if (!root) return;
     const p = station.propById(propId); if (!p) return;
@@ -1836,6 +1898,48 @@ const Build = (() => {
         + limField('lb-msg', 'maxUsdPerMessage', '$ per message, whole line', LD.maxUsdPerMessage.toFixed(2), '0.05')
         + limField('lb-day', 'maxUsdPerDay', '$ per day, this line', 'off', '0.50')
         + '<div class="refit-note lb-note" id="lb-note">' + esc(lbDefaultNote) + '</div>'
+      : '';
+    /* JOINER / LOOP GATE CONFIG (2026-08-22): the two junctions that carry numbers had cards that only
+       DESCRIBED them ("10 minutes at most", "up to 5 times") with no way to set either — every number
+       the copy quoted was a default the Commander could not reach. Both ride the prop exactly like a
+       filter's routes (station.configureJunction -> applyJunctionCfg whitelist: timeoutMin 1..120,
+       maxIter 1..20, done = an out-lane dir, when = a verdict tag) and COMPILE INTO plan.junctions —
+       which is inside plan.hash — so an edit re-POSTs the plan on its own; nothing is added to the
+       poster key. The numbers shown are the ones in force (the compiler's defaults fill the blanks). */
+    const isJoiner = p.t === 'joiner', isLoop = p.t === 'loop';
+    const jnField = (id, label, min, max, step, val, ph) => '<label class="refit-field lb-field" for="' + id + '">' + label
+      + '<input id="' + id + '" class="refit-num lb-num" type="number" min="' + min + '" max="' + max + '" step="' + step + '" placeholder="' + esc(ph) + '" value="' + esc(val) + '" /></label>';
+    const joinerHtml = isJoiner
+      ? '<div class="refit-sec">TIMEOUT — PARTIAL RELEASE</div>'
+        + jnField('jn-timeout', 'minutes to wait for a late branch', 1, 120, 1, p.timeoutMin ? String(p.timeoutMin) : '', '10')
+        + '<div class="refit-note" id="jn-note">if a branch has not delivered after this long, the crate goes on with the branches that did arrive, marked PARTIAL — so one stuck lane never stalls the line. blank = 10 · 1–120 — saved on Enter / blur</div>'
+      : '';
+    // LOOP: the gate's REAL exits, read off the compiled plan in its local frame (junctionBeltTile = the
+    // compiler's attach tile), each labelled by direction AND destination ("E → OUTBOX" / "S → to WRITER").
+    const loopJt = isLoop ? junctionBeltTile(p) : null;
+    const loopO = (cacheGeo && cacheGeo.origin) || { tx: 0, ty: 0 };
+    const loopExits = (isLoop && loopJt) ? loopExitLabels(valPlan, { x: loopJt.x - loopO.tx, y: loopJt.y - loopO.ty }, agentLabel) : [];
+    const loopMaxDef = (typeof Pipeline !== 'undefined' && Pipeline.LOOP_MAX_DEFAULT) || 5;
+    const loopMaxCeil = (typeof Pipeline !== 'undefined' && Pipeline.LOOP_MAX_CEILING) || 20;
+    const loopDoneCur = (p.done && loopExits.some(x => x.dir === p.done)) ? p.done : (loopExits[0] ? loopExits[0].dir : null);
+    const loopHtml = isLoop
+      ? '<div class="refit-sec">DONE LANE — WHERE THE CRATE LEAVES</div>'
+        + (loopExits.length
+            ? '<div class="refit-agents loop-exits" id="loop-exits">' + loopExits.map(x => '<button type="button" class="bb sm loop-exit' + (x.dir === loopDoneCur ? ' active' : '') + '" data-dir="' + x.dir + '">'
+                + esc(x.label) + '</button>').join('') + '</div>'
+              + '<div class="step-fact" id="loop-back">' + esc(loopBackTxt(loopExits, loopDoneCur)) + '</div>'
+            : '<div class="refit-note bad">lay belts OUT of this gate first — it needs two exits: one onward, one back</div>')
+        + '<div class="refit-sec">HOW MANY TIMES ROUND</div>'
+        + jnField('loop-max', 'MAX PASSES', 1, loopMaxCeil, 1, p.maxIter ? String(p.maxIter) : '', String(loopMaxDef))
+        /* the verdict TAG is a pick, not a free word: the sidecar's loop gate (routing/chain.js) compares the
+           reviewer's output tag — the SAME content classifier a FILTER sorts by (classify.js getTag:
+           code / research / general) — so those three are the only tags that can ever match. A typed
+           "approved" would be a field that can never fire; offering it would be the card asserting a
+           rule the harness does not run. */
+        + '<div class="refit-route-row loop-when-row"><span class="refit-route-lbl">GO ROUND WHILE →</span>'
+        + [['code', 'CODE'], ['research', 'RESEARCH'], ['general', 'GENERAL']].map(([tag, lbl]) => '<button type="button" class="bb sm loop-when' + (p.when === tag ? ' sel' : '') + '" data-tag="' + tag + '">' + lbl + '</button>').join('')
+        + '</div>'
+        + '<div class="refit-note" id="loop-note">the crate goes round again ONLY while the reviewer’s output reads as that kind of work; any other verdict leaves on DONE. no tag picked = every pass goes round until MAX PASSES is spent. blank max = ' + loopMaxDef + ' · ceiling ' + loopMaxCeil + ' — saved on Enter / blur</div>'
       : '';
     /* ---------- THE TRIGGER ZONE (inbox-trigger, 2026-08-05) ----------
        The INBOX card is the workflow's WHY, completing the loop the floor already draws: trigger (INBOX) →
@@ -1901,6 +2005,8 @@ const Build = (() => {
       + '<ul><li>' + line + '</li></ul>'
       + nameHtml
       + budgetHtml
+      + joinerHtml
+      + loopHtml
       + trgHtml
       + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="flow-ok">✓ GOT IT</button></div></div>';
     root.appendChild(g);
@@ -1950,8 +2056,57 @@ const Build = (() => {
         if (e.key === 'Escape') { e.stopPropagation(); el.blur(); }   // leave the field (saving); the next ESC closes the card
       });
     }
-    const closeP = () => { saveName(); saveLimits(); if (g.parentNode) g.parentNode.removeChild(g); };
-    cardRegister(g, closeP);   // ESC closes THROUGH here, so the line name + budget are saved and never discarded
+    /* JOINER / LOOP gate saves — one configureJunction per save (it replaces the prop's gate config wholesale,
+       so every field is sent every time). The answer is re-painted INTO the fields: a clamped number comes
+       back as the number in force. The plan recompiles off station.onChange and re-POSTs by itself. */
+    const jnTimeout = g.querySelector('#jn-timeout'), jnNote = g.querySelector('#jn-note');
+    const loopMax = g.querySelector('#loop-max'), loopNote = g.querySelector('#loop-note'), loopBackEl = g.querySelector('#loop-back');
+    const gate = { done: loopDoneCur, when: p.when || null };
+    let gateSaved = JSON.stringify(isJoiner ? { timeoutMin: p.timeoutMin || null } : isLoop ? { maxIter: p.maxIter || null, done: p.done || null, when: p.when || null } : null);
+    const saveGate = () => {
+      if (!(isJoiner || isLoop) || typeof station.configureJunction !== 'function') return;
+      const cfg = {};
+      if (isJoiner) { const v = +String(jnTimeout && jnTimeout.value || '').trim(); if (isFinite(v) && v >= 1) cfg.timeoutMin = Math.min(120, Math.floor(v)); }
+      if (isLoop) {
+        const v = +String(loopMax && loopMax.value || '').trim(); if (isFinite(v) && v >= 1) cfg.maxIter = Math.min(loopMaxCeil, Math.floor(v));
+        if (gate.done) cfg.done = gate.done;
+        if (gate.when) cfg.when = gate.when;
+      }
+      const res = station.configureJunction(propId, Object.keys(cfg).length ? cfg : null);
+      if (!res || !res.ok) { sfx('bad'); return; }
+      if (jnTimeout) jnTimeout.value = res.timeoutMin ? String(res.timeoutMin) : '';
+      if (loopMax) loopMax.value = res.maxIter ? String(res.maxIter) : '';
+      const next = JSON.stringify(isJoiner ? { timeoutMin: res.timeoutMin || null } : { maxIter: res.maxIter || null, done: res.done || null, when: res.when || null });
+      if (next === gateSaved) return;
+      gateSaved = next; sfx('click');
+      const said = isJoiner
+        ? (res.timeoutMin ? '✓ saved — waits ' + res.timeoutMin + ' min, then releases partial' : '✓ saved — station default (10 min), then releases partial')
+        : '✓ saved — ' + (res.maxIter || loopMaxDef) + ' pass' + ((res.maxIter || loopMaxDef) === 1 ? '' : 'es') + ' max' + (res.done ? ', DONE on ' + res.done : '') + (res.when ? ', round again while ' + res.when.toUpperCase() : '');
+      if (isJoiner && jnNote) jnNote.textContent = said;
+      if (isLoop && loopNote) loopNote.textContent = said;
+      flashTip(null, isJoiner ? 'joiner timeout saved' : 'loop gate saved', true);
+    };
+    for (const el of [jnTimeout, loopMax]) {
+      if (!el) continue;
+      el.addEventListener('blur', saveGate);
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); saveGate(); }
+        if (e.key === 'Escape') { e.stopPropagation(); el.blur(); }
+      });
+    }
+    g.querySelectorAll('.loop-exit').forEach(b => b.onclick = () => {
+      gate.done = b.dataset.dir;
+      g.querySelectorAll('.loop-exit').forEach(x => x.classList.toggle('active', x.dataset.dir === gate.done));
+      if (loopBackEl) loopBackEl.textContent = loopBackTxt(loopExits, gate.done);
+      saveGate();
+    });
+    g.querySelectorAll('.loop-when').forEach(b => b.onclick = () => {
+      gate.when = (gate.when === b.dataset.tag) ? null : b.dataset.tag;   // click again to clear
+      g.querySelectorAll('.loop-when').forEach(x => x.classList.toggle('sel', x.dataset.tag === gate.when));
+      saveGate();
+    });
+    const closeP = () => { saveName(); saveLimits(); saveGate(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);   // ESC closes THROUGH here, so the line name + budget + gate config are saved and never discarded
     /* ---- trigger-zone wiring (intake only; every claim below is a server answer, never synthesized) ---- */
     if (isIntake) {
       const feedEl = g.querySelector('#trg-feed'), listEl = g.querySelector('#trg-routines');
