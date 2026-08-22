@@ -105,7 +105,7 @@ const Build = (() => {
 
   const SEEN_KEY = 'starnet.refit.seen';
   // machines the BELT tool connects with two clicks (mirrors worldmodel CONNECTABLE)
-  const CONNECT_TYPES = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
+  const CONNECT_TYPES = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1, joiner: 1, loop: 1 };
 
   let opts = null, station = null, unsub = null;
   let connectFrom = null;   // connect-mode state: the armed FROM machine's propId (null = not connecting)
@@ -1054,8 +1054,8 @@ const Build = (() => {
         for (const k of Object.keys(p.routes || {})) { paint(p.x, p.y, p.routes[k], SCHEME.cyan); dirs.push({ d: p.routes[k], col: SCHEME.cyan }); }
         if (p.def) { paint(p.x, p.y, p.def, SCHEME.neutral); dirs.push({ d: p.def, col: SCHEME.neutral }); }
         fans.push({ p, dirs });
-      } else if (p.t === 'splitter' || p.t === 'merger') {
-        const col = p.t === 'splitter' ? SCHEME.green : SCHEME.merge, dirs = [];
+      } else if (p.t === 'splitter' || p.t === 'merger' || p.t === 'joiner' || p.t === 'loop') {
+        const col = p.t === 'splitter' ? SCHEME.green : p.t === 'loop' ? SCHEME.cyan : SCHEME.merge, dirs = [];
         for (const d of ['N', 'E', 'S', 'W']) {
           const b = at[(p.x + LINE_DIR[d][0]) + ',' + (p.y + LINE_DIR[d][1])];
           if (b && b.d === d) { paint(p.x, p.y, d, col); dirs.push({ d, col }); }   // points AWAY = out-lane
@@ -1127,9 +1127,9 @@ const Build = (() => {
         x.fillStyle = SCHEME.chute; x.fillRect(X + m, Y + m, W - m * 2, H - m * 2);
         x.fillStyle = SCHEME.greenHot; x.fillRect(X + W - m - u * 2, Y + m + 1, u * 2, u);
         x.fillStyle = SCHEME.green; x.fillRect(X + m + 1, Y + H - m - u - 1, u * 2, u);
-      } else {                               // junction (filter/splitter/merger) — node + tinted arms
-        const core = p.t === 'filter' ? SCHEME.violet : (p.t === 'splitter' ? SCHEME.green : SCHEME.merge);
-        const hot = p.t === 'filter' ? SCHEME.violetHot : (p.t === 'splitter' ? '#c8f4e6' : '#ffd488');
+      } else {                               // junction (filter/splitter/merger/joiner/loop) — node + tinted arms
+        const core = p.t === 'filter' ? SCHEME.violet : (p.t === 'splitter' ? SCHEME.green : p.t === 'loop' ? SCHEME.cyan : SCHEME.merge);
+        const hot = p.t === 'filter' ? SCHEME.violetHot : (p.t === 'splitter' ? '#c8f4e6' : p.t === 'loop' ? '#bfefff' : p.t === 'joiner' ? '#ffc9a0' : '#ffd488');
         lineBody(x, X + 1, Y + 1, W - 2, H - 2, st.top, st.face, st.lit, st.dk);
         const cx = X + (W >> 1), cy = Y + (H >> 1);
         const fan = lanes.fans.find(f => f.p === p);
@@ -1787,8 +1787,8 @@ const Build = (() => {
     if (!root) return;
     const p = station.propById(propId); if (!p) return;
     cardCloseAll();
-    const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger') ? 'junction' : 'bay';
-    const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN', splitter: 'SPLITTER — LANES BALANCE' };
+    const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger' || p.t === 'joiner' || p.t === 'loop') ? 'junction' : 'bay';
+    const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN', splitter: 'SPLITTER — LANES BALANCE', joiner: 'JOINER — BRANCHES WAIT', loop: 'LOOP — GO ROUND AGAIN' };
     const LINE = {
       intake: 'This is where OUTSIDE work — a channel DM, a scheduled routine — physically arrives on the floor. Its TRIGGERS below decide why this line runs; wire one right here.',
       outbox: 'Every job the crew actually FINISHES ships a green crate here; the pallet is today’s output. Click it (when quiet) for the LOGBOOK.',
@@ -1797,7 +1797,12 @@ const Build = (() => {
       merger: 'Where several belt lanes join into one. Every crate rides straight through — a merger tidies the LANES, it does not combine the jobs on them (each still runs on its own). Nothing to configure.',
       // the splitter's counterpart card: it balances UNOWNED work across its out-lanes; addressed
       // jobs still ride home (junctionLaneOwners). Nothing to configure — topology does the work.
-      splitter: 'Where one lane fans into several. Unowned work balances across the out-lanes; addressed jobs (crons, bound chats) still take the lane that leads to their owner’s bay. Nothing to configure.'
+      splitter: 'Where one lane fans into several. Unowned work balances across the out-lanes; addressed jobs (crons, bound chats) still take the lane that leads to their owner’s bay. Nothing to configure.',
+      // the joiner is the barrier the merger never was: one crate per in-lane is HELD per job until every branch
+      // has delivered (or the timeout passes), then ONE merged crate leaves — the sidecar chain runner performs it.
+      joiner: 'Where parallel branches of ONE job come back together. Each branch’s result is held here until every in-lane has delivered (10 minutes at most — then it goes on, marked partial), and a single merged crate continues. A SPLITTER upstream of a JOINER runs all its lanes, not one.',
+      // a bounded cycle: the gate is the only legal way round; the runner counts passes per job
+      loop: 'The gate that lets a line go round again. One lane leads BACK to an upstream dock, the other is DONE. Work re-enters up to 5 times (the line’s dollar cap still binds), then leaves on DONE. A cycle drawn without a LOOP is refused.'
     };
     const line = LINE[p.t] || LINE.outbox;
     /* LINE NAMING (workflow studio, 2026-08-05): the INTAKE is a line's front door, so its card names the
@@ -1811,6 +1816,26 @@ const Build = (() => {
       ? '<div class="refit-sec">LINE NAME</div>'
         + '<input id="line-name" class="refit-input" type="text" maxlength="48" placeholder="' + esc(namePh) + '" value="' + esc(p.label || '') + '" />'
         + '<div class="refit-note">names this whole line (shown on its checklist + this INBOX\'s glance) — saved on Enter / blur</div>'
+      : '';
+    /* LINE BUDGET (2026-08-21): the line's own ceilings, set at its front door like its name. Rides the intake
+       prop as `limits` (worldmodel.setPropLimits -> migrate() whitelist), compiles onto plan.lines[].limits
+       (outside plan.hash; the poster key carries it) and the sidecar's chain executor reads it by lineId
+       (router.lineLimits). Blank = the executor's defaults (6 stages / $2.00 per message / no daily cap).
+       The numbers shown are the ones IN FORCE: the shared normalizer clamps (24 / $50 / $500) and the card
+       says so, so the field never claims a ceiling the harness will not apply. */
+    const LD = (typeof Pipeline !== 'undefined' && Pipeline.LINE_LIMIT_DEFAULTS) || { maxHops: 6, maxUsdPerMessage: 2, maxUsdPerDay: null };
+    const LC = (typeof Pipeline !== 'undefined' && Pipeline.LINE_LIMIT_CEILINGS) || { maxHops: 24, maxUsdPerMessage: 50, maxUsdPerDay: 500 };
+    const lim0 = (isIntake && p.limits && typeof p.limits === 'object') ? p.limits : {};
+    const limVal = (k) => (typeof lim0[k] === 'number' && isFinite(lim0[k]) && lim0[k] > 0) ? String(lim0[k]) : '';
+    const lbDefaultNote = 'blank = station default · ceilings ' + LC.maxHops + ' stages / $' + LC.maxUsdPerMessage + ' / $' + LC.maxUsdPerDay + ' a day, never above the global pool — saved on Enter / blur';
+    const limField = (id, k, label, ph, step) => '<label class="refit-field lb-field" for="' + id + '">' + label
+      + '<input id="' + id + '" class="refit-num lb-num" type="number" min="0" step="' + step + '" data-k="' + k + '" placeholder="' + esc(ph) + '" value="' + esc(limVal(k)) + '" /></label>';
+    const budgetHtml = isIntake
+      ? '<div class="refit-sec">LINE BUDGET</div>'
+        + limField('lb-hops', 'maxHops', 'max stages after the first', String(LD.maxHops), '1')
+        + limField('lb-msg', 'maxUsdPerMessage', '$ per message, whole line', LD.maxUsdPerMessage.toFixed(2), '0.05')
+        + limField('lb-day', 'maxUsdPerDay', '$ per day, this line', 'off', '0.50')
+        + '<div class="refit-note lb-note" id="lb-note">' + esc(lbDefaultNote) + '</div>'
       : '';
     /* ---------- THE TRIGGER ZONE (inbox-trigger, 2026-08-05) ----------
        The INBOX card is the workflow's WHY, completing the loop the floor already draws: trigger (INBOX) →
@@ -1875,6 +1900,7 @@ const Build = (() => {
       + flowStripHTML(hot)
       + '<ul><li>' + line + '</li></ul>'
       + nameHtml
+      + budgetHtml
       + trgHtml
       + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="flow-ok">✓ GOT IT</button></div></div>';
     root.appendChild(g);
@@ -1896,8 +1922,36 @@ const Build = (() => {
         if (e.key === 'Escape') { e.stopPropagation(); nameIn.blur(); }   // leave the field (saving); the next ESC closes the card
       });
     }
-    const closeP = () => { saveName(); if (g.parentNode) g.parentNode.removeChild(g); };
-    cardRegister(g, closeP);   // ESC closes THROUGH here, so the line name is saved and never discarded
+    // LINE BUDGET fields: one save for the three (the prop holds one `limits` object). The saved answer is
+    // re-painted INTO the fields — a clamped number comes back as the number in force, never as what was typed.
+    const lbNums = Array.prototype.slice.call(g.querySelectorAll('.lb-num'));
+    const lbNote = g.querySelector('#lb-note');
+    let lbSaved = JSON.stringify(Object.keys(lim0).length ? lim0 : null);
+    const lbName = k => k === 'maxHops' ? 'stages' : k === 'maxUsdPerMessage' ? '$ per message' : '$ per day';
+    const saveLimits = () => {
+      if (!lbNums.length || typeof station.setPropLimits !== 'function') return;
+      const raw = {};
+      for (const el of lbNums) { const v = String(el.value || '').trim(); if (v !== '' && isFinite(+v) && +v > 0) raw[el.dataset.k] = +v; }
+      const res = station.setPropLimits(propId, Object.keys(raw).length ? raw : null);
+      if (!res || !res.ok) { sfx('bad'); return; }
+      const next = JSON.stringify(res.limits || null);
+      for (const el of lbNums) { const k = el.dataset.k, v = res.limits && res.limits[k]; el.value = (typeof v === 'number' && v > 0) ? String(v) : ''; }
+      if (lbNote) lbNote.textContent = (res.clamped && res.clamped.length)
+        ? 'clamped to the ceiling — ' + res.clamped.map(c => lbName(c.split('>')[0])).join(', ') + ' (the numbers shown are the ones in force)'
+        : lbDefaultNote;
+      if (next === lbSaved) return;
+      lbSaved = next; sfx('click');
+      flashTip(null, res.limits ? 'line budget saved' : 'line budget cleared — station defaults', true);
+    };
+    for (const el of lbNums) {
+      el.addEventListener('blur', saveLimits);
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); saveLimits(); }
+        if (e.key === 'Escape') { e.stopPropagation(); el.blur(); }   // leave the field (saving); the next ESC closes the card
+      });
+    }
+    const closeP = () => { saveName(); saveLimits(); if (g.parentNode) g.parentNode.removeChild(g); };
+    cardRegister(g, closeP);   // ESC closes THROUGH here, so the line name + budget are saved and never discarded
     /* ---- trigger-zone wiring (intake only; every claim below is a server answer, never synthesized) ---- */
     if (isIntake) {
       const feedEl = g.querySelector('#trg-feed'), listEl = g.querySelector('#trg-routines');
@@ -3093,13 +3147,13 @@ const Build = (() => {
     if (t === 'filter') return openJunctionEditor(p.id, ev);
     if (t === 'airlock') return openDoorPicker(p.id, ev);
     if (t === 'connector_portal') return openConnectorEditor(p.id, ev);
-    if (t === 'intake' || t === 'outbox' || t === 'merger' || t === 'splitter') return openFlowCard(p.id);
+    if (t === 'intake' || t === 'outbox' || t === 'merger' || t === 'splitter' || t === 'joiner' || t === 'loop') return openFlowCard(p.id);
     // no config surface: answer the click honestly instead of doing nothing
     const sp = propSpec(t);
     flashTip(ev, ((sp.label || t) + '').toUpperCase() + ' — MOVE (4) relocates · DELETE (5) removes', true);
   }
   const openPropEditor = (id, t, ev) => { const p = station && station.propById(id); if (p) onInspect(p, ev); };
-  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, splitter: 1, airlock: 1, connector_portal: 1, intake: 1, outbox: 1 };   // merger/splitter = flow card only (no config)
+  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, splitter: 1, joiner: 1, loop: 1, airlock: 1, connector_portal: 1, intake: 1, outbox: 1 };   // merger/splitter = flow card only (no config)
   const isEditableProp = t => !!PROP_EDITABLE[t] || !!WORKSTATION_TYPES[t];   // a workstation binds an agent + opens its picker on place/click
   function commitPropStamp(d, ev) {
     // CLICK-ON-MACHINE WINS: a click (no drag) on ANY existing prop inspects it instead of attempting
@@ -3116,7 +3170,7 @@ const Build = (() => {
     // JUNCTION SNAP (connect-mode UX): a filter/splitter/merger only works ON a line — if it's dropped
     // NEXT to one, snap it onto the nearest belt tile instead of leaving an inert junction (the exact
     // silent failure of the 2026-07-05 playtest). Dropped ON a belt already? Unchanged.
-    if ((propType === 'filter' || propType === 'splitter' || propType === 'merger') && !station.beltAt(px, py)) {
+    if ((propType === 'filter' || propType === 'splitter' || propType === 'merger' || propType === 'joiner' || propType === 'loop') && !station.beltAt(px, py)) {
       let snapped = null;
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
         if (station.beltAt(px + dx, py + dy)) { snapped = { x: px + dx, y: py + dy }; break; }
@@ -3176,7 +3230,7 @@ const Build = (() => {
     // tiles off, went silently inert. If the snapped tile is blocked, fall back to the plain move.
     const mp = station.propById(d.propId);
     let okMsg = 'relocated';
-    if (mp && (mp.t === 'filter' || mp.t === 'splitter' || mp.t === 'merger') && !station.beltAt(mp.x + dx, mp.y + dy)) {
+    if (mp && (mp.t === 'filter' || mp.t === 'splitter' || mp.t === 'merger' || mp.t === 'joiner' || mp.t === 'loop') && !station.beltAt(mp.x + dx, mp.y + dy)) {
       for (const [ox, oy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]]) {
         if (station.beltAt(mp.x + dx + ox, mp.y + dy + oy) && station.canPlaceProp(mp.t, mp.x + dx + ox, mp.y + dy + oy, mp.w, mp.h, mp.id).ok) {
           dx += ox; dy += oy; okMsg = 'snapped onto the line'; break;

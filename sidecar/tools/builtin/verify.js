@@ -52,6 +52,8 @@
       run: function (args, ctx) {
         ctx = ctx || {};
         const aid = safeAgentId((ctx && ctx.agentId) || 'agent');
+        const refusal = shell.sandboxRefusal ? shell.sandboxRefusal(environment, aid) : null;
+        if (refusal) throw refusal;
         const environmentBackendId = environment
           ? (typeof environment.backendIdFor === 'function' ? environment.backendIdFor(aid) : environment.backendId)
           : null;

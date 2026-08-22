@@ -168,6 +168,16 @@ function makeRouter(o) {
     return b ? b.slice(0, 2000) : null;
   }
 
+  /* THE LINE BUDGET (2026-08-21): the normalized per-line limits the Commander set on this line's INBOX
+     ({ maxHops, maxUsdPerMessage, maxUsdPerDay, clamped? }), or null = the executor's defaults. Read
+     straight off the compiled plan (Pipeline.lineLimitsOf — never re-derived). Same precedence as the
+     brief: a limit is a fact about the PLACED floor, true whether or not the belts compile. Policy only —
+     it bounds how far/how much a line runs, never which agent runs (chainNext alone decides that). */
+  function lineLimits(lineId) {
+    const p = stationPlan || plan || capsPlan;
+    return p ? Pipeline.lineLimitsOf(p, lineId) : null;
+  }
+
   /* THE CHAIN EDGE (agentic graphs): which agent does THIS dock's output hand off to? null = a terminal stage
      (its reply is the pipeline's answer) or no routing floor at all. Reads the same compiled plan and the same
      round-robin counters as resolveTarget, so a SPLIT downstream of a dock spreads exactly like one upstream —
@@ -179,6 +189,20 @@ function makeRouter(o) {
     return Pipeline.chainNext(p, agentId, ctx || {}, pick);
   }
 
+  /* chainStep / fanSiblings (2026-08-21) — the JOINER + LOOP reading of the same plan, same pick counter, for the
+     chain runner. chainNext above stays the plain single-dock reading every older surface uses. */
+  function chainStep(agentId, ctx) {
+    const p = activePlan();
+    if (!p || !agentId || !Pipeline.chainStep) return null;
+    const pick = (k, n) => { const c = rr[k] || 0; rr[k] = (c + 1) % n; return c; };
+    return Pipeline.chainStep(p, agentId, ctx || {}, pick);
+  }
+  function fanSiblings(agentId) {
+    const p = activePlan();
+    if (!p || !agentId || !Pipeline.fanSiblings) return [];
+    return Pipeline.fanSiblings(p, agentId);
+  }
+
   // A clean model run is not necessarily a shipped work line. This reports whether the final dock's compiled
   // outbound lane actually reaches OUTBOX rather than terminating at an open belt end.
   function chainShipsToOutbox(agentId) {
@@ -187,7 +211,7 @@ function makeRouter(o) {
     return !!(rec && rec.outbox && !rec.deadEnd);
   }
 
-  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, lineOfAgent, lineOriginFor, chainNext, chainShipsToOutbox, stationFor, stageBrief };
+  return { setPlan, clearPlan, getPlan, hasPlan, setStation, clearStation, getStation, resolveTarget, lineOfAgent, lineOriginFor, lineLimits, chainNext, chainStep, fanSiblings, chainShipsToOutbox, stationFor, stageBrief };
 }
 
 module.exports = { makeRouter };

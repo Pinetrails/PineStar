@@ -61,8 +61,17 @@ function makeTerminalTools(deps) {
     run: async function (args, ctx) {
       const agentId = aid(ctx), command = String((args && args.command) || '').trim();
       if (!command) throw new Error('empty command');
-      const environmentBackendId = typeof environment.backendIdFor === 'function' ? environment.backendIdFor(agentId) : environment.backendId;
-      if (environmentBackendId !== 'local') throw new Error('interactive terminal sessions currently require the Trusted Project or This Computer local execution profile');
+      // Lane C: a PTY is spawned on the HOST by node-pty. If this agent's profile asks for a sandbox, the
+      // terminal must not quietly escape it — honor the sandbox or refuse, with the fix named.
+      const refusal = typeof environment.refusalFor === 'function' ? environment.refusalFor(agentId) : null;
+      if (refusal) throw refusal;
+      const resolution = typeof environment.resolutionFor === 'function' ? environment.resolutionFor(agentId) : null;
+      const environmentBackendId = resolution ? resolution.id : (typeof environment.backendIdFor === 'function' ? environment.backendIdFor(agentId) : environment.backendId);
+      if (environmentBackendId !== 'local') {
+        const e = new Error('interactive terminals run on the host; this agent is sandboxed (profile ' + String((resolution && resolution.profileId) || 'unknown') + ' → ' + environmentBackendId + '). Use shell.exec inside the sandbox, or change the agent execution profile to Trusted Project or This Computer.');
+        e.precondition = { code: 'terminal_requires_local_backend', requiredState: 'local_execution_backend', requiredAction: 'use_shell_exec_or_change_execution_profile' };
+        throw e;
+      }
       const where = resolveCwd(args, ctx || {}, agentId);
       const risk = safety(command, where.cwd, ctx || {});
       if (risk) throw new Error('refused [' + risk.kind + ']: this terminal command ' + risk.reason);

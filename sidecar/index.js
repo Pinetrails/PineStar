@@ -172,7 +172,8 @@ const { makeSseHub, runTeeView } = require('./channels/sse.js');
 // relayWebhook (the signed-ingress verifier) is composed AFTER the WORKSPACES stores below —
 // its replay-nonce inbox is a durable JSONL sibling of the other ledgers.
 const { makeRouter } = require('./routing/router.js');
-const { makeChainRunner } = require('./routing/chain.js');
+const { makeChainRunner, effectiveLimits: chainEffectiveLimits } = require('./routing/chain.js');
+const { makeLineSpend } = require('./routing/line-spend.js');   // per-line DAY spend ledger (LINE BUDGET maxUsdPerDay) — durable sibling of routing.plan.json
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
@@ -3749,13 +3750,43 @@ const router = makeRouter();
    instance, bound to the floor's edge function; each caller hands it its own way to execute a hop. Emits its
    per-hop crates through the SAME validated chanEmit the channel telemetry uses, so a handoff is a real crate
    on the floor and not a claim. */
+/* LINE BUDGET day ledger (2026-08-21): { [lineId]: { day, usd } } over the same domain-store idiom as
+   budget.json — durable, .bak-recovered, normalized on read — so a line's $-per-day cap survives a restart. */
+const LINE_SPEND_FILE = path.join(WORKSPACES, 'line-spend.json');
+const lineSpendStore = makeDomainStore({
+  fs, path, file: LINE_SPEND_FILE, version: 1, writeDurable: writeFileDurable,
+  defaults: () => ({}),
+  normalize: value => makeLineSpend().clean(value || {}),
+  encode: value => ({ lines: value }),
+  decode: envelope => envelope && envelope.lines && typeof envelope.lines === 'object' && !Array.isArray(envelope.lines) ? envelope.lines : undefined,
+  onIssue: reportDomainStoreIssue('line-spend')
+});
+const lineSpend = makeLineSpend({
+  now: () => Date.now(),
+  load: () => lineSpendStore.load().value,
+  save: v => { try { lineSpendStore.save(v); } catch (e) { console.warn('[line-spend] persist failed:', (e && e.message) || e); } }
+});
 const chainRunner = makeChainRunner({
   nextAgent: (agentId, ctx) => router.chainNext(agentId, ctx),
+  // LINE BUDGET (2026-08-21): the line's own ceilings off the compiled plan, clamped to the station's global
+  // $ pool (0/absent = ungoverned), and the durable per-line day ledger the $-per-day cap is measured against.
+  lineLimits: (lineId) => router.lineLimits(lineId),
+  poolCap: () => (typeof effectiveCaps.global === 'number' && effectiveCaps.global > 0) ? effectiveCaps.global : null,
+  daySpend: lineSpend,
   stageBrief: (agentId) => router.stageBrief(agentId),   // the RECEIVING dock's standing brief rides each handoff turn (prompt text only)
   // the line a dock belongs to, so the runner can tell "this dock is terminal by design" from "this line
   // REFUSED this work" and say so honestly. Without it chain.js stays silent rather than guess (never a
   // false note) — which is exactly why the refusal was invisible before.
   lineOfAgent: (agentId) => router.lineOfAgent(agentId),
+  // JOINER + LOOP (2026-08-21): the richer step reading (barriers, fan-out, bounded loops) and the fan-out
+  // siblings of an entry dock. Parked join barriers are written beside the plan so a restart can REPORT a
+  // line that died mid-join (fail-loud; see chain.js — nothing in-flight is durable, so nothing resumes).
+  stepAgent: (agentId, ctx) => router.chainStep(agentId, ctx),
+  fanSiblings: (agentId) => router.fanSiblings(agentId),
+  barrierStore: {
+    load: () => { try { return loadResilient(path.join(WORKSPACES, 'join.barriers.json'), 'join-barriers'); } catch (_) { return null; } },
+    save: (v) => { try { saveResilient(path.join(WORKSPACES, 'join.barriers.json'), v); } catch (e) { failNote('chain.barriers.save', e); } }
+  },
   emit: (name, payload) => { try { chanEmit(name, payload); } catch (_) {} },
   newId: () => 'wi_' + crypto.randomUUID().slice(0, 8),
   now: () => Date.now(),
@@ -7206,11 +7237,17 @@ function armQuestRefresh() {
 
 /* ---- execution spine: the checkpoint rollback net (Commit 1). A per-agent shadow-git store under
    WORKSPACES/.checkpoints/<agentId>/ — a SIBLING of the fs jail, so the agent's own fs.* and shell tools can
-   neither read nor rewrite its own history. The auto-snapshot-before-a-mutating-tool hook (in dispatch) is OPT-IN
-   via SKYNET_CHECKPOINTS (default OFF = the existing run path is byte-identical) and FAIL-OPEN (a git problem
-   never breaks a run); the restore route is always available. The pure index/rollback math is checkpoint.js;
-   the git/fs is here, the one ambient-I/O edge. ---- */
-const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CHECKPOINTS') || '').trim());
+   neither read nor rewrite its own history. The auto-snapshot-before-a-mutating-tool hook (in dispatch) is ON BY
+   DEFAULT (reliability program, 2026-08-21: a rollback net nobody switched on caught nothing) and FAIL-OPEN (a git
+   problem never breaks a run); STARNET_CHECKPOINTS=0 / SKYNET_CHECKPOINTS=0 (or false/no/off) opts out. The
+   restore route is always available. The pure index/rollback math is checkpoint.js; the git/fs is here, the one
+   ambient-I/O edge. ---- */
+const CHECKPOINTS_ENABLED = checkpointsEnabledFromEnv(ENV('CHECKPOINTS'));
+function checkpointsEnabledFromEnv(raw) {
+  const v = String(raw == null ? '' : raw).trim().toLowerCase();
+  if (!v) return true;
+  return !/^(0|false|no|off)$/.test(v);
+}
 // fs.patch belongs here with the other writers: it is the WIDEST-blast-radius fs tool (multi-hunk, multi-file,
 // and the one the system prompt actively recommends over fs.edit for real edits), so leaving it out meant the
 // single most destructive tool ran with NO workspace lease and NO checkpoint snapshot — the exact combination
@@ -8923,8 +8960,17 @@ function handleRoutingChain(req, res) {
   // work line composes the SAME handoff turn the sidecar executor does (chat.js runWorkLine — must not drift).
   let brief = null;
   if (next) { try { brief = router.stageBrief(next); } catch (_) { brief = null; } }
+  // `limits` (additive, LINE BUDGET 2026-08-21): the EFFECTIVE ceilings for the line this work entered on —
+  // plan limits clamped to the global pool, plus today's ledger reading — so the browser's COMMS work line
+  // bounds itself by the same numbers the sidecar executor would (chat.js runWorkLine reads them; absent =
+  // its own mirrored constants). A direct order (no lineId) gets the defaults.
+  let limits = null;
+  try {
+    const lim = chainEffectiveLimits(lineId ? router.lineLimits(lineId) : null, {}, (typeof effectiveCaps.global === 'number' && effectiveCaps.global > 0) ? effectiveCaps.global : null);
+    limits = { maxHops: lim.maxHops, maxUsd: lim.maxUsd, maxUsdPerDay: lim.maxUsdPerDay, clamped: lim.clamped, spentToday: lineId ? lineSpend.spentToday(lineId) : 0 };
+  } catch (_) { limits = null; }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ next: next || null, brief: brief || null }));
+  res.end(JSON.stringify({ next: next || null, brief: brief || null, limits: limits }));
 }
 
 /* ---- GET /api/routing/sample — inert feature discovery for the Build Mode finish-the-line card. ---- */
@@ -14979,7 +15025,7 @@ async function runOnce(o) {
       }
     }
     // CHECKPOINT NET: snapshot the workspace BEFORE a mutating tool so the turn is one rollback away. The general
-    // fs.* net is opt-in (SKYNET_CHECKPOINTS); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
+    // fs.* net is on by default (STARNET_CHECKPOINTS=0 opts out); a shell.* call is ALWAYS snapshotted (the safety coupling that makes
     // command execution undo-able, independent of the flag). Content-deduped + fail-open: an unchanged workspace
     // or a git hiccup costs nothing and never throws into the run.
     const preciseCheckpoint = /^fs\.(write|append|edit|patch)$/.test(c.name) || /^(shell\.exec|verify\.run|terminal\.(?:start|write))$/.test(c.name);

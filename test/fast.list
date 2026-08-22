@@ -52,6 +52,7 @@ test/file-response.test.js
 test/test-list-runner.test.js
 test/runroute.test.js
 test/checkpoint.test.js
+test/checkpoint-default-on.test.js
 test/module-scope-shadowing.test.js
 test/verify.test.js
 test/lsp-edit-feedback.test.js
@@ -528,6 +529,7 @@ test/stationbake.hull.test.js
 test/canvas-loss-recovery.test.js
 test/conveyor.test.js
 test/pipeline.test.js
+test/pipeline.join-loop.test.js
 test/blueprints.test.js
 test/guidedline.test.js
 test/ghostline.test.js
@@ -536,6 +538,8 @@ test/routing-nag-parity.test.js
 test/crate-honesty.test.js
 test/plan-poster.test.js
 test/chain.test.js
+test/chain.join-loop.test.js
+test/chain.limits.test.js
 test/refit-card-stack.test.js
 test/step-brief.test.js
 test/propanchor.test.js
@@ -657,6 +661,7 @@ test/station-recovery-cli.test.js
 test/execution-profiles.test.js
 test/execution-settings.test.js
 test/execution-router.test.js
+test/sandbox-no-silent-fallback.test.js
 test/execution-profiles-ui.test.js
 test/failopen.test.js
 test/failopen-ratchet.test.js

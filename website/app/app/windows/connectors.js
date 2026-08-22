@@ -921,13 +921,15 @@
       const redirectUri = 'http://127.0.0.1:' + (location.port || '8787') + '/api/connectors/oauth/callback';
       const clientField = (e.authType === 'oauth' && e.staticOauth && e.needsClient)
         ? '<div class="cc-key cc-oclient" style="display:none">' +
-            '<div class="mc-hint">One-time setup shared by every Google card. ' + esc(e.staticOauth.setupNote || '') + ' ' +
-              '1&#41; follow the <a href="' + esc(e.staticOauth.setupUrl) + '" target="_blank" rel="noopener">' + esc(e.staticOauth.setupName || 'vendor setup guide') + ' ↗</a> &middot; ' +
-              '2&#41; add this redirect URI exactly: <code>' + esc(redirectUri) + '</code> &middot; ' +
-              '3&#41; paste the client ID and secret here.</div>' +
+            '<div class="mc-hint">One-time setup, shared by every Google card.</div>' +
+            '<ol class="cc-steps">' +
+              '<li>Open the <a href="' + esc(e.staticOauth.setupUrl) + '" target="_blank" rel="noopener">' + esc(e.staticOauth.setupName || 'vendor setup guide') + ' ↗</a> and create an OAuth <b>Web application</b> client.</li>' +
+              '<li>Add this redirect URI: <span class="cc-uri"><code>' + esc(redirectUri) + '</code><button type="button" class="cc-copy" data-cc-copy="' + esc(redirectUri) + '">COPY</button></span></li>' +
+              '<li>Paste the client ID and secret below.</li>' +
+            '</ol>' +
             '<input type="text" class="key-input" data-cc-oclientid="' + esc(cardId) + '" placeholder="client ID" autocomplete="off" spellcheck="false">' +
             '<input type="password" class="key-input" data-cc-oclientsecret="' + esc(cardId) + '" placeholder="client secret" autocomplete="off" spellcheck="false">' +
-            '<div class="mc-hint">Stored locally by the sidecar, never displayed again. Then the button becomes a normal sign-in.</div>' +
+            '<div class="mc-hint">Stored locally, never shown again.</div>' +
           '</div>'
         : '';
       const home = e.homepage ? ' <a class="cc-home dim" href="' + esc(e.homepage) + '" target="_blank" rel="noopener">site ↗</a>' : '';
@@ -1141,6 +1143,13 @@
       ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'sign-in for ' + label + ' cancelled — press SIGN IN to try again.'; sfx('tick');
     }
     ccListEl.addEventListener('click', async ev => {
+      const copyBtn = ev.target.closest('button[data-cc-copy]');
+      if (copyBtn) {
+        try { await navigator.clipboard.writeText(copyBtn.dataset.ccCopy); copyBtn.textContent = 'COPIED'; sfx('tick'); }
+        catch (_) { copyBtn.textContent = 'SELECT'; const code = copyBtn.previousElementSibling; try { getSelection().selectAllChildren(code); } catch (__) {} }
+        setTimeout(() => { copyBtn.textContent = 'COPY'; }, 1500);
+        return;
+      }
       const btn = ev.target.closest('button[data-cc-act]'); if (!btn) return;
       const act = btn.dataset.ccAct, id = btn.dataset.id;
       if (act === 'add') { btn.disabled = true; await ccInstall(id); }

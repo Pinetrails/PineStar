@@ -21,6 +21,13 @@ const WorldModel = (() => {
      is the plain-node/test case: every prop is placeable on bare deck exactly as before. */
   let propRules = null;
   function setPropRules(fn) { propRules = (typeof fn === 'function') ? fn : null; }
+  // the ONE line-budget normalizer (pipeline.js): the browser global, or the module in node tests. Absent
+  // (no compiler loaded) -> limits are dropped rather than stored raw: a number no executor normalized never rides a save.
+  function normalizeLimits(raw) {
+    let P = (typeof Pipeline !== 'undefined') ? Pipeline : null;
+    if (!P && typeof require === 'function') { try { P = require('./pipeline.js'); } catch (_) { P = null; } }
+    return (P && typeof P.normalizeLineLimits === 'function') ? P.normalizeLineLimits(raw) : null;
+  }
   const TILE = 12;
   const MARGIN = 3;     // tile padding around the bounding box (hull extrusion + chamfer arcs need room)
   const MIN_ROOM = 3;   // min room floor side, in tiles
@@ -72,6 +79,11 @@ const WorldModel = (() => {
     const routes = cleanRoutes(src.routes); if (routes) dst.routes = routes;
     const def = cleanDir(src.def); if (def) dst.def = def;
     const buf = cleanBuf(src.bufferSize); if (buf) dst.bufferSize = buf;
+    // JOINER / LOOP gate config (2026-08-21): bounded ints + a lane dir + a tag, same sanitizing discipline
+    const tm = Math.floor(+src.timeoutMin); if (isFinite(tm) && tm >= 1 && tm <= 120) dst.timeoutMin = tm;
+    const mx = Math.floor(+src.maxIter); if (isFinite(mx) && mx >= 1 && mx <= 20) dst.maxIter = mx;
+    const done = cleanDir(src.done); if (done) dst.done = done;
+    if (typeof src.when === 'string' && /^[A-Za-z0-9_.:-]{1,40}$/.test(src.when)) dst.when = src.when;
     return dst;
   }
 
@@ -1087,7 +1099,7 @@ const WorldModel = (() => {
        a free neighbor (the out-lane forms naturally). All-or-nothing, one undo slot. This is what makes
        the tile-perfect wiring rules (ring adjacency, junction-on-line, direction) unlearnable-by-necessity:
        the user clicks INBOX then BAY, and the path knows the rules for them. */
-    const CONNECTABLE = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1 };
+    const CONNECTABLE = { intake: 1, bay: 1, outbox: 1, filter: 1, splitter: 1, merger: 1, joiner: 1, loop: 1 };
     function connectBelt(fromId, toId) {
       const A = doc.props.find(p => p.id === fromId), B = doc.props.find(p => p.id === toId);
       if (!A || !B) return fail('NOT_FOUND', 'no such prop');
@@ -1375,7 +1387,9 @@ const WorldModel = (() => {
         if (p.role) lp.role = p.role;   // a role-carrying dock's placard/nag copy (guided workflows)
         if (p.brief) lp.brief = p.brief;   // a dock's standing job brief -> the compiled plan (step editor; prompt text only)
         if (p.label) lp.label = p.label;   // an INTAKE's line name (step editor; legibility only, never routing)
+        if (p.limits) lp.limits = p.limits;   // an INTAKE's LINE BUDGET -> the compiled plan (pipeline normalizes; chain executor reads)
         if (p.routes) lp.routes = p.routes; if (p.def) lp.def = p.def; if (p.bufferSize) lp.bufferSize = p.bufferSize;   // junction config -> the bake/pipeline
+        if (p.timeoutMin) lp.timeoutMin = p.timeoutMin; if (p.maxIter) lp.maxIter = p.maxIter; if (p.done) lp.done = p.done; if (p.when) lp.when = p.when;   // joiner / loop gate config
         if (p.door) lp.door = p.door;   // an AIRLOCK's seal state -> the prop sprite's status light / jam spark
         if (p.connectorId) lp.connectorId = p.connectorId;   // a CONNECTOR PORTAL's bound server -> live state + firing pulse on the sprite
         propsLocal.push(lp);
@@ -1517,10 +1531,10 @@ const WorldModel = (() => {
       const p = doc.props.find(q => q.id === propId);
       if (!p) return fail('NOT_FOUND', 'no such prop');
       snapshot();
-      delete p.routes; delete p.def; delete p.bufferSize;   // replace wholesale
+      delete p.routes; delete p.def; delete p.bufferSize; delete p.timeoutMin; delete p.maxIter; delete p.done; delete p.when;   // replace wholesale
       if (cfg) applyJunctionCfg(p, cfg);
       emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
-      return { ok: true, id: propId, routes: p.routes || null, def: p.def || null, bufferSize: p.bufferSize || null };
+      return { ok: true, id: propId, routes: p.routes || null, def: p.def || null, bufferSize: p.bufferSize || null, timeoutMin: p.timeoutMin || null, maxIter: p.maxIter || null, done: p.done || null, when: p.when || null };
     }
     // bind/clear the connectorId on a CONNECTOR PORTAL — WHICH MCP server this gateway grants (per-instance).
     // A blank id unbinds (the portal grants nothing until bound; bayObjects emits it only when bound). Mirrors
@@ -1561,6 +1575,23 @@ const WorldModel = (() => {
       if (l) p.label = l; else delete p.label;
       emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
       return { ok: true, id: propId, label: p.label || null };
+    }
+    /* set/clear an INTAKE's LINE BUDGET (REFIT flow card, 2026-08-21): { maxHops, maxUsdPerMessage, maxUsdPerDay }.
+       Normalized + clamped through the ONE shared normalizer (Pipeline.normalizeLineLimits) so the doc never
+       holds a number the executor would read differently; null/empty clears (= executor defaults). Mirrors
+       setPropLabel: only an INBOX carries it, no-op edits take no undo slot. */
+    function setPropLimits(propId, limits) {
+      const p = doc.props.find(q => q.id === propId);
+      if (!p) return fail('NOT_FOUND', 'no such prop');
+      if (p.t !== 'intake') return fail('BAD_TYPE', 'only an INBOX carries a line budget');
+      const norm = normalizeLimits(limits);
+      const next = norm ? { maxHops: norm.maxHops, maxUsdPerMessage: norm.maxUsdPerMessage, maxUsdPerDay: norm.maxUsdPerDay } : null;
+      const same = JSON.stringify(p.limits || null) === JSON.stringify(next);
+      if (same) return { ok: true, id: propId, limits: p.limits || null, clamped: (norm && norm.clamped) || [] };
+      snapshot();
+      if (next) p.limits = next; else delete p.limits;
+      emit([{ x1: p.x, y1: p.y, x2: p.x + (p.w || 1) - 1, y2: p.y + (p.h || 1) - 1 }]);
+      return { ok: true, id: propId, limits: p.limits || null, clamped: (norm && norm.clamped) || [] };
     }
     const propsByType = t => doc.props.filter(p => p.t === t).map(clone);
     const propsByAgent = agentId => doc.props.filter(p => p.agentId === agentId).map(clone);
@@ -1777,7 +1808,7 @@ const WorldModel = (() => {
       },
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, setWalls, setHull, paintTiles, renameRoom,
-      addProp, removeProp, moveProp, rotateProp, faceProp, mirrorProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState, setPropBrief, setPropLabel,
+      addProp, removeProp, moveProp, rotateProp, faceProp, mirrorProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState, setPropBrief, setPropLabel, setPropLimits,
       setBelt, removeBelt, removeBelts, placeBeltRun, connectBelt, stampBlueprint,
       // agent-bay binding queries
       propsByType, propsByAgent, pipelineEdges, setPipelineEdges, addPipelineEdge, removePipelineEdge, agentRoomId, bayObjects,
@@ -1831,7 +1862,7 @@ const WorldModel = (() => {
     // lookup is installed (i.e. a real client with the catalog); plain node tests keep every prop.
     if (propRules) doc.props = doc.props.filter(p => !(p && typeof p.t === 'string') || !!propRules(p.t));
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
-      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; const r0 = cleanRot(p.r); if (r0) o.r = r0; if (p.m) o.m = 1; if (typeof p.role === 'string' && p.role) o.role = p.role.slice(0, 24); if (typeof p.brief === 'string' && p.brief.trim()) o.brief = p.brief.slice(0, 2000); if (typeof p.label === 'string' && p.label.trim()) o.label = p.label.slice(0, 48); applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
+      .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; const r0 = cleanRot(p.r); if (r0) o.r = r0; if (p.m) o.m = 1; if (typeof p.role === 'string' && p.role) o.role = p.role.slice(0, 24); if (typeof p.brief === 'string' && p.brief.trim()) o.brief = p.brief.slice(0, 2000); if (typeof p.label === 'string' && p.label.trim()) o.label = p.label.slice(0, 48); if (p.t === 'intake' && p.limits && typeof p.limits === 'object') { const nl = normalizeLimits(p.limits); if (nl) o.limits = { maxHops: nl.maxHops, maxUsdPerMessage: nl.maxUsdPerMessage, maxUsdPerDay: nl.maxUsdPerDay }; } applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
     // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
     if (!doc.belts || typeof doc.belts !== 'object' || Array.isArray(doc.belts)) doc.belts = {};
     else { const clean = {}; for (const k in doc.belts) { const d = doc.belts[k]; if (/^-?\d+,-?\d+$/.test(k) && (d === 'E' || d === 'W' || d === 'N' || d === 'S')) clean[k] = d; } doc.belts = clean; }
