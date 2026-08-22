@@ -489,6 +489,32 @@ function chatFixture() {
       A.ok(summarized >= 1, 'the summarizer ran as part of the overflow recovery');
       A.eq(seq.filter(e => e.name === 'agent.compact').length, 1, 'exactly one compaction during recovery');
     }
+    // context_overflow AFTER the summarizer breaker tripped: used to be a dead run (compactionOff -> maybeCompact
+    // false -> end 'error'). Now the no-LLM fallback fold shrinks the prompt and the retry proceeds to 'done'.
+    {
+      const { seq, emit } = setup();
+      const reg = makeRegistry();
+      reg.register({ name: 'fs_write', schema: WRITE_SCHEMA, run: async () => 'w'.repeat(2000) });
+      let calls = 0;
+      const toolT = (id) => [{ type: 'tool_start', index: 0, id, name: 'fs_write' }, { type: 'tool_args', index: 0, chunk: '{"path":"a.md","content":"x"}' }, { type: 'usage', usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 } }, { type: 'done', finishReason: 'tool_calls' }];
+      const provider = { async *stream() { calls++; if (calls <= 2) { for (const ev of toolT('c' + calls)) yield ev; return; } if (calls === 3) throw new Error('prompt is too long'); for (const ev of okTurn) yield ev; },
+        priceOf: () => ({ prompt: '0', completion: '0' }), contextLimit: () => 10 };
+      const ctxMgr = makeContext({ contextLimit: 10, compactAt: 0.65, keepTail: 1 });   // 8 > 6.5 -> a proactive fold is attempted at the top of turns 2 and 3
+      let attempts = 0;
+      const summarize = async () => { attempts++; throw new Error('summarizer down'); };
+      const res = await runAgentLoop({
+        messages: [{ role: 'user', content: 'directive' }, { role: 'user', content: 'old-a' }, { role: 'assistant', content: 'old-b' }],
+        provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'm1', agentId: 'a', runId: 'r',
+        tools: [], dispatch: (c, ctx2) => reg.dispatch(c, ctx2), capCtx: openCtx(),
+        context: ctxMgr, summarize, approxTokens: 100, contextLimit: 10
+      });
+      A.eq(attempts, 2, 'the summarizer failed twice -> breaker tripped before the overflow');
+      A.eq(res.reason, 'done', 'context_overflow after compactionOff no longer ends the run');
+      A.eq(calls, 4, 'the overflowing turn was retried once after the fallback fold');
+      const comps = seq.filter(e => e.name === 'agent.compact');
+      A.ok(comps.length >= 1 && comps[comps.length - 1].payload.reason === 'fallback', 'the recovery fold is the deterministic fallback (' + comps.map(e => e.payload.reason).join(',') + ')');
+      A.eq(seq.filter(e => e.name === 'agent.run.error').length, 0, 'no run error');
+    }
   }
 
   // ---- no default iteration quota: productive work continues past the former 40-turn ceiling ----

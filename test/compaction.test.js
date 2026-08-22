@@ -69,5 +69,89 @@ function reg() { const r = makeRegistry(); r.register({ name: 'noop', schema: { 
     A.eq(compacts, 2, 'exactly two agent.compact events despite four threshold-crossing tool turns');
   }
 
+  // ---- 3. DIRECTIVE PINNED + TAIL IN TURNS: after a fold the first user message is byte-identical at the head,
+  //         the summarizer never sees it, and the verbatim tail holds >= keepTailTurns turns ----
+  {
+    const { seq, emit } = setup();
+    const big = 'B'.repeat(4000);   // big tool results: the micro tier alone cannot clear a 10-token window
+    const R = makeRegistry(); R.register({ name: 'noop', schema: { type: 'object' }, run: async () => big });
+    const provider = makeReplayProvider({ turns: [toolTurn('c1', 100), toolTurn('c2', 100), toolTurn('c3', 100), toolTurn('c4', 100), stopTurn] });
+    const ctx = makeContext({ contextLimit: 10, compactAt: 0.65, keepTailTurns: 2 });
+    const folded = [];
+    const summarize = async (older) => { folded.push(older); return { summary: 'S', usd: 0, tokens: 0 }; };
+    const directive = { role: 'user', content: 'THE DIRECTIVE: read every file and report the tokens' };
+    const messages = [{ role: 'system', content: 'sys' }, directive, { role: 'user', content: 'earlier note' }, { role: 'assistant', content: 'ack' }];
+    const res = await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: R.wireFormat(), dispatch: (c, ctx2) => R.dispatch(c, ctx2), capCtx: openCtx(), context: ctx, summarize });
+    A.eq(res.reason, 'done', 'run completes');
+    A.ok(folded.length >= 1, 'at least one LLM fold happened (' + folded.length + ')');
+    A.eq(messages[0], { role: 'system', content: 'sys' }, 'leading system prefix verbatim');
+    A.eq(messages[1], directive, 'the directive is pinned byte-identical after the fold(s)');
+    A.ok(!folded.some(older => older.some(m => m === directive || String(m.content).indexOf('THE DIRECTIVE') >= 0)), 'the summarizer never received the directive');
+    A.ok(folded[0].some(m => m.content === 'earlier note'), 'the turns AFTER the directive were folded');
+    A.ok(seq.some(e => e.name === 'agent.compact' && e.payload.reason === 'context'), 'an LLM fold was emitted');
+    // tail after the LAST fold: the summarizer saw the slice, so messages after the note = kept tail at that
+    // moment; count turn-groups in what the last fold kept (its `tail` = everything after the note then)
+    const lastOlder = folded[folded.length - 1];
+    const noteIdx = messages.findIndex(m => m.role === 'system' && /^<conversation_summary>/.test(String(m.content)));
+    A.ok(noteIdx === 2, 'the summary note sits right after the pinned directive');
+    const afterNote = messages.slice(noteIdx + 1).filter(m => m.role !== 'system');
+    let groups = 0; for (let k = 0; k < afterNote.length; k++) if (afterNote[k].role !== 'tool') groups++;
+    A.ok(groups >= 2, 'the verbatim tail holds >= keepTailTurns (2) turns — got ' + groups + ' (' + afterNote.map(m => m.role).join(',') + ')');
+    A.ok(lastOlder.length >= 1, 'the last fold folded something');
+  }
+
+  // ---- 4. MICRO TIER FIRST: elided tool results clear the threshold -> no summarizer call, reason 'micro' ----
+  {
+    const { seq, emit } = setup();
+    const big = 'C'.repeat(20000);                       // ~5000 tokens of tool output per turn
+    const R = makeRegistry(); R.register({ name: 'noop', schema: { type: 'object' }, run: async () => big });
+    // window 20000: threshold 13000 tokens. After the 3rd tool turn the provider reports 14000 -> fires; eliding the
+    // results OUTSIDE a 1-turn tail drops the local estimate far under the threshold -> micro clears it.
+    const provider = makeReplayProvider({ turns: [toolTurn('c1', 6000), toolTurn('c2', 11000), toolTurn('c3', 14000), stopTurn] });
+    const ctx = makeContext({ contextLimit: 20000, compactAt: 0.65, keepTailTurns: 1 });
+    let llm = 0;
+    const summarize = async () => { llm++; return { summary: 'S', usd: 0, tokens: 0 }; };
+    const messages = [{ role: 'user', content: 'read things' }];
+    const res = await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: R.wireFormat(), dispatch: (c, ctx2) => R.dispatch(c, ctx2), capCtx: openCtx(), context: ctx, summarize });
+    A.eq(res.reason, 'done', 'run completes');
+    const ev = seq.filter(e => e.name === 'agent.compact');
+    A.ok(ev.length >= 1, 'a compaction fired');
+    A.eq(ev[0].payload.reason, 'micro', 'the FIRST compaction is the free micro tier');
+    A.ok(ev[0].payload.elided >= 1, 'it reports how many tool results it elided');
+    A.ok(ev[0].payload.afterTokens < ev[0].payload.beforeTokens, 'and it really shrank the prompt');
+    A.eq(llm, 0, 'the paid summarizer was NOT called when micro cleared the threshold');
+    const elided = messages.filter(m => m.role === 'tool' && /^\[tool result elided at compaction/.test(String(m.content)));
+    A.ok(elided.length >= 1, 'older tool results carry the elision marker');
+    A.ok(/noop, 20000 bytes; re-run the tool if needed\]/.test(elided[0].content), 'marker names the tool and the byte size');
+    A.eq(messages[0], { role: 'user', content: 'read things' }, 'directive untouched by the micro tier');
+    for (let k = 0; k < messages.length; k++) if (messages[k].role === 'tool') { let j = k - 1; while (j >= 0 && messages[j].role === 'tool') j--; A.eq(messages[j].role, 'assistant', 'tool result ' + k + ' still paired'); }
+  }
+
+  // ---- 5. BREAKER TRIPPED -> FALLBACK NOTE, NOT A DEAD RUN: two summarizer throws flip compactionOff; the next
+  //         threshold crossing folds deterministically (reason 'fallback'), and the run proceeds to 'done' ----
+  {
+    const { seq, emit } = setup();
+    const R = makeRegistry(); R.register({ name: 'noop', schema: { type: 'object' }, run: async () => 'r'.repeat(3000) });
+    const provider = makeReplayProvider({ turns: [toolTurn('c1', 100), toolTurn('c2', 100), toolTurn('c3', 100), toolTurn('c4', 100), stopTurn] });
+    const ctx = { shouldCompact: () => true, estimateMessages: (arr) => arr.reduce((t, m) => t + Math.ceil(String(m.content || '').length / 4) + 4, 0),
+      planCompaction: (arr) => ({ older: arr.slice(0, Math.max(0, arr.length - 1)), tail: arr.slice(Math.max(0, arr.length - 1)) }) };
+    let calls = 0, drained = 0;
+    const summarize = async () => { calls++; throw new Error('summarizer down'); };
+    summarize.drain = (older) => { drained += older.length; };
+    const messages = [{ role: 'user', content: 'd' }, { role: 'user', content: 'old-1 ' + 'z'.repeat(2000) }, { role: 'assistant', content: 'old-2 ' + 'z'.repeat(2000) }, { role: 'user', content: 'old-3' }];
+    const res = await runAgentLoop({ messages, provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }),
+      model: 'replay/model', agentId: 'a', runId: 'r', tools: R.wireFormat(), dispatch: (c, ctx2) => R.dispatch(c, ctx2), capCtx: openCtx(), context: ctx, summarize });
+    A.eq(res.reason, 'done', 'the run still completes after the summarizer breaker trips');
+    A.eq(calls, 2, 'the summarizer was tried exactly twice (breaker at 2)');
+    const ev = seq.filter(e => e.name === 'agent.compact');
+    A.ok(ev.length >= 1 && ev.every(e => e.payload.reason === 'fallback'), 'every compaction after the breaker is a fallback fold (' + ev.map(e => e.payload.reason).join(',') + ')');
+    A.ok(drained > 0, 'the durable-transcript drain still ran for the fallback-folded slice');
+    const note = messages.find(m => m.role === 'system' && /^<conversation_summary>/.test(String(m.content)));
+    A.ok(note && /compaction fallback/.test(note.content) && /old-1/.test(note.content), 'the fallback note is a deterministic digest of the folded messages');
+    A.eq(messages[0], { role: 'user', content: 'd' }, 'directive still pinned');
+  }
+
   A.report('compaction.test');
 })();

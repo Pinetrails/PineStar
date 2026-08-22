@@ -89,6 +89,26 @@ const pcBefore = JSON.stringify(withTools);
 ctx.planCompaction(withTools);
 A.eq(JSON.stringify(withTools), pcBefore, 'planCompaction does not mutate input');
 
+// ---- keepTailTurns: the tail is counted in TURNS (assistant + its tool results = 1), not messages ----
+{
+  const tctx = makeContext({ contextLimit: 1000, compactAt: 0.65, keepTailTurns: 2 });
+  A.eq(tctx.keepTailTurns, 2, 'keepTailTurns exposed');
+  A.eq(tctx.thresholdTokens(), 650, 'thresholdTokens = compactAt x window');
+  const h = [m('user', 'u1'), m('assistant', 'a1'), m('tool', 't1a'), m('tool', 't1b'), m('user', 'u2'), m('assistant', 'a2'), m('tool', 't2a'), m('tool', 't2b'), m('tool', 't2c')];
+  const tp = tctx.planCompaction(h);
+  A.eq(tp.tail.length, 5, 'two turns = user u2 + assistant a2 with its THREE tool results (5 messages, not 2)');
+  A.eq(tp.tail[0], m('user', 'u2'), 'tail starts at the user turn two groups back');
+  A.eq(tp.older.length, 4, 'the first turn-group (u1 + a1 + 2 tool results) folds');
+  const one = makeContext({ contextLimit: 1000, keepTailTurns: 1 }).planCompaction(h);
+  A.eq(one.tail[0].role, 'assistant', 'one turn = the final assistant call plus all its tool results');
+  A.eq(one.tail.length, 4, 'assistant + 3 tool results = 1 turn');
+  A.eq(tctx.compact(h, (o) => 'S' + o.length), { summary: 'S4', tail: h.slice(4) }, 'compact() shares the turn rule');
+  A.eq(tctx.planCompaction(h.slice(0, 4)).older.length, 0, 'history of <= keepTailTurns turns (u1 + a1-group = 2) folds nothing');
+  // legacy callers keep MESSAGE semantics byte-for-byte
+  A.eq(makeContext({ contextLimit: 1000, keepTail: 2 }).planCompaction(h).tail.length, 4, 'keepTail (messages) still snaps the last 2 messages to the owning assistant');
+  A.eq(makeContext({}).keepTail, 6, 'no option -> legacy 6-message default unchanged');
+}
+
 // ---- redact: strips key-shaped secrets, recurses, never mutates ----
 A.ok(redact('my key is sk-or-v1-abcdef0123456789zzzz here').indexOf('sk-or-v1-') < 0, 'openrouter key redacted');
 A.ok(redact('sk-ant-api03-AAAA1111BBBB2222').indexOf('sk-ant-') < 0, 'anthropic key redacted');
