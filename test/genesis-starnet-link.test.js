@@ -9,6 +9,8 @@ const path = require('path');
 
 const index = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html'), 'utf8');
 const app = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'app.js'), 'utf8');
+const stationui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
+const host = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
@@ -56,5 +58,20 @@ ok(/managed credit\|Managed credits/.test(app), 'a billing refusal from the wire
 // "the provider returned an error" and the real reason never reaches the screen.
 ok(/typeof res\.error === 'string' && res\.error\.trim\(\)\) \? res\.error/.test(app), 'preflightWire surfaces res.error (the refusal reason), not only res.text');
 ok(/stopStarnetBalancePoll\(\)/.test(app), 'the empty-wallet balance poll has a stop, wired on screen exit');
+
+// REMOTE UNLINK (0.10.8 field regression): local keychain/file presence is not proof after the account page
+// revoked the device. The sidecar must project the cloud's 401/403 as configured:false, both first-run and
+// Settings must offer pairing again, and neither surface may turn the stale cached $0 into "no credits".
+ok(/snap\.authStatus === 'invalid'[\s\S]{0,300}configured:\s*false[\s\S]{0,200}reason:\s*'link_revoked'/.test(host),
+  'a cloud-rejected linked device is reported as unconfigured with an explicit revoked reason');
+ok(/const revoked = !CREDITS_URL[\s\S]{0,240}snap\.authStatus === 'invalid'/.test(host) &&
+   /available = creditsLink\.configured\(\) && \(!credits\.configured\(\) \|\| revoked\)/.test(host),
+  'remote revocation re-opens the normal LINK STATION flow without a manual local unlink');
+ok(/previous link was removed from your account/.test(app),
+  'genesis names the removed link and tells the Commander to reconnect credits');
+ok(/lk\.reason === 'link_revoked'[\s\S]{0,220}previous link was removed from your account/.test(stationui),
+  'Settings renders the same relink recovery from backend truth');
+ok(/LINK SAVED · SERVICE UNAVAILABLE/.test(stationui) && /link saved on this station, but StarNet could not verify it/.test(app),
+  'temporary cloud failure is presented separately and never overclaimed as LINKED');
 
 console.log('genesis-starnet-link.test.js OK -', n, 'assertions');

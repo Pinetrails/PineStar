@@ -9272,8 +9272,25 @@ function handleBudgetStatus(req, res) {
 async function handleCredits(req, res) {
   if (!credits.configured()) { res.writeHead(404, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ configured: false })); }
   await credits.refresh(CREDITS_ACCOUNT).catch(swallow('credits.refresh'));   // reconcile the cached balance before we report it
-  const hist = await credits.history(CREDITS_ACCOUNT, 20).catch(() => ({ entries: [] }));
   const snap = credits.snapshot();
+  const linkSaved = !CREDITS_URL && creditsLink.hasSaved();
+  // The account page can revoke a station without touching this machine. In that case the old local file /
+  // keychain token still exists, but the cloud's 401/403 is the authority: it is NOT a live link and must not
+  // keep STARNET selected or turn an old cached $0 into "no credits". Return 200 so both frontend consumers
+  // can read the reason, offer the normal pairing flow, and replace the stale keychain token on relink.
+  if (linkSaved && snap.authStatus === 'invalid') {
+    return creditsJson(res, 200, {
+      configured: false,
+      linked: false,
+      linkSaved: true,
+      linkStatus: 'revoked',
+      reason: 'link_revoked'
+    });
+  }
+  const hist = await credits.history(CREDITS_ACCOUNT, 20).catch(() => ({ entries: [] }));
+  const linkStatus = linkSaved
+    ? (snap.authStatus === 'valid' ? 'linked' : 'unavailable')
+    : (CREDITS_URL ? 'env' : 'none');
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({
     configured: true,
@@ -9286,7 +9303,11 @@ async function handleCredits(req, res) {
     // subscription, and the STORE must then say nothing about one rather than invent a tier.
     subscription: snap.subscription || null,
     manageUrl: snap.manageUrl || snap.purchaseUrl,   // opens in the real browser; billing UI never renders in-app
-    linked: !CREDITS_URL && creditsLink.hasSaved(),   // true when configured via a LINKED DEVICE (not env) -> STORE shows UNLINK
+    // `linked` is reserved for a cloud-accepted device. `linkSaved` tells the UI this is the Commander's
+    // account-shaped config even during a temporary outage, without overclaiming a live association.
+    linked: linkSaved && snap.authStatus === 'valid',
+    linkSaved,
+    linkStatus,
     // Where the device token actually rests: 'keychain' (desktop, adopted), 'file' (bare sidecar, or a link
     // the desktop has not adopted yet), 'none'. Reported so the STORE states the truth about a money-spending
     // credential instead of implying a protection that is not there — the honesty law applied to secrets.
@@ -9306,8 +9327,13 @@ function creditsJson(res, code, obj) { res.writeHead(code, { 'Content-Type': 'ap
 function handleCreditsLinkable(req, res) {
   // available: the cloud is wired AND we are not already configured (env or an existing link). When already
   // configured, /api/credits carries the balance + the `linked` flag — there is no separate LINK card to show.
-  const available = creditsLink.configured() && !credits.configured();
-  creditsJson(res, 200, { available: available, cloud: creditsLink.configured() });
+  // A definitive cloud rejection overrides local token presence: that station is linkable again without first
+  // finding an UNLINK control. A fresh pairing token wins over the stale launch-time keychain injection and the
+  // shell's normal adoption step then replaces it.
+  const snap = credits.snapshot();
+  const revoked = !CREDITS_URL && creditsLink.hasSaved() && snap.authStatus === 'invalid';
+  const available = creditsLink.configured() && (!credits.configured() || revoked);
+  creditsJson(res, 200, { available: available, cloud: creditsLink.configured(), reason: revoked ? 'link_revoked' : '' });
 }
 
 async function handleCreditsLinkStart(req, res) {

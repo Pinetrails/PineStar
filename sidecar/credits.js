@@ -46,7 +46,7 @@
       beginRun() { return { ok: true, mode: 'byok', managed: false, skipped: true }; },
       finishRun() { return { ok: true, settled: true, skipped: true }; },
       refresh() { return Promise.resolve(null); },
-      snapshot() { return { configured: false, accountId: '', balanceUsd: null, purchaseUrl: '' }; },
+      snapshot() { return { configured: false, accountId: '', balanceUsd: null, purchaseUrl: '', authStatus: 'absent', lastErrorStatus: 0 }; },
       history() { return Promise.resolve({ entries: [] }); }
     };
   }
@@ -74,7 +74,15 @@
     // run refuses rather than spending against an unknown balance). refresh() populates/reconciles it.
     // `subscription` and `manageUrl` ride the same /v1/balance response (a backend that doesn't send them
     // simply leaves them null, and the STORE renders no plan line — never an invented one).
-    const cache = { balanceUsd: null, at: 0, subscription: null, manageUrl: '' };
+    // `authStatus` is the server's verdict on this credential, not mere local token presence:
+    //   unknown     — no balance round-trip has completed yet
+    //   valid       — the backend accepted the bearer for this account
+    //   invalid     — a definitive 401/403; the device was revoked or belongs to another account
+    //   unavailable — transport/5xx failure; do not mislabel it as revocation
+    // The distinction matters for linked stations: the account page can revoke a device while this app
+    // still has its old keychain token. Local presence must never keep painting "LINKED" after the cloud
+    // has rejected it.
+    const cache = { balanceUsd: null, at: 0, subscription: null, manageUrl: '', authStatus: 'unknown', lastErrorStatus: 0 };
 
     /* ---- LOW-BALANCE WARNING ------------------------------------------------------------------
        Without this, a managed run just stops at $0 with no warning — the user's first signal that
@@ -165,14 +173,34 @@
     async function refresh(id) {
       try {
         const j = await getJson('/v1/balance?account=' + encodeURIComponent(acct(id)));
-        const b = num(j && (j.balanceUsd != null ? j.balanceUsd : j.balance));
+        const rawBalance = j && (j.balanceUsd != null ? j.balanceUsd : j.balance);
+        // The cloud contract says NUMBER. Missing/NaN/string data is "unavailable", never zero: num(undefined)
+        // used to turn a malformed 200 into $0 and the onboarding screen then told a paid customer to buy more.
+        if (typeof rawBalance !== 'number' || !isFinite(rawBalance)) {
+          const malformed = new Error('credits balance response missing a finite numeric balance');
+          malformed.code = 'credits_balance_invalid';
+          throw malformed;
+        }
+        const b = rawBalance;
         // Plan state is whatever the backend just said, INCLUDING null — a cancelled subscription must be
         // able to clear the tier line, not leave the last-known plan on screen forever.
         cache.subscription = (j && typeof j.subscription === 'object') ? j.subscription : null;
         if (j && j.manageUrl) cache.manageUrl = str(j.manageUrl);
+        cache.authStatus = 'valid';
+        cache.lastErrorStatus = 0;
         setBalance(b);
         return b;
-      } catch (e) { onError('refresh', e); return null; }
+      } catch (e) {
+        // Never keep a stale dollar amount after an authoritative refresh failed. This was the 0.10.8
+        // escape: a station revoked on the account site kept its cached $0, so the app asserted both
+        // "LINKED" and "no credits" while the real account held $22 and listed no linked stations.
+        setBalance(null);
+        const status = Number(e && e.status) || 0;
+        cache.lastErrorStatus = status;
+        cache.authStatus = (status === 401 || status === 403) ? 'invalid' : 'unavailable';
+        onError('refresh', e);
+        return null;
+      }
     }
 
     // the SYNCHRONOUS payment client billing.js drives. balance() reads the cache; debit/credit adjust it
@@ -232,7 +260,9 @@
         return {
           configured: true, accountId, balanceUsd: cache.balanceUsd, at: cache.at, purchaseUrl,
           subscription: cache.subscription,                 // null until the backend reports one
-          manageUrl: cache.manageUrl || purchaseUrl         // where "manage subscription" opens in the browser
+          manageUrl: cache.manageUrl || purchaseUrl,        // where "manage subscription" opens in the browser
+          authStatus: cache.authStatus,
+          lastErrorStatus: cache.lastErrorStatus
         };
       }
     };

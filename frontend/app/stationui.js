@@ -3869,7 +3869,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       .then(j => {
         if (j && j.configured) {
           creditsProv = {
-            state: 'linked',
+            // Temporary cloud trouble is not proof that the device was revoked, but local token presence is
+            // not proof of a live link either. Keep the provider reachable for refresh/recovery while painting
+            // the narrower "LINK SAVED" state. A definitive 401/403 arrives as configured:false below.
+            state: j.linkStatus === 'unavailable' ? 'saved' : 'linked',
             balanceUsd: (j.balanceUsd == null ? null : j.balanceUsd),
             tier: (j.subscription && j.subscription.tier) ? String(j.subscription.tier) : ''
           };
@@ -4165,13 +4168,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // action routes to the STORE rather than owning a second copy of the pairing flow.
   function creditsProviderCard(p, pi, active) {
     const linked = creditsProv.state === 'linked';
+    const saved = creditsProv.state === 'saved';
     const runnable = !!(linked && p.id === active && H() && H().getModel && H().getModel());
     const cls = linked ? 'conn' : 'avail';
     const bal = (creditsProv.balanceUsd == null) ? null : fmtUsd(creditsProv.balanceUsd);
-    // A linked station with an unreadable balance says so instead of implying it can spend.
     const stat = linked
-      ? (bal == null ? '● LINKED · BALANCE UNAVAILABLE' : '● LINKED · ' + esc(bal) + (creditsProv.tier ? ' · $' + esc(creditsProv.tier) + '/MO' : ''))
-      : '○ NOT LINKED';
+      ? ('● LINKED · ' + esc(bal == null ? 'BALANCE UNAVAILABLE' : bal) + (creditsProv.tier ? ' · $' + esc(creditsProv.tier) + '/MO' : ''))
+      : (saved ? '◌ LINK SAVED · SERVICE UNAVAILABLE' : '○ NOT LINKED');
     return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="group" aria-label="' + esc(p.name) + ' provider" style="--ci:' + pi + '">' +
       '<button class="prov-select" data-act="prov-select" aria-label="Select ' + esc(p.name) + ' provider">' +
         '<span class="conn-dot"></span>' +
@@ -4182,9 +4185,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<span class="prov-stat"><span class="prov-stat-t">' + stat + '</span></span>' +
       '</button>' +
       '<button class="bb sm prov-addkey" data-act="credits-store" data-provider="' + esc(p.id) + '" ' +
-      'aria-label="' + (linked ? 'Open the STORE' : 'Link this station to a StarNet account') + '" ' +
-      'title="' + (linked ? 'balance, plan and history live in the STORE' : 'link this station to a StarNet account') + '">' +
-      (linked ? '◆ STORE' : '🔗 LINK STATION') + '</button>' +
+      'aria-label="' + ((linked || saved) ? 'Open the STORE' : 'Link this station to a StarNet account') + '" ' +
+      'title="' + ((linked || saved) ? 'balance, plan and history live in the STORE' : 'link this station to a StarNet account') + '">' +
+      ((linked || saved) ? '◆ STORE' : '🔗 LINK STATION') + '</button>' +
       '</div>';
   }
 
@@ -4750,7 +4753,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // unconfigured → is this station LINKABLE (STARNET_CLOUD_URL wired)? If so, offer LINK STATION. Otherwise
         // render NOTHING (honesty law: a bare BYOK install shows no STORE surface at all).
         return Harness.api.get('/api/credits/linkable').catch(() => ({ available: false }))
-          .then(lk => { if (lk && lk.available) renderCreditsLinkCard(body, host); })
+          .then(lk => {
+            if (lk && lk.available) renderCreditsLinkCard(body, host,
+              lk.reason === 'link_revoked'
+                ? 'This station’s previous link was removed from your account. Link it again to reconnect your balance.'
+                : '');
+          })
           .catch(() => {});
       })
       .catch(() => {});   // sidecar offline / not configured → leave the STORE absent
@@ -4809,13 +4817,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // A LINKED station is somebody's own subscription; an env-configured one is an operator's prepaid pool.
     // Same balance, completely different sentence — describing a subscriber's own account as something "the
     // operator tops up" is just wrong on the surface that is supposed to be the truthful one.
-    const about = j.linked
+    const about = j.linkSaved
       ? 'This station runs on <b>your StarNet credits</b> — agents work without you bringing a provider key. Each run reserves up to your <b>PER RUN</b> budget and refunds whatever it doesn’t spend. You can always switch to your own key under API KEYS above.'
       : 'This station runs on <b>managed credits</b> — a prepaid balance the operator tops up, so your agents can work without you bringing your own provider key. Each run reserves up to your <b>PER RUN</b> budget and refunds whatever it doesn’t spend. You can always switch to your own key under API KEYS above.';
     host.innerHTML =
       '<h4 class="ms-h">STORE <span class="dim">— managed credits</span></h4>' +
       '<p class="set-about">' + about + '</p>' +
-      (j.linked && j.accountId ? '<div class="set-row"><span class="dim">ACCOUNT</span><span class="dim" style="margin-left:auto">' + esc(String(j.accountId)) + '</span></div>' : '') +
+      (j.linkSaved && j.accountId ? '<div class="set-row"><span class="dim">ACCOUNT</span><span class="dim" style="margin-left:auto">' + esc(String(j.accountId)) + '</span></div>' : '') +
       creditsPlanRows(j) +
       '<div class="set-row"><span class="dim">BALANCE</span><b class="credits-bal" style="margin-left:auto">' + esc(bal) + '</b></div>' +
       (reach ? '<div class="set-row dim">⚠ the credits service didn’t answer — the balance shown may be stale.</div>' : '') +
@@ -4827,7 +4835,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="mc-hint">Adding credits opens your browser — StarNet never handles your payment details.</div>' +
       '<div class="set-row"><span class="dim">RECENT ACTIVITY</span></div>' +
       '<div class="mc-list">' + rows + '</div>' +
-      (j.linked ? '<div class="set-row" style="margin-top:.6em"><span class="dim" style="font-size:.85em">This station is linked to your account.</span>' +
+      (j.linkSaved ? '<div class="set-row" style="margin-top:.6em"><span class="dim" style="font-size:.85em">' +
+        (j.linked ? 'This station is linked to your account.' : 'Link saved locally; the cloud check is unavailable, so runs wait for verification.') + '</span>' +
         '<button class="bb xs" id="credits-unlink" title="forget this station’s link" style="margin-left:auto">UNLINK</button></div>' : '');
     const buy = host.querySelector('#credits-buy');
     if (buy) buy.addEventListener('click', () => { sfx('click'); openExternal(j.purchaseUrl); });

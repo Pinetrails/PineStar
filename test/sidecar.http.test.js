@@ -243,6 +243,73 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(creditsUnconf.status, 404, 'GET /api/credits with no credits backend configured -> 404 (no surface)');
     A.eq(creditsUnconf.body.configured, false, 'the 404 body honestly reports configured:false');
 
+    // ---- managed credits: ACCOUNT-SIDE UNLINK INVALIDATES THE LOCAL "LINKED" CLAIM -----------------
+    // Reproduce the 0.10.8 field escape over real sockets: the station first caches a valid $0, then the
+    // account page removes its device and the same bearer starts returning 401. The customer actually has
+    // $22 on the account, but that money is deliberately unreachable until this station pairs to it again.
+    // The app must discard cached $0, stop claiming LINKED, and expose LINK STATION — no local UNLINK ritual.
+    {
+      let revoked = false;
+      const cloud = http.createServer((rq, rs) => {
+        const auth = String(rq.headers.authorization || '');
+        if (auth !== 'Bearer snd_revoked_after_zero' || revoked) {
+          rs.writeHead(401, { 'Content-Type': 'application/json' });
+          return rs.end(JSON.stringify({ error: 'unauthorized' }));
+        }
+        if (String(rq.url || '').indexOf('/v1/balance') === 0) {
+          rs.writeHead(200, { 'Content-Type': 'application/json' });
+          return rs.end(JSON.stringify({ balanceUsd: 0 }));
+        }
+        if (String(rq.url || '').indexOf('/v1/history') === 0) {
+          rs.writeHead(200, { 'Content-Type': 'application/json' });
+          return rs.end(JSON.stringify({ entries: [] }));
+        }
+        rs.writeHead(404, { 'Content-Type': 'application/json' }); rs.end('{}');
+      });
+      await new Promise(r => cloud.listen(0, HOST, r));
+      const cloudUrl = 'http://' + HOST + ':' + cloud.address().port;
+      const revokedWs = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-credits-revoked-'));
+      fs.mkdirSync(path.join(revokedWs, '.secrets'), { recursive: true });
+      fs.writeFileSync(path.join(revokedWs, '.secrets', 'credits.json'), JSON.stringify({
+        url: cloudUrl, accountId: 'acct_paid_22', linkedAt: now - 1000
+      }));
+      const rb = await boot(port + 120, revokedWs, 20, {
+        STARNET_CLOUD_URL: cloudUrl,
+        STARNET_CREDITS_TOKEN: 'snd_revoked_after_zero'
+      });
+      const RB = 'http://' + HOST + ':' + rb.port;
+      try {
+        const rtok = await bootToken(RB, RB);
+        const rh = { 'Content-Type': 'application/json', 'X-StarNet-Token': rtok, Origin: RB };
+        const read = async p => {
+          const rr = await fetch(RB + p, { headers: rh });
+          return { status: rr.status, body: await rr.json() };
+        };
+        const before = await read('/api/credits');
+        A.eq(before.status, 200, 'precondition: linked credits route answers before account-side unlink');
+        A.eq(before.body.configured, true, 'precondition: accepted bearer is configured');
+        A.eq(before.body.linked, true, 'precondition: accepted bearer is server-proven linked');
+        A.eq(before.body.balanceUsd, 0, 'precondition: the exact stale $0 from the field report is cached');
+
+        revoked = true;   // account page DELETEs the device row; all later bearer reads are 401
+        const after = await read('/api/credits');
+        A.eq(after.status, 200, 'revocation remains a readable state payload for both UI consumers');
+        A.eq(after.body.configured, false, 'a cloud-rejected device is no longer configured');
+        A.eq(after.body.linked, false, 'local file/keychain presence cannot keep claiming LINKED');
+        A.eq(after.body.reason, 'link_revoked', 'the route names the authoritative account-side revocation');
+        A.eq(after.body.balanceUsd, undefined, 'the stale cached $0 is not emitted as the paid account balance');
+        const linkable = await read('/api/credits/linkable');
+        A.eq(linkable.body.available, true, 'the revoked station can pair again without manually unlinking locally');
+        A.eq(linkable.body.reason, 'link_revoked', 'the relink card receives the recovery reason');
+      } finally {
+        try { rb.child.kill(); } catch (_) {}
+        try { if (cloud.closeAllConnections) cloud.closeAllConnections(); } catch (_) {}
+        await new Promise(r => { let done = false; const fin = () => { if (!done) { done = true; r(); } }; try { cloud.close(fin); } catch (_) { fin(); } setTimeout(fin, 1000); });
+        await sleep(150);
+        try { fs.rmSync(revokedWs, { recursive: true, force: true }); } catch (_) {}
+      }
+    }
+
     // ---- provider registry/catalog routes: dynamic provider surface boots and remains token-gated ----
     const providersNoTok = await fetch(B + '/api/providers');
     A.eq(providersNoTok.status, 403, 'GET /api/providers WITHOUT a token -> 403');

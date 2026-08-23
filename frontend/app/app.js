@@ -2120,7 +2120,7 @@ const App = (() => {
   // through managed admission, which refuses a $0 wallet before any model is reached — so a linked-but-empty
   // account must be said HERE, with the fix one button away, never as "your model didn't answer" (2026-08-22:
   // a first-time user signed in without buying credits and kept switching models trying to fix it).
-  let starnetBalanceUsd = null, starnetPurchaseUrl = '';
+  let starnetBalanceUsd = null, starnetPurchaseUrl = '', starnetLinkStatus = '';
   let _starnetBalancePoll = null;
   function stopStarnetBalancePoll() { if (_starnetBalancePoll) { clearInterval(_starnetBalancePoll); _starnetBalancePoll = null; } }
   function starnetOutOfCredit() { return starnetLinked && starnetBalanceUsd != null && !(Number(starnetBalanceUsd) > 0); }
@@ -2146,11 +2146,18 @@ const App = (() => {
     let j = null;
     try { j = await Harness.api.get('/api/credits'); } catch (_) {}
     starnetLinked = !!(j && j.configured);
+    starnetLinkStatus = (j && (j.linkStatus || j.reason)) ? String(j.linkStatus || j.reason) : '';
     starnetBalanceUsd = (starnetLinked && j.balanceUsd != null && isFinite(Number(j.balanceUsd))) ? Number(j.balanceUsd) : null;
     starnetPurchaseUrl = (starnetLinked && j.purchaseUrl) ? String(j.purchaseUrl) : '';
     const creditsBtn = el('btn-starnet-credits');
     if (pickedProvider !== 'starnet') { stopStarnetBalancePoll(); return; }   // pick moved on — don't repaint another provider's block
-    if (starnetLinked && starnetOutOfCredit()) {
+    if (starnetLinked && starnetLinkStatus === 'unavailable') {
+      stopStarnetBalancePoll();
+      statusEl.textContent = 'link saved on this station, but StarNet could not verify it right now — check your connection and try again.';
+      statusEl.className = 'codex-status bad';
+      if (linkBtn) linkBtn.classList.add('hidden');
+      if (creditsBtn) creditsBtn.classList.add('hidden');
+    } else if (starnetLinked && starnetOutOfCredit()) {
       // linked, wallet empty: the one state WAKE can never fix. Say it, offer the store, and keep polling the
       // balance so the moment the purchase lands this line flips green without a restart.
       statusEl.innerHTML = '<span class="conn-dot"></span>linked to your StarNet account — <b>no credits yet</b>. Waking your agent uses credits right away, so add some first.';
@@ -2168,8 +2175,10 @@ const App = (() => {
     } else {
       stopStarnetBalancePoll();
       if (creditsBtn) creditsBtn.classList.add('hidden');
-      statusEl.textContent = 'not linked — connect the subscription you bought on starnetos.com (takes one click + a code)';
-      statusEl.className = 'codex-status';
+      statusEl.textContent = starnetLinkStatus === 'revoked' || starnetLinkStatus === 'link_revoked'
+        ? 'this station’s previous link was removed from your account — link it again to reconnect your credits.'
+        : 'not linked — connect the subscription you bought on starnetos.com (takes one click + a code)';
+      statusEl.className = 'codex-status' + (starnetLinkStatus === 'revoked' || starnetLinkStatus === 'link_revoked' ? ' bad' : '');
       if (linkBtn) linkBtn.classList.remove('hidden');
     }
   }

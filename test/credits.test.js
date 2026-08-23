@@ -58,10 +58,42 @@ function fakeFetch(seed) {
     const bal = await c.refresh('acct');
     A.eq(bal, 10, 'refresh() reads the authoritative balance from the backend');
     A.eq(c.snapshot().balanceUsd, 10, 'snapshot reflects the refreshed balance');
+    A.eq(c.snapshot().authStatus, 'valid', 'an accepted balance read proves the credential is valid');
     // the api key rides Authorization, never the account/display surface
     const auth = ff.calls[0].headers['Authorization'];
     A.eq(auth, 'Bearer sekret-key', 'the api key is sent as a bearer header (never in the snapshot payload)');
     A.eq(JSON.stringify(c.snapshot()).indexOf('sekret-key'), -1, 'the api key never appears in the snapshot (no secret leak)');
+  }
+
+  // ---- REMOTE REVOCATION: the account page can delete the device while this process still holds its token.
+  //      The cloud's 401/403 must erase the cached number and become an explicit invalid-auth verdict. This is
+  //      the 0.10.8 field report: cached $0 + remote unlink was painted as "LINKED · no credits" beside a paid
+  //      account with $22 and no linked stations. ----
+  {
+    let status = 200;
+    const fetchImpl = async () => status === 200
+      ? { ok: true, status: 200, json: async () => ({ balanceUsd: 0 }) }
+      : status === 299
+        ? { ok: true, status: 200, json: async () => ({ error: 'unexpected success shape' }) }
+      : { ok: false, status, json: async () => ({ error: status === 401 ? 'unauthorized' : 'down' }) };
+    const c = makeCredits({ url: 'https://credits.example', accountId: 'acct', fetch: fetchImpl });
+    A.eq(await c.refresh('acct'), 0, 'precondition: the linked station cached a real $0 response');
+    A.eq(c.snapshot().balanceUsd, 0, 'the real zero is cached while the credential is valid');
+    status = 401;
+    A.eq(await c.refresh('acct'), null, 'the remotely revoked bearer no longer yields a balance');
+    A.eq(c.snapshot().balanceUsd, null, 'a rejected refresh discards the stale cached $0');
+    A.eq(c.snapshot().authStatus, 'invalid', '401 becomes the definitive invalid-link verdict');
+    A.eq(c.snapshot().lastErrorStatus, 401, 'the rejection status is available to the host authority seam');
+
+    status = 503;
+    await c.refresh('acct');
+    A.eq(c.snapshot().authStatus, 'unavailable', 'a service outage stays distinct from revocation');
+    A.eq(c.snapshot().balanceUsd, null, 'an outage also cannot keep presenting a stale dollar amount');
+
+    status = 299;
+    A.eq(await c.refresh('acct'), null, 'a malformed HTTP 200 is not coerced into a balance');
+    A.eq(c.snapshot().authStatus, 'unavailable', 'malformed success data is unavailable, not revoked or empty');
+    A.eq(c.snapshot().balanceUsd, null, 'missing balance data can never become a fabricated $0');
   }
 
   // ---- MANAGED RUN via the backend: reserve holds the balance, refund returns the unspent headroom ----
