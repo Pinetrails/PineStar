@@ -6,20 +6,34 @@
 'use strict';
 
 const FreshStart = (() => {
-  const PREFIXES = ['starnet.', 'skynet.'];
+  // Dot namespaces hold station state. The underscore namespace is the original arcade store and
+  // is still StarNet-owned; leaving it behind contradicts "completely fresh".
+  const PREFIXES = ['starnet.', 'skynet.', 'starnet_', 'skynet_'];
+
+  function ownedKey(key) {
+    return PREFIXES.some(prefix => String(key || '').startsWith(prefix));
+  }
 
   function clearBrowserState(storage) {
     const store = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
-    if (!store) return 0;
+    if (!store) throw new Error('browser storage is unavailable');
     const keys = [];
     try {
       for (let i = 0; i < store.length; i++) {
         const key = store.key(i);
-        if (PREFIXES.some(prefix => String(key || '').startsWith(prefix))) keys.push(key);
+        if (ownedKey(key)) keys.push(key);
       }
       keys.forEach(key => store.removeItem(key));
+      const remaining = [];
+      for (let i = 0; i < store.length; i++) {
+        const key = store.key(i);
+        if (ownedKey(key)) remaining.push(key);
+      }
+      if (remaining.length) throw new Error('StarNet browser state remained after clearing');
       return keys.length;
-    } catch (_) { return 0; }
+    } catch (error) {
+      throw new Error('browser state could not be cleared: ' + String(error && error.message || error));
+    }
   }
 
   async function resetDesktop(core, storage) {
@@ -28,8 +42,15 @@ const FreshStart = (() => {
     // Never erase the cache when native preservation fails — it may be the user's last readable copy.
     const result = await core.invoke('starnet_start_fresh');
     if (!result || result.ok !== true) throw new Error('StarNet could not preserve the prior station');
-    const cleared = clearBrowserState(storage);
-    return Object.assign({}, result, { browserKeysCleared: cleared });
+    let cleared = 0, fallbackError = '';
+    try { cleared = clearBrowserState(storage); }
+    catch (error) { fallbackError = String(error && error.message || error); }
+    const browserDataCleared = result.browserDataCleared === true || !fallbackError;
+    return Object.assign({}, result, {
+      browserDataCleared,
+      browserKeysCleared: cleared,
+      browserClearError: browserDataCleared ? '' : fallbackError
+    });
   }
 
   return { clearBrowserState, resetDesktop };

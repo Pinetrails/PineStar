@@ -69,6 +69,29 @@ struct AppState {
     shutting_down: AtomicBool,
 }
 
+/// Serializes user-driven recovery commands and keeps the guardian paused until every return path
+/// (including errors) has finished. Tauri commands may run concurrently, so a plain load/store can
+/// let Restart and Start Fresh kill/spawn/move the same station at the same time.
+struct RecoveryOperation<'a> {
+    flag: &'a AtomicBool,
+}
+
+impl Drop for RecoveryOperation<'_> {
+    fn drop(&mut self) {
+        self.flag.store(false, Ordering::SeqCst);
+    }
+}
+
+fn begin_recovery(state: &AppState) -> Result<RecoveryOperation<'_>, String> {
+    state
+        .recovery_in_progress
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .map_err(|_| "another station recovery is already running".to_string())?;
+    Ok(RecoveryOperation {
+        flag: &state.recovery_in_progress,
+    })
+}
+
 #[cfg(unix)]
 fn terminate_sidecar_child(child: &mut Child) {
     unsafe extern "C" {
@@ -3392,7 +3415,7 @@ fn starnet_restart_sidecar(state: State<AppState>) -> Result<bool, String> {
     if st.shutting_down.load(Ordering::SeqCst) {
         return Err("StarNet is shutting down".to_string());
     }
-    st.recovery_in_progress.store(true, Ordering::SeqCst);
+    let _recovery = begin_recovery(st)?;
     log_startup(
         &st.startup_log,
         "restart: user requested a station service restart",
@@ -3408,7 +3431,6 @@ fn starnet_restart_sidecar(state: State<AppState>) -> Result<bool, String> {
         &st.startup_log,
         format!("restart: respawned sidecar listening={listening}"),
     );
-    st.recovery_in_progress.store(false, Ordering::SeqCst);
     Ok(listening)
 }
 
@@ -3418,6 +3440,7 @@ struct FreshStartView {
     ok: bool,
     listening: bool,
     quarantine: Option<String>,
+    browser_data_cleared: bool,
 }
 
 /// Last-resort recovery for a station service that cannot answer HTTP at all. The sidecar-backed
@@ -3426,12 +3449,15 @@ struct FreshStartView {
 /// re-migration, and respawns with the same OS-keychain credentials. Purchased credits therefore
 /// remain account-bound and are re-injected into the clean sidecar; this command never clears them.
 #[tauri::command]
-fn starnet_start_fresh(state: State<AppState>) -> Result<FreshStartView, String> {
+fn starnet_start_fresh(
+    window: tauri::WebviewWindow,
+    state: State<AppState>,
+) -> Result<FreshStartView, String> {
     let st: &AppState = state.inner();
     if st.shutting_down.load(Ordering::SeqCst) {
         return Err("StarNet is shutting down".to_string());
     }
-    st.recovery_in_progress.store(true, Ordering::SeqCst);
+    let _recovery = begin_recovery(st)?;
     log_startup(
         &st.startup_log,
         "fresh-start: explicit unreachable-screen reset requested",
@@ -3454,7 +3480,6 @@ fn starnet_start_fresh(state: State<AppState>) -> Result<FreshStartView, String>
         Ok(value) => value,
         Err(error) => {
             let listening = spawn_sidecar(st);
-            st.recovery_in_progress.store(false, Ordering::SeqCst);
             log_startup(
                 &st.startup_log,
                 format!("fresh-start: refused ({error}); original station respawn listening={listening}"),
@@ -3466,8 +3491,20 @@ fn starnet_start_fresh(state: State<AppState>) -> Result<FreshStartView, String>
     // The reset deliberately preserves only the protected StarNet credit-account link record.
     // Adopt a transient plaintext token into the OS keychain before the new sidecar starts, matching boot.
     migrate_credits_token_from_plaintext(&st.workspaces);
+    // The packaged origin belongs only to StarNet. Clearing it natively removes localStorage,
+    // IndexedDB, cookies, service workers and caches on both WebView2 and WKWebView. JS repeats the
+    // namespaced localStorage clear as a fallback, and will refuse to reload if neither layer proves it.
+    let browser_data_cleared = match window.clear_all_browsing_data() {
+        Ok(()) => true,
+        Err(error) => {
+            log_startup(
+                &st.startup_log,
+                format!("fresh-start: native browser-data clear failed; renderer fallback required ({error})"),
+            );
+            false
+        }
+    };
     let listening = spawn_sidecar(st);
-    st.recovery_in_progress.store(false, Ordering::SeqCst);
     let quarantine = prepared
         .quarantine
         .as_ref()
@@ -3483,6 +3520,7 @@ fn starnet_start_fresh(state: State<AppState>) -> Result<FreshStartView, String>
         ok: true,
         listening,
         quarantine,
+        browser_data_cleared,
     })
 }
 

@@ -83,15 +83,71 @@ fn valid_owner_pid(workspaces: &Path) -> Option<u32> {
     u32::try_from(pid).ok().filter(|pid| *pid > 0)
 }
 
+// A recorded PID is only an ownership claim while that process still exists. Crash/reboot leaves
+// the owner file behind, and treating the number alone as proof recreates the unreachable loop.
+// Unknown/permission-denied probes fail closed (alive); only a definitive "no such process" is dead.
+#[cfg(unix)]
+fn process_is_alive(pid: u32) -> bool {
+    unsafe extern "C" {
+        fn kill(pid: i32, signal: i32) -> i32;
+    }
+    let Ok(pid) = i32::try_from(pid) else {
+        return true;
+    };
+    if unsafe { kill(pid, 0) } == 0 {
+        return true;
+    }
+    // ESRCH is 3 on the Unix platforms StarNet ships (macOS and Linux). Every other result,
+    // especially EPERM, means the process exists or liveness could not be proven.
+    std::io::Error::last_os_error().raw_os_error() != Some(3)
+}
+
+#[cfg(windows)]
+fn process_is_alive(pid: u32) -> bool {
+    use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_INVALID_PARAMETER};
+    use windows_sys::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
+    let handle = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
+    if !handle.is_null() {
+        unsafe { CloseHandle(handle) };
+        return true;
+    }
+    // Access denied is still a live/unknown process. Windows documents INVALID_PARAMETER for a
+    // PID that does not exist, which is the only result that authorizes reclaiming the station.
+    (unsafe { GetLastError() }) != ERROR_INVALID_PARAMETER
+}
+
+#[cfg(not(any(unix, windows)))]
+fn process_is_alive(_pid: u32) -> bool {
+    true
+}
+
 /// Replace the active workspace with a clean, migration-sealed generation while moving the
 /// previous generation to a sibling quarantine. Nothing in the OS keychain is read or changed.
-/// The caller must stop its sidecar first and pass that exact child PID; a different valid owner
-/// is refused so an explicit reset can never create two writers for one station.
+/// The caller must stop its sidecar first and pass that exact child PID; a different live owner is
+/// refused so an explicit reset can never create two writers for one station. A provably dead PID
+/// is stale crash residue and must not strand the recovery escape.
 pub fn quarantine_and_prepare(
     workspaces: &Path,
     acknowledged_roots: &[PathBuf],
     stopped_child_pid: Option<u32>,
     now_ms: u64,
+) -> Result<FreshWorkspace, String> {
+    quarantine_and_prepare_with(
+        workspaces,
+        acknowledged_roots,
+        stopped_child_pid,
+        now_ms,
+        &process_is_alive,
+    )
+}
+
+fn quarantine_and_prepare_with(
+    workspaces: &Path,
+    acknowledged_roots: &[PathBuf],
+    stopped_child_pid: Option<u32>,
+    now_ms: u64,
+    owner_pid_alive: &dyn Fn(u32) -> bool,
 ) -> Result<FreshWorkspace, String> {
     let parent = workspaces
         .parent()
@@ -104,7 +160,7 @@ pub fn quarantine_and_prepare(
     })?;
 
     if let Some(owner_pid) = valid_owner_pid(workspaces) {
-        if Some(owner_pid) != stopped_child_pid {
+        if Some(owner_pid) != stopped_child_pid && owner_pid_alive(owner_pid) {
             return Err(format!(
                 "another StarNet process still owns this station (PID {owner_pid}); quit it before starting fresh"
             ));
@@ -247,9 +303,34 @@ mod tests {
             br#"{"version":1,"pid":9001,"nonce":"other"}"#,
         )
         .unwrap();
-        let error = quarantine_and_prepare(&workspaces, &[], Some(9002), 12345).unwrap_err();
+        let error =
+            quarantine_and_prepare_with(&workspaces, &[], Some(9002), 12345, &|pid| pid == 9001)
+                .unwrap_err();
         assert!(error.contains("another StarNet process"));
         assert!(workspaces.exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn reclaims_a_stale_owner_after_the_recorded_process_is_gone() {
+        let root = scratch("fresh-stale-owner");
+        let workspaces = root.join("workspaces");
+        fs::create_dir_all(&workspaces).unwrap();
+        fs::write(workspaces.join("agent.save.json"), b"old station").unwrap();
+        fs::write(
+            workspaces.join(OWNER_FILE),
+            br#"{"version":1,"pid":9001,"nonce":"crashed"}"#,
+        )
+        .unwrap();
+
+        let result = quarantine_and_prepare_with(&workspaces, &[], None, 12345, &|_| false)
+            .expect("a dead PID must not strand recovery");
+        let quarantine = result.quarantine.expect("old station is preserved");
+        assert_eq!(
+            fs::read(quarantine.join("agent.save.json")).unwrap(),
+            b"old station"
+        );
+        assert!(workspaces.join(FRESH_MARKER).is_file());
         let _ = fs::remove_dir_all(root);
     }
 }

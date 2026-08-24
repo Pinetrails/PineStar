@@ -4492,10 +4492,10 @@ const App = (() => {
     const sub = el('unreachable-sub');
     if (sub) sub.textContent = reason === 'forbidden' ? 'station service refused this window (stale session) — a relaunch usually clears it' : 'station service not answering';
     const status = el('unreachable-status');
-    let attempts = 0, timer = null, checking = false, resetting = false;
+    let attempts = 0, timer = null, checking = false, resetting = false, browserResetBlocked = false;
     const setStatus = m => { if (status) status.textContent = '＋ ' + m; };
     const attempt = async () => {
-      if (checking || resetting) return;
+      if (checking || resetting || browserResetBlocked) return;
       checking = true;
       attempts++;
       setStatus('checking… (attempt ' + attempts + ')');
@@ -4523,7 +4523,7 @@ const App = (() => {
     const restartBtn = el('btn-unreachable-restart');
     let restarting = false;
     const restart = async (auto) => {
-      if (restarting || resetting || !core || !core.invoke) return;
+      if (restarting || resetting || browserResetBlocked || !core || !core.invoke) return;
       restarting = true;
       if (restartBtn) restartBtn.disabled = true;
       setStatus((auto ? 'still unreachable — ' : '') + 'restarting the station service…');
@@ -4568,6 +4568,17 @@ const App = (() => {
           try {
             const result = await FreshStart.resetDesktop(core);
             const where = result.quarantine ? ' Old files were preserved in ' + result.quarantine + '.' : '';
+            if (!result.browserDataCleared) {
+              resetting = false;
+              browserResetBlocked = true;
+              freshBtn.disabled = false;
+              freshBtn.textContent = '✦ START COMPLETELY FRESH';
+              if (btn) btn.disabled = true;
+              if (restartBtn) restartBtn.disabled = true;
+              setStatus('the old station was safely preserved, but this window could not clear its browser data. Do not reload. Press START COMPLETELY FRESH again to retry.' + where);
+              return;
+            }
+            browserResetBlocked = false;
             if (result.listening) {
               setStatus('clean station ready — reopening now. Your account link and purchased credits were kept.' + where);
               try { location.reload(); } catch (_) {}
@@ -4578,9 +4589,9 @@ const App = (() => {
             resetting = false;
             freshBtn.disabled = false;
             freshBtn.textContent = '✦ START COMPLETELY FRESH';
-            if (btn) btn.disabled = false;
-            if (restartBtn) restartBtn.disabled = false;
-            setStatus('nothing was reset — ' + String(error && error.message || error));
+            if (btn) btn.disabled = browserResetBlocked;
+            if (restartBtn) restartBtn.disabled = browserResetBlocked;
+            setStatus((browserResetBlocked ? 'the clean station is still protected from the uncleared window cache — retry START COMPLETELY FRESH. ' : 'nothing was reset — ') + String(error && error.message || error));
           }
         };
       } else freshBtn.hidden = true;
@@ -4591,7 +4602,7 @@ const App = (() => {
     let autoRestarted = false;
     timer = setInterval(() => {
       attempt();
-      if (!autoRestarted && !resetting && attempts >= 6 && core && core.invoke) { autoRestarted = true; restart(true); }
+      if (!autoRestarted && !resetting && !browserResetBlocked && attempts >= 6 && core && core.invoke) { autoRestarted = true; restart(true); }
     }, 5000);
     show('screen-unreachable');
   }
