@@ -2142,15 +2142,22 @@ const App = (() => {
   }
   async function refreshStarnetGenesisStatus() {
     const statusEl = el('starnet-status'), linkBtn = el('btn-starnet-link');
-    if (!statusEl) return;
+    if (!statusEl) return { answered: false, linked: starnetLinked, balanceUsd: null, linkStatus: 'unavailable' };
     let j = null;
-    try { j = await Harness.api.get('/api/credits'); } catch (_) {}
+    let answered = false;
+    try { j = await Harness.api.get('/api/credits'); answered = !!j; }
+    catch (e) {
+      // /api/credits deliberately 404s when no account is linked. That is a definitive "not linked", not a
+      // balance outage; preserve the one-button LINK guidance. Every other failure remains unavailable.
+      if (/http 404\b/.test(String((e && e.message) || e))) { j = { configured: false }; answered = true; }
+    }
     starnetLinked = !!(j && j.configured);
     starnetLinkStatus = (j && (j.linkStatus || j.reason)) ? String(j.linkStatus || j.reason) : '';
     starnetBalanceUsd = (starnetLinked && j.balanceUsd != null && isFinite(Number(j.balanceUsd))) ? Number(j.balanceUsd) : null;
     starnetPurchaseUrl = (starnetLinked && j.purchaseUrl) ? String(j.purchaseUrl) : '';
+    const result = () => ({ answered, linked: starnetLinked, balanceUsd: starnetBalanceUsd, linkStatus: starnetLinkStatus });
     const creditsBtn = el('btn-starnet-credits');
-    if (pickedProvider !== 'starnet') { stopStarnetBalancePoll(); return; }   // pick moved on — don't repaint another provider's block
+    if (pickedProvider !== 'starnet') { stopStarnetBalancePoll(); return result(); }   // pick moved on — don't repaint another provider's block
     if (starnetLinked && starnetLinkStatus === 'unavailable') {
       stopStarnetBalancePoll();
       statusEl.textContent = 'link saved on this station, but StarNet could not verify it right now — check your connection and try again.';
@@ -2181,6 +2188,7 @@ const App = (() => {
       statusEl.className = 'codex-status' + (starnetLinkStatus === 'revoked' || starnetLinkStatus === 'link_revoked' ? ' bad' : '');
       if (linkBtn) linkBtn.classList.remove('hidden');
     }
+    return result();
   }
   // Mint a pairing code, open the browser to confirm it, poll until linked. The device token never enters
   // this WebView: the sidecar holds it, and on desktop Rust immediately moves it into the OS keychain.
@@ -2213,6 +2221,12 @@ const App = (() => {
                 // configured('starnet') answers true without a restart.
                 const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
                 const adopt = invoke ? Promise.resolve(invoke('harness_adopt_credits_token')).catch(() => false) : Promise.resolve(false);
+                // The poll response is the first authoritative statement about the account that was JUST
+                // confirmed. Seed the screen from it immediately, then re-read /api/credits after keychain
+                // adoption. An older linked account's cached $0 must never survive across this boundary.
+                starnetLinked = true;
+                starnetBalanceUsd = (p.balanceUsd != null && isFinite(Number(p.balanceUsd))) ? Number(p.balanceUsd) : null;
+                starnetLinkStatus = p.balanceVerified === false ? 'unavailable' : 'valid';
                 adopt
                   .then(() => (Harness.refreshCreditsConfigured ? Harness.refreshCreditsConfigured() : null))
                   .then(() => { refreshStarnetGenesisStatus(); loadModels('starnet'); });
@@ -2593,9 +2607,19 @@ const App = (() => {
       return false;
     }
     if (pickedProvider === 'starnet') {
-      // the credits admission gate would refuse the run anyway — say it here, where the fix is one button away.
-      if (!starnetLinked) { msg.textContent = 'link your StarNet account first — press 🔗 LINK YOUR STARNET ACCOUNT above.'; return false; }
-      if (starnetOutOfCredit()) { msg.className = 'msg bad'; msg.textContent = 'your StarNet account has no credits yet — waking your agent uses credits right away. Press ＄ ADD CREDITS above, then WAKE again.'; refreshStarnetGenesisStatus(); return false; }
+      // MONEY TRUTH MUST BE FRESH AT THE DECISION. The screen's painted balance can predate a purchase or a
+      // relink; using that cached $0 here stranded a funded customer even though /v1/balance already held the
+      // credits. GET /api/credits performs an awaited authoritative refresh for the ACTIVE linked account.
+      // Only a successful finite zero may deny WAKE. A failed/unknown read is unavailable, never "$0".
+      msg.textContent = 'checking your StarNet credits…';
+      const creditState = await refreshStarnetGenesisStatus();
+      if (!creditState || !creditState.answered || (creditState.linked && creditState.balanceUsd == null)) {
+        msg.className = 'msg bad';
+        msg.textContent = 'StarNet couldn’t confirm your credit balance right now. Your credits are safe — try WAKE again in a moment.';
+        return false;
+      }
+      if (!creditState.linked) { msg.textContent = 'link your StarNet account first — press 🔗 LINK YOUR STARNET ACCOUNT above.'; return false; }
+      if (!(Number(creditState.balanceUsd) > 0)) { msg.className = 'msg bad'; msg.textContent = 'your StarNet account has no credits yet — waking your agent uses credits right away. Press ＄ ADD CREDITS above, then WAKE again.'; return false; }
       Harness.setModel(model); Harness.setProv('starnet');
     } else if (isOAuthProviderId(pickedProvider)) {
       if (!oauthConnected[pickedProvider]) { msg.textContent = 'sign in with ' + OAUTH_GENESIS[pickedProvider].name + ' first, or switch to OpenRouter.'; return false; }

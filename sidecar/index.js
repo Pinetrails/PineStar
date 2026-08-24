@@ -9354,8 +9354,23 @@ async function handleCreditsLinkPoll(req, res) {
   try {
     const r = await creditsLink.poll(code);
     if (r && r.status === 'confirmed') {
-      await rebuildCredits();   // the device token is now persisted — build the live adapter + warm the balance
-      return creditsJson(res, 200, { linked: true, accountId: r.accountId });
+      const balanceUsd = await rebuildCredits();   // build from the JUST-persisted token/account + verify its balance
+      const snap = credits.snapshot();
+      const linkedAccount = String((snap && snap.accountId) || '');
+      // The confirmed account, active adapter account, and balance request must be one identity. Never tell the
+      // UI "linked" if an env override/stale credential caused the adapter to resolve a different account.
+      if (!linkedAccount || linkedAccount !== String(r.accountId || '')) {
+        await creditsLink.clearSaved().catch(swallow('credits.link.account-mismatch.clear', null));
+        await rebuildCredits().catch(swallow('credits.link.account-mismatch.rebuild', null));
+        return creditsJson(res, 409, { linked: false, error: 'link_account_mismatch' });
+      }
+      const balanceVerified = typeof balanceUsd === 'number' && isFinite(balanceUsd);
+      return creditsJson(res, 200, {
+        linked: true,
+        accountId: linkedAccount,
+        balanceUsd: balanceVerified ? balanceUsd : null,
+        balanceVerified
+      });
     }
     return creditsJson(res, 200, { linked: false, status: (r && r.status) || 'pending' });
   } catch (e) { return creditsJson(res, 502, { error: (e && e.message) || 'link_poll_failed' }); }

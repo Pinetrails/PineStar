@@ -41,7 +41,7 @@ ok(/harness_adopt_credits_token/.test(app), 'a fresh link hands the token to the
 ok(/refreshCreditsConfigured/.test(app), "a fresh link teaches Harness so configured('starnet') answers without a restart");
 
 // WAKE is gated: an unlinked STARNET pick is refused with the remedy named, before any agent exists.
-ok(/pickedProvider === 'starnet'[\s\S]{0,240}starnetLinked[\s\S]{0,240}link your StarNet account first/i.test(app),
+ok(/pickedProvider === 'starnet'[\s\S]{0,1800}!creditState\.linked[\s\S]{0,240}link your StarNet account first/i.test(app),
   'WAKE refuses an unlinked STARNET pick and names the one-button remedy');
 
 // Leaving the screen (or switching provider) drops the in-flight pairing poll — no orphan pollers.
@@ -52,7 +52,19 @@ ok(/stopStarnetLinkPoll\(\)/.test(app), 'the pairing poll has a stop, wired on s
 ok(/id="btn-starnet-credits"/.test(index), 'the STARNET block offers ADD CREDITS');
 ok(/function starnetOutOfCredit\(\)/.test(app), 'a linked-but-empty wallet is a named state');
 ok(/no credits yet/.test(app) && /btn-starnet-credits/.test(app), 'the status line names the empty wallet and the button opens the store');
-ok(app.split(/\r?\n/).some(l => l.includes('if (starnetOutOfCredit()) {') && l.includes('no credits yet') && l.includes('return false;')), 'WAKE refuses an empty wallet up front, with the fix one button away — never as a model failure');
+const wakeCreditsStart = app.indexOf("msg.textContent = 'checking your StarNet credits…'");
+const wakeCreditsRefresh = app.indexOf('const creditState = await refreshStarnetGenesisStatus();', wakeCreditsStart);
+const wakeCreditsZero = app.indexOf('if (!(Number(creditState.balanceUsd) > 0))', wakeCreditsRefresh);
+ok(wakeCreditsStart >= 0 && wakeCreditsRefresh > wakeCreditsStart && wakeCreditsZero > wakeCreditsRefresh,
+  'WAKE awaits a fresh authoritative balance before it may classify the active linked account as empty');
+ok(/!creditState\.answered[\s\S]{0,260}credits are safe/.test(app) && /creditState\.balanceUsd == null/.test(app),
+  'an unavailable/unknown balance is never converted into a false no-credits denial');
+ok(/http 404\\b[\s\S]{0,160}configured: false[\s\S]{0,80}answered = true/.test(app),
+  'a definitive unlinked 404 still gives the user the LINK ACCOUNT remedy instead of claiming a balance outage');
+ok(/linkedAccount !== String\(r\.accountId/.test(host) && /link_account_mismatch/.test(host),
+  'link confirmation refuses any account-ID mismatch between the newly confirmed token and the active credits adapter');
+ok(/balanceUsd:\s*balanceVerified \? balanceUsd : null/.test(host),
+  'link confirmation returns the freshly verified balance for the newly active account, never an inherited cached value');
 ok(/managed credit\|Managed credits/.test(app), 'a billing refusal from the wire preflight is named as billing, not as "model didn’t answer"');
 // the preflight reads Harness.chat's refusal string — otherwise every up-front refusal collapses to
 // "the provider returned an error" and the real reason never reaches the screen.
