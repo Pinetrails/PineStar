@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "c64dd574ee46382ae7fafb0611c8458126ae6454",
-    "pathSetSha256": "77c7cefbdaf746b68ae98b176644d3d9ddf2519175bb3ed53931be9819e6750c",
+    "sourceCommit": "fbc47186917785e4148bbc640bca4b9e69f134f0",
+    "pathSetSha256": "4a4d5044dc5f1a8aa7e16d752bd899dc2b027dcd621bea4ae61df6a29d6a6912",
     "files": [
       {
         "path": "INSTALL.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 360423,
-        "sha256": "47cd1f05c9d784a8e52cffe2480f111d61a11dd0f44c04ab5e032118ee669e61"
+        "bytes": 363045,
+        "sha256": "148df7f6ffb061236343d6bd602be9f41c1dd849d72ae27a62a0167cfda6e9d5"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -250,6 +250,11 @@
         "path": "frontend/app/fork.js",
         "bytes": 15622,
         "sha256": "2b32c8fe2da8046352981d7856d0d7ef5843bffe889fdabe8b386334ffdbe5a8"
+      },
+      {
+        "path": "frontend/app/freshstart.js",
+        "bytes": 1712,
+        "sha256": "bcb2ef30901ea817063ddecc4dc12c1d4d2fc31b814349b0daa55638e39da535"
       },
       {
         "path": "frontend/app/friendlyerror.js",
@@ -1043,8 +1048,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 76595,
-        "sha256": "7e0f71281d8efe2d619f9ece3efdd5fb709178ba413aeb421d2cf4bf298707d7"
+        "bytes": 76998,
+        "sha256": "52d29d48576815c2ce9e12586cef7b077f6faa3cf3b98862e6740af0195436b5"
       },
       {
         "path": "frontend/js/arcade.js",
