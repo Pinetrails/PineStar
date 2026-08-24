@@ -104,6 +104,10 @@
        stops the station is the one that stays silent. */
     const REARM = 1.25;
     const warned = { low: false, exhausted: false };
+    // Local reservations are already subtracted from cache.balanceUsd. Add them back only when deciding whether
+    // the ACCOUNT is low; otherwise two concurrent healthy runs could make each other's temporary holds look
+    // like settled spend. Admission continues to use the raw cache and therefore cannot oversubscribe funds.
+    const reservations = new Map();
     const emitFn = typeof opts.emit === 'function' ? opts.emit : null;
     // number or getter — index.js passes a getter so a live per-run cap change is picked up without a restart
     function lowThreshold() {
@@ -112,14 +116,14 @@
       return n > 0 ? n : 0;   // 0 (or unset/garbage) disables the warning entirely
     }
 
-    // The ONLY writer of cache.balanceUsd. Every caller goes through here so the crossing check cannot be
-    // bypassed. `null` means "unknown" (fail-closed) and must never be treated as a low balance — that would
-    // fire a scary warning every time a background POST invalidates the cache.
-    function setBalance(v) {
-      const b = (typeof v === 'number' && isFinite(v)) ? v : null;
-      cache.balanceUsd = b;
-      cache.at = clock.now();
-      if (b == null) return;                      // unknown ≠ low
+    // Warning evaluation is separate from cache mutation because a managed debit is a RESERVATION, not spend.
+    // An uncapped run reserves the whole wallet, temporarily taking spendable balance to $0; treating that hold
+    // as exhaustion produced a false "$0 left" warning on every input. Settlement below calls this explicitly,
+    // while refresh/refund paths evaluate it through setBalance as before.
+    function evaluateWarning(available) {
+      if (available == null) return;              // unknown ≠ low
+      let b = available;
+      for (const held of reservations.values()) b += held;
       const t = lowThreshold();
       if (!emitFn || !(t > 0)) return;
 
@@ -134,6 +138,15 @@
         return;
       }
       if (b > t * REARM) { warned.low = false; warned.exhausted = false; }   // topped up — arm for next time
+    }
+
+    // The ONLY writer of cache.balanceUsd. Every caller goes through here so authority ordering and warning
+    // classification cannot drift apart. `warn === false` is reserved for temporary billing holds.
+    function setBalance(v, warn) {
+      const b = (typeof v === 'number' && isFinite(v)) ? v : null;
+      cache.balanceUsd = b;
+      cache.at = clock.now();
+      if (warn !== false) evaluateWarning(b);
     }
 
     // A background debit/credit POST FAILED, so the optimistic cache no longer reflects a state we can trust
@@ -238,10 +251,11 @@
       debit(id, usd, meta) {
         const amt = num(usd);
         const seq = ++authoritySeq;
-        // The optimistic hold is what makes the warning TIMELY: it lands the moment the run reserves,
-        // not a round-trip later. The authoritative response below re-runs the same check with the
-        // real number — the latch means the user still only sees it once.
-        if (cache.balanceUsd != null) setBalance(Math.max(0, cache.balanceUsd - amt));
+        // The optimistic hold keeps synchronous admission safe while the debit POST is in flight.
+        // Warning evaluation deliberately waits for settlement: this number includes reserved funds.
+        // This is available balance after a temporary reservation, not settled account spend. In the default
+        // uncapped path `amt` is the whole wallet, so evaluating it would fabricate exhaustion every run.
+        if (cache.balanceUsd != null) setBalance(Math.max(0, cache.balanceUsd - amt), false);
         postJson('/v1/debit', { account: acct(), usd: amt, meta: meta || {} })
           .then(body => {
             if (!body || body.balanceUsd == null) return;
@@ -250,7 +264,7 @@
               malformed.code = 'credits_balance_invalid';
               return onPostFailure('debit', malformed, seq);
             }
-            if (seq === authoritySeq) setBalance(body.balanceUsd);
+            if (seq === authoritySeq) setBalance(body.balanceUsd, false);
           })
           .catch(e => onPostFailure('debit', e, seq));
         return { ok: true };
@@ -258,7 +272,10 @@
       credit(id, usd, meta) {
         const amt = num(usd);
         const seq = ++authoritySeq;
-        if (cache.balanceUsd != null) setBalance(cache.balanceUsd + amt);   // optimistic refund
+        // The owning reservation remains in reservations until billing.finishRun returns. Suppress this
+        // intermediate mutation; finishRun evaluates after removing that hold, and the POST response below
+        // evaluates the authoritative balance as well.
+        if (cache.balanceUsd != null) setBalance(cache.balanceUsd + amt, false);   // optimistic refund
         postJson('/v1/credit', { account: acct(), usd: amt, meta: meta || {} })
           .then(body => {
             if (!body || body.balanceUsd == null) return;
@@ -282,9 +299,24 @@
       o = o || {};
       const capUsd = num(o.capUsd);
       if (!(capUsd > 0)) return billing.beginRun({ mode: 'byok', runId: str(o.runId), agentId: str(o.agentId) });
-      return billing.beginRun({ mode: 'managed', accountId: acct(), runId: str(o.runId), agentId: str(o.agentId), capUsd });
+      const out = billing.beginRun({ mode: 'managed', accountId: acct(), runId: str(o.runId), agentId: str(o.agentId), capUsd });
+      const status = out && out.ok && out.managed ? billing.status(str(o.runId)) : null;
+      if (status && !status.settled) reservations.set(str(o.runId), num(out.reservedUsd));
+      return out;
     }
-    function finishRun(o) { return billing.finishRun(o || {}); }
+    function finishRun(o) {
+      o = o || {};
+      const runId = str(o.runId);
+      const out = billing.finishRun(o);
+      // Refunds synchronously update the cache before billing returns. Remove this run's hold, then evaluate
+      // the settled account balance (raw availability + any OTHER live reservations). A run that consumes its
+      // entire reservation has no refund call, so this seam is also what preserves real exhaustion warnings.
+      if (out && out.ok && out.mode === 'managed' && out.settled) {
+        reservations.delete(runId);
+        evaluateWarning(cache.balanceUsd);
+      }
+      return out;
+    }
 
     async function history(id, limit) {
       try {
