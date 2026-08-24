@@ -359,6 +359,79 @@ function fakeFetch(seed) {
   }
 
   {
+    // Regression (2026-08-24 field report): an uncapped managed run reserves the WHOLE wallet, so the
+    // temporary hold takes the spendable cache to $0 before settlement refunds the unused headroom. That
+    // reservation is not account exhaustion and must never produce the scary $0 warning on every input.
+    const { c, low } = withWarn(22);
+    await c.refresh('acct');
+    for (let i = 1; i <= 3; i++) {
+      const balance = c.snapshot().balanceUsd;
+      c.beginRun({ accountId: 'acct', runId: 'wallet-' + i, capUsd: balance });
+      c.finishRun({ runId: 'wallet-' + i, usd: 0.10 });
+      await flush(); await flush();
+      await c.refresh('acct');
+    }
+    A.eq(low().length, 0, 'full-wallet reservation/refund cycles never masquerade as account exhaustion');
+    A.ok(Math.abs(c.snapshot().balanceUsd - 21.70) < 1e-9, 'the settled cache still tracks the three real debits');
+  }
+
+  {
+    // Suppressing the temporary hold must not suppress a REAL exhausted balance: when a run consumes its
+    // entire reservation there is no refund POST to carry the final $0, so finishRun must evaluate settlement.
+    const { c, low } = withWarn(20);
+    await c.refresh('acct');
+    c.beginRun({ accountId: 'acct', runId: 'spent-all', capUsd: 20 });
+    c.finishRun({ runId: 'spent-all', usd: 20 });
+    await flush(); await flush();
+    A.eq(low().length, 1, 'a run that truly spends the remaining wallet emits one warning at settlement');
+    A.eq(low()[0].payload.balanceUsd, 0, 'real exhaustion still reports the settled $0 balance');
+    A.eq(low()[0].payload.exhausted, true, 'real exhaustion remains classified as exhausted');
+  }
+
+  {
+    // Other live runs' reservations are holds too. Settling run A while run B still holds the rest of the
+    // wallet must evaluate the account total, not the temporarily spendable cache left under B's hold.
+    const { c, low } = withWarn(22);
+    await c.refresh('acct');
+    c.beginRun({ accountId: 'acct', runId: 'concurrent-a', capUsd: 11 });
+    c.beginRun({ accountId: 'acct', runId: 'concurrent-b', capUsd: 11 });
+    c.finishRun({ runId: 'concurrent-a', usd: 1 });
+    await flush(); await flush();
+    A.eq(low().length, 0, 'settling beside another live reservation does not fabricate a low balance');
+    c.finishRun({ runId: 'concurrent-b', usd: 1 });
+    await flush(); await flush();
+    A.eq(low().length, 0, 'both healthy concurrent settlements remain quiet');
+    A.ok(Math.abs(c.snapshot().balanceUsd - 20) < 1e-9, 'concurrent settlements retain the real account balance');
+  }
+
+  {
+    // A partial refund can leave the account genuinely low. Its settled balance, not the temporary $0 hold,
+    // is the number the warning must carry.
+    const { c, low } = withWarn(20);
+    await c.refresh('acct');
+    c.beginRun({ accountId: 'acct', runId: 'settled-low', capUsd: 20 });
+    c.finishRun({ runId: 'settled-low', usd: 16 });
+    await flush(); await flush();
+    A.eq(low().length, 1, 'a genuinely low post-settlement balance still warns once');
+    A.eq(low()[0].payload.balanceUsd, 4, 'the warning reports the settled balance instead of the reservation hold');
+    A.eq(low()[0].payload.exhausted, false, 'a positive settled balance is low, not exhausted');
+  }
+
+  {
+    // An idempotent begin for an already-settled run must not resurrect its old reservation in warning math.
+    const { c, f, low } = withWarn(20);
+    await c.refresh('acct');
+    c.beginRun({ accountId: 'acct', runId: 'settled-replay', capUsd: 10 });
+    c.finishRun({ runId: 'settled-replay', usd: 1 });
+    await flush(); await flush();
+    A.eq(c.beginRun({ accountId: 'acct', runId: 'settled-replay', capUsd: 10 }).ok, true, 'settled admission replay stays idempotent');
+    f.book.acct = 4;
+    await c.refresh('acct');
+    A.eq(low().length, 1, 'settled admission replay cannot hide a later genuine low balance');
+    A.eq(low()[0].payload.balanceUsd, 4, 'the replay adds no phantom reservation to warning math');
+  }
+
+  {
     // an invalidated cache is UNKNOWN, not empty — warning on it would cry wolf on every network blip
     const { c, f, low } = withWarn(20);
     await c.refresh('acct');
