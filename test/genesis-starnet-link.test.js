@@ -52,6 +52,10 @@ ok(/stopStarnetLinkPoll\(\)/.test(app), 'the pairing poll has a stop, wired on s
 // EMPTY WALLET IS SAID HERE (2026-08-22: a first-timer signed in without buying credits; WAKE's real call was
 // refused by managed admission and the screen said "your model didn't answer", so they kept switching models).
 ok(/id="btn-starnet-credits"/.test(index), 'the STARNET block offers ADD CREDITS');
+ok(/id="btn-starnet-switch"/.test(index) && /USE A DIFFERENT ACCOUNT/.test(index),
+  'the genesis screen lets a paid beginner escape an automatically linked wrong account');
+ok(/async function switchStarnetAccount\(\)[\s\S]{0,1400}harness_clear_credits_token[\s\S]{0,800}\/api\/credits\/unlink[\s\S]{0,800}startStarnetLink\(\)/.test(app),
+  'switch account clears keychain + sidecar link and immediately starts the normal pairing flow');
 ok(/function starnetOutOfCredit\(\)/.test(app), 'a linked-but-empty wallet is a named state');
 ok(/no credits yet/.test(app) && /btn-starnet-credits/.test(app), 'the status line names the empty wallet and the button opens the store');
 const wakeCreditsStart = app.indexOf("msg.textContent = 'checking your StarNet credits…'");

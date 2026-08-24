@@ -4869,7 +4869,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         ? kcInvoke('harness_clear_credits_token').then(() => true).catch(() => false)
         : Promise.resolve(true);
       forgetKeychain
-        .then(() => Harness.api.post('/api/credits/unlink', {}))
+        .then(ok => { if (!ok && kcInvoke) throw new Error('keychain unlink failed'); return Harness.api.post('/api/credits/unlink', {}); })
         // Symmetric to the link path: a station that just gave up its credential must stop reporting
         // that it can run on credits, or STARNET stays selectable and every run fails at admission.
         .then(() => (H() && H().refreshCreditsConfigured) ? H().refreshCreditsConfigured() : null)

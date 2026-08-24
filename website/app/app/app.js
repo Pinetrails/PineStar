@@ -2145,7 +2145,7 @@ const App = (() => {
     return linked || linkable;
   }
   async function refreshStarnetGenesisStatus() {
-    const statusEl = el('starnet-status'), linkBtn = el('btn-starnet-link');
+    const statusEl = el('starnet-status'), linkBtn = el('btn-starnet-link'), switchBtn = el('btn-starnet-switch');
     if (!statusEl) return { answered: false, linked: starnetLinked, balanceUsd: null, linkStatus: 'unavailable' };
     let j = null;
     let answered = false;
@@ -2182,12 +2182,14 @@ const App = (() => {
       statusEl.className = 'codex-status bad';
       if (linkBtn) linkBtn.classList.add('hidden');
       if (creditsBtn) creditsBtn.classList.add('hidden');
+      if (switchBtn) switchBtn.classList.remove('hidden');
     } else if (starnetLinked && starnetOutOfCredit()) {
       // linked, wallet empty: the one state WAKE can never fix. Say it, offer the store, and keep polling the
       // balance so the moment the purchase lands this line flips green without a restart.
       statusEl.innerHTML = '<span class="conn-dot"></span>linked to your StarNet account — <b>no credits yet</b>. Waking your agent uses credits right away, so add some first.';
       statusEl.className = 'codex-status bad';
       if (linkBtn) linkBtn.classList.add('hidden');
+      if (switchBtn) switchBtn.classList.remove('hidden');
       if (creditsBtn) { creditsBtn.classList.remove('hidden'); creditsBtn.onclick = () => { SFX.click(); if (starnetPurchaseUrl) openExternalUrl(starnetPurchaseUrl); }; }
       if (!_starnetBalancePoll) _starnetBalancePoll = setInterval(() => { if (pickedProvider === 'starnet' && starnetOutOfCredit()) refreshStarnetGenesisStatus(); else stopStarnetBalancePoll(); }, 10000);
     } else if (starnetLinked) {
@@ -2197,9 +2199,11 @@ const App = (() => {
       statusEl.className = 'codex-status ok';
       if (linkBtn) linkBtn.classList.add('hidden');
       if (creditsBtn) creditsBtn.classList.add('hidden');
+      if (switchBtn) switchBtn.classList.remove('hidden');
     } else {
       stopStarnetBalancePoll();
       if (creditsBtn) creditsBtn.classList.add('hidden');
+      if (switchBtn) switchBtn.classList.add('hidden');
       statusEl.textContent = starnetLinkStatus === 'revoked' || starnetLinkStatus === 'link_revoked'
         ? 'this station’s previous link was removed from your account — link it again to reconnect your credits.'
         : 'not linked — connect the subscription you bought on starnetos.com (takes one click + a code)';
@@ -2207,6 +2211,30 @@ const App = (() => {
       if (linkBtn) linkBtn.classList.remove('hidden');
     }
     return result();
+  }
+  // A station can be linked to a DIFFERENT StarNet login than the browser account that owns the purchase.
+  // Genesis used to auto-recognize that old device and offer only ADD CREDITS, trapping a paid beginner on
+  // the wrong account. Switching clears both credential halves, re-reads provider truth, and starts the normal
+  // pairing flow immediately — no Terminal, logs, reinstall, or trip through Settings required.
+  async function switchStarnetAccount() {
+    SFX.click();
+    stopStarnetLinkPoll(); stopStarnetBalancePoll(); _starnetStatusSeq++;
+    const statusEl = el('starnet-status'), switchBtn = el('btn-starnet-switch');
+    if (switchBtn) switchBtn.disabled = true;
+    if (statusEl) { statusEl.textContent = 'disconnecting this account so you can link the one with your credits…'; statusEl.className = 'codex-status'; }
+    try {
+      const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+      if (invoke) await invoke('harness_clear_credits_token');
+      const response = await Harness.api.post('/api/credits/unlink', {});
+      if (!response || !response.ok || (response.j && response.j.ok === false)) throw new Error('unlink refused');
+      if (Harness.refreshCreditsConfigured) await Harness.refreshCreditsConfigured();
+      starnetLinked = false; starnetBalanceUsd = null; starnetPurchaseUrl = ''; starnetLinkStatus = '';
+      if (switchBtn) { switchBtn.classList.add('hidden'); switchBtn.disabled = false; }
+      startStarnetLink();
+    } catch (_) {
+      if (statusEl) { statusEl.textContent = 'could not disconnect this account safely — try again.'; statusEl.className = 'codex-status bad'; }
+      if (switchBtn) switchBtn.disabled = false;
+    }
   }
   // Mint a pairing code, open the browser to confirm it, poll until linked. The device token never enters
   // this WebView: the sidecar holds it, and on desktop Rust immediately moves it into the OS keychain.
@@ -2453,6 +2481,7 @@ const App = (() => {
     // a resume keeps the agent's saved provider.
     userPickedProvider = false;
     { const sl = el('btn-starnet-link'); if (sl) sl.onclick = () => startStarnetLink(); }
+    { const ss = el('btn-starnet-switch'); if (ss) ss.onclick = () => switchStarnetAccount(); }
     revealStarnetGenesis(!recovery);
     // BYOK key-safety note: collapsed by default, expanded by its own disclosure toggle (progressive disclosure).
     { const bt = el('byok-toggle'), bn = el('byok-note');
