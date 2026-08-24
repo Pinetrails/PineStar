@@ -131,6 +131,8 @@ test/desktop-installed-cdp-forwarding.test.js
 test/cloudsavecore.test.js
 test/cloudsave-refusal.test.js
 test/cloudsave-unknown.test.js
+test/freshstart.test.js
+test/desktop-fresh-start-contract.test.js
 test/cloudsave-unload.test.js
 test/fullscreen.test.js
 test/titlebar.test.js
