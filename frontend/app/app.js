@@ -2123,13 +2123,17 @@ const App = (() => {
   let starnetBalanceUsd = null, starnetPurchaseUrl = '', starnetLinkStatus = '';
   let _starnetBalancePoll = null;
   function stopStarnetBalancePoll() { if (_starnetBalancePoll) { clearInterval(_starnetBalancePoll); _starnetBalancePoll = null; } }
-  function starnetOutOfCredit() { return starnetLinked && starnetBalanceUsd != null && !(Number(starnetBalanceUsd) > 0); }
+  function starnetOutOfCredit() { return starnetLinked && typeof starnetBalanceUsd === 'number' && !(starnetBalanceUsd > 0); }
   let userPickedProvider = false;     // a real chip click — the auto-promote below must never override it
-  let _starnetLinkPoll = null;
-  function stopStarnetLinkPoll() { if (_starnetLinkPoll) { clearInterval(_starnetLinkPoll); _starnetLinkPoll = null; } }
+  let _starnetLinkPoll = null, _starnetLinkPollBusy = false, _starnetLinkGeneration = 0, _starnetStatusSeq = 0;
+  function stopStarnetLinkPoll() {
+    _starnetLinkGeneration++;
+    _starnetLinkPollBusy = false;
+    if (_starnetLinkPoll) { clearInterval(_starnetLinkPoll); _starnetLinkPoll = null; }
+  }
   async function revealStarnetGenesis(autoPick) {
     let linked = false, linkable = false;
-    try { const j = await Harness.api.get('/api/credits'); linked = !!(j && j.configured); } catch (_) {}
+    try { const j = await Harness.api.get('/api/credits?history=0'); linked = !!(j && j.configured); } catch (_) {}
     if (!linked) { try { const j = await Harness.api.get('/api/credits/linkable'); linkable = !!(j && j.available); } catch (_) {} }
     starnetLinked = linked;
     const b = document.querySelector('.provider-row .prov[data-prov="starnet"]');
@@ -2141,19 +2145,33 @@ const App = (() => {
     return linked || linkable;
   }
   async function refreshStarnetGenesisStatus() {
-    const statusEl = el('starnet-status'), linkBtn = el('btn-starnet-link');
+    const statusEl = el('starnet-status'), linkBtn = el('btn-starnet-link'), switchBtn = el('btn-starnet-switch');
     if (!statusEl) return { answered: false, linked: starnetLinked, balanceUsd: null, linkStatus: 'unavailable' };
     let j = null;
     let answered = false;
-    try { j = await Harness.api.get('/api/credits'); answered = !!j; }
+    const seq = ++_starnetStatusSeq;
+    const priorLinked = starnetLinked, priorPurchaseUrl = starnetPurchaseUrl;
+    let timeout = null;
+    try {
+      j = await Promise.race([
+        Harness.api.get('/api/credits?history=0'),
+        new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('credits status timeout')), 10000); })
+      ]);
+      answered = !!(j && typeof j.configured === 'boolean');
+    }
     catch (e) {
       // /api/credits deliberately 404s when no account is linked. That is a definitive "not linked", not a
       // balance outage; preserve the one-button LINK guidance. Every other failure remains unavailable.
       if (/http 404\b/.test(String((e && e.message) || e))) { j = { configured: false }; answered = true; }
     }
+    finally { if (timeout) clearTimeout(timeout); }
+    // A slower old request must never repaint a newer account/balance answer. The caller gets UNKNOWN and may
+    // retry; it never gets an old zero that could deny a funded account.
+    if (seq !== _starnetStatusSeq) return { answered: false, linked: starnetLinked, balanceUsd: null, linkStatus: 'unavailable' };
+    if (!answered) j = { configured: priorLinked, linkStatus: 'unavailable', purchaseUrl: priorPurchaseUrl };
     starnetLinked = !!(j && j.configured);
     starnetLinkStatus = (j && (j.linkStatus || j.reason)) ? String(j.linkStatus || j.reason) : '';
-    starnetBalanceUsd = (starnetLinked && j.balanceUsd != null && isFinite(Number(j.balanceUsd))) ? Number(j.balanceUsd) : null;
+    starnetBalanceUsd = (starnetLinked && typeof j.balanceUsd === 'number' && isFinite(j.balanceUsd)) ? j.balanceUsd : null;
     starnetPurchaseUrl = (starnetLinked && j.purchaseUrl) ? String(j.purchaseUrl) : '';
     const result = () => ({ answered, linked: starnetLinked, balanceUsd: starnetBalanceUsd, linkStatus: starnetLinkStatus });
     const creditsBtn = el('btn-starnet-credits');
@@ -2164,12 +2182,14 @@ const App = (() => {
       statusEl.className = 'codex-status bad';
       if (linkBtn) linkBtn.classList.add('hidden');
       if (creditsBtn) creditsBtn.classList.add('hidden');
+      if (switchBtn) switchBtn.classList.remove('hidden');
     } else if (starnetLinked && starnetOutOfCredit()) {
       // linked, wallet empty: the one state WAKE can never fix. Say it, offer the store, and keep polling the
       // balance so the moment the purchase lands this line flips green without a restart.
       statusEl.innerHTML = '<span class="conn-dot"></span>linked to your StarNet account — <b>no credits yet</b>. Waking your agent uses credits right away, so add some first.';
       statusEl.className = 'codex-status bad';
       if (linkBtn) linkBtn.classList.add('hidden');
+      if (switchBtn) switchBtn.classList.remove('hidden');
       if (creditsBtn) { creditsBtn.classList.remove('hidden'); creditsBtn.onclick = () => { SFX.click(); if (starnetPurchaseUrl) openExternalUrl(starnetPurchaseUrl); }; }
       if (!_starnetBalancePoll) _starnetBalancePoll = setInterval(() => { if (pickedProvider === 'starnet' && starnetOutOfCredit()) refreshStarnetGenesisStatus(); else stopStarnetBalancePoll(); }, 10000);
     } else if (starnetLinked) {
@@ -2179,9 +2199,11 @@ const App = (() => {
       statusEl.className = 'codex-status ok';
       if (linkBtn) linkBtn.classList.add('hidden');
       if (creditsBtn) creditsBtn.classList.add('hidden');
+      if (switchBtn) switchBtn.classList.remove('hidden');
     } else {
       stopStarnetBalancePoll();
       if (creditsBtn) creditsBtn.classList.add('hidden');
+      if (switchBtn) switchBtn.classList.add('hidden');
       statusEl.textContent = starnetLinkStatus === 'revoked' || starnetLinkStatus === 'link_revoked'
         ? 'this station’s previous link was removed from your account — link it again to reconnect your credits.'
         : 'not linked — connect the subscription you bought on starnetos.com (takes one click + a code)';
@@ -2190,17 +2212,43 @@ const App = (() => {
     }
     return result();
   }
+  // A station can be linked to a DIFFERENT StarNet login than the browser account that owns the purchase.
+  // Genesis used to auto-recognize that old device and offer only ADD CREDITS, trapping a paid beginner on
+  // the wrong account. Switching clears both credential halves, re-reads provider truth, and starts the normal
+  // pairing flow immediately — no Terminal, logs, reinstall, or trip through Settings required.
+  async function switchStarnetAccount() {
+    SFX.click();
+    stopStarnetLinkPoll(); stopStarnetBalancePoll(); _starnetStatusSeq++;
+    const statusEl = el('starnet-status'), switchBtn = el('btn-starnet-switch');
+    if (switchBtn) switchBtn.disabled = true;
+    if (statusEl) { statusEl.textContent = 'disconnecting this account so you can link the one with your credits…'; statusEl.className = 'codex-status'; }
+    try {
+      const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
+      if (invoke) await invoke('harness_clear_credits_token');
+      const response = await Harness.api.post('/api/credits/unlink', {});
+      if (!response || !response.ok || (response.j && response.j.ok === false)) throw new Error('unlink refused');
+      if (Harness.refreshCreditsConfigured) await Harness.refreshCreditsConfigured();
+      starnetLinked = false; starnetBalanceUsd = null; starnetPurchaseUrl = ''; starnetLinkStatus = '';
+      if (switchBtn) { switchBtn.classList.add('hidden'); switchBtn.disabled = false; }
+      startStarnetLink();
+    } catch (_) {
+      if (statusEl) { statusEl.textContent = 'could not disconnect this account safely — try again.'; statusEl.className = 'codex-status bad'; }
+      if (switchBtn) switchBtn.disabled = false;
+    }
+  }
   // Mint a pairing code, open the browser to confirm it, poll until linked. The device token never enters
   // this WebView: the sidecar holds it, and on desktop Rust immediately moves it into the OS keychain.
   function startStarnetLink() {
     SFX.click();
     stopStarnetLinkPoll();
+    const generation = _starnetLinkGeneration;
     const statusEl = el('starnet-status'), codeEl = el('starnet-code'), openBtn = el('btn-starnet-open');
     const fail = t => { statusEl.textContent = t; statusEl.className = 'codex-status bad'; codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); };
     statusEl.textContent = 'requesting a link code…'; statusEl.className = 'codex-status';
     Harness.api.post('/api/credits/link/start', { deviceName: 'StarNet Station' })
-      .then(r => { if (!r || !r.ok) throw new Error('start failed'); return r.j; })
+      .then(r => { if (generation !== _starnetLinkGeneration) return null; if (!r || !r.ok) throw new Error('start failed'); return r.j; })
       .then(j => {
+        if (generation !== _starnetLinkGeneration) return;
         if (!j || !j.code) throw new Error('no code');
         codeEl.textContent = j.code; codeEl.classList.remove('hidden');
         openBtn.classList.remove('hidden');
@@ -2209,10 +2257,13 @@ const App = (() => {
         openExternalUrl(j.verifyUrl);
         const expiresAt = Number(j.expiresAt) || 0;
         const tick = () => {
+          if (generation !== _starnetLinkGeneration || _starnetLinkPollBusy) return;
           if (expiresAt && Date.now() > expiresAt) { stopStarnetLinkPoll(); fail('that code expired — start again'); return; }
+          _starnetLinkPollBusy = true;
           Harness.api.post('/api/credits/link/poll', { code: j.code })
             .then(r2 => (r2 && r2.ok) ? r2.j : {})
             .then(p => {
+              if (generation !== _starnetLinkGeneration) return;
               if (p && p.linked) {
                 stopStarnetLinkPoll(); SFX.open();
                 codeEl.classList.add('hidden'); openBtn.classList.add('hidden');
@@ -2225,22 +2276,23 @@ const App = (() => {
                 // confirmed. Seed the screen from it immediately, then re-read /api/credits after keychain
                 // adoption. An older linked account's cached $0 must never survive across this boundary.
                 starnetLinked = true;
-                starnetBalanceUsd = (p.balanceUsd != null && isFinite(Number(p.balanceUsd))) ? Number(p.balanceUsd) : null;
+                starnetBalanceUsd = (typeof p.balanceUsd === 'number' && isFinite(p.balanceUsd)) ? p.balanceUsd : null;
                 starnetLinkStatus = p.balanceVerified === false ? 'unavailable' : 'valid';
                 adopt
                   .then(() => (Harness.refreshCreditsConfigured ? Harness.refreshCreditsConfigured() : null))
                   .then(() => { refreshStarnetGenesisStatus(); loadModels('starnet'); });
                 return;
               }
-              if (p && (p.status === 'expired' || p.status === 'consumed' || p.status === 'unknown')) {
+              if (p && (p.status === 'expired' || p.status === 'consumed' || p.status === 'unknown' || p.status === 'invalid')) {
                 stopStarnetLinkPoll(); fail('that code is no longer valid — start again');
               }
             })
-            .catch(() => {});
+            .catch(() => {})
+            .finally(() => { if (generation === _starnetLinkGeneration) _starnetLinkPollBusy = false; });
         };
         _starnetLinkPoll = setInterval(tick, 2000);
       })
-      .catch(() => fail('could not reach the link service — try again'));
+      .catch(() => { if (generation === _starnetLinkGeneration) fail('could not reach the link service — try again'); });
   }
 
   // the SKIN picker: choose which sprite set (teddy bear, pepe, …) the new agent wears. The chosen
@@ -2429,6 +2481,7 @@ const App = (() => {
     // a resume keeps the agent's saved provider.
     userPickedProvider = false;
     { const sl = el('btn-starnet-link'); if (sl) sl.onclick = () => startStarnetLink(); }
+    { const ss = el('btn-starnet-switch'); if (ss) ss.onclick = () => switchStarnetAccount(); }
     revealStarnetGenesis(!recovery);
     // BYOK key-safety note: collapsed by default, expanded by its own disclosure toggle (progressive disclosure).
     { const bt = el('byok-toggle'), bn = el('byok-note');
@@ -2619,7 +2672,7 @@ const App = (() => {
         return false;
       }
       if (!creditState.linked) { msg.textContent = 'link your StarNet account first — press 🔗 LINK YOUR STARNET ACCOUNT above.'; return false; }
-      if (!(Number(creditState.balanceUsd) > 0)) { msg.className = 'msg bad'; msg.textContent = 'your StarNet account has no credits yet — waking your agent uses credits right away. Press ＄ ADD CREDITS above, then WAKE again.'; return false; }
+      if (!(creditState.balanceUsd > 0)) { msg.className = 'msg bad'; msg.textContent = 'your StarNet account has no credits yet — waking your agent uses credits right away. Press ＄ ADD CREDITS above, then WAKE again.'; return false; }
       Harness.setModel(model); Harness.setProv('starnet');
     } else if (isOAuthProviderId(pickedProvider)) {
       if (!oauthConnected[pickedProvider]) { msg.textContent = 'sign in with ' + OAUTH_GENESIS[pickedProvider].name + ' first, or switch to OpenRouter.'; return false; }

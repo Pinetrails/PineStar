@@ -119,6 +119,85 @@ function fakeFetch(seed) {
     A.ok(Math.abs(ff.book.acct - 8.5) < 1e-9, 'backend balance ends at start − actual spend (10 − 1.5)');
   }
 
+  // ---- ACCOUNT IDENTITY IS ADAPTER-BOUND: no stale caller/env value may redirect a linked bearer. ----
+  {
+    const ff = fakeFetch({ acct: 9, stale_account: 0 });
+    const c = makeCredits({ url: 'https://credits.example', accountId: 'acct', fetch: ff.fetch });
+    A.eq(await c.refresh('stale_account'), 9, 'refresh ignores a caller-supplied account and reads the adapter account');
+    A.ok(ff.calls[0].url.includes('account=acct'), 'the balance request carries the account bound to this bearer');
+    const adm = c.beginRun({ accountId: 'stale_account', runId: 'identity-run', agentId: 'a', capUsd: 1 });
+    A.eq(adm.ok, true, 'the bound funded account admits even when a stale caller account is supplied');
+    await flush();
+    const debit = ff.calls.find(x => x.url.includes('/v1/debit'));
+    A.eq(debit.body.account, 'acct', 'the debit cannot be redirected away from the bearer-bound account');
+    await c.history('stale_account', 5);
+    const history = ff.calls.find(x => x.url.includes('/v1/history'));
+    A.ok(history.url.includes('account=acct'), 'history also stays on the bearer-bound account');
+  }
+
+  // ---- OVERLAPPING REFRESHES: a slower old zero/failure cannot overwrite a newer funded answer. ----
+  {
+    const pending = [];
+    const fetchImpl = () => new Promise(resolve => pending.push(resolve));
+    const c = makeCredits({ url: 'https://credits.example', accountId: 'acct', fetch: fetchImpl });
+    const old = c.refresh();
+    const fresh = c.refresh();
+    pending[1]({ ok: true, status: 200, json: async () => ({ balanceUsd: 22 }) });
+    A.eq(await fresh, 22, 'newer funded refresh completes');
+    pending[0]({ ok: true, status: 200, json: async () => ({ balanceUsd: 0 }) });
+    A.eq(await old, 0, 'the older request may still return its own historical answer to its caller');
+    A.eq(c.snapshot().balanceUsd, 22, 'but the older $0 cannot overwrite the newer funded cache');
+    A.eq(c.snapshot().authStatus, 'valid', 'the newer successful authority remains valid');
+  }
+  {
+    const pending = [];
+    const fetchImpl = () => new Promise(resolve => pending.push(resolve));
+    const c = makeCredits({ url: 'https://credits.example', accountId: 'acct', fetch: fetchImpl });
+    const old = c.refresh();
+    const fresh = c.refresh();
+    pending[1]({ ok: true, status: 200, json: async () => ({ balanceUsd: 22 }) });
+    await fresh;
+    pending[0]({ ok: false, status: 503, json: async () => ({ error: 'old outage' }) });
+    await old;
+    A.eq(c.snapshot().balanceUsd, 22, 'a stale failed refresh cannot erase a newer funded balance');
+    A.eq(c.snapshot().authStatus, 'valid', 'a stale failure cannot downgrade newer valid authentication');
+  }
+
+  // A delayed mutation response is the same race in the other direction: an old debit that once reached $0
+  // must not land after a top-up refresh and strand the newly funded user again.
+  {
+    let balanceReads = 0;
+    let resolveDebit;
+    const fetchImpl = (url) => {
+      const u = String(url);
+      if (u.includes('/v1/balance')) {
+        balanceReads++;
+        const amount = balanceReads === 1 ? 10 : 22;
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ balanceUsd: amount }) });
+      }
+      if (u.includes('/v1/debit')) return new Promise(resolve => { resolveDebit = resolve; });
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({}) });
+    };
+    const c = makeCredits({ url: 'https://credits.example', accountId: 'acct', fetch: fetchImpl });
+    await c.refresh();
+    A.eq(c.beginRun({ runId: 'old-debit', agentId: 'a', capUsd: 2 }).ok, true, 'precondition: the old debit starts');
+    A.eq(await c.refresh(), 22, 'a newer top-up refresh sees the funded balance');
+    resolveDebit({ ok: true, status: 200, json: async () => ({ balanceUsd: 0 }) });
+    await flush(); await flush();
+    A.eq(c.snapshot().balanceUsd, 22, 'the delayed old debit zero cannot overwrite the newer top-up truth');
+  }
+
+  // ---- BOUNDED AUTHORITY: a hung cloud balance check becomes unavailable instead of hanging WAKE forever. ----
+  {
+    const fetchImpl = (url, init) => new Promise((resolve, reject) => {
+      if (init && init.signal) init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+    });
+    const c = makeCredits({ url: 'https://credits.example', accountId: 'acct', fetch: fetchImpl, requestTimeoutMs: 5 });
+    A.eq(await c.refresh(), null, 'a hung balance request settles as unavailable within the configured bound');
+    A.eq(c.snapshot().balanceUsd, null, 'timeout never fabricates a dollar value');
+    A.eq(c.snapshot().authStatus, 'unavailable', 'timeout is availability trouble, not zero or revocation');
+  }
+
   // ---- EXHAUSTED balance: admission fails CLOSED before any debit/model work ----
   {
     const ff = fakeFetch({ acct: 0.5 });
@@ -194,6 +273,18 @@ function fakeFetch(seed) {
     const healed = await c.refresh('acct');
     A.eq(healed, 10, 'refresh() re-reads the authoritative balance and heals the cache');
     A.eq(c.snapshot().balanceUsd, 10, 'cache is trustworthy again after refresh');
+  }
+
+  // ---- MALFORMED MUTATION RESPONSE: a string/NaN balance is UNKNOWN, never numeric zero. ----
+  {
+    const fetchImpl = async (url) => String(url).includes('/v1/balance')
+      ? { ok: true, status: 200, json: async () => ({ balanceUsd: 10 }) }
+      : { ok: true, status: 200, json: async () => ({ ok: true, balanceUsd: '6.00' }) };
+    const c = makeCredits({ url: 'https://credits.example', accountId: 'acct', fetch: fetchImpl });
+    await c.refresh();
+    A.eq(c.beginRun({ runId: 'malformed-post', agentId: 'a', capUsd: 4 }).ok, true, 'precondition: funded admission succeeds');
+    await flush(); await flush();
+    A.eq(c.snapshot().balanceUsd, null, 'a malformed POST balance invalidates the cache instead of becoming $0');
   }
 
   /* ---- LOW-BALANCE WARNING -------------------------------------------------------------------
