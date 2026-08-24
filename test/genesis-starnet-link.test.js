@@ -33,6 +33,7 @@ ok(/id="btn-starnet-link"/.test(index) && /id="starnet-code"/.test(index) && /id
 // The reveal is keyed on the sidecar seam, not hardcoded on.
 ok(/async function revealStarnetGenesis\(/.test(app), 'genesis probes the cloud seam before offering the chip');
 ok(/\/api\/credits\/linkable/.test(app), 'the reveal asks /api/credits/linkable (the STORE reads the same pair)');
+ok(/Harness\.api\.get\('\/api\/credits\?history=0'\)/.test(app), 'the reveal uses the bounded summary endpoint and cannot be stalled by history');
 ok(/revealStarnetGenesis\(!recovery\)/.test(app), 'the connect screen actually runs the reveal (auto-pick only on a fresh create)');
 
 // The pairing flow rides the SAME sidecar engine as the STORE — one implementation.

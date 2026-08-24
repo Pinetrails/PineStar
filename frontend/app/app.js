@@ -2133,7 +2133,7 @@ const App = (() => {
   }
   async function revealStarnetGenesis(autoPick) {
     let linked = false, linkable = false;
-    try { const j = await Harness.api.get('/api/credits'); linked = !!(j && j.configured); } catch (_) {}
+    try { const j = await Harness.api.get('/api/credits?history=0'); linked = !!(j && j.configured); } catch (_) {}
     if (!linked) { try { const j = await Harness.api.get('/api/credits/linkable'); linkable = !!(j && j.available); } catch (_) {} }
     starnetLinked = linked;
     const b = document.querySelector('.provider-row .prov[data-prov="starnet"]');
