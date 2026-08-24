@@ -4485,17 +4485,17 @@ const App = (() => {
   // possibly-intact durable save (the July-19 "my save got deleted" incident — a 403'd pull rendered genesis
   // over a healthy 200KB save.json). HARD STOP: gate, auto-retry the reconcile until the sidecar answers
   // definitively, then reload so the whole boot (token injection included) starts clean. Never times out into
-  // creation — the ONLY exits are a definitive answer or the user closing the app.
+  // creation — the exits are a definitive answer or the explicit, quarantined START COMPLETELY FRESH path.
   function showSaveUnreachableGate(reason) {
     gateActive = true;
     try { if (World && World.stop) World.stop(); } catch (_) {}
     const sub = el('unreachable-sub');
     if (sub) sub.textContent = reason === 'forbidden' ? 'station service refused this window (stale session) — a relaunch usually clears it' : 'station service not answering';
     const status = el('unreachable-status');
-    let attempts = 0, timer = null, checking = false;
+    let attempts = 0, timer = null, checking = false, resetting = false;
     const setStatus = m => { if (status) status.textContent = '＋ ' + m; };
     const attempt = async () => {
-      if (checking) return;
+      if (checking || resetting) return;
       checking = true;
       attempts++;
       setStatus('checking… (attempt ' + attempts + ')');
@@ -4523,7 +4523,7 @@ const App = (() => {
     const restartBtn = el('btn-unreachable-restart');
     let restarting = false;
     const restart = async (auto) => {
-      if (restarting || !core || !core.invoke) return;
+      if (restarting || resetting || !core || !core.invoke) return;
       restarting = true;
       if (restartBtn) restartBtn.disabled = true;
       setStatus((auto ? 'still unreachable — ' : '') + 'restarting the station service…');
@@ -4538,13 +4538,60 @@ const App = (() => {
       if (core && core.invoke) { restartBtn.hidden = false; restartBtn.onclick = () => { SFX.click && SFX.click(); restart(false); }; }
       else restartBtn.hidden = true;
     }
+    // START COMPLETELY FRESH — unlike the sidecar-backed lineage action, this must work when NO HTTP
+    // route answers. The native shell first moves the entire workspace generation to quarantine, seals
+    // the new generation against legacy re-migration, and respawns with the same keychain credentials.
+    // Only after that durable move succeeds does FreshStart clear browser-owned StarNet state. Two clicks.
+    const freshBtn = el('btn-unreachable-fresh');
+    if (freshBtn) {
+      let armed = false;
+      if (core && core.invoke && typeof FreshStart !== 'undefined') {
+        freshBtn.hidden = false;
+        freshBtn.onclick = async () => {
+          SFX.click && SFX.click();
+          if (resetting) return;
+          if (!armed) {
+            armed = true;
+            freshBtn.textContent = '✦ CONFIRM — START COMPLETELY FRESH';
+            setStatus('your old local station will be moved to a quarantine folder. Your StarNet account link and purchased credits are not removed. Press again to confirm.');
+            setTimeout(() => {
+              if (armed && !resetting) { armed = false; freshBtn.textContent = '✦ START COMPLETELY FRESH'; }
+            }, 12000);
+            return;
+          }
+          armed = false;
+          resetting = true;
+          freshBtn.disabled = true;
+          if (btn) btn.disabled = true;
+          if (restartBtn) restartBtn.disabled = true;
+          setStatus('preserving the old station and preparing a clean one…');
+          try {
+            const result = await FreshStart.resetDesktop(core);
+            const where = result.quarantine ? ' Old files were preserved in ' + result.quarantine + '.' : '';
+            if (result.listening) {
+              setStatus('clean station ready — reopening now. Your account link and purchased credits were kept.' + where);
+              try { location.reload(); } catch (_) {}
+            } else {
+              setStatus('clean station prepared, but the station service is still blocked. Fully quit StarNet and reopen it. Your account link and purchased credits were kept.' + where);
+            }
+          } catch (error) {
+            resetting = false;
+            freshBtn.disabled = false;
+            freshBtn.textContent = '✦ START COMPLETELY FRESH';
+            if (btn) btn.disabled = false;
+            if (restartBtn) restartBtn.disabled = false;
+            setStatus('nothing was reset — ' + String(error && error.message || error));
+          }
+        };
+      } else freshBtn.hidden = true;
+    }
     // one automatic restart after the polls have clearly failed (≈30s), so the common case heals itself
     // without the user needing to know the button exists. Exactly once — a restart that didn't help must
     // not loop; the copy then tells them what to do.
     let autoRestarted = false;
     timer = setInterval(() => {
       attempt();
-      if (!autoRestarted && attempts >= 6 && core && core.invoke) { autoRestarted = true; restart(true); }
+      if (!autoRestarted && !resetting && attempts >= 6 && core && core.invoke) { autoRestarted = true; restart(true); }
     }, 5000);
     show('screen-unreachable');
   }
