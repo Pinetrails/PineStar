@@ -1551,12 +1551,12 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-22 18:17Z @ 15486212 | RED | 0 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-22T13:02:01.089Z · ui-only · 118684ms | PASS | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-24 17:24Z @ 300948d1 | GREEN | 0 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-24T17:08:36.960Z · ui-only · 130228ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
-| Janitor | What's rotting in the workshop? | 2026-08-16 | 375 findings | 106 |
+| Janitor | What's rotting in the workshop? | 2026-08-23 | 440 findings | 106 |
 | Cartographer | Is every surface element mapped and perfected? | 2026-07-18 04:18Z @ bc28c86f | PERFECTED-fresh 279 / total 1154 (24%) | 34 |
 | Dogfood | Does StarNet survive being USED like a real user uses it? | 2026-07-07 (proof shift · mock) @ e01831ab | SURVIVED — 0 anomalies (mock seam shift) | 0 |
 
@@ -2670,4 +2670,9 @@ Laws: a lock must distinguish "PID alive" from "my process alive" · a gate owes
 Every first-time StarNet-subscription desktop user: link → shell adopts the token into the keychain and strips `credits.json` → the RUNNING sidecar (spawned before the link, no STARNET_CREDITS_TOKEN) re-read the file live → no bearer, no base URL → "catalog offline", WAKE refused, until a full restart. `credits-link.js` now remembers the token it linked with for the life of the process (cleared on unlink; never leaks to a fresh process). Both 08-22 first-run reports were this, not credits.
 **2026-08-23 merge digest (FUNDED STARNET ACCOUNT IDENTITY IS ONE INVARIANT):** `agent/credits-invariant-sweep` → trunk merge `5461e280d`; a newly linked account now owns balance, debit/refund, history, and inference end-to-end; stale launch-time tokens/account overrides and out-of-order `$0` responses cannot replace newer funded truth; malformed, failed, or timed-out reads remain UNKNOWN instead of zero; genesis adds **USE A DIFFERENT ACCOUNT** so an auto-linked wrong login is recoverable without Terminal/reinstall. Real-sidecar regression: wrong account `$0` → unlink/relink → paid account `$22` → desktop-style token adoption → WAKE streamed from the managed model, with every paid call on the new bearer/account. Exact merged-trunk gates: `test:fast` **683/683 GREEN**, `test:http` **83/83 GREEN**; credit-link units **56**, credit authority units **92**, real-host HTTP suite **497 assertions**.
 
+## 2026-08-23 — credits link-authority hotfix → trunk `d69931f46` — fast 683/683 · http 83/83
+`agent/station-link-credit-regression` fast-forwarded to trunk and shipped as v0.10.9. A website-revoked station token can no longer leave the desktop claiming LINKED or turn a stale/malformed balance into `$0`: authoritative 401/403 clears cached dollars, projects `link_revoked`, and reopens LINK YOUR STARNET ACCOUNT directly on CREATE YOUR OVERSEER; temporary service failure stays a distinct unverified state. Exact `$0 → account-side revoke → relinkable` real-HTTP regression: 484 assertions. Live clean onboarding showed the relink copy/button and neither false “no credits” nor false “station linked.” Release evidence: READY on `d69931f46`; local installed v0.10.9 smoke GREEN; signed three-platform train `32618841204` GREEN; both macOS notarization/Gatekeeper jobs GREEN; Intel installed acceptance GREEN; hosted T0 `32620061416` GREEN; hosted G1 lifecycle `32620062568` GREEN; public updater manifest v0.10.9 verified for Windows + both Mac architectures.
+
 **2026-08-24 merge digest (TEMPORARY RESERVATIONS ARE NOT ACCOUNT EXHAUSTION):** `agent/credit-warning-investigate` → trunk merge `d868b1c46`; managed billing still reserves the full available wallet before a run, but low/exhausted warnings now evaluate only after settlement and include other live reservations so temporary holds cannot fabricate “$0 left.” True low and exhausted settlements still warn once. Exact merged-trunk gates: credits **106 assertions GREEN**, `test:fast` **685/685 GREEN**, `test:http` **83/83 GREEN**; live seeded app: three user inputs, three real $22 → $0 → $22 reservation/refund cycles, zero out-of-credit warnings.
+
+- 2026-08-24 · agent/outbox-click -> trunk 8761f7f9f (ff) · OUTBOX dead-click fixes: >4px drag threshold before a pan swallows a click + SHIPPED pallet hit box widened below the chute · worktree gate test:fast 685 green · live CDP proof dev/outbox-click-proof.mjs 3/3 PASS (3/3 FAIL pre-fix) · trunk gate rerun in progress at write time
