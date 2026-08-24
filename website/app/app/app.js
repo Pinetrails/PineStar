@@ -4492,7 +4492,7 @@ const App = (() => {
     const sub = el('unreachable-sub');
     if (sub) sub.textContent = reason === 'forbidden' ? 'station service refused this window (stale session) — a relaunch usually clears it' : 'station service not answering';
     const status = el('unreachable-status');
-    let attempts = 0, timer = null, checking = false, resetting = false, browserResetBlocked = false;
+    let attempts = 0, timer = null, checking = false, resetting = false, browserResetBlocked = false, preservedReset = null;
     const setStatus = m => { if (status) status.textContent = '＋ ' + m; };
     const attempt = async () => {
       if (checking || resetting || browserResetBlocked) return;
@@ -4550,7 +4550,8 @@ const App = (() => {
         freshBtn.onclick = async () => {
           SFX.click && SFX.click();
           if (resetting) return;
-          if (!armed) {
+          const retryingBrowserClear = browserResetBlocked && preservedReset;
+          if (!retryingBrowserClear && !armed) {
             armed = true;
             freshBtn.textContent = '✦ CONFIRM — START COMPLETELY FRESH';
             setStatus('your old local station will be moved to a quarantine folder. Your StarNet account link and purchased credits are not removed. Press again to confirm.');
@@ -4564,13 +4565,19 @@ const App = (() => {
           freshBtn.disabled = true;
           if (btn) btn.disabled = true;
           if (restartBtn) restartBtn.disabled = true;
-          setStatus('preserving the old station and preparing a clean one…');
+          setStatus(retryingBrowserClear ? 'retrying the browser-state clear; the preserved station will not be moved again…' : 'preserving the old station and preparing a clean one…');
           try {
-            const result = await FreshStart.resetDesktop(core);
+            // Once native preservation has succeeded, a browser-clear retry must reuse that exact receipt.
+            // Running the native transaction again would quarantine the new empty generation and obscure the
+            // path containing the user's real old station.
+            const result = retryingBrowserClear
+              ? FreshStart.retryBrowserClear(preservedReset)
+              : await FreshStart.resetDesktop(core);
             const where = result.quarantine ? ' Old files were preserved in ' + result.quarantine + '.' : '';
             if (!result.browserDataCleared) {
               resetting = false;
               browserResetBlocked = true;
+              preservedReset = result;
               freshBtn.disabled = false;
               freshBtn.textContent = '✦ START COMPLETELY FRESH';
               if (btn) btn.disabled = true;
@@ -4579,6 +4586,7 @@ const App = (() => {
               return;
             }
             browserResetBlocked = false;
+            preservedReset = null;
             if (result.listening) {
               setStatus('clean station ready — reopening now. Your account link and purchased credits were kept.' + where);
               try { location.reload(); } catch (_) {}

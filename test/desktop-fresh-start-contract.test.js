@@ -23,5 +23,6 @@ A.ok(html.includes('does not remove your StarNet account link or purchased credi
 A.ok(app.includes('FreshStart.resetDesktop(core)'), 'the two-click UI calls the native transaction rather than dead sidecar HTTP');
 A.ok(app.includes("freshBtn.textContent = '✦ CONFIRM — START COMPLETELY FRESH'"), 'the destructive choice requires an explicit second click');
 A.ok(app.includes('browserResetBlocked = true'), 'an uncleared browser cache cannot silently repopulate the clean station');
+A.ok(app.includes('FreshStart.retryBrowserClear(preservedReset)'), 'a browser-clear retry reuses the original quarantine receipt instead of moving the clean station again');
 
 A.report('desktop-fresh-start-contract.test');
