@@ -173,25 +173,40 @@
 
     const requestTimeoutMs = (typeof opts.requestTimeoutMs === 'number' && isFinite(opts.requestTimeoutMs) && opts.requestTimeoutMs > 0)
       ? Math.floor(opts.requestTimeoutMs) : 8000;
-    async function boundedFetch(target, init) {
+    async function boundedJson(target, init, parseErrorBody) {
       const ctl = typeof AbortController === 'function' ? new AbortController() : null;
       let timer = null;
       const request = Object.assign({}, init || {}, ctl ? { signal: ctl.signal } : {});
       if (ctl) timer = setTimeout(() => ctl.abort(), requestTimeoutMs);
-      try { return await doFetch(target, request); }
+      try {
+        const response = await doFetch(target, request);
+        // Fetch resolves at headers, not at the end of the response body. The timeout owns both phases so a
+        // half-responsive credits service cannot strand admission/status/history on an endless JSON body.
+        let body = {};
+        if (response && typeof response.json === 'function' && (response.ok || parseErrorBody)) {
+          try { body = await response.json(); }
+          catch (error) {
+            if (error && error.name === 'AbortError') throw error;
+            body = {};
+          }
+        }
+        return { response, body };
+      }
       finally { if (timer) clearTimeout(timer); }
     }
 
     async function getJson(pathAndQuery) {
       if (!doFetch) throw new Error('no fetch');
-      const r = await boundedFetch(url + pathAndQuery, { method: 'GET', headers: headers() });
+      const result = await boundedJson(url + pathAndQuery, { method: 'GET', headers: headers() }, false);
+      const r = result.response;
       if (!r || !r.ok) { const e = new Error('credits GET ' + pathAndQuery + ' failed'); e.status = r && r.status; throw e; }
-      return r.json();
+      return result.body;
     }
     async function postJson(pathName, payload) {
       if (!doFetch) throw new Error('no fetch');
-      const r = await boundedFetch(url + pathName, { method: 'POST', headers: headers(), body: JSON.stringify(payload || {}) });
-      const body = (r && typeof r.json === 'function') ? await r.json().catch(() => ({})) : {};
+      const result = await boundedJson(url + pathName, { method: 'POST', headers: headers(), body: JSON.stringify(payload || {}) }, true);
+      const r = result.response;
+      const body = result.body;
       if (!r || !r.ok) { const e = new Error('credits POST ' + pathName + ' failed'); e.status = r && r.status; e.body = body; throw e; }
       return body || {};
     }

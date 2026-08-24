@@ -96,6 +96,21 @@ function fakeFetch(seed) {
     A.eq(c.snapshot().balanceUsd, null, 'missing balance data can never become a fabricated $0');
   }
 
+  // A response is not complete merely because headers arrived. Keep the request deadline armed while the
+  // JSON body is consumed or a half-responsive balance service can hang WAKE/status forever.
+  {
+    const stalledBody = (url, init) => Promise.resolve({
+      ok: true, status: 200,
+      json: () => new Promise((resolve, reject) => {
+        if (init && init.signal) init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+      })
+    });
+    const c = makeCredits({ url: 'https://credits.example', accountId: 'acct', fetch: stalledBody, requestTimeoutMs: 5 });
+    A.eq(await c.refresh(), null, 'a stalled balance body terminates at the configured request deadline');
+    A.eq(c.snapshot().balanceUsd, null, 'body timeout cannot fabricate or retain a dollar value');
+    A.eq(c.snapshot().authStatus, 'unavailable', 'body timeout is availability trouble, not revocation');
+  }
+
   // ---- MANAGED RUN via the backend: reserve holds the balance, refund returns the unspent headroom ----
   {
     const ff = fakeFetch({ acct: 10 });
