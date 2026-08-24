@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "81609419235f5e1c3c4ee969ddd803fe637f6cb4",
+    "sourceCommit": "ad5d7af08c5a99218e31734b287032ce1cfa09c2",
     "pathSetSha256": "4a4d5044dc5f1a8aa7e16d752bd899dc2b027dcd621bea4ae61df6a29d6a6912",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 363896,
-        "sha256": "7bda100a7323f3939ebe69a399c270f34279a2819954df2f9df5b205b6561631"
+        "bytes": 364582,
+        "sha256": "246e70bfd0090edc127307a58946a375dc4b704c89071df5f3aad3513766cddf"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -253,8 +253,8 @@
       },
       {
         "path": "frontend/app/freshstart.js",
-        "bytes": 2682,
-        "sha256": "9e8bfbed92df4aa5825b4dca2a87d10deeb1a0ace3721f2e338cb3249fdeda5d"
+        "bytes": 2801,
+        "sha256": "c1d18dbbc659f299e226d0f86b373aadd622e4e8c1c9c5a66f07902c7aeb9ba0"
       },
       {
         "path": "frontend/app/friendlyerror.js",
