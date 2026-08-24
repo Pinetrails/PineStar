@@ -11,6 +11,7 @@ const index = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'index.html
 const app = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'app.js'), 'utf8');
 const stationui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
 const host = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+const link = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'credits-link.js'), 'utf8');
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; };
@@ -54,7 +55,7 @@ ok(/function starnetOutOfCredit\(\)/.test(app), 'a linked-but-empty wallet is a 
 ok(/no credits yet/.test(app) && /btn-starnet-credits/.test(app), 'the status line names the empty wallet and the button opens the store');
 const wakeCreditsStart = app.indexOf("msg.textContent = 'checking your StarNet credits…'");
 const wakeCreditsRefresh = app.indexOf('const creditState = await refreshStarnetGenesisStatus();', wakeCreditsStart);
-const wakeCreditsZero = app.indexOf('if (!(Number(creditState.balanceUsd) > 0))', wakeCreditsRefresh);
+const wakeCreditsZero = app.indexOf('if (!(creditState.balanceUsd > 0))', wakeCreditsRefresh);
 ok(wakeCreditsStart >= 0 && wakeCreditsRefresh > wakeCreditsStart && wakeCreditsZero > wakeCreditsRefresh,
   'WAKE awaits a fresh authoritative balance before it may classify the active linked account as empty');
 ok(/!creditState\.answered[\s\S]{0,260}credits are safe/.test(app) && /creditState\.balanceUsd == null/.test(app),
@@ -65,6 +66,24 @@ ok(/linkedAccount !== String\(r\.accountId/.test(host) && /link_account_mismatch
   'link confirmation refuses any account-ID mismatch between the newly confirmed token and the active credits adapter');
 ok(/balanceUsd:\s*balanceVerified \? balanceUsd : null/.test(host),
   'link confirmation returns the freshly verified balance for the newly active account, never an inherited cached value');
+ok(!/credits\.refresh\(CREDITS_ACCOUNT\)/.test(host) && !/credits\.history\(CREDITS_ACCOUNT/.test(host),
+  'the host cannot override the active adapter account with a stale global account id');
+ok(/fileToken \|\| sessionToken \|\| envToken/.test(link),
+  'after relink adoption, the fresh in-process token outranks the stale launch-time keychain token');
+ok(/typeof j\.balanceUsd === 'number'/.test(app) && /typeof p\.balanceUsd === 'number'/.test(app),
+  'creator and link responses accept only numeric balances — malformed strings never become $0');
+ok(/\/api\/credits\?history=0/.test(app) && /credits status timeout/.test(app),
+  'WAKE uses a bounded balance-only status request and cannot be stranded behind activity history');
+ok(/_starnetLinkPollBusy/.test(app) && /generation !== _starnetLinkGeneration/.test(app),
+  'slow link polling is single-flight and an old consumed response cannot overwrite a successful relink');
+ok(/seq !== _starnetStatusSeq[\s\S]{0,180}answered: false/.test(app),
+  'an out-of-order creator balance response becomes unknown instead of repainting a stale zero');
+ok(/snap\.authStatus === 'invalid'[\s\S]{0,400}link_token_rejected/.test(host),
+  'a newly confirmed token rejected by balance authority is never reported or adopted as linked');
+ok(/refreshCreditsProvider\(\)[\s\S]{0,220}\/api\/credits\?history=0/.test(stationui),
+  'the provider card reads the bounded summary path rather than waiting on credit history');
+ok(/_creditsLinkPollBusy/.test(stationui) && /generation !== _creditsLinkGeneration/.test(stationui),
+  'the STORE pairing flow is also single-flight and ignores stale link responses');
 ok(/managed credit\|Managed credits/.test(app), 'a billing refusal from the wire preflight is named as billing, not as "model didn’t answer"');
 // the preflight reads Harness.chat's refusal string — otherwise every up-front refusal collapses to
 // "the provider returned an error" and the real reason never reaches the screen.
