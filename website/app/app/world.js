@@ -1102,7 +1102,16 @@ const World = (() => {
     cv.addEventListener('mousemove', ev => {
       if (drag) {
         const c = toCanvas(ev);
-        panX += c.x - drag.sx; panY += c.y - drag.sy; drag.sx = c.x; drag.sy = c.y; drag.moved = true;
+        // CLICK vs PAN: a real mouse click almost always carries 1–2px of jitter between down and up.
+        // Flagging moved on ANY movement made mouseup swallow those as "drags", so prop clicks (OUTBOX,
+        // boards, bays) randomly did nothing. A pan only starts once cumulative travel clears ~4px;
+        // under that the press stays a click and the camera holds still.
+        if (!drag.moved) {
+          drag.acc = (drag.acc || 0) + Math.hypot(c.x - drag.sx, c.y - drag.sy);
+          if (drag.acc <= 4) { drag.sx = c.x; drag.sy = c.y; return; }
+          drag.moved = true;
+        }
+        panX += c.x - drag.sx; panY += c.y - drag.sy; drag.sx = c.x; drag.sy = c.y;
         cv.style.cursor = 'grabbing'; return;
       }
       const wp = toWorld(ev);
@@ -6945,8 +6954,14 @@ const World = (() => {
     for (const p of geo.props) {
       if (p.t !== 'outbox') continue;
       const x0 = p.x * T, y0 = p.y * T - 34;
-      const x1 = (p.x + (p.w || 1)) * T, y1 = (p.y + (p.h || 1)) * T + 12;
-      if (wp.x >= x0 && wp.x < x1 && wp.y >= y0 && wp.y < y1) return p;
+      const yBot = (p.y + (p.h || 1)) * T;
+      const x1 = (p.x + (p.w || 1)) * T, y1 = yBot + 12;
+      // the SHIPPED pallet draws WIDER than the chute (4 crate columns ≈ 42px vs a 24px footprint) and
+      // sits below it — clicking an outer crate used to be a dead click. Below the bottom edge the hit
+      // box widens to the pallet's real span; above it stays the footprint so a neighbouring bay/board
+      // click is never shadowed.
+      const pad = wp.y >= yBot ? 12 : 0;
+      if (wp.x >= x0 - pad && wp.x < x1 + pad && wp.y >= y0 && wp.y < y1) return p;
     }
     return null;
   }
