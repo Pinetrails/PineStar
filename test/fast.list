@@ -654,6 +654,7 @@ test/release-ritual.test.js
 test/release-installer-selection.test.mjs
 test/opensource-readiness.test.js
 test/source-release-mirror.test.js
+test/release-train-chrome-warmup.test.js
 test/release-train-provenance.test.js
 test/desktop-build-macos-notarization.test.js
 test/desktop-artifact-open.test.js
