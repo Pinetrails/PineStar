@@ -81,10 +81,15 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload || {}),
           signal: ctl ? ctl.signal : undefined
         });
+        // Fetch resolves when headers arrive. Keep the same bound armed through body consumption or a
+        // peer can send headers and strand link/start or link/poll forever on a stalled JSON body.
+        const body = (r && typeof r.json === 'function') ? await r.json().catch(error => {
+          if (error && error.name === 'AbortError') throw error;
+          return {};
+        }) : {};
+        if (!r || !r.ok) { const e = new Error('link POST ' + pathName + ' failed'); e.status = r && r.status; e.body = body; throw e; }
+        return body || {};
       } finally { if (timer) clearTimeout(timer); }
-      const body = (r && typeof r.json === 'function') ? await r.json().catch(() => ({})) : {};
-      if (!r || !r.ok) { const e = new Error('link POST ' + pathName + ' failed'); e.status = r && r.status; e.body = body; throw e; }
-      return body || {};
     }
 
     // Ask the cloud for a fresh pairing code. Stashes the pollSecret in memory; returns only the public bits.

@@ -146,6 +146,22 @@ function fakeCloud(opts) {
     A.eq(link.hasSaved(), false, 'a timed-out link request persists nothing');
   }
 
+  // Fetch resolves at headers. A cloud that then stalls its JSON body is still a hung request and owes the
+  // same bound; clearing the timer at headers used to strand the creator indefinitely.
+  {
+    const stalledBody = (url, init) => Promise.resolve({
+      ok: true, status: 200,
+      json: () => new Promise((resolve, reject) => {
+        if (init && init.signal) init.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+      })
+    });
+    const link = makeCreditsLink({ cloudUrl: 'https://cloud.example', fetch: stalledBody, fsp, fs, pathMod: path, dir: path.join(tmp, 'stalled-body'), now: () => 4700, requestTimeoutMs: 5 });
+    let timedOut = false;
+    try { await link.start('Station'); } catch (e) { timedOut = e && e.name === 'AbortError'; }
+    A.eq(timedOut, true, 'link-start also aborts when headers arrive but the JSON body stalls');
+    A.eq(link.hasSaved(), false, 'a body-timeout persists no partial link identity');
+  }
+
   // ---- KEYCHAIN ADOPTION: the desktop strips `deviceToken` from credits.json and injects it at spawn as
   //      STARNET_CREDITS_TOKEN. The station must stay linked across that move, and the non-secret fields
   //      (url/accountId/linkedAt) must survive it — they are NOT part of what gets adopted. ----

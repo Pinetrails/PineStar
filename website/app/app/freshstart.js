@@ -36,11 +36,7 @@ const FreshStart = (() => {
     }
   }
 
-  async function resetDesktop(core, storage) {
-    if (!core || typeof core.invoke !== 'function') throw new Error('desktop recovery is unavailable');
-    // Native first: it moves the durable generation to quarantine and starts a clean sidecar.
-    // Never erase the cache when native preservation fails — it may be the user's last readable copy.
-    const result = await core.invoke('starnet_start_fresh');
+  function retryBrowserClear(result, storage) {
     if (!result || result.ok !== true) throw new Error('StarNet could not preserve the prior station');
     let cleared = 0, fallbackError = '';
     try { cleared = clearBrowserState(storage); }
@@ -53,7 +49,15 @@ const FreshStart = (() => {
     });
   }
 
-  return { clearBrowserState, resetDesktop };
+  async function resetDesktop(core, storage) {
+    if (!core || typeof core.invoke !== 'function') throw new Error('desktop recovery is unavailable');
+    // Native first: it moves the durable generation to quarantine and starts a clean sidecar.
+    // Never erase the cache when native preservation fails — it may be the user's last readable copy.
+    const result = await core.invoke('starnet_start_fresh');
+    return retryBrowserClear(result, storage);
+  }
+
+  return { clearBrowserState, retryBrowserClear, resetDesktop };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = FreshStart;

@@ -56,6 +56,23 @@ function storage(seed) {
   A.eq(incomplete.browserDataCleared, false, 'native and renderer clear failure is reported instead of claiming a fresh station');
   A.ok(incomplete.browserClearError.includes('storage locked'), 'the truthful browser-clear failure reaches the gate');
 
+  let unlocked = false, present = true;
+  const transient = {
+    get length() { return present ? 1 : 0; },
+    key() { return present ? 'starnet.save' : null; },
+    removeItem() { if (!unlocked) throw new Error('storage locked'); present = false; }
+  };
+  let nativeResets = 0;
+  const firstTry = await FreshStart.resetDesktop({
+    async invoke() { nativeResets++; return { ok: true, listening: true, quarantine: 'original-station', browserDataCleared: false }; }
+  }, transient);
+  A.eq(firstTry.browserDataCleared, false, 'precondition: the first browser clear is blocked after preservation');
+  unlocked = true;
+  const retried = FreshStart.retryBrowserClear(firstTry, transient);
+  A.eq(retried.browserDataCleared, true, 'a later browser-only retry can finish the reset');
+  A.eq(retried.quarantine, 'original-station', 'the retry keeps the exact original-station preservation receipt');
+  A.eq(nativeResets, 1, 'browser-clear retry never quarantines the clean generation a second time');
+
   const nativeProof = await FreshStart.resetDesktop({
     async invoke() { return { ok: true, listening: true, quarantine: 'safe-copy', browserDataCleared: true }; }
   }, blocked);
