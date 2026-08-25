@@ -1328,9 +1328,11 @@
       if (!key) { kyMsgEl.textContent = 'paste the API key'; sfx('bad'); kyKeyEl.focus(); return; }
       try {
         // a non-JSON refusal parses to {} — without the r.ok check that {} reads as "saved".
+        // A body that carries `key` is a structured verdict (saved:false = live-this-session,
+        // handled below) even on a 500, so only a key-less answer is a refusal.
         const r = await postJSON('/api/servicekeys', { name, key, docsUrl });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok || (j.error && !j.key)) { kyMsgEl.textContent = '✕ ' + (j.error || ('the station refused (HTTP ' + r.status + ') — the key was NOT saved')); sfx('bad'); return; }
+        if (!j.key && (!r.ok || j.error)) { kyMsgEl.textContent = '✕ ' + (j.error || ('the station refused (HTTP ' + r.status + ') — the key was NOT saved')); sfx('bad'); return; }
         // saved:false still means LIVE this session — surface the persistence truth instead of a flat "saved".
         kyMsgEl.classList.toggle('ok', j.saved !== false);
         kyMsgEl.textContent = j.saved === false
@@ -1367,7 +1369,12 @@
           ? await postJSON('/api/servicekeys/autonomy', { id, autonomous: cb.checked })
           : await postJSON('/api/servicekeys/toggle', { id, enabled: cb.checked });
         const j = await r.json().catch(() => ({}));
-        if (!r.ok || (j.error && !j.ok)) { cb.checked = !cb.checked; sfx('bad'); notify('✕ ' + (j.error || ('the station refused (HTTP ' + r.status + ') — nothing changed'))); }
+        if (j.key && j.saved === false) {
+          // structured 500: the switch IS live this session (list + env already updated) — keep the
+          // box truthful to the live state and surface the persistence gap instead of reverting.
+          sfx('bad'); notify('⚠ the switch is live for this session, but saving to disk failed — it may not survive a restart', 'warn');
+        }
+        else if (!r.ok || (j.error && !j.ok)) { cb.checked = !cb.checked; sfx('bad'); notify('✕ ' + (j.error || ('the station refused (HTTP ' + r.status + ') — nothing changed'))); }
         else sfx('tick');
       } catch (_) { cb.checked = !cb.checked; sfx('bad'); }
       cb.disabled = false;
