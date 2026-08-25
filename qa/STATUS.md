@@ -1551,7 +1551,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-24 17:24Z @ 300948d1 | GREEN | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-25 01:13Z @ 787e0a49 | GREEN | 0 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-24T17:08:36.960Z · ui-only · 130228ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
@@ -2676,3 +2676,5 @@ Every first-time StarNet-subscription desktop user: link → shell adopts the to
 **2026-08-24 merge digest (TEMPORARY RESERVATIONS ARE NOT ACCOUNT EXHAUSTION):** `agent/credit-warning-investigate` → trunk merge `d868b1c46`; managed billing still reserves the full available wallet before a run, but low/exhausted warnings now evaluate only after settlement and include other live reservations so temporary holds cannot fabricate “$0 left.” True low and exhausted settlements still warn once. Exact merged-trunk gates: credits **106 assertions GREEN**, `test:fast` **685/685 GREEN**, `test:http` **83/83 GREEN**; live seeded app: three user inputs, three real $22 → $0 → $22 reservation/refund cycles, zero out-of-credit warnings.
 
 - 2026-08-24 · agent/outbox-click -> trunk 8761f7f9f (ff) · OUTBOX dead-click fixes: >4px drag threshold before a pan swallows a click + SHIPPED pallet hit box widened below the chute · worktree gate test:fast 685 green · live CDP proof dev/outbox-click-proof.mjs 3/3 PASS (3/3 FAIL pre-fix) · trunk gate rerun in progress at write time
+
+- 2026-08-24 · stage-ctx-loss lane -> trunk 913b505d5 (ff; code 57112a690) · FULLY-BLACK VIEWPORT FIX (user email report): the visible stage's own 2D context dying (GPU reset, no contextrestored) previously no-op'd every draw forever — the bake watchdog probes only the offscreen plate and was blind to it. Now a heartbeat pixel painted as the frame's last act arms a stage sentinel; a dead stage (3s grace for the browser restore) gets its canvas element REBUILT in-frame with input rewired, futile-only backoff. Worktree gate 686 green · trunk gate 686 green · live proof: 6/6 kill→heal cycles (0% → ~87.8% non-black), input wired post-rebuild, bake-loss mode still heals alongside. Reaches users at the next cut. (Same report's "credits at zero" spam = d868b1c46, already on trunk, also awaiting cut. Guardian row stamp rode along in this commit.)
