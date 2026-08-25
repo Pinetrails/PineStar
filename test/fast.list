@@ -684,4 +684,5 @@ test/sandbox-no-silent-fallback.test.js
 test/execution-profiles-ui.test.js
 test/failopen.test.js
 test/failopen-ratchet.test.js
+test/frontend-fetch-truth-ratchet.test.js
 test/loop-verdict.test.js
