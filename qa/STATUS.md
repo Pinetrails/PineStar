@@ -1553,8 +1553,8 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-25 01:13Z @ 787e0a49 | GREEN | 0 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-24T17:08:36.960Z · ui-only · 130228ms | PASS | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-08-25 03:04Z @ ca76891c | GREEN | 0 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-08-25T02:29:36.306Z · ui-only · 97013ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
@@ -2680,3 +2680,5 @@ Every first-time StarNet-subscription desktop user: link → shell adopts the to
 - 2026-08-24 · agent/outbox-click -> trunk 8761f7f9f (ff) · OUTBOX dead-click fixes: >4px drag threshold before a pan swallows a click + SHIPPED pallet hit box widened below the chute · worktree gate test:fast 685 green · live CDP proof dev/outbox-click-proof.mjs 3/3 PASS (3/3 FAIL pre-fix) · trunk gate rerun in progress at write time
 
 - 2026-08-24 · stage-ctx-loss lane -> trunk 913b505d5 (ff; code 57112a690) · FULLY-BLACK VIEWPORT FIX (user email report): the visible stage's own 2D context dying (GPU reset, no contextrestored) previously no-op'd every draw forever — the bake watchdog probes only the offscreen plate and was blind to it. Now a heartbeat pixel painted as the frame's last act arms a stage sentinel; a dead stage (3s grace for the browser restore) gets its canvas element REBUILT in-frame with input rewired, futile-only backoff. Worktree gate 686 green · trunk gate 686 green · live proof: 6/6 kill→heal cycles (0% → ~87.8% non-black), input wired post-rebuild, bake-loss mode still heals alongside. Reaches users at the next cut. (Same report's "credits at zero" spam = d868b1c46, already on trunk, also awaiting cut. Guardian row stamp rode along in this commit.)
+
+- 2026-08-25 · `agent/release-polish-0824` integrated through `agent/release-ready-0824` → trunk `ca76891c9`: credits balance/link requests now keep their 8-second bound through JSON body consumption, and START COMPLETELY FRESH retries browser-state clearing against the original quarantine receipt instead of moving the clean generation again. Focused credits/recovery contracts **197 assertions GREEN**; candidate gates `test:fast` **687/687 GREEN** + `test:http` **83/83 GREEN**; exact merged-trunk Guardian **GREEN** across fast, HTTP/E2E, saboteur, shoot, golden, audit, and journeys. Live merged candidate: ONLINE/UPLINK/COMMS with a lit 648×572 station canvas and zero browser warnings/errors. No push, tag, release cut, deployment, credential, or production-data change performed.
