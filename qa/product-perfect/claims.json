@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "57112a690f8174f3ba3f3ac33fe786d07fa51c5d",
+    "sourceCommit": "19de6ef04b92e9a2e0c8462688a2c79f5d4d23d5",
     "pathSetSha256": "4a4d5044dc5f1a8aa7e16d752bd899dc2b027dcd621bea4ae61df6a29d6a6912",
     "files": [
       {
@@ -883,8 +883,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 107544,
-        "sha256": "f15b59140b24d152ec37cd3a013546e690b5fd910cd0497943effba329b4c323"
+        "bytes": 108978,
+        "sha256": "ccc47e9ff93b57677a3ee0b1472b7fd9cbaa548110752830d5e9ab08b93b187f"
       },
       {
         "path": "frontend/app/windows/logbook.js",
@@ -893,8 +893,8 @@
       },
       {
         "path": "frontend/app/windows/loops.js",
-        "bytes": 43519,
-        "sha256": "7954601a91b063fd79cf8565a9b286b42148fb843ebd3d68e2fd0850dac39af8"
+        "bytes": 43646,
+        "sha256": "e30766f865b007129f18477a8a6239a4aab5336c282da978a6852744f525a654"
       },
       {
         "path": "frontend/app/windows/messaging.js",
