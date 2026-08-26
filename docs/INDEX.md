@@ -1,4 +1,26 @@
-# docs/ index
+# Documentation index
+
+## Pine Star current authority
+
+These documents define current Pine Star direction. They take precedence over older StarNet plans for Pine Star product decisions, while code remains the authority for implemented behavior.
+
+- [VISION.md](VISION.md) — purpose and long-term experience.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — preservation-first architecture direction.
+- [OPERATING_POLICY.md](OPERATING_POLICY.md) — operating rules and change control.
+- [AGENT_SYSTEM.md](AGENT_SYSTEM.md) and [AGENT_REGISTRY.md](AGENT_REGISTRY.md) — organization, routing, and role catalog.
+- [MEMORY_AND_OBSIDIAN.md](MEMORY_AND_OBSIDIAN.md) — private and shared memory boundaries.
+- [AUTONOMY_AND_SAFETY.md](AUTONOMY_AND_SAFETY.md) — action boundaries and protections.
+- [BUSINESS_SYSTEM.md](BUSINESS_SYSTEM.md), [ART_DIRECTION.md](ART_DIRECTION.md), and [INTEGRATIONS.md](INTEGRATIONS.md) — business, visual, and integration direction.
+- [UPSTREAM_STARNET.md](UPSTREAM_STARNET.md) — upstream policy.
+- [ROADMAP.md](ROADMAP.md), [CURRENT_STATUS.md](CURRENT_STATUS.md), and [BASELINE.md](BASELINE.md) — plan, state, and verified baseline.
+- [DECISIONS.md](DECISIONS.md) — retained StarNet decisions plus Pine Star decisions.
+- [change-records/](change-records/) — Pine Star change records.
+
+Repository front doors: [PINE_STAR_CONTROL.md](../PINE_STAR_CONTROL.md), [AGENTS.md](../AGENTS.md), and [CHANGELOG.md](../CHANGELOG.md).
+
+## Upstream StarNet documentation retained for reference
+
+The remainder is the upstream map. It is preserved for valuable architecture, QA, release, and design history. Reverify dated claims against current code.
 
 A map of the ~95 files in `docs/`. They fall into four buckets: **living reference**,
 **plans & roadmaps**, **audits & QA reports**, and **release/runbooks**.

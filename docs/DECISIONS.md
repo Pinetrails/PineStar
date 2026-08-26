@@ -131,3 +131,29 @@ many of these — they win on any wording conflict.
   every candidate-bound wave W0–W7 passes. Neither verdict authorizes publishing, deployment,
   credential rotation, or any other external release operation; those still require the owner's
   explicit authorization.
+
+## Pine Star decisions
+
+The StarNet entries above are retained as upstream architectural history, not automatically adopted Pine Star product law. The decisions below were established before or during `PS-2026-001`. When an earlier precise date is unknown, **pre-foundation** is used rather than fabricating one. Change these only through a deliberate later decision record.
+
+| Date | Decision | Reason / consequence |
+| --- | --- | --- |
+| Pre-foundation | Build Pine Star on StarNet instead of continuing the old architecture. | Begin from a functioning multi-agent desktop foundation. |
+| Pre-foundation | Preserve old Pine Star work as reference rather than merge it into the fresh baseline. | Avoid importing unknown architecture/regressions. |
+| 2026-08-26 | Preserve StarNet architecture initially and transform gradually. | Rewrites require evidence and a Pine Star need. |
+| 2026-08-26 | Maintain upstream as a reference/update source; never blindly merge. | Review valuable fixes selectively without surrendering Pine Star control. |
+| Pre-foundation | Use the separate `pine-star` branch. | Isolate Pine Star evolution. |
+| Pre-foundation | Keep `starnet-baseline-0.10.10` permanently untouched. | Preserve an immutable comparison/recovery point. |
+| 2026-08-26 | Separate coordinator system role from visible agent name. | Identity can vary without confusing routing authority. |
+| 2026-08-26 | Permit direct conversations with specialist agents. | The coordinator is not a mandatory bottleneck. |
+| 2026-08-26 | Route to the lowest capable level and escalate only when needed. | Use specialization and cost tiers efficiently. |
+| 2026-08-26 | Permit safe local autonomy within protected boundaries. | Reduce interruption without external commitments or irreversible harm. |
+| 2026-08-26 | Default external financial authority to `$0`. | Money actions require explicit user approval. |
+| 2026-08-26 | Preserve multi-provider architecture initially. | Avoid lock-in and match cost/capability to work. |
+| 2026-08-26 | Do not integrate Hermes initially. | Keep foundation scope controlled. |
+| 2026-08-26 | Use private internal memory plus shared Obsidian operational memory. | Separate machine state from human-reviewable history. |
+| 2026-08-26 | Make Daily Open-Source Scout a permanent future role. | Create disciplined discovery without auto-installation. |
+| 2026-08-26 | Ship only original Pine Star art and branding. | Respect upstream exclusions/copyright and create independent identity. |
+| 2026-08-26 | Pursue the GBA-era top-down world after functional foundations stabilize. | Preserve experience direction without destabilizing core systems. |
+| 2026-08-26 | Keep code-level self-improvement controlled and reviewable. | Inspect, change, test, review, keep/revert, and log; initial merges stay user-controlled. |
+| 2026-08-26 | Track intentional changes with `PS-YYYY-###`. | Connect technical changes to rationale, evidence, and outcomes. |

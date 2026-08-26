@@ -1,3 +1,15 @@
+# Pine Star
+
+Pine Star is a desktop multi-agent AI workspace being built from the open-source [StarNet](https://github.com/androoAGI/starnet) architecture. The strategy is to preserve working architecture first, transform gradually, and avoid rewriting proven systems without a demonstrated reason.
+
+The `pine-star` branch is in **Phase 2 — Foundation**. The verified stock baseline is commit `56c3848e`, permanently tagged `starnet-baseline-0.10.10`. Windows is the primary development platform. Pine Star features, branding, and distributable artwork will be introduced in controlled later changes; they are not implied to exist yet.
+
+Start with [PINE_STAR_CONTROL.md](PINE_STAR_CONTROL.md), [AGENTS.md](AGENTS.md), and the [documentation index](docs/INDEX.md). Baseline evidence is in [docs/BASELINE.md](docs/BASELINE.md).
+
+## Upstream StarNet foundation
+
+The material below is retained as useful upstream product and technical documentation. StarNet names, release links, screenshots, behavior claims, and development instructions describe the stock foundation and may not describe a future Pine Star release. Pine Star acknowledges StarNet's MIT-licensed code and will use its own distributable name, branding, and original artwork.
+
 <div align="center">
 
 <img src=".github/media/starnet-logo-glow.png" alt="StarNet" width="560">

@@ -1,0 +1,24 @@
+# Agent registry direction
+
+## Status
+
+This is a **planned schema and seed catalog**, not an implemented registry.
+
+A future data-driven registry should support stable role ID, display name, department, purpose, capabilities, tool grants, escalation targets, model tier, cost limits, protected-action boundaries, availability, evaluation profile, and memory/report destinations. Names may change without changing role identity.
+
+| Department | Example roles |
+| --- | --- |
+| Operations | Coordinator/Chief of Staff, Morning Brief Reporter, Auditor, Experiment Manager, Librarian, File Manager, Daily Open-Source Scout |
+| Development | Integration Engineer, Software Engineer, QA/testing, system/tool specialists |
+| Creative | Image/design, video, product art, creative QA |
+| Business | Digital Product, Commerce, Pine Trail Printables/social, Growth, Finance, Idea Lab |
+| Research | General, market/product, tool scouting, technical investigation |
+
+## Rules
+
+- Do not hard-code product logic around this exact list.
+- Separate role, agent identity, model/provider configuration, and permissions.
+- Default new roles to least necessary authority and explicit budgets.
+- Declare ownership/escalation paths and preserve evaluation history.
+- Direct user access to specialists remains supported.
+

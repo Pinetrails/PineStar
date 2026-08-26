@@ -143,7 +143,6 @@ qa/installed/smoke-*/
 # internal multi-agent factory tooling — local-only, never in the public tree
 .claude/
 /CLAUDE.md
-/AGENTS.md
 
 # machine-local session litter (never track)
 CODEX_HANDOFF.md
