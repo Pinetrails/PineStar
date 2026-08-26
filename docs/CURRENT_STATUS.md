@@ -4,15 +4,15 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 2 — Foundation  
-**Current change:** `PS-2026-001` — Pine Star documentation and governance foundation
+**Current change:** `PS-2026-002` — Pine Star Foundation & Initial Rebranding
 
 | Item | Status |
 | --- | --- |
 | Last completed milestone | Clean stock StarNet baseline tagged `starnet-baseline-0.10.10` |
-| Application source modified yet | **No** |
+| Application source modified yet | **Yes — presentation-only frontend identity in PS-2026-002 batch 1** |
 | Packaged desktop | **PASS** |
 | Fresh onboarding | **PASS** |
-| Documentation foundation | Complete under `PS-2026-001`; awaiting user review |
+| Documentation foundation | `PS-2026-001` complete, approved, committed, and pushed (`1c2ef0d4`) |
 
 ## Known baseline issues
 
@@ -23,8 +23,8 @@
 
 These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](BASELINE.md).
 
-`PS-2026-001` changes docs/governance only—no source, dependencies, configuration, tests, builds, runtime, providers, or assets.
+`PS-2026-001` changed docs/governance only. `PS-2026-002` batch 1 begins the application change history with presentation-only frontend branding; it does not change persistence, auth, migrations, providers, native identity, packaging, updates, or runtime architecture.
 
 ## Next development goal
 
-Review and approve this completed documentation. Begin controlled Pine Star foundation/rebranding work only in a separate change.
+Complete and review the first `PS-2026-002` batch: status rollover, text-only Pine Star primary frontend identity, branding regression-test adaptation, and generated website mirror synchronization.

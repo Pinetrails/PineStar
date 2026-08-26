@@ -8,13 +8,13 @@ Pine Star is built on StarNet, its upstream technical foundation.
 | --- | --- |
 | Previous phase | **Phase 1 — Stock StarNet Baseline — COMPLETE** |
 | Current phase | **Phase 2 — Foundation** |
-| Last milestone | Clean stock StarNet baseline established and tagged `starnet-baseline-0.10.10` |
-| Current change | `PS-2026-001` — documentation and governance foundation |
-| Application source modified yet | **No** |
+| Last milestone | `PS-2026-001` documentation/governance foundation committed and pushed as `1c2ef0d4` |
+| Current change | `PS-2026-002` — Pine Star Foundation & Initial Rebranding |
+| Application source modified yet | **Yes — presentation-only frontend identity in the first PS-2026-002 batch** |
 | Packaged desktop baseline | **PASS** |
 | Fresh onboarding baseline | **PASS** |
-| Documentation state | **Complete; review/approval pending** |
-| Next goal | Review and approve this documentation, then begin controlled Pine Star foundation/rebranding under a separate Change ID |
+| Documentation state | `PS-2026-001` **complete and approved**; `PS-2026-002` first batch in progress |
+| Next goal | Review the text-only Pine Star frontend identity batch before any native identity, compatibility, or final-art work |
 
 ## Known stock-baseline issues
 
@@ -27,4 +27,4 @@ These are baseline findings, not Pine Star regressions. See [docs/BASELINE.md](d
 
 ## Next references
 
-[Working rules](AGENTS.md) · [Detailed status](docs/CURRENT_STATUS.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Current change](docs/change-records/PS-2026-001.md) · [Docs index](docs/INDEX.md)
+[Working rules](AGENTS.md) · [Detailed status](docs/CURRENT_STATUS.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Current change](docs/change-records/PS-2026-002.md) · [Docs index](docs/INDEX.md)
