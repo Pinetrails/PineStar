@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-011 — Safe objective activation
+
+- Activated admitted objectives through the existing `runOnce` lifecycle with shared cancellation and E-stop controllers.
+- Synchronized durable running/completed/failed/cancelled states from real execution outcomes with bounded run/artifact evidence.
+- Added authenticated activation/cancellation APIs, duplicate/restart guards, and settlement visibility.
+
 ### PS-2026-010 — Objective dispatch admission boundary
 
 - Added a pure fail-closed bridge from durable objective and routed system role to an explicitly bound runtime roster identity.

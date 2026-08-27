@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 4 — Agents & Objectives foundation (Phase 3 adapters remain)
-**Current change:** `PS-2026-010` — Objective Dispatch Admission Boundary — **COMPLETE**
+**Current change:** `PS-2026-011` — Safe Objective Activation — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -22,6 +22,7 @@
 | Durable objectives | `PS-2026-008` complete; authenticated role discovery and durable objective create/list/status APIs preserve routing, approval state, timestamps, and completion evidence |
 | Objective inspection | `PS-2026-009` complete; the Reports window shows durable objectives and system roles without exposing execution or approval controls |
 | Objective admission | `PS-2026-010` complete; durable objectives admit only through explicit stable-role roster bindings and existing runtime readiness/halt checks, without starting execution |
+| Objective activation | `PS-2026-011` complete; admitted objectives run through `runOnce`, share cancellation/E-stop, and settle durably from real outcomes and bounded evidence |
 
 ## Known baseline issues
 
@@ -36,4 +37,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Activate admitted objective tickets through the existing `runOnce` lifecycle, preserving abort propagation and settling objective evidence from durable run outcomes.
+Add coordinator objective intake and bounded decomposition using the live routing/admission/activation lifecycle.

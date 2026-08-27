@@ -9,6 +9,8 @@ function makeObjectiveDispatch(deps) {
   const admitRuntime = typeof deps.admitRuntime === 'function' ? deps.admitRuntime : async () => ({ ok: true });
   const newId = typeof deps.newId === 'function' ? deps.newId : (() => { throw new Error('objective dispatch requires newId'); });
   const now = typeof deps.now === 'function' ? deps.now : Date.now;
+  const startRuntime = typeof deps.startRuntime === 'function' ? deps.startRuntime : null;
+  const isRunActive = typeof deps.isRunActive === 'function' ? deps.isRunActive : () => false;
   async function reject(objective, code, reason, agentId) {
     const audit = { decision: 'rejected', code, reason, agentId: agentId || null, at: Number(now()) || 0 };
     if (objective) await objectives.recordAdmission(objective.id, audit);
@@ -35,6 +37,37 @@ function makeObjectiveDispatch(deps) {
     const updated = await objectives.recordAdmission(objective.id, audit);
     return { ok: true, code: 'admitted', runId, agentId, roleId: role.id, objective: updated, executionStarted: false };
   }
-  return { admit };
+  async function activate(objectiveId) {
+    const objective = objectives.get(objectiveId);
+    if (!objective) return { ok: false, code: 'objective_not_found', reason: 'objective not found' };
+    if (objective.status === 'approval_required' || objective.approvalState === 'required') return { ok: false, code: 'approval_required', reason: 'protected objective requires approval' };
+    if (objective.status === 'in_progress') {
+      if (isRunActive(objective.admittedRunId)) return { ok: false, code: 'already_running', runId: objective.admittedRunId };
+      const interrupted = await objectives.recordLifecycle(objective.id, { state: 'failed', runId: objective.admittedRunId, at: Number(now()) || 0, reason: 'interrupted before durable settlement', evidenceRefs: ['run:' + objective.admittedRunId] });
+      return { ok: false, code: 'interrupted', reason: 'prior activation is no longer running and was settled failed', objective: interrupted };
+    }
+    if (objective.status !== 'admitted') return { ok: false, code: 'objective_not_admitted', reason: 'objective is not admitted' };
+    const role = roles.get(objective.assignedRoleId), agent = roster().get(String(objective.runtimeAgentId || ''));
+    if (!role || role.availability !== 'active') return { ok: false, code: 'role_unavailable', reason: 'assigned system role is unavailable' };
+    if (!agent || !Array.isArray(agent.systemRoleIds) || !agent.systemRoleIds.includes(role.id)) return { ok: false, code: 'runtime_binding_stale', reason: 'admitted runtime binding is no longer valid' };
+    if (halted()) return { ok: false, code: 'halted', reason: 'runtime is halted' };
+    if (!startRuntime) return { ok: false, code: 'runtime_unavailable', reason: 'runtime activation is unavailable' };
+    const runId = String(objective.admittedRunId || '');
+    if (!runId) return { ok: false, code: 'run_identity_missing', reason: 'admitted objective has no run identity' };
+    let started;
+    try { started = startRuntime({ objective, role, agentId: objective.runtimeAgentId, agent, runId }); }
+    catch (e) { return { ok: false, code: 'runtime_start_failed', reason: (e && e.message) || 'runtime start failed' }; }
+    if (!started || started.ok !== true || !started.completion || typeof started.completion.then !== 'function') return { ok: false, code: (started && started.code) || 'runtime_start_failed', reason: (started && started.reason) || 'runtime start failed' };
+    try { await objectives.recordLifecycle(objective.id, { state: 'running', runId, at: Number(now()) || 0, reason: 'existing runtime started' }); }
+    catch (e) { try { if (started.cancel) started.cancel(); } catch (_) {} return { ok: false, code: 'objective_state_failed', reason: (e && e.message) || 'could not persist running state' }; }
+    const settled = Promise.resolve(started.completion).then(async result => {
+      const r = result || {}, reason = String(r.reason || 'error');
+      const state = /^(cancelled|aborted|halted)$/.test(reason) ? 'cancelled' : (reason === 'done' ? 'completed' : 'failed');
+      const refs = ['run:' + runId].concat((Array.isArray(r.artifacts) ? r.artifacts : []).map(x => 'artifact:' + String((x && (x.path || x.id)) || '')).filter(x => x !== 'artifact:')).slice(0, 24);
+      return objectives.recordLifecycle(objective.id, { state, runId, at: Number(now()) || 0, reason, evidenceRefs: refs, resultSummary: r.summary || '' });
+    }, async e => objectives.recordLifecycle(objective.id, { state: 'failed', runId, at: Number(now()) || 0, reason: (e && e.message) || 'runtime failure', evidenceRefs: ['run:' + runId] }));
+    return { ok: true, code: 'running', runId, agentId: objective.runtimeAgentId, roleId: role.id, settled };
+  }
+  return { admit, activate };
 }
 module.exports = { makeObjectiveDispatch };

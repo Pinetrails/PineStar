@@ -110,6 +110,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('GET', '/api/roles')).status, 403, 'role discovery remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives', {})).status, 403, 'objective creation remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/admit', {})).status, 403, 'objective admission remains behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives/activate', {})).status, 403, 'objective activation remains behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives/cancel', {})).status, 403, 'objective cancellation remains behind the API token gate');
     const roles = await j('GET', '/api/roles');
     A.eq(roles.status, 200, 'GET /api/roles -> 200');
     A.ok(roles.body.roles.some(role => role.id === 'research.general_researcher'), 'role discovery exposes stable system role IDs');
@@ -126,6 +128,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const protectedAdmission = await j('POST', '/api/objectives/admit', { id: protectedCreated.body.objective.id });
     A.eq(protectedAdmission.status, 409, 'protected objective admission is rejected');
     A.eq(protectedAdmission.body.code, 'approval_required', 'protected admission names the approval boundary');
+    const protectedActivation = await j('POST', '/api/objectives/activate', { id: protectedCreated.body.objective.id });
+    A.eq(protectedActivation.body.code, 'approval_required', 'protected objective cannot activate through the runtime API');
     const unboundCreated = await j('POST', '/api/objectives', { title: 'Unbound runtime identity', requiredCapabilities: ['audit'] });
     const unboundAdmission = await j('POST', '/api/objectives/admit', { id: unboundCreated.body.objective.id });
     A.eq(unboundAdmission.body.code, 'runtime_identity_missing', 'admission refuses a role with no approved runtime binding');

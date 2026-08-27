@@ -1621,6 +1621,7 @@ const objectiveStore = makeObjectiveStore({
 });
 const objectiveDispatch = makeObjectiveDispatch({
   objectives: objectiveStore, roles: pineStarRoleRegistry, roster: () => agentRoster,
+  isRunActive: runId => runs.has(String(runId || '')),
   halted: () => !!cronHalted || !!loopsHalted || !!(nightshiftState && nightshiftState.haltedAt),
   newId: () => crypto.randomUUID(), now: () => Date.now(),
   admitRuntime: async ({ agent, agentId }) => {
@@ -1630,6 +1631,25 @@ const objectiveDispatch = makeObjectiveDispatch({
     if (!agent.model) return { ok: false, code: 'runtime_model_unavailable', reason: 'bound runtime agent has no model' };
     if (!agentRoster.has(agentId)) return { ok: false, code: 'runtime_identity_missing', reason: 'bound runtime agent is no longer in the roster' };
     return { ok: true };
+  },
+  startRuntime: ({ objective, agent, agentId, runId }) => {
+    if (runs.has(runId)) return { ok: false, code: 'already_running', reason: 'run identity is already active' };
+    const model = cronModelFor({ agentId }), provider = cronProviderFor({ agentId }), key = cronKeyFor(provider);
+    if (!model || !cronHasCredential(provider, key)) return { ok: false, code: 'runtime_unavailable', reason: 'bound runtime provider/model is unavailable' };
+    const ac = new AbortController(); let endReason = '';
+    const emit = (name, payload) => { if (name === 'agent.run.end') endReason = String((payload && payload.reason) || ''); };
+    runs.set(runId, ac); runsMeta.set(runId, { agentId: String(agentId), startedAt: Date.now(), source: 'objective', objectiveId: objective.id });
+    const directive = String(objective.title || '') + (objective.description ? '\n\n' + String(objective.description) : '');
+    const completion = (async () => {
+      try {
+        const result = await runOnce({ key, model, provider, system: agent.system || cronSystemFor(agentId), messages: [{ role: 'user', content: directive }],
+          agentId, isTask: true, emit, signal: ac.signal, runId, streamId: 'objective-' + runId,
+          surface: 'autonomous', trigger: 'directive', reflect: true, station: router.stationFor(agentId) || undefined });
+        if (ac.signal.aborted) return Object.assign({}, result || {}, { reason: 'cancelled' });
+        return result || { reason: endReason || 'error' };
+      } finally { runs.delete(runId); runsMeta.delete(runId); dropSteer(runId, 'objective'); }
+    })();
+    return { ok: true, completion, cancel: () => ac.abort() };
   }
 });
 
@@ -8648,6 +8668,8 @@ const ROUTES = [
   { m: ['GET', 'POST'], qsplit: '/api/objectives', h: handlePineStarObjectives },
   { m: 'POST', exact: '/api/objectives/status', h: handlePineStarObjectiveStatus },
   { m: 'POST', exact: '/api/objectives/admit', h: handlePineStarObjectiveAdmission },
+  { m: 'POST', exact: '/api/objectives/activate', h: handlePineStarObjectiveActivation },
+  { m: 'POST', exact: '/api/objectives/cancel', h: handlePineStarObjectiveCancel },
   { m: 'GET', exact: '/api/control/status', h: servePineStarControlStatus },
   { m: 'POST', exact: '/api/notebook/restore', h: handleNotebookRestore },
   { m: 'GET', prefix: '/api/notebook', h: serveNotebook },
@@ -18325,6 +18347,23 @@ async function handlePineStarObjectiveAdmission(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
   const result = await objectiveDispatch.admit(body.id);
   return respondJson(res, result.ok ? 202 : (result.code === 'objective_not_found' ? 404 : 409), result);
+}
+async function handlePineStarObjectiveActivation(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  const result = await objectiveDispatch.activate(body.id);
+  if (result.ok) { result.settled.catch(e => console.warn('[objectives] settlement failed:', (e && e.message) || e)); }
+  const out = Object.assign({}, result); delete out.settled;
+  return respondJson(res, result.ok ? 202 : (result.code === 'objective_not_found' ? 404 : 409), out);
+}
+async function handlePineStarObjectiveCancel(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  const objective = objectiveStore.get(body.id);
+  if (!objective) return respondJson(res, 404, { error: 'objective not found' });
+  if (objective.status === 'admitted') return respondJson(res, 200, { ok: true, objective: await objectiveStore.recordLifecycle(objective.id, { state: 'cancelled', runId: objective.admittedRunId, at: Date.now(), reason: 'cancelled before execution' }) });
+  if (objective.status !== 'in_progress') return respondJson(res, 409, { error: 'objective is not active' });
+  const ac = runs.get(String(objective.admittedRunId || ''));
+  if (!ac) return respondJson(res, 409, { error: 'objective run is not active' });
+  ac.abort(); return respondJson(res, 202, { ok: true, runId: objective.admittedRunId, cancellationRequested: true });
 }
 function servePineStarControlStatus(req, res) {
   const internal = notebookStore.readKey('internal:station');

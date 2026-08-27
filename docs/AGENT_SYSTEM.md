@@ -28,6 +28,8 @@ Operations, Development, Creative, Business, and Research are seed categories, n
 
 `PS-2026-010` adds the fail-closed dispatch-admission boundary. A runtime roster identity must explicitly list the stable system role in `systemRoleIds`; the free-form visible `role` label is never authority. Admission validates objective state, role availability, a unique complete runtime identity, global autonomous halt state, provider/model readiness, and the existing runtime admission adapter. It mints and audits a run ID but returns `executionStarted:false`; provider execution remains a separate next-stage transition through `runOnce`.
 
+`PS-2026-011` activates only admitted tickets through `runOnce` with `surface:'autonomous'`. The pre-minted run ID is registered in the existing live-run maps, so `/api/cancel`, E-stop, snapshots, run journals, billing, permission enforcement, and durable run history remain authoritative. The objective settles from the real run reason with bounded run/artifact references; an orphaned post-restart `in_progress` record fails truthfully instead of re-executing.
+
 The permanent planned Daily Open-Source Scout recommends 3-5 discoveries with license, cost, compatibility, activity, difficulty, action, and owner. It never auto-installs. See [INTEGRATIONS.md](INTEGRATIONS.md).
 
 Future evaluation may use performance tiers and champion/challenger tests. Assess usefulness, quality, cost, safety, and wasted work—not activity volume. Preserve lessons when configurations retire.

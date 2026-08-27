@@ -38,5 +38,13 @@ const store = makeObjectiveStore({ durable, registry: makeRoleRegistry(SEEDS), n
   A.eq(makeObjectiveStore(deps).get('objective:durable-id').runtimeAgentId, 'agent-a', 'runtime binding survives store reconstruction');
   let admissionBypassBlocked = false; try { await restarted.updateStatus('objective:durable-id', 'admitted', []); } catch (e) { admissionBypassBlocked = /unsupported/.test(e.message); }
   A.ok(admissionBypassBlocked, 'generic status mutation cannot bypass the admission boundary');
+  let runtimeStateProtected = false; try { await restarted.updateStatus('objective:durable-id', 'cancelled', []); } catch (e) { runtimeStateProtected = /runtime-owned/.test(e.message); }
+  A.ok(runtimeStateProtected, 'generic status mutation cannot settle a runtime-owned objective');
+  const running = await restarted.recordLifecycle('objective:durable-id', { state: 'running', runId: 'run-1', at: 502, reason: 'started' });
+  A.eq(running.status, 'in_progress', 'activation persists running state against the admitted run identity');
+  const settled = await restarted.recordLifecycle('objective:durable-id', { state: 'completed', runId: 'run-1', at: 503, reason: 'done', evidenceRefs: ['run:run-1'], resultSummary: 'bounded result' });
+  A.eq(settled.status, 'completed', 'real lifecycle settlement persists completion');
+  A.eq(settled.completionEvidenceRefs, ['run:run-1'], 'settlement preserves bounded evidence references');
+  A.eq(makeObjectiveStore(deps).get('objective:durable-id').settlementReason, 'done', 'settlement survives restart');
   A.report('objective-store.test');
 })().catch(e => { console.error(e); process.exit(1); });

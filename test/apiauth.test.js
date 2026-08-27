@@ -22,6 +22,8 @@ A.eq(auth.requiresApiToken(req('GET', '/api/roles')), true, 'GET role discovery 
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives')), true, 'POST objective creation requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/status')), true, 'POST objective status requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/admit')), true, 'POST objective admission requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/objectives/activate')), true, 'POST objective activation requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/objectives/cancel')), true, 'POST objective cancellation requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/runs')), true, 'GET runs requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/run')), true, 'POST run requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/save')), true, 'POST save now requires token (was exempt)');

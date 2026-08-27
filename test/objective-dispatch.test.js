@@ -43,5 +43,41 @@ function fixture(overrides) {
   const cancel = fixture(); await cancel.dispatcher.admit('objective:1');
   cancel.rows.set('objective:1', Object.assign({}, cancel.rows.get('objective:1'), { status: 'cancelled' }));
   A.eq(cancel.rows.get('objective:1').status, 'cancelled', 'an admitted ticket remains cancellable before execution');
+
+  function activationFx(opts) {
+    opts = opts || {}; let row = Object.assign({ id: 'objective:a', status: 'admitted', approvalState: 'not_required', assignedRoleId: 'research.safe', runtimeAgentId: 'agent_a', admittedRunId: 'run-a' }, opts.objective);
+    const lifecycle = [], agents = new Map([['agent_a', { model: 'm', provider: 'p', systemRoleIds: ['research.safe'] }]]);
+    let resolveRun, rejectRun; const completion = new Promise((resolve, reject) => { resolveRun = resolve; rejectRun = reject; });
+    const objectives = { get: () => row, recordAdmission: async () => row, recordLifecycle: async (id, e) => { lifecycle.push(e); row = Object.assign({}, row, { status: e.state === 'running' ? 'in_progress' : e.state }); return row; } };
+    let cancelled = false, starts = 0;
+    const dispatcher = makeObjectiveDispatch({ objectives, roles: { get: () => ({ id: 'research.safe', availability: opts.roleUnavailable ? 'inactive' : 'active' }) }, roster: () => agents,
+      halted: () => !!opts.halted, isRunActive: () => row.status === 'in_progress' && !opts.orphaned, now: () => 200 + lifecycle.length, newId: () => 'unused',
+      startRuntime: () => { starts++; if (opts.startFail) return { ok: false, code: 'runtime_start_failed' }; return { ok: true, completion, cancel: () => { cancelled = true; resolveRun({ reason: 'cancelled' }); } }; } });
+    return { dispatcher, lifecycle, agents, resolveRun, rejectRun, starts: () => starts, cancelled: () => cancelled, row: () => row };
+  }
+  const active = activationFx(); const activation = await active.dispatcher.activate('objective:a');
+  A.eq(activation.code, 'running', 'safe admitted objective activates');
+  A.eq(active.lifecycle[0].state, 'running', 'activation synchronizes observable running state');
+  A.eq(activation.agentId, 'agent_a', 'activation preserves intended runtime identity');
+  A.eq((await active.dispatcher.activate('objective:a')).code, 'already_running', 'duplicate activation is rejected');
+  active.resolveRun({ reason: 'done', artifacts: [{ path: 'result.txt' }], summary: 'finished safely' });
+  const completed = await activation.settled;
+  A.eq(completed.status, 'completed', 'successful execution settles completed');
+  A.ok(active.lifecycle[1].evidenceRefs.includes('run:run-a') && active.lifecycle[1].evidenceRefs.includes('artifact:result.txt'), 'completion records bounded run and artifact evidence');
+  A.eq((await active.dispatcher.activate('objective:a')).code, 'objective_not_admitted', 'settled objective cannot execute twice after retry/restart');
+  const orphaned = activationFx({ objective: { status: 'in_progress' }, orphaned: true });
+  A.eq((await orphaned.dispatcher.activate('objective:a')).code, 'interrupted', 'restart orphan is settled without re-execution');
+  A.eq(orphaned.row().status, 'failed', 'interrupted activation becomes a durable truthful failure');
+  const failedRun = activationFx(); const failingActivation = await failedRun.dispatcher.activate('objective:a'); failedRun.rejectRun(new Error('provider failed'));
+  A.eq((await failingActivation.settled).status, 'failed', 'execution failure settles truthfully');
+  const protectedActivation = activationFx({ objective: { status: 'approval_required', approvalState: 'required' } });
+  A.eq((await protectedActivation.dispatcher.activate('objective:a')).code, 'approval_required', 'protected objective cannot activate');
+  const unroutable = activationFx({ objective: { status: 'unroutable' } });
+  A.eq((await unroutable.dispatcher.activate('objective:a')).code, 'objective_not_admitted', 'unroutable objective cannot activate');
+  const stopped = activationFx({ halted: true }); A.eq((await stopped.dispatcher.activate('objective:a')).code, 'halted', 'E-stop blocks activation');
+  const stale = activationFx(); stale.agents.get('agent_a').systemRoleIds = [];
+  A.eq((await stale.dispatcher.activate('objective:a')).code, 'runtime_binding_stale', 'stale binding blocks activation');
+  const cancellable = activationFx(); const runningCancel = await cancellable.dispatcher.activate('objective:a'); cancellable.resolveRun({ reason: 'cancelled' });
+  A.eq((await runningCancel.settled).status, 'cancelled', 'existing runtime cancellation reason propagates to objective');
   A.report('objective-dispatch.test');
 })().catch(e => { console.error(e); process.exit(1); });

@@ -20,6 +20,7 @@
       '<div class="dim">ROLE · ' + esc(r.assignedRoleId || 'UNASSIGNED') + '  |  TIER · ' + esc(r.assignedModelTier || r.maxModelTier || 'unknown') + '  |  APPROVAL · ' + esc(String(r.approvalState || 'unknown').toUpperCase()) + '</div>' +
       (capabilities.length ? '<div class="dim">CAPABILITIES · ' + capabilities.map(esc).join(' · ') + '</div>' : '') +
       (r.routing && r.routing.reason ? '<p class="muted">' + esc(r.routing.reason) + '</p>' : '') +
+      (r.settlementReason ? '<p class="muted">RESULT · ' + esc(r.settlementReason) + (r.resultSummary ? ' — ' + esc(r.resultSummary) : '') + '</p>' : '') +
       (evidence.length ? '<div class="dim">EVIDENCE · ' + evidence.map(esc).join(' · ') + '</div>' : '') + '</article>';
   }
   function roleHtml(row) {

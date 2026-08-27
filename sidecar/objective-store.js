@@ -46,6 +46,32 @@ function makeObjectiveStore(deps) {
     });
     return updated;
   }
+  async function recordLifecycle(id, event) {
+    let updated = null;
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], index = list.findIndex(item => item && item.id === String(id || ''));
+      if (index < 0) throw new Error('objective not found');
+      const current = list[index], e = event || {}, runId = String(e.runId || '');
+      if (!runId || runId !== String(current.admittedRunId || '')) throw new Error('objective run identity mismatch');
+      const audit = (Array.isArray(current.lifecycleAudit) ? current.lifecycleAudit : []).slice(-39);
+      audit.push({ state: String(e.state || ''), runId, at: Math.max(0, Number(e.at) || 0), reason: text(e.reason, 300) });
+      const stamp = Math.max(Number(current.updatedAt) || 0, Number(e.at) || 0);
+      if (e.state === 'running') {
+        if (current.status !== 'admitted') throw new Error('objective is not admitted');
+        updated = Object.assign({}, current, { status: 'in_progress', startedAt: stamp, updatedAt: stamp, lifecycleAudit: audit });
+      } else {
+        if (current.status !== 'in_progress' && !(current.status === 'admitted' && e.state === 'cancelled')) throw new Error('objective is not running');
+        if (!['completed', 'failed', 'cancelled'].includes(e.state)) throw new Error('invalid objective settlement');
+        const refs = strings(e.evidenceRefs, 24, 240);
+        if (e.state === 'completed' && !refs.length) throw new Error('completion requires evidence references');
+        updated = Object.assign({}, current, { status: e.state, updatedAt: stamp, settledAt: stamp,
+          completedAt: e.state === 'completed' ? stamp : 0, completionEvidenceRefs: refs,
+          settlementReason: text(e.reason, 300), resultSummary: text(e.resultSummary, 500), lifecycleAudit: audit });
+      }
+      list[index] = updated; return list;
+    });
+    return updated;
+  }
   async function updateStatus(id, status, evidenceRefs) {
     const objectiveId = text(id, 120), nextStatus = text(status, 40);
     if (!objectiveId) throw new Error('objective id is required');
@@ -57,6 +83,7 @@ function makeObjectiveStore(deps) {
       const current = list[index];
       if (current.status === 'approval_required') throw new Error('objective requires approval before status changes');
       if (FINAL.has(current.status)) throw new Error('completed objective status is immutable');
+      if (current.status === 'admitted' || current.status === 'in_progress') throw new Error('active objective state is runtime-owned');
       const refs = strings(evidenceRefs, 24, 240);
       if (nextStatus === 'completed' && !refs.length) throw new Error('completion requires evidence references');
       const stamp = Math.max(Number(current.updatedAt) || 0, Number(now()) || 0);
@@ -66,6 +93,6 @@ function makeObjectiveStore(deps) {
     });
     return updated;
   }
-  return { create, list, get, recordAdmission, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
+  return { create, list, get, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
 }
 module.exports = { makeObjectiveStore, publicRole, CAP };
