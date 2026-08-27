@@ -24,6 +24,8 @@ A.ok(settledObjective.includes('done&lt;script&gt;') && settledObjective.include
 const relatedObjective = Reports.objectiveHtml({ title: 'child', parentObjectiveId: 'objective:parent<script>', dependsOnObjectiveIds: ['objective:first&'], decomposition: { childIds: ['objective:child>'] } });
 A.ok(relatedObjective.includes('PARENT') && relatedObjective.includes('objective:parent&lt;script&gt;'), 'parent objective relationship renders safely');
 A.ok(relatedObjective.includes('DEPENDS ON') && relatedObjective.includes('objective:first&amp;') && relatedObjective.includes('CHILDREN') && relatedObjective.includes('objective:child&gt;'), 'dependency and child relationships render safely');
+const auditObjective = Reports.objectiveHtml({ title: 'audit', auditTargetObjectiveId: 'objective:target<script>' });
+A.ok(auditObjective.includes('AUDIT TARGET') && auditObjective.includes('objective:target&lt;script&gt;'), 'audit target relationship renders safely');
 const role = Reports.roleHtml({ id: 'research.general', displayName: '<Researcher>', department: 'research', modelTier: 'economy', capabilities: ['verify&report'], availability: 'active' });
 A.ok(role.includes('&lt;Researcher&gt;') && role.includes('research.general') && role.includes('verify&amp;report'), 'role identity and capabilities render safely');
 A.report('reports-ui.test');

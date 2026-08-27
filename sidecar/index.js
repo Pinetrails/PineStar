@@ -8669,6 +8669,7 @@ const ROUTES = [
   { m: ['GET', 'POST'], qsplit: '/api/objectives', h: handlePineStarObjectives },
   { m: 'POST', exact: '/api/objectives/intake', h: handlePineStarObjectiveIntake },
   { m: 'POST', exact: '/api/objectives/decompose', h: handlePineStarObjectiveDecompose },
+  { m: 'POST', exact: '/api/objectives/audit', h: handlePineStarObjectiveAudit },
   { m: 'POST', exact: '/api/objectives/status', h: handlePineStarObjectiveStatus },
   { m: 'POST', exact: '/api/objectives/admit', h: handlePineStarObjectiveAdmission },
   { m: 'POST', exact: '/api/objectives/activate', h: handlePineStarObjectiveActivation },
@@ -18354,6 +18355,16 @@ async function handlePineStarObjectiveDecompose(req, res) {
   } catch (e) {
     const message = (e && e.message) || 'invalid decomposition';
     return respondJson(res, message === 'parent objective not found' ? 404 : (/already decomposed/.test(message) ? 409 : 400), { error: message });
+  }
+}
+async function handlePineStarObjectiveAudit(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 15)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const result = await objectiveStore.createAudit(body.targetObjectiveId, body);
+    return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
+  } catch (e) {
+    const message = (e && e.message) || 'invalid audit request';
+    return respondJson(res, message === 'audit target objective not found' ? 404 : (/already targets/.test(message) ? 409 : 400), { error: message });
   }
 }
 async function handlePineStarObjectiveStatus(req, res) {

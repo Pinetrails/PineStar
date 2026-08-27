@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 4 — Agents & Objectives foundation (Phase 3 adapters remain)
-**Current change:** `PS-2026-012` — Atomic Coordinator Intake & Decomposition — **COMPLETE**
+**Current change:** `PS-2026-013` — Auditor Objective Foundation — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -24,6 +24,7 @@
 | Objective admission | `PS-2026-010` complete; durable objectives admit only through explicit stable-role roster bindings and existing runtime readiness/halt checks, without starting execution |
 | Objective activation | `PS-2026-011` complete; admitted objectives run through `runOnce`, share cancellation/E-stop, and settle durably from real outcomes and bounded evidence |
 | Coordinator orchestration | `PS-2026-012` complete; deterministic intake, direct specialist targeting, atomic bounded decomposition, dependency admission, and truthful parent aggregation use the existing objective/runtime lifecycle |
+| Auditor workflow | `PS-2026-013` complete; idempotent audits of settled objectives create directly assigned Auditor work with bounded target evidence and use the normal admission/activation lifecycle |
 
 ## Known baseline issues
 
@@ -38,4 +39,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Build the first useful Auditor workflow over the completed objective orchestration lifecycle, preserving direct specialist access and approval/runtime boundaries.
+Build the Daily Open-Source Scout foundation as a useful recommendation workflow over the same objective lifecycle; it must not install software or publish externally.

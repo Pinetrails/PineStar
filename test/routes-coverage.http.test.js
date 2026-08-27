@@ -111,6 +111,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/objectives', {})).status, 403, 'objective creation remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/intake', {})).status, 403, 'objective intake remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/decompose', {})).status, 403, 'objective decomposition remains behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives/audit', {})).status, 403, 'objective audit requests remain behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/admit', {})).status, 403, 'objective admission remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/activate', {})).status, 403, 'objective activation remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/cancel', {})).status, 403, 'objective cancellation remains behind the API token gate');
@@ -140,6 +141,11 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const objectiveControlStatus = await j('GET', '/api/control/status');
     A.eq(objectiveControlStatus.body.objectiveCount, 3, 'control status reconciles to the durable objective store');
     A.eq(objectiveControlStatus.body.approvalRequiredCount, 1, 'control status exposes the protected objective backlog');
+    const auditRequest = await j('POST', '/api/objectives/audit', { targetObjectiveId: objectiveId, auditId: 'http-audit-1' });
+    A.eq(auditRequest.status, 201, 'POST /api/objectives/audit -> 201');
+    A.eq(auditRequest.body.objective.assignedRoleId, 'operations.auditor', 'audit request creates directly assigned Auditor work');
+    A.eq(auditRequest.body.objective.auditTargetObjectiveId, objectiveId, 'audit objective durably links the settled target');
+    A.eq((await j('POST', '/api/objectives/audit', { targetObjectiveId: objectiveId, auditId: 'http-audit-1' })).status, 200, 'audit request retry is idempotent');
     const coordinator = await j('POST', '/api/objectives/intake', { title: 'Coordinate research and implementation' });
     A.eq(coordinator.status, 201, 'POST /api/objectives/intake -> 201');
     A.eq(coordinator.body.objective.assignedRoleId, 'operations.coordinator', 'deterministic intake routes explicit coordination to the system role');

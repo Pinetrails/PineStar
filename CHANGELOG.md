@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-013 — Auditor objective foundation
+
+- Added idempotent audit requests for settled durable objectives, directly assigned to the Auditor system role.
+- Supplied the Auditor runtime with a bounded target status/settlement/evidence snapshot while excluding raw transcripts and preventing unfinished-target claims.
+- Added an authenticated audit API and read-only audit-target inspection without changing admission, execution, approval, or permission authority.
+
 ### PS-2026-012 — Atomic coordinator intake and decomposition
 
 - Added deterministic objective intake and explicit capable specialist targeting without model calls or coordinator intermediation for simple work.

@@ -20,6 +20,7 @@
       (r.description ? '<p>' + esc(r.description) + '</p>' : '') +
       '<div class="dim">ROLE · ' + esc(r.assignedRoleId || 'UNASSIGNED') + '  |  TIER · ' + esc(r.assignedModelTier || r.maxModelTier || 'unknown') + '  |  APPROVAL · ' + esc(String(r.approvalState || 'unknown').toUpperCase()) + '</div>' +
       (r.parentObjectiveId ? '<div class="dim">PARENT · ' + esc(r.parentObjectiveId) + '</div>' : '') +
+      (r.auditTargetObjectiveId ? '<div class="dim">AUDIT TARGET · ' + esc(r.auditTargetObjectiveId) + '</div>' : '') +
       (dependencies.length ? '<div class="dim">DEPENDS ON · ' + dependencies.map(esc).join(' · ') + '</div>' : '') +
       (r.decomposition && Array.isArray(r.decomposition.childIds) ? '<div class="dim">CHILDREN · ' + r.decomposition.childIds.map(esc).join(' · ') + '</div>' : '') +
       (capabilities.length ? '<div class="dim">CAPABILITIES · ' + capabilities.map(esc).join(' · ') + '</div>' : '') +

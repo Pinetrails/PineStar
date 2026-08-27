@@ -38,6 +38,7 @@ function makeObjectiveStore(deps) {
       approvalState: routed.status === 'approval_required' ? 'required' : 'not_required', status: routed.status,
       parentObjectiveId: rel.parentObjectiveId || null, decompositionDepth: Number(rel.decompositionDepth) || 0,
       dependsOnObjectiveIds: Array.isArray(rel.dependsOnObjectiveIds) ? rel.dependsOnObjectiveIds.slice() : [],
+      auditTargetObjectiveId: rel.auditTargetObjectiveId || null, auditRequest: rel.auditRequest || null,
       classification: row.classification && typeof row.classification === 'object' ? row.classification : null,
       createdAt: stamp, updatedAt: stamp, completedAt: 0, completionEvidenceRefs: [], admissionAudit: [] };
   }
@@ -91,6 +92,32 @@ function makeObjectiveStore(deps) {
         completedAt: status === 'completed' ? stamp : 0, completionEvidenceRefs: status === 'completed' ? ids.slice() : cur.completionEvidenceRefs });
       list[pi] = parent; return list;
     }); return parent;
+  }
+  async function createAudit(targetId, input) {
+    const body = input && typeof input === 'object' ? input : {}, auditId = text(body.auditId, 120);
+    if (!auditId) throw new Error('auditId is required');
+    let result;
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], target = list.find(x => x && x.id === String(targetId || ''));
+      if (!target) throw new Error('audit target objective not found');
+      if (!FINAL.has(target.status)) throw new Error('audit target objective is not settled');
+      const existing = list.find(x => x && x.auditRequest && x.auditRequest.id === auditId);
+      if (existing) {
+        if (existing.auditTargetObjectiveId !== target.id) throw new Error('auditId already targets another objective');
+        result = { objective: existing, idempotent: true }; return undefined;
+      }
+      if (list.length >= CAP) throw new Error('objective store capacity exceeded');
+      const targetSnapshot = ['Target: ' + target.id, 'Title: ' + target.title, 'Status: ' + target.status,
+        'Assigned role: ' + (target.assignedRoleId || 'unassigned'), 'Settlement: ' + (target.settlementReason || 'not recorded'),
+        'Result summary: ' + (target.resultSummary || 'not recorded'), 'Evidence: ' + (strings(target.completionEvidenceRefs, 24, 240).join(', ') || 'none recorded')].join('\n');
+      const objective = build({ title: text(body.title, 240) || ('Audit objective: ' + target.title),
+        description: text(body.description, 1200) || ('Independently verify this settled objective from its bounded record. Report findings and exceptions; do not repeat or expand the target action.\n\n' + targetSnapshot),
+        requiredCapabilities: ['audit', 'verify'], maxModelTier: body.maxModelTier || 'economy', targetRoleId: 'operations.auditor', priority: body.priority || 'normal' },
+      { auditTargetObjectiveId: target.id, auditRequest: { id: auditId, at: Math.max(0, Number(now()) || 0), targetStatus: target.status,
+        targetEvidenceRefs: strings(target.completionEvidenceRefs, 24, 240) } });
+      list.push(objective); result = { objective, idempotent: false }; return list;
+    });
+    return result;
   }
   function list(limit) { const cap = Math.max(1, Math.min(250, Number(limit) || 50)); const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).filter(Boolean).slice(-cap).reverse(); }
   function get(id) { const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).find(row => row && row.id === String(id || '')) || null; }
@@ -154,6 +181,6 @@ function makeObjectiveStore(deps) {
     });
     return updated;
   }
-  return { create, decompose, reconcileParent, list, get, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
+  return { create, decompose, reconcileParent, createAudit, list, get, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
 }
 module.exports = { makeObjectiveStore, publicRole, CAP };

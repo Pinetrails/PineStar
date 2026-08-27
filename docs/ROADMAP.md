@@ -36,6 +36,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Fail-closed objective dispatch admission and explicit stable-role-to-roster binding completed in `PS-2026-010`; admitted-ticket execution and outcome settlement remain.
 - Safe admitted-ticket activation through the shared StarNet run lifecycle completed in `PS-2026-011`.
 - Deterministic coordinator intake, explicit direct-specialist targeting, atomic bounded decomposition, dependency admission, parent aggregation, and relationship inspection completed in `PS-2026-012`; useful Auditor and Scout workflows remain.
+- Idempotent settled-objective audit requests with bounded evidence snapshots and direct Auditor assignment completed in `PS-2026-013`; Scout and recurring objective workflows remain.
 
 ## Phase 5 — Autonomous Operations
 
