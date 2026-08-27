@@ -100,6 +100,11 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(reportRead.body.reports.length, 1, 'GET /api/reports returns the durable report');
     A.eq(reportRead.body.reports[0].rawTranscript, undefined, 'shared route drops raw/unapproved fields');
     A.eq((await raw('GET', '/api/reports')).status, 403, 'shared reports remain behind the API token gate');
+    const controlStatus = await j('GET', '/api/control/status');
+    A.eq(controlStatus.body.schema, 'pine-star.control-status.v1', 'control status exposes a versioned machine contract');
+    A.eq(controlStatus.body.reportCount, 1, 'control status reconciles to the durable report store');
+    A.eq(controlStatus.body.externalSync.enabled, false, 'external/Obsidian synchronization is truthfully off');
+    A.eq(controlStatus.body.spendingAuthorityUsd, 0, 'control status preserves the zero-spend default');
 
     // ---- (2) GET /api/quests — the ledger read ----
     const quests0 = await j('GET', '/api/quests');

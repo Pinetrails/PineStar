@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 3 — Memory & Control
-**Current change:** `PS-2026-004` — Operational Memory and Shared Reporting Boundary — **COMPLETE**
+**Current change:** `PS-2026-005` — Reports Surface and Control Status — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -16,6 +16,7 @@
 | Presentation foundation | `PS-2026-002` complete; first batch pushed (`43ba5fc5`) and final copy cleanup locally committed |
 | Release asset safety | `PS-2026-003` complete; distributable roots now have a reference/placeholder marker gate |
 | Memory/report boundary | `PS-2026-004` complete; private operational records and concise shared reports now use separate durable station stores |
+| Report/control surface | `PS-2026-005` complete; shared reports are readable in-app and runtime control status has a versioned API contract |
 
 ## Known baseline issues
 
@@ -30,4 +31,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Add project-control/status synchronization and a readable shared-report surface (`PS-2026-005`).
+Add a safe local report-export adapter contract, then begin the extensible agent/objective registry foundation.

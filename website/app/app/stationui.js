@@ -8583,6 +8583,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // itself every time a card's details drawer opens — the row you just clicked would slide out from under you.
     // The `dlv` class owns that height; the card list scrolls inside it.
     deliverables:['DELIVERABLES',         body => { if (typeof Deliverables !== 'undefined') Deliverables.mount(body); }, { console: true, className: 'dlv-win' }],
+    reports:  ['REPORTS',                body => { if (typeof Reports !== 'undefined') Reports.mount(body); }, { wide: true }],
     settings: ['SETTINGS',               buildSettings,  { console: true }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    {}],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder

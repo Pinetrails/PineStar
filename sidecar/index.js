@@ -8619,6 +8619,7 @@ const ROUTES = [
   // jailed via resolveInside (same proof the /api/file route uses); never lists or exposes contents.
   { m: 'GET', prefix: '/api/workspace/dir', h: serveWorkspaceDir },
   { m: ['GET', 'POST'], qsplit: '/api/reports', h: handleSharedReports },
+  { m: 'GET', exact: '/api/control/status', h: servePineStarControlStatus },
   { m: 'POST', exact: '/api/notebook/restore', h: handleNotebookRestore },
   { m: 'GET', prefix: '/api/notebook', h: serveNotebook },
   { m: 'POST', exact: '/api/save/recovery-ack', h: handleSaveRecoveryAck },
@@ -18273,6 +18274,16 @@ async function handleSharedReports(req, res) {
     const result = await appendSharedReport(notebookStore, body);
     return json(200, { ok: true, added: result.added, report: result.report });
   } catch (e) { return json(400, { error: (e && e.message) || 'invalid report' }); }
+}
+function servePineStarControlStatus(req, res) {
+  const internal = notebookStore.readKey('internal:station');
+  const reports = notebookStore.readKey('reports:station');
+  const rows = (reports.status === 'ok' || reports.status === 'recovered') && Array.isArray(reports.value) ? reports.value : [];
+  return respondJson(res, 200, {
+    schema: 'pine-star.control-status.v1', internalMemory: internal.status, sharedReports: reports.status,
+    reportCount: rows.length, latestReportAt: rows.length ? Number(rows[rows.length - 1].createdAt) || 0 : 0,
+    externalSync: { enabled: false, target: null }, spendingAuthorityUsd: 0
+  });
 }
 // POST /api/notebook/restore { agent?, notes:[...] } — fold a backup's memory snapshot back into the agent's
 // notebook (M-save P2). This is the ONLY HTTP write to the notebook, and it is user-initiated (import/restore),

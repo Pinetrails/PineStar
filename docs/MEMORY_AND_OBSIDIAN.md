@@ -11,6 +11,8 @@
 
 This does not write to the external Obsidian vault. Obsidian synchronization remains a later adapter with explicit mapping, privacy, conflict, audit, and write-scope rules.
 
+`PS-2026-005` adds a read-only in-app Reports surface and a versioned `/api/control/status` contract. The status truthfully reports external synchronization disabled and preserves the `$0` spending boundary.
+
 Obsidian is not a raw mirror of private runtime memory.
 
 ## Existing external vault

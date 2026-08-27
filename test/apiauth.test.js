@@ -17,6 +17,7 @@ A.eq(auth.requiresApiToken(req('GET', '/api/file?agent=a&path=p')), true, 'GET f
 A.eq(auth.requiresApiToken(req('GET', '/api/memory/records?agent=x')), true, 'GET memory records requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/reports?limit=20')), true, 'GET shared reports requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/reports')), true, 'POST shared reports requires token');
+A.eq(auth.requiresApiToken(req('GET', '/api/control/status')), true, 'GET Pine Star control status requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/runs')), true, 'GET runs requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/run')), true, 'POST run requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/save')), true, 'POST save now requires token (was exempt)');

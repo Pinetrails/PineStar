@@ -1,0 +1,10 @@
+'use strict';
+const A = require('./_assert.js');
+const Reports = require('../frontend/app/reports.js');
+const html = Reports.reportHtml({ type: 'morning-brief', createdAt: 1, headline: '<b>done</b>', completed: ['made & checked'], exceptions: ['none <script>'], sourceRefs: ['/api/runs'] });
+A.ok(html.includes('&lt;b&gt;done&lt;/b&gt;') && !html.includes('<b>done</b>'), 'report headline is escaped');
+A.ok(html.includes('made &amp; checked') && html.includes('none &lt;script&gt;'), 'report sections are escaped');
+A.ok(html.includes('COMPLETED') && html.includes('EXCEPTIONS') && html.includes('SOURCES'), 'readable report sections render when present');
+const sparse = Reports.reportHtml({ headline: 'quiet day' });
+A.ok(!sparse.includes('NEXT ACTIONS') && sparse.includes('quiet day'), 'empty sections are omitted without hiding the report');
+A.report('reports-ui.test');

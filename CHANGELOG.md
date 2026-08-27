@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-005 — Reports surface and control status
+
+- Added a read-only, escaped Reports window for concise shared operational history.
+- Added a versioned authenticated control-status API reporting memory-store health, report counts, external-sync-off, and zero spending authority.
+- Added focused UI, auth, HTTP persistence, and generated-mirror coverage.
+
 ### PS-2026-004 — Operational memory and shared reporting boundary
 
 - Added separate crash-safe stores for private operational records and bounded shareable reports.
