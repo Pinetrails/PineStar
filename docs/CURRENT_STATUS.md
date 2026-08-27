@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 3 — Memory & Control
-**Current change:** `PS-2026-005` — Reports Surface and Control Status — **COMPLETE**
+**Current change:** `PS-2026-006` — Local Shared-Report Export Adapter — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -17,6 +17,7 @@
 | Release asset safety | `PS-2026-003` complete; distributable roots now have a reference/placeholder marker gate |
 | Memory/report boundary | `PS-2026-004` complete; private operational records and concise shared reports now use separate durable station stores |
 | Report/control surface | `PS-2026-005` complete; shared reports are readable in-app and runtime control status has a versioned API contract |
+| Local report export | `PS-2026-006` complete; bounded shared reports export to inspectable JSON/Markdown without external writes |
 
 ## Known baseline issues
 
@@ -31,4 +32,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Add a safe local report-export adapter contract, then begin the extensible agent/objective registry foundation.
+Begin the extensible agent and objective registry foundation (`PS-2026-007`).

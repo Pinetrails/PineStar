@@ -7,4 +7,12 @@ A.ok(html.includes('made &amp; checked') && html.includes('none &lt;script&gt;')
 A.ok(html.includes('COMPLETED') && html.includes('EXCEPTIONS') && html.includes('SOURCES'), 'readable report sections render when present');
 const sparse = Reports.reportHtml({ headline: 'quiet day' });
 A.ok(!sparse.includes('NEXT ACTIONS') && sparse.includes('quiet day'), 'empty sections are omitted without hiding the report');
+const bundle = Reports.exportBundle([{ id: 'r1', headline: 'done' }], 123);
+A.eq(bundle.schema, 'pine-star.shared-report-export.v1', 'local export has a versioned adapter contract');
+A.eq(bundle.destination, null, 'export selects no external destination');
+A.eq(bundle.externalWritePerformed, false, 'export truthfully records that no external write occurred');
+const md = Reports.markdown([{ type: 'daily', createdAt: 1, headline: 'Day one', completed: ['built it'], exceptions: ['none'] }]);
+A.ok(md.includes('# Pine Star shared reports') && md.includes('### Completed') && md.includes('- built it'), 'Markdown export is concise and human-readable');
+A.ok(md.includes('no external vault was modified'), 'Markdown export states its local-only boundary');
+A.ok(!Reports.markdown([{ headline: '<script>x</script>' }]).includes('<script>'), 'Markdown export escapes embedded HTML');
 A.report('reports-ui.test');

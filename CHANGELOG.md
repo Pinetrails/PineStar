@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-006 — Local shared-report export adapter
+
+- Added user-initiated JSON and Markdown export for bounded shared reports.
+- Export receipts select no external destination, perform no external write, and exclude private memory.
+- Escaped embedded HTML in Markdown output and added focused adapter tests.
+
 ### PS-2026-005 — Reports surface and control status
 
 - Added a read-only, escaped Reports window for concise shared operational history.

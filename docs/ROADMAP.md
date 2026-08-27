@@ -25,6 +25,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Internal/shared memory boundaries, Obsidian integration, control/status synchronization, reporting architecture.
 - Internal/shared durable-store boundary and the first concise morning-report record completed in `PS-2026-004`; control synchronization, report UI, and deliberate Obsidian adaptation remain.
 - Readable report UI and a machine-readable runtime control-status contract completed in `PS-2026-005`; deliberate Obsidian adaptation remains.
+- User-initiated local shared-report export completed in `PS-2026-006`; no external vault writes occur.
 
 ## Phase 4 — Agents & Objectives
 
