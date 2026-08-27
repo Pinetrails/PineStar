@@ -9,12 +9,12 @@ Pine Star is built on StarNet, its upstream technical foundation.
 | Previous phase | **Phase 1 — Stock StarNet Baseline — COMPLETE** |
 | Current phase | **Phase 4 — Agents & Objectives (foundation; Phase 3 adapters remain)** |
 | Last milestone | `PS-2026-001` documentation/governance foundation committed and pushed as `1c2ef0d4` |
-| Current change | `PS-2026-007` — Extensible Role Registry and Objective Router Foundation — **COMPLETE** |
+| Current change | `PS-2026-008` — Durable Objective Records and Runtime Role/Objective APIs — **COMPLETE** |
 | Application source modified yet | **Yes — presentation-only frontend identity in the first PS-2026-002 batch** |
 | Packaged desktop baseline | **PASS** |
 | Fresh onboarding baseline | **PASS** |
 | Documentation state | `PS-2026-001` **complete and approved**; `PS-2026-002` **complete for the presentation foundation** |
-| Next goal | Add durable objective records and runtime role/objective APIs under `PS-2026-008` |
+| Next goal | Add an objective inspection/control surface without introducing an approval or execution bypass |
 
 ## Known stock-baseline issues
 
@@ -27,4 +27,4 @@ These are baseline findings, not Pine Star regressions. See [docs/BASELINE.md](d
 
 ## Next references
 
-[Working rules](AGENTS.md) · [Detailed status](docs/CURRENT_STATUS.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Current change](docs/change-records/PS-2026-007.md) · [Docs index](docs/INDEX.md)
+[Working rules](AGENTS.md) · [Detailed status](docs/CURRENT_STATUS.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Current change](docs/change-records/PS-2026-008.md) · [Docs index](docs/INDEX.md)

@@ -30,7 +30,8 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 ## Phase 4 — Agents & Objectives — STARTED
 
 - Coordinator model, registry, departments, objective routing, Scout, Auditor, specialist workflows.
-- Pure extensible role registry and lowest-capable-level routing foundation completed in `PS-2026-007`; durable objectives and runtime/UI integration remain.
+- Pure extensible role registry and lowest-capable-level routing foundation completed in `PS-2026-007`.
+- Durable station-scoped objective records plus authenticated role discovery and objective lifecycle APIs completed in `PS-2026-008`; UI, execution dispatch, and approval-grant design remain.
 
 ## Phase 5 — Autonomous Operations
 

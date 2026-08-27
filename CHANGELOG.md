@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-008 — Durable objective records and runtime APIs
+
+- Added a crash-safe station objective ledger outside agent filesystem jails.
+- Added authenticated role discovery and objective create/list/status APIs that preserve routing and approval decisions.
+- Required evidence references for completion and prevented protected objectives from advancing through the status API.
+
 ### PS-2026-007 — Extensible role registry and objective router
 
 - Added shared system-role seed data with identity, department, capabilities, tier, permissions, escalation, and availability separated.

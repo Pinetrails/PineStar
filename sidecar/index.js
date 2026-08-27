@@ -223,6 +223,9 @@ function writeFileDurable(deps, file, data) {
 }
 const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore, saveJsonVerified } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
 const { makeDomainStore } = require('./domain-store.js'); // normalized/versioned policy for ordinary non-secret singleton state
+const { SEEDS: PINE_STAR_ROLE_SEEDS } = require('../shared/pine-star-roles.js');
+const { makeRoleRegistry } = require('./role-registry.js');
+const { makeObjectiveStore, publicRole: publicPineStarRole } = require('./objective-store.js');
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined, appendSharedReport, listSharedReports } = MemoryStore;
@@ -1606,6 +1609,13 @@ const notebookStore = makeMemoryStore({
   onRecover: (key, file) => console.warn('[memory] recovered ' + file + ' from .bak last-known-good after a torn/corrupt main.'),
   onCorrupt: (key, file) => quarantineCorrupt(file, String(key).indexOf('todo:') === 0 ? 'todo' : (String(key).indexOf('declined:') === 0 ? 'declined' : (String(key).indexOf('minted:') === 0 ? 'minted' : 'notebook'))),
   warn: (...args) => console.warn.apply(console, args)
+});
+const pineStarRoleRegistry = makeRoleRegistry(PINE_STAR_ROLE_SEEDS);
+const objectiveStore = makeObjectiveStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable, registry: pineStarRoleRegistry,
+  now: () => Date.now(), newId: () => crypto.randomUUID(),
+  onRecover: (key, file) => console.warn('[objectives] recovered ' + file + ' from .bak last-known-good.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'objectives')
 });
 
 // WIDGET RAILS Phase 2 — the STATION-scoped agent-fed widget records (one file, not per-agent:
@@ -8619,6 +8629,9 @@ const ROUTES = [
   // jailed via resolveInside (same proof the /api/file route uses); never lists or exposes contents.
   { m: 'GET', prefix: '/api/workspace/dir', h: serveWorkspaceDir },
   { m: ['GET', 'POST'], qsplit: '/api/reports', h: handleSharedReports },
+  { m: 'GET', exact: '/api/roles', h: handlePineStarRoles },
+  { m: ['GET', 'POST'], qsplit: '/api/objectives', h: handlePineStarObjectives },
+  { m: 'POST', exact: '/api/objectives/status', h: handlePineStarObjectiveStatus },
   { m: 'GET', exact: '/api/control/status', h: servePineStarControlStatus },
   { m: 'POST', exact: '/api/notebook/restore', h: handleNotebookRestore },
   { m: 'GET', prefix: '/api/notebook', h: serveNotebook },
@@ -18274,6 +18287,23 @@ async function handleSharedReports(req, res) {
     const result = await appendSharedReport(notebookStore, body);
     return json(200, { ok: true, added: result.added, report: result.report });
   } catch (e) { return json(400, { error: (e && e.message) || 'invalid report' }); }
+}
+function handlePineStarRoles(req, res) {
+  return respondJson(res, 200, { schema: 'pine-star.roles.v1', roles: pineStarRoleRegistry.list().map(publicPineStarRole) });
+}
+async function handlePineStarObjectives(req, res) {
+  if (req.method === 'GET') {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    return respondJson(res, 200, { schema: 'pine-star.objectives.v1', objectives: objectiveStore.list(u.searchParams.get('limit')) });
+  }
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try { return respondJson(res, 201, { ok: true, objective: await objectiveStore.create(body) }); }
+  catch (e) { return respondJson(res, 400, { error: (e && e.message) || 'invalid objective' }); }
+}
+async function handlePineStarObjectiveStatus(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try { return respondJson(res, 200, { ok: true, objective: await objectiveStore.updateStatus(body.id, body.status, body.completionEvidenceRefs) }); }
+  catch (e) { const message = (e && e.message) || 'invalid objective status'; return respondJson(res, message === 'objective not found' ? 404 : 400, { error: message }); }
 }
 function servePineStarControlStatus(req, res) {
   const internal = notebookStore.readKey('internal:station');

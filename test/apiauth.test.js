@@ -18,6 +18,9 @@ A.eq(auth.requiresApiToken(req('GET', '/api/memory/records?agent=x')), true, 'GE
 A.eq(auth.requiresApiToken(req('GET', '/api/reports?limit=20')), true, 'GET shared reports requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/reports')), true, 'POST shared reports requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/control/status')), true, 'GET Pine Star control status requires token');
+A.eq(auth.requiresApiToken(req('GET', '/api/roles')), true, 'GET role discovery requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/objectives')), true, 'POST objective creation requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/objectives/status')), true, 'POST objective status requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/runs')), true, 'GET runs requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/run')), true, 'POST run requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/save')), true, 'POST save now requires token (was exempt)');

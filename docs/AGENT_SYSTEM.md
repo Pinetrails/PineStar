@@ -22,6 +22,8 @@ Operations, Development, Creative, Business, and Research are seed categories, n
 
 `PS-2026-007` implements this routing foundation: objectives declare capabilities and an optional tier ceiling; the router selects the lowest-tier active matching specialist, escalates when none fits, and stops protected actions for approval.
 
+`PS-2026-008` composes that foundation into the authenticated runtime. Station-scoped objective records persist outside agent filesystem jails with declared capabilities, routing result, stable assigned role ID, tier ceiling, approval state, timestamps, and completion-evidence references. Protected objectives are recorded as `approval_required`; this API does not approve or execute them. Completion requires at least one evidence reference.
+
 The permanent planned Daily Open-Source Scout recommends 3-5 discoveries with license, cost, compatibility, activity, difficulty, action, and owner. It never auto-installs. See [INTEGRATIONS.md](INTEGRATIONS.md).
 
 Future evaluation may use performance tiers and champion/challenger tests. Assess usefulness, quality, cost, safety, and wasted work—not activity volume. Preserve lessons when configurations retire.

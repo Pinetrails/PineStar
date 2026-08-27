@@ -2,11 +2,17 @@
 
 ## Status
 
-`PS-2026-007` implements the first pure, data-driven registry and lowest-capable-level router. It is not yet the complete durable runtime registry or objective queue.
+`PS-2026-007` implements the first pure, data-driven registry and lowest-capable-level router. `PS-2026-008` now exposes authenticated read-only runtime role discovery and a durable station-scoped objective ledger. Runtime role mutation, agent-instance binding, execution dispatch, and approval-grant workflows remain deferred.
 
 A future data-driven registry should support stable role ID, display name, department, purpose, capabilities, tool grants, escalation targets, model tier, cost limits, protected-action boundaries, availability, evaluation profile, and memory/report destinations. Names may change without changing role identity.
 
 The implemented foundation currently separates stable role ID, display label, department, capabilities, Economy/Balanced/Deep tier, escalation targets, permissions, and availability. Remaining fields will be added as runtime objective ownership and evaluation mature.
+
+Runtime contracts:
+
+- `GET /api/roles` returns `pine-star.roles.v1` discovery records without visible agent identities.
+- `GET|POST /api/objectives` lists or creates `pine-star.objective.v1` records.
+- `POST /api/objectives/status` records lifecycle changes; completion requires evidence references and `approval_required` records cannot be advanced through this route.
 
 | Department | Example roles |
 | --- | --- |

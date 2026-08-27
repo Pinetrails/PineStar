@@ -106,6 +106,25 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(controlStatus.body.externalSync.enabled, false, 'external/Obsidian synchronization is truthfully off');
     A.eq(controlStatus.body.spendingAuthorityUsd, 0, 'control status preserves the zero-spend default');
 
+    // ---- Pine Star role discovery + durable objective lifecycle ----
+    A.eq((await raw('GET', '/api/roles')).status, 403, 'role discovery remains behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives', {})).status, 403, 'objective creation remains behind the API token gate');
+    const roles = await j('GET', '/api/roles');
+    A.eq(roles.status, 200, 'GET /api/roles -> 200');
+    A.ok(roles.body.roles.some(role => role.id === 'research.general_researcher'), 'role discovery exposes stable system role IDs');
+    const created = await j('POST', '/api/objectives', { title: 'Verify HTTP objective durability', requiredCapabilities: ['research', 'verify'], maxModelTier: 'economy' });
+    A.eq(created.status, 201, 'POST /api/objectives -> 201');
+    A.eq(created.body.objective.assignedRoleId, 'research.general_researcher', 'runtime objective persists its routing assignment');
+    const objectiveId = created.body.objective.id;
+    const objectiveRead = await j('GET', '/api/objectives?limit=5');
+    A.ok(objectiveRead.body.objectives.some(objective => objective.id === objectiveId), 'objective is readable after its durable write');
+    const objectiveDone = await j('POST', '/api/objectives/status', { id: objectiveId, status: 'completed', completionEvidenceRefs: ['test:http'] });
+    A.eq(objectiveDone.body.objective.status, 'completed', 'objective status API records completion');
+    const protectedCreated = await j('POST', '/api/objectives', { title: 'External publication', requiredCapabilities: ['publish'], protectedAction: true });
+    A.eq(protectedCreated.body.objective.status, 'approval_required', 'protected runtime objective persists without execution');
+    const protectedAdvance = await j('POST', '/api/objectives/status', { id: protectedCreated.body.objective.id, status: 'in_progress' });
+    A.eq(protectedAdvance.status, 400, 'status API cannot bypass protected-objective approval');
+
     // ---- (2) GET /api/quests — the ledger read ----
     const quests0 = await j('GET', '/api/quests');
     A.eq(quests0.status, 200, 'GET /api/quests -> 200');
