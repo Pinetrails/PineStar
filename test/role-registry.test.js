@@ -1,0 +1,20 @@
+'use strict';
+const A = require('./_assert.js');
+const { SEEDS } = require('../shared/pine-star-roles.js');
+const { makeRoleRegistry } = require('../sidecar/role-registry.js');
+const registry = makeRoleRegistry(SEEDS);
+
+A.eq(registry.list().length, SEEDS.length, 'seed roles load from data rather than router branches');
+A.eq(registry.get('operations.coordinator').displayName, 'Coordinator', 'system role identity is independent from a future visible agent name');
+const research = registry.route({ requiredCapabilities: ['research', 'verify'], maxModelTier: 'economy' });
+A.eq(research.status, 'assigned', 'a supported objective is assigned');
+A.eq(research.role.id, 'research.general_researcher', 'routing chooses the lowest capable specialist');
+const code = registry.route({ requiredCapabilities: ['code', 'test'] });
+A.eq(code.role.id, 'development.software_engineer', 'multi-capability work reaches the matching specialist');
+A.eq(registry.route({ requiredCapabilities: ['code'], maxModelTier: 'economy' }).status, 'escalate', 'a tier ceiling is honored rather than silently spending more');
+A.eq(registry.route({ requiredCapabilities: ['publish'], protectedAction: true }).status, 'approval_required', 'protected work stops for approval before routing');
+A.eq(registry.route({ requiredCapabilities: [] }).status, 'unroutable', 'an unclassified objective is not guessed');
+registry.register({ id: 'creative.image_specialist', displayName: 'Image Specialist', department: 'creative', capabilities: ['create_image'], modelTier: 'economy' });
+A.eq(registry.route({ requiredCapabilities: ['create_image'] }).role.id, 'creative.image_specialist', 'new roles extend routing without core changes');
+A.throws(() => registry.register(SEEDS[0]), 'duplicate stable role ids are rejected');
+A.report('role-registry.test');

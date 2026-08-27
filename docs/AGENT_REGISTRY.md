@@ -2,9 +2,11 @@
 
 ## Status
 
-This is a **planned schema and seed catalog**, not an implemented registry.
+`PS-2026-007` implements the first pure, data-driven registry and lowest-capable-level router. It is not yet the complete durable runtime registry or objective queue.
 
 A future data-driven registry should support stable role ID, display name, department, purpose, capabilities, tool grants, escalation targets, model tier, cost limits, protected-action boundaries, availability, evaluation profile, and memory/report destinations. Names may change without changing role identity.
+
+The implemented foundation currently separates stable role ID, display label, department, capabilities, Economy/Balanced/Deep tier, escalation targets, permissions, and availability. Remaining fields will be added as runtime objective ownership and evaluation mature.
 
 | Department | Example roles |
 | --- | --- |
@@ -21,4 +23,3 @@ A future data-driven registry should support stable role ID, display name, depar
 - Default new roles to least necessary authority and explicit budgets.
 - Declare ownership/escalation paths and preserve evaluation history.
 - Direct user access to specialists remains supported.
-

@@ -20,7 +20,8 @@ Pine Star is intended to operate as a team, not one personality through which ev
 
 Operations, Development, Creative, Business, and Research are seed categories, not a fixed ontology. The registry must permit new roles, tools, models, and relationships without core rewrites.
 
+`PS-2026-007` implements this routing foundation: objectives declare capabilities and an optional tier ceiling; the router selects the lowest-tier active matching specialist, escalates when none fits, and stops protected actions for approval.
+
 The permanent planned Daily Open-Source Scout recommends 3-5 discoveries with license, cost, compatibility, activity, difficulty, action, and owner. It never auto-installs. See [INTEGRATIONS.md](INTEGRATIONS.md).
 
 Future evaluation may use performance tiers and champion/challenger tests. Assess usefulness, quality, cost, safety, and wasted work—not activity volume. Preserve lessons when configurations retire.
-

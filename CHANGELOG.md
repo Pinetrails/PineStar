@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-007 — Extensible role registry and objective router
+
+- Added shared system-role seed data with identity, department, capabilities, tier, permissions, escalation, and availability separated.
+- Added deterministic lowest-capable-level routing, tier ceilings, protected-action approval stops, and extensible registration.
+- Added focused registry/routing coverage without replacing existing StarNet agent-instance architecture.
+
 ### PS-2026-006 — Local shared-report export adapter
 
 - Added user-initiated JSON and Markdown export for bounded shared reports.

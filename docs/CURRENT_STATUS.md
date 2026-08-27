@@ -3,8 +3,8 @@
 **As of:** 2026-08-26  
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
-**Current phase:** Phase 3 — Memory & Control
-**Current change:** `PS-2026-006` — Local Shared-Report Export Adapter — **COMPLETE**
+**Current phase:** Phase 4 — Agents & Objectives foundation (Phase 3 adapters remain)
+**Current change:** `PS-2026-007` — Extensible Role Registry and Objective Router Foundation — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -18,6 +18,7 @@
 | Memory/report boundary | `PS-2026-004` complete; private operational records and concise shared reports now use separate durable station stores |
 | Report/control surface | `PS-2026-005` complete; shared reports are readable in-app and runtime control status has a versioned API contract |
 | Local report export | `PS-2026-006` complete; bounded shared reports export to inspectable JSON/Markdown without external writes |
+| Role/objective routing | `PS-2026-007` complete; extensible role data and lowest-capable-level routing now have a pure tested foundation |
 
 ## Known baseline issues
 
@@ -32,4 +33,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Begin the extensible agent and objective registry foundation (`PS-2026-007`).
+Add durable objective records and runtime role/objective APIs (`PS-2026-008`).

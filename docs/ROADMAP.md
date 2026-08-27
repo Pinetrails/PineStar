@@ -27,9 +27,10 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Readable report UI and a machine-readable runtime control-status contract completed in `PS-2026-005`; deliberate Obsidian adaptation remains.
 - User-initiated local shared-report export completed in `PS-2026-006`; no external vault writes occur.
 
-## Phase 4 — Agents & Objectives
+## Phase 4 — Agents & Objectives — STARTED
 
 - Coordinator model, registry, departments, objective routing, Scout, Auditor, specialist workflows.
+- Pure extensible role registry and lowest-capable-level routing foundation completed in `PS-2026-007`; durable objectives and runtime/UI integration remain.
 
 ## Phase 5 — Autonomous Operations
 
