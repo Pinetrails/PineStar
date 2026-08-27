@@ -24,6 +24,8 @@ function memoryFileFor(workspaces, pathMod, key) {
   if (k.indexOf('declined:') === 0) return pathMod.join(workspaces, agentIdFromKey(k, /^declined:/) + '.declined.json');
   if (k.indexOf('minted:') === 0) return pathMod.join(workspaces, agentIdFromKey(k, /^minted:/) + '.minted.json');
   if (k.indexOf('pending:') === 0) return pathMod.join(workspaces, agentIdFromKey(k, /^pending:/) + '.pending.json');
+  if (k === 'internal:station') return pathMod.join(workspaces, 'pine-star.internal-memory.json');
+  if (k === 'reports:station') return pathMod.join(workspaces, 'pine-star.shared-reports.json');
   throw new Error('unsupported memory store key: ' + k);
 }
 
@@ -153,4 +155,51 @@ function listPending(store, agentId) {
   return Array.isArray(v) ? v.filter(Boolean) : [];
 }
 
-module.exports = { makeMemoryStore, memoryFileFor, resetAgentMemory, restoreDeclined, appendPending, takePending, listPending, PENDING_CAP };
+const INTERNAL_CAP = 500;
+const REPORT_CAP = 180;
+function boundedText(value, max) { return String(value == null ? '' : value).trim().slice(0, max); }
+function safeStringList(value, cap, width) {
+  return (Array.isArray(value) ? value : []).map(v => boundedText(v, width)).filter(Boolean).slice(0, cap);
+}
+async function appendInternalRecord(store, input) {
+  const row = input && typeof input === 'object' ? input : {};
+  const id = boundedText(row.id, 120), type = boundedText(row.type, 60);
+  if (!id || !type) throw new Error('internal memory record requires id and type');
+  let added = false;
+  await store.update('internal:station', stored => {
+    const list = Array.isArray(stored) ? stored.slice() : [];
+    if (list.some(item => item && item.id === id)) return undefined;
+    list.push({ schema: 'pine-star.internal-memory.v1', id, type, createdAt: Math.max(0, Number(row.createdAt) || 0), payload: row.payload && typeof row.payload === 'object' ? row.payload : {} });
+    while (list.length > INTERNAL_CAP) list.shift();
+    added = true; return list;
+  });
+  return added;
+}
+function normalizeSharedReport(input) {
+  const row = input && typeof input === 'object' ? input : {};
+  const id = boundedText(row.id, 120), type = boundedText(row.type, 60), headline = boundedText(row.headline, 240);
+  if (!id || !type || !headline) throw new Error('shared report requires id, type, and headline');
+  return {
+    schema: 'pine-star.shared-report.v1', id, type,
+    createdAt: Math.max(0, Number(row.createdAt) || 0), periodStart: Math.max(0, Number(row.periodStart) || 0), periodEnd: Math.max(0, Number(row.periodEnd) || 0),
+    headline, completed: safeStringList(row.completed, 10, 240), exceptions: safeStringList(row.exceptions, 10, 240),
+    decisions: safeStringList(row.decisions, 10, 240), nextActions: safeStringList(row.nextActions, 10, 240), sourceRefs: safeStringList(row.sourceRefs, 12, 120)
+  };
+}
+async function appendSharedReport(store, input) {
+  const report = normalizeSharedReport(input); let added = false;
+  await store.update('reports:station', stored => {
+    const list = Array.isArray(stored) ? stored.slice() : [];
+    if (list.some(item => item && item.id === report.id)) return undefined;
+    list.push(report); while (list.length > REPORT_CAP) list.shift(); added = true; return list;
+  });
+  return { added, report };
+}
+function listSharedReports(store, limit) {
+  const list = store.get('reports:station');
+  const cap = Math.max(1, Math.min(100, Number(limit) || 20));
+  return (Array.isArray(list) ? list : []).filter(Boolean).slice(-cap).reverse();
+}
+
+module.exports = { makeMemoryStore, memoryFileFor, resetAgentMemory, restoreDeclined, appendPending, takePending, listPending,
+  appendInternalRecord, appendSharedReport, listSharedReports, normalizeSharedReport, PENDING_CAP, INTERNAL_CAP, REPORT_CAP };

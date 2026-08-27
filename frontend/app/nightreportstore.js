@@ -76,6 +76,14 @@ const NightReportStore = (() => {
     const hasNight = !!(report && report.hasReport);
     if (!hasNight && !pendingBuilds.length) return;
 
+    // Best-effort durable shared projection. Full draft bodies stay in their private runtime store.
+    if (hasNight && NightReport.sharedRecord) {
+      try {
+        const record = NightReport.sharedRecord(report, { awaySince, nowMs: now });
+        if (record) await fetch('/api/reports', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(record) });
+      } catch (_) {}
+    }
+
     fired = true;   // spend the session's single report even if the beat is later dismissed (anti-nag)
 
     // NS visibility: the morning report is SURFACING these drafts — mark them seen so the live-session unseen-drafts

@@ -254,5 +254,10 @@ A.eq(NR.unseenDrafts(null, 0).length, 0, 'a non-array drafts payload → [] (fai
 /* ---------- purity / determinism ---------- */
 const args = { status: { active: true, binding: 'leash' }, awaySince: 1000, nowMs: 5, tzOffsetMin: 0, ledger: [{ source: 'nightshift', kind: 'decline', binding: 'leash', ts: 2000 }], drafts: [] };
 A.eq(NR.compose(args), NR.compose(args), 'compose() is deterministic for the same input');
+const shared = NR.sharedRecord(NR.compose(args), args);
+A.eq(shared.type, 'morning-brief', 'morning output projects to the shared report schema');
+A.ok(shared.exceptions.length === 2 && shared.sourceRefs.length === 3, 'shared report keeps concise exceptions and evidence references');
+A.eq(shared.drafts, undefined, 'shared report never carries draft bodies');
+A.eq(NR.sharedRecord({ hasReport: false }, args), null, 'an empty night creates no durable shared report');
 
 A.report('nightreport.test');

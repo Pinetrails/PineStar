@@ -225,7 +225,7 @@ const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonSt
 const { makeDomainStore } = require('./domain-store.js'); // normalized/versioned policy for ordinary non-secret singleton state
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
-const { makeMemoryStore, resetAgentMemory, restoreDeclined } = MemoryStore;
+const { makeMemoryStore, resetAgentMemory, restoreDeclined, appendSharedReport, listSharedReports } = MemoryStore;
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
 const { makeIdempotencyLedger } = require('./idempotency-ledger.js'); // SOP lane: durable connector-WRITE idempotency (no double-send on retry/resume)
@@ -8618,6 +8618,7 @@ const ROUTES = [
   // where their output landed (the frontend otherwise only knows the relative filename). Read-only,
   // jailed via resolveInside (same proof the /api/file route uses); never lists or exposes contents.
   { m: 'GET', prefix: '/api/workspace/dir', h: serveWorkspaceDir },
+  { m: ['GET', 'POST'], qsplit: '/api/reports', h: handleSharedReports },
   { m: 'POST', exact: '/api/notebook/restore', h: handleNotebookRestore },
   { m: 'GET', prefix: '/api/notebook', h: serveNotebook },
   { m: 'POST', exact: '/api/save/recovery-ack', h: handleSaveRecoveryAck },
@@ -18257,6 +18258,21 @@ function serveNotebook(req, res) {
       : [];
     json(200, { notes });
   } catch (e) { json(200, { notes: [] }); }   // tolerate missing/corrupt — empty memory, never a 500
+}
+// Explicit shared-memory seam: concise, bounded reports live apart from private notebook/internal records.
+async function handleSharedReports(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  if (req.method === 'GET') {
+    try {
+      const u = new URL(req.url, 'http://127.0.0.1');
+      return json(200, { reports: listSharedReports(notebookStore, u.searchParams.get('limit')) });
+    } catch (_) { return json(200, { reports: [] }); }
+  }
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  try {
+    const result = await appendSharedReport(notebookStore, body);
+    return json(200, { ok: true, added: result.added, report: result.report });
+  } catch (e) { return json(400, { error: (e && e.message) || 'invalid report' }); }
 }
 // POST /api/notebook/restore { agent?, notes:[...] } — fold a backup's memory snapshot back into the agent's
 // notebook (M-save P2). This is the ONLY HTTP write to the notebook, and it is user-initiated (import/restore),

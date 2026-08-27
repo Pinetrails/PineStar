@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-004 — Operational memory and shared reporting boundary
+
+- Added separate crash-safe stores for private operational records and bounded shareable reports.
+- Added an authenticated shared-report API and persisted concise Night Shift morning reports without raw drafts, transcripts, notebooks, or internal payloads.
+- Added focused durability, privacy-boundary, report projection, authentication, and mirror-sync coverage.
+
 ### PS-2026-003 — Release asset safety foundation
 
 - Added a read-only distribution gate for private reference/placeholder material in frontend, website, native icon, and installer asset roots.

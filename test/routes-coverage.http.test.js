@@ -90,6 +90,17 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.ok(Array.isArray(drafts.body.drafts), 'drafts route returns {drafts:[...]} (empty on a fresh workspace)');
     A.eq(drafts.body.drafts.length, 0, 'fresh workspace has no night-shift drafts');
 
+    // ---- Pine Star shared-report boundary: authenticated, durable, idempotent, and projection-only ----
+    const reportInput = { id: 'brief:http-1', type: 'morning-brief', createdAt: 10, headline: 'one task completed', completed: ['task A'], rawTranscript: 'must not survive' };
+    const reportWrite = await j('POST', '/api/reports', reportInput);
+    A.eq(reportWrite.status, 200, 'POST /api/reports -> 200');
+    A.eq(reportWrite.body.added, true, 'first report write is appended');
+    A.eq((await j('POST', '/api/reports', reportInput)).body.added, false, 'duplicate report id is idempotent');
+    const reportRead = await j('GET', '/api/reports?limit=5');
+    A.eq(reportRead.body.reports.length, 1, 'GET /api/reports returns the durable report');
+    A.eq(reportRead.body.reports[0].rawTranscript, undefined, 'shared route drops raw/unapproved fields');
+    A.eq((await raw('GET', '/api/reports')).status, 403, 'shared reports remain behind the API token gate');
+
     // ---- (2) GET /api/quests — the ledger read ----
     const quests0 = await j('GET', '/api/quests');
     A.eq(quests0.status, 200, 'GET /api/quests -> 200');

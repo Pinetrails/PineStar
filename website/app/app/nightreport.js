@@ -345,5 +345,20 @@
     });
   }
 
-  return { compose, panelModel, trailLine, collapseTrail, trailLines, awayRuleText, fmtLocalTime, bindingPhrase, plural, modeText, readinessText, postureOutlook, unseenDrafts, BINDING_PHRASE };
+  // Deliberately shareable durable projection. Draft bodies and raw ledger rows stay private; the shared record
+  // carries only concise outcomes, exceptions, the declared priority, and source route references.
+  function sharedRecord(report, input) {
+    if (!report || !report.hasReport) return null;
+    input = input || {};
+    const end = Math.max(0, Number(input.nowMs) || 0), start = Math.max(0, Number(input.awaySince) || 0);
+    return {
+      id: 'morning-brief:' + start + ':' + end, type: 'morning-brief', createdAt: end, periodStart: start, periodEnd: end,
+      headline: String(report.headline || 'Morning brief'), completed: (report.actLines || []).map(String),
+      exceptions: (report.declineLines || []).concat(report.idleReason ? [report.idleReason] : []).map(String),
+      decisions: report.priorityLine ? [String(report.priorityLine)] : [], nextActions: [],
+      sourceRefs: ['/api/nightshift/status', '/api/autonomy/ledger', '/api/nightshift/drafts']
+    };
+  }
+
+  return { compose, sharedRecord, panelModel, trailLine, collapseTrail, trailLines, awayRuleText, fmtLocalTime, bindingPhrase, plural, modeText, readinessText, postureOutlook, unseenDrafts, BINDING_PHRASE };
 });

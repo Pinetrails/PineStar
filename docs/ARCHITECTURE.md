@@ -29,6 +29,7 @@ For stock detail, see [../CODE_MAP.md](../CODE_MAP.md), [BRAIN.md](BRAIN.md), an
 - Preserve multi-provider support; Economy/Balanced/Deep are future policy tiers above adapters.
 - Make roles/departments extensible rather than hard-coded to a seed roster.
 - Keep private operational memory distinct from shared human-readable history.
+- `PS-2026-004` implements that distinction as separate crash-safe station stores with a bounded authenticated shared-report API; it reuses the existing durable-store primitive.
 - Treat the future world UI as a projection of real state, not a replacement for technical controls.
 - Review upstream changes selectively.
 - Establish Pine Star's own release/signing process; never seek StarNet private signing material.
@@ -36,4 +37,3 @@ For stock detail, see [../CODE_MAP.md](../CODE_MAP.md), [BRAIN.md](BRAIN.md), an
 ## Controlled self-improvement
 
 Future code-level improvement follows `INSPECT -> CREATE DEVELOPMENT CHANGE -> TEST -> REVIEW RESULT -> KEEP OR REVERT -> LOG DECISION`. Initially, final code merges remain user-controlled. Constitutional safeguards are outside autonomous modification authority.
-

@@ -20,9 +20,10 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Later begin controlled foundation/rebranding modifications under separate Change IDs.
 - Completed initial presentation separation (`PS-2026-002`) and a machine-checkable reference/placeholder asset gate (`PS-2026-003`); native identity and original replacement art remain deferred.
 
-## Phase 3 — Memory & Control
+## Phase 3 — Memory & Control — STARTED
 
 - Internal/shared memory boundaries, Obsidian integration, control/status synchronization, reporting architecture.
+- Internal/shared durable-store boundary and the first concise morning-report record completed in `PS-2026-004`; control synchronization, report UI, and deliberate Obsidian adaptation remain.
 
 ## Phase 4 — Agents & Objectives
 
