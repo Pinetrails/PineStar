@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 4 — Agents & Objectives foundation (Phase 3 adapters remain)
-**Current change:** `PS-2026-008` — Durable Objective Records and Runtime Role/Objective APIs — **COMPLETE**
+**Current change:** `PS-2026-009` — Objective and Role Inspection Surface — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -20,6 +20,7 @@
 | Local report export | `PS-2026-006` complete; bounded shared reports export to inspectable JSON/Markdown without external writes |
 | Role/objective routing | `PS-2026-007` complete; extensible role data and lowest-capable-level routing now have a pure tested foundation |
 | Durable objectives | `PS-2026-008` complete; authenticated role discovery and durable objective create/list/status APIs preserve routing, approval state, timestamps, and completion evidence |
+| Objective inspection | `PS-2026-009` complete; the Reports window shows durable objectives and system roles without exposing execution or approval controls |
 
 ## Known baseline issues
 
@@ -34,4 +35,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Continue Phase 4 with an objective inspection/control surface and explicit execution/approval design that preserves existing consent and E-stop boundaries.
+Design the first safe objective-to-agent dispatch seam against existing consent, E-stop, run audit, and agent-instance boundaries.

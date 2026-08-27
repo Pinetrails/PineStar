@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-009 — Objective and role inspection surface
+
+- Extended the Reports window with escaped, read-only objective and system-role records.
+- Made routing, tier, approval state, capabilities, timestamps, and completion evidence visible without adding execution or approval controls.
+- Added objective-store health, count, and approval-required backlog to runtime control status.
+
 ### PS-2026-008 — Durable objective records and runtime APIs
 
 - Added a crash-safe station objective ledger outside agent filesystem jails.

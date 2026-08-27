@@ -15,4 +15,10 @@ const md = Reports.markdown([{ type: 'daily', createdAt: 1, headline: 'Day one',
 A.ok(md.includes('# Pine Star shared reports') && md.includes('### Completed') && md.includes('- built it'), 'Markdown export is concise and human-readable');
 A.ok(md.includes('no external vault was modified'), 'Markdown export states its local-only boundary');
 A.ok(!Reports.markdown([{ headline: '<script>x</script>' }]).includes('<script>'), 'Markdown export escapes embedded HTML');
+const objective = Reports.objectiveHtml({ title: '<img src=x>', status: 'approval_required', assignedRoleId: 'operations.coordinator', maxModelTier: 'balanced', approvalState: 'required', requiredCapabilities: ['publish<script>'], routing: { reason: 'Commander <approval>' }, completionEvidenceRefs: ['report:1&2'] });
+A.ok(objective.includes('&lt;img src=x&gt;') && !objective.includes('<img src=x>'), 'objective title is escaped');
+A.ok(objective.includes('APPROVAL_REQUIRED') && objective.includes('APPROVAL · REQUIRED'), 'objective status and approval boundary are visible');
+A.ok(objective.includes('publish&lt;script&gt;') && objective.includes('Commander &lt;approval&gt;') && objective.includes('report:1&amp;2'), 'objective capabilities, routing reason, and evidence are escaped');
+const role = Reports.roleHtml({ id: 'research.general', displayName: '<Researcher>', department: 'research', modelTier: 'economy', capabilities: ['verify&report'], availability: 'active' });
+A.ok(role.includes('&lt;Researcher&gt;') && role.includes('research.general') && role.includes('verify&amp;report'), 'role identity and capabilities render safely');
 A.report('reports-ui.test');

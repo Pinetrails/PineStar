@@ -124,6 +124,9 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(protectedCreated.body.objective.status, 'approval_required', 'protected runtime objective persists without execution');
     const protectedAdvance = await j('POST', '/api/objectives/status', { id: protectedCreated.body.objective.id, status: 'in_progress' });
     A.eq(protectedAdvance.status, 400, 'status API cannot bypass protected-objective approval');
+    const objectiveControlStatus = await j('GET', '/api/control/status');
+    A.eq(objectiveControlStatus.body.objectiveCount, 2, 'control status reconciles to the durable objective store');
+    A.eq(objectiveControlStatus.body.approvalRequiredCount, 1, 'control status exposes the protected objective backlog');
 
     // ---- (2) GET /api/quests — the ledger read ----
     const quests0 = await j('GET', '/api/quests');

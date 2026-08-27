@@ -18308,10 +18308,14 @@ async function handlePineStarObjectiveStatus(req, res) {
 function servePineStarControlStatus(req, res) {
   const internal = notebookStore.readKey('internal:station');
   const reports = notebookStore.readKey('reports:station');
+  const objectives = objectiveStore.readStatus();
   const rows = (reports.status === 'ok' || reports.status === 'recovered') && Array.isArray(reports.value) ? reports.value : [];
+  const objectiveRows = (objectives.status === 'ok' || objectives.status === 'recovered') && Array.isArray(objectives.value) ? objectives.value : [];
   return respondJson(res, 200, {
     schema: 'pine-star.control-status.v1', internalMemory: internal.status, sharedReports: reports.status,
     reportCount: rows.length, latestReportAt: rows.length ? Number(rows[rows.length - 1].createdAt) || 0 : 0,
+    objectives: objectives.status, objectiveCount: objectiveRows.length,
+    approvalRequiredCount: objectiveRows.filter(row => row && row.status === 'approval_required').length,
     externalSync: { enabled: false, target: null }, spendingAuthorityUsd: 0
   });
 }
