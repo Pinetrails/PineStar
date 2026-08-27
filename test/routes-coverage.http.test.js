@@ -112,6 +112,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/objectives/intake', {})).status, 403, 'objective intake remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/decompose', {})).status, 403, 'objective decomposition remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/audit', {})).status, 403, 'objective audit requests remain behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives/scout', {})).status, 403, 'Scout requests remain behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives/scout/report', {})).status, 403, 'Scout reports remain behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/admit', {})).status, 403, 'objective admission remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/activate', {})).status, 403, 'objective activation remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/cancel', {})).status, 403, 'objective cancellation remains behind the API token gate');
@@ -146,6 +148,17 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(auditRequest.body.objective.assignedRoleId, 'operations.auditor', 'audit request creates directly assigned Auditor work');
     A.eq(auditRequest.body.objective.auditTargetObjectiveId, objectiveId, 'audit objective durably links the settled target');
     A.eq((await j('POST', '/api/objectives/audit', { targetObjectiveId: objectiveId, auditId: 'http-audit-1' })).status, 200, 'audit request retry is idempotent');
+    const scoutRequest = await j('POST', '/api/objectives/scout', { scoutId: 'http-scout-1', topic: 'Windows developer utilities', recommendationLimit: 3 });
+    A.eq(scoutRequest.status, 201, 'POST /api/objectives/scout -> 201');
+    A.eq(scoutRequest.body.objective.assignedRoleId, 'operations.open_source_scout', 'HTTP Scout request routes to the specialist');
+    A.eq(scoutRequest.body.objective.status, 'assigned', 'HTTP Scout request does not auto-execute');
+    await j('POST', '/api/objectives/status', { id: scoutRequest.body.objective.id, status: 'completed', completionEvidenceRefs: ['run:http-scout-fixture'] });
+    const scoutFinal = await j('POST', '/api/objectives/scout/report', { id: scoutRequest.body.objective.id, discoveries: [{ name: 'Fixture project', source: 'Test fixture', url: 'https://example.invalid/fixture', purpose: 'Exercise the report path', recommendation: 'WATCH', evidenceRefs: ['fixture:http'] }] });
+    A.eq(scoutFinal.status, 201, 'settled Scout findings create a shared report');
+    A.eq(scoutFinal.body.report.discoveries[0].license, 'UNKNOWN', 'HTTP Scout report preserves unknown license truthfully');
+    A.eq(scoutFinal.body.objective.workflowAudit[0].event, 'scout_report_created', 'HTTP Scout report records objective audit evidence');
+    const scoutReports = await j('GET', '/api/reports?limit=10');
+    A.ok(scoutReports.body.reports.some(x => x.id === 'scout-report:http-scout-1'), 'Scout report is readable through the existing shared report API');
     const coordinator = await j('POST', '/api/objectives/intake', { title: 'Coordinate research and implementation' });
     A.eq(coordinator.status, 201, 'POST /api/objectives/intake -> 201');
     A.eq(coordinator.body.objective.assignedRoleId, 'operations.coordinator', 'deterministic intake routes explicit coordination to the system role');

@@ -179,11 +179,19 @@ function normalizeSharedReport(input) {
   const row = input && typeof input === 'object' ? input : {};
   const id = boundedText(row.id, 120), type = boundedText(row.type, 60), headline = boundedText(row.headline, 240);
   if (!id || !type || !headline) throw new Error('shared report requires id, type, and headline');
+  const discoveries = (Array.isArray(row.discoveries) ? row.discoveries : []).slice(0, 5).map(item => ({
+    name: boundedText(item && item.name, 160), source: boundedText(item && item.source, 100), reference: boundedText(item && item.reference, 500),
+    purpose: boundedText(item && item.purpose, 300), relevance: boundedText(item && item.relevance, 300), category: boundedText(item && item.category, 80),
+    compatibility: boundedText(item && item.compatibility, 180), license: boundedText(item && item.license, 120), cost: boundedText(item && item.cost, 120),
+    activityEvidence: boundedText(item && item.activityEvidence, 300), integrationDifficulty: boundedText(item && item.integrationDifficulty, 80),
+    risk: boundedText(item && item.risk, 300), recommendation: boundedText(item && item.recommendation, 20), recommendedOwnerRoleId: boundedText(item && item.recommendedOwnerRoleId, 100),
+    evidenceRefs: safeStringList(item && item.evidenceRefs, 8, 500)
+  })).filter(item => item.name && item.source && item.reference);
   return {
     schema: 'pine-star.shared-report.v1', id, type,
     createdAt: Math.max(0, Number(row.createdAt) || 0), periodStart: Math.max(0, Number(row.periodStart) || 0), periodEnd: Math.max(0, Number(row.periodEnd) || 0),
     headline, completed: safeStringList(row.completed, 10, 240), exceptions: safeStringList(row.exceptions, 10, 240),
-    decisions: safeStringList(row.decisions, 10, 240), nextActions: safeStringList(row.nextActions, 10, 240), sourceRefs: safeStringList(row.sourceRefs, 12, 120)
+    decisions: safeStringList(row.decisions, 10, 240), nextActions: safeStringList(row.nextActions, 10, 240), sourceRefs: safeStringList(row.sourceRefs, 12, 500), discoveries
   };
 }
 async function appendSharedReport(store, input) {

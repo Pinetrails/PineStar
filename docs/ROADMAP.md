@@ -37,6 +37,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Safe admitted-ticket activation through the shared StarNet run lifecycle completed in `PS-2026-011`.
 - Deterministic coordinator intake, explicit direct-specialist targeting, atomic bounded decomposition, dependency admission, parent aggregation, and relationship inspection completed in `PS-2026-012`; useful Auditor and Scout workflows remain.
 - Idempotent settled-objective audit requests with bounded evidence snapshots and direct Auditor assignment completed in `PS-2026-013`; Scout and recurring objective workflows remain.
+- Daily Open-Source Scout request, runtime directive, structured normalization, shared-report finalization, and audit linkage completed in `PS-2026-014`; recurring objective scheduling remains.
 
 ## Phase 5 — Autonomous Operations
 

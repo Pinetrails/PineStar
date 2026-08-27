@@ -14,7 +14,8 @@ The Scout recommends; it does not install. The Integration Engineer or relevant 
 
 ## Daily Open-Source Scout
 
-Future morning output normally contains 3-5 worthwhile discoveries from GitHub, GitLab, SourceForge, Hugging Face, Reddit, Hacker News, open-source directories, awesome lists, MCP, agent frameworks, media/automation/local-AI/business/coding tools, APIs, and datasets.
+The implemented workflow normally requests 3-5 worthwhile discoveries. Its source-adapter contract initially delegates truthful live discovery to the admitted agent's existing runtime web-research tools; future adapters may cover GitHub, GitLab, SourceForge, Hugging Face, Reddit, Hacker News, open-source directories, awesome lists, MCP, agent frameworks, media/automation/local-AI/business/coding tools, APIs, and datasets without changing objective or report storage.
 
 Each item reports what it is, why it matters, Pine Star relevance, Windows/platform compatibility, license, cost, maintenance signal, integration difficulty, action (`IGNORE`, `WATCH`, `TEST`, `ADD`), and best owner.
 
+Only a successfully completed Scout objective may finalize findings. Normalization requires a name, source, URL/reference, and valid action; removes duplicate references; preserves evidence; and uses `UNKNOWN` rather than inventing license or cost. Finalization writes the existing shared-report record and a bounded `scout_report_created` audit event on the objective. `TEST` and `ADD` remain recommendations for a separate Integration Engineer or specialist objective and never install automatically.

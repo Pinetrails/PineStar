@@ -9,8 +9,9 @@
   function dateText(ms) { const n = Number(ms); if (!n) return ''; try { return new Date(n).toLocaleString(); } catch (_) { return ''; } }
   function list(label, rows) { const items = (Array.isArray(rows) ? rows : []).filter(Boolean); return items.length ? '<section><h4>' + esc(label) + '</h4><ul>' + items.map(x => '<li>' + esc(x) + '</li>').join('') + '</ul></section>' : ''; }
   function reportHtml(row) {
-    const r = row || {};
-    return '<article class="cfg-card ps-report"><div class="dim">' + esc(String(r.type || 'report').toUpperCase()) + ' · ' + esc(dateText(r.createdAt)) + '</div><h3>' + esc(r.headline || 'Untitled report') + '</h3>' + list('COMPLETED', r.completed) + list('EXCEPTIONS', r.exceptions) + list('DECISIONS', r.decisions) + list('NEXT ACTIONS', r.nextActions) + (r.sourceRefs && r.sourceRefs.length ? '<div class="dim">SOURCES · ' + r.sourceRefs.map(esc).join(' · ') + '</div>' : '') + '</article>';
+    const r = row || {}, discoveries = Array.isArray(r.discoveries) ? r.discoveries : [];
+    const discoveryHtml = discoveries.length ? '<section><h4>DISCOVERIES</h4>' + discoveries.map(x => '<div class="ps-discovery"><strong>' + esc(x.name) + '</strong> · ' + esc(x.recommendation || 'UNKNOWN') + '<div class="dim">' + esc(x.source) + ' · ' + esc(x.license || 'UNKNOWN') + ' · ' + esc(x.cost || 'UNKNOWN') + ' · ' + esc(x.compatibility || 'UNKNOWN') + '</div><p>' + esc(x.purpose || '') + (x.relevance ? ' — ' + esc(x.relevance) : '') + '</p><div class="dim">OWNER · ' + esc(x.recommendedOwnerRoleId || 'operations.coordinator') + ' · RISK · ' + esc(x.risk || 'UNKNOWN') + '</div></div>').join('') + '</section>' : '';
+    return '<article class="cfg-card ps-report"><div class="dim">' + esc(String(r.type || 'report').toUpperCase()) + ' · ' + esc(dateText(r.createdAt)) + '</div><h3>' + esc(r.headline || 'Untitled report') + '</h3>' + discoveryHtml + list('COMPLETED', r.completed) + list('EXCEPTIONS', r.exceptions) + list('DECISIONS', r.decisions) + list('NEXT ACTIONS', r.nextActions) + (r.sourceRefs && r.sourceRefs.length ? '<div class="dim">SOURCES · ' + r.sourceRefs.map(esc).join(' · ') + '</div>' : '') + '</article>';
   }
   function objectiveHtml(row) {
     const r = row || {}, capabilities = Array.isArray(r.requiredCapabilities) ? r.requiredCapabilities : [];
@@ -21,6 +22,7 @@
       '<div class="dim">ROLE · ' + esc(r.assignedRoleId || 'UNASSIGNED') + '  |  TIER · ' + esc(r.assignedModelTier || r.maxModelTier || 'unknown') + '  |  APPROVAL · ' + esc(String(r.approvalState || 'unknown').toUpperCase()) + '</div>' +
       (r.parentObjectiveId ? '<div class="dim">PARENT · ' + esc(r.parentObjectiveId) + '</div>' : '') +
       (r.auditTargetObjectiveId ? '<div class="dim">AUDIT TARGET · ' + esc(r.auditTargetObjectiveId) + '</div>' : '') +
+      (r.scoutRequest ? '<div class="dim">SCOUT · ' + esc(r.scoutRequest.id) + ' · LIMIT ' + esc(r.scoutRequest.scope && r.scoutRequest.scope.recommendationLimit) + '</div>' : '') +
       (dependencies.length ? '<div class="dim">DEPENDS ON · ' + dependencies.map(esc).join(' · ') + '</div>' : '') +
       (r.decomposition && Array.isArray(r.decomposition.childIds) ? '<div class="dim">CHILDREN · ' + r.decomposition.childIds.map(esc).join(' · ') + '</div>' : '') +
       (capabilities.length ? '<div class="dim">CAPABILITIES · ' + capabilities.map(esc).join(' · ') + '</div>' : '') +

@@ -39,6 +39,7 @@ function makeObjectiveStore(deps) {
       parentObjectiveId: rel.parentObjectiveId || null, decompositionDepth: Number(rel.decompositionDepth) || 0,
       dependsOnObjectiveIds: Array.isArray(rel.dependsOnObjectiveIds) ? rel.dependsOnObjectiveIds.slice() : [],
       auditTargetObjectiveId: rel.auditTargetObjectiveId || null, auditRequest: rel.auditRequest || null,
+      scoutRequest: rel.scoutRequest || null, scoutReportId: null,
       classification: row.classification && typeof row.classification === 'object' ? row.classification : null,
       createdAt: stamp, updatedAt: stamp, completedAt: 0, completionEvidenceRefs: [], admissionAudit: [] };
   }
@@ -119,6 +120,41 @@ function makeObjectiveStore(deps) {
     });
     return result;
   }
+  async function createScout(request) {
+    let result;
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], existing = list.find(x => x && x.scoutRequest && x.scoutRequest.id === request.scoutId);
+      const signature = JSON.stringify(request.scope);
+      if (existing) {
+        if (existing.scoutRequest.signature !== signature) throw new Error('scoutId already has another scope');
+        result = { objective: existing, idempotent: true }; return undefined;
+      }
+      if (list.length >= CAP) throw new Error('objective store capacity exceeded');
+      const s = request.scope, directive = ['Discover and compare ' + s.recommendationLimit + ' or fewer worthwhile open-source options for: ' + s.topic,
+        'Date scope: ' + s.dateScope, 'Compatibility target: ' + s.compatibilityTarget, 'Allowed licenses: ' + (s.allowedLicenses.join(', ') || 'not constrained; report UNKNOWN when unverified'),
+        'For each finding provide name, source, URL/reference, purpose, Pine Star relevance, category, compatibility, license, cost, activity evidence, integration difficulty, risk, recommendation (IGNORE/WATCH/TEST/ADD), owner role, and evidence references.',
+        'Research and recommend only. Do not install or execute downloads, create accounts/subscriptions, spend, publish, message externally, expose credentials, or approve integrations. Unknown license/cost/facts must remain UNKNOWN.'].join('\n');
+      const objective = build({ title: 'Daily Open-Source Scout: ' + s.topic, description: directive,
+        requiredCapabilities: ['discover_open_source', 'research', 'recommend'], maxModelTier: 'economy', targetRoleId: 'operations.open_source_scout' },
+      { scoutRequest: { id: request.scoutId, signature, scope: s, safety: request.safety, sourceAdapterIds: s.sourceAdapterIds, at: Math.max(0, Number(now()) || 0) } });
+      list.push(objective); result = { objective, idempotent: false }; return list;
+    }); return result;
+  }
+  async function recordScoutReport(id, reportId) {
+    let updated;
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], index = list.findIndex(x => x && x.id === String(id || ''));
+      if (index < 0) throw new Error('Scout objective not found'); const current = list[index];
+      if (!current.scoutRequest) throw new Error('objective is not a Scout request');
+      if (current.status !== 'completed') throw new Error('Scout objective did not complete successfully');
+      if (current.scoutReportId && current.scoutReportId !== reportId) throw new Error('Scout objective already has another report');
+      if (current.scoutReportId === reportId) { updated = current; return undefined; }
+      const audit = (Array.isArray(current.workflowAudit) ? current.workflowAudit : []).slice(-19);
+      audit.push({ event: 'scout_report_created', reportId, at: Math.max(0, Number(now()) || 0) });
+      updated = Object.assign({}, current, { scoutReportId: reportId, workflowAudit: audit, updatedAt: Math.max(Number(current.updatedAt) || 0, Number(now()) || 0) });
+      list[index] = updated; return list;
+    }); return updated;
+  }
   function list(limit) { const cap = Math.max(1, Math.min(250, Number(limit) || 50)); const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).filter(Boolean).slice(-cap).reverse(); }
   function get(id) { const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).find(row => row && row.id === String(id || '')) || null; }
   async function recordAdmission(id, admission) {
@@ -181,6 +217,6 @@ function makeObjectiveStore(deps) {
     });
     return updated;
   }
-  return { create, decompose, reconcileParent, createAudit, list, get, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
+  return { create, decompose, reconcileParent, createAudit, createScout, recordScoutReport, list, get, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
 }
 module.exports = { makeObjectiveStore, publicRole, CAP };

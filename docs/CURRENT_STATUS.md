@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 4 — Agents & Objectives foundation (Phase 3 adapters remain)
-**Current change:** `PS-2026-013` — Auditor Objective Foundation — **COMPLETE**
+**Current change:** `PS-2026-014` — Daily Open-Source Scout Foundation — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -25,6 +25,7 @@
 | Objective activation | `PS-2026-011` complete; admitted objectives run through `runOnce`, share cancellation/E-stop, and settle durably from real outcomes and bounded evidence |
 | Coordinator orchestration | `PS-2026-012` complete; deterministic intake, direct specialist targeting, atomic bounded decomposition, dependency admission, and truthful parent aggregation use the existing objective/runtime lifecycle |
 | Auditor workflow | `PS-2026-013` complete; idempotent audits of settled objectives create directly assigned Auditor work with bounded target evidence and use the normal admission/activation lifecycle |
+| Open-Source Scout | `PS-2026-014` complete; bounded idempotent Scout objectives use the existing runtime and create structured shared reports with source evidence, UNKNOWN preservation, and zero-install/zero-spend boundaries |
 
 ## Known baseline issues
 
@@ -39,4 +40,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Build the Daily Open-Source Scout foundation as a useful recommendation workflow over the same objective lifecycle; it must not install software or publish externally.
+Bridge durable recurring Pine Star objective definitions to the existing StarNet scheduling/runtime seams without creating a parallel scheduler.

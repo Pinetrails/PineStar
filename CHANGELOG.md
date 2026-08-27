@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-014 — Daily Open-Source Scout foundation
+
+- Added idempotent bounded Scout objectives directly assigned to the economy-tier Open-Source Scout role through the existing runtime lifecycle.
+- Added an extensible source-adapter contract and structured finding normalization with evidence, deduplication, recommendation classes, and truthful `UNKNOWN` license/cost fields.
+- Finalized successful Scout work into the existing shared-report store with durable objective audit linkage and explicit zero-spend, no-install, no-publish boundaries.
+
 ### PS-2026-013 — Auditor objective foundation
 
 - Added idempotent audit requests for settled durable objectives, directly assigned to the Auditor system role.

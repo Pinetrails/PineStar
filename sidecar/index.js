@@ -228,6 +228,7 @@ const { makeRoleRegistry } = require('./role-registry.js');
 const { makeObjectiveStore, publicRole: publicPineStarRole } = require('./objective-store.js');
 const { makeObjectiveDispatch } = require('./objective-dispatch.js');
 const { classifyObjective } = require('./objective-intake.js');
+const { normalizeScoutRequest, scoutReport, SOURCE_ADAPTERS } = require('./open-source-scout.js');
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined, appendSharedReport, listSharedReports } = MemoryStore;
@@ -8670,6 +8671,8 @@ const ROUTES = [
   { m: 'POST', exact: '/api/objectives/intake', h: handlePineStarObjectiveIntake },
   { m: 'POST', exact: '/api/objectives/decompose', h: handlePineStarObjectiveDecompose },
   { m: 'POST', exact: '/api/objectives/audit', h: handlePineStarObjectiveAudit },
+  { m: 'POST', exact: '/api/objectives/scout', h: handlePineStarObjectiveScout },
+  { m: 'POST', exact: '/api/objectives/scout/report', h: handlePineStarObjectiveScoutReport },
   { m: 'POST', exact: '/api/objectives/status', h: handlePineStarObjectiveStatus },
   { m: 'POST', exact: '/api/objectives/admit', h: handlePineStarObjectiveAdmission },
   { m: 'POST', exact: '/api/objectives/activate', h: handlePineStarObjectiveActivation },
@@ -18366,6 +18369,27 @@ async function handlePineStarObjectiveAudit(req, res) {
     const message = (e && e.message) || 'invalid audit request';
     return respondJson(res, message === 'audit target objective not found' ? 404 : (/already targets/.test(message) ? 409 : 400), { error: message });
   }
+}
+async function handlePineStarObjectiveScout(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 15)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const result = await objectiveStore.createScout(normalizeScoutRequest(body));
+    return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true, sourceAdapters: SOURCE_ADAPTERS }, result));
+  } catch (e) {
+    const message = (e && e.message) || 'invalid Scout request';
+    return respondJson(res, /already has another scope/.test(message) ? 409 : 400, { error: message });
+  }
+}
+async function handlePineStarObjectiveScoutReport(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 18)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const objective = objectiveStore.get(body.id);
+    if (!objective) return respondJson(res, 404, { error: 'Scout objective not found' });
+    if (!objective.scoutRequest || objective.status !== 'completed') return respondJson(res, 409, { error: 'Scout objective did not complete successfully' });
+    const report = scoutReport(objective, body.discoveries, Date.now()), saved = await appendSharedReport(notebookStore, report);
+    const updated = await objectiveStore.recordScoutReport(objective.id, report.id);
+    return respondJson(res, saved.added ? 201 : 200, { ok: true, added: saved.added, report: saved.report, objective: updated });
+  } catch (e) { return respondJson(res, 400, { error: (e && e.message) || 'invalid Scout report' }); }
 }
 async function handlePineStarObjectiveStatus(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }

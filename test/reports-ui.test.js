@@ -15,6 +15,9 @@ const md = Reports.markdown([{ type: 'daily', createdAt: 1, headline: 'Day one',
 A.ok(md.includes('# Pine Star shared reports') && md.includes('### Completed') && md.includes('- built it'), 'Markdown export is concise and human-readable');
 A.ok(md.includes('no external vault was modified'), 'Markdown export states its local-only boundary');
 A.ok(!Reports.markdown([{ headline: '<script>x</script>' }]).includes('<script>'), 'Markdown export escapes embedded HTML');
+const scoutReport = Reports.reportHtml({ type: 'open-source-scout', headline: 'Scout', discoveries: [{ name: '<Tool>', source: 'Git&Hub', license: '', cost: '', compatibility: 'Windows', purpose: 'Useful<script>', relevance: 'Pine & Star', recommendation: 'WATCH', risk: '<unknown>', recommendedOwnerRoleId: 'development.integration_engineer' }] });
+A.ok(scoutReport.includes('DISCOVERIES') && scoutReport.includes('&lt;Tool&gt;') && scoutReport.includes('Git&amp;Hub'), 'Scout discoveries render in the existing report surface with escaping');
+A.ok(!scoutReport.includes('<script>') && scoutReport.includes('development.integration_engineer'), 'Scout purpose, risk, and owner fields render safely');
 const objective = Reports.objectiveHtml({ title: '<img src=x>', status: 'approval_required', assignedRoleId: 'operations.coordinator', maxModelTier: 'balanced', approvalState: 'required', requiredCapabilities: ['publish<script>'], routing: { reason: 'Commander <approval>' }, completionEvidenceRefs: ['report:1&2'] });
 A.ok(objective.includes('&lt;img src=x&gt;') && !objective.includes('<img src=x>'), 'objective title is escaped');
 A.ok(objective.includes('APPROVAL_REQUIRED') && objective.includes('APPROVAL · REQUIRED'), 'objective status and approval boundary are visible');
