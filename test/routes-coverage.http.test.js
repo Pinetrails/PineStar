@@ -109,6 +109,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     // ---- Pine Star role discovery + durable objective lifecycle ----
     A.eq((await raw('GET', '/api/roles')).status, 403, 'role discovery remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives', {})).status, 403, 'objective creation remains behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives/intake', {})).status, 403, 'objective intake remains behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives/decompose', {})).status, 403, 'objective decomposition remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/admit', {})).status, 403, 'objective admission remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/activate', {})).status, 403, 'objective activation remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/cancel', {})).status, 403, 'objective cancellation remains behind the API token gate');
@@ -138,6 +140,21 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const objectiveControlStatus = await j('GET', '/api/control/status');
     A.eq(objectiveControlStatus.body.objectiveCount, 3, 'control status reconciles to the durable objective store');
     A.eq(objectiveControlStatus.body.approvalRequiredCount, 1, 'control status exposes the protected objective backlog');
+    const coordinator = await j('POST', '/api/objectives/intake', { title: 'Coordinate research and implementation' });
+    A.eq(coordinator.status, 201, 'POST /api/objectives/intake -> 201');
+    A.eq(coordinator.body.objective.assignedRoleId, 'operations.coordinator', 'deterministic intake routes explicit coordination to the system role');
+    const decomposition = await j('POST', '/api/objectives/decompose', { id: coordinator.body.objective.id, decompositionId: 'http-plan-1', children: [
+      { title: 'Research the source', maxModelTier: 'economy' }, { title: 'Implement the code', dependsOn: [0] }
+    ] });
+    A.eq(decomposition.status, 201, 'POST /api/objectives/decompose -> 201');
+    A.eq(decomposition.body.children.length, 2, 'atomic decomposition creates bounded durable children');
+    A.eq(decomposition.body.children[1].dependsOnObjectiveIds, [decomposition.body.children[0].id], 'HTTP decomposition preserves dependency ordering');
+    const decompositionRetry = await j('POST', '/api/objectives/decompose', { id: coordinator.body.objective.id, decompositionId: 'http-plan-1', children: [
+      { title: 'Research the source', maxModelTier: 'economy' }, { title: 'Implement the code', dependsOn: [0] }
+    ] });
+    A.eq(decompositionRetry.status, 200, 'decomposition retry is idempotent');
+    const coordinatorRead = await j('GET', '/api/objectives?limit=10');
+    A.ok(coordinatorRead.body.objectives.some(x => x.id === coordinator.body.objective.id && x.decomposition.childIds.length === 2), 'parent/child relationships survive authenticated read-after-write');
 
     // ---- (2) GET /api/quests — the ledger read ----
     const quests0 = await j('GET', '/api/quests');

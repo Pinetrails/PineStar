@@ -30,6 +30,8 @@ Operations, Development, Creative, Business, and Research are seed categories, n
 
 `PS-2026-011` activates only admitted tickets through `runOnce` with `surface:'autonomous'`. The pre-minted run ID is registered in the existing live-run maps, so `/api/cancel`, E-stop, snapshots, run journals, billing, permission enforcement, and durable run history remain authoritative. The objective settles from the real run reason with bounded run/artifact references; an orphaned post-restart `in_progress` record fails truthfully instead of re-executing.
 
+`PS-2026-012` makes Coordinator an orchestration role over that same lifecycle. Deterministic intake handles obvious work without a model call; simple objectives route directly to the lowest capable specialist, and an explicit capable `targetRoleId` preserves direct specialist access. Coordinator objectives may atomically create 2–8 children up to depth 3, with stable parent/dependency relationships and independently routed approval states. Admission refuses children until predecessors complete. Child settlement or pre-run cancellation reconciles the parent to active, waiting for approval, blocked, or completed with bounded child-objective evidence. Decomposition itself never admits, approves, or activates work.
+
 The permanent planned Daily Open-Source Scout recommends 3-5 discoveries with license, cost, compatibility, activity, difficulty, action, and owner. It never auto-installs. See [INTEGRATIONS.md](INTEGRATIONS.md).
 
 Future evaluation may use performance tiers and champion/challenger tests. Assess usefulness, quality, cost, safety, and wasted work—not activity volume. Preserve lessons when configurations retire.

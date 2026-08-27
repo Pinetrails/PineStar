@@ -20,6 +20,8 @@ A.eq(auth.requiresApiToken(req('POST', '/api/reports')), true, 'POST shared repo
 A.eq(auth.requiresApiToken(req('GET', '/api/control/status')), true, 'GET Pine Star control status requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/roles')), true, 'GET role discovery requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives')), true, 'POST objective creation requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/objectives/intake')), true, 'POST objective intake requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/objectives/decompose')), true, 'POST objective decomposition requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/status')), true, 'POST objective status requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/admit')), true, 'POST objective admission requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/activate')), true, 'POST objective activation requires token');

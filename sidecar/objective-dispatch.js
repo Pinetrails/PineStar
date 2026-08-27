@@ -21,6 +21,9 @@ function makeObjectiveDispatch(deps) {
     if (!objective) return reject(null, 'objective_not_found', 'objective not found');
     if (objective.status === 'approval_required' || objective.approvalState === 'required') return reject(objective, 'approval_required', 'protected objective requires approval');
     if (objective.status !== 'assigned') return reject(objective, 'objective_not_assignable', 'objective is not in assigned state');
+    const dependencyIds = Array.isArray(objective.dependsOnObjectiveIds) ? objective.dependsOnObjectiveIds : [];
+    const incomplete = dependencyIds.filter(id => { const dependency = objectives.get(id); return !dependency || dependency.status !== 'completed'; });
+    if (incomplete.length) return reject(objective, 'dependencies_incomplete', 'required predecessor objectives are not complete');
     const role = roles.get(objective.assignedRoleId);
     if (!role || role.availability !== 'active') return reject(objective, 'role_unavailable', 'assigned system role is unavailable');
     if (halted()) return reject(objective, 'halted', 'runtime is halted');
@@ -37,13 +40,18 @@ function makeObjectiveDispatch(deps) {
     const updated = await objectives.recordAdmission(objective.id, audit);
     return { ok: true, code: 'admitted', runId, agentId, roleId: role.id, objective: updated, executionStarted: false };
   }
+  async function settle(objective, event) {
+    const updated = await objectives.recordLifecycle(objective.id, event);
+    if (updated && updated.parentObjectiveId && typeof objectives.reconcileParent === 'function') await objectives.reconcileParent(updated.parentObjectiveId);
+    return updated;
+  }
   async function activate(objectiveId) {
     const objective = objectives.get(objectiveId);
     if (!objective) return { ok: false, code: 'objective_not_found', reason: 'objective not found' };
     if (objective.status === 'approval_required' || objective.approvalState === 'required') return { ok: false, code: 'approval_required', reason: 'protected objective requires approval' };
     if (objective.status === 'in_progress') {
       if (isRunActive(objective.admittedRunId)) return { ok: false, code: 'already_running', runId: objective.admittedRunId };
-      const interrupted = await objectives.recordLifecycle(objective.id, { state: 'failed', runId: objective.admittedRunId, at: Number(now()) || 0, reason: 'interrupted before durable settlement', evidenceRefs: ['run:' + objective.admittedRunId] });
+      const interrupted = await settle(objective, { state: 'failed', runId: objective.admittedRunId, at: Number(now()) || 0, reason: 'interrupted before durable settlement', evidenceRefs: ['run:' + objective.admittedRunId] });
       return { ok: false, code: 'interrupted', reason: 'prior activation is no longer running and was settled failed', objective: interrupted };
     }
     if (objective.status !== 'admitted') return { ok: false, code: 'objective_not_admitted', reason: 'objective is not admitted' };
@@ -64,8 +72,8 @@ function makeObjectiveDispatch(deps) {
       const r = result || {}, reason = String(r.reason || 'error');
       const state = /^(cancelled|aborted|halted)$/.test(reason) ? 'cancelled' : (reason === 'done' ? 'completed' : 'failed');
       const refs = ['run:' + runId].concat((Array.isArray(r.artifacts) ? r.artifacts : []).map(x => 'artifact:' + String((x && (x.path || x.id)) || '')).filter(x => x !== 'artifact:')).slice(0, 24);
-      return objectives.recordLifecycle(objective.id, { state, runId, at: Number(now()) || 0, reason, evidenceRefs: refs, resultSummary: r.summary || '' });
-    }, async e => objectives.recordLifecycle(objective.id, { state: 'failed', runId, at: Number(now()) || 0, reason: (e && e.message) || 'runtime failure', evidenceRefs: ['run:' + runId] }));
+      return settle(objective, { state, runId, at: Number(now()) || 0, reason, evidenceRefs: refs, resultSummary: r.summary || '' });
+    }, async e => settle(objective, { state: 'failed', runId, at: Number(now()) || 0, reason: (e && e.message) || 'runtime failure', evidenceRefs: ['run:' + runId] }));
     return { ok: true, code: 'running', runId, agentId: objective.runtimeAgentId, roleId: role.id, settled };
   }
   return { admit, activate };

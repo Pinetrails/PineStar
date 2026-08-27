@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 4 — Agents & Objectives foundation (Phase 3 adapters remain)
-**Current change:** `PS-2026-011` — Safe Objective Activation — **COMPLETE**
+**Current change:** `PS-2026-012` — Atomic Coordinator Intake & Decomposition — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -23,6 +23,7 @@
 | Objective inspection | `PS-2026-009` complete; the Reports window shows durable objectives and system roles without exposing execution or approval controls |
 | Objective admission | `PS-2026-010` complete; durable objectives admit only through explicit stable-role roster bindings and existing runtime readiness/halt checks, without starting execution |
 | Objective activation | `PS-2026-011` complete; admitted objectives run through `runOnce`, share cancellation/E-stop, and settle durably from real outcomes and bounded evidence |
+| Coordinator orchestration | `PS-2026-012` complete; deterministic intake, direct specialist targeting, atomic bounded decomposition, dependency admission, and truthful parent aggregation use the existing objective/runtime lifecycle |
 
 ## Known baseline issues
 
@@ -37,4 +38,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Add coordinator objective intake and bounded decomposition using the live routing/admission/activation lifecycle.
+Build the first useful Auditor workflow over the completed objective orchestration lifecycle, preserving direct specialist access and approval/runtime boundaries.

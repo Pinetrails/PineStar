@@ -227,6 +227,7 @@ const { SEEDS: PINE_STAR_ROLE_SEEDS } = require('../shared/pine-star-roles.js');
 const { makeRoleRegistry } = require('./role-registry.js');
 const { makeObjectiveStore, publicRole: publicPineStarRole } = require('./objective-store.js');
 const { makeObjectiveDispatch } = require('./objective-dispatch.js');
+const { classifyObjective } = require('./objective-intake.js');
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined, appendSharedReport, listSharedReports } = MemoryStore;
@@ -8666,6 +8667,8 @@ const ROUTES = [
   { m: ['GET', 'POST'], qsplit: '/api/reports', h: handleSharedReports },
   { m: 'GET', exact: '/api/roles', h: handlePineStarRoles },
   { m: ['GET', 'POST'], qsplit: '/api/objectives', h: handlePineStarObjectives },
+  { m: 'POST', exact: '/api/objectives/intake', h: handlePineStarObjectiveIntake },
+  { m: 'POST', exact: '/api/objectives/decompose', h: handlePineStarObjectiveDecompose },
   { m: 'POST', exact: '/api/objectives/status', h: handlePineStarObjectiveStatus },
   { m: 'POST', exact: '/api/objectives/admit', h: handlePineStarObjectiveAdmission },
   { m: 'POST', exact: '/api/objectives/activate', h: handlePineStarObjectiveActivation },
@@ -18338,6 +18341,21 @@ async function handlePineStarObjectives(req, res) {
   try { return respondJson(res, 201, { ok: true, objective: await objectiveStore.create(body) }); }
   catch (e) { return respondJson(res, 400, { error: (e && e.message) || 'invalid objective' }); }
 }
+async function handlePineStarObjectiveIntake(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try { return respondJson(res, 201, { ok: true, objective: await objectiveStore.create(classifyObjective(body)) }); }
+  catch (e) { return respondJson(res, 400, { error: (e && e.message) || 'invalid objective intake' }); }
+}
+async function handlePineStarObjectiveDecompose(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const result = await objectiveStore.decompose(body.id, { decompositionId: body.decompositionId, children: (Array.isArray(body.children) ? body.children : []).map(classifyObjective) });
+    return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
+  } catch (e) {
+    const message = (e && e.message) || 'invalid decomposition';
+    return respondJson(res, message === 'parent objective not found' ? 404 : (/already decomposed/.test(message) ? 409 : 400), { error: message });
+  }
+}
 async function handlePineStarObjectiveStatus(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
   try { return respondJson(res, 200, { ok: true, objective: await objectiveStore.updateStatus(body.id, body.status, body.completionEvidenceRefs) }); }
@@ -18359,7 +18377,11 @@ async function handlePineStarObjectiveCancel(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
   const objective = objectiveStore.get(body.id);
   if (!objective) return respondJson(res, 404, { error: 'objective not found' });
-  if (objective.status === 'admitted') return respondJson(res, 200, { ok: true, objective: await objectiveStore.recordLifecycle(objective.id, { state: 'cancelled', runId: objective.admittedRunId, at: Date.now(), reason: 'cancelled before execution' }) });
+  if (objective.status === 'admitted') {
+    const updated = await objectiveStore.recordLifecycle(objective.id, { state: 'cancelled', runId: objective.admittedRunId, at: Date.now(), reason: 'cancelled before execution' });
+    if (updated.parentObjectiveId) await objectiveStore.reconcileParent(updated.parentObjectiveId);
+    return respondJson(res, 200, { ok: true, objective: updated });
+  }
   if (objective.status !== 'in_progress') return respondJson(res, 409, { error: 'objective is not active' });
   const ac = runs.get(String(objective.admittedRunId || ''));
   if (!ac) return respondJson(res, 409, { error: 'objective run is not active' });

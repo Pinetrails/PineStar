@@ -13,23 +13,84 @@ function makeObjectiveStore(deps) {
   const newId = typeof deps.newId === 'function' ? deps.newId : (() => { throw new Error('objective store requires newId'); });
   const durable = deps.durable || makeDurableJsonStore({ fs: deps.fs, path: deps.path, writeDurable: deps.writeDurable,
     fileFor: () => deps.path.join(deps.workspaces, 'pine-star.objectives.json'), onRecover: deps.onRecover, onCorrupt: deps.onCorrupt });
-  async function create(input) {
+  function build(input, relation) {
     const row = input && typeof input === 'object' ? input : {}, title = text(row.title, 240);
     const requiredCapabilities = strings(row.requiredCapabilities, 24, 80);
     if (!title) throw new Error('objective requires a title');
     if (!requiredCapabilities.length) throw new Error('objective requires declared capabilities');
     const maxModelTier = ['economy', 'balanced', 'deep'].includes(row.maxModelTier) ? row.maxModelTier : 'deep';
     const protectedAction = row.protectedAction === true;
-    const routed = deps.registry.route({ requiredCapabilities, maxModelTier, protectedAction });
+    let routed = deps.registry.route({ requiredCapabilities, maxModelTier, protectedAction });
+    const targetRoleId = text(row.targetRoleId, 80);
+    if (!protectedAction && targetRoleId) {
+      const role = deps.registry.get(targetRoleId), tier = { economy: 0, balanced: 1, deep: 2 };
+      routed = role && role.availability === 'active' && tier[role.modelTier] <= tier[maxModelTier] && requiredCapabilities.every(c => role.capabilities.includes(c))
+        ? { status: 'assigned', role, reason: 'direct specialist selection satisfies declared capabilities' }
+        : { status: 'escalate', role: null, reason: 'direct specialist is unavailable or lacks required capability/tier' };
+    }
     const stamp = Math.max(0, Number(now()) || 0);
-    const objective = { schema: 'pine-star.objective.v1', id: 'objective:' + text(newId(), 100), title,
+    const rel = relation || {};
+    return { schema: 'pine-star.objective.v1', id: rel.id || ('objective:' + text(newId(), 100)), title,
       description: text(row.description, 2000), requiredCapabilities, protectedAction, maxModelTier,
+      priority: ['low', 'normal', 'high', 'urgent'].includes(row.priority) ? row.priority : 'normal', targetRoleId: targetRoleId || null,
       routing: { status: routed.status, reason: text(routed.reason, 300) }, assignedRoleId: routed.role ? routed.role.id : null,
       assignedModelTier: routed.role ? routed.role.modelTier : null,
       approvalState: routed.status === 'approval_required' ? 'required' : 'not_required', status: routed.status,
+      parentObjectiveId: rel.parentObjectiveId || null, decompositionDepth: Number(rel.decompositionDepth) || 0,
+      dependsOnObjectiveIds: Array.isArray(rel.dependsOnObjectiveIds) ? rel.dependsOnObjectiveIds.slice() : [],
+      classification: row.classification && typeof row.classification === 'object' ? row.classification : null,
       createdAt: stamp, updatedAt: stamp, completedAt: 0, completionEvidenceRefs: [], admissionAudit: [] };
+  }
+  async function create(input) {
+    const objective = build(input);
     await durable.update('station', stored => { const list = Array.isArray(stored) ? stored.slice() : []; list.push(objective); while (list.length > CAP) list.shift(); return list; });
     return objective;
+  }
+  async function decompose(parentId, input) {
+    const body = input && typeof input === 'object' ? input : {}, decompositionId = text(body.decompositionId, 120);
+    const specs = Array.isArray(body.children) ? body.children : [];
+    if (!decompositionId) throw new Error('decompositionId is required');
+    if (specs.length < 2 || specs.length > 8) throw new Error('decomposition requires 2-8 children');
+    if (JSON.stringify(specs).length > 24000) throw new Error('decomposition payload is too large');
+    let result;
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], pi = list.findIndex(x => x && x.id === String(parentId || ''));
+      if (pi < 0) throw new Error('parent objective not found');
+      const parent = list[pi], role = deps.registry.get(parent.assignedRoleId);
+      if (parent.decomposition && parent.decomposition.id === decompositionId) { result = { parent, children: parent.decomposition.childIds.map(id => list.find(x => x && x.id === id)).filter(Boolean), idempotent: true }; return undefined; }
+      if (parent.decomposition) throw new Error('parent objective already decomposed');
+      if (parent.protectedAction || parent.status === 'approval_required') throw new Error('protected parent requires approval');
+      if (parent.status !== 'assigned' || !role || role.availability !== 'active' || !role.capabilities.includes('coordinate')) throw new Error('parent is not an available coordinator objective');
+      const depth = (Number(parent.decompositionDepth) || 0) + 1; if (depth > 3) throw new Error('decomposition depth limit exceeded');
+      if (list.length + specs.length > CAP) throw new Error('objective store capacity exceeded');
+      const children = [], ids = specs.map(() => 'objective:' + text(newId(), 100));
+      for (let i = 0; i < specs.length; i++) {
+        const rawDeps = Array.isArray(specs[i] && specs[i].dependsOn) ? specs[i].dependsOn : [];
+        if (rawDeps.some(n => !Number.isInteger(n) || n < 0 || n >= i)) throw new Error('child dependencies must reference earlier child indexes');
+        const child = build(specs[i], { id: ids[i], parentObjectiveId: parent.id, decompositionDepth: depth, dependsOnObjectiveIds: rawDeps.map(n => ids[n]) });
+        children.push(child);
+      }
+      const stamp = Math.max(0, Number(now()) || 0), nextParent = Object.assign({}, parent, { status: 'decomposed', decompositionState: 'active', updatedAt: stamp,
+        decomposition: { id: decompositionId, childIds: ids, at: stamp, decision: 'bounded multi-capability decomposition' } });
+      list[pi] = nextParent; list.push(...children); result = { parent: nextParent, children, idempotent: false }; return list;
+    });
+    return result;
+  }
+  async function reconcileParent(parentId) {
+    let parent = null;
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], pi = list.findIndex(x => x && x.id === String(parentId || ''));
+      if (pi < 0) return undefined; const cur = list[pi], ids = cur.decomposition && cur.decomposition.childIds;
+      if (!Array.isArray(ids) || !ids.length) return undefined;
+      const children = ids.map(id => list.find(x => x && x.id === id)).filter(Boolean); if (children.length !== ids.length) return undefined;
+      let status = 'decomposed', state = 'active', reason = 'children in progress';
+      if (children.some(x => x.status === 'approval_required')) { status = 'waiting_approval'; state = 'waiting_approval'; reason = 'child approval required'; }
+      else if (children.some(x => x.status === 'failed' || x.status === 'cancelled' || x.status === 'blocked')) { status = 'blocked'; state = 'blocked'; reason = 'required child did not complete'; }
+      else if (children.every(x => x.status === 'completed')) { status = 'completed'; state = 'completed'; reason = 'all required children completed'; }
+      const stamp = Math.max(0, Number(now()) || 0); parent = Object.assign({}, cur, { status, decompositionState: state, settlementReason: reason, updatedAt: stamp,
+        completedAt: status === 'completed' ? stamp : 0, completionEvidenceRefs: status === 'completed' ? ids.slice() : cur.completionEvidenceRefs });
+      list[pi] = parent; return list;
+    }); return parent;
   }
   function list(limit) { const cap = Math.max(1, Math.min(250, Number(limit) || 50)); const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).filter(Boolean).slice(-cap).reverse(); }
   function get(id) { const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).find(row => row && row.id === String(id || '')) || null; }
@@ -93,6 +154,6 @@ function makeObjectiveStore(deps) {
     });
     return updated;
   }
-  return { create, list, get, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
+  return { create, decompose, reconcileParent, list, get, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
 }
 module.exports = { makeObjectiveStore, publicRole, CAP };

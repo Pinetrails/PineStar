@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-012 — Atomic coordinator intake and decomposition
+
+- Added deterministic objective intake and explicit capable specialist targeting without model calls or coordinator intermediation for simple work.
+- Added crash-atomic bounded parent/child decomposition with durable dependencies, routing, approval states, idempotency, and aggregation evidence.
+- Enforced predecessor completion at admission, reconciled child settlement/cancellation into parent state, and exposed authenticated APIs plus read-only relationship inspection.
+
 ### PS-2026-011 — Safe objective activation
 
 - Activated admitted objectives through the existing `runOnce` lifecycle with shared cancellation and E-stop controllers.

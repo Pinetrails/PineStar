@@ -15,9 +15,13 @@
   function objectiveHtml(row) {
     const r = row || {}, capabilities = Array.isArray(r.requiredCapabilities) ? r.requiredCapabilities : [];
     const evidence = Array.isArray(r.completionEvidenceRefs) ? r.completionEvidenceRefs : [];
+    const dependencies = Array.isArray(r.dependsOnObjectiveIds) ? r.dependsOnObjectiveIds : [];
     return '<article class="cfg-card ps-objective"><div class="dim">' + esc(String(r.status || 'unknown').toUpperCase()) + ' · ' + esc(dateText(r.updatedAt || r.createdAt)) + '</div><h3>' + esc(r.title || 'Untitled objective') + '</h3>' +
       (r.description ? '<p>' + esc(r.description) + '</p>' : '') +
       '<div class="dim">ROLE · ' + esc(r.assignedRoleId || 'UNASSIGNED') + '  |  TIER · ' + esc(r.assignedModelTier || r.maxModelTier || 'unknown') + '  |  APPROVAL · ' + esc(String(r.approvalState || 'unknown').toUpperCase()) + '</div>' +
+      (r.parentObjectiveId ? '<div class="dim">PARENT · ' + esc(r.parentObjectiveId) + '</div>' : '') +
+      (dependencies.length ? '<div class="dim">DEPENDS ON · ' + dependencies.map(esc).join(' · ') + '</div>' : '') +
+      (r.decomposition && Array.isArray(r.decomposition.childIds) ? '<div class="dim">CHILDREN · ' + r.decomposition.childIds.map(esc).join(' · ') + '</div>' : '') +
       (capabilities.length ? '<div class="dim">CAPABILITIES · ' + capabilities.map(esc).join(' · ') + '</div>' : '') +
       (r.routing && r.routing.reason ? '<p class="muted">' + esc(r.routing.reason) + '</p>' : '') +
       (r.settlementReason ? '<p class="muted">RESULT · ' + esc(r.settlementReason) + (r.resultSummary ? ' — ' + esc(r.resultSummary) : '') + '</p>' : '') +

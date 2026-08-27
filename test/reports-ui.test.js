@@ -21,6 +21,9 @@ A.ok(objective.includes('APPROVAL_REQUIRED') && objective.includes('APPROVAL · 
 A.ok(objective.includes('publish&lt;script&gt;') && objective.includes('Commander &lt;approval&gt;') && objective.includes('report:1&amp;2'), 'objective capabilities, routing reason, and evidence are escaped');
 const settledObjective = Reports.objectiveHtml({ title: 'done', status: 'completed', settlementReason: 'done<script>', resultSummary: 'bounded & useful' });
 A.ok(settledObjective.includes('done&lt;script&gt;') && settledObjective.includes('bounded &amp; useful'), 'objective settlement summary renders safely');
+const relatedObjective = Reports.objectiveHtml({ title: 'child', parentObjectiveId: 'objective:parent<script>', dependsOnObjectiveIds: ['objective:first&'], decomposition: { childIds: ['objective:child>'] } });
+A.ok(relatedObjective.includes('PARENT') && relatedObjective.includes('objective:parent&lt;script&gt;'), 'parent objective relationship renders safely');
+A.ok(relatedObjective.includes('DEPENDS ON') && relatedObjective.includes('objective:first&amp;') && relatedObjective.includes('CHILDREN') && relatedObjective.includes('objective:child&gt;'), 'dependency and child relationships render safely');
 const role = Reports.roleHtml({ id: 'research.general', displayName: '<Researcher>', department: 'research', modelTier: 'economy', capabilities: ['verify&report'], availability: 'active' });
 A.ok(role.includes('&lt;Researcher&gt;') && role.includes('research.general') && role.includes('verify&amp;report'), 'role identity and capabilities render safely');
 A.report('reports-ui.test');

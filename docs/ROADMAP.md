@@ -34,7 +34,8 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Durable station-scoped objective records plus authenticated role discovery and objective lifecycle APIs completed in `PS-2026-008`; UI, execution dispatch, and approval-grant design remain.
 - Read-only objective and role inspection plus objective control-status telemetry completed in `PS-2026-009`; execution dispatch and approval-grant design remain.
 - Fail-closed objective dispatch admission and explicit stable-role-to-roster binding completed in `PS-2026-010`; admitted-ticket execution and outcome settlement remain.
-- Safe admitted-ticket activation through the shared StarNet run lifecycle completed in `PS-2026-011`; coordinator intake/decomposition and direct specialist workflows remain.
+- Safe admitted-ticket activation through the shared StarNet run lifecycle completed in `PS-2026-011`.
+- Deterministic coordinator intake, explicit direct-specialist targeting, atomic bounded decomposition, dependency admission, parent aggregation, and relationship inspection completed in `PS-2026-012`; useful Auditor and Scout workflows remain.
 
 ## Phase 5 — Autonomous Operations
 

@@ -40,6 +40,9 @@ function fixture(overrides) {
   A.eq((await failed.dispatcher.admit('objective:1')).code, 'runtime_admission_failed', 'failed existing-runtime admission is preserved');
   A.eq(failed.rows.get('objective:1').status, 'assigned', 'failed admission leaves objective assignable');
   A.eq(failed.audits[0].decision, 'rejected', 'failed admission creates an audit record');
+  const dependency = fixture({ objective: { dependsOnObjectiveIds: ['objective:predecessor'] } });
+  A.eq((await dependency.dispatcher.admit('objective:1')).code, 'dependencies_incomplete', 'unfinished dependency blocks child admission');
+  A.eq(dependency.audits[0].decision, 'rejected', 'dependency rejection creates admission audit evidence');
   const cancel = fixture(); await cancel.dispatcher.admit('objective:1');
   cancel.rows.set('objective:1', Object.assign({}, cancel.rows.get('objective:1'), { status: 'cancelled' }));
   A.eq(cancel.rows.get('objective:1').status, 'cancelled', 'an admitted ticket remains cancellable before execution');
@@ -48,12 +51,13 @@ function fixture(overrides) {
     opts = opts || {}; let row = Object.assign({ id: 'objective:a', status: 'admitted', approvalState: 'not_required', assignedRoleId: 'research.safe', runtimeAgentId: 'agent_a', admittedRunId: 'run-a' }, opts.objective);
     const lifecycle = [], agents = new Map([['agent_a', { model: 'm', provider: 'p', systemRoleIds: ['research.safe'] }]]);
     let resolveRun, rejectRun; const completion = new Promise((resolve, reject) => { resolveRun = resolve; rejectRun = reject; });
-    const objectives = { get: () => row, recordAdmission: async () => row, recordLifecycle: async (id, e) => { lifecycle.push(e); row = Object.assign({}, row, { status: e.state === 'running' ? 'in_progress' : e.state }); return row; } };
+    let reconciled = 0;
+    const objectives = { get: () => row, recordAdmission: async () => row, recordLifecycle: async (id, e) => { lifecycle.push(e); row = Object.assign({}, row, { status: e.state === 'running' ? 'in_progress' : e.state }); return row; }, reconcileParent: async () => { reconciled++; } };
     let cancelled = false, starts = 0;
     const dispatcher = makeObjectiveDispatch({ objectives, roles: { get: () => ({ id: 'research.safe', availability: opts.roleUnavailable ? 'inactive' : 'active' }) }, roster: () => agents,
       halted: () => !!opts.halted, isRunActive: () => row.status === 'in_progress' && !opts.orphaned, now: () => 200 + lifecycle.length, newId: () => 'unused',
       startRuntime: () => { starts++; if (opts.startFail) return { ok: false, code: 'runtime_start_failed' }; return { ok: true, completion, cancel: () => { cancelled = true; resolveRun({ reason: 'cancelled' }); } }; } });
-    return { dispatcher, lifecycle, agents, resolveRun, rejectRun, starts: () => starts, cancelled: () => cancelled, row: () => row };
+    return { dispatcher, lifecycle, agents, resolveRun, rejectRun, starts: () => starts, cancelled: () => cancelled, reconciled: () => reconciled, row: () => row };
   }
   const active = activationFx(); const activation = await active.dispatcher.activate('objective:a');
   A.eq(activation.code, 'running', 'safe admitted objective activates');
@@ -79,5 +83,7 @@ function fixture(overrides) {
   A.eq((await stale.dispatcher.activate('objective:a')).code, 'runtime_binding_stale', 'stale binding blocks activation');
   const cancellable = activationFx(); const runningCancel = await cancellable.dispatcher.activate('objective:a'); cancellable.resolveRun({ reason: 'cancelled' });
   A.eq((await runningCancel.settled).status, 'cancelled', 'existing runtime cancellation reason propagates to objective');
+  const child = activationFx({ objective: { parentObjectiveId: 'objective:parent' } }); const childRun = await child.dispatcher.activate('objective:a'); child.resolveRun({ reason: 'done' }); await childRun.settled;
+  A.eq(child.reconciled(), 1, 'child settlement triggers durable parent reconciliation');
   A.report('objective-dispatch.test');
 })().catch(e => { console.error(e); process.exit(1); });
