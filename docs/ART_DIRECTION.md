@@ -18,5 +18,4 @@ Any private reference extraction must be labeled exactly:
 
 > REFERENCE / PLACEHOLDER — DO NOT DISTRIBUTE
 
-Future release checks should fail if such an asset remains. No environment or asset work is implemented by `PS-2026-001`.
-
+`PS-2026-003` implements the first read-only release check: `npm run release:asset-safety` fails when the exact marker or an explicitly blocked reference/placeholder filename appears in a distributable asset root. This does not replace licensing review or approve the currently inventoried upstream assets for Pine Star distribution.

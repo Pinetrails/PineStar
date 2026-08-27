@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-003 — Release asset safety foundation
+
+- Added a read-only distribution gate for private reference/placeholder material in frontend, website, native icon, and installer asset roots.
+- Added focused positive and negative tests without changing or deleting compatibility-era assets.
+- This is not a release approval; original art, licensing, native identity, signing, and updater ownership remain deferred.
+
 ### PS-2026-002 — Pine Star Foundation & Initial Rebranding
 
 - Began separating Pine Star's visible identity from StarNet while preserving compatibility-sensitive internals and working architecture.

@@ -14,10 +14,11 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Install/test stock system and identify baseline defects.
 - Verify packaged desktop and create permanent baseline tag.
 
-## Phase 2 — Foundation — STARTED
+## Phase 2 — Foundation — IN PROGRESS
 
 - Pine Star identity, permanent instructions, documentation, change ledger, upstream policy, configuration philosophy, and baseline record.
 - Later begin controlled foundation/rebranding modifications under separate Change IDs.
+- Completed initial presentation separation (`PS-2026-002`) and a machine-checkable reference/placeholder asset gate (`PS-2026-003`); native identity and original replacement art remain deferred.
 
 ## Phase 3 — Memory & Control
 
@@ -42,4 +43,3 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 ## Phase 8 — Pine Star World
 
 - Original GBA-style environment, departments/buildings, visible agent activity, original sprites/tiles, day/night, activity visualization, polished identity.
-
