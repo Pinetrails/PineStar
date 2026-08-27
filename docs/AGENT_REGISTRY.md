@@ -13,6 +13,7 @@ Runtime contracts:
 - `GET /api/roles` returns `pine-star.roles.v1` discovery records without visible agent identities.
 - `GET|POST /api/objectives` lists or creates `pine-star.objective.v1` records.
 - `POST /api/objectives/status` records lifecycle changes; completion requires evidence references and `approval_required` records cannot be advanced through this route.
+- `POST /api/objectives/admit` validates an explicit `systemRoleIds` roster binding and records a dispatch ticket. It never treats a display name or free-form roster role as authority and does not start execution.
 
 | Department | Example roles |
 | --- | --- |
@@ -29,3 +30,4 @@ Runtime contracts:
 - Default new roles to least necessary authority and explicit budgets.
 - Declare ownership/escalation paths and preserve evaluation history.
 - Direct user access to specialists remains supported.
+- A runtime agent may implement a system role only through an explicit stable-ID binding. Zero or multiple bindings fail closed.

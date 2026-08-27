@@ -32,5 +32,11 @@ const store = makeObjectiveStore({ durable, registry: makeRoleRegistry(SEEDS), n
   const restarted = makeObjectiveStore(deps);
   A.eq(restarted.list()[0].id, 'objective:durable-id', 'objective survives store reconstruction from disk');
   A.eq(restarted.readStatus().status, 'ok', 'durable objective store reports a healthy committed main');
+  const admission = await restarted.recordAdmission('objective:durable-id', { decision: 'admitted', runId: 'run-1', agentId: 'agent-a', roleId: 'operations.auditor', at: 501 });
+  A.eq(admission.status, 'admitted', 'durable admission advances the objective without claiming execution');
+  A.eq(admission.admissionAudit[0].runId, 'run-1', 'admission audit evidence persists with the objective');
+  A.eq(makeObjectiveStore(deps).get('objective:durable-id').runtimeAgentId, 'agent-a', 'runtime binding survives store reconstruction');
+  let admissionBypassBlocked = false; try { await restarted.updateStatus('objective:durable-id', 'admitted', []); } catch (e) { admissionBypassBlocked = /unsupported/.test(e.message); }
+  A.ok(admissionBypassBlocked, 'generic status mutation cannot bypass the admission boundary');
   A.report('objective-store.test');
 })().catch(e => { console.error(e); process.exit(1); });

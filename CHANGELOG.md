@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-010 — Objective dispatch admission boundary
+
+- Added a pure fail-closed bridge from durable objective and routed system role to an explicitly bound runtime roster identity.
+- Added authenticated objective admission tickets with durable audit evidence and an explicit `executionStarted:false` boundary.
+- Preserved protected-objective blocks, autonomous halt checks, provider/model readiness, cancellation state, and existing runtime execution authority.
+
 ### PS-2026-009 — Objective and role inspection surface
 
 - Extended the Reports window with escaped, read-only objective and system-role records.

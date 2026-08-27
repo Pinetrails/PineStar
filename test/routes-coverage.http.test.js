@@ -109,6 +109,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     // ---- Pine Star role discovery + durable objective lifecycle ----
     A.eq((await raw('GET', '/api/roles')).status, 403, 'role discovery remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives', {})).status, 403, 'objective creation remains behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives/admit', {})).status, 403, 'objective admission remains behind the API token gate');
     const roles = await j('GET', '/api/roles');
     A.eq(roles.status, 200, 'GET /api/roles -> 200');
     A.ok(roles.body.roles.some(role => role.id === 'research.general_researcher'), 'role discovery exposes stable system role IDs');
@@ -122,10 +123,16 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(objectiveDone.body.objective.status, 'completed', 'objective status API records completion');
     const protectedCreated = await j('POST', '/api/objectives', { title: 'External publication', requiredCapabilities: ['publish'], protectedAction: true });
     A.eq(protectedCreated.body.objective.status, 'approval_required', 'protected runtime objective persists without execution');
+    const protectedAdmission = await j('POST', '/api/objectives/admit', { id: protectedCreated.body.objective.id });
+    A.eq(protectedAdmission.status, 409, 'protected objective admission is rejected');
+    A.eq(protectedAdmission.body.code, 'approval_required', 'protected admission names the approval boundary');
+    const unboundCreated = await j('POST', '/api/objectives', { title: 'Unbound runtime identity', requiredCapabilities: ['audit'] });
+    const unboundAdmission = await j('POST', '/api/objectives/admit', { id: unboundCreated.body.objective.id });
+    A.eq(unboundAdmission.body.code, 'runtime_identity_missing', 'admission refuses a role with no approved runtime binding');
     const protectedAdvance = await j('POST', '/api/objectives/status', { id: protectedCreated.body.objective.id, status: 'in_progress' });
     A.eq(protectedAdvance.status, 400, 'status API cannot bypass protected-objective approval');
     const objectiveControlStatus = await j('GET', '/api/control/status');
-    A.eq(objectiveControlStatus.body.objectiveCount, 2, 'control status reconciles to the durable objective store');
+    A.eq(objectiveControlStatus.body.objectiveCount, 3, 'control status reconciles to the durable objective store');
     A.eq(objectiveControlStatus.body.approvalRequiredCount, 1, 'control status exposes the protected objective backlog');
 
     // ---- (2) GET /api/quests — the ledger read ----

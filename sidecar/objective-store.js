@@ -27,11 +27,25 @@ function makeObjectiveStore(deps) {
       routing: { status: routed.status, reason: text(routed.reason, 300) }, assignedRoleId: routed.role ? routed.role.id : null,
       assignedModelTier: routed.role ? routed.role.modelTier : null,
       approvalState: routed.status === 'approval_required' ? 'required' : 'not_required', status: routed.status,
-      createdAt: stamp, updatedAt: stamp, completedAt: 0, completionEvidenceRefs: [] };
+      createdAt: stamp, updatedAt: stamp, completedAt: 0, completionEvidenceRefs: [], admissionAudit: [] };
     await durable.update('station', stored => { const list = Array.isArray(stored) ? stored.slice() : []; list.push(objective); while (list.length > CAP) list.shift(); return list; });
     return objective;
   }
   function list(limit) { const cap = Math.max(1, Math.min(250, Number(limit) || 50)); const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).filter(Boolean).slice(-cap).reverse(); }
+  function get(id) { const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).find(row => row && row.id === String(id || '')) || null; }
+  async function recordAdmission(id, admission) {
+    let updated = null;
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], index = list.findIndex(item => item && item.id === String(id || ''));
+      if (index < 0) throw new Error('objective not found');
+      const current = list[index], audit = (Array.isArray(current.admissionAudit) ? current.admissionAudit : []).slice(-19);
+      audit.push(Object.assign({}, admission));
+      updated = Object.assign({}, current, { admissionAudit: audit, updatedAt: Math.max(Number(current.updatedAt) || 0, Number(admission && admission.at) || 0) });
+      if (admission && admission.decision === 'admitted') updated = Object.assign(updated, { status: 'admitted', admittedRunId: String(admission.runId || ''), runtimeAgentId: String(admission.agentId || '') });
+      list[index] = updated; return list;
+    });
+    return updated;
+  }
   async function updateStatus(id, status, evidenceRefs) {
     const objectiveId = text(id, 120), nextStatus = text(status, 40);
     if (!objectiveId) throw new Error('objective id is required');
@@ -52,6 +66,6 @@ function makeObjectiveStore(deps) {
     });
     return updated;
   }
-  return { create, list, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
+  return { create, list, get, recordAdmission, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
 }
 module.exports = { makeObjectiveStore, publicRole, CAP };

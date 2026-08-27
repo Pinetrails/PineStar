@@ -33,6 +33,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Pure extensible role registry and lowest-capable-level routing foundation completed in `PS-2026-007`.
 - Durable station-scoped objective records plus authenticated role discovery and objective lifecycle APIs completed in `PS-2026-008`; UI, execution dispatch, and approval-grant design remain.
 - Read-only objective and role inspection plus objective control-status telemetry completed in `PS-2026-009`; execution dispatch and approval-grant design remain.
+- Fail-closed objective dispatch admission and explicit stable-role-to-roster binding completed in `PS-2026-010`; admitted-ticket execution and outcome settlement remain.
 
 ## Phase 5 — Autonomous Operations
 

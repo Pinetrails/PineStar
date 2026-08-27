@@ -9,12 +9,12 @@ Pine Star is built on StarNet, its upstream technical foundation.
 | Previous phase | **Phase 1 — Stock StarNet Baseline — COMPLETE** |
 | Current phase | **Phase 4 — Agents & Objectives (foundation; Phase 3 adapters remain)** |
 | Last milestone | `PS-2026-001` documentation/governance foundation committed and pushed as `1c2ef0d4` |
-| Current change | `PS-2026-009` — Objective and Role Inspection Surface — **COMPLETE** |
+| Current change | `PS-2026-010` — Objective Dispatch Admission Boundary — **COMPLETE** |
 | Application source modified yet | **Yes — presentation-only frontend identity in the first PS-2026-002 batch** |
 | Packaged desktop baseline | **PASS** |
 | Fresh onboarding baseline | **PASS** |
 | Documentation state | `PS-2026-001` **complete and approved**; `PS-2026-002` **complete for the presentation foundation** |
-| Next goal | Design the first safe objective-to-agent dispatch seam against existing consent, E-stop, and run audit contracts |
+| Next goal | Activate admitted objective tickets through existing `runOnce` lifecycle with cancellation and evidence settlement |
 
 ## Known stock-baseline issues
 
@@ -27,4 +27,4 @@ These are baseline findings, not Pine Star regressions. See [docs/BASELINE.md](d
 
 ## Next references
 
-[Working rules](AGENTS.md) · [Detailed status](docs/CURRENT_STATUS.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Current change](docs/change-records/PS-2026-009.md) · [Docs index](docs/INDEX.md)
+[Working rules](AGENTS.md) · [Detailed status](docs/CURRENT_STATUS.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Current change](docs/change-records/PS-2026-010.md) · [Docs index](docs/INDEX.md)

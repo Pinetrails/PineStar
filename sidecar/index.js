@@ -226,6 +226,7 @@ const { makeDomainStore } = require('./domain-store.js'); // normalized/versione
 const { SEEDS: PINE_STAR_ROLE_SEEDS } = require('../shared/pine-star-roles.js');
 const { makeRoleRegistry } = require('./role-registry.js');
 const { makeObjectiveStore, publicRole: publicPineStarRole } = require('./objective-store.js');
+const { makeObjectiveDispatch } = require('./objective-dispatch.js');
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined, appendSharedReport, listSharedReports } = MemoryStore;
@@ -1378,6 +1379,7 @@ function replaceAgentRoster(list) {
       model: (a && a.model) ? String(a.model) : null,
       provider: normalizeProviderId((a && a.provider) || ''),
       role: String((a && a.role) || '').slice(0, 120),
+      systemRoleIds: Array.isArray(a && a.systemRoleIds) ? [...new Set(a.systemRoleIds.map(x => String(x || '').trim()).filter(x => /^[a-z][a-z0-9_.-]{2,79}$/.test(x)))].slice(0, 20) : [],
       approvalMode: approvalMode,   // per-agent consent posture: 'full' bypasses the gate (see runOnce)
       executionProfile: executionProfiles.normalizeId(a && a.executionProfile, {
         approvalMode,
@@ -1409,7 +1411,7 @@ function loadAgentRoster() {
 // P1.1: the fields saveAgentRoster() rebuilds from the live Map — the KNOWN shape. Preserved unknown fields (any
 // key a newer frontend added that this sidecar doesn't model) are spread UNDER these on save, so they survive a
 // re-save by older code rather than being dropped. agentId is always rebuilt (identity), never preserved raw.
-const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'executionProfile', 'skills', 'reasoningEffort', 'track'];
+const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'systemRoleIds', 'approvalMode', 'executionProfile', 'skills', 'reasoningEffort', 'track'];
 // saveAgentRoster(updatedAt?) — persist the live roster. The optional updatedAt is the CLIENT's freshness stamp
 // (from POST /api/roster body.updatedAt); handleRoster passes it after its anti-clobber gate accepts a push, so the
 // stored envelope records the exact stamp we accepted (a later push older than it is refused). Server-internal
@@ -1419,7 +1421,7 @@ function saveAgentRoster(updatedAt) {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
     const agents = [...agentRoster].map(([agentId, a]) => {
-      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', executionProfile: executionProfiles.normalizeId(a.executionProfile, { approvalMode: a.approvalMode, backendId: executionEnvironment && executionEnvironment.backendId }), skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null, track: a.track || '' };   // S3: track = the earned track-record line (see replaceAgentRoster)   // Class Loadouts S1: per-agent package + execution envelope persist beside approval posture.
+      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', systemRoleIds: Array.isArray(a.systemRoleIds) ? a.systemRoleIds : [], approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', executionProfile: executionProfiles.normalizeId(a.executionProfile, { approvalMode: a.approvalMode, backendId: executionEnvironment && executionEnvironment.backendId }), skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null, track: a.track || '' };   // S3: track = the earned track-record line (see replaceAgentRoster)   // Class Loadouts S1: per-agent package + execution envelope persist beside approval posture.
       // P1.1: forward-compat field preservation — carry any UNKNOWN keys from the last-seen raw record under the
       // known ones, so a field a newer frontend added isn't silently eaten when older sidecar code re-saves.
       const rawRec = agentRosterRaw.get(agentId);
@@ -1616,6 +1618,19 @@ const objectiveStore = makeObjectiveStore({
   now: () => Date.now(), newId: () => crypto.randomUUID(),
   onRecover: (key, file) => console.warn('[objectives] recovered ' + file + ' from .bak last-known-good.'),
   onCorrupt: (key, file) => quarantineCorrupt(file, 'objectives')
+});
+const objectiveDispatch = makeObjectiveDispatch({
+  objectives: objectiveStore, roles: pineStarRoleRegistry, roster: () => agentRoster,
+  halted: () => !!cronHalted || !!loopsHalted || !!(nightshiftState && nightshiftState.haltedAt),
+  newId: () => crypto.randomUUID(), now: () => Date.now(),
+  admitRuntime: async ({ agent, agentId }) => {
+    const provider = normalizeProviderId(agent.provider || '');
+    const key = providerRuntimeKey(provider, ''), baseUrl = providerRuntimeBaseUrl(provider, '');
+    if (!providerHasCredential(provider, key, baseUrl)) return { ok: false, code: 'runtime_credential_unavailable', reason: 'bound runtime provider is not configured' };
+    if (!agent.model) return { ok: false, code: 'runtime_model_unavailable', reason: 'bound runtime agent has no model' };
+    if (!agentRoster.has(agentId)) return { ok: false, code: 'runtime_identity_missing', reason: 'bound runtime agent is no longer in the roster' };
+    return { ok: true };
+  }
 });
 
 // WIDGET RAILS Phase 2 — the STATION-scoped agent-fed widget records (one file, not per-agent:
@@ -8632,6 +8647,7 @@ const ROUTES = [
   { m: 'GET', exact: '/api/roles', h: handlePineStarRoles },
   { m: ['GET', 'POST'], qsplit: '/api/objectives', h: handlePineStarObjectives },
   { m: 'POST', exact: '/api/objectives/status', h: handlePineStarObjectiveStatus },
+  { m: 'POST', exact: '/api/objectives/admit', h: handlePineStarObjectiveAdmission },
   { m: 'GET', exact: '/api/control/status', h: servePineStarControlStatus },
   { m: 'POST', exact: '/api/notebook/restore', h: handleNotebookRestore },
   { m: 'GET', prefix: '/api/notebook', h: serveNotebook },
@@ -18304,6 +18320,11 @@ async function handlePineStarObjectiveStatus(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
   try { return respondJson(res, 200, { ok: true, objective: await objectiveStore.updateStatus(body.id, body.status, body.completionEvidenceRefs) }); }
   catch (e) { const message = (e && e.message) || 'invalid objective status'; return respondJson(res, message === 'objective not found' ? 404 : 400, { error: message }); }
+}
+async function handlePineStarObjectiveAdmission(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  const result = await objectiveDispatch.admit(body.id);
+  return respondJson(res, result.ok ? 202 : (result.code === 'objective_not_found' ? 404 : 409), result);
 }
 function servePineStarControlStatus(req, res) {
   const internal = notebookStore.readKey('internal:station');
