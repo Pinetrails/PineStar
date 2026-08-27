@@ -4317,7 +4317,7 @@ const App = (() => {
             }
             discovered.innerHTML = rows.map(x => '<button type="button" class="proj-discover-pick" data-path="' + U.esc(x.root) + '"><b>' + U.esc(x.name || x.root) + '</b><span>' + U.esc(x.root) + '</span><em>' + U.esc(x.kind || 'project') + '</em></button>').join('');
             discovered.hidden = false;
-            discovered.querySelectorAll('.proj-discover-pick').forEach(b => { b.onclick = () => { input.value = b.dataset.path || ''; showHint('Candidate selected. ADD grants this folder to StarNet.', false); input.focus(); }; });
+            discovered.querySelectorAll('.proj-discover-pick').forEach(b => { b.onclick = () => { input.value = b.dataset.path || ''; showHint('Candidate selected. ADD grants this folder to Pine Star.', false); input.focus(); }; });
             showHint('Found ' + rows.length + ' candidate' + (rows.length === 1 ? '' : 's') + '. Select one, then ADD to grant access.' + (j.truncated ? ' Search stopped at its safety limit.' : ''), false);
           })
           .catch(() => showHint('could not reach the station', true))
@@ -4530,7 +4530,7 @@ const App = (() => {
       let up = false;
       try { up = await core.invoke('starnet_restart_sidecar'); } catch (_) { up = false; }
       if (up) { setStatus('station service restarted — reconnecting…'); attempt(); }
-      else setStatus('the station service could not be restarted — quit StarNet fully (Cmd+Q / tray → Quit) and open it again. Your save is untouched.');
+      else setStatus('the station service could not be restarted — quit Pine Star fully (Cmd+Q / tray → Quit) and open it again. Your save is untouched.');
       restarting = false;
       if (restartBtn) restartBtn.disabled = false;
     };
@@ -4591,7 +4591,7 @@ const App = (() => {
               setStatus('clean station ready — reopening now. Your account link and purchased credits were kept.' + where);
               try { location.reload(); } catch (_) {}
             } else {
-              setStatus('clean station prepared, but the station service is still blocked. Fully quit StarNet and reopen it. Your account link and purchased credits were kept.' + where);
+              setStatus('clean station prepared, but the station service is still blocked. Fully quit Pine Star and reopen it. Your account link and purchased credits were kept.' + where);
             }
           } catch (error) {
             resetting = false;

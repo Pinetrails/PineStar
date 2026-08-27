@@ -13,6 +13,7 @@
 | Packaged desktop | **PASS** |
 | Fresh onboarding | **PASS** |
 | Documentation foundation | `PS-2026-001` complete, approved, committed, and pushed (`1c2ef0d4`) |
+| Presentation foundation | `PS-2026-002` complete; first batch pushed (`43ba5fc5`) and final copy cleanup locally committed |
 
 ## Known baseline issues
 
@@ -27,4 +28,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Complete and review the first `PS-2026-002` batch: status rollover, text-only Pine Star primary frontend identity, branding regression-test adaptation, and generated website mirror synchronization.
+Begin a separately scoped Phase 2 configuration-separation and release-asset safety foundation.

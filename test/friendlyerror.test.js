@@ -329,7 +329,7 @@ for (const raw of [
     'BROWSER: a bare sidecar 500 keeps the local-service copy');
   A.eq(friendlyError(Object.assign(new Error('sidecar HTTP 500 — internal error'), { status: 500 })).kind,
     'server_error', 'DELEGATE: a bare sidecar 500 keeps the local-service copy');
-  A.ok(/local starnet service/i.test(KINDS.server_error.msg), 'the local copy still exists for the proven-local case');
+  A.ok(/local pine star service/i.test(KINDS.server_error.msg), 'the local copy still exists for the proven-local case');
   // the two ladders must agree on the flagship shape, or the halves drift again
   A.eq(kindFromRaw('anthropic http 529 - overloaded', null),
     friendlyError(new Error('Anthropic http 529 - Overloaded')).kind,

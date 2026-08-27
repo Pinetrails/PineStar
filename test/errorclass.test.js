@@ -132,7 +132,7 @@ const F = (err, status, opts) => friendlyError(err, status, opts);
   A.eq(v.kind, 'server_error', '5xx -> server_error');
   A.eq(v.retryable, true, 'server_error retryable');
   A.eq(v.action, null, 'server_error has no deep-link action');
-  A.ok(/local StarNet service hit an error/i.test(v.userMessage), 'server_error leads with the friendly headline');
+  A.ok(/local Pine Star service hit an error/i.test(v.userMessage), 'server_error leads with the friendly headline');
   A.ok(/sidecar HTTP 500/.test(v.raw), 'raw technical text preserved for the dim sub-line');
   // 2026-07-30: this line used to assert the DEFECT (a bare 503 -> the "local StarNet service" copy). A 503
   // with no sidecar evidence in the raw is a provider-shaped failure — the local claim owes proof it never has.
@@ -153,7 +153,7 @@ const F = (err, status, opts) => friendlyError(err, status, opts);
   v = F(new Error('terminated'), null, { engineAlive: false });
   A.eq(v.kind, 'network', 'proven-dead engine is still the network kind');
   A.eq(v.engineAlive, false, 'measured verdict rides on the verdict object');
-  A.ok(/Can't reach StarNet's local service/i.test(v.userMessage), 'engine proven DOWN earns the restart copy');
+  A.ok(/Can't reach Pine Star's local service/i.test(v.userMessage), 'engine proven DOWN earns the restart copy');
 
   v = F(new Error('terminated'), null, { engineAlive: true });
   A.eq(v.kind, 'network', 'proven-alive engine is still the network kind (retryable, no door)');

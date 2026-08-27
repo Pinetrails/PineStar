@@ -26,7 +26,7 @@
         verb: 'polling',
         steps: [
           'In Telegram open <b>@BotFather</b> → send <code>/newbot</code> → copy the token it gives you.',
-          'Paste it below and connect. StarNet will show a one-time owner pairing <code>/pair</code> command.',
+          'Paste it below and connect. Pine Star will show a one-time owner pairing <code>/pair</code> command.',
           'Send that owner pairing command to your bot in Telegram. Only then can the bot accept your DMs.'
         ],
         note: 'The token is stored locally by the sidecar and never displayed.',

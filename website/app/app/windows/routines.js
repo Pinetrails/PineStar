@@ -109,7 +109,7 @@
             '<input id="rt-script" class="key-input" placeholder="pre-check script (relative to workspace/project)">' +
             '<label class="rt-term"><input type="checkbox" id="rt-no-agent"> script only — do not call a model</label>' +
             '<input id="rt-toolsets" class="key-input" placeholder="allowed toolsets (comma-separated; blank = station defaults)">' +
-            '<select id="rt-deliver" class="key-input"><option value="local">keep result in StarNet</option><option value="origin">return result to this conversation</option></select>' +
+            '<select id="rt-deliver" class="key-input"><option value="local">keep result in Pine Star</option><option value="origin">return result to this conversation</option></select>' +
             '<label class="rt-term"><input type="checkbox" id="rt-continue"> keep delivery continuable in its conversation</label>' +
           '</div>' +
         '</details>' +

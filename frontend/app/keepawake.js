@@ -36,7 +36,7 @@ const KeepAwake = (() => {
       desktop: false,
       supported: false,
       enabled: false,
-      message: 'Keep Computer Awake is available in the StarNet desktop app.',
+      message: 'Keep Computer Awake is available in the Pine Star desktop app.',
       requested: !!requested
     };
   }

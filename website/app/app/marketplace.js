@@ -759,7 +759,7 @@ const Marketplace = (() => {
   // second copy of the console. Hidden the moment it's acked; the panel below remains the place to pause or wipe.
   function consentStripHTML() {
     const ps = profileApi(); if (!ps || !ps.summary || !ps.summary()) return '';
-    return '<div class="mkt-consent-strip">◉ STARNET keeps a local preference profile. When Scout drafts a new option, a bounded summary is sent only to your configured model. ' +
+    return '<div class="mkt-consent-strip">◉ PINE STAR keeps a local preference profile. When Scout drafts a new option, a bounded summary is sent only to your configured model. ' +
       'Pause or wipe it anytime in STATION FAMILIARITY below. <button class="bb sm mkt-fam-ack">GOT IT</button></div>';
   }
 
@@ -1242,7 +1242,7 @@ const Marketplace = (() => {
         '<span class="mkt-fam-v">' + v + '%</span></div>';
     }).join('');
     const consent = !acked()
-      ? '<div class="mkt-fam-consent">STARNET learns what you work on to tailor these picks. The profile is stored locally; bounded summaries are sent to your configured model only when it drafts a recommendation. ' +
+      ? '<div class="mkt-fam-consent">PINE STAR learns what you work on to tailor these picks. The profile is stored locally; bounded summaries are sent to your configured model only when it drafts a recommendation. ' +
         'Pause or wipe it anytime, right here. <button class="bb sm mkt-fam-ack">GOT IT</button></div>' : '';
     const acts = '<div class="mkt-fam-acts">' +
         '<span class="mkt-fam-priv">◇ local-first · pause stops browser and sidecar personalization</span>' +
@@ -3129,7 +3129,7 @@ const Marketplace = (() => {
     const rows = editParams.map(paramRowHTML).join('');
     return '<div class="mkt-r-params" id="mkt-r-params">' + rows + '</div>' +
       '<button type="button" class="bb xs mkt-r-padd">＋ ADD FILL-IN</button>' +
-      '<span class="mkt-hint mkt-r-phint"> — or leave empty and STARNET derives them from the {tokens} in your directive.</span>';
+      '<span class="mkt-hint mkt-r-phint"> — or leave empty and PINE STAR derives them from the {tokens} in your directive.</span>';
   }
   // SOP acceptance rows: one typed check per row. The TYPE picks which second box applies (path / command) and
   // whether a third (text / sha256) exists — the same swap-a-box discipline the fill-in grid uses for 'pick one'.

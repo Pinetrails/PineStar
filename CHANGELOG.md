@@ -9,7 +9,8 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 - Began separating Pine Star's visible identity from StarNet while preserving compatibility-sensitive internals and working architecture.
 - First batch: project-status rollover, text-only Pine Star primary frontend identity, removal of primary UI dependence on excluded StarNet logo/wordmark assets, branding regression-test adaptation, and generated website mirror synchronization.
 - Deferred native identity, executable/package/installer naming, identifiers, icons/art, data paths, persistence namespaces, provider/managed-credit internals, updater/signing, architecture changes, and the future GBA environment.
-- Git commit: **Not committed**.
+- Git commit: `43ba5fc555549a7114aab2c5ffcdfa728eee6b69` (committed and pushed).
+- Completed the presentation-copy classification cleanup across the frontend and generated website mirror; native package identity, public website conversion, and original art remain deferred.
 
 ### PS-2026-001 — Documentation and governance foundation
 

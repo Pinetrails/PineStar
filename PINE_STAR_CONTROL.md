@@ -13,8 +13,8 @@ Pine Star is built on StarNet, its upstream technical foundation.
 | Application source modified yet | **Yes — presentation-only frontend identity in the first PS-2026-002 batch** |
 | Packaged desktop baseline | **PASS** |
 | Fresh onboarding baseline | **PASS** |
-| Documentation state | `PS-2026-001` **complete and approved**; `PS-2026-002` first batch in progress |
-| Next goal | Review the text-only Pine Star frontend identity batch before any native identity, compatibility, or final-art work |
+| Documentation state | `PS-2026-001` **complete and approved**; `PS-2026-002` **complete for the presentation foundation** |
+| Next goal | Begin a separately scoped Phase 2 configuration-separation and release-asset safety foundation |
 
 ## Known stock-baseline issues
 

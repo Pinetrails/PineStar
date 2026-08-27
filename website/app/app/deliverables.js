@@ -182,7 +182,7 @@
     let rows = [], projects = [], kinds = [], summary = null, loadSeq = 0, project = '', kind = '';
     const openState = { blobUrl: '', previewHost: null };
     const revoke = () => revokePreview(openState);
-    body.innerHTML = '<div class="cfg dlv"><h3>DELIVERABLES / WORKSHOP LIBRARY</h3><p class="muted">Everything your agents actually made, filed under the project it was made for. Open any one to see what you asked for, what came back, and every file it produced. Previews open safely inside StarNet in a browser; desktop OPEN uses your file app.</p>' +
+    body.innerHTML = '<div class="cfg dlv"><h3>DELIVERABLES / WORKSHOP LIBRARY</h3><p class="muted">Everything your agents actually made, filed under the project it was made for. Open any one to see what you asked for, what came back, and every file it produced. Previews open safely inside Pine Star in a browser; desktop OPEN uses your file app.</p>' +
       '<div id="dl-head" class="dlv-head-strip"></div>' +
       '<div class="deliverables-toolbar"><input id="dl-query" aria-label="Search deliverables" placeholder="search title, agent, project"><select id="dl-status" aria-label="Filter deliverables"><option value="">ALL STATUS</option><option>pending</option><option>kept</option><option>implemented</option><option>discarded</option><option>produced</option><option>failed</option></select><button class="bb sm" id="dl-refresh">REFRESH</button><button class="bb sm" id="dl-clean">CLEAN OLD RECORDS</button></div>' +
       '<div id="dl-kinds" class="dlv-kinds"></div>' +

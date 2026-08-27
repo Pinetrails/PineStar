@@ -197,7 +197,7 @@
     context = context || {};
     return Promise.all([buildLine(), engineVerdict(context)]).then(([build, alive]) => {
       const lines = [];
-      lines.push('STARNET DIAGNOSTICS (page-side fallback — the local engine did not answer, so this report was');
+      lines.push('PINE STAR DIAGNOSTICS (page-side fallback — the local engine did not answer, so this report was');
       lines.push('assembled by the app window itself and is SHORTER than a normal report.)');
       lines.push('');
       lines.push('when:          ' + new Date().toISOString());

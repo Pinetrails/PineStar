@@ -147,7 +147,7 @@ const VoiceLive = (() => {
         '<option value="2600">PATIENT · 2.6S</option>',
       '</select></label>',
       '<dl class="lv-rail">',
-        '<div class="lv-row"><dt>ROUTE</dt><dd id="lv-route">LOCAL SPEECH · ACTIVE STARNET AGENT</dd></div>',
+        '<div class="lv-row"><dt>ROUTE</dt><dd id="lv-route">LOCAL SPEECH · ACTIVE PINE STAR AGENT</dd></div>',
         '<div class="lv-row lv-row-dl"><dt>SPEECH</dt><dd id="lv-model">LOCAL MODELS: CHECKING</dd></div>',
         '<div class="lv-row"><dt>TASK</dt><dd id="lv-task" class="lv-task">No active task detected.</dd></div>',
       '</dl>',
@@ -969,7 +969,7 @@ const VoiceLive = (() => {
     button.setAttribute('aria-label', on ? 'Stop Local Live hands-free voice' : 'Start Local Live hands-free voice');
     button.title = on
       ? 'Stop Local Live hands-free voice'
-      : 'Local Live hands-free voice — local speech with your active Starnet agent';
+      : 'Local Live hands-free voice — local speech with your active Pine Star agent';
   }
 
   async function start(retry) {

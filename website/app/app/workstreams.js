@@ -440,7 +440,7 @@
       const doc = { schema: 'starnet.conversation', version: 1, exportedAt: opts.exportedAt != null ? opts.exportedAt : now(), title, messages, secretsIncluded: false };
       return { format: 'json', mime: 'application/json', filename: 'starnet-' + slug + '.json', text: JSON.stringify(doc, null, 2), doc };
     }
-    const lines = ['# ' + title, '', '_Exported from StarNet. Hidden/system data and obvious credentials are excluded._', ''];
+    const lines = ['# ' + title, '', '_Exported from Pine Star. Hidden/system data and obvious credentials are excluded._', ''];
     for (const m of messages) lines.push('## ' + (m.role === 'user' ? 'Commander' : 'Agent'), '', m.content, '');
     return { format: 'markdown', mime: 'text/markdown', filename: 'starnet-' + slug + '.md', text: lines.join('\n') };
   }

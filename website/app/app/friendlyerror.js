@@ -74,17 +74,17 @@
     // provider's 5xx/overloaded must never land here — a message naming a component owes proof it is at fault,
     // and blaming the local service for an Anthropic/OpenRouter overload had users reporting "StarNet's servers
     // are down" during every industry load spike (2026-07-30, the report wave behind this split).
-    server_error:  { retryable: true,  action: null,       msg: 'The local StarNet service hit an error — give it a moment and try again.' },
+    server_error:  { retryable: true,  action: null,       msg: 'The local Pine Star service hit an error — give it a moment and try again.' },
     // The PROVIDER's servers answered with an error/overload (5xx, "overloaded", "temporarily unavailable").
     // StarNet is healthy and says so; retry is the primary door because provider load spikes pass.
-    provider_server_error: { retryable: true, action: null, msg: "The AI provider's servers are having trouble right now (overloaded or erroring) — StarNet itself is fine. Wait a moment and try again; if it keeps failing, switch model or provider in COMMS." },
-    network:       { retryable: true,  action: null,       msg: "Can't reach StarNet's local service — if the app closed, restart it; if it restarted, reload this window, then try again." },
+    provider_server_error: { retryable: true, action: null, msg: "The AI provider's servers are having trouble right now (overloaded or erroring) — Pine Star itself is fine. Wait a moment and try again; if it keeps failing, switch model or provider in COMMS." },
+    network:       { retryable: true,  action: null,       msg: "Can't reach Pine Star's local service — if the app closed, restart it; if it restarted, reload this window, then try again." },
     rate_limit:    { retryable: true,  action: null,       msg: 'The model provider is busy (too many requests) — wait a few seconds and try again.' },
     // The sidecar is fine; its call OUT to the model provider failed (see isUpstreamFetchFailure). Say that, and
     // say StarNet is healthy — the failure mode this replaces had users restarting and reinstalling for days over
     // a message that named the wrong component. `action: null` on purpose: a provider blip is usually transient,
     // so RETRY must stay the primary chip rather than a SETTINGS door that fixes nothing.
-    provider_unreachable: { retryable: true, action: null, msg: "StarNet is running fine, but it couldn't reach the AI provider — that's usually your internet connection, a VPN or proxy, or the provider having a moment. Try again; if it keeps failing, switch provider or model in SETTINGS." },
+    provider_unreachable: { retryable: true, action: null, msg: "Pine Star is running fine, but it couldn't reach the AI provider — that's usually your internet connection, a VPN or proxy, or the provider having a moment. Try again; if it keeps failing, switch provider or model in SETTINGS." },
     /* A SPENT ALLOWANCE is not a busy moment. A ChatGPT-subscription weekly quota resets in DAYS, so offering
        "wait a few seconds and try again" made every retry doomed and told the user nothing they could act on.
        The copy names the meter that was actually spent — the ChatGPT subscription, NOT API billing — and the
@@ -189,7 +189,7 @@
   function transportMessage(engineAlive) {
     if (engineAlive === false) return KINDS.network.msg;
     if (engineAlive === true) {
-      return "The reply stream stopped before it finished — StarNet's local service answered a health check, so "
+      return "The reply stream stopped before it finished — Pine Star's local service answered a health check, so "
         + 'the app itself is running; this was the connection carrying the reply. Try again.';
     }
     return 'The connection dropped before the reply finished — try again. If it keeps happening, use "copy '
