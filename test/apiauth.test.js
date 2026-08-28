@@ -33,6 +33,9 @@ A.eq(auth.requiresApiToken(req('POST', '/api/objectives/status')), true, 'POST o
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/admit')), true, 'POST objective admission requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/activate')), true, 'POST objective activation requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/cancel')), true, 'POST objective cancellation requires token');
+A.eq(auth.requiresApiToken(req('GET', '/api/objectives/away')), true, 'GET Away objective queue requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/objectives/away')), true, 'POST Away objective queue requires token');
+A.eq(auth.requiresApiToken(req('DELETE', '/api/objectives/away')), true, 'DELETE Away objective queue requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/runs')), true, 'GET runs requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/run')), true, 'POST run requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/save')), true, 'POST save now requires token (was exempt)');

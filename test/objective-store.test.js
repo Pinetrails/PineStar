@@ -25,6 +25,22 @@ const store = makeObjectiveStore({ durable, registry: makeRoleRegistry(SEEDS), n
   let evidenceRequired = false; const another = await store.create({ title: 'Write code', requiredCapabilities: ['code'] });
   try { await store.updateStatus(another.id, 'completed', []); } catch (e) { evidenceRequired = /evidence/.test(e.message); }
   A.ok(evidenceRequired, 'completion cannot be claimed without evidence references');
+  const queued = await store.queueAway(another.id);
+  A.eq(queued.awayWork.state, 'queued', 'an assigned safe objective can enter the durable Away queue');
+  A.eq(store.hasAwayReady(stamp, 3600000), true, 'Night Shift can detect durable queued work without claiming it');
+  A.eq((await store.queueAway(another.id)).awayWork.queuedAt, queued.awayWork.queuedAt, 'Away enqueue is idempotent');
+  const claimed = await store.claimAway();
+  A.eq(claimed.id, another.id, 'Away worker atomically claims the queued objective');
+  A.eq(claimed.awayWork.attempts, 1, 'Away claim records its bounded attempt');
+  const retried = await store.finishAway(another.id, { retry: true, reason: 'temporary runtime failure' });
+  A.eq(retried.awayWork.state, 'queued', 'a transient failure requeues bounded work');
+  A.eq((await store.claimAway()).awayWork.attempts, 2, 'retry reclaims the same durable objective without cloning it');
+  await store.finishAway(another.id, { retry: true, reason: 'temporary runtime failure' });
+  await store.claimAway();
+  const exhausted = await store.finishAway(another.id, { retry: true, reason: 'temporary runtime failure' });
+  A.eq(exhausted.awayWork.state, 'blocked', 'Away work stops after three failed attempts');
+  let protectedAwayBlocked = false; try { await store.queueAway(protectedObjective.id); } catch (e) { protectedAwayBlocked = /requires approval/.test(e.message); }
+  A.ok(protectedAwayBlocked, 'protected objectives cannot enter unattended Away execution');
   const workspaces = fs.mkdtempSync(path.join(os.tmpdir(), 'pine-objectives-'));
   const deps = { fs, path, workspaces, registry: makeRoleRegistry(SEEDS), now: () => 500, newId: () => 'durable-id' };
   const first = makeObjectiveStore(deps);

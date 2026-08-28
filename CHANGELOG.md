@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-017 — Away/Night Shift objective bridge
+
+- Added an authenticated durable queue for explicitly selected safe Away objectives with inspection and pre-activation cancellation.
+- Reused the existing Night Shift presence, posture, leash, concurrency, halt, timer, and abort behavior before normal objective admission and activation.
+- Added atomic claims, one-hour stale-claim recovery, and a three-attempt bound without introducing another unattended scheduler or widening permissions.
+
 ### PS-2026-016 — Deterministic Morning Brief
 
 - Added deterministic bounded aggregation of completed, active, failed, cancelled, blocked, and approval-waiting objectives.

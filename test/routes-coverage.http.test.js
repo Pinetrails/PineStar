@@ -125,6 +125,9 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/objectives/admit', {})).status, 403, 'objective admission remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/activate', {})).status, 403, 'objective activation remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/cancel', {})).status, 403, 'objective cancellation remains behind the API token gate');
+    A.eq((await raw('GET', '/api/objectives/away')).status, 403, 'Away objective inspection remains behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives/away', {})).status, 403, 'Away objective enqueue remains behind the API token gate');
+    A.eq((await raw('DELETE', '/api/objectives/away', {})).status, 403, 'Away objective cancellation remains behind the API token gate');
     const roles = await j('GET', '/api/roles');
     A.eq(roles.status, 200, 'GET /api/roles -> 200');
     A.ok(roles.body.roles.some(role => role.id === 'research.general_researcher'), 'role discovery exposes stable system role IDs');
@@ -144,6 +147,11 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const protectedActivation = await j('POST', '/api/objectives/activate', { id: protectedCreated.body.objective.id });
     A.eq(protectedActivation.body.code, 'approval_required', 'protected objective cannot activate through the runtime API');
     const unboundCreated = await j('POST', '/api/objectives', { title: 'Unbound runtime identity', requiredCapabilities: ['audit'] });
+    const awayQueued = await j('POST', '/api/objectives/away', { id: unboundCreated.body.objective.id });
+    A.eq(awayQueued.status, 200, 'safe assigned objective can be durably queued for Away work');
+    A.eq((await j('GET', '/api/objectives/away')).body.objectives[0].awayWork.state, 'queued', 'Away queue is inspectable without activating work');
+    A.eq((await j('POST', '/api/objectives/away', { id: protectedCreated.body.objective.id })).status, 409, 'protected objective cannot enter unattended Away work');
+    A.eq((await j('DELETE', '/api/objectives/away', { id: unboundCreated.body.objective.id })).body.objective.awayWork.state, 'cancelled', 'queued Away work is cancellable before activation');
     const unboundAdmission = await j('POST', '/api/objectives/admit', { id: unboundCreated.body.objective.id });
     A.eq(unboundAdmission.body.code, 'runtime_identity_missing', 'admission refuses a role with no approved runtime binding');
     const protectedAdvance = await j('POST', '/api/objectives/status', { id: protectedCreated.body.objective.id, status: 'in_progress' });

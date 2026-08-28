@@ -40,12 +40,14 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Daily Open-Source Scout request, runtime directive, structured normalization, shared-report finalization, and audit linkage completed in `PS-2026-014`; recurring objective scheduling remains.
 - Recurring objective definitions and idempotent occurrences now delegate from the existing durable cron scheduler into normal Pine Star admission/activation/settlement in `PS-2026-015`.
 - Deterministic Morning Brief aggregation now publishes concise shared reports from durable objective, Scout, Auditor, approval, and measured run-cost evidence in `PS-2026-016`; Away/Night Shift objective integration remains.
+- Explicit safe objective queues now enter the existing Night Shift beat only after its presence, posture, leash, concurrency, and durable halt gates clear, then reuse normal objective admission/activation/settlement (`PS-2026-017`).
 
 ## Phase 5 — Autonomous Operations
 
 - Away/Night Shift, reports, safe recurring work, zero-spend default, approval refinements.
 - Existing cron now schedules durable Pine Star objective occurrences with scheduler-owned pause, halt, retry, recovery, and inspection (`PS-2026-015`).
 - Authenticated Morning Brief generation now reuses the shared-report store and requires no model call (`PS-2026-016`).
+- Away objective work now reuses the existing Night Shift timer and safety gates with durable bounded claims/recovery instead of a new unattended loop (`PS-2026-017`).
 
 ## Phase 6 — Business System
 

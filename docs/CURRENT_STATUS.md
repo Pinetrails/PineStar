@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 4 — Agents & Objectives foundation (Phase 3 adapters remain)
-**Current change:** `PS-2026-016` — Deterministic Morning Brief — **COMPLETE**
+**Current change:** `PS-2026-017` — Away/Night Shift Objective Bridge — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -28,6 +28,7 @@
 | Open-Source Scout | `PS-2026-014` complete; bounded idempotent Scout objectives use the existing runtime and create structured shared reports with source evidence, UNKNOWN preservation, and zero-install/zero-spend boundaries |
 | Recurring objectives | `PS-2026-015` complete; durable Pine Star definitions are cron jobs with bounded templates, role bindings, idempotent occurrences, normal objective execution, scheduler-owned halt/retry/cancellation, and authenticated inspection/control |
 | Morning Brief | `PS-2026-016` complete; authenticated deterministic aggregation creates bounded shared reports from objective lifecycle, Scout, Auditor, approval, and measured run-cost evidence |
+| Away objectives | `PS-2026-017` complete; explicitly queued safe objectives reuse Night Shift presence/posture/leash/halt gates and normal objective admission, activation, cancellation, settlement, recovery, and audit evidence |
 
 ## Known baseline issues
 
@@ -42,4 +43,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Bridge Pine Star objectives into existing Away/Night Shift seams without weakening posture, halt, leash, consent, or zero-spend controls.
+Add the next useful specialist workflow or begin dependency-ready Phase 6 product-project foundations without creating decorative roles.

@@ -5981,6 +5981,37 @@ async function runNightshiftActShift(opts) {
   return { delivered: true, reason: 'built', title: manifest.title, archetype: sel.selected.archetype, runId, backlogId, artifactPaths: paths };
 }
 
+async function runAwayObjectiveOrNightshiftBeat(opts) {
+  const objective = await objectiveStore.claimAway(3600000);
+  if (!objective) return runNightshiftBeat(opts);
+  const signal = opts && opts.signal;
+  try {
+    if (signal && signal.aborted) { await objectiveStore.finishAway(objective.id, { retry: true, reason: 'halted before Away activation' }); return { delivered: false, reason: 'halted', title: objective.title }; }
+    let current = objective;
+    if (current.status === 'assigned') {
+      const admission = await objectiveDispatch.admit(current.id);
+      if (!admission.ok) {
+        await objectiveStore.finishAway(current.id, { retry: ['halted', 'runtime_admission_failed'].includes(admission.code), reason: admission.reason || admission.code });
+        return { delivered: false, reason: admission.reason || admission.code, title: current.title };
+      }
+      current = admission.objective;
+    }
+    const activation = await objectiveDispatch.activate(current.id);
+    if (!activation.ok) {
+      await objectiveStore.finishAway(current.id, { retry: activation.code === 'halted' || activation.code === 'runtime_start_failed', reason: activation.reason || activation.code });
+      return { delivered: false, reason: activation.reason || activation.code, title: current.title };
+    }
+    const abortObjective = () => { const controller = runs.get(String(activation.runId || '')); if (controller) controller.abort(); };
+    if (signal) signal.addEventListener('abort', abortObjective, { once: true });
+    let settled; try { settled = await activation.settled; } finally { if (signal) signal.removeEventListener('abort', abortObjective); }
+    await objectiveStore.finishAway(current.id, { ok: settled.status === 'completed', reason: settled.settlementReason || settled.status });
+    return { delivered: settled.status === 'completed', reason: settled.settlementReason || settled.status, title: settled.title, runId: activation.runId, archetype: 'pine-star-objective' };
+  } catch (e) {
+    await objectiveStore.finishAway(objective.id, { retry: true, reason: (e && e.message) || 'Away objective failure' });
+    return { delivered: false, reason: (e && e.message) || 'Away objective failure', title: objective.title };
+  }
+}
+
 // ---- the driver: all ambient deps injected, so nightshift-driver.js stays determinism-clean.
 const nightshiftDriver = makeNightshiftDriver({
   getState: () => nightshiftState,
@@ -5998,12 +6029,12 @@ const nightshiftDriver = makeNightshiftDriver({
   // NS-2 cold-leash fix: the PURELY-LOCAL pre-spend gate. A cold-on-both-paths beat (thin dossier AND thin recent
   // activity) stands down here, BEFORE the leash is spent, because no model call could have salvaged it. Anything
   // that clears this still spends at accept-time (a beat that reached a model call and stood down cost the budget).
-  precheck: () => nightshiftPrecheck(),
+  precheck: () => objectiveStore.hasAwayReady(Date.now(), 3600000) ? { ok: true } : nightshiftPrecheck(),
   // broadcast: tee the beat's run lifecycle + name-only tool calls to the station floor over SSE (the
   // unit-tested runTeeView policy — args never leave the sidecar), the same opt-in the force-fire route and
   // manual cron use. Without it a scheduled beat ran with a no-op emit and the station sat visibly dead
   // while the harness worked (2026-07-14: "it doesn't notify me anywhere").
-  beat: (o) => runNightshiftBeat(Object.assign({ broadcast: true }, o || {})),
+  beat: (o) => runAwayObjectiveOrNightshiftBeat(Object.assign({ broadcast: true }, o || {})),
   newAbort: () => new AbortController(),
   now: () => Date.now(),
   ledger: (entry) => autonomyLedgerAppend(entry),
@@ -8707,6 +8738,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/objectives/admit', h: handlePineStarObjectiveAdmission },
   { m: 'POST', exact: '/api/objectives/activate', h: handlePineStarObjectiveActivation },
   { m: 'POST', exact: '/api/objectives/cancel', h: handlePineStarObjectiveCancel },
+  { m: ['GET', 'POST', 'DELETE'], qsplit: '/api/objectives/away', h: handlePineStarObjectiveAway },
   { m: 'GET', exact: '/api/control/status', h: servePineStarControlStatus },
   { m: 'POST', exact: '/api/notebook/restore', h: handleNotebookRestore },
   { m: 'GET', prefix: '/api/notebook', h: serveNotebook },
@@ -18507,6 +18539,21 @@ async function handlePineStarObjectiveCancel(req, res) {
   const ac = runs.get(String(objective.admittedRunId || ''));
   if (!ac) return respondJson(res, 409, { error: 'objective run is not active' });
   ac.abort(); return respondJson(res, 202, { ok: true, runId: objective.admittedRunId, cancellationRequested: true });
+}
+async function handlePineStarObjectiveAway(req, res) {
+  if (req.method === 'GET') {
+    const objectives = objectiveStore.listAway().map(x => ({ id: x.id, title: x.title, status: x.status,
+      assignedRoleId: x.assignedRoleId, admittedRunId: x.admittedRunId || null, awayWork: Object.assign({}, x.awayWork) }));
+    return respondJson(res, 200, { schema: 'pine-star.away-objectives.v1', halted: !!(nightshiftState && nightshiftState.haltedAt), active: !!nightshiftTimer, objectives });
+  }
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const objective = req.method === 'DELETE' ? await objectiveStore.cancelAway(body.id) : await objectiveStore.queueAway(body.id);
+    return respondJson(res, 200, { ok: true, objective });
+  } catch (e) {
+    const message = (e && e.message) || 'invalid Away objective request';
+    return respondJson(res, message === 'objective not found' ? 404 : 409, { error: message });
+  }
 }
 function servePineStarControlStatus(req, res) {
   const internal = notebookStore.readKey('internal:station');

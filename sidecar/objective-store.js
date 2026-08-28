@@ -175,6 +175,58 @@ function makeObjectiveStore(deps) {
   }
   function list(limit) { const cap = Math.max(1, Math.min(250, Number(limit) || 50)); const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).filter(Boolean).slice(-cap).reverse(); }
   function get(id) { const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).find(row => row && row.id === String(id || '')) || null; }
+  function listAway() { const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).filter(x => x && x.awayWork).slice(-250).reverse(); }
+  function hasAwayReady(atMs, leaseMs) { const stale = Math.max(0, Number(atMs) || 0) - Math.max(60000, Number(leaseMs) || 3600000); return listAway().some(x => ['assigned', 'admitted'].includes(x.status) && (x.awayWork.state === 'queued' || (x.awayWork.state === 'claimed' && Number(x.awayWork.claimedAt) <= stale))); }
+  async function queueAway(id) {
+    let updated = null;
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], index = list.findIndex(x => x && x.id === String(id || ''));
+      if (index < 0) throw new Error('objective not found');
+      const current = list[index];
+      if (current.protectedAction || current.approvalState === 'required' || current.status === 'approval_required') throw new Error('protected objective requires approval');
+      if (!['assigned', 'admitted'].includes(current.status)) throw new Error('objective is not ready for Away work');
+      if (current.awayWork && ['queued', 'claimed'].includes(current.awayWork.state)) { updated = current; return undefined; }
+      const stamp = Math.max(0, Number(now()) || 0);
+      updated = Object.assign({}, current, { updatedAt: stamp, awayWork: { state: 'queued', queuedAt: stamp, claimedAt: 0, attempts: 0, lastReason: '' } });
+      list[index] = updated; return list;
+    }); return updated;
+  }
+  async function claimAway(leaseMs) {
+    let claimed = null; const stamp = Math.max(0, Number(now()) || 0), stale = stamp - Math.max(60000, Number(leaseMs) || 3600000);
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], index = list.findIndex(x => x && x.awayWork && (x.awayWork.state === 'queued' || (x.awayWork.state === 'claimed' && Number(x.awayWork.claimedAt) <= stale)) && ['assigned', 'admitted'].includes(x.status));
+      if (index < 0) return undefined;
+      const current = list[index], attempts = Math.max(0, Number(current.awayWork.attempts) || 0) + 1;
+      claimed = Object.assign({}, current, { updatedAt: stamp, awayWork: Object.assign({}, current.awayWork, { state: 'claimed', claimedAt: stamp, attempts }) });
+      list[index] = claimed; return list;
+    }); return claimed;
+  }
+  async function finishAway(id, outcome) {
+    let updated = null;
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], index = list.findIndex(x => x && x.id === String(id || ''));
+      if (index < 0) throw new Error('objective not found');
+      const current = list[index], prior = current.awayWork;
+      if (!prior || prior.state !== 'claimed') { updated = current; return undefined; }
+      const o = outcome || {}, retry = o.retry === true && Number(prior.attempts) < 3, stamp = Math.max(0, Number(now()) || 0);
+      updated = Object.assign({}, current, { updatedAt: Math.max(Number(current.updatedAt) || 0, stamp), awayWork: Object.assign({}, prior, {
+        state: retry ? 'queued' : (o.ok ? 'completed' : 'blocked'), claimedAt: 0, finishedAt: retry ? 0 : stamp, lastReason: text(o.reason, 300)
+      }) });
+      list[index] = updated; return list;
+    }); return updated;
+  }
+  async function cancelAway(id) {
+    let updated = null;
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], index = list.findIndex(x => x && x.id === String(id || ''));
+      if (index < 0) throw new Error('objective not found');
+      const current = list[index], prior = current.awayWork;
+      if (!prior || prior.state !== 'queued') throw new Error('objective is not queued for Away work');
+      const stamp = Math.max(0, Number(now()) || 0);
+      updated = Object.assign({}, current, { updatedAt: stamp, awayWork: Object.assign({}, prior, { state: 'cancelled', finishedAt: stamp, lastReason: 'Away queue cancelled by user' }) });
+      list[index] = updated; return list;
+    }); return updated;
+  }
   async function recordAdmission(id, admission) {
     let updated = null;
     await durable.update('station', stored => {
@@ -235,6 +287,6 @@ function makeObjectiveStore(deps) {
     });
     return updated;
   }
-  return { create, decompose, reconcileParent, createAudit, createScout, recordScoutReport, createRecurringOccurrence, list, get, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
+  return { create, decompose, reconcileParent, createAudit, createScout, recordScoutReport, createRecurringOccurrence, list, get, listAway, hasAwayReady, queueAway, claimAway, finishAway, cancelAway, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
 }
 module.exports = { makeObjectiveStore, publicRole, CAP };
