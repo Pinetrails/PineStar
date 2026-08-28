@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-018 — Digital-product project records
+
+- Added durable digital-product business records with bounded metadata, truthful unknown financials, zero spending authority, and deterministic lifecycle/QA gates.
+- Linked projects to existing objectives and shared reports with validated IDs and live progress projection rather than duplicating work or transcripts.
+- Added authenticated create/list/inspect/update/link APIs and read-only Reports-window visibility; safe APIs cannot publish externally.
+
 ### PS-2026-017 — Away/Night Shift objective bridge
 
 - Added an authenticated durable queue for explicitly selected safe Away objectives with inspection and pre-activation cancellation.

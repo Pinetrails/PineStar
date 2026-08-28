@@ -3,8 +3,8 @@
 **As of:** 2026-08-27
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
-**Current phase:** Phase 4 — Agents & Objectives foundation (Phase 3 adapters remain)
-**Current change:** `PS-2026-017` — Away/Night Shift Objective Bridge — **COMPLETE**
+**Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
+**Current change:** `PS-2026-018` — Digital-Product Project Records — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -29,6 +29,7 @@
 | Recurring objectives | `PS-2026-015` complete; durable Pine Star definitions are cron jobs with bounded templates, role bindings, idempotent occurrences, normal objective execution, scheduler-owned halt/retry/cancellation, and authenticated inspection/control |
 | Morning Brief | `PS-2026-016` complete; authenticated deterministic aggregation creates bounded shared reports from objective lifecycle, Scout, Auditor, approval, and measured run-cost evidence |
 | Away objectives | `PS-2026-017` complete; explicitly queued safe objectives reuse Night Shift presence/posture/leash/halt gates and normal objective admission, activation, cancellation, settlement, recovery, and audit evidence |
+| Digital-product projects | `PS-2026-018` complete; durable zero-spend business records link existing objectives/reports, enforce workflow and QA gates, expose progress, and stop publication at protected approval |
 
 ## Known baseline issues
 
@@ -43,4 +44,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Add the next useful specialist workflow or begin dependency-ready Phase 6 product-project foundations without creating decorative roles.
+Build Product Idea / Idea Lab intake as a useful workflow that creates and links normal routed objectives to digital-product projects.

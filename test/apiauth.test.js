@@ -36,6 +36,10 @@ A.eq(auth.requiresApiToken(req('POST', '/api/objectives/cancel')), true, 'POST o
 A.eq(auth.requiresApiToken(req('GET', '/api/objectives/away')), true, 'GET Away objective queue requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/away')), true, 'POST Away objective queue requires token');
 A.eq(auth.requiresApiToken(req('DELETE', '/api/objectives/away')), true, 'DELETE Away objective queue requires token');
+A.eq(auth.requiresApiToken(req('GET', '/api/product-projects')), true, 'GET product projects requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/product-projects')), true, 'POST product project creation requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/update')), true, 'POST product project update requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/link')), true, 'POST product project links requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/runs')), true, 'GET runs requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/run')), true, 'POST run requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/save')), true, 'POST save now requires token (was exempt)');

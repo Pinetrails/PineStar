@@ -31,4 +31,7 @@ const auditObjective = Reports.objectiveHtml({ title: 'audit', auditTargetObject
 A.ok(auditObjective.includes('AUDIT TARGET') && auditObjective.includes('objective:target&lt;script&gt;'), 'audit target relationship renders safely');
 const role = Reports.roleHtml({ id: 'research.general', displayName: '<Researcher>', department: 'research', modelTier: 'economy', capabilities: ['verify&report'], availability: 'active' });
 A.ok(role.includes('&lt;Researcher&gt;') && role.includes('research.general') && role.includes('verify&amp;report'), 'role identity and capabilities render safely');
+const product = Reports.productProjectHtml({ project: { title: '<Planner>', status: 'approval_required', productType: 'printable&pdf', qaState: 'passed', publicationState: 'approval_required', targetCustomer: '<hiker>', nextAction: 'wait & review' }, progress: { objectives: [{ id: 'objective:<research>', status: 'completed' }] } });
+A.ok(product.includes('&lt;Planner&gt;') && product.includes('APPROVAL_REQUIRED') && product.includes('PUBLICATION · APPROVAL_REQUIRED'), 'product project status and publication boundary render visibly');
+A.ok(!product.includes('<hiker>') && product.includes('&lt;hiker&gt;') && product.includes('objective:&lt;research&gt; [completed]'), 'product project customer and linked progress are escaped');
 A.report('reports-ui.test');

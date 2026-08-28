@@ -128,6 +128,10 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('GET', '/api/objectives/away')).status, 403, 'Away objective inspection remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/away', {})).status, 403, 'Away objective enqueue remains behind the API token gate');
     A.eq((await raw('DELETE', '/api/objectives/away', {})).status, 403, 'Away objective cancellation remains behind the API token gate');
+    A.eq((await raw('GET', '/api/product-projects')).status, 403, 'product project inspection remains behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects', {})).status, 403, 'product project creation remains behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/update', {})).status, 403, 'product project updates remain behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/link', {})).status, 403, 'product project links remain behind the API token gate');
     const roles = await j('GET', '/api/roles');
     A.eq(roles.status, 200, 'GET /api/roles -> 200');
     A.ok(roles.body.roles.some(role => role.id === 'research.general_researcher'), 'role discovery exposes stable system role IDs');
@@ -175,6 +179,19 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(scoutFinal.body.objective.workflowAudit[0].event, 'scout_report_created', 'HTTP Scout report records objective audit evidence');
     const scoutReports = await j('GET', '/api/reports?limit=10');
     A.ok(scoutReports.body.reports.some(x => x.id === 'scout-report:http-scout-1'), 'Scout report is readable through the existing shared report API');
+    const productCreate = await j('POST', '/api/product-projects', { projectId: 'http-planner', title: 'HTTP Trail Planner', targetMarketplaces: ['Marketplace A'], estimatedCostUsd: 'UNKNOWN', publishAutomatically: true });
+    A.eq(productCreate.status, 201, 'POST /api/product-projects -> 201');
+    A.eq(productCreate.body.project.spendingAuthorityUsd, 0, 'product project preserves zero-spend authority');
+    A.eq(productCreate.body.project.estimatedCostUsd, null, 'unknown product cost remains unknown');
+    A.eq((await j('POST', '/api/product-projects', { projectId: 'http-planner', title: 'HTTP Trail Planner' })).status, 200, 'product project creation is idempotent by stable scope');
+    const productLink = await j('POST', '/api/product-projects/link', { id: 'http-planner', objectiveIds: [objectiveId], reportIds: ['scout-report:http-scout-1'] });
+    A.eq(productLink.status, 200, 'product project links existing objective and report records');
+    A.eq(productLink.body.progress.objectives[0].status, 'completed', 'linked objective progress remains inspectable through HTTP');
+    const productUpdate = await j('POST', '/api/product-projects/update', { id: 'http-planner', patch: { status: 'research', revision: productLink.body.project.revision, nextAction: 'Compare customer needs' } });
+    A.eq(productUpdate.status, 200, 'valid product workflow transition persists');
+    A.eq((await j('POST', '/api/product-projects/update', { id: 'http-planner', patch: { status: 'published' } })).status, 400, 'safe product API cannot publish externally');
+    const productRead = await j('GET', '/api/product-projects?id=http-planner');
+    A.eq(productRead.body.project.status, 'research', 'product project survives durable read-after-write');
     const recurringSpec = { scheduleId: 'http-daily-scout', roleId: 'operations.open_source_scout', recurrence: '0 9 * * *', timezone: 'America/New_York', enabled: false,
       template: { workflow: 'open-source-scout', scout: { topic: 'Windows developer utilities', recommendationLimit: 3, compatibilityTarget: 'Windows 11' } } };
     const recurringCreate = await j('POST', '/api/objectives/recurring', recurringSpec);

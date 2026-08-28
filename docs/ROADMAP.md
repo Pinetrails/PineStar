@@ -52,6 +52,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 ## Phase 6 — Business System
 
 - Digital products, commerce, Pine Trail Printables/social, pipeline, growth experiments, revenue/cost tracking.
+- Durable digital-product project records now coordinate existing objectives and reports through idea, research, planning, production, QA, listing readiness, and protected publication stages (`PS-2026-018`).
 
 ## Phase 7 — Evolution
 
