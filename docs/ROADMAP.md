@@ -38,12 +38,14 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Deterministic coordinator intake, explicit direct-specialist targeting, atomic bounded decomposition, dependency admission, parent aggregation, and relationship inspection completed in `PS-2026-012`; useful Auditor and Scout workflows remain.
 - Idempotent settled-objective audit requests with bounded evidence snapshots and direct Auditor assignment completed in `PS-2026-013`; Scout and recurring objective workflows remain.
 - Daily Open-Source Scout request, runtime directive, structured normalization, shared-report finalization, and audit linkage completed in `PS-2026-014`; recurring objective scheduling remains.
-- Recurring objective definitions and idempotent occurrences now delegate from the existing durable cron scheduler into normal Pine Star admission/activation/settlement in `PS-2026-015`; Morning Brief and Away/Night Shift objective aggregation remain.
+- Recurring objective definitions and idempotent occurrences now delegate from the existing durable cron scheduler into normal Pine Star admission/activation/settlement in `PS-2026-015`.
+- Deterministic Morning Brief aggregation now publishes concise shared reports from durable objective, Scout, Auditor, approval, and measured run-cost evidence in `PS-2026-016`; Away/Night Shift objective integration remains.
 
 ## Phase 5 — Autonomous Operations
 
 - Away/Night Shift, reports, safe recurring work, zero-spend default, approval refinements.
 - Existing cron now schedules durable Pine Star objective occurrences with scheduler-owned pause, halt, retry, recovery, and inspection (`PS-2026-015`).
+- Authenticated Morning Brief generation now reuses the shared-report store and requires no model call (`PS-2026-016`).
 
 ## Phase 6 — Business System
 

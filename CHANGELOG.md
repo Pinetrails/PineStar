@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-016 — Deterministic Morning Brief
+
+- Added deterministic bounded aggregation of completed, active, failed, cancelled, blocked, and approval-waiting objectives.
+- Included actionable Scout discoveries and Auditor exceptions while retaining concise durable evidence references.
+- Reported costs only from real in-period run records and added an authenticated idempotent generation API using the existing shared-report store.
+
 ### PS-2026-015 — Recurring objective scheduler bridge
 
 - Stored recurring Pine Star definitions as existing durable cron jobs with bounded role-owned objective templates and zero unattended grants.

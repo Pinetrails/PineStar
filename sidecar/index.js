@@ -72,6 +72,7 @@ const spotifyPkce = require('./spotify/pkce.js');                          // pu
 const { makeSaveStore } = require('./savestore.js');
 const { mergeNotes } = require('./notebookrestore.js');
 const { makeRunStore } = require('./runstore.js');
+const { composeMorningBrief } = require('./morning-brief.js');
 const { makeGrowthRatings, deriveRating: deriveGrowthRating } = require('./growthratings.js');
 const { makeAutonomyLedger } = require('./autonomy-ledger.js');   // NS-0: durable append-only ledger of autonomy decisions
 const { makeArtifactCollector } = require('./artifacts.js');   // work-visibility: per-run "what did it produce" ledger
@@ -8691,6 +8692,7 @@ const ROUTES = [
   // where their output landed (the frontend otherwise only knows the relative filename). Read-only,
   // jailed via resolveInside (same proof the /api/file route uses); never lists or exposes contents.
   { m: 'GET', prefix: '/api/workspace/dir', h: serveWorkspaceDir },
+  { m: 'POST', exact: '/api/reports/morning-brief', h: handleMorningBrief },
   { m: ['GET', 'POST'], qsplit: '/api/reports', h: handleSharedReports },
   { m: 'GET', exact: '/api/roles', h: handlePineStarRoles },
   { m: ['GET', 'POST'], qsplit: '/api/objectives', h: handlePineStarObjectives },
@@ -18360,6 +18362,20 @@ async function handleSharedReports(req, res) {
     const result = await appendSharedReport(notebookStore, body);
     return json(200, { ok: true, added: result.added, report: result.report });
   } catch (e) { return json(400, { error: (e && e.message) || 'invalid report' }); }
+}
+async function handleMorningBrief(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const now = Date.now(), previous = listSharedReports(notebookStore, 100).find(x => x && x.type === 'morning-brief');
+    const periodEnd = Math.max(1, Number(body.periodEnd) || now);
+    const periodStart = Math.max(0, Number(body.periodStart) || (previous && previous.periodEnd) || periodEnd - 86400000);
+    const id = String(body.id || ('morning-brief:' + new Date(periodEnd).toISOString().slice(0, 10))).trim().slice(0, 120);
+    const existing = listSharedReports(notebookStore, 100).find(x => x && x.id === id);
+    if (existing) return respondJson(res, 200, { ok: true, added: false, report: existing });
+    const report = composeMorningBrief({ id, periodStart, periodEnd, objectives: objectiveStore.list(1000), reports: listSharedReports(notebookStore, 100), runs: runStore.list(null, { limit: 1000, since: periodStart, through: periodEnd }) });
+    const saved = await appendSharedReport(notebookStore, report);
+    return respondJson(res, 201, { ok: true, added: saved.added, report: saved.report });
+  } catch (e) { return respondJson(res, 400, { error: (e && e.message) || 'invalid Morning Brief request' }); }
 }
 function handlePineStarRoles(req, res) {
   return respondJson(res, 200, { schema: 'pine-star.roles.v1', roles: pineStarRoleRegistry.list().map(publicPineStarRole) });

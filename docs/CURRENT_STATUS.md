@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 4 — Agents & Objectives foundation (Phase 3 adapters remain)
-**Current change:** `PS-2026-015` — Recurring Objective Scheduler Bridge — **COMPLETE**
+**Current change:** `PS-2026-016` — Deterministic Morning Brief — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -27,6 +27,7 @@
 | Auditor workflow | `PS-2026-013` complete; idempotent audits of settled objectives create directly assigned Auditor work with bounded target evidence and use the normal admission/activation lifecycle |
 | Open-Source Scout | `PS-2026-014` complete; bounded idempotent Scout objectives use the existing runtime and create structured shared reports with source evidence, UNKNOWN preservation, and zero-install/zero-spend boundaries |
 | Recurring objectives | `PS-2026-015` complete; durable Pine Star definitions are cron jobs with bounded templates, role bindings, idempotent occurrences, normal objective execution, scheduler-owned halt/retry/cancellation, and authenticated inspection/control |
+| Morning Brief | `PS-2026-016` complete; authenticated deterministic aggregation creates bounded shared reports from objective lifecycle, Scout, Auditor, approval, and measured run-cost evidence |
 
 ## Known baseline issues
 
@@ -41,4 +42,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Build a deterministic Morning Brief from durable objective, report, Scout, Auditor, approval, and real cost evidence without dumping raw events or inventing state.
+Bridge Pine Star objectives into existing Away/Night Shift seams without weakening posture, halt, leash, consent, or zero-spend controls.
