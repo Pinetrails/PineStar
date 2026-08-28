@@ -1,5 +1,6 @@
 'use strict';
 const { makeDurableJsonStore } = require('./durable-store.js');
+const { scoutDirective } = require('./open-source-scout.js');
 const CAP = 1000;
 const FINAL = new Set(['completed', 'failed', 'cancelled']);
 const MUTABLE = new Set(['assigned', 'in_progress', 'completed', 'failed', 'cancelled']);
@@ -40,6 +41,8 @@ function makeObjectiveStore(deps) {
       dependsOnObjectiveIds: Array.isArray(rel.dependsOnObjectiveIds) ? rel.dependsOnObjectiveIds.slice() : [],
       auditTargetObjectiveId: rel.auditTargetObjectiveId || null, auditRequest: rel.auditRequest || null,
       scoutRequest: rel.scoutRequest || null, scoutReportId: null,
+      recurringOccurrence: rel.recurringOccurrence || null,
+      workflowAudit: Array.isArray(rel.workflowAudit) ? rel.workflowAudit.slice(0, 20) : [],
       classification: row.classification && typeof row.classification === 'object' ? row.classification : null,
       createdAt: stamp, updatedAt: stamp, completedAt: 0, completionEvidenceRefs: [], admissionAudit: [] };
   }
@@ -130,11 +133,8 @@ function makeObjectiveStore(deps) {
         result = { objective: existing, idempotent: true }; return undefined;
       }
       if (list.length >= CAP) throw new Error('objective store capacity exceeded');
-      const s = request.scope, directive = ['Discover and compare ' + s.recommendationLimit + ' or fewer worthwhile open-source options for: ' + s.topic,
-        'Date scope: ' + s.dateScope, 'Compatibility target: ' + s.compatibilityTarget, 'Allowed licenses: ' + (s.allowedLicenses.join(', ') || 'not constrained; report UNKNOWN when unverified'),
-        'For each finding provide name, source, URL/reference, purpose, Pine Star relevance, category, compatibility, license, cost, activity evidence, integration difficulty, risk, recommendation (IGNORE/WATCH/TEST/ADD), owner role, and evidence references.',
-        'Research and recommend only. Do not install or execute downloads, create accounts/subscriptions, spend, publish, message externally, expose credentials, or approve integrations. Unknown license/cost/facts must remain UNKNOWN.'].join('\n');
-      const objective = build({ title: 'Daily Open-Source Scout: ' + s.topic, description: directive,
+      const s = request.scope;
+      const objective = build({ title: 'Daily Open-Source Scout: ' + s.topic, description: scoutDirective(s),
         requiredCapabilities: ['discover_open_source', 'research', 'recommend'], maxModelTier: 'economy', targetRoleId: 'operations.open_source_scout' },
       { scoutRequest: { id: request.scoutId, signature, scope: s, safety: request.safety, sourceAdapterIds: s.sourceAdapterIds, at: Math.max(0, Number(now()) || 0) } });
       list.push(objective); result = { objective, idempotent: false }; return list;
@@ -154,6 +154,24 @@ function makeObjectiveStore(deps) {
       updated = Object.assign({}, current, { scoutReportId: reportId, workflowAudit: audit, updatedAt: Math.max(Number(current.updatedAt) || 0, Number(now()) || 0) });
       list[index] = updated; return list;
     }); return updated;
+  }
+  async function createRecurringOccurrence(definition, occurrenceKey) {
+    let result;
+    await durable.update('station', stored => {
+      const list = Array.isArray(stored) ? stored.slice() : [], existing = list.find(x => x && x.recurringOccurrence && x.recurringOccurrence.key === occurrenceKey);
+      if (existing) { result = { objective: existing, idempotent: true }; return undefined; }
+      const pending = list.find(x => x && x.recurringOccurrence && x.recurringOccurrence.scheduleId === definition.scheduleId && !FINAL.has(x.status));
+      if (pending) { result = { objective: pending, idempotent: true, reusedPending: true }; return undefined; }
+      if (list.length >= CAP) throw new Error('objective store capacity exceeded');
+      const t = definition.template, scout = t.workflow === 'open-source-scout' ? { id: occurrenceKey.slice(0, 120), signature: occurrenceKey,
+        scope: t.workflowConfig.scope, safety: t.workflowConfig.safety, sourceAdapterIds: t.workflowConfig.scope.sourceAdapterIds,
+        at: Math.max(0, Number(now()) || 0) } : null;
+      const objective = build(Object.assign({}, t, { targetRoleId: definition.roleId }),
+        { recurringOccurrence: { key: occurrenceKey, scheduleId: definition.scheduleId, cronJobId: definition.cronJobId || null,
+          cronRunId: definition.cronRunId || null, scheduledFor: definition.scheduledFor || null, createdAt: Math.max(0, Number(now()) || 0) }, scoutRequest: scout,
+          workflowAudit: [{ event: 'recurring_occurrence_created', scheduleId: definition.scheduleId, occurrenceKey, at: Math.max(0, Number(now()) || 0) }] });
+      list.push(objective); result = { objective, idempotent: false }; return list;
+    }); return result;
   }
   function list(limit) { const cap = Math.max(1, Math.min(250, Number(limit) || 50)); const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).filter(Boolean).slice(-cap).reverse(); }
   function get(id) { const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).find(row => row && row.id === String(id || '')) || null; }
@@ -217,6 +235,6 @@ function makeObjectiveStore(deps) {
     });
     return updated;
   }
-  return { create, decompose, reconcileParent, createAudit, createScout, recordScoutReport, list, get, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
+  return { create, decompose, reconcileParent, createAudit, createScout, recordScoutReport, createRecurringOccurrence, list, get, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
 }
 module.exports = { makeObjectiveStore, publicRole, CAP };

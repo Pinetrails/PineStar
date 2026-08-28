@@ -150,6 +150,7 @@
     const blockedRetryMs = (function () { const n = parseInt(d.blockedRetryMs, 10); return Number.isFinite(n) && n > 0 ? n : 60000; })();
     // Fault-injection seam: false models a process stop after the final receipt is durable, before delivery.
     const afterFinalizationCommitted = typeof d.afterFinalizationCommitted === 'function' ? d.afterFinalizationCommitted : null;
+    const runPineStarObjective = typeof d.runPineStarObjective === 'function' ? d.runPineStarObjective : null;
     if (typeof getJobs !== 'function' || typeof setJobs !== 'function') throw new Error('cron-driver: getJobs/setJobs are required');
     if (typeof runOnce !== 'function') throw new Error('cron-driver: runOnce is required');
     if (typeof newId !== 'function' || typeof newAbort !== 'function' || typeof now !== 'function') throw new Error('cron-driver: newId/newAbort/now are required');
@@ -329,9 +330,10 @@
       const model = (job.model && String(job.model).trim()) || (ident.model && String(ident.model).trim()) || defaultModel;
       const provider = providerForJob(job, ident) || 'openrouter';
       const key = getKey(provider, job);
+      const isPineStarRecurring = !!(runPineStarObjective && job.meta && job.meta.pineStarRecurring);
       let configIssue = null;
-      if (!job.noAgent && !model) configIssue = { code: 'missing-model', reason: 'no model is configured; choose a model for this routine or its assigned agent' };
-      else if (!job.noAgent && !hasCredential(provider, key, job)) configIssue = { code: 'missing-credential', reason: 'provider "' + provider + '" has no usable credential; connect it or choose a configured provider' };
+      if (!isPineStarRecurring && !job.noAgent && !model) configIssue = { code: 'missing-model', reason: 'no model is configured; choose a model for this routine or its assigned agent' };
+      else if (!isPineStarRecurring && !job.noAgent && !hasCredential(provider, key, job)) configIssue = { code: 'missing-credential', reason: 'provider "' + provider + '" has no usable credential; connect it or choose a configured provider' };
       if (!configIssue && preflightConfig) {
         try {
           const checked = preflightConfig(job, { provider: provider, model: model, key: key, identity: ident });
@@ -435,7 +437,12 @@
       // synchronous throw and an async rejection through the SAME terminal path so the lease always releases.
       let p;
       try {
-        p = runOnce({
+        if (runPineStarObjective && job.meta && job.meta.pineStarRecurring) {
+          p = Promise.resolve(runPineStarObjective({ job: job, runId: runId, scheduledFor: scheduledFor, signal: ac.signal })).then(function (out) {
+            const result = out || {}; state.buf = String(result.summary || result.reason || ''); state.reason = result.ok ? 'done' : String(result.reason || 'objective execution failed');
+            if (!result.ok) state.errMsg = String(result.reason || 'objective execution failed');
+          });
+        } else p = runOnce({
           key: key, model: model, system: system, messages: messages,
           agentId: job.agentId, isTask: true, emit: sink, signal: ac.signal,
           // streamId 'cron-'+runId makes this run's transcript durable under a per-RUN named stream (runId is a

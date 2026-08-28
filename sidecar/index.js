@@ -229,6 +229,7 @@ const { makeObjectiveStore, publicRole: publicPineStarRole } = require('./object
 const { makeObjectiveDispatch } = require('./objective-dispatch.js');
 const { classifyObjective } = require('./objective-intake.js');
 const { normalizeScoutRequest, scoutReport, SOURCE_ADAPTERS } = require('./open-source-scout.js');
+const { normalizeRecurringDefinition, recurringMeta, publicRecurringJob } = require('./recurring-objective.js');
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined, appendSharedReport, listSharedReports } = MemoryStore;
@@ -4703,6 +4704,31 @@ const cronDriver = makeCronDriver({
       return false;
     }
   },
+  runPineStarObjective: async ({ job, runId, scheduledFor, signal }) => {
+    const meta = job && job.meta && job.meta.pineStarRecurring;
+    if (!meta) return { ok: false, reason: 'recurring objective metadata is missing' };
+    if (signal && signal.aborted) return { ok: false, reason: 'cancelled' };
+    const occurrenceKey = String(meta.scheduleId) + ':' + String(scheduledFor == null ? runId : scheduledFor);
+    const created = await objectiveStore.createRecurringOccurrence({ scheduleId: meta.scheduleId, roleId: meta.roleId, template: meta.template,
+      cronJobId: job.id, cronRunId: runId, scheduledFor: scheduledFor }, occurrenceKey);
+    const objective = created.objective;
+    if (objective.status === 'approval_required') return { ok: true, summary: 'Recurring objective ' + objective.id + ' is waiting for approval.' };
+    if (objective.status === 'completed') return { ok: true, summary: 'Recurring objective ' + objective.id + ' was already completed.' };
+    if (objective.status === 'failed' || objective.status === 'cancelled') return { ok: false, reason: objective.settlementReason || objective.status };
+    let current = objective;
+    if (current.status === 'assigned') {
+      const admission = await objectiveDispatch.admit(current.id);
+      if (!admission.ok) return { ok: false, reason: admission.reason || admission.code };
+      current = admission.objective;
+    }
+    const activation = await objectiveDispatch.activate(current.id);
+    if (!activation.ok) return { ok: false, reason: activation.reason || activation.code };
+    const abortObjective = () => { const controller = runs.get(String(activation.runId || '')); if (controller) controller.abort(); };
+    if (signal) signal.addEventListener('abort', abortObjective, { once: true });
+    let settled; try { settled = await activation.settled; } finally { if (signal) signal.removeEventListener('abort', abortObjective); }
+    return { ok: settled.status === 'completed', reason: settled.settlementReason || settled.status,
+      summary: 'Recurring objective ' + settled.id + ' settled ' + settled.status + (settled.resultSummary ? ': ' + settled.resultSummary : '') };
+  },
   // the SAME run host the browser uses (hoisted decl below). AWAY WORKSHOP: a workshop shift routine stores the
   // WORKSHOP_MARK sentinel as its prompt; when the driver fires it, redirect to runWorkshopShift (which pops the
   // agent's backlog, builds under workshop/<runId>/, validates the manifest, emits workshop.built). An empty
@@ -8673,6 +8699,8 @@ const ROUTES = [
   { m: 'POST', exact: '/api/objectives/audit', h: handlePineStarObjectiveAudit },
   { m: 'POST', exact: '/api/objectives/scout', h: handlePineStarObjectiveScout },
   { m: 'POST', exact: '/api/objectives/scout/report', h: handlePineStarObjectiveScoutReport },
+  { m: ['GET', 'POST'], qsplit: '/api/objectives/recurring', h: handlePineStarRecurringObjectives },
+  { m: 'POST', exact: '/api/objectives/recurring/status', h: handlePineStarRecurringObjectiveStatus },
   { m: 'POST', exact: '/api/objectives/status', h: handlePineStarObjectiveStatus },
   { m: 'POST', exact: '/api/objectives/admit', h: handlePineStarObjectiveAdmission },
   { m: 'POST', exact: '/api/objectives/activate', h: handlePineStarObjectiveActivation },
@@ -18390,6 +18418,48 @@ async function handlePineStarObjectiveScoutReport(req, res) {
     const updated = await objectiveStore.recordScoutReport(objective.id, report.id);
     return respondJson(res, saved.added ? 201 : 200, { ok: true, added: saved.added, report: saved.report, objective: updated });
   } catch (e) { return respondJson(res, 400, { error: (e && e.message) || 'invalid Scout report' }); }
+}
+function recurringRuntimeBinding(definition, required) {
+  const role = pineStarRoleRegistry.get(definition.roleId), tier = { economy: 0, balanced: 1, deep: 2 };
+  if (!role || role.availability !== 'active' || tier[role.modelTier] > tier[definition.template.maxModelTier]
+    || !definition.template.requiredCapabilities.every(c => role.capabilities.includes(c))) throw new Error('recurring objective role is unavailable or incapable');
+  const candidates = [...agentRoster.entries()].filter(([, agent]) => Array.isArray(agent && agent.systemRoleIds) && agent.systemRoleIds.includes(role.id));
+  if (required && candidates.length !== 1) throw new Error(candidates.length ? 'recurring objective role binding is ambiguous' : 'recurring objective role has no approved runtime identity');
+  return candidates.length === 1 ? candidates[0][0] : null;
+}
+function recurringJobs() { return cronJobs.map(publicRecurringJob).filter(Boolean); }
+async function handlePineStarRecurringObjectives(req, res) {
+  if (req.method === 'GET') return respondJson(res, 200, { schema: 'pine-star.recurring-objectives.v1', enabled: !!cronArmed && !cronHalted, halted: !!cronHalted, schedules: recurringJobs() });
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const definition = normalizeRecurringDefinition(body), existing = cronJobs.find(job => job && job.meta && job.meta.pineStarRecurring && job.meta.pineStarRecurring.scheduleId === definition.scheduleId);
+    if (existing) {
+      if (existing.meta.pineStarRecurring.signature !== definition.signature) return respondJson(res, 409, { error: 'scheduleId already has another recurring objective definition' });
+      return respondJson(res, 200, { ok: true, idempotent: true, schedule: publicRecurringJob(existing) });
+    }
+    const agentId = recurringRuntimeBinding(definition, definition.enabled) || 'agent';
+    const made = await createCronJobFromSpec({ name: 'Pine Star recurring ' + definition.scheduleId, prompt: definition.template.description || definition.template.title,
+      schedule: definition.recurrence, tz: definition.timezone, agentId, deliver: 'local', enabled: definition.enabled, unattendedGrants: [],
+      meta: recurringMeta(definition), runsLine: false, attachToSession: false });
+    if (!made.body || !made.body.ok || !made.body.job || !(made.body.job.meta && made.body.job.meta.pineStarRecurring)) return respondJson(res, made.status || 400, { error: (made.body && (made.body.error || made.body.message)) || 'could not create recurring objective' });
+    return respondJson(res, 201, { ok: true, idempotent: false, schedule: publicRecurringJob(made.body.job) });
+  } catch (e) { return respondJson(res, 400, { error: (e && e.message) || 'invalid recurring objective' }); }
+}
+async function handlePineStarRecurringObjectiveStatus(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  const job = cronJobs.find(row => row && row.meta && row.meta.pineStarRecurring && row.meta.pineStarRecurring.scheduleId === String(body.scheduleId || ''));
+  if (!job) return respondJson(res, 404, { error: 'recurring objective schedule not found' });
+  const enabled = body.enabled === true;
+  try {
+    const meta = job.meta.pineStarRecurring, definition = { roleId: meta.roleId, template: meta.template };
+    const agentId = enabled ? recurringRuntimeBinding(definition, true) : job.agentId;
+    await withCronWrite(jobs => {
+      let next = jobs;
+      if (enabled && agentId !== job.agentId) next = cronStore.updateJob(next, job.id, { agentId }, { now: Date.now(), defaultTz: CRON_HOST_TZ });
+      return enabled ? cronStore.resumeJob(next, job.id, { now: Date.now(), defaultTz: CRON_HOST_TZ }) : cronStore.pauseJob(next, job.id);
+    });
+    return respondJson(res, 200, { ok: true, schedule: publicRecurringJob(cronStore.getJob(cronJobs, job.id)) });
+  } catch (e) { return respondJson(res, 400, { error: (e && e.message) || 'could not update recurring objective' }); }
 }
 async function handlePineStarObjectiveStatus(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }

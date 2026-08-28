@@ -17,6 +17,13 @@ function normalizeScoutRequest(input) {
   if (scope.sourceAdapterIds.some(id => !known.has(id))) throw new Error('unknown Scout source adapter');
   return { scoutId, scope, safety: { spendingAuthorityUsd: 0, installSoftware: false, executeDownloads: false, createAccounts: false, startSubscriptions: false, publishExternally: false, approveIntegrations: false } };
 }
+function scoutDirective(scope) {
+  const s = scope || {};
+  return ['Discover and compare ' + s.recommendationLimit + ' or fewer worthwhile open-source options for: ' + s.topic,
+    'Date scope: ' + s.dateScope, 'Compatibility target: ' + s.compatibilityTarget, 'Allowed licenses: ' + ((s.allowedLicenses || []).join(', ') || 'not constrained; report UNKNOWN when unverified'),
+    'For each finding provide name, source, URL/reference, purpose, Pine Star relevance, category, compatibility, license, cost, activity evidence, integration difficulty, risk, recommendation (IGNORE/WATCH/TEST/ADD), owner role, and evidence references.',
+    'Research and recommend only. Do not install or execute downloads, create accounts/subscriptions, spend, publish, message externally, expose credentials, or approve integrations. Unknown license/cost/facts must remain UNKNOWN.'].join('\n');
+}
 function normalizeDiscovery(input) {
   const row = input && typeof input === 'object' ? input : {}, name = text(row.name, 160), source = text(row.source, 100), reference = text(row.url || row.reference, 500);
   if (!name || !source || !reference) throw new Error('Scout discovery requires name, source, and URL/reference');
@@ -48,4 +55,4 @@ function scoutReport(objective, findings, now) {
     nextActions: rows.filter(x => x.recommendation === 'TEST' || x.recommendation === 'ADD').map(x => x.name + ': route to ' + x.recommendedOwnerRoleId + ' for separate review/approval'),
     sourceRefs: [...new Set(rows.flatMap(x => [x.reference].concat(x.evidenceRefs)))].slice(0, 12), discoveries: rows };
 }
-module.exports = { SOURCE_ADAPTERS, RECOMMENDATIONS, normalizeScoutRequest, normalizeDiscovery, normalizeDiscoveries, scoutReport };
+module.exports = { SOURCE_ADAPTERS, RECOMMENDATIONS, normalizeScoutRequest, scoutDirective, normalizeDiscovery, normalizeDiscoveries, scoutReport };

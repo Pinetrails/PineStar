@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-015 — Recurring objective scheduler bridge
+
+- Stored recurring Pine Star definitions as existing durable cron jobs with bounded role-owned objective templates and zero unattended grants.
+- Delegated cron fires into idempotent durable objective occurrences and the normal routing, admission, activation, cancellation, E-stop, and settlement lifecycle without a second `runOnce` call.
+- Added authenticated recurring create/list/enable/disable APIs with next-run, last-outcome, and bounded failure telemetry; structured Daily Scout schedules reuse the existing Scout report contract.
+
 ### PS-2026-014 — Daily Open-Source Scout foundation
 
 - Added idempotent bounded Scout objectives directly assigned to the economy-tier Open-Source Scout role through the existing runtime lifecycle.

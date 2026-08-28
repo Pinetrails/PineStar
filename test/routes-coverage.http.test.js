@@ -114,6 +114,9 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/objectives/audit', {})).status, 403, 'objective audit requests remain behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/scout', {})).status, 403, 'Scout requests remain behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/scout/report', {})).status, 403, 'Scout reports remain behind the API token gate');
+    A.eq((await raw('GET', '/api/objectives/recurring')).status, 403, 'recurring objective inspection remains behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives/recurring', {})).status, 403, 'recurring objective creation remains behind the API token gate');
+    A.eq((await raw('POST', '/api/objectives/recurring/status', {})).status, 403, 'recurring objective status remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/admit', {})).status, 403, 'objective admission remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/activate', {})).status, 403, 'objective activation remains behind the API token gate');
     A.eq((await raw('POST', '/api/objectives/cancel', {})).status, 403, 'objective cancellation remains behind the API token gate');
@@ -159,6 +162,25 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(scoutFinal.body.objective.workflowAudit[0].event, 'scout_report_created', 'HTTP Scout report records objective audit evidence');
     const scoutReports = await j('GET', '/api/reports?limit=10');
     A.ok(scoutReports.body.reports.some(x => x.id === 'scout-report:http-scout-1'), 'Scout report is readable through the existing shared report API');
+    const recurringSpec = { scheduleId: 'http-daily-scout', roleId: 'operations.open_source_scout', recurrence: '0 9 * * *', timezone: 'America/New_York', enabled: false,
+      template: { workflow: 'open-source-scout', scout: { topic: 'Windows developer utilities', recommendationLimit: 3, compatibilityTarget: 'Windows 11' } } };
+    const recurringCreate = await j('POST', '/api/objectives/recurring', recurringSpec);
+    A.eq(recurringCreate.status, 201, 'POST /api/objectives/recurring -> 201');
+    A.eq(recurringCreate.body.schedule.enabled, false, 'recurring objective can be created disabled without execution');
+    A.eq(recurringCreate.body.schedule.roleId, 'operations.open_source_scout', 'recurring Scout preserves owning role');
+    A.eq((await j('POST', '/api/objectives/recurring', recurringSpec)).status, 200, 'same recurring definition is idempotent');
+    const recurringConflict = await j('POST', '/api/objectives/recurring', Object.assign({}, recurringSpec, { recurrence: '0 10 * * *' }));
+    A.eq(recurringConflict.status, 409, 'same schedule identity cannot silently change definition');
+    A.eq((await j('POST', '/api/objectives/recurring/status', { scheduleId: 'http-daily-scout', enabled: true })).status, 400, 'enable fails closed without an approved runtime-role binding');
+    const recurringRoster = await j('POST', '/api/roster', { agents: [{ agentId: 'scout_runtime', name: 'Scout Runtime', role: 'research', system: 'Research only.', model: 'fixture/model', provider: 'openrouter', systemRoleIds: ['operations.open_source_scout'] }] });
+    A.eq(recurringRoster.status, 200, 'test roster binds one approved runtime identity');
+    const recurringEnabled = await j('POST', '/api/objectives/recurring/status', { scheduleId: 'http-daily-scout', enabled: true });
+    A.eq(recurringEnabled.status, 200, 'recurring objective enables through existing cron state');
+    A.eq(recurringEnabled.body.schedule.enabled, true, 'enabled recurring objective exposes next-run state');
+    A.ok(recurringEnabled.body.schedule.nextRunAt, 'enabled recurring objective has scheduler-owned nextRunAt');
+    const recurringList = await j('GET', '/api/objectives/recurring');
+    A.ok(recurringList.body.schedules.some(x => x.scheduleId === 'http-daily-scout'), 'recurring definition is inspectable from existing cron records');
+    A.eq((await j('POST', '/api/objectives/recurring/status', { scheduleId: 'http-daily-scout', enabled: false })).body.schedule.enabled, false, 'recurring objective can be disabled through cron pause');
     const coordinator = await j('POST', '/api/objectives/intake', { title: 'Coordinate research and implementation' });
     A.eq(coordinator.status, 201, 'POST /api/objectives/intake -> 201');
     A.eq(coordinator.body.objective.assignedRoleId, 'operations.coordinator', 'deterministic intake routes explicit coordination to the system role');

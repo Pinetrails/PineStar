@@ -25,6 +25,9 @@ A.eq(auth.requiresApiToken(req('POST', '/api/objectives/decompose')), true, 'POS
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/audit')), true, 'POST objective audit request requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/scout')), true, 'POST Scout request requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/scout/report')), true, 'POST Scout report requires token');
+A.eq(auth.requiresApiToken(req('GET', '/api/objectives/recurring')), true, 'GET recurring objectives requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/objectives/recurring')), true, 'POST recurring objective creation requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/objectives/recurring/status')), true, 'POST recurring objective status requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/status')), true, 'POST objective status requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/admit')), true, 'POST objective admission requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/objectives/activate')), true, 'POST objective activation requires token');
