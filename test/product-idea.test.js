@@ -1,0 +1,37 @@
+'use strict';
+const A = require('./_assert.js');
+const { SEEDS } = require('../shared/pine-star-roles.js');
+const { makeRoleRegistry } = require('../sidecar/role-registry.js');
+const { makeObjectiveStore } = require('../sidecar/objective-store.js');
+const { makeProductProjectStore } = require('../sidecar/product-project-store.js');
+const { appendSharedReport } = require('../sidecar/memory-store.js');
+const { normalizeIdea, intakeProductIdea } = require('../sidecar/product-idea.js');
+function memoryDurable() { let value; return { get: () => value, readKey: () => ({ status: value ? 'ok' : 'absent', value }), update: async (key, fn) => { const next = await fn(value); if (next !== undefined) value = next; return next; } }; }
+let n = 0, stamp = 100; const registry = makeRoleRegistry(SEEDS), objectives = makeObjectiveStore({ durable: memoryDurable(), registry, now: () => stamp++, newId: () => 'idea-' + (++n) });
+const reports = memoryDurable(), findReport = id => (reports.get('reports:station') || []).find(x => x.id === id);
+const projects = makeProductProjectStore({ durable: memoryDurable(), now: () => stamp++, newId: () => 'project-' + (++n), objectiveExists: id => objectives.get(id), reportExists: findReport });
+const intake = input => intakeProductIdea({ projects, objectives, appendReport: report => appendSharedReport(reports, report), now: () => stamp++ }, input);
+(async () => {
+  A.eq(registry.get('business.idea_lab').permissions.publish, false, 'Idea Lab is a real zero-publication system role');
+  const normalized = normalizeIdea({ ideaId: 'Trail Log', title: 'Trail Log Printable', assumptions: ['Hikers need a compact log'], targetMarketplaces: ['Marketplace A'] });
+  A.eq(normalized.ideaId, 'trail-log', 'idea identity is deterministic');
+  const first = await intake(normalized);
+  A.eq(first.project.status, 'research', 'intake advances the business record to research');
+  A.eq(first.children.length, 2, 'multi-capability idea creates a bounded two-child workflow');
+  A.eq(first.children[0].assignedRoleId, 'research.general_researcher', 'market validation routes to the lowest capable researcher');
+  A.eq(first.children[1].assignedRoleId, 'business.idea_lab', 'concept brief routes to Idea Lab rather than Coordinator');
+  A.eq(first.children[1].dependsOnObjectiveIds, [first.children[0].id], 'concept work waits for market research');
+  A.eq(first.parent.assignedRoleId, 'operations.coordinator', 'Coordinator owns orchestration only');
+  A.eq(first.project.linkedObjectiveIds.length, 3, 'project links parent and specialist objectives');
+  A.eq(first.project.linkedReportIds, ['product-idea:trail-log'], 'project links its deterministic intake report');
+  A.eq(first.report.sourceRefs.length, 4, 'intake report references the project and all workflow objectives');
+  A.ok(first.children.every(x => !x.protectedAction), 'research and drafting children remain safe internal work');
+  A.ok(first.children.every(x => !/publish externally/i.test(x.description) || /do not publish/i.test(x.description)), 'directives explicitly preserve publication safety');
+  const second = await intake(normalized);
+  A.eq(second.idempotent, true, 'retry reuses the same project and decomposition');
+  A.eq(projects.get('trail-log').linkedObjectiveIds.length, 3, 'retry creates no duplicate linked work');
+  A.eq(objectives.list(20).length, 3, 'retry creates no duplicate objectives');
+  A.eq((reports.get('reports:station') || []).length, 1, 'retry creates no duplicate shared report');
+  let malformed = false; try { normalizeIdea({ title: 'No stable identity' }); } catch (e) { malformed = /ideaId/.test(e.message); } A.ok(malformed, 'malformed idea intake is rejected');
+  A.report('product-idea.test');
+})().catch(e => { console.error(e); process.exitCode = 1; });

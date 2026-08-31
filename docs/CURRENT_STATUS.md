@@ -1,10 +1,10 @@
 # Current status
 
-**As of:** 2026-08-27
+**As of:** 2026-08-30
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-018` — Digital-Product Project Records — **COMPLETE**
+**Current change:** `PS-2026-019` — Product Idea / Idea Lab Intake — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -30,6 +30,7 @@
 | Morning Brief | `PS-2026-016` complete; authenticated deterministic aggregation creates bounded shared reports from objective lifecycle, Scout, Auditor, approval, and measured run-cost evidence |
 | Away objectives | `PS-2026-017` complete; explicitly queued safe objectives reuse Night Shift presence/posture/leash/halt gates and normal objective admission, activation, cancellation, settlement, recovery, and audit evidence |
 | Digital-product projects | `PS-2026-018` complete; durable zero-spend business records link existing objectives/reports, enforce workflow and QA gates, expose progress, and stop publication at protected approval |
+| Product idea intake | `PS-2026-019` complete; authenticated idempotent intake creates a product project, Coordinator-owned objective graph, specialist research and Idea Lab work, and a linked shared report without execution or external authority |
 
 ## Known baseline issues
 
@@ -44,4 +45,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Build Product Idea / Idea Lab intake as a useful workflow that creates and links normal routed objectives to digital-product projects.
+Build the product research pipeline that converts completed market-validation evidence and Idea Lab recommendations into bounded project decisions and deliverable preparation.

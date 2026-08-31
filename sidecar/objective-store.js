@@ -175,6 +175,7 @@ function makeObjectiveStore(deps) {
   }
   function list(limit) { const cap = Math.max(1, Math.min(250, Number(limit) || 50)); const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).filter(Boolean).slice(-cap).reverse(); }
   function get(id) { const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).find(row => row && row.id === String(id || '')) || null; }
+  function find(predicate) { const rows = durable.get('station'); return typeof predicate === 'function' ? (Array.isArray(rows) ? rows : []).find(predicate) || null : null; }
   function listAway() { const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).filter(x => x && x.awayWork).slice(-250).reverse(); }
   function hasAwayReady(atMs, leaseMs) { const stale = Math.max(0, Number(atMs) || 0) - Math.max(60000, Number(leaseMs) || 3600000); return listAway().some(x => ['assigned', 'admitted'].includes(x.status) && (x.awayWork.state === 'queued' || (x.awayWork.state === 'claimed' && Number(x.awayWork.claimedAt) <= stale))); }
   async function queueAway(id) {
@@ -287,6 +288,6 @@ function makeObjectiveStore(deps) {
     });
     return updated;
   }
-  return { create, decompose, reconcileParent, createAudit, createScout, recordScoutReport, createRecurringOccurrence, list, get, listAway, hasAwayReady, queueAway, claimAway, finishAway, cancelAway, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
+  return { create, decompose, reconcileParent, createAudit, createScout, recordScoutReport, createRecurringOccurrence, list, get, find, listAway, hasAwayReady, queueAway, claimAway, finishAway, cancelAway, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
 }
 module.exports = { makeObjectiveStore, publicRole, CAP };

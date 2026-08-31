@@ -21,4 +21,6 @@ Planned concepts include digital products, commerce, Pine Trail Printables/socia
 
 The deterministic workflow is `idea → research → planned → production → qa → listing_ready → approval_required → published`, with explicit safe return paths and archival. Listing readiness requires passed QA. The authenticated safe-update API cannot transition into `published`; a future legitimate approval seam must call the internal approved transition explicitly. Unknown estimated/actual costs and revenue remain `null`, while spending authority is always `$0`.
 
+`PS-2026-019` adds Product Idea / Idea Lab intake without a second task engine. A stable idea ID creates or reuses the product project, a Coordinator-owned parent objective, a Researcher market-validation objective, and a dependent Idea Lab concept-brief objective. A deterministic shared intake report links the project and objective graph for later Morning Brief and research use. Intake only records and routes work; normal admission, activation, cancellation, E-stop, settlement, and audit controls still own execution.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

@@ -232,6 +232,7 @@ const { classifyObjective } = require('./objective-intake.js');
 const { normalizeScoutRequest, scoutReport, SOURCE_ADAPTERS } = require('./open-source-scout.js');
 const { normalizeRecurringDefinition, recurringMeta, publicRecurringJob } = require('./recurring-objective.js');
 const { makeProductProjectStore } = require('./product-project-store.js');
+const { intakeProductIdea } = require('./product-idea.js');
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined, appendSharedReport, listSharedReports } = MemoryStore;
@@ -8737,6 +8738,7 @@ const ROUTES = [
   { m: ['GET', 'POST'], qsplit: '/api/objectives', h: handlePineStarObjectives },
   { m: 'POST', exact: '/api/product-projects/update', h: handleProductProjectUpdate },
   { m: 'POST', exact: '/api/product-projects/link', h: handleProductProjectLink },
+  { m: 'POST', exact: '/api/product-projects/ideas', h: handleProductIdeaIntake },
   { m: ['GET', 'POST'], qsplit: '/api/product-projects', h: handleProductProjects },
   { m: 'POST', exact: '/api/objectives/intake', h: handlePineStarObjectiveIntake },
   { m: 'POST', exact: '/api/objectives/decompose', h: handlePineStarObjectiveDecompose },
@@ -18440,6 +18442,17 @@ async function handleProductProjectLink(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
   try { const project = await productProjectStore.link(body.id, body); return respondJson(res, 200, { ok: true, project, progress: productProjectStore.progress(project) }); }
   catch (e) { const message = (e && e.message) || 'invalid product project links'; return respondJson(res, message === 'product project not found' ? 404 : 400, { error: message }); }
+}
+async function handleProductIdeaIntake(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const result = await intakeProductIdea({ projects: productProjectStore, objectives: objectiveStore,
+      appendReport: report => appendSharedReport(notebookStore, report), now: Date.now }, body);
+    return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
+  } catch (e) {
+    const message = (e && e.message) || 'invalid product idea';
+    return respondJson(res, /already belongs|already decomposed/.test(message) ? 409 : 400, { error: message });
+  }
 }
 function handlePineStarRoles(req, res) {
   return respondJson(res, 200, { schema: 'pine-star.roles.v1', roles: pineStarRoleRegistry.list().map(publicPineStarRole) });

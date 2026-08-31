@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-019 — Product Idea / Idea Lab intake
+
+- Added authenticated, deterministic, idempotent product-idea intake over existing product projects, objectives, routing, and shared reports.
+- Assigned orchestration to Coordinator, market validation to Researcher, and the dependent concept brief to the economy-tier Idea Lab specialist.
+- Preserved zero-spend, no-publish, no-purchase, no-account, and approval boundaries; intake creates records and queued work but does not execute it.
+
 ### PS-2026-018 — Digital-product project records
 
 - Added durable digital-product business records with bounded metadata, truthful unknown financials, zero spending authority, and deterministic lifecycle/QA gates.

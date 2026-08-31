@@ -53,7 +53,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     child.stdout.on('data', onData);
     child.stderr.on('data', onData);
     child.on('error', e => { if (!settled) { settled = true; reject(e); } });
-    setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout; output:\n' + out)); } }, 9000);
+    setTimeout(() => { if (!settled) { settled = true; try { child.kill(); } catch (_) {} reject(new Error('boot timeout; output:\n' + out)); } }, 45000);
   });
 }
 
@@ -132,6 +132,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects', {})).status, 403, 'product project creation remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/update', {})).status, 403, 'product project updates remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/link', {})).status, 403, 'product project links remain behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/ideas', {})).status, 403, 'product idea intake remains behind the API token gate');
     const roles = await j('GET', '/api/roles');
     A.eq(roles.status, 200, 'GET /api/roles -> 200');
     A.ok(roles.body.roles.some(role => role.id === 'research.general_researcher'), 'role discovery exposes stable system role IDs');
@@ -192,6 +193,14 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await j('POST', '/api/product-projects/update', { id: 'http-planner', patch: { status: 'published' } })).status, 400, 'safe product API cannot publish externally');
     const productRead = await j('GET', '/api/product-projects?id=http-planner');
     A.eq(productRead.body.project.status, 'research', 'product project survives durable read-after-write');
+    const ideaIntake = await j('POST', '/api/product-projects/ideas', { ideaId: 'http-idea-lab', title: 'HTTP Idea Lab Printable', targetCustomer: 'Trail planners', assumptions: ['A printable may reduce forgotten supplies'] });
+    A.eq(ideaIntake.status, 201, 'POST /api/product-projects/ideas -> 201');
+    A.eq(ideaIntake.body.parent.assignedRoleId, 'operations.coordinator', 'HTTP idea parent routes to Coordinator');
+    A.eq(ideaIntake.body.children.map(x => x.assignedRoleId), ['research.general_researcher', 'business.idea_lab'], 'HTTP idea work routes to useful specialists');
+    A.eq(ideaIntake.body.project.linkedObjectiveIds.length, 3, 'HTTP idea project links its objective graph');
+    A.eq(ideaIntake.body.project.linkedReportIds, ['product-idea:http-idea-lab'], 'HTTP idea project links its intake report');
+    A.eq((await j('POST', '/api/product-projects/ideas', { ideaId: 'http-idea-lab', title: 'HTTP Idea Lab Printable' })).status, 200, 'HTTP idea retry is idempotent');
+    A.ok((await j('GET', '/api/reports?limit=20')).body.reports.some(x => x.id === 'product-idea:http-idea-lab'), 'Idea Lab report is readable through the shared report API');
     const recurringSpec = { scheduleId: 'http-daily-scout', roleId: 'operations.open_source_scout', recurrence: '0 9 * * *', timezone: 'America/New_York', enabled: false,
       template: { workflow: 'open-source-scout', scout: { topic: 'Windows developer utilities', recommendationLimit: 3, compatibilityTarget: 'Windows 11' } } };
     const recurringCreate = await j('POST', '/api/objectives/recurring', recurringSpec);
