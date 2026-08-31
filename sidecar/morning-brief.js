@@ -13,6 +13,7 @@ function composeMorningBrief(input) {
   const objectives = Array.isArray(o.objectives) ? o.objectives.filter(Boolean) : [];
   const reports = Array.isArray(o.reports) ? o.reports.filter(Boolean) : [];
   const business = o.businessSummary && typeof o.businessSummary === 'object' ? o.businessSummary : null;
+  const products = o.productSummary && typeof o.productSummary === 'object' ? o.productSummary : null;
   const runs = Array.isArray(o.runs) ? o.runs.filter(r => r && Number(r.ts) > start && Number(r.ts) <= end) : [];
   const completedRows = objectives.filter(x => x.status === 'completed' && inPeriod(x, start, end));
   const failures = objectives.filter(x => ['failed', 'cancelled', 'blocked'].includes(x.status) && inPeriod(x, start, end));
@@ -30,21 +31,23 @@ function composeMorningBrief(input) {
     ...failures.map(x => label(x) + ' — ' + text(x.settlementReason || x.status, 120)),
     ...approvals.map(x => label(x) + ' — waiting for approval'),
     ...auditorRows.filter(x => x.status !== 'completed' || /exception|issue|fail/i.test(String(x.resultSummary || x.settlementReason || '')))
-      .map(x => 'Auditor: ' + label(x) + ' — ' + text(x.resultSummary || x.settlementReason || x.status, 120))
+      .map(x => 'Auditor: ' + label(x) + ' — ' + text(x.resultSummary || x.settlementReason || x.status, 120)),
+    ...(products && Array.isArray(products.exceptions) ? products.exceptions : [])
   ], 8);
   const decisions = unique((measuredRuns.length ? ['Measured runtime cost for this period: $' + totalUsd.toFixed(4) + ' across ' + measuredRuns.length + ' recorded run' + (measuredRuns.length === 1 ? '' : 's') + '.'] : [])
-    .concat(business && business.entryCount ? ['Recorded business activity: $' + Number(business.revenueUsd || 0).toFixed(2) + ' revenue, $' + Number(business.expenseUsd || 0).toFixed(2) + ' expenses, $' + Number(business.refundUsd || 0).toFixed(2) + ' refunds; net $' + Number(business.netUsd || 0).toFixed(2) + '.'] : [], productReports.concat(growthReports).flatMap(x => Array.isArray(x.decisions) ? x.decisions : [])), 10);
+    .concat(business && business.entryCount ? ['Recorded business activity: $' + Number(business.revenueUsd || 0).toFixed(2) + ' revenue, $' + Number(business.expenseUsd || 0).toFixed(2) + ' expenses, $' + Number(business.refundUsd || 0).toFixed(2) + ' refunds; net $' + Number(business.netUsd || 0).toFixed(2) + '.'] : [], products && Array.isArray(products.decisions) ? products.decisions : [], productReports.concat(growthReports).flatMap(x => Array.isArray(x.decisions) ? x.decisions : [])), 10);
   const nextActions = unique([
     ...approvals.map(x => 'Review approval: ' + label(x)),
     ...failures.map(x => 'Review ' + x.status + ' objective: ' + label(x)),
     ...active.map(x => 'Continue monitoring: ' + label(x)),
     ...discoveries.filter(x => ['TEST', 'ADD'].includes(x.recommendation)).map(x => x.recommendation + ': ' + text(x.name, 140) + ' → ' + text(x.recommendedOwnerRoleId || 'appropriate specialist', 100)),
-    ...productReports.concat(growthReports).flatMap(x => Array.isArray(x.nextActions) ? x.nextActions : [])
+    ...productReports.concat(growthReports).flatMap(x => Array.isArray(x.nextActions) ? x.nextActions : []),
+    ...(products && Array.isArray(products.nextActions) ? products.nextActions : [])
   ], 8);
   const headline = completedRows.length + ' completed · ' + active.length + ' active · ' + exceptions.length + ' attention item' + (exceptions.length === 1 ? '' : 's');
   return { schema: 'pine-star.shared-report.v1', id: text(o.id, 120) || ('morning-brief:' + new Date(end).toISOString().slice(0, 10)), type: 'morning-brief',
     createdAt: end, periodStart: start, periodEnd: end, headline, completed, exceptions, decisions, nextActions, discoveries,
-    sourceRefs: unique([...completedRows, ...failures, ...active, ...approvals, ...auditorRows].map(x => 'objective:' + x.id).concat(scoutReports.concat(productReports, growthReports).map(x => 'report:' + x.id), measuredRuns.map(x => 'run:' + x.runId), business && Array.isArray(business.sourceRefs) ? business.sourceRefs : []), 20) };
+    sourceRefs: unique([...completedRows, ...failures, ...active, ...approvals, ...auditorRows].map(x => 'objective:' + x.id).concat(scoutReports.concat(productReports, growthReports).map(x => 'report:' + x.id), measuredRuns.map(x => 'run:' + x.runId), business && Array.isArray(business.sourceRefs) ? business.sourceRefs : [], products && Array.isArray(products.sourceRefs) ? products.sourceRefs : []), 30) };
 }
 
 module.exports = { composeMorningBrief };

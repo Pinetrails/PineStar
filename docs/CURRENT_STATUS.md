@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-026` — Pine Trail Printables Workflow Preset — **COMPLETE**
+**Current change:** `PS-2026-027` — Product Portfolio Morning Brief — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -38,6 +38,7 @@
 | Commerce and business ledger | `PS-2026-024` complete; authenticated durable commerce references and evidence-required revenue/expense/refund entries describe external facts without publishing, paying, storing credentials, or granting spending authority; recorded totals feed Morning Brief with provenance |
 | Growth experiments | `PS-2026-025` complete; listing-ready products can create idempotent zero-spend Growth Analyst objectives and evidence-gated result reports whose outcomes feed Business Morning Brief without advertising, outreach, publication, accounts, or scaling authority |
 | Pine Trail Printables intake | `PS-2026-026` complete; a bounded brand workflow preset standardizes printable families, original-asset and print-layout requirements, stable IDs, and then delegates to the existing Product Idea project/objective/report pipeline with no external authority |
+| Product portfolio brief | `PS-2026-027` complete; deterministic current-state projection adds stage counts, listing/approval visibility, failed QA/blockers, next actions, and commerce provenance to Business Morning Brief without a new store, model call, or action path |
 
 ## Known baseline issues
 
@@ -52,4 +53,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Add a bounded product pipeline/portfolio summary for Business Morning Brief so research, production, QA, listing readiness, approvals, commerce observations, and growth outcomes remain visible without another task system.
+Add product portfolio/readiness inspection to the existing Reports UI without exposing publication, approval-grant, payment, or execution controls.

@@ -288,6 +288,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const growthBrief = await j('POST', '/api/reports/morning-brief', { id: 'morning:http-growth', periodStart: growthAt - 1, periodEnd: growthAt + 1000 });
     A.ok(growthBrief.body.report.decisions.some(x => /^SUPPORTED:/.test(x)), 'Business Morning Brief includes the evidenced growth outcome');
     A.ok(growthBrief.body.report.sourceRefs.includes('report:growth-experiment-result:http-idea-lab:title-clarity'), 'Business Morning Brief links the growth result report');
+    A.ok(growthBrief.body.report.decisions.some(x => /^Product pipeline:/.test(x) && /listing-ready/.test(x)), 'Business Morning Brief includes current product pipeline counts');
+    A.ok(growthBrief.body.report.sourceRefs.includes('product-project:http-idea-lab'), 'Business Morning Brief retains product-project provenance');
     const recurringSpec = { scheduleId: 'http-daily-scout', roleId: 'operations.open_source_scout', recurrence: '0 9 * * *', timezone: 'America/New_York', enabled: false,
       template: { workflow: 'open-source-scout', scout: { topic: 'Windows developer utilities', recommendationLimit: 3, compatibilityTarget: 'Windows 11' } } };
     const recurringCreate = await j('POST', '/api/objectives/recurring', recurringSpec);

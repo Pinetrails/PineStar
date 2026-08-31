@@ -239,6 +239,7 @@ const { finalizeQa } = require('./product-qa.js');
 const { makeBusinessRecordStore } = require('./business-record-store.js');
 const { planGrowthExperiment, finalizeGrowthExperiment } = require('./growth-experiment.js');
 const { intakePineTrailPrintable } = require('./pine-trail-printables.js');
+const { summarizeProductPortfolio } = require('./product-portfolio.js');
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined, appendSharedReport, listSharedReports } = MemoryStore;
@@ -18437,7 +18438,7 @@ async function handleMorningBrief(req, res) {
     const id = String(body.id || ('morning-brief:' + new Date(periodEnd).toISOString().slice(0, 10))).trim().slice(0, 120);
     const existing = listSharedReports(notebookStore, 100).find(x => x && x.id === id);
     if (existing) return respondJson(res, 200, { ok: true, added: false, report: existing });
-    const report = composeMorningBrief({ id, periodStart, periodEnd, objectives: objectiveStore.list(1000), reports: listSharedReports(notebookStore, 100), runs: runStore.list(null, { limit: 1000, since: periodStart, through: periodEnd }), businessSummary: businessRecordStore.summary(periodStart, periodEnd) });
+    const report = composeMorningBrief({ id, periodStart, periodEnd, objectives: objectiveStore.list(1000), reports: listSharedReports(notebookStore, 100), runs: runStore.list(null, { limit: 1000, since: periodStart, through: periodEnd }), businessSummary: businessRecordStore.summary(periodStart, periodEnd), productSummary: summarizeProductPortfolio({ projects: productProjectStore.list(250), commerce: businessRecordStore.listCommerce(250) }) });
     const saved = await appendSharedReport(notebookStore, report);
     return respondJson(res, 201, { ok: true, added: saved.added, report: saved.report });
   } catch (e) { return respondJson(res, 400, { error: (e && e.message) || 'invalid Morning Brief request' }); }

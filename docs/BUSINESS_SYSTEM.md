@@ -35,4 +35,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-026` adds a Pine Trail Printables intake preset, not a parallel product system. Supported families are planner, checklist, tracker, activity sheet, and bundle. The preset namespaces stable product IDs and adds original Pine Trail-owned asset, print-safe margin/contrast, editable-source plus PDF, and US Letter/A4 requirements before delegating to the existing Product Idea intake. All normal project, objective, specialist-routing, report, authentication, cancellation, E-stop, and audit controls remain authoritative.
 
+`PS-2026-027` adds a pure product-portfolio snapshot to Business Morning Brief. It derives total and per-stage counts, listing readiness, protected approvals, failed QA, blockers, and evidenced observed-publication counts from existing product and commerce records. It contributes bounded attention items, next actions, and record references to the shared report. It creates no store, task, model call, publication, approval grant, payment, or external mutation.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

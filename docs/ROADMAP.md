@@ -60,6 +60,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Durable commerce references and immutable evidence-backed revenue, expense, and refund entries now provide authenticated project-linked business truth and Morning Brief totals without external commerce or payment authority (`PS-2026-024`).
 - Listing-ready products can now route bounded hypotheses to a zero-authority Growth Analyst and record immutable evidence-backed outcomes in shared reports and Business Morning Brief (`PS-2026-025`).
 - Pine Trail Printables now has a bounded family/asset/layout intake preset that delegates to the existing Product Idea workflow rather than creating a parallel production system (`PS-2026-026`).
+- Business Morning Brief now includes a deterministic current portfolio snapshot with stage, QA, listing, approval, blocker, commerce-observation, action, and provenance signals (`PS-2026-027`).
 
 ## Phase 7 — Evolution
 

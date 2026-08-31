@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-027 — Product portfolio Morning Brief
+
+- Added a pure current-state portfolio projection over existing product projects and commerce references, with deterministic stage/QA/listing/approval/observed-publication counts.
+- Added bounded failed-QA/blocker attention, protected-approval and listing-review next actions, and source provenance.
+- Integrated the projection into the existing deterministic Business Morning Brief with no new store, task engine, model call, or external action.
+
 ### PS-2026-026 — Pine Trail Printables workflow preset
 
 - Added a stable Pine Trail Printables intake preset for planner, checklist, tracker, activity-sheet, and bundle families.
