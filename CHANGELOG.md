@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-025 — Bounded growth experiments
+
+- Added a zero-publish, zero-outreach, zero-account, zero-spend Growth Analyst system role at economy tier.
+- Added authenticated idempotent growth-experiment planning for listing-ready products and evidence-gated results that require completed linked specialist objectives.
+- Added strict stable-ID conflict detection and projected evidenced outcomes into Business Morning Brief without executing, advertising, scaling, or mutating external systems.
+
 ### PS-2026-024 — Truthful commerce and business records
 
 - Added authenticated durable commerce references that can record planned, draft, approval-waiting, evidenced observed-publication, and archived state without performing marketplace actions.

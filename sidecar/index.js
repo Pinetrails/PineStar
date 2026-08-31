@@ -237,6 +237,7 @@ const { finalizeProductResearch } = require('./product-research.js');
 const { createProductionPlan } = require('./product-production.js');
 const { finalizeQa } = require('./product-qa.js');
 const { makeBusinessRecordStore } = require('./business-record-store.js');
+const { planGrowthExperiment, finalizeGrowthExperiment } = require('./growth-experiment.js');
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined, appendSharedReport, listSharedReports } = MemoryStore;
@@ -8755,6 +8756,8 @@ const ROUTES = [
   { m: ['GET', 'POST'], qsplit: '/api/product-projects', h: handleProductProjects },
   { m: ['GET', 'POST'], qsplit: '/api/business/commerce-records', h: handleCommerceRecords },
   { m: ['GET', 'POST'], qsplit: '/api/business/ledger', h: handleBusinessLedger },
+  { m: 'POST', exact: '/api/business/growth-experiments', h: handleGrowthExperimentPlan },
+  { m: 'POST', exact: '/api/business/growth-experiments/result', h: handleGrowthExperimentResult },
   { m: 'POST', exact: '/api/objectives/intake', h: handlePineStarObjectiveIntake },
   { m: 'POST', exact: '/api/objectives/decompose', h: handlePineStarObjectiveDecompose },
   { m: 'POST', exact: '/api/objectives/audit', h: handlePineStarObjectiveAudit },
@@ -18508,6 +18511,16 @@ async function handleBusinessLedger(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
   try { const result = await businessRecordStore.recordLedger(body); return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result)); }
   catch (e) { const message = (e && e.message) || 'invalid business ledger entry'; return respondJson(res, /already recorded differently/.test(message) ? 409 : 400, { error: message }); }
+}
+async function handleGrowthExperimentPlan(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try { const result = await planGrowthExperiment({ projects: productProjectStore, objectives: objectiveStore, appendReport: report => appendSharedReport(notebookStore, report), getReport: id => listSharedReports(notebookStore, 100).find(x => x.id === id) || null, now: Date.now }, body); return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result)); }
+  catch (e) { const message = (e && e.message) || 'invalid growth experiment'; return respondJson(res, message === 'product project not found' ? 404 : (/already recorded differently/.test(message) ? 409 : 400), { error: message }); }
+}
+async function handleGrowthExperimentResult(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try { const result = await finalizeGrowthExperiment({ projects: productProjectStore, objectives: objectiveStore, appendReport: report => appendSharedReport(notebookStore, report), getReport: id => listSharedReports(notebookStore, 100).find(x => x.id === id) || null, now: Date.now }, body); return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result)); }
+  catch (e) { const message = (e && e.message) || 'invalid growth experiment result'; return respondJson(res, message === 'product project not found' ? 404 : (/already recorded differently/.test(message) ? 409 : 400), { error: message }); }
 }
 function handlePineStarRoles(req, res) {
   return respondJson(res, 200, { schema: 'pine-star.roles.v1', roles: pineStarRoleRegistry.list().map(publicPineStarRole) });

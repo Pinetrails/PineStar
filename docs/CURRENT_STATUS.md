@@ -1,10 +1,10 @@
 # Current status
 
-**As of:** 2026-08-30
+**As of:** 2026-08-31
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-024` — Truthful Commerce & Business Records — **COMPLETE**
+**Current change:** `PS-2026-025` — Bounded Growth Experiments — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -36,6 +36,7 @@
 | Product production planning | `PS-2026-022` complete; planned projects create specification, real-deliverable preparation, and independent QA objectives with explicit dependencies while reusing Workshop/file provenance and preserving zero-publish/zero-spend boundaries |
 | Product QA and listing preparation | `PS-2026-023` complete; completed linked Quality Reviewer work plus verified Workshop artifact and report evidence gates QA, retains bounded internal listing/SEO copy, and reaches listing readiness without publication authority |
 | Commerce and business ledger | `PS-2026-024` complete; authenticated durable commerce references and evidence-required revenue/expense/refund entries describe external facts without publishing, paying, storing credentials, or granting spending authority; recorded totals feed Morning Brief with provenance |
+| Growth experiments | `PS-2026-025` complete; listing-ready products can create idempotent zero-spend Growth Analyst objectives and evidence-gated result reports whose outcomes feed Business Morning Brief without advertising, outreach, publication, accounts, or scaling authority |
 
 ## Known baseline issues
 
@@ -50,4 +51,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Add bounded growth-experiment records and connect product/business pipeline checkpoints to Business Morning Brief without autonomous outreach, advertising spend, or external mutations.
+Add Pine Trail Printables-specific reusable product workflow presets over the existing idea/research/production/QA/business foundations without duplicating those systems or creating external commerce authority.

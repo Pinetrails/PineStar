@@ -141,6 +141,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/business/commerce-records', {})).status, 403, 'commerce record writes remain behind the API token gate');
     A.eq((await raw('GET', '/api/business/ledger')).status, 403, 'business ledger remains behind the API token gate');
     A.eq((await raw('POST', '/api/business/ledger', {})).status, 403, 'business ledger writes remain behind the API token gate');
+    A.eq((await raw('POST', '/api/business/growth-experiments', {})).status, 403, 'growth experiment planning remains behind the API token gate');
+    A.eq((await raw('POST', '/api/business/growth-experiments/result', {})).status, 403, 'growth experiment results remain behind the API token gate');
     const roles = await j('GET', '/api/roles');
     A.eq(roles.status, 200, 'GET /api/roles -> 200');
     A.ok(roles.body.roles.some(role => role.id === 'research.general_researcher'), 'role discovery exposes stable system role IDs');
@@ -257,6 +259,24 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const businessBrief = await j('POST', '/api/reports/morning-brief', { id: 'morning:http-business', periodStart: businessAt - 1, periodEnd: businessAt + 1 });
     A.ok(businessBrief.body.report.decisions.some(x => /\$14\.50 revenue/.test(x) && /net \$12\.00/.test(x)), 'Morning Brief integrates recorded business totals');
     A.ok(businessBrief.body.report.sourceRefs.includes('business-entry:http-sale-1'), 'Morning Brief retains business entry provenance');
+    const growthPlanSpec = { projectId: 'http-idea-lab', experimentId: 'title-clarity', hypothesis: 'A clearer benefit title improves qualified interest.', metric: 'qualified-interest-rate', direction: 'increase', baselineValue: 0.1, targetValue: 0.15, method: 'Analyze user-supplied reviewed observations.', evidenceRefs: ['report:product-qa:http-idea-lab'] };
+    const growthPlan = await j('POST', '/api/business/growth-experiments', growthPlanSpec);
+    A.eq(growthPlan.status, 201, 'listing-ready product creates a bounded growth experiment');
+    A.eq(growthPlan.body.objective.assignedRoleId, 'business.growth_analyst', 'growth experiment routes to the Growth Analyst specialist');
+    A.eq(growthPlan.body.objective.maxModelTier, 'economy', 'growth analysis uses economy tier');
+    A.eq(growthPlan.body.externalAction, false, 'growth planning does not advertise, publish, or contact anyone');
+    A.eq(growthPlan.body.spendingAuthorityUsd, 0, 'growth planning grants no advertising spend');
+    A.eq((await j('POST', '/api/business/growth-experiments', growthPlanSpec)).status, 200, 'growth plan retry is idempotent');
+    A.eq((await j('POST', '/api/business/growth-experiments/result', { projectId: 'http-idea-lab', experimentId: 'title-clarity', objectiveId: growthPlan.body.objective.id, observedValue: .16, sampleSize: 20, outcome: 'supported', evidenceRefs: ['fixture:growth-observations'] })).status, 400, 'growth outcome waits for completed specialist work');
+    await j('POST', '/api/objectives/status', { id: growthPlan.body.objective.id, status: 'completed', completionEvidenceRefs: ['fixture:growth-observations'] });
+    const growthAt = Date.now(), growthResultSpec = { projectId: 'http-idea-lab', experimentId: 'title-clarity', objectiveId: growthPlan.body.objective.id, observedValue: .16, sampleSize: 20, outcome: 'supported', interpretation: 'Observed value exceeded the target.', evidenceRefs: ['fixture:growth-observations'] };
+    const growthResult = await j('POST', '/api/business/growth-experiments/result', growthResultSpec);
+    A.eq(growthResult.status, 201, 'completed evidenced growth work creates a result');
+    A.eq(growthResult.body.externalAction, false, 'recording a growth result does not scale or execute it');
+    A.eq((await j('POST', '/api/business/growth-experiments/result', growthResultSpec)).status, 200, 'growth result retry is idempotent');
+    const growthBrief = await j('POST', '/api/reports/morning-brief', { id: 'morning:http-growth', periodStart: growthAt - 1, periodEnd: growthAt + 1000 });
+    A.ok(growthBrief.body.report.decisions.some(x => /^SUPPORTED:/.test(x)), 'Business Morning Brief includes the evidenced growth outcome');
+    A.ok(growthBrief.body.report.sourceRefs.includes('report:growth-experiment-result:http-idea-lab:title-clarity'), 'Business Morning Brief links the growth result report');
     const recurringSpec = { scheduleId: 'http-daily-scout', roleId: 'operations.open_source_scout', recurrence: '0 9 * * *', timezone: 'America/New_York', enabled: false,
       template: { workflow: 'open-source-scout', scout: { topic: 'Windows developer utilities', recommendationLimit: 3, compatibilityTarget: 'Windows 11' } } };
     const recurringCreate = await j('POST', '/api/objectives/recurring', recurringSpec);

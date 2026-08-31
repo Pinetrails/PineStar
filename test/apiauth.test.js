@@ -48,6 +48,8 @@ A.eq(auth.requiresApiToken(req('GET', '/api/business/commerce-records')), true, 
 A.eq(auth.requiresApiToken(req('POST', '/api/business/commerce-records')), true, 'POST commerce records requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/business/ledger')), true, 'GET business ledger requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/business/ledger')), true, 'POST business ledger requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/business/growth-experiments')), true, 'POST growth experiment planning requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/business/growth-experiments/result')), true, 'POST growth experiment results requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/runs')), true, 'GET runs requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/run')), true, 'POST run requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/save')), true, 'POST save now requires token (was exempt)');
