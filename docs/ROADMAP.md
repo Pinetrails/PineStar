@@ -55,6 +55,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Durable digital-product project records now coordinate existing objectives and reports through idea, research, planning, production, QA, listing readiness, and protected publication stages (`PS-2026-018`).
 - Authenticated Product Idea intake now creates an idempotent project, Coordinator-owned dependency graph, specialist market-validation and Idea Lab objectives, and a linked shared intake report (`PS-2026-019`).
 - Completed linked Researcher and Idea Lab objectives can now produce an evidence-required research decision report; only a supported `go` advances the project to planning, and decisions flow into Morning Brief (`PS-2026-021`).
+- Planned projects now create bounded specification, product-preparation, and dependent independent-QA objectives while real artifacts remain owned by existing Workshop/file provenance (`PS-2026-022`).
 
 ## Phase 7 — Evolution
 

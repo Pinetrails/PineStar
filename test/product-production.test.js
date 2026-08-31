@@ -1,0 +1,13 @@
+'use strict';
+const A = require('./_assert.js');
+const { SEEDS } = require('../shared/pine-star-roles.js'); const { makeRoleRegistry } = require('../sidecar/role-registry.js'); const { makeObjectiveStore } = require('../sidecar/objective-store.js'); const { makeProductProjectStore } = require('../sidecar/product-project-store.js'); const { appendSharedReport } = require('../sidecar/memory-store.js'); const { createProductionPlan } = require('../sidecar/product-production.js');
+function durable() { let v; return { get: () => v, readKey: () => ({ status: v ? 'ok' : 'absent', value: v }), update: async (k, fn) => { const n = await fn(v); if (n !== undefined) v = n; return n; } }; }
+let n = 0, at = 100; const roles = makeRoleRegistry(SEEDS), objectives = makeObjectiveStore({ durable: durable(), registry: roles, now: () => at++, newId: () => 'prod-' + (++n) }), reports = durable();
+const projects = makeProductProjectStore({ durable: durable(), now: () => at++, newId: () => 'p-' + (++n), objectiveExists: id => objectives.get(id), reportExists: id => (reports.get('reports:station') || []).find(x => x.id === id) });
+(async () => {
+  await projects.create({ projectId: 'trail-kit', title: 'Trail Kit', status: 'planned' });
+  const spec = { projectId: 'trail-kit', planId: 'v1', productSpecification: 'Printable planning kit', deliverables: ['US Letter PDF', 'A4 PDF'], qaChecklist: ['No clipped text', 'All pages print legibly'], constraints: ['Original art only'] };
+  const run = x => createProductionPlan({ projects, objectives, appendReport: r => appendSharedReport(reports, r), now: () => at++ }, x);
+  const first = await run(spec); A.eq(first.project.status, 'production', 'plan advances a planned project to production'); A.eq(first.children.map(x => x.assignedRoleId), ['business.product_designer', 'business.product_designer', 'operations.quality_reviewer'], 'work routes to product and QA specialists'); A.eq(first.children[2].dependsOnObjectiveIds, [first.children[1].id], 'QA waits for real deliverable preparation'); A.eq(first.project.deliverables, spec.deliverables, 'business record carries bounded expected deliverables'); A.ok(first.children.every(x => !x.protectedAction), 'internal preparation remains non-protected and grants no publication');
+  const second = await run(spec); A.eq(second.idempotent, true, 'stable plan retry is idempotent'); A.eq(objectives.list(20).length, 4, 'retry creates no duplicate objectives'); A.eq((reports.get('reports:station') || []).length, 1, 'retry creates no duplicate reports'); A.report('product-production.test');
+})().catch(e => { console.error(e); process.exitCode = 1; });

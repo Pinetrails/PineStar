@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-022 — Product production and QA planning
+
+- Added authenticated idempotent production planning with bounded specifications, expected deliverables, constraints, and QA checklists.
+- Routed specification/preparation to Product Designer and dependent independent verification to Quality Reviewer through normal objectives.
+- Reused existing Workshop/file provenance for real artifacts and preserved no-claim, no-publish, no-spend, and approval boundaries.
+
 ### PS-2026-021 — Evidence-gated product research decisions
 
 - Added authenticated, idempotent research finalization that requires completed linked Researcher and Idea Lab objectives plus explicit evidence.

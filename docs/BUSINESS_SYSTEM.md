@@ -25,4 +25,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-021` closes the research decision gate. An authenticated decision must name completed linked Researcher and Idea Lab objectives and at least one evidence reference. It creates one idempotent shared report. `go` may advance `research → planned`; `revise` and `stop` leave the project in research with explicit blockers and no production activity. Morning Brief projects the bounded decision and next action from the existing shared-report store.
 
+`PS-2026-022` plans production without duplicating StarNet's Workshop deliverable store, filesystem trust, or provenance. It records expected deliverable names on the product project, creates Product Designer specification/preparation objectives, and gates an independent Quality Reviewer objective on completed preparation. The workflow never claims an artifact exists; production objectives must cite real existing artifact evidence.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

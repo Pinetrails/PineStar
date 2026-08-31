@@ -134,6 +134,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects/link', {})).status, 403, 'product project links remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/ideas', {})).status, 403, 'product idea intake remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/research-decision', {})).status, 403, 'product research decisions remain behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/production-plan', {})).status, 403, 'product production plans remain behind the API token gate');
     const roles = await j('GET', '/api/roles');
     A.eq(roles.status, 200, 'GET /api/roles -> 200');
     A.ok(roles.body.roles.some(role => role.id === 'research.general_researcher'), 'role discovery exposes stable system role IDs');
@@ -211,6 +212,14 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(researchDecision.body.project.spendingAuthorityUsd, 0, 'research decision preserves zero-spend authority');
     A.eq(researchDecision.body.report.id, 'product-research:http-idea-lab', 'research decision creates a stable linked shared report');
     A.eq((await j('POST', '/api/product-projects/research-decision', researchDecisionSpec)).status, 200, 'same product research decision is idempotent');
+    const productionSpec = { projectId: 'http-idea-lab', planId: 'http-v1', productSpecification: 'Fixture printable specification', deliverables: ['US Letter PDF', 'A4 PDF'], qaChecklist: ['No clipped text', 'Legible at actual size'], constraints: ['Original assets only'] };
+    const productionPlan = await j('POST', '/api/product-projects/production-plan', productionSpec);
+    A.eq(productionPlan.status, 201, 'planned project creates a bounded production plan');
+    A.eq(productionPlan.body.project.status, 'production', 'production plan advances project to production without publishing');
+    A.eq(productionPlan.body.children.map(x => x.assignedRoleId), ['business.product_designer', 'business.product_designer', 'operations.quality_reviewer'], 'production work routes to product and QA specialists');
+    A.eq(productionPlan.body.children[2].dependsOnObjectiveIds, [productionPlan.body.children[1].id], 'HTTP QA waits for deliverable preparation');
+    A.eq(productionPlan.body.project.spendingAuthorityUsd, 0, 'production planning preserves zero spending authority');
+    A.eq((await j('POST', '/api/product-projects/production-plan', productionSpec)).status, 200, 'same production plan is idempotent');
     const recurringSpec = { scheduleId: 'http-daily-scout', roleId: 'operations.open_source_scout', recurrence: '0 9 * * *', timezone: 'America/New_York', enabled: false,
       template: { workflow: 'open-source-scout', scout: { topic: 'Windows developer utilities', recommendationLimit: 3, compatibilityTarget: 'Windows 11' } } };
     const recurringCreate = await j('POST', '/api/objectives/recurring', recurringSpec);

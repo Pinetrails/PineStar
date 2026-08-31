@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-021` — Evidence-Gated Product Research Decisions — **COMPLETE**
+**Current change:** `PS-2026-022` — Product Production & QA Planning — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -33,6 +33,7 @@
 | Product idea intake | `PS-2026-019` complete; authenticated idempotent intake creates a product project, Coordinator-owned objective graph, specialist research and Idea Lab work, and a linked shared report without execution or external authority |
 | External pattern evaluation | `PS-2026-020` complete; Awesome LLM Apps was inspected outside Pine Star, ranked as reference material, and yielded one dependency-free advisory Change-ID scope check; no third-party code, skill, proxy, or dependency was installed |
 | Product research decisions | `PS-2026-021` complete; completed linked Researcher and Idea Lab work plus explicit evidence can create an idempotent shared decision report, safely advance supported projects to planning, and appear in Morning Brief |
+| Product production planning | `PS-2026-022` complete; planned projects create specification, real-deliverable preparation, and independent QA objectives with explicit dependencies while reusing Workshop/file provenance and preserving zero-publish/zero-spend boundaries |
 
 ## Known baseline issues
 
@@ -47,4 +48,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Build bounded product specification and deliverable records with production and QA checkpoints; keep listing/publishing approval-protected.
+Finalize QA outcomes against real artifact/report evidence, then prepare bounded listing copy/SEO records without publishing.
