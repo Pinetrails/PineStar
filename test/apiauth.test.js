@@ -43,6 +43,7 @@ A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/link')), true, 'PO
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/ideas')), true, 'POST product idea intake requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/research-decision')), true, 'POST product research decision requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/production-plan')), true, 'POST product production plan requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/qa')), true, 'POST product QA requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/runs')), true, 'GET runs requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/run')), true, 'POST run requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/save')), true, 'POST save now requires token (was exempt)');

@@ -7,6 +7,7 @@ function text(v, n) { return String(v == null ? '' : v).trim().slice(0, n); }
 function strings(v, cap, n) { return [...new Set((Array.isArray(v) ? v : []).map(x => text(x, n)).filter(Boolean))].slice(0, cap); }
 function money(v) { return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.round(v * 10000) / 10000 : null; }
 function slug(v) { return text(v, 100).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, ''); }
+function listingDraft(v) { if (!v || typeof v !== 'object') return null; const title = text(v.title, 200), description = text(v.description, 2000); if (!title || !description) return null; return { title, description, tags: strings(v.tags, 13, 80), seoKeywords: strings(v.seoKeywords, 20, 100), targetMarketplaces: strings(v.targetMarketplaces, 8, 100) }; }
 function makeProductProjectStore(deps) {
   deps = deps || {}; const now = typeof deps.now === 'function' ? deps.now : Date.now, newId = typeof deps.newId === 'function' ? deps.newId : () => { throw new Error('product project store requires newId'); };
   const objectiveExists = typeof deps.objectiveExists === 'function' ? deps.objectiveExists : () => false;
@@ -25,7 +26,7 @@ function makeProductProjectStore(deps) {
       linkedObjectiveIds: [], linkedReportIds: [], evidenceRefs: strings(row.evidenceRefs, 24, 300), blockers: strings(row.blockers, 12, 240),
       qaState: ['not_started', 'in_progress', 'passed', 'failed'].includes(row.qaState) ? row.qaState : 'not_started', listingState: 'not_started', publicationState: status === 'approval_required' ? 'approval_required' : 'not_published',
       estimatedCostUsd: money(row.estimatedCostUsd), actualCostUsd: money(row.actualCostUsd), revenueUsd: money(row.revenueUsd), spendingAuthorityUsd: 0,
-      notes: text(row.notes, 1200), nextAction: text(row.nextAction, 300), createdAt: stamp, updatedAt: stamp, revision: 1 };
+      listingDraft: listingDraft(row.listingDraft), notes: text(row.notes, 1200), nextAction: text(row.nextAction, 300), createdAt: stamp, updatedAt: stamp, revision: 1 };
   }
   function list(limit, status) { const rows = durable.get('station'), cap = Math.max(1, Math.min(250, Number(limit) || 50)); return (Array.isArray(rows) ? rows : []).filter(x => x && (!status || x.status === status)).slice(-cap).reverse(); }
   function get(id) { const rows = durable.get('station'); return (Array.isArray(rows) ? rows : []).find(x => x && x.id === String(id || '')) || null; }
@@ -51,7 +52,7 @@ function makeProductProjectStore(deps) {
         qaState: qa, listingState: nextStatus === 'listing_ready' || nextStatus === 'approval_required' || nextStatus === 'published' ? 'ready' : cur.listingState,
         publicationState: nextStatus === 'published' ? 'published' : (nextStatus === 'approval_required' ? 'approval_required' : cur.publicationState),
         estimatedCostUsd: p.estimatedCostUsd === undefined ? cur.estimatedCostUsd : money(p.estimatedCostUsd), actualCostUsd: p.actualCostUsd === undefined ? cur.actualCostUsd : money(p.actualCostUsd), revenueUsd: p.revenueUsd === undefined ? cur.revenueUsd : money(p.revenueUsd),
-        notes: p.notes == null ? cur.notes : text(p.notes, 1200), nextAction: p.nextAction == null ? cur.nextAction : text(p.nextAction, 300), updatedAt: stamp, revision: cur.revision + 1 });
+        listingDraft: p.listingDraft === undefined ? cur.listingDraft : listingDraft(p.listingDraft), notes: p.notes == null ? cur.notes : text(p.notes, 1200), nextAction: p.nextAction == null ? cur.nextAction : text(p.nextAction, 300), updatedAt: stamp, revision: cur.revision + 1 });
       rows[i] = updated; return rows; }); return updated;
   }
   async function link(id, input) {

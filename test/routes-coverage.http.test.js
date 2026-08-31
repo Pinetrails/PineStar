@@ -59,6 +59,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
 
 (async () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-routes-'));
+  fs.writeFileSync(path.join(ws, 'deliverables.library.json'), JSON.stringify({ v: 2, appliedSeq: 0, rows: [{ id: 'http-product-artifact', agentId: 'fixture', runId: 'fixture-run', title: 'Verified product artifact', source: 'test-fixture', status: 'kept', kind: 'files', summary: 'Existing artifact evidence for the isolated HTTP fixture.', files: [{ path: 'trail-kit.pdf', bytes: 128 }], createdAt: 1, updatedAt: 1 }], undo: [] }));
   const booted = await boot(8890 + (process.pid % 40), ws, 20);
   const { child, port } = booted;
   const B = 'http://' + HOST + ':' + port;
@@ -135,6 +136,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects/ideas', {})).status, 403, 'product idea intake remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/research-decision', {})).status, 403, 'product research decisions remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/production-plan', {})).status, 403, 'product production plans remain behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/qa', {})).status, 403, 'product QA finalization remains behind the API token gate');
     const roles = await j('GET', '/api/roles');
     A.eq(roles.status, 200, 'GET /api/roles -> 200');
     A.ok(roles.body.roles.some(role => role.id === 'research.general_researcher'), 'role discovery exposes stable system role IDs');
@@ -220,6 +222,16 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(productionPlan.body.children[2].dependsOnObjectiveIds, [productionPlan.body.children[1].id], 'HTTP QA waits for deliverable preparation');
     A.eq(productionPlan.body.project.spendingAuthorityUsd, 0, 'production planning preserves zero spending authority');
     A.eq((await j('POST', '/api/product-projects/production-plan', productionSpec)).status, 200, 'same production plan is idempotent');
+    await j('POST', '/api/objectives/status', { id: productionPlan.body.children[2].id, status: 'completed', completionEvidenceRefs: ['deliverable:http-product-artifact', 'report:product-production-plan:http-idea-lab:http-v1'] });
+    const qaSpec = { projectId: 'http-idea-lab', qaObjectiveId: productionPlan.body.children[2].id, outcome: 'passed', artifactIds: ['http-product-artifact'], reportIds: ['product-production-plan:http-idea-lab:http-v1'], checks: ['No clipped text', 'Legible at actual size'], listingDraft: { title: 'HTTP Idea Lab Printable', description: 'A bounded fixture listing draft that is not published.', tags: ['trail printable'], seoKeywords: ['trail planning printable'], targetMarketplaces: ['Marketplace A'] } };
+    const qaFinal = await j('POST', '/api/product-projects/qa', qaSpec);
+    A.eq(qaFinal.status, 201, 'completed QA with verified artifact/report evidence finalizes through HTTP');
+    A.eq(qaFinal.body.project.status, 'listing_ready', 'passed QA reaches internal listing readiness');
+    A.eq(qaFinal.body.project.listingState, 'ready', 'listing readiness is explicit');
+    A.eq(qaFinal.body.project.publicationState, 'not_published', 'QA and listing preparation do not publish');
+    A.eq(qaFinal.body.project.listingDraft.seoKeywords, ['trail planning printable'], 'bounded SEO metadata persists');
+    A.eq((await j('POST', '/api/product-projects/qa', qaSpec)).status, 200, 'same QA finalization is idempotent');
+    A.eq((await j('POST', '/api/product-projects/update', { id: 'http-idea-lab', patch: { status: 'published' } })).status, 400, 'listing-ready project still cannot publish through safe update API');
     const recurringSpec = { scheduleId: 'http-daily-scout', roleId: 'operations.open_source_scout', recurrence: '0 9 * * *', timezone: 'America/New_York', enabled: false,
       template: { workflow: 'open-source-scout', scout: { topic: 'Windows developer utilities', recommendationLimit: 3, compatibilityTarget: 'Windows 11' } } };
     const recurringCreate = await j('POST', '/api/objectives/recurring', recurringSpec);

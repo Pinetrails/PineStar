@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-023 — Evidence-gated QA and listing preparation
+
+- Required a completed linked Quality Reviewer objective plus verified existing Workshop artifact and shared-report evidence before recording QA.
+- Added idempotent pass/fail QA reports, truthful failed-QA blockers, and bounded internal listing title/description/tag/SEO metadata.
+- Reused existing project QA/listing gates; passed work reaches `listing_ready` but remains `not_published`, and safe APIs still cannot publish.
+
 ### PS-2026-022 — Product production and QA planning
 
 - Added authenticated idempotent production planning with bounded specifications, expected deliverables, constraints, and QA checklists.

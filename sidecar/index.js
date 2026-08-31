@@ -235,6 +235,7 @@ const { makeProductProjectStore } = require('./product-project-store.js');
 const { intakeProductIdea } = require('./product-idea.js');
 const { finalizeProductResearch } = require('./product-research.js');
 const { createProductionPlan } = require('./product-production.js');
+const { finalizeQa } = require('./product-qa.js');
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined, appendSharedReport, listSharedReports } = MemoryStore;
@@ -8743,6 +8744,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/product-projects/ideas', h: handleProductIdeaIntake },
   { m: 'POST', exact: '/api/product-projects/research-decision', h: handleProductResearchDecision },
   { m: 'POST', exact: '/api/product-projects/production-plan', h: handleProductProductionPlan },
+  { m: 'POST', exact: '/api/product-projects/qa', h: handleProductQa },
   { m: ['GET', 'POST'], qsplit: '/api/product-projects', h: handleProductProjects },
   { m: 'POST', exact: '/api/objectives/intake', h: handlePineStarObjectiveIntake },
   { m: 'POST', exact: '/api/objectives/decompose', h: handlePineStarObjectiveDecompose },
@@ -18475,6 +18477,16 @@ async function handleProductProductionPlan(req, res) {
     const result = await createProductionPlan({ projects: productProjectStore, objectives: objectiveStore, appendReport: report => appendSharedReport(notebookStore, report), now: Date.now }, body);
     return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
   } catch (e) { const message = (e && e.message) || 'invalid product production plan'; return respondJson(res, message === 'product project not found' ? 404 : (/already decomposed/.test(message) ? 409 : 400), { error: message }); }
+}
+async function handleProductQa(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const reports = () => listSharedReports(notebookStore, 100), result = await finalizeQa({ projects: productProjectStore, objectives: objectiveStore,
+      artifactExists: id => deliverableStore.list().find(x => x && x.id === id && ['kept', 'implemented'].includes(x.status)) || null,
+      reportExists: id => reports().find(x => x && x.id === id) || null, getReport: id => reports().find(x => x && x.id === id) || null,
+      appendReport: report => appendSharedReport(notebookStore, report), now: Date.now }, body);
+    return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
+  } catch (e) { const message = (e && e.message) || 'invalid product QA'; return respondJson(res, message === 'product project not found' ? 404 : (/already recorded differently/.test(message) ? 409 : 400), { error: message }); }
 }
 function handlePineStarRoles(req, res) {
   return respondJson(res, 200, { schema: 'pine-star.roles.v1', roles: pineStarRoleRegistry.list().map(publicPineStarRole) });

@@ -27,4 +27,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-022` plans production without duplicating StarNet's Workshop deliverable store, filesystem trust, or provenance. It records expected deliverable names on the product project, creates Product Designer specification/preparation objectives, and gates an independent Quality Reviewer objective on completed preparation. The workflow never claims an artifact exists; production objectives must cite real existing artifact evidence.
 
+`PS-2026-023` finalizes QA only when the linked Quality Reviewer objective is complete and both named Workshop deliverables and shared reports exist. Failed QA holds production with blockers. Passed QA moves through the existing QA gate to `listing_ready` and stores bounded internal title, description, tags, SEO keywords, and marketplace targets. It does not publish or create marketplace state; `publicationState` remains `not_published` and the safe update API still rejects `published`.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.
