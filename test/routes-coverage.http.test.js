@@ -137,6 +137,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects/research-decision', {})).status, 403, 'product research decisions remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/production-plan', {})).status, 403, 'product production plans remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/qa', {})).status, 403, 'product QA finalization remains behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/pine-trail-printables', {})).status, 403, 'Pine Trail printable intake remains behind the API token gate');
     A.eq((await raw('GET', '/api/business/commerce-records')).status, 403, 'commerce records remain behind the API token gate');
     A.eq((await raw('POST', '/api/business/commerce-records', {})).status, 403, 'commerce record writes remain behind the API token gate');
     A.eq((await raw('GET', '/api/business/ledger')).status, 403, 'business ledger remains behind the API token gate');
@@ -211,6 +212,16 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(ideaIntake.body.project.linkedReportIds, ['product-idea:http-idea-lab'], 'HTTP idea project links its intake report');
     A.eq((await j('POST', '/api/product-projects/ideas', { ideaId: 'http-idea-lab', title: 'HTTP Idea Lab Printable' })).status, 200, 'HTTP idea retry is idempotent');
     A.ok((await j('GET', '/api/reports?limit=20')).body.reports.some(x => x.id === 'product-idea:http-idea-lab'), 'Idea Lab report is readable through the shared report API');
+    const pineTrailSpec = { productId: 'http-trail-checklist', title: 'HTTP Trail Checklist', family: 'checklist', useCase: 'Prepare for a day hike', targetCustomer: 'New hikers', assumptions: ['A compact checklist may reduce forgotten gear'] };
+    const pineTrail = await j('POST', '/api/product-projects/pine-trail-printables', pineTrailSpec);
+    A.eq(pineTrail.status, 201, 'Pine Trail preset enters the existing product intake pipeline');
+    A.eq(pineTrail.body.project.id, 'pine-trail-http-trail-checklist', 'Pine Trail product uses a stable namespaced identity');
+    A.eq(pineTrail.body.project.productType, 'pine-trail-printable:checklist', 'Pine Trail printable family persists on the product project');
+    A.ok(pineTrail.body.project.assetRequirements.some(x => /Original Pine Trail-owned/.test(x)), 'Pine Trail project requires original distributable assets');
+    A.eq(pineTrail.body.children.map(x => x.assignedRoleId), ['research.general_researcher', 'business.idea_lab'], 'Pine Trail preset reuses existing specialist routing');
+    A.eq(pineTrail.body.externalAction, false, 'Pine Trail intake performs no external commerce action');
+    A.eq(pineTrail.body.spendingAuthorityUsd, 0, 'Pine Trail intake grants no spend');
+    A.eq((await j('POST', '/api/product-projects/pine-trail-printables', pineTrailSpec)).status, 200, 'Pine Trail intake retry is idempotent');
     await j('POST', '/api/objectives/status', { id: ideaIntake.body.children[0].id, status: 'completed', completionEvidenceRefs: ['report:http-market'] });
     await j('POST', '/api/objectives/status', { id: ideaIntake.body.children[1].id, status: 'completed', completionEvidenceRefs: ['report:http-concept'] });
     const researchDecisionSpec = { projectId: 'http-idea-lab', researchObjectiveId: ideaIntake.body.children[0].id, conceptObjectiveId: ideaIntake.body.children[1].id, decision: 'go', rationale: 'Fixture evidence supports bounded planning.', findings: ['Fixture customer need'], risks: ['Fixture evidence is limited'], evidenceRefs: ['fixture:market', 'fixture:concept'] };

@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-026 — Pine Trail Printables workflow preset
+
+- Added a stable Pine Trail Printables intake preset for planner, checklist, tracker, activity-sheet, and bundle families.
+- Standardized original Pine Trail-owned assets, print-safe layout, editable-source/PDF deliverables, and US Letter/A4 requirements while allowing bounded product-specific additions.
+- Delegated entirely to the existing Product Idea project, Coordinator, Researcher, Idea Lab, report, auth, cancellation, E-stop, and audit systems; added no external commerce authority.
+
 ### PS-2026-025 — Bounded growth experiments
 
 - Added a zero-publish, zero-outreach, zero-account, zero-spend Growth Analyst system role at economy tier.

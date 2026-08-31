@@ -44,6 +44,7 @@ A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/ideas')), true, 'P
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/research-decision')), true, 'POST product research decision requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/production-plan')), true, 'POST product production plan requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/qa')), true, 'POST product QA requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/pine-trail-printables')), true, 'POST Pine Trail printable intake requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/business/commerce-records')), true, 'GET commerce records requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/business/commerce-records')), true, 'POST commerce records requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/business/ledger')), true, 'GET business ledger requires token');
