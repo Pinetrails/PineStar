@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-029 — Read-only commerce and ledger UI
+
+- Added escaped read-only commerce observation cards with project, marketplace, listing-reference, and evidence fields plus explicit no-action copy.
+- Added recorded all-time revenue, expense, refund, net, and entry totals plus evidenced entry cards to Reports.
+- Reused existing authenticated GET APIs and exposed no external link, payment/refund, purchase, publication, or edit controls.
+
 ### PS-2026-028 — Read-only product portfolio UI
 
 - Added a read-only current portfolio card to Reports with deterministic stage, failed-QA, blocker, and evidenced observed-publication counts.

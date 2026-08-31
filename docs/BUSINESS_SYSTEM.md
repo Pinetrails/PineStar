@@ -39,4 +39,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-028` projects product readiness into the existing Reports UI. A read-only portfolio card shows per-stage, failed-QA, blocker, and evidenced observed-publication counts. Existing product cards now show listing state, marketplace targets, blockers, and evidence references in addition to objective progress and next actions. The UI only calls existing authenticated GET routes and contains no product, approval, publication, payment, execution, or edit control.
 
+`PS-2026-029` adds commerce and financial inspection to Reports through the existing authenticated GET routes. Commerce cards show escaped project, marketplace, external listing reference, and evidence values as text only. The ledger section shows recorded all-time revenue, expense, refund, net, and entry totals plus source/project/evidence entry cards. It contains no external link, payment, refund, purchase, publication, or edit control.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

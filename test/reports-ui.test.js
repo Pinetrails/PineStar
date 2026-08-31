@@ -39,4 +39,11 @@ const portfolio = Reports.productPortfolioHtml([{ project: { id: 'a', status: 'l
 A.ok(portfolio.includes('2 PRODUCTS') && portfolio.includes('LISTING_READY 1') && portfolio.includes('PRODUCTION 1'), 'portfolio summary renders deterministic stage counts');
 A.ok(portfolio.includes('FAILED QA · 1') && portfolio.includes('BLOCKED · 1') && portfolio.includes('OBSERVED PUBLICATION · 1'), 'portfolio summary renders readiness attention without controls');
 A.ok(!/<button|onclick=|<form/i.test(portfolio), 'portfolio summary exposes no action control');
+const commerce = Reports.commerceRecordHtml({ projectId: '<project>', marketplace: 'Market&One', state: 'observed_published', externalListingId: '<listing>', listingUrl: 'https://example.invalid/?a=1&b=2', evidenceRefs: ['file:export<script>'] });
+A.ok(commerce.includes('&lt;project&gt;') && commerce.includes('Market&amp;One') && commerce.includes('&lt;listing&gt;') && commerce.includes('&amp;b=2'), 'commerce observations render escaped references');
+A.ok(!commerce.includes('<script>') && commerce.includes('no marketplace action performed'), 'commerce evidence is escaped and boundary is explicit');
+const ledger = Reports.businessLedgerHtml({ summary: { revenueUsd: 14.5, expenseUsd: 2.5, refundUsd: 1, netUsd: 11, entryCount: 3 }, entries: [{ type: 'revenue', amountUsd: 14.5, currency: 'USD', occurredAt: 1, source: '<export>', projectId: 'planner&one', evidenceRefs: ['row:<1>'] }] });
+A.ok(ledger.includes('NET $11.00') && ledger.includes('REVENUE $14.50') && ledger.includes('EXPENSES $2.50') && ledger.includes('REFUNDS $1.00'), 'business ledger renders truthful recorded totals');
+A.ok(ledger.includes('&lt;export&gt;') && ledger.includes('planner&amp;one') && ledger.includes('row:&lt;1&gt;'), 'business entry source, project, and evidence are escaped');
+A.ok(!/<button|onclick=|<form|href=/i.test(commerce + ledger), 'commerce and ledger inspection expose no action or external navigation control');
 A.report('reports-ui.test');

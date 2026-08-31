@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-028` — Read-Only Product Portfolio UI — **COMPLETE**
+**Current change:** `PS-2026-029` — Read-Only Commerce & Ledger UI — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -40,6 +40,7 @@
 | Pine Trail Printables intake | `PS-2026-026` complete; a bounded brand workflow preset standardizes printable families, original-asset and print-layout requirements, stable IDs, and then delegates to the existing Product Idea project/objective/report pipeline with no external authority |
 | Product portfolio brief | `PS-2026-027` complete; deterministic current-state projection adds stage counts, listing/approval visibility, failed QA/blockers, next actions, and commerce provenance to Business Morning Brief without a new store, model call, or action path |
 | Product portfolio UI | `PS-2026-028` complete; Reports now shows a read-only stage/QA/blocker/observed-publication snapshot and richer listing, marketplace, evidence, blocker, and next-action details using existing authenticated reads with no mutation controls |
+| Commerce and ledger UI | `PS-2026-029` complete; Reports shows escaped commerce observations plus recorded revenue/expense/refund/net totals and evidenced entries via existing authenticated reads, with no links or payment/refund/publication/edit controls |
 
 ## Known baseline issues
 
@@ -54,4 +55,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Add bounded commerce and financial read-only inspection to Reports so recorded listing observations and evidenced ledger totals are visible without payment, refund, publication, or edit controls.
+Add bounded product portfolio exports or filtered inspection only if it reuses existing local export/privacy boundaries; otherwise continue Phase 6 product workflow depth such as reusable production/QA presets.
