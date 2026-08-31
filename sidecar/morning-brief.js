@@ -12,6 +12,7 @@ function composeMorningBrief(input) {
   const start = Math.max(0, Math.min(end - 1, Number(o.periodStart) || end - 86400000));
   const objectives = Array.isArray(o.objectives) ? o.objectives.filter(Boolean) : [];
   const reports = Array.isArray(o.reports) ? o.reports.filter(Boolean) : [];
+  const business = o.businessSummary && typeof o.businessSummary === 'object' ? o.businessSummary : null;
   const runs = Array.isArray(o.runs) ? o.runs.filter(r => r && Number(r.ts) > start && Number(r.ts) <= end) : [];
   const completedRows = objectives.filter(x => x.status === 'completed' && inPeriod(x, start, end));
   const failures = objectives.filter(x => ['failed', 'cancelled', 'blocked'].includes(x.status) && inPeriod(x, start, end));
@@ -31,7 +32,7 @@ function composeMorningBrief(input) {
       .map(x => 'Auditor: ' + label(x) + ' — ' + text(x.resultSummary || x.settlementReason || x.status, 120))
   ], 8);
   const decisions = unique((measuredRuns.length ? ['Measured runtime cost for this period: $' + totalUsd.toFixed(4) + ' across ' + measuredRuns.length + ' recorded run' + (measuredRuns.length === 1 ? '' : 's') + '.'] : [])
-    .concat(productReports.flatMap(x => Array.isArray(x.decisions) ? x.decisions : [])), 10);
+    .concat(business && business.entryCount ? ['Recorded business activity: $' + Number(business.revenueUsd || 0).toFixed(2) + ' revenue, $' + Number(business.expenseUsd || 0).toFixed(2) + ' expenses, $' + Number(business.refundUsd || 0).toFixed(2) + ' refunds; net $' + Number(business.netUsd || 0).toFixed(2) + '.'] : [], productReports.flatMap(x => Array.isArray(x.decisions) ? x.decisions : [])), 10);
   const nextActions = unique([
     ...approvals.map(x => 'Review approval: ' + label(x)),
     ...failures.map(x => 'Review ' + x.status + ' objective: ' + label(x)),
@@ -42,7 +43,7 @@ function composeMorningBrief(input) {
   const headline = completedRows.length + ' completed · ' + active.length + ' active · ' + exceptions.length + ' attention item' + (exceptions.length === 1 ? '' : 's');
   return { schema: 'pine-star.shared-report.v1', id: text(o.id, 120) || ('morning-brief:' + new Date(end).toISOString().slice(0, 10)), type: 'morning-brief',
     createdAt: end, periodStart: start, periodEnd: end, headline, completed, exceptions, decisions, nextActions, discoveries,
-    sourceRefs: unique([...completedRows, ...failures, ...active, ...approvals, ...auditorRows].map(x => 'objective:' + x.id).concat(scoutReports.concat(productReports).map(x => 'report:' + x.id), measuredRuns.map(x => 'run:' + x.runId)), 12) };
+    sourceRefs: unique([...completedRows, ...failures, ...active, ...approvals, ...auditorRows].map(x => 'objective:' + x.id).concat(scoutReports.concat(productReports).map(x => 'report:' + x.id), measuredRuns.map(x => 'run:' + x.runId), business && Array.isArray(business.sourceRefs) ? business.sourceRefs : []), 20) };
 }
 
 module.exports = { composeMorningBrief };

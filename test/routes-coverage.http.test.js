@@ -137,6 +137,10 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects/research-decision', {})).status, 403, 'product research decisions remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/production-plan', {})).status, 403, 'product production plans remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/qa', {})).status, 403, 'product QA finalization remains behind the API token gate');
+    A.eq((await raw('GET', '/api/business/commerce-records')).status, 403, 'commerce records remain behind the API token gate');
+    A.eq((await raw('POST', '/api/business/commerce-records', {})).status, 403, 'commerce record writes remain behind the API token gate');
+    A.eq((await raw('GET', '/api/business/ledger')).status, 403, 'business ledger remains behind the API token gate');
+    A.eq((await raw('POST', '/api/business/ledger', {})).status, 403, 'business ledger writes remain behind the API token gate');
     const roles = await j('GET', '/api/roles');
     A.eq(roles.status, 200, 'GET /api/roles -> 200');
     A.ok(roles.body.roles.some(role => role.id === 'research.general_researcher'), 'role discovery exposes stable system role IDs');
@@ -232,6 +236,27 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(qaFinal.body.project.listingDraft.seoKeywords, ['trail planning printable'], 'bounded SEO metadata persists');
     A.eq((await j('POST', '/api/product-projects/qa', qaSpec)).status, 200, 'same QA finalization is idempotent');
     A.eq((await j('POST', '/api/product-projects/update', { id: 'http-idea-lab', patch: { status: 'published' } })).status, 400, 'listing-ready project still cannot publish through safe update API');
+    const commerceSpec = { recordId: 'http-marketplace-draft', projectId: 'http-idea-lab', marketplace: 'Marketplace A', state: 'draft', externalListingId: 'draft-42' };
+    const commerceWrite = await j('POST', '/api/business/commerce-records', commerceSpec);
+    A.eq(commerceWrite.status, 201, 'commerce reference is durably recorded');
+    A.eq(commerceWrite.body.record.recordsExternalAction, false, 'commerce API does not perform publication');
+    A.eq(commerceWrite.body.record.spendingAuthorityUsd, 0, 'commerce API grants no spending authority');
+    A.eq((await j('POST', '/api/business/commerce-records', commerceSpec)).status, 200, 'commerce retry is idempotent');
+    A.eq((await j('POST', '/api/business/commerce-records', { projectId: 'http-idea-lab', marketplace: 'Marketplace A', state: 'observed_published' })).status, 400, 'publication observations require evidence');
+    A.eq((await j('GET', '/api/business/commerce-records?projectId=http-idea-lab')).body.records.length, 1, 'commerce references are readable by product project');
+    const businessAt = Date.now(), revenueSpec = { entryId: 'http-sale-1', type: 'revenue', amountUsd: 14.5, projectId: 'http-idea-lab', source: 'fixture marketplace export', evidenceRefs: ['fixture:export-row-1'], occurredAt: businessAt };
+    const revenueWrite = await j('POST', '/api/business/ledger', revenueSpec);
+    A.eq(revenueWrite.status, 201, 'evidenced revenue is durably recorded');
+    A.eq(revenueWrite.body.entry.recordsExternalAction, false, 'business ledger does not initiate payments');
+    A.eq((await j('POST', '/api/business/ledger', revenueSpec)).status, 200, 'business ledger retry is idempotent');
+    A.eq((await j('POST', '/api/business/ledger', { type: 'expense', amountUsd: 3, occurredAt: businessAt })).status, 400, 'business ledger rejects unevidenced amounts');
+    await j('POST', '/api/business/ledger', { entryId: 'http-fee-1', type: 'expense', amountUsd: 2.5, projectId: 'http-idea-lab', source: 'fixture receipt', evidenceRefs: ['fixture:receipt-1'], occurredAt: businessAt });
+    const businessRead = await j('GET', '/api/business/ledger?projectId=http-idea-lab&periodStart=' + (businessAt - 1) + '&periodEnd=' + (businessAt + 1));
+    A.eq(businessRead.body.summary.netUsd, 12, 'business ledger exposes a truthful evidenced net total');
+    A.eq(businessRead.body.entries.length, 2, 'business ledger retains both source entries');
+    const businessBrief = await j('POST', '/api/reports/morning-brief', { id: 'morning:http-business', periodStart: businessAt - 1, periodEnd: businessAt + 1 });
+    A.ok(businessBrief.body.report.decisions.some(x => /\$14\.50 revenue/.test(x) && /net \$12\.00/.test(x)), 'Morning Brief integrates recorded business totals');
+    A.ok(businessBrief.body.report.sourceRefs.includes('business-entry:http-sale-1'), 'Morning Brief retains business entry provenance');
     const recurringSpec = { scheduleId: 'http-daily-scout', roleId: 'operations.open_source_scout', recurrence: '0 9 * * *', timezone: 'America/New_York', enabled: false,
       template: { workflow: 'open-source-scout', scout: { topic: 'Windows developer utilities', recommendationLimit: 3, compatibilityTarget: 'Windows 11' } } };
     const recurringCreate = await j('POST', '/api/objectives/recurring', recurringSpec);

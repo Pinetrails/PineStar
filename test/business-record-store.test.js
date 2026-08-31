@@ -1,0 +1,26 @@
+'use strict';
+const A = require('./_assert.js');
+const { makeBusinessRecordStore } = require('../sidecar/business-record-store.js');
+let saved, tick = 1000;
+const durable = { get: () => saved, readKey: () => ({ status: saved ? 'ok' : 'absent', value: saved }), update: async (k, fn) => { const next = await fn(saved); if (next !== undefined) saved = next; return next; } };
+const store = makeBusinessRecordStore({ durable, now: () => tick++, newId: () => 'generated', projectExists: id => id === 'planner' });
+(async () => {
+  const commerce = await store.recordCommerce({ recordId: 'etsy-planner', projectId: 'planner', marketplace: 'Etsy', state: 'draft', externalListingId: 'secret-is-not-a-credential' });
+  A.eq(commerce.record.recordsExternalAction, false, 'commerce rows describe state without performing an external action');
+  A.eq(commerce.record.spendingAuthorityUsd, 0, 'commerce rows grant no spending authority');
+  A.eq((await store.recordCommerce({ recordId: 'etsy-planner', projectId: 'planner', marketplace: 'Etsy', state: 'draft', externalListingId: 'secret-is-not-a-credential' })).idempotent, true, 'commerce retry is idempotent');
+  let evidenceBlocked = false; try { await store.recordCommerce({ projectId: 'planner', marketplace: 'Etsy', state: 'observed_published' }); } catch (e) { evidenceBlocked = /evidence/.test(e.message); } A.ok(evidenceBlocked, 'published observations require evidence');
+  const revenue = await store.recordLedger({ entryId: 'sale-1', type: 'revenue', amountUsd: 12.5, projectId: 'planner', source: 'marketplace export row 4', evidenceRefs: ['file:export.csv#4'], occurredAt: 900 });
+  A.eq(revenue.entry.amountUsd, 12.5, 'known revenue is retained exactly');
+  A.eq(revenue.entry.recordsExternalAction, false, 'ledger rows do not initiate a payment');
+  A.eq((await store.recordLedger({ entryId: 'sale-1', type: 'revenue', amountUsd: 12.5, projectId: 'planner', source: 'marketplace export row 4', evidenceRefs: ['file:export.csv#4'], occurredAt: 900 })).idempotent, true, 'ledger retry is idempotent');
+  await store.recordLedger({ entryId: 'fee-1', type: 'expense', amountUsd: 2, projectId: 'planner', source: 'receipt', evidenceRefs: ['file:receipt.pdf'], occurredAt: 950 });
+  await store.recordLedger({ entryId: 'refund-1', type: 'refund', amountUsd: 1, projectId: 'planner', source: 'marketplace export row 5', evidenceRefs: ['file:export.csv#5'], occurredAt: 975 });
+  A.eq(store.summary(800, 1000).netUsd, 9.5, 'summary computes revenue minus expenses and refunds');
+  A.eq(store.summary(800, 1000).sourceRefs.length, 3, 'summary retains entry provenance');
+  let bareBlocked = false; try { await store.recordLedger({ type: 'expense', amountUsd: 9, occurredAt: 999 }); } catch (e) { bareBlocked = /source/.test(e.message); } A.ok(bareBlocked, 'unevidenced entries are rejected');
+  let conflict = false; try { await store.recordLedger({ entryId: 'sale-1', type: 'revenue', amountUsd: 99, source: 'x', evidenceRefs: ['x'], occurredAt: 900 }); } catch (e) { conflict = /differently/.test(e.message); } A.ok(conflict, 'stable entry identity cannot be rewritten');
+  A.eq(store.listCommerce(10, 'planner').length, 1, 'commerce records are filterable by project');
+  A.eq(store.listLedger(10, 'planner', 'revenue').length, 1, 'ledger entries are filterable by project and type');
+  A.report('business-record-store.test');
+})().catch(e => { console.error(e); process.exitCode = 1; });

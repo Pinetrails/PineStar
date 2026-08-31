@@ -236,6 +236,7 @@ const { intakeProductIdea } = require('./product-idea.js');
 const { finalizeProductResearch } = require('./product-research.js');
 const { createProductionPlan } = require('./product-production.js');
 const { finalizeQa } = require('./product-qa.js');
+const { makeBusinessRecordStore } = require('./business-record-store.js');
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
 const { makeMemoryStore, resetAgentMemory, restoreDeclined, appendSharedReport, listSharedReports } = MemoryStore;
@@ -1634,6 +1635,12 @@ const productProjectStore = makeProductProjectStore({
   reportExists: id => { const rows = notebookStore.get('reports:station'); return (Array.isArray(rows) ? rows : []).find(x => x && x.id === String(id || '')) || null; },
   onRecover: (key, file) => console.warn('[product-projects] recovered ' + file + ' from .bak last-known-good.'),
   onCorrupt: (key, file) => quarantineCorrupt(file, 'product-projects')
+});
+const businessRecordStore = makeBusinessRecordStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable, now: () => Date.now(), newId: () => crypto.randomUUID(),
+  projectExists: id => productProjectStore.get(id),
+  onRecover: (key, file) => console.warn('[business-records] recovered ' + file + ' from .bak last-known-good.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'business-records')
 });
 const objectiveDispatch = makeObjectiveDispatch({
   objectives: objectiveStore, roles: pineStarRoleRegistry, roster: () => agentRoster,
@@ -8746,6 +8753,8 @@ const ROUTES = [
   { m: 'POST', exact: '/api/product-projects/production-plan', h: handleProductProductionPlan },
   { m: 'POST', exact: '/api/product-projects/qa', h: handleProductQa },
   { m: ['GET', 'POST'], qsplit: '/api/product-projects', h: handleProductProjects },
+  { m: ['GET', 'POST'], qsplit: '/api/business/commerce-records', h: handleCommerceRecords },
+  { m: ['GET', 'POST'], qsplit: '/api/business/ledger', h: handleBusinessLedger },
   { m: 'POST', exact: '/api/objectives/intake', h: handlePineStarObjectiveIntake },
   { m: 'POST', exact: '/api/objectives/decompose', h: handlePineStarObjectiveDecompose },
   { m: 'POST', exact: '/api/objectives/audit', h: handlePineStarObjectiveAudit },
@@ -18423,7 +18432,7 @@ async function handleMorningBrief(req, res) {
     const id = String(body.id || ('morning-brief:' + new Date(periodEnd).toISOString().slice(0, 10))).trim().slice(0, 120);
     const existing = listSharedReports(notebookStore, 100).find(x => x && x.id === id);
     if (existing) return respondJson(res, 200, { ok: true, added: false, report: existing });
-    const report = composeMorningBrief({ id, periodStart, periodEnd, objectives: objectiveStore.list(1000), reports: listSharedReports(notebookStore, 100), runs: runStore.list(null, { limit: 1000, since: periodStart, through: periodEnd }) });
+    const report = composeMorningBrief({ id, periodStart, periodEnd, objectives: objectiveStore.list(1000), reports: listSharedReports(notebookStore, 100), runs: runStore.list(null, { limit: 1000, since: periodStart, through: periodEnd }), businessSummary: businessRecordStore.summary(periodStart, periodEnd) });
     const saved = await appendSharedReport(notebookStore, report);
     return respondJson(res, 201, { ok: true, added: saved.added, report: saved.report });
   } catch (e) { return respondJson(res, 400, { error: (e && e.message) || 'invalid Morning Brief request' }); }
@@ -18487,6 +18496,18 @@ async function handleProductQa(req, res) {
       appendReport: report => appendSharedReport(notebookStore, report), now: Date.now }, body);
     return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
   } catch (e) { const message = (e && e.message) || 'invalid product QA'; return respondJson(res, message === 'product project not found' ? 404 : (/already recorded differently/.test(message) ? 409 : 400), { error: message }); }
+}
+async function handleCommerceRecords(req, res) {
+  if (req.method === 'GET') { const u = new URL(req.url, 'http://127.0.0.1'); return respondJson(res, 200, { schema: 'pine-star.commerce-records.v1', records: businessRecordStore.listCommerce(u.searchParams.get('limit'), u.searchParams.get('projectId') || '') }); }
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try { const result = await businessRecordStore.recordCommerce(body); return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result)); }
+  catch (e) { const message = (e && e.message) || 'invalid commerce record'; return respondJson(res, /already recorded differently/.test(message) ? 409 : 400, { error: message }); }
+}
+async function handleBusinessLedger(req, res) {
+  if (req.method === 'GET') { const u = new URL(req.url, 'http://127.0.0.1'), start = u.searchParams.get('periodStart'), end = u.searchParams.get('periodEnd'); return respondJson(res, 200, { schema: 'pine-star.business-ledger.v1', entries: businessRecordStore.listLedger(u.searchParams.get('limit'), u.searchParams.get('projectId') || '', u.searchParams.get('type') || ''), summary: businessRecordStore.summary(start, end) }); }
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try { const result = await businessRecordStore.recordLedger(body); return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result)); }
+  catch (e) { const message = (e && e.message) || 'invalid business ledger entry'; return respondJson(res, /already recorded differently/.test(message) ? 409 : 400, { error: message }); }
 }
 function handlePineStarRoles(req, res) {
   return respondJson(res, 200, { schema: 'pine-star.roles.v1', roles: pineStarRoleRegistry.list().map(publicPineStarRole) });
@@ -18639,6 +18660,7 @@ function servePineStarControlStatus(req, res) {
   const reports = notebookStore.readKey('reports:station');
   const objectives = objectiveStore.readStatus();
   const productProjects = productProjectStore.readStatus();
+  const businessRecords = businessRecordStore.readStatus();
   const rows = (reports.status === 'ok' || reports.status === 'recovered') && Array.isArray(reports.value) ? reports.value : [];
   const objectiveRows = (objectives.status === 'ok' || objectives.status === 'recovered') && Array.isArray(objectives.value) ? objectives.value : [];
   const productRows = (productProjects.status === 'ok' || productProjects.status === 'recovered') && Array.isArray(productProjects.value) ? productProjects.value : [];
@@ -18647,7 +18669,7 @@ function servePineStarControlStatus(req, res) {
     reportCount: rows.length, latestReportAt: rows.length ? Number(rows[rows.length - 1].createdAt) || 0 : 0,
     objectives: objectives.status, objectiveCount: objectiveRows.length,
     approvalRequiredCount: objectiveRows.filter(row => row && row.status === 'approval_required').length,
-    productProjects: productProjects.status, productProjectCount: productRows.length,
+    productProjects: productProjects.status, productProjectCount: productRows.length, businessRecords: businessRecords.status,
     productPublicationApprovalCount: productRows.filter(row => row && row.status === 'approval_required').length,
     externalSync: { enabled: false, target: null }, spendingAuthorityUsd: 0
   });

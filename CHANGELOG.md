@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-024 — Truthful commerce and business records
+
+- Added authenticated durable commerce references that can record planned, draft, approval-waiting, evidenced observed-publication, and archived state without performing marketplace actions.
+- Added immutable evidence-required USD revenue, expense, and refund entries with source/time/project provenance, idempotent stable identities, and truthful period summaries.
+- Integrated recorded business totals and entry references into Morning Brief while retaining zero spending authority and no payment, account, credential, or publication capability.
+
 ### PS-2026-023 — Evidence-gated QA and listing preparation
 
 - Required a completed linked Quality Reviewer objective plus verified existing Workshop artifact and shared-report evidence before recording QA.
