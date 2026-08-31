@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-030 — Pine Trail production and QA preset
+
+- Added family-aware editable-source, US Letter PDF, A4 PDF, and bundle-manifest expectations for researched Pine Trail Printables.
+- Added original-asset, print-size legibility, clipping, print-margin, and no-StarNet/commercial-game-art QA checks with bounded product-specific additions.
+- Delegated to the existing Product Designer/Workshop/Quality Reviewer production planner and retained no-publish, no-account, no-purchase, zero-spend boundaries.
+
 ### PS-2026-029 — Read-only commerce and ledger UI
 
 - Added escaped read-only commerce observation cards with project, marketplace, listing-reference, and evidence fields plus explicit no-action copy.

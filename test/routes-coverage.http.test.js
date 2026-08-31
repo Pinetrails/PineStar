@@ -138,6 +138,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects/production-plan', {})).status, 403, 'product production plans remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/qa', {})).status, 403, 'product QA finalization remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-printables', {})).status, 403, 'Pine Trail printable intake remains behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/pine-trail-printables/production-plan', {})).status, 403, 'Pine Trail production planning remains behind the API token gate');
     A.eq((await raw('GET', '/api/business/commerce-records')).status, 403, 'commerce records remain behind the API token gate');
     A.eq((await raw('POST', '/api/business/commerce-records', {})).status, 403, 'commerce record writes remain behind the API token gate');
     A.eq((await raw('GET', '/api/business/ledger')).status, 403, 'business ledger remains behind the API token gate');
@@ -222,6 +223,20 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(pineTrail.body.externalAction, false, 'Pine Trail intake performs no external commerce action');
     A.eq(pineTrail.body.spendingAuthorityUsd, 0, 'Pine Trail intake grants no spend');
     A.eq((await j('POST', '/api/product-projects/pine-trail-printables', pineTrailSpec)).status, 200, 'Pine Trail intake retry is idempotent');
+    await j('POST', '/api/objectives/status', { id: pineTrail.body.children[0].id, status: 'completed', completionEvidenceRefs: ['fixture:pine-trail-market'] });
+    await j('POST', '/api/objectives/status', { id: pineTrail.body.children[1].id, status: 'completed', completionEvidenceRefs: ['fixture:pine-trail-concept'] });
+    const pineTrailResearch = await j('POST', '/api/product-projects/research-decision', { projectId: pineTrail.body.project.id, researchObjectiveId: pineTrail.body.children[0].id, conceptObjectiveId: pineTrail.body.children[1].id, decision: 'go', rationale: 'Fixture evidence supports bounded printable planning.', findings: ['Fixture need'], risks: ['Fixture evidence limited'], evidenceRefs: ['fixture:pine-trail-market', 'fixture:pine-trail-concept'] });
+    A.eq(pineTrailResearch.body.project.status, 'planned', 'evidenced Pine Trail research reaches the existing planning gate');
+    const pineTrailProductionSpec = { projectId: pineTrail.body.project.id, planId: 'http-v1', productSpecification: 'Fixture Pine Trail checklist specification', additionalQaChecks: ['Verify checkbox alignment'] };
+    const pineTrailProduction = await j('POST', '/api/product-projects/pine-trail-printables/production-plan', pineTrailProductionSpec);
+    A.eq(pineTrailProduction.status, 201, 'planned Pine Trail product enters the existing production planner');
+    A.eq(pineTrailProduction.body.preset.family, 'checklist', 'production preset derives the persisted Pine Trail family');
+    A.eq(pineTrailProduction.body.preset.deliverables, ['Editable checklist source', 'US Letter checklist PDF', 'A4 checklist PDF'], 'production preset creates family-specific expected deliverables');
+    A.ok(pineTrailProduction.body.preset.qaChecklist.some(x => /original Pine Trail-owned/.test(x)) && pineTrailProduction.body.preset.qaChecklist.includes('Verify checkbox alignment'), 'production preset combines original-asset and product QA checks');
+    A.eq(pineTrailProduction.body.children.map(x => x.assignedRoleId), ['business.product_designer', 'business.product_designer', 'operations.quality_reviewer'], 'Pine Trail production reuses Product Designer and independent QA routing');
+    A.eq(pineTrailProduction.body.externalAction, false, 'Pine Trail production planning performs no external action');
+    A.eq(pineTrailProduction.body.spendingAuthorityUsd, 0, 'Pine Trail production planning grants zero spend');
+    A.eq((await j('POST', '/api/product-projects/pine-trail-printables/production-plan', pineTrailProductionSpec)).status, 200, 'Pine Trail production retry is idempotent');
     await j('POST', '/api/objectives/status', { id: ideaIntake.body.children[0].id, status: 'completed', completionEvidenceRefs: ['report:http-market'] });
     await j('POST', '/api/objectives/status', { id: ideaIntake.body.children[1].id, status: 'completed', completionEvidenceRefs: ['report:http-concept'] });
     const researchDecisionSpec = { projectId: 'http-idea-lab', researchObjectiveId: ideaIntake.body.children[0].id, conceptObjectiveId: ideaIntake.body.children[1].id, decision: 'go', rationale: 'Fixture evidence supports bounded planning.', findings: ['Fixture customer need'], risks: ['Fixture evidence is limited'], evidenceRefs: ['fixture:market', 'fixture:concept'] };

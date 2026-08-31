@@ -41,4 +41,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-029` adds commerce and financial inspection to Reports through the existing authenticated GET routes. Commerce cards show escaped project, marketplace, external listing reference, and evidence values as text only. The ledger section shows recorded all-time revenue, expense, refund, net, and entry totals plus source/project/evidence entry cards. It contains no external link, payment, refund, purchase, publication, or edit control.
 
+`PS-2026-030` extends the Pine Trail preset through the existing production planner after evidence-backed research reaches `planned`. It derives family-specific editable source, US Letter PDF, A4 PDF, and optional bundle manifest expectations; supplies original-asset, clipping, legibility, margin, and no-StarNet/commercial-game-art QA checks; and delegates to existing Product Designer preparation and independent Quality Reviewer objectives. Real artifacts still require Workshop/file provenance, and the preset cannot publish, create accounts, purchase, subscribe, or spend.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

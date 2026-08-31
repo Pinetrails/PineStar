@@ -63,6 +63,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Business Morning Brief now includes a deterministic current portfolio snapshot with stage, QA, listing, approval, blocker, commerce-observation, action, and provenance signals (`PS-2026-027`).
 - The existing Reports UI now exposes a read-only product portfolio snapshot plus listing, marketplace, blocker, evidence, and next-action readiness detail without mutation controls (`PS-2026-028`).
 - Reports now includes escaped read-only commerce observations and evidence-backed business-ledger totals/entries using existing authenticated GET APIs without external navigation or mutation controls (`PS-2026-029`).
+- Researched Pine Trail Printables now have a family-aware production/QA preset that delegates to the existing Product Designer, Workshop provenance, and independent Quality Reviewer workflow (`PS-2026-030`).
 
 ## Phase 7 — Evolution
 

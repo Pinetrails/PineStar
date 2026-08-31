@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-029` — Read-Only Commerce & Ledger UI — **COMPLETE**
+**Current change:** `PS-2026-030` — Pine Trail Production & QA Preset — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -41,6 +41,7 @@
 | Product portfolio brief | `PS-2026-027` complete; deterministic current-state projection adds stage counts, listing/approval visibility, failed QA/blockers, next actions, and commerce provenance to Business Morning Brief without a new store, model call, or action path |
 | Product portfolio UI | `PS-2026-028` complete; Reports now shows a read-only stage/QA/blocker/observed-publication snapshot and richer listing, marketplace, evidence, blocker, and next-action details using existing authenticated reads with no mutation controls |
 | Commerce and ledger UI | `PS-2026-029` complete; Reports shows escaped commerce observations plus recorded revenue/expense/refund/net totals and evidenced entries via existing authenticated reads, with no links or payment/refund/publication/edit controls |
+| Pine Trail production preset | `PS-2026-030` complete; researched/planned Pine Trail products can delegate family-specific editable/Letter/A4 deliverables and original-asset/print QA checks to the existing Product Designer, Workshop provenance, and independent Quality Reviewer workflow with zero external authority |
 
 ## Known baseline issues
 
@@ -55,4 +56,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Add bounded product portfolio exports or filtered inspection only if it reuses existing local export/privacy boundaries; otherwise continue Phase 6 product workflow depth such as reusable production/QA presets.
+Add a Pine Trail listing-copy preset over the existing evidence-gated QA finalization only if it remains internal, preserves marketplace-neutral bounded metadata, and cannot publish or create accounts.

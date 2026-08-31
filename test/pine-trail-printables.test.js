@@ -1,5 +1,5 @@
 'use strict';
-const A = require('./_assert.js'); const { normalizePineTrailPrintable, intakePineTrailPrintable } = require('../sidecar/pine-trail-printables.js');
+const A = require('./_assert.js'); const { normalizePineTrailPrintable, intakePineTrailPrintable, planPineTrailProduction } = require('../sidecar/pine-trail-printables.js');
 (async () => {
   const preset = normalizePineTrailPrintable({ productId: 'weekend-planner', title: 'Weekend Trail Planner', family: 'planner', useCase: 'Prepare for a day hike', targetMarketplaces: ['Marketplace A'], assetRequirements: ['Accessible form labels'] });
   A.eq(preset.productId, 'pine-trail-weekend-planner', 'preset uses a stable Pine Trail namespace');
@@ -11,5 +11,11 @@ const A = require('./_assert.js'); const { normalizePineTrailPrintable, intakePi
   A.eq(result.externalAction, false, 'preset performs no marketplace or publication action');
   A.eq(result.spendingAuthorityUsd, 0, 'preset grants no spending authority');
   let bad = false; try { normalizePineTrailPrintable({ productId: 'x', title: 'X', family: 'unknown' }); } catch (e) { bad = /supported family/.test(e.message); } A.ok(bad, 'unsupported families are rejected rather than improvised');
+  let productionInput; const production = await planPineTrailProduction({ projects: { get: id => ({ id, productType: 'pine-trail-printable:checklist' }) }, createProductionPlan: async x => { productionInput = x; return { idempotent: false, project: { id: x.projectId } }; } }, { projectId: 'pine-trail-weekend-planner', planId: 'v1', additionalQaChecks: ['Verify checkbox alignment'] });
+  A.eq(productionInput.deliverables, ['Editable checklist source', 'US Letter checklist PDF', 'A4 checklist PDF'], 'production preset supplies family-specific deliverables');
+  A.ok(productionInput.qaChecklist.some(x => /original Pine Trail-owned/.test(x)) && productionInput.qaChecklist.includes('Verify checkbox alignment'), 'production preset combines protected asset and product-specific QA checks');
+  A.ok(productionInput.constraints.some(x => /No publication/.test(x)) && productionInput.constraints.some(x => /Workshop\/file provenance/.test(x)), 'production preset preserves external-action and real-artifact boundaries');
+  A.eq(production.externalAction, false, 'production preset performs no external action');
+  A.eq(production.spendingAuthorityUsd, 0, 'production preset grants zero spending authority');
   A.report('pine-trail-printables.test');
 })().catch(e => { console.error(e); process.exitCode = 1; });
