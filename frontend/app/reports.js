@@ -36,10 +36,20 @@
   }
   function productProjectHtml(entry) {
     const p = (entry && entry.project) || entry || {}, progress = (entry && entry.progress) || {}, objectives = Array.isArray(progress.objectives) ? progress.objectives : [];
+    const blockers = Array.isArray(p.blockers) ? p.blockers : [], markets = Array.isArray(p.targetMarketplaces) ? p.targetMarketplaces : [], evidence = Array.isArray(p.evidenceRefs) ? p.evidenceRefs : [];
     return '<article class="cfg-card ps-product-project"><div class="dim">' + esc(String(p.status || 'unknown').toUpperCase()) + ' · ' + esc(p.productType || 'digital-product') + ' · ' + esc(dateText(p.updatedAt || p.createdAt)) + '</div><h3>' + esc(p.title || 'Untitled product project') + '</h3>' +
       (p.description ? '<p>' + esc(p.description) + '</p>' : '') + '<div class="dim">OWNER · ' + esc(p.owningRoleId || p.owningDepartment || 'business') + ' | QA · ' + esc(String(p.qaState || 'not_started').toUpperCase()) + ' | PUBLICATION · ' + esc(String(p.publicationState || 'not_published').toUpperCase()) + '</div>' +
-      (p.targetCustomer ? '<p class="muted">CUSTOMER · ' + esc(p.targetCustomer) + '</p>' : '') + (objectives.length ? '<div class="dim">OBJECTIVES · ' + objectives.map(x => esc(x.id + ' [' + x.status + ']')).join(' · ') + '</div>' : '') +
+      '<div class="dim">LISTING · ' + esc(String(p.listingState || 'not_started').toUpperCase()) + (markets.length ? ' | MARKETS · ' + markets.map(esc).join(' · ') : '') + '</div>' +
+      (p.targetCustomer ? '<p class="muted">CUSTOMER · ' + esc(p.targetCustomer) + '</p>' : '') + list('BLOCKERS', blockers) + (objectives.length ? '<div class="dim">OBJECTIVES · ' + objectives.map(x => esc(x.id + ' [' + x.status + ']')).join(' · ') + '</div>' : '') +
+      (evidence.length ? '<div class="dim">EVIDENCE · ' + evidence.map(esc).join(' · ') + '</div>' : '') +
       (p.nextAction ? '<p class="muted">NEXT · ' + esc(p.nextAction) + '</p>' : '') + '</article>';
+  }
+  function productPortfolioHtml(entries, commerceRows) {
+    const rows = (Array.isArray(entries) ? entries : []).map(x => (x && x.project) || x).filter(Boolean), commerce = (Array.isArray(commerceRows) ? commerceRows : []).filter(Boolean), counts = {};
+    for (const p of rows) counts[p.status || 'unknown'] = (counts[p.status || 'unknown'] || 0) + 1;
+    const stages = Object.keys(counts).sort().map(k => esc(String(k).toUpperCase()) + ' ' + counts[k]).join(' · '), failed = rows.filter(p => p.qaState === 'failed').length, blocked = rows.filter(p => Array.isArray(p.blockers) && p.blockers.length).length;
+    const observed = new Set(commerce.filter(x => x.state === 'observed_published').map(x => x.projectId)).size;
+    return '<article class="cfg-card ps-product-portfolio"><div class="dim">READ-ONLY PORTFOLIO SNAPSHOT</div><h3>' + rows.length + ' PRODUCT' + (rows.length === 1 ? '' : 'S') + '</h3><p>' + (stages || 'No pipeline stages recorded.') + '</p><div class="dim">FAILED QA · ' + failed + ' | BLOCKED · ' + blocked + ' | EVIDENCED OBSERVED PUBLICATION · ' + observed + '</div><p class="muted">Inspection only · approvals, publication, payments, and execution are unavailable here.</p></article>';
   }
   function exportBundle(rows, createdAt) {
     return { schema: 'pine-star.shared-report-export.v1', createdAt: Math.max(0, Number(createdAt) || 0), destination: null, externalWritePerformed: false, reports: (Array.isArray(rows) ? rows : []).slice() };
@@ -62,16 +72,17 @@
     a.href = url; a.download = name; a.style.display = 'none'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 0);
   }
   async function mount(body) {
-    body.innerHTML = '<div class="cfg"><h3>REPORTS / SHARED OPERATIONAL HISTORY</h3><p class="muted">Concise, human-readable outcomes only. Private agent memory, transcripts, and raw runtime payloads stay outside this view.</p><div id="ps-control" class="dim">checking memory boundary…</div><p><button class="bb sm" id="ps-export-json" disabled>EXPORT JSON</button> <button class="bb sm" id="ps-export-md" disabled>EXPORT MARKDOWN</button></p><div id="ps-reports"><p class="muted">loading reports…</p></div><h3>PRODUCT PROJECTS</h3><p class="muted">Business records link to the objectives and reports doing the work. Publication remains approval-protected.</p><div id="ps-product-projects"><p class="muted">loading product projects…</p></div><h3>OBJECTIVES</h3><p class="muted">Durable routing and evidence records. Protected objectives remain stopped for approval; this view cannot approve or execute them.</p><div id="ps-objectives"><p class="muted">loading objectives…</p></div><h3>SYSTEM ROLES</h3><p class="muted">Stable routing roles are separate from visible agent names and roster instances.</p><div id="ps-roles"><p class="muted">loading roles…</p></div></div>';
+    body.innerHTML = '<div class="cfg"><h3>REPORTS / SHARED OPERATIONAL HISTORY</h3><p class="muted">Concise, human-readable outcomes only. Private agent memory, transcripts, and raw runtime payloads stay outside this view.</p><div id="ps-control" class="dim">checking memory boundary…</div><p><button class="bb sm" id="ps-export-json" disabled>EXPORT JSON</button> <button class="bb sm" id="ps-export-md" disabled>EXPORT MARKDOWN</button></p><div id="ps-reports"><p class="muted">loading reports…</p></div><h3>PRODUCT PROJECTS</h3><p class="muted">Business records link to the objectives and reports doing the work. Publication remains approval-protected.</p><div id="ps-product-portfolio"><p class="muted">loading portfolio snapshot…</p></div><div id="ps-product-projects"><p class="muted">loading product projects…</p></div><h3>OBJECTIVES</h3><p class="muted">Durable routing and evidence records. Protected objectives remain stopped for approval; this view cannot approve or execute them.</p><div id="ps-objectives"><p class="muted">loading objectives…</p></div><h3>SYSTEM ROLES</h3><p class="muted">Stable routing roles are separate from visible agent names and roster instances.</p><div id="ps-roles"><p class="muted">loading roles…</p></div></div>';
     try {
-      const [rr, sr, pr, or, ro] = await Promise.all([fetch('/api/reports?limit=40', { cache: 'no-store' }), fetch('/api/control/status', { cache: 'no-store' }), fetch('/api/product-projects?limit=100', { cache: 'no-store' }), fetch('/api/objectives?limit=100', { cache: 'no-store' }), fetch('/api/roles', { cache: 'no-store' })]);
+      const [rr, sr, pr, cr, or, ro] = await Promise.all([fetch('/api/reports?limit=40', { cache: 'no-store' }), fetch('/api/control/status', { cache: 'no-store' }), fetch('/api/product-projects?limit=100', { cache: 'no-store' }), fetch('/api/business/commerce-records?limit=250', { cache: 'no-store' }), fetch('/api/objectives?limit=100', { cache: 'no-store' }), fetch('/api/roles', { cache: 'no-store' })]);
       const reports = rr.ok ? await rr.json() : { reports: [] }, status = sr.ok ? await sr.json() : null;
-      const productProjects = pr.ok ? await pr.json() : { projects: [] }, objectives = or.ok ? await or.json() : { objectives: [] }, roles = ro.ok ? await ro.json() : { roles: [] };
+      const productProjects = pr.ok ? await pr.json() : { projects: [] }, commerce = cr.ok ? await cr.json() : { records: [] }, objectives = or.ok ? await or.json() : { objectives: [] }, roles = ro.ok ? await ro.json() : { roles: [] };
       const control = body.querySelector('#ps-control');
       if (control && status) control.textContent = 'PRIVATE MEMORY · ' + String(status.internalMemory || 'unknown').toUpperCase() + '  |  SHARED REPORTS · ' + String(status.sharedReports || 'unknown').toUpperCase() + '  |  EXTERNAL SYNC · OFF';
       const host = body.querySelector('#ps-reports'), rows = Array.isArray(reports.reports) ? reports.reports : [];
       if (host) host.innerHTML = rows.length ? rows.map(reportHtml).join('') : '<p class="muted">No shared reports yet. A morning brief will appear after Night Shift has real activity or exceptions to report.</p>';
       const productHost = body.querySelector('#ps-product-projects'), productRows = Array.isArray(productProjects.projects) ? productProjects.projects : [];
+      const portfolioHost = body.querySelector('#ps-product-portfolio'); if (portfolioHost) portfolioHost.innerHTML = productPortfolioHtml(productRows, commerce.records);
       if (productHost) productHost.innerHTML = productRows.length ? productRows.map(productProjectHtml).join('') : '<p class="muted">No digital-product projects have been recorded yet.</p>';
       const objectiveHost = body.querySelector('#ps-objectives'), objectiveRows = Array.isArray(objectives.objectives) ? objectives.objectives : [];
       if (objectiveHost) objectiveHost.innerHTML = objectiveRows.length ? objectiveRows.map(objectiveHtml).join('') : '<p class="muted">No objectives have been recorded yet.</p>';
@@ -80,7 +91,7 @@
       const jsonBtn = body.querySelector('#ps-export-json'), mdBtn = body.querySelector('#ps-export-md');
       if (jsonBtn) { jsonBtn.disabled = !rows.length; jsonBtn.onclick = () => download('pine-star-shared-reports.json', 'application/json', JSON.stringify(exportBundle(rows, Date.now()), null, 2)); }
       if (mdBtn) { mdBtn.disabled = !rows.length; mdBtn.onclick = () => download('pine-star-shared-reports.md', 'text/markdown', markdown(rows)); }
-    } catch (_) { for (const id of ['#ps-reports', '#ps-product-projects', '#ps-objectives', '#ps-roles']) { const host = body.querySelector(id); if (host) host.innerHTML = '<p class="bad">Operational records are temporarily unavailable.</p>'; } }
+    } catch (_) { for (const id of ['#ps-reports', '#ps-product-portfolio', '#ps-product-projects', '#ps-objectives', '#ps-roles']) { const host = body.querySelector(id); if (host) host.innerHTML = '<p class="bad">Operational records are temporarily unavailable.</p>'; } }
   }
-  return { mount, reportHtml, productProjectHtml, objectiveHtml, roleHtml, dateText, exportBundle, markdown };
+  return { mount, reportHtml, productProjectHtml, productPortfolioHtml, objectiveHtml, roleHtml, dateText, exportBundle, markdown };
 });

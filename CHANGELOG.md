@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-028 — Read-only product portfolio UI
+
+- Added a read-only current portfolio card to Reports with deterministic stage, failed-QA, blocker, and evidenced observed-publication counts.
+- Expanded product cards with listing state, marketplace targets, blockers, and evidence references while preserving HTML escaping.
+- Reused existing authenticated product and commerce GET APIs and exposed no publication, approval, payment, execution, or edit controls.
+
 ### PS-2026-027 — Product portfolio Morning Brief
 
 - Added a pure current-state portfolio projection over existing product projects and commerce references, with deterministic stage/QA/listing/approval/observed-publication counts.

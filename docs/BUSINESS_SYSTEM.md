@@ -37,4 +37,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-027` adds a pure product-portfolio snapshot to Business Morning Brief. It derives total and per-stage counts, listing readiness, protected approvals, failed QA, blockers, and evidenced observed-publication counts from existing product and commerce records. It contributes bounded attention items, next actions, and record references to the shared report. It creates no store, task, model call, publication, approval grant, payment, or external mutation.
 
+`PS-2026-028` projects product readiness into the existing Reports UI. A read-only portfolio card shows per-stage, failed-QA, blocker, and evidenced observed-publication counts. Existing product cards now show listing state, marketplace targets, blockers, and evidence references in addition to objective progress and next actions. The UI only calls existing authenticated GET routes and contains no product, approval, publication, payment, execution, or edit control.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.
