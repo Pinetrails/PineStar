@@ -15,6 +15,7 @@ These documents define current Pine Star direction. They take precedence over ol
 - [ROADMAP.md](ROADMAP.md), [CURRENT_STATUS.md](CURRENT_STATUS.md), and [BASELINE.md](BASELINE.md) — plan, state, and verified baseline.
 - [DECISIONS.md](DECISIONS.md) — retained StarNet decisions plus Pine Star decisions.
 - [change-records/](change-records/) — Pine Star change records.
+- [research/AWESOME_LLM_APPS_EVALUATION.md](research/AWESOME_LLM_APPS_EVALUATION.md) — evidence-based external pattern evaluation for `PS-2026-020`.
 
 Repository front doors: [PINE_STAR_CONTROL.md](../PINE_STAR_CONTROL.md), [AGENTS.md](../AGENTS.md), and [CHANGELOG.md](../CHANGELOG.md).
 

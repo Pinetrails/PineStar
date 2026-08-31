@@ -24,3 +24,6 @@ Pine Star must never autonomously weaken financial/security safeguards, approval
 - Prefer reversible operations, scoped permissions, logs, and truthful failure reporting.
 - Keep real-money activity separate from paper/simulated testing.
 
+## Development scope signal
+
+Before the final diff review for a Pine Star change, `npm run pine:scope -- --change-id PS-YYYY-###` can inspect the current unstaged diff, or add `-- --change-id PS-YYYY-### --staged` after staging. The result is advisory: path/intent overlap, churn, subsystem breadth, and manifest edits are review signals, never proof that work is in or out of scope. The command is offline, read-only, and cannot stage, revert, commit, install, or authorize a change.

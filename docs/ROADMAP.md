@@ -58,6 +58,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 ## Phase 7 — Evolution
 
 - Performance measurement, experiments, champion/challenger, safe self-improvement, agent/configuration evolution.
+- External development patterns are research inputs only. `PS-2026-020` added an advisory native Change-ID scope signal while rejecting unverified context proxies and autonomous third-party self-rewriting authority.
 
 ## Phase 8 — Pine Star World
 

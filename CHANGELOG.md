@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-020 — Awesome LLM Apps evaluation and selective integration
+
+- Inspected the external Awesome LLM Apps repository as an Apache-2.0 reference library without executing or importing its apps, skills, dependencies, or model proxy.
+- Recorded priority and secondary candidates with overlap, dependency, service, cost, security, license, difficulty, recommendation, and role ownership evidence.
+- Added a dependency-free, offline, read-only Change-ID scope signal for final diff review; its heuristic output is advisory and grants no staging, commit, install, approval, or execution authority.
+
 ### PS-2026-019 — Product Idea / Idea Lab intake
 
 - Added authenticated, deterministic, idempotent product-idea intake over existing product projects, objectives, routing, and shared reports.
