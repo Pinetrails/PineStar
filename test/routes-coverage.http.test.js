@@ -133,6 +133,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects/update', {})).status, 403, 'product project updates remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/link', {})).status, 403, 'product project links remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/ideas', {})).status, 403, 'product idea intake remains behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/research-decision', {})).status, 403, 'product research decisions remain behind the API token gate');
     const roles = await j('GET', '/api/roles');
     A.eq(roles.status, 200, 'GET /api/roles -> 200');
     A.ok(roles.body.roles.some(role => role.id === 'research.general_researcher'), 'role discovery exposes stable system role IDs');
@@ -201,6 +202,15 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(ideaIntake.body.project.linkedReportIds, ['product-idea:http-idea-lab'], 'HTTP idea project links its intake report');
     A.eq((await j('POST', '/api/product-projects/ideas', { ideaId: 'http-idea-lab', title: 'HTTP Idea Lab Printable' })).status, 200, 'HTTP idea retry is idempotent');
     A.ok((await j('GET', '/api/reports?limit=20')).body.reports.some(x => x.id === 'product-idea:http-idea-lab'), 'Idea Lab report is readable through the shared report API');
+    await j('POST', '/api/objectives/status', { id: ideaIntake.body.children[0].id, status: 'completed', completionEvidenceRefs: ['report:http-market'] });
+    await j('POST', '/api/objectives/status', { id: ideaIntake.body.children[1].id, status: 'completed', completionEvidenceRefs: ['report:http-concept'] });
+    const researchDecisionSpec = { projectId: 'http-idea-lab', researchObjectiveId: ideaIntake.body.children[0].id, conceptObjectiveId: ideaIntake.body.children[1].id, decision: 'go', rationale: 'Fixture evidence supports bounded planning.', findings: ['Fixture customer need'], risks: ['Fixture evidence is limited'], evidenceRefs: ['fixture:market', 'fixture:concept'] };
+    const researchDecision = await j('POST', '/api/product-projects/research-decision', researchDecisionSpec);
+    A.eq(researchDecision.status, 201, 'completed specialist evidence creates a product research decision');
+    A.eq(researchDecision.body.project.status, 'planned', 'go decision advances the project to planning');
+    A.eq(researchDecision.body.project.spendingAuthorityUsd, 0, 'research decision preserves zero-spend authority');
+    A.eq(researchDecision.body.report.id, 'product-research:http-idea-lab', 'research decision creates a stable linked shared report');
+    A.eq((await j('POST', '/api/product-projects/research-decision', researchDecisionSpec)).status, 200, 'same product research decision is idempotent');
     const recurringSpec = { scheduleId: 'http-daily-scout', roleId: 'operations.open_source_scout', recurrence: '0 9 * * *', timezone: 'America/New_York', enabled: false,
       template: { workflow: 'open-source-scout', scout: { topic: 'Windows developer utilities', recommendationLimit: 3, compatibilityTarget: 'Windows 11' } } };
     const recurringCreate = await j('POST', '/api/objectives/recurring', recurringSpec);

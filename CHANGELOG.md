@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-021 — Evidence-gated product research decisions
+
+- Added authenticated, idempotent research finalization that requires completed linked Researcher and Idea Lab objectives plus explicit evidence.
+- Added bounded shared decision reports and project linkage; supported `go` decisions advance only to planning, while revise/stop decisions hold production with truthful blockers.
+- Projected product decisions and next actions into the deterministic Morning Brief without adding another feed or model call.
+
 ### PS-2026-020 — Awesome LLM Apps evaluation and selective integration
 
 - Inspected the external Awesome LLM Apps repository as an Apache-2.0 reference library without executing or importing its apps, skills, dependencies, or model proxy.
