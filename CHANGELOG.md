@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-031 — Local business snapshot export
+
+- Added a user-initiated JSON download of bounded product, commerce, and evidence-backed ledger projections from Reports.
+- Added a versioned export contract with no destination or external write and an explicit field allowlist that drops unknown credential/private fields.
+- Reused existing authenticated reads and added no automatic trigger, sync, publication, payment, account, or spending authority.
+
 ### PS-2026-030 — Pine Trail production and QA preset
 
 - Added family-aware editable-source, US Letter PDF, A4 PDF, and bundle-manifest expectations for researched Pine Trail Printables.

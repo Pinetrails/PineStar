@@ -46,4 +46,11 @@ const ledger = Reports.businessLedgerHtml({ summary: { revenueUsd: 14.5, expense
 A.ok(ledger.includes('NET $11.00') && ledger.includes('REVENUE $14.50') && ledger.includes('EXPENSES $2.50') && ledger.includes('REFUNDS $1.00'), 'business ledger renders truthful recorded totals');
 A.ok(ledger.includes('&lt;export&gt;') && ledger.includes('planner&amp;one') && ledger.includes('row:&lt;1&gt;'), 'business entry source, project, and evidence are escaped');
 A.ok(!/<button|onclick=|<form|href=/i.test(commerce + ledger), 'commerce and ledger inspection expose no action or external navigation control');
+const businessExport = Reports.businessExportBundle([{ project: { id: 'p1', title: 'Planner', status: 'listing_ready', credentials: 'must-drop', blockers: ['none'] } }], [{ id: 'c1', projectId: 'p1', marketplace: 'Market', state: 'draft', apiKey: 'must-drop' }], { summary: { entryCount: 1, revenueUsd: 4, netUsd: 4 }, entries: [{ id: 'e1', type: 'revenue', amountUsd: 4, source: 'export', evidenceRefs: ['row:1'], secret: 'must-drop', occurredAt: 2 }] }, 123);
+A.eq(businessExport.schema, 'pine-star.business-snapshot-export.v1', 'business export has a versioned bounded contract');
+A.eq(businessExport.destination, null, 'business export selects no external destination');
+A.eq(businessExport.externalWritePerformed, false, 'business export records that no external write occurred');
+A.ok(JSON.stringify(businessExport).indexOf('must-drop') < 0, 'business export allowlist drops unknown credential/private fields');
+A.eq(businessExport.products[0].status, 'listing_ready', 'business export retains bounded product readiness');
+A.eq(businessExport.ledger[0].amountUsd, 4, 'business export retains evidenced financial amount');
 A.report('reports-ui.test');

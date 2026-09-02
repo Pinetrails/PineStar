@@ -1,10 +1,10 @@
 # Current status
 
-**As of:** 2026-08-31
+**As of:** 2026-09-02
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-030` — Pine Trail Production & QA Preset — **COMPLETE**
+**Current change:** `PS-2026-031` — Local Business Snapshot Export — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -42,6 +42,7 @@
 | Product portfolio UI | `PS-2026-028` complete; Reports now shows a read-only stage/QA/blocker/observed-publication snapshot and richer listing, marketplace, evidence, blocker, and next-action details using existing authenticated reads with no mutation controls |
 | Commerce and ledger UI | `PS-2026-029` complete; Reports shows escaped commerce observations plus recorded revenue/expense/refund/net totals and evidenced entries via existing authenticated reads, with no links or payment/refund/publication/edit controls |
 | Pine Trail production preset | `PS-2026-030` complete; researched/planned Pine Trail products can delegate family-specific editable/Letter/A4 deliverables and original-asset/print QA checks to the existing Product Designer, Workshop provenance, and independent Quality Reviewer workflow with zero external authority |
+| Local business snapshot export | `PS-2026-031` complete; Reports can download an allowlisted product, commerce, and evidenced-ledger JSON snapshot locally on explicit user action, with no destination, external write, credential field, sync, or automatic trigger |
 
 ## Known baseline issues
 
@@ -56,4 +57,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Add a Pine Trail listing-copy preset over the existing evidence-gated QA finalization only if it remains internal, preserves marketplace-neutral bounded metadata, and cannot publish or create accounts.
+Audit the Phase 6 foundation against implemented dependencies and select the next non-duplicative internal business capability. Do not add a Pine Trail listing-copy alias: the existing evidence-gated QA finalization already owns bounded internal listing metadata.
