@@ -4,6 +4,11 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-036 — Read-only QA coverage inspection
+
+- Added escaped expected-deliverable-to-artifact coverage to product QA reports in Reports.
+- Reused the bounded shared-report field and exposed no artifact, approval, publication, navigation, or execution control.
+
 ### PS-2026-035 — Complete deliverable coverage gate
 
 - Required passed product QA to map every expected deliverable to verified Workshop artifact evidence.

@@ -53,4 +53,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-035` closes a production evidence gap in QA. A passed decision must supply an exact mapping from every expected project deliverable to an existing kept or implemented Workshop artifact; missing, extra, or unverified coverage is rejected. The bounded mapping survives the shared-report projection so later audits can reconstruct which artifact supported each deliverable. Failed QA can still record partial evidence without pretending the complete set exists.
 
+`PS-2026-036` renders the shared QA report's expected-deliverable-to-artifact mapping in Reports. Values are escaped and read-only; the projection adds no artifact operation, navigation, approval, execution, or publication control.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

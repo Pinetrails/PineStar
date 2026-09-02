@@ -7,6 +7,9 @@ A.ok(html.includes('made &amp; checked') && html.includes('none &lt;script&gt;')
 A.ok(html.includes('COMPLETED') && html.includes('EXCEPTIONS') && html.includes('SOURCES'), 'readable report sections render when present');
 const sparse = Reports.reportHtml({ headline: 'quiet day' });
 A.ok(!sparse.includes('NEXT ACTIONS') && sparse.includes('quiet day'), 'empty sections are omitted without hiding the report');
+const qaCoverage = Reports.reportHtml({ type: 'product-qa', headline: 'Passed QA', deliverableEvidence: [{ deliverable: 'US Letter <PDF>', artifactId: 'artifact:&one' }] });
+A.ok(qaCoverage.includes('VERIFIED DELIVERABLE COVERAGE') && qaCoverage.includes('US Letter &lt;PDF&gt;') && qaCoverage.includes('artifact:&amp;one'), 'QA reports show escaped deliverable-to-artifact coverage');
+A.ok(!/<button|onclick=|<form|href=/i.test(qaCoverage), 'QA coverage projection exposes no action or navigation control');
 const bundle = Reports.exportBundle([{ id: 'r1', headline: 'done' }], 123);
 A.eq(bundle.schema, 'pine-star.shared-report-export.v1', 'local export has a versioned adapter contract');
 A.eq(bundle.destination, null, 'export selects no external destination');
