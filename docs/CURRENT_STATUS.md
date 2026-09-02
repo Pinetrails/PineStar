@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-031` — Local Business Snapshot Export — **COMPLETE**
+**Current change:** `PS-2026-032` — Evidence-Based Product Contribution — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -43,6 +43,7 @@
 | Commerce and ledger UI | `PS-2026-029` complete; Reports shows escaped commerce observations plus recorded revenue/expense/refund/net totals and evidenced entries via existing authenticated reads, with no links or payment/refund/publication/edit controls |
 | Pine Trail production preset | `PS-2026-030` complete; researched/planned Pine Trail products can delegate family-specific editable/Letter/A4 deliverables and original-asset/print QA checks to the existing Product Designer, Workshop provenance, and independent Quality Reviewer workflow with zero external authority |
 | Local business snapshot export | `PS-2026-031` complete; Reports can download an allowlisted product, commerce, and evidenced-ledger JSON snapshot locally on explicit user action, with no destination, external write, credential field, sync, or automatic trigger |
+| Product contribution reporting | `PS-2026-032` complete; existing period summaries deterministically attribute linked ledger facts to known products, and portfolio/Morning Brief surface recorded net and negative contribution with provenance but no estimates, ROI claim, financial action, or new store |
 
 ## Known baseline issues
 
@@ -57,4 +58,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Audit the Phase 6 foundation against implemented dependencies and select the next non-duplicative internal business capability. Do not add a Pine Trail listing-copy alias: the existing evidence-gated QA finalization already owns bounded internal listing metadata.
+Project evidence-based product contribution into a bounded internal performance view, or select the next dependency-ready Phase 6 gap. Do not infer profitability from missing costs and do not add external commerce authority.

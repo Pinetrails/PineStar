@@ -47,7 +47,9 @@ function makeBusinessRecordStore(deps) {
   function summary(start, end) { const from = Math.max(0, Number(start) || 0), through = Math.max(from, Number(end) || Number(now()) || 0), rows = (state().ledger || []).filter(x => x && x.occurredAt > from && x.occurredAt <= through);
     const total = type => rows.filter(x => x.type === type).reduce((sum, x) => sum + x.amountUsd, 0);
     const revenueUsd = total('revenue'), expenseUsd = total('expense'), refundUsd = total('refund');
-    return { schema: 'pine-star.business-summary.v1', periodStart: from, periodEnd: through, entryCount: rows.length, revenueUsd, expenseUsd, refundUsd, netUsd: Math.round((revenueUsd - expenseUsd - refundUsd) * 10000) / 10000, sourceRefs: rows.map(x => 'business-entry:' + x.id).slice(0, 50) };
+    const grouped = new Map(); for (const row of rows) { if (!row.projectId) continue; const item = grouped.get(row.projectId) || { projectId: row.projectId, entryCount: 0, revenueUsd: 0, expenseUsd: 0, refundUsd: 0 }; item.entryCount++; item[row.type + 'Usd'] += row.amountUsd; grouped.set(row.projectId, item); }
+    const byProject = [...grouped.values()].sort((a, b) => a.projectId.localeCompare(b.projectId)).slice(0, 250).map(x => Object.assign(x, { revenueUsd: Math.round(x.revenueUsd * 10000) / 10000, expenseUsd: Math.round(x.expenseUsd * 10000) / 10000, refundUsd: Math.round(x.refundUsd * 10000) / 10000, netUsd: Math.round((x.revenueUsd - x.expenseUsd - x.refundUsd) * 10000) / 10000 }));
+    return { schema: 'pine-star.business-summary.v1', periodStart: from, periodEnd: through, entryCount: rows.length, revenueUsd, expenseUsd, refundUsd, netUsd: Math.round((revenueUsd - expenseUsd - refundUsd) * 10000) / 10000, projectEntryCount: rows.filter(x => x.projectId).length, unallocatedEntryCount: rows.filter(x => !x.projectId).length, byProject, sourceRefs: rows.map(x => 'business-entry:' + x.id).slice(0, 50) };
   }
   return { recordCommerce, recordLedger, listCommerce, listLedger, summary, readStatus: () => durable.readKey('station'), _durable: durable };
 }

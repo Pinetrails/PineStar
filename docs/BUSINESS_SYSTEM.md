@@ -45,4 +45,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-031` adds a user-initiated local business snapshot to Reports. Its versioned JSON contract projects only allowlisted product-readiness, commerce-reference, and evidence-backed ledger fields from the existing authenticated reads. Unknown fields—including credential-like test fields—are omitted. The bundle names no destination and records that no external write occurred; there is no automatic trigger, sync, upload, publication, payment, account, or spending path.
 
+`PS-2026-032` derives product contribution from the existing immutable ledger. Each period summary groups only entries with a product-project link into deterministic revenue, expense, refund, and net totals. The portfolio accepts those bounded facts only for known products, carries ledger provenance, adds a recorded-contribution decision, and raises negative recorded contribution as an attention item in Business Morning Brief. It does not estimate missing costs, claim profit or ROI, mutate records, initiate financial activity, or create another store.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

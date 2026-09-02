@@ -18,6 +18,7 @@ const store = makeBusinessRecordStore({ durable, now: () => tick++, newId: () =>
   await store.recordLedger({ entryId: 'refund-1', type: 'refund', amountUsd: 1, projectId: 'planner', source: 'marketplace export row 5', evidenceRefs: ['file:export.csv#5'], occurredAt: 975 });
   A.eq(store.summary(800, 1000).netUsd, 9.5, 'summary computes revenue minus expenses and refunds');
   A.eq(store.summary(800, 1000).sourceRefs.length, 3, 'summary retains entry provenance');
+  A.eq(store.summary(800, 1000).byProject, [{ projectId: 'planner', entryCount: 3, revenueUsd: 12.5, expenseUsd: 2, refundUsd: 1, netUsd: 9.5 }], 'summary attributes recorded contribution to its product deterministically');
   let bareBlocked = false; try { await store.recordLedger({ type: 'expense', amountUsd: 9, occurredAt: 999 }); } catch (e) { bareBlocked = /source/.test(e.message); } A.ok(bareBlocked, 'unevidenced entries are rejected');
   let conflict = false; try { await store.recordLedger({ entryId: 'sale-1', type: 'revenue', amountUsd: 99, source: 'x', evidenceRefs: ['x'], occurredAt: 900 }); } catch (e) { conflict = /differently/.test(e.message); } A.ok(conflict, 'stable entry identity cannot be rewritten');
   A.eq(store.listCommerce(10, 'planner').length, 1, 'commerce records are filterable by project');

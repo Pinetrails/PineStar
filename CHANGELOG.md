@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-032 — Evidence-based product contribution
+
+- Added deterministic per-product revenue, expense, refund, and net attribution to existing period summaries from immutable linked ledger entries.
+- Added linked-product contribution and negative recorded contribution signals to the product portfolio and Business Morning Brief.
+- Preserved unknown-as-absent behavior: no estimates, ROI claims, financial actions, external writes, or new store were added.
+
 ### PS-2026-031 — Local business snapshot export
 
 - Added a user-initiated JSON download of bounded product, commerce, and evidence-backed ledger projections from Reports.
