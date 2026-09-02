@@ -49,4 +49,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-033` projects that evidence-only contribution into the existing Reports portfolio card. It shows recorded net and evidence-entry counts only for currently known products, excludes unmatched identifiers, and visibly states that missing costs are not estimated. The view remains read-only and reuses authenticated data already loaded for the portfolio and ledger.
 
+`PS-2026-034` makes unallocated ledger evidence visible in Business Morning Brief. When a period contains entries without a product-project link, the brief adds a bounded exception and asks for evidence review while explicitly refusing to infer a link. The immutable ledger remains unchanged.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

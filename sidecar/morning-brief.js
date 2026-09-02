@@ -32,8 +32,9 @@ function composeMorningBrief(input) {
     ...approvals.map(x => label(x) + ' — waiting for approval'),
     ...auditorRows.filter(x => x.status !== 'completed' || /exception|issue|fail/i.test(String(x.resultSummary || x.settlementReason || '')))
       .map(x => 'Auditor: ' + label(x) + ' — ' + text(x.resultSummary || x.settlementReason || x.status, 120)),
+    ...(business && Number(business.unallocatedEntryCount) > 0 ? [Number(business.unallocatedEntryCount) + ' recorded business ledger entr' + (Number(business.unallocatedEntryCount) === 1 ? 'y is' : 'ies are') + ' not linked to a product project.'] : []),
     ...(products && Array.isArray(products.exceptions) ? products.exceptions : [])
-  ], 8);
+  ], 10);
   const decisions = unique((measuredRuns.length ? ['Measured runtime cost for this period: $' + totalUsd.toFixed(4) + ' across ' + measuredRuns.length + ' recorded run' + (measuredRuns.length === 1 ? '' : 's') + '.'] : [])
     .concat(business && business.entryCount ? ['Recorded business activity: $' + Number(business.revenueUsd || 0).toFixed(2) + ' revenue, $' + Number(business.expenseUsd || 0).toFixed(2) + ' expenses, $' + Number(business.refundUsd || 0).toFixed(2) + ' refunds; net $' + Number(business.netUsd || 0).toFixed(2) + '.'] : [], products && Array.isArray(products.decisions) ? products.decisions : [], productReports.concat(growthReports).flatMap(x => Array.isArray(x.decisions) ? x.decisions : [])), 10);
   const nextActions = unique([
@@ -42,8 +43,9 @@ function composeMorningBrief(input) {
     ...active.map(x => 'Continue monitoring: ' + label(x)),
     ...discoveries.filter(x => ['TEST', 'ADD'].includes(x.recommendation)).map(x => x.recommendation + ': ' + text(x.name, 140) + ' → ' + text(x.recommendedOwnerRoleId || 'appropriate specialist', 100)),
     ...productReports.concat(growthReports).flatMap(x => Array.isArray(x.nextActions) ? x.nextActions : []),
+    ...(business && Number(business.unallocatedEntryCount) > 0 ? ['Review unallocated business ledger evidence; do not infer a product link.'] : []),
     ...(products && Array.isArray(products.nextActions) ? products.nextActions : [])
-  ], 8);
+  ], 10);
   const headline = completedRows.length + ' completed · ' + active.length + ' active · ' + exceptions.length + ' attention item' + (exceptions.length === 1 ? '' : 's');
   return { schema: 'pine-star.shared-report.v1', id: text(o.id, 120) || ('morning-brief:' + new Date(end).toISOString().slice(0, 10)), type: 'morning-brief',
     createdAt: end, periodStart: start, periodEnd: end, headline, completed, exceptions, decisions, nextActions, discoveries,

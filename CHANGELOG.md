@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-034 — Unallocated ledger evidence alert
+
+- Added a Business Morning Brief exception and review action when recorded ledger evidence lacks a product-project link.
+- Explicitly prohibits inferred attribution and leaves immutable ledger records unchanged.
+- Kept exception and next-action lists bounded while retaining existing product actions.
+
 ### PS-2026-033 — Read-only product contribution UI
 
 - Added recorded net contribution and evidence-entry counts for known products to the existing Reports portfolio card.
