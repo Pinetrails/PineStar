@@ -1,0 +1,25 @@
+'use strict';
+function text(v, n) { return String(v == null ? '' : v).trim().slice(0, n); }
+function list(v, cap, n) { return [...new Set((Array.isArray(v) ? v : []).map(x => text(x, n)).filter(Boolean))].slice(0, cap); }
+function normalizePublicationRequest(input) {
+  const row = input && typeof input === 'object' ? input : {}, projectId = text(row.projectId, 100), requestId = text(row.requestId, 100).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, ''), qaReportId = text(row.qaReportId, 120);
+  if (!projectId || !requestId || !qaReportId) throw new Error('publication approval request requires stable projectId, requestId, and QA report');
+  return { projectId, requestId, qaReportId, rationale: text(row.rationale, 1000), targetMarketplaces: list(row.targetMarketplaces, 8, 100), priority: ['low', 'normal', 'high'].includes(row.priority) ? row.priority : 'normal' };
+}
+async function requestPublicationApproval(deps, input) {
+  const d = deps || {}, row = normalizePublicationRequest(input); if (!d.projects || !d.objectives || typeof d.getReport !== 'function' || typeof d.appendReport !== 'function') throw new Error('publication approval request requires project, objective, and report stores');
+  const project = d.projects.get(row.projectId); if (!project) throw new Error('product project not found'); if (!['listing_ready', 'approval_required'].includes(project.status) || project.qaState !== 'passed' || !project.listingDraft) throw new Error('product project is not ready to request publication approval');
+  const qaReport = d.getReport(row.qaReportId), expected = list(project.deliverables, 20, 240), covered = new Set((qaReport && Array.isArray(qaReport.deliverableEvidence) ? qaReport.deliverableEvidence : []).map(x => text(x && x.deliverable, 240)));
+  if (!qaReport || qaReport.type !== 'product-qa' || !project.linkedReportIds.includes(qaReport.id) || !expected.length || expected.some(name => !covered.has(name))) throw new Error('publication approval request requires linked complete QA evidence');
+  const targets = row.targetMarketplaces.length ? row.targetMarketplaces : list(project.listingDraft.targetMarketplaces || project.targetMarketplaces, 8, 100); if (!targets.length) throw new Error('publication approval request requires target marketplaces');
+  const signature = JSON.stringify({ qaReportId: row.qaReportId, rationale: row.rationale, targetMarketplaces: targets });
+  let objective = d.objectives.find(x => x && x.classification && x.classification.workflow === 'product-publication-approval' && x.classification.projectId === project.id && x.classification.requestId === row.requestId);
+  if (objective && objective.classification.signature !== signature) throw new Error('requestId already recorded differently');
+  if (!objective) objective = await d.objectives.create({ title: 'Protected publication review: ' + project.title, description: 'Review the linked QA evidence and internal listing draft for the named marketplaces. This objective requests a Commander decision only; it cannot publish, create an account, spend, or execute externally.\nRationale: ' + (row.rationale || 'No additional rationale supplied.'), requiredCapabilities: ['publish'], protectedAction: true, maxModelTier: 'economy', priority: row.priority, classification: { method: 'product-publication-approval-v1', matched: true, workflow: 'product-publication-approval', projectId: project.id, requestId: row.requestId, signature, qaReportId: row.qaReportId, targetMarketplaces: targets } });
+  const draft = { id: 'product-publication-approval:' + project.id + ':' + row.requestId, type: 'product-publication-approval-request', createdAt: typeof d.now === 'function' ? d.now() : Date.now(), headline: 'Protected publication review requested: ' + project.title, decisions: ['Commander approval is required; no publication has occurred.'], nextActions: ['Review listing copy, complete QA evidence, and target marketplaces before any separate approved implementation.'], sourceRefs: ['product-project:' + project.id, 'report:' + qaReport.id, 'objective:' + objective.id] };
+  const prior = d.getReport(draft.id); if (prior && JSON.stringify(prior.sourceRefs) !== JSON.stringify(draft.sourceRefs)) throw new Error('requestId already recorded differently');
+  const saved = prior ? { added: false, report: prior } : await d.appendReport(draft), linked = await d.projects.link(project.id, { objectiveIds: [objective.id], reportIds: [saved.report.id] });
+  const updated = linked.status === 'listing_ready' ? await d.projects.update(linked.id, { status: 'approval_required', revision: linked.revision, nextAction: 'Await Commander review; publication is not authorized' }, { publicationApprovalRequested: true }) : linked;
+  return { schema: 'pine-star.product-publication-approval-request.v1', idempotent: !!prior, project: updated, objective, report: saved.report, externalAction: false, publicationPerformed: false, spendingAuthorityUsd: 0 };
+}
+module.exports = { normalizePublicationRequest, requestPublicationApproval };

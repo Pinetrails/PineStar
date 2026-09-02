@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-037 — Evidence-gated publication approval request
+
+- Added an authenticated, idempotent request package linking listing-ready product, complete QA coverage, target marketplaces, shared report, and protected objective.
+- Restricted generic project updates from entering `approval_required`; only the internal evidence-gated request seam may make that transition.
+- The request remains unassigned and stopped for Commander approval and performs no publication, account creation, spending, or external action.
+
 ### PS-2026-036 — Read-only QA coverage inspection
 
 - Added escaped expected-deliverable-to-artifact coverage to product QA reports in Reports.

@@ -137,6 +137,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects/research-decision', {})).status, 403, 'product research decisions remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/production-plan', {})).status, 403, 'product production plans remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/qa', {})).status, 403, 'product QA finalization remains behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/publication-approval-request', {})).status, 403, 'publication approval requests remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-printables', {})).status, 403, 'Pine Trail printable intake remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-printables/production-plan', {})).status, 403, 'Pine Trail production planning remains behind the API token gate');
     A.eq((await raw('GET', '/api/business/commerce-records')).status, 403, 'commerce records remain behind the API token gate');
@@ -263,6 +264,13 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(qaFinal.body.project.publicationState, 'not_published', 'QA and listing preparation do not publish');
     A.eq(qaFinal.body.project.listingDraft.seoKeywords, ['trail planning printable'], 'bounded SEO metadata persists');
     A.eq((await j('POST', '/api/product-projects/qa', qaSpec)).status, 200, 'same QA finalization is idempotent');
+    const publicationRequestSpec = { projectId: 'http-idea-lab', requestId: 'marketplace-a-v1', qaReportId: qaFinal.body.report.id, rationale: 'Reviewed fixture request only.', targetMarketplaces: ['Marketplace A'] };
+    const publicationRequest = await j('POST', '/api/product-projects/publication-approval-request', publicationRequestSpec);
+    A.eq(publicationRequest.status, 201, 'listing-ready evidence creates a protected publication approval request');
+    A.eq(publicationRequest.body.objective.status, 'approval_required', 'publication request remains stopped for Commander approval');
+    A.eq(publicationRequest.body.publicationPerformed, false, 'publication request performs no publication');
+    A.eq(publicationRequest.body.project.status, 'approval_required', 'project truthfully waits at the approval boundary');
+    A.eq((await j('POST', '/api/product-projects/publication-approval-request', publicationRequestSpec)).status, 200, 'same publication approval request is idempotent');
     A.eq((await j('POST', '/api/product-projects/update', { id: 'http-idea-lab', patch: { status: 'published' } })).status, 400, 'listing-ready project still cannot publish through safe update API');
     const commerceSpec = { recordId: 'http-marketplace-draft', projectId: 'http-idea-lab', marketplace: 'Marketplace A', state: 'draft', externalListingId: 'draft-42' };
     const commerceWrite = await j('POST', '/api/business/commerce-records', commerceSpec);

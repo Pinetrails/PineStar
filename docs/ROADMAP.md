@@ -70,6 +70,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Business Morning Brief now exposes unallocated ledger evidence as a review exception instead of silently omitting or guessing product attribution (`PS-2026-034`).
 - Passed product QA now requires complete expected-deliverable coverage by verified Workshop artifacts and retains the bounded mapping in its shared report (`PS-2026-035`).
 - Reports now exposes that bounded QA deliverable-to-artifact mapping as escaped, read-only evidence for reviewers (`PS-2026-036`).
+- Listing-ready products with linked complete QA evidence can now create a durable protected publication-review request; it remains unassigned, stopped, and incapable of external action (`PS-2026-037`).
 
 ## Phase 7 — Evolution
 

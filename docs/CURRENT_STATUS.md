@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-036` — Read-Only QA Coverage Inspection — **COMPLETE**
+**Current change:** `PS-2026-037` — Evidence-Gated Publication Approval Request — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -48,6 +48,7 @@
 | Ledger allocation visibility | `PS-2026-034` complete; Business Morning Brief flags recorded ledger entries without product links and requests evidence review without inferring attribution or mutating immutable records |
 | Complete deliverable QA coverage | `PS-2026-035` complete; passed QA must explicitly map every expected deliverable to verified kept/implemented Workshop evidence, and the bounded mapping persists in the shared QA report for audit |
 | QA coverage inspection | `PS-2026-036` complete; Reports displays the escaped expected-deliverable-to-artifact mapping from shared QA reports without adding artifact, approval, publication, navigation, or execution controls |
+| Publication approval request | `PS-2026-037` complete; listing-ready products with linked complete QA evidence can create an authenticated idempotent report and unassigned protected objective, while generic updates cannot enter approval-required and no publication capability exists |
 
 ## Known baseline issues
 
@@ -62,4 +63,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Select the next non-duplicative internal Phase 6 dependency. Preserve complete artifact coverage, evidence-only reporting, immutable ledger facts, and zero external commerce authority.
+Keep protected publication unavailable. Improve read-only approval-request inspection or select another non-duplicative internal Phase 6 dependency while preserving complete artifact coverage and zero external authority.

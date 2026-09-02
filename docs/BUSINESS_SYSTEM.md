@@ -55,4 +55,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-036` renders the shared QA report's expected-deliverable-to-artifact mapping in Reports. Values are escaped and read-only; the projection adds no artifact operation, navigation, approval, execution, or publication control.
 
+`PS-2026-037` adds the request side of the protected publication boundary. A listing-ready, QA-passed product may request review only by citing a linked product QA report whose coverage includes every expected deliverable and naming target marketplaces. Pine Star creates a shared request report and an unassigned protected objective in `approval_required`, then moves the project to the same truthful waiting state. The generic update API can no longer make that transition. There is deliberately no grant, execution, account, credential, marketplace-write, or publication implementation.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.
