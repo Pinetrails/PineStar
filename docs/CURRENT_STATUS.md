@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-032` — Evidence-Based Product Contribution — **COMPLETE**
+**Current change:** `PS-2026-033` — Read-Only Product Contribution UI — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -44,6 +44,7 @@
 | Pine Trail production preset | `PS-2026-030` complete; researched/planned Pine Trail products can delegate family-specific editable/Letter/A4 deliverables and original-asset/print QA checks to the existing Product Designer, Workshop provenance, and independent Quality Reviewer workflow with zero external authority |
 | Local business snapshot export | `PS-2026-031` complete; Reports can download an allowlisted product, commerce, and evidenced-ledger JSON snapshot locally on explicit user action, with no destination, external write, credential field, sync, or automatic trigger |
 | Product contribution reporting | `PS-2026-032` complete; existing period summaries deterministically attribute linked ledger facts to known products, and portfolio/Morning Brief surface recorded net and negative contribution with provenance but no estimates, ROI claim, financial action, or new store |
+| Product contribution UI | `PS-2026-033` complete; the Reports portfolio card shows recorded net and evidence-entry counts only for known products, explicitly declines to estimate missing costs, and exposes no financial, publication, approval, or execution control |
 
 ## Known baseline issues
 
@@ -58,4 +59,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Project evidence-based product contribution into a bounded internal performance view, or select the next dependency-ready Phase 6 gap. Do not infer profitability from missing costs and do not add external commerce authority.
+Select the next dependency-ready Phase 6 gap. Preserve evidence-only reporting, treat missing costs as unknown, and add no external commerce authority.

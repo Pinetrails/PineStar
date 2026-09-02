@@ -47,4 +47,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-032` derives product contribution from the existing immutable ledger. Each period summary groups only entries with a product-project link into deterministic revenue, expense, refund, and net totals. The portfolio accepts those bounded facts only for known products, carries ledger provenance, adds a recorded-contribution decision, and raises negative recorded contribution as an attention item in Business Morning Brief. It does not estimate missing costs, claim profit or ROI, mutate records, initiate financial activity, or create another store.
 
+`PS-2026-033` projects that evidence-only contribution into the existing Reports portfolio card. It shows recorded net and evidence-entry counts only for currently known products, excludes unmatched identifiers, and visibly states that missing costs are not estimated. The view remains read-only and reuses authenticated data already loaded for the portfolio and ledger.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

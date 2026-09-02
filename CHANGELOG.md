@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-033 — Read-only product contribution UI
+
+- Added recorded net contribution and evidence-entry counts for known products to the existing Reports portfolio card.
+- Excluded unmatched product identifiers and made the missing-cost/no-estimation boundary visible.
+- Reused authenticated read data and added no action controls, financial authority, or external connection.
+
 ### PS-2026-032 — Evidence-based product contribution
 
 - Added deterministic per-product revenue, expense, refund, and net attribution to existing period summaries from immutable linked ledger entries.

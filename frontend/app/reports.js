@@ -44,12 +44,15 @@
       (evidence.length ? '<div class="dim">EVIDENCE · ' + evidence.map(esc).join(' · ') + '</div>' : '') +
       (p.nextAction ? '<p class="muted">NEXT · ' + esc(p.nextAction) + '</p>' : '') + '</article>';
   }
-  function productPortfolioHtml(entries, commerceRows) {
-    const rows = (Array.isArray(entries) ? entries : []).map(x => (x && x.project) || x).filter(Boolean), commerce = (Array.isArray(commerceRows) ? commerceRows : []).filter(Boolean), counts = {};
+  function productPortfolioHtml(entries, commerceRows, financialSummary) {
+    const rows = (Array.isArray(entries) ? entries : []).map(x => (x && x.project) || x).filter(Boolean), commerce = (Array.isArray(commerceRows) ? commerceRows : []).filter(Boolean), financials = financialSummary || {}, counts = {};
     for (const p of rows) counts[p.status || 'unknown'] = (counts[p.status || 'unknown'] || 0) + 1;
     const stages = Object.keys(counts).sort().map(k => esc(String(k).toUpperCase()) + ' ' + counts[k]).join(' · '), failed = rows.filter(p => p.qaState === 'failed').length, blocked = rows.filter(p => Array.isArray(p.blockers) && p.blockers.length).length;
     const observed = new Set(commerce.filter(x => x.state === 'observed_published').map(x => x.projectId)).size;
-    return '<article class="cfg-card ps-product-portfolio"><div class="dim">READ-ONLY PORTFOLIO SNAPSHOT</div><h3>' + rows.length + ' PRODUCT' + (rows.length === 1 ? '' : 'S') + '</h3><p>' + (stages || 'No pipeline stages recorded.') + '</p><div class="dim">FAILED QA · ' + failed + ' | BLOCKED · ' + blocked + ' | EVIDENCED OBSERVED PUBLICATION · ' + observed + '</div><p class="muted">Inspection only · approvals, publication, payments, and execution are unavailable here.</p></article>';
+    const known = new Set(rows.map(p => p.id)), contributions = (Array.isArray(financials.byProject) ? financials.byProject : []).filter(x => x && known.has(x.projectId));
+    const net = contributions.reduce((sum, x) => sum + (Number(x.netUsd) || 0), 0), money = v => '$' + (Number.isFinite(Number(v)) ? Number(v) : 0).toFixed(2);
+    const contribution = contributions.length ? '<p>RECORDED PRODUCT CONTRIBUTION · ' + esc(money(net)) + ' NET ACROSS ' + contributions.length + ' PRODUCT' + (contributions.length === 1 ? '' : 'S') + '</p>' + contributions.map(x => '<div class="dim">' + esc(x.projectId) + ' · NET ' + esc(money(x.netUsd)) + ' · ' + esc(x.entryCount || 0) + ' EVIDENCED ENTR' + (Number(x.entryCount) === 1 ? 'Y' : 'IES') + '</div>').join('') : '<p class="muted">No product-linked financial evidence is recorded for this period.</p>';
+    return '<article class="cfg-card ps-product-portfolio"><div class="dim">READ-ONLY PORTFOLIO SNAPSHOT</div><h3>' + rows.length + ' PRODUCT' + (rows.length === 1 ? '' : 'S') + '</h3><p>' + (stages || 'No pipeline stages recorded.') + '</p><div class="dim">FAILED QA · ' + failed + ' | BLOCKED · ' + blocked + ' | EVIDENCED OBSERVED PUBLICATION · ' + observed + '</div>' + contribution + '<p class="muted">Recorded evidence only · missing costs are not estimated. Approvals, publication, payments, and execution are unavailable here.</p></article>';
   }
   function commerceRecordHtml(row) {
     const r = row || {}, evidence = Array.isArray(r.evidenceRefs) ? r.evidenceRefs : [];
@@ -101,7 +104,7 @@
       const host = body.querySelector('#ps-reports'), rows = Array.isArray(reports.reports) ? reports.reports : [];
       if (host) host.innerHTML = rows.length ? rows.map(reportHtml).join('') : '<p class="muted">No shared reports yet. A morning brief will appear after Night Shift has real activity or exceptions to report.</p>';
       const productHost = body.querySelector('#ps-product-projects'), productRows = Array.isArray(productProjects.projects) ? productProjects.projects : [];
-      const portfolioHost = body.querySelector('#ps-product-portfolio'); if (portfolioHost) portfolioHost.innerHTML = productPortfolioHtml(productRows, commerce.records);
+      const portfolioHost = body.querySelector('#ps-product-portfolio'); if (portfolioHost) portfolioHost.innerHTML = productPortfolioHtml(productRows, commerce.records, business.summary);
       if (productHost) productHost.innerHTML = productRows.length ? productRows.map(productProjectHtml).join('') : '<p class="muted">No digital-product projects have been recorded yet.</p>';
       const commerceHost = body.querySelector('#ps-commerce-records'), commerceRows = Array.isArray(commerce.records) ? commerce.records : [];
       if (commerceHost) commerceHost.innerHTML = commerceRows.length ? commerceRows.map(commerceRecordHtml).join('') : '<p class="muted">No commerce observations have been recorded yet.</p>';

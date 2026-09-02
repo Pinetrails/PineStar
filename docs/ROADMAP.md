@@ -66,6 +66,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Researched Pine Trail Printables now have a family-aware production/QA preset that delegates to the existing Product Designer, Workshop provenance, and independent Quality Reviewer workflow (`PS-2026-030`).
 - Reports can now produce an explicit user-initiated local JSON snapshot from allowlisted product, commerce, and ledger fields, with no external destination or automatic action (`PS-2026-031`).
 - Existing period summaries now attribute immutable ledger evidence to known products so portfolio and Business Morning Brief can report recorded contribution without estimates or ROI claims (`PS-2026-032`).
+- The Reports portfolio card now shows recorded contribution and evidence-entry counts for known products while explicitly preserving missing costs as unknown (`PS-2026-033`).
 
 ## Phase 7 — Evolution
 
