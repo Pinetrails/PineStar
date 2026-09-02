@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-035 — Complete deliverable coverage gate
+
+- Required passed product QA to map every expected deliverable to verified Workshop artifact evidence.
+- Retained the bounded deliverable-to-artifact map in the durable shared QA report for audit.
+- Rejected missing, incomplete, extra, or unverified coverage without changing publication or approval authority.
+
 ### PS-2026-034 — Unallocated ledger evidence alert
 
 - Added a Business Morning Brief exception and review action when recorded ledger evidence lacks a product-project link.

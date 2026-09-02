@@ -187,11 +187,12 @@ function normalizeSharedReport(input) {
     risk: boundedText(item && item.risk, 300), recommendation: boundedText(item && item.recommendation, 20), recommendedOwnerRoleId: boundedText(item && item.recommendedOwnerRoleId, 100),
     evidenceRefs: safeStringList(item && item.evidenceRefs, 8, 500)
   })).filter(item => item.name && item.source && item.reference);
+  const deliverableEvidence = (Array.isArray(row.deliverableEvidence) ? row.deliverableEvidence : []).slice(0, 20).map(item => ({ deliverable: boundedText(item && item.deliverable, 240), artifactId: boundedText(item && item.artifactId, 120) })).filter(item => item.deliverable && item.artifactId);
   return {
     schema: 'pine-star.shared-report.v1', id, type,
     createdAt: Math.max(0, Number(row.createdAt) || 0), periodStart: Math.max(0, Number(row.periodStart) || 0), periodEnd: Math.max(0, Number(row.periodEnd) || 0),
     headline, completed: safeStringList(row.completed, 10, 240), exceptions: safeStringList(row.exceptions, 10, 240),
-    decisions: safeStringList(row.decisions, 10, 240), nextActions: safeStringList(row.nextActions, 10, 240), sourceRefs: safeStringList(row.sourceRefs, 12, 500), discoveries
+    decisions: safeStringList(row.decisions, 10, 240), nextActions: safeStringList(row.nextActions, 10, 240), sourceRefs: safeStringList(row.sourceRefs, 12, 500), discoveries, deliverableEvidence
   };
 }
 async function appendSharedReport(store, input) {

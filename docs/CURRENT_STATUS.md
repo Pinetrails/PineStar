@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-034` — Unallocated Ledger Evidence Alert — **COMPLETE**
+**Current change:** `PS-2026-035` — Complete Deliverable Coverage Gate — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -46,6 +46,7 @@
 | Product contribution reporting | `PS-2026-032` complete; existing period summaries deterministically attribute linked ledger facts to known products, and portfolio/Morning Brief surface recorded net and negative contribution with provenance but no estimates, ROI claim, financial action, or new store |
 | Product contribution UI | `PS-2026-033` complete; the Reports portfolio card shows recorded net and evidence-entry counts only for known products, explicitly declines to estimate missing costs, and exposes no financial, publication, approval, or execution control |
 | Ledger allocation visibility | `PS-2026-034` complete; Business Morning Brief flags recorded ledger entries without product links and requests evidence review without inferring attribution or mutating immutable records |
+| Complete deliverable QA coverage | `PS-2026-035` complete; passed QA must explicitly map every expected deliverable to verified kept/implemented Workshop evidence, and the bounded mapping persists in the shared QA report for audit |
 
 ## Known baseline issues
 
@@ -60,4 +61,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Select the next dependency-ready Phase 6 gap. Preserve evidence-only reporting, immutable ledger facts, and zero external commerce authority.
+Continue dependency-ready internal production work while preserving complete artifact coverage, evidence-only reporting, immutable ledger facts, and zero external commerce authority.

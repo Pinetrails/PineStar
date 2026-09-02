@@ -28,8 +28,9 @@ function memFs() {
   A.ok(!JSON.stringify(reports).includes('privateContext'), 'private internal content never leaks through the report reader');
   A.ok(fs.files.has(path.join(root, 'pine-star.internal-memory.json')) && fs.files.has(path.join(root, 'pine-star.shared-reports.json')), 'both boundaries use durable sibling files');
 
-  const bounded = normalizeSharedReport({ id: 'x', type: 'daily', headline: 'h', completed: Array.from({ length: 20 }, (_, i) => 'item-' + i), rawTranscript: 'secret raw log' });
+  const bounded = normalizeSharedReport({ id: 'x', type: 'daily', headline: 'h', completed: Array.from({ length: 20 }, (_, i) => 'item-' + i), deliverableEvidence: [{ deliverable: 'US Letter PDF', artifactId: 'artifact:1', secret: 'drop-me' }], rawTranscript: 'secret raw log' });
   A.eq(bounded.completed.length, 10, 'report sections are concise and bounded');
+  A.eq(bounded.deliverableEvidence, [{ deliverable: 'US Letter PDF', artifactId: 'artifact:1' }], 'shared reports retain only bounded deliverable coverage fields');
   A.eq(bounded.rawTranscript, undefined, 'unknown/raw fields are dropped by projection');
   A.throws(() => normalizeSharedReport({ type: 'daily' }), 'incomplete reports are rejected');
   A.report('operational-memory.test');
