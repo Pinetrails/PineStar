@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-039 — Terminal publication request identity
+
+- Prevented a withdrawn stable request ID from reactivating its cancelled approval objective or moving a product back to a false waiting state.
+- Required revised publication review requests to use a new stable ID, producing new protected stopped work with preserved history.
+- Reset the withdrawn project's publication projection to `not_published`; no approval, publication, spending, or external authority was added.
+
 ### PS-2026-038 — Protected publication request withdrawal
 
 - Added authenticated, idempotent withdrawal of a still-waiting protected publication approval request.

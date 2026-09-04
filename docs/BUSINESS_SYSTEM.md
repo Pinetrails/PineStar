@@ -59,4 +59,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-038` adds withdrawal, not approval. An authenticated caller may withdraw only the matching still-waiting protected request. The objective becomes `cancelled`, its approval state becomes `withdrawn`, and an `approval_withdrawn` audit event plus a shared withdrawal report preserve history. The product returns to `listing_ready` through a private workflow option; generic project updates cannot perform that transition. Repeated withdrawal is idempotent, while nonprotected or no-longer-pending objectives are refused.
 
+`PS-2026-039` makes withdrawn request identity terminal. Reusing its stable ID is refused before any report, objective, or project mutation; a materially revised review must use a new stable request ID and creates new protected stopped work. Withdrawal also restores `publicationState: not_published`, so the project record no longer claims that a review remains pending. Neither path grants approval or performs publication.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

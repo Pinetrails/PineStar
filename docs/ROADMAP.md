@@ -72,6 +72,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Reports now exposes that bounded QA deliverable-to-artifact mapping as escaped, read-only evidence for reviewers (`PS-2026-036`).
 - Listing-ready products with linked complete QA evidence can now create a durable protected publication-review request; it remains unassigned, stopped, and incapable of external action (`PS-2026-037`).
 - Still-waiting publication review requests can be authenticatedly and idempotently withdrawn, preserving audit history and returning the project to listing readiness without granting authority (`PS-2026-038`).
+- Withdrawn publication request identities are terminal; revised review uses a new stable ID and new protected stopped objective while retained history remains unchanged (`PS-2026-039`).
 
 ## Phase 7 — Evolution
 

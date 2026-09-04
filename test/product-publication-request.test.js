@@ -8,7 +8,7 @@ let objectiveRows = [], seq = 0, report = { id: 'product-qa:kit', type: 'product
 const durable = { get: () => objectiveRows, update: async (key, fn) => { const next = await fn(objectiveRows); if (next !== undefined) objectiveRows = next; return next; } };
 const objectives = makeObjectiveStore({ registry: makeRoleRegistry(SEEDS), durable, now: () => 100 + seq, newId: () => 'pub-' + (++seq) });
 let project = { id: 'kit', title: 'Trail Kit', status: 'listing_ready', qaState: 'passed', revision: 1, deliverables: ['US Letter PDF', 'A4 PDF'], listingDraft: { title: 'Trail Kit', description: 'Ready.', targetMarketplaces: ['Marketplace A'] }, targetMarketplaces: ['Marketplace A'], linkedObjectiveIds: [], linkedReportIds: ['product-qa:kit'] }, approvalOption = false, savedReport = null;
-const projects = { get: () => project, link: async (id, x) => { project = Object.assign({}, project, { linkedObjectiveIds: [...new Set(project.linkedObjectiveIds.concat(x.objectiveIds || []))], linkedReportIds: [...new Set(project.linkedReportIds.concat(x.reportIds || []))], revision: project.revision + 1 }); return project; }, update: async (id, patch, options) => { approvalOption = !!(options && (options.publicationApprovalRequested || options.publicationApprovalWithdrawn)); project = Object.assign({}, project, patch, { revision: project.revision + 1 }); return project; } };
+const projects = { get: () => project, link: async (id, x) => { project = Object.assign({}, project, { linkedObjectiveIds: [...new Set(project.linkedObjectiveIds.concat(x.objectiveIds || []))], linkedReportIds: [...new Set(project.linkedReportIds.concat(x.reportIds || []))], revision: project.revision + 1 }); return project; }, update: async (id, patch, options) => { approvalOption = !!(options && (options.publicationApprovalRequested || options.publicationApprovalWithdrawn)); project = Object.assign({}, project, patch, { publicationState: options && options.publicationApprovalWithdrawn ? 'not_published' : (patch.status === 'approval_required' ? 'approval_required' : project.publicationState), revision: project.revision + 1 }); return project; } };
 const deps = { projects, objectives, getReport: id => id === report.id ? report : (savedReport && savedReport.id === id ? savedReport : null), appendReport: async row => { savedReport = row; return { added: true, report: row }; }, now: () => 500 };
 (async () => {
   const input = { projectId: 'kit', requestId: 'market-a-v1', qaReportId: 'product-qa:kit', rationale: 'Ready for human review.' };
@@ -25,8 +25,16 @@ const deps = { projects, objectives, getReport: id => id === report.id ? report 
   A.eq(withdrawal.objective.status, 'cancelled', 'withdrawal cancels the still-waiting protected objective');
   A.eq(withdrawal.objective.approvalState, 'withdrawn', 'withdrawal records truthful approval state');
   A.eq(withdrawal.project.status, 'listing_ready', 'withdrawal restores the project to listing readiness');
+  A.eq(withdrawal.project.publicationState, 'not_published', 'withdrawal clears the waiting-publication projection');
   A.eq(withdrawal.publicationPerformed, false, 'withdrawal performs no publication');
   A.eq((await withdrawPublicationApproval(deps, { projectId: 'kit', requestId: 'market-a-v1', reason: 'Listing copy needs revision' })).idempotent, true, 'repeated withdrawal is idempotent');
+  let withdrawnReuseBlocked = false; try { await requestPublicationApproval(deps, input); } catch (e) { withdrawnReuseBlocked = /withdrawn; use a new requestId/.test(e.message); } A.ok(withdrawnReuseBlocked, 'withdrawn stable request identity cannot reactivate its cancelled objective');
+  A.eq(project.status, 'listing_ready', 'refused withdrawn request reuse leaves project truthfully listing-ready');
+  const revised = await requestPublicationApproval(deps, Object.assign({}, input, { requestId: 'market-a-v2', rationale: 'Revised copy is ready for a new review.' }));
+  A.eq(revised.objective.status, 'approval_required', 'a revised request can use a new stable identity');
+  A.eq(revised.objective.approvalState, 'required', 'new request creates a truthful waiting approval state');
+  A.eq(revised.project.status, 'approval_required', 'new request returns project to the protected boundary');
+  A.eq(revised.publicationPerformed, false, 'new request still performs no publication');
   let incomplete = false; report = { id: 'product-qa:other', type: 'product-qa', deliverableEvidence: [{ deliverable: 'US Letter PDF', artifactId: 'artifact:1' }] }; project = Object.assign({}, project, { id: 'other', status: 'listing_ready', linkedReportIds: ['product-qa:other'] }); try { await requestPublicationApproval(deps, { projectId: 'other', requestId: 'bad', qaReportId: 'product-qa:other' }); } catch (e) { incomplete = /complete QA evidence/.test(e.message); } A.ok(incomplete, 'incomplete deliverable coverage cannot request approval');
   A.report('product-publication-request.test');
 })().catch(e => { console.error(e); process.exitCode = 1; });

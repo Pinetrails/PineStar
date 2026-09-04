@@ -278,8 +278,15 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(withdrawal.body.objective.status, 'cancelled', 'withdrawal cancels the protected objective');
     A.eq(withdrawal.body.objective.approvalState, 'withdrawn', 'withdrawal records truthful approval state');
     A.eq(withdrawal.body.project.status, 'listing_ready', 'withdrawal restores listing-ready project state');
+    A.eq(withdrawal.body.project.publicationState, 'not_published', 'withdrawal clears the waiting-publication projection');
     A.eq(withdrawal.body.publicationPerformed, false, 'withdrawal performs no external publication');
     A.eq((await j('POST', '/api/product-projects/publication-approval-withdrawal', withdrawalSpec)).status, 200, 'same withdrawal is idempotent');
+    A.eq((await j('POST', '/api/product-projects/publication-approval-request', publicationRequestSpec)).status, 400, 'withdrawn stable request identity cannot reactivate cancelled approval work');
+    const revisedPublicationRequest = await j('POST', '/api/product-projects/publication-approval-request', Object.assign({}, publicationRequestSpec, { requestId: 'marketplace-a-v2', rationale: 'Fixture copy revised for a new review.' }));
+    A.eq(revisedPublicationRequest.status, 201, 'revised publication review uses a new stable request identity');
+    A.eq(revisedPublicationRequest.body.objective.status, 'approval_required', 'revised request creates new stopped protected work');
+    A.eq(revisedPublicationRequest.body.project.status, 'approval_required', 'revised request truthfully returns project to approval boundary');
+    A.eq(revisedPublicationRequest.body.publicationPerformed, false, 'revised request performs no external publication');
     const commerceSpec = { recordId: 'http-marketplace-draft', projectId: 'http-idea-lab', marketplace: 'Marketplace A', state: 'draft', externalListingId: 'draft-42' };
     const commerceWrite = await j('POST', '/api/business/commerce-records', commerceSpec);
     A.eq(commerceWrite.status, 201, 'commerce reference is durably recorded');
