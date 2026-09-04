@@ -287,6 +287,13 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(revisedPublicationRequest.body.objective.status, 'approval_required', 'revised request creates new stopped protected work');
     A.eq(revisedPublicationRequest.body.project.status, 'approval_required', 'revised request truthfully returns project to approval boundary');
     A.eq(revisedPublicationRequest.body.publicationPerformed, false, 'revised request performs no external publication');
+    const concurrentPublicationRequest = await j('POST', '/api/product-projects/publication-approval-request', Object.assign({}, publicationRequestSpec, { requestId: 'marketplace-a-v3', rationale: 'Competing fixture review.' }));
+    A.eq(concurrentPublicationRequest.status, 400, 'product refuses a second concurrent pending publication review');
+    A.ok(/already has a pending/.test(concurrentPublicationRequest.body.error), 'concurrent refusal names the existing protected boundary');
+    const revisedWithdrawal = await j('POST', '/api/product-projects/publication-approval-withdrawal', { projectId: 'http-idea-lab', requestId: 'marketplace-a-v2', reason: 'Revised fixture needs more work' });
+    A.eq(revisedWithdrawal.status, 201, 'last pending revised review can be withdrawn');
+    A.eq(revisedWithdrawal.body.remainingPendingObjectiveId, null, 'withdrawal confirms no concurrent review remains');
+    A.eq(revisedWithdrawal.body.project.status, 'listing_ready', 'last pending review withdrawal restores listing readiness');
     const commerceSpec = { recordId: 'http-marketplace-draft', projectId: 'http-idea-lab', marketplace: 'Marketplace A', state: 'draft', externalListingId: 'draft-42' };
     const commerceWrite = await j('POST', '/api/business/commerce-records', commerceSpec);
     A.eq(commerceWrite.status, 201, 'commerce reference is durably recorded');

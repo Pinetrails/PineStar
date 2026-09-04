@@ -73,6 +73,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Listing-ready products with linked complete QA evidence can now create a durable protected publication-review request; it remains unassigned, stopped, and incapable of external action (`PS-2026-037`).
 - Still-waiting publication review requests can be authenticatedly and idempotently withdrawn, preserving audit history and returning the project to listing readiness without granting authority (`PS-2026-038`).
 - Withdrawn publication request identities are terminal; revised review uses a new stable ID and new protected stopped objective while retained history remains unchanged (`PS-2026-039`).
+- Each product permits one pending publication review; competing request IDs are refused and legacy concurrent waiting work prevents a withdrawal from falsely clearing the approval boundary (`PS-2026-040`).
 
 ## Phase 7 — Evolution
 

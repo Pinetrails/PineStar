@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-040 — Single pending publication review
+
+- Limited each product to one pending protected publication review, refusing a different request ID while one still waits.
+- Made withdrawal retain the product approval boundary when legacy concurrent pending work exists and report that remaining objective explicitly.
+- Preserved authentication, stopped protected work, audit history, and zero publication/spending authority.
+
 ### PS-2026-039 — Terminal publication request identity
 
 - Prevented a withdrawn stable request ID from reactivating its cancelled approval objective or moving a product back to a false waiting state.

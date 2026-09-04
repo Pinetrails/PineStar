@@ -35,6 +35,15 @@ const deps = { projects, objectives, getReport: id => id === report.id ? report 
   A.eq(revised.objective.approvalState, 'required', 'new request creates a truthful waiting approval state');
   A.eq(revised.project.status, 'approval_required', 'new request returns project to the protected boundary');
   A.eq(revised.publicationPerformed, false, 'new request still performs no publication');
+  let concurrentBlocked = false; try { await requestPublicationApproval(deps, Object.assign({}, input, { requestId: 'market-a-v3', rationale: 'Competing pending review.' })); } catch (e) { concurrentBlocked = /already has a pending/.test(e.message); } A.ok(concurrentBlocked, 'a product cannot accumulate concurrent pending publication reviews');
+  A.eq(project.status, 'approval_required', 'refused concurrent request leaves the existing approval boundary intact');
+  const legacyPending = await objectives.create({ title: 'Legacy concurrent review', requiredCapabilities: ['publish'], protectedAction: true, classification: { workflow: 'product-publication-approval', projectId: 'kit', requestId: 'legacy-concurrent' } });
+  const revisedWithdrawal = await withdrawPublicationApproval(deps, { projectId: 'kit', requestId: 'market-a-v2', reason: 'Second review needs revision' });
+  A.eq(revisedWithdrawal.remainingPendingObjectiveId, legacyPending.id, 'withdrawal reports legacy concurrent pending review truthfully');
+  A.eq(revisedWithdrawal.project.status, 'approval_required', 'withdrawal preserves approval boundary while another review remains');
+  const lastWithdrawal = await withdrawPublicationApproval(deps, { projectId: 'kit', requestId: 'legacy-concurrent', reason: 'Retire legacy concurrent review' });
+  A.eq(lastWithdrawal.remainingPendingObjectiveId, null, 'last withdrawal confirms no pending review remains');
+  A.eq(lastWithdrawal.project.status, 'listing_ready', 'last pending review withdrawal restores listing readiness');
   let incomplete = false; report = { id: 'product-qa:other', type: 'product-qa', deliverableEvidence: [{ deliverable: 'US Letter PDF', artifactId: 'artifact:1' }] }; project = Object.assign({}, project, { id: 'other', status: 'listing_ready', linkedReportIds: ['product-qa:other'] }); try { await requestPublicationApproval(deps, { projectId: 'other', requestId: 'bad', qaReportId: 'product-qa:other' }); } catch (e) { incomplete = /complete QA evidence/.test(e.message); } A.ok(incomplete, 'incomplete deliverable coverage cannot request approval');
   A.report('product-publication-request.test');
 })().catch(e => { console.error(e); process.exitCode = 1; });
