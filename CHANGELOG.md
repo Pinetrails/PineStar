@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-041 — Pending review archival guard
+
+- Prevented generic project archival from orphaning a still-pending protected publication review.
+- Requires the authenticated audited withdrawal lifecycle before a waiting product can return to an archivable internal state.
+- Added no approval, publication, spending, credential, account, or external-action authority.
+
 ### PS-2026-040 — Single pending publication review
 
 - Limited each product to one pending protected publication review, refusing a different request ID while one still waits.

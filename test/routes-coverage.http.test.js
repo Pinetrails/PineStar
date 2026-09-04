@@ -287,6 +287,9 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(revisedPublicationRequest.body.objective.status, 'approval_required', 'revised request creates new stopped protected work');
     A.eq(revisedPublicationRequest.body.project.status, 'approval_required', 'revised request truthfully returns project to approval boundary');
     A.eq(revisedPublicationRequest.body.publicationPerformed, false, 'revised request performs no external publication');
+    const pendingArchive = await j('POST', '/api/product-projects/update', { id: 'http-idea-lab', patch: { status: 'archived' } });
+    A.eq(pendingArchive.status, 400, 'generic project API cannot archive pending publication review work');
+    A.ok(/withdrawn before archival/.test(pendingArchive.body.error), 'archive refusal directs the audited withdrawal lifecycle');
     const concurrentPublicationRequest = await j('POST', '/api/product-projects/publication-approval-request', Object.assign({}, publicationRequestSpec, { requestId: 'marketplace-a-v3', rationale: 'Competing fixture review.' }));
     A.eq(concurrentPublicationRequest.status, 400, 'product refuses a second concurrent pending publication review');
     A.ok(/already has a pending/.test(concurrentPublicationRequest.body.error), 'concurrent refusal names the existing protected boundary');

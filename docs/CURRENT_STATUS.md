@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-040` — Single Pending Publication Review — **COMPLETE**
+**Current change:** `PS-2026-041` — Pending Review Archival Guard — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -52,6 +52,7 @@
 | Publication request withdrawal | `PS-2026-038` complete; an authenticated still-waiting request can be idempotently withdrawn, cancelling its protected objective with durable audit/withdrawn state and restoring listing readiness without approval or external action |
 | Terminal publication request identity | `PS-2026-039` complete; withdrawn stable request IDs cannot reactivate cancelled work, revised review requires a new stable ID, and the project publication projection returns to `not_published` |
 | Single pending publication review | `PS-2026-040` complete; a product cannot accumulate competing pending protected review requests, and withdrawal retains the approval boundary if legacy concurrent pending work remains |
+| Pending review archival guard | `PS-2026-041` complete; generic project archival cannot orphan a pending protected review, which must first use the authenticated audited withdrawal lifecycle |
 
 ## Known baseline issues
 

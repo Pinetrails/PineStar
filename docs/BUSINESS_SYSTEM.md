@@ -63,4 +63,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-040` enforces one pending publication review per product. A different stable request ID is refused while protected review work already waits. Withdrawal checks for any legacy concurrent pending review after cancellation; when one exists, the project stays in `approval_required` and the response identifies the remaining objective rather than falsely claiming listing readiness. The last withdrawal restores the normal internal state without approving or publishing anything.
 
+`PS-2026-041` prevents generic archival from abandoning a still-pending publication review. A product at `approval_required` must first withdraw the protected request through the authenticated audited lifecycle; once listing readiness is restored, ordinary archival rules apply. This is a refusal guard only and adds no approval or execution path.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

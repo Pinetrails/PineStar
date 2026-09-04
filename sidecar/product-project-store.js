@@ -45,6 +45,7 @@ function makeProductProjectStore(deps) {
       if (nextStatus === 'listing_ready' && (p.qaState || cur.qaState) !== 'passed') throw new Error('listing readiness requires passed QA');
       if (nextStatus === 'approval_required' && nextStatus !== cur.status && !(options && options.publicationApprovalRequested === true)) throw new Error('approval request requires protected workflow');
       if (cur.status === 'approval_required' && nextStatus === 'listing_ready' && !(options && options.publicationApprovalWithdrawn === true)) throw new Error('approval withdrawal requires protected workflow');
+      if (cur.status === 'approval_required' && nextStatus === 'archived') throw new Error('pending publication approval must be withdrawn before archival');
       if (nextStatus === 'published' && !(options && options.publicationApproved === true)) throw new Error('publication requires protected approval');
       const stamp = Math.max(Number(cur.updatedAt) || 0, Number(now()) || 0), qa = ['not_started', 'in_progress', 'passed', 'failed'].includes(p.qaState) ? p.qaState : cur.qaState;
       updated = Object.assign({}, cur, { title: p.title == null ? cur.title : text(p.title, 200) || cur.title, description: p.description == null ? cur.description : text(p.description, 2000), status: nextStatus,
