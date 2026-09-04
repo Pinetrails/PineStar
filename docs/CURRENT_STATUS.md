@@ -1,10 +1,10 @@
 # Current status
 
-**As of:** 2026-09-02
+**As of:** 2026-09-03
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-037` — Evidence-Gated Publication Approval Request — **COMPLETE**
+**Current change:** `PS-2026-038` — Protected Publication Request Withdrawal — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -49,6 +49,7 @@
 | Complete deliverable QA coverage | `PS-2026-035` complete; passed QA must explicitly map every expected deliverable to verified kept/implemented Workshop evidence, and the bounded mapping persists in the shared QA report for audit |
 | QA coverage inspection | `PS-2026-036` complete; Reports displays the escaped expected-deliverable-to-artifact mapping from shared QA reports without adding artifact, approval, publication, navigation, or execution controls |
 | Publication approval request | `PS-2026-037` complete; listing-ready products with linked complete QA evidence can create an authenticated idempotent report and unassigned protected objective, while generic updates cannot enter approval-required and no publication capability exists |
+| Publication request withdrawal | `PS-2026-038` complete; an authenticated still-waiting request can be idempotently withdrawn, cancelling its protected objective with durable audit/withdrawn state and restoring listing readiness without approval or external action |
 
 ## Known baseline issues
 
@@ -63,4 +64,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Keep protected publication unavailable. Improve read-only approval-request inspection or select another non-duplicative internal Phase 6 dependency while preserving complete artifact coverage and zero external authority.
+Continue non-duplicative internal Phase 6 work. Publication approval and execution remain deliberately unavailable pending a protected user decision.

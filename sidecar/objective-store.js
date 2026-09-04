@@ -51,6 +51,14 @@ function makeObjectiveStore(deps) {
     await durable.update('station', stored => { const list = Array.isArray(stored) ? stored.slice() : []; list.push(objective); while (list.length > CAP) list.shift(); return list; });
     return objective;
   }
+  async function withdrawApproval(id, reason) {
+    let updated = null; await durable.update('station', stored => { const list = Array.isArray(stored) ? stored.slice() : [], index = list.findIndex(x => x && x.id === String(id || '')); if (index < 0) throw new Error('objective not found'); const current = list[index];
+      if (current.status === 'cancelled' && current.approvalState === 'withdrawn') { updated = current; return undefined; }
+      if (current.status !== 'approval_required' || current.approvalState !== 'required' || !current.protectedAction) throw new Error('objective is not a pending protected approval');
+      const stamp = Math.max(Number(current.updatedAt) || 0, Number(now()) || 0), audit = (Array.isArray(current.workflowAudit) ? current.workflowAudit : []).slice(-19); audit.push({ event: 'approval_withdrawn', at: stamp });
+      updated = Object.assign({}, current, { status: 'cancelled', approvalState: 'withdrawn', settlementReason: text(reason, 300) || 'Protected approval request withdrawn by user', updatedAt: stamp, completedAt: stamp, workflowAudit: audit }); list[index] = updated; return list;
+    }); return updated;
+  }
   async function decompose(parentId, input) {
     const body = input && typeof input === 'object' ? input : {}, decompositionId = text(body.decompositionId, 120);
     const specs = Array.isArray(body.children) ? body.children : [];
@@ -288,6 +296,6 @@ function makeObjectiveStore(deps) {
     });
     return updated;
   }
-  return { create, decompose, reconcileParent, createAudit, createScout, recordScoutReport, createRecurringOccurrence, list, get, find, listAway, hasAwayReady, queueAway, claimAway, finishAway, cancelAway, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
+  return { create, withdrawApproval, decompose, reconcileParent, createAudit, createScout, recordScoutReport, createRecurringOccurrence, list, get, find, listAway, hasAwayReady, queueAway, claimAway, finishAway, cancelAway, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
 }
 module.exports = { makeObjectiveStore, publicRole, CAP };

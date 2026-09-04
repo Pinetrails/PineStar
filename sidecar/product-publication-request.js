@@ -22,4 +22,14 @@ async function requestPublicationApproval(deps, input) {
   const updated = linked.status === 'listing_ready' ? await d.projects.update(linked.id, { status: 'approval_required', revision: linked.revision, nextAction: 'Await Commander review; publication is not authorized' }, { publicationApprovalRequested: true }) : linked;
   return { schema: 'pine-star.product-publication-approval-request.v1', idempotent: !!prior, project: updated, objective, report: saved.report, externalAction: false, publicationPerformed: false, spendingAuthorityUsd: 0 };
 }
-module.exports = { normalizePublicationRequest, requestPublicationApproval };
+async function withdrawPublicationApproval(deps, input) {
+  const d = deps || {}, row = input && typeof input === 'object' ? input : {}, projectId = text(row.projectId, 100), requestId = text(row.requestId, 100).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, ''), reason = text(row.reason, 300);
+  if (!projectId || !requestId || !reason) throw new Error('publication approval withdrawal requires projectId, requestId, and reason'); if (!d.projects || !d.objectives || typeof d.appendReport !== 'function' || typeof d.getReport !== 'function') throw new Error('publication approval withdrawal requires project, objective, and report stores');
+  const project = d.projects.get(projectId); if (!project) throw new Error('product project not found');
+  const objective = d.objectives.find(x => x && x.classification && x.classification.workflow === 'product-publication-approval' && x.classification.projectId === project.id && x.classification.requestId === requestId); if (!objective) throw new Error('publication approval request not found');
+  const cancelled = await d.objectives.withdrawApproval(objective.id, reason), draft = { id: 'product-publication-approval-withdrawal:' + project.id + ':' + requestId, type: 'product-publication-approval-withdrawal', createdAt: typeof d.now === 'function' ? d.now() : Date.now(), headline: 'Publication approval request withdrawn: ' + project.title, decisions: ['Protected request withdrawn; no publication occurred.'], nextActions: ['Revise internal product evidence before creating a new stable approval request.'], sourceRefs: ['product-project:' + project.id, 'objective:' + objective.id] };
+  const prior = d.getReport(draft.id), saved = prior ? { added: false, report: prior } : await d.appendReport(draft), linked = await d.projects.link(project.id, { reportIds: [saved.report.id] });
+  const updated = linked.status === 'approval_required' ? await d.projects.update(linked.id, { status: 'listing_ready', revision: linked.revision, nextAction: 'Revise internal evidence before requesting publication approval again' }, { publicationApprovalWithdrawn: true }) : linked;
+  return { schema: 'pine-star.product-publication-approval-withdrawal.v1', idempotent: !!prior, project: updated, objective: cancelled, report: saved.report, externalAction: false, publicationPerformed: false, spendingAuthorityUsd: 0 };
+}
+module.exports = { normalizePublicationRequest, requestPublicationApproval, withdrawPublicationApproval };

@@ -138,6 +138,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects/production-plan', {})).status, 403, 'product production plans remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/qa', {})).status, 403, 'product QA finalization remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/publication-approval-request', {})).status, 403, 'publication approval requests remain behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/publication-approval-withdrawal', {})).status, 403, 'publication approval withdrawals remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-printables', {})).status, 403, 'Pine Trail printable intake remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-printables/production-plan', {})).status, 403, 'Pine Trail production planning remains behind the API token gate');
     A.eq((await raw('GET', '/api/business/commerce-records')).status, 403, 'commerce records remain behind the API token gate');
@@ -272,6 +273,13 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(publicationRequest.body.project.status, 'approval_required', 'project truthfully waits at the approval boundary');
     A.eq((await j('POST', '/api/product-projects/publication-approval-request', publicationRequestSpec)).status, 200, 'same publication approval request is idempotent');
     A.eq((await j('POST', '/api/product-projects/update', { id: 'http-idea-lab', patch: { status: 'published' } })).status, 400, 'listing-ready project still cannot publish through safe update API');
+    const withdrawalSpec = { projectId: 'http-idea-lab', requestId: 'marketplace-a-v1', reason: 'Fixture copy needs revision' }, withdrawal = await j('POST', '/api/product-projects/publication-approval-withdrawal', withdrawalSpec);
+    A.eq(withdrawal.status, 201, 'authenticated pending publication request can be withdrawn');
+    A.eq(withdrawal.body.objective.status, 'cancelled', 'withdrawal cancels the protected objective');
+    A.eq(withdrawal.body.objective.approvalState, 'withdrawn', 'withdrawal records truthful approval state');
+    A.eq(withdrawal.body.project.status, 'listing_ready', 'withdrawal restores listing-ready project state');
+    A.eq(withdrawal.body.publicationPerformed, false, 'withdrawal performs no external publication');
+    A.eq((await j('POST', '/api/product-projects/publication-approval-withdrawal', withdrawalSpec)).status, 200, 'same withdrawal is idempotent');
     const commerceSpec = { recordId: 'http-marketplace-draft', projectId: 'http-idea-lab', marketplace: 'Marketplace A', state: 'draft', externalListingId: 'draft-42' };
     const commerceWrite = await j('POST', '/api/business/commerce-records', commerceSpec);
     A.eq(commerceWrite.status, 201, 'commerce reference is durably recorded');

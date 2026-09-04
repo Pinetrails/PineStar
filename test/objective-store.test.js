@@ -20,8 +20,16 @@ const store = makeObjectiveStore({ durable, registry: makeRoleRegistry(SEEDS), n
   const protectedObjective = await store.create({ title: 'Publish externally', requiredCapabilities: ['publish'], protectedAction: true });
   A.eq(protectedObjective.status, 'approval_required', 'protected objectives stop at approval required');
   A.eq(protectedObjective.approvalState, 'required', 'approval state is explicit and durable');
+  let safeWithdrawalBlocked = false; try { await store.withdrawApproval(made.id, 'not protected'); } catch (e) { safeWithdrawalBlocked = /not a pending protected approval/.test(e.message); }
+  A.ok(safeWithdrawalBlocked, 'ordinary objectives cannot use protected approval withdrawal');
   let blocked = false; try { await store.updateStatus(protectedObjective.id, 'in_progress', []); } catch (e) { blocked = /requires approval/.test(e.message); }
   A.ok(blocked, 'status mutation cannot bypass approval-required state');
+  const withdrawn = await store.withdrawApproval(protectedObjective.id, 'Listing needs revision');
+  A.eq(withdrawn.status, 'cancelled', 'pending protected objective can be withdrawn into cancelled state');
+  A.eq(withdrawn.approvalState, 'withdrawn', 'withdrawal state is explicit and truthful');
+  A.eq(withdrawn.workflowAudit.slice(-1)[0].event, 'approval_withdrawn', 'withdrawal appends durable workflow audit history');
+  A.eq((await store.withdrawApproval(protectedObjective.id, 'repeat')).workflowAudit.length, withdrawn.workflowAudit.length, 'repeated withdrawal is idempotent and does not duplicate audit history');
+  const notPending = await store.create({ title: 'Another protected request', requiredCapabilities: ['publish'], protectedAction: true }); rows = rows.map(x => x.id === notPending.id ? Object.assign({}, x, { status: 'completed' }) : x); let notPendingBlocked = false; try { await store.withdrawApproval(notPending.id, 'too late'); } catch (e) { notPendingBlocked = /not a pending protected approval/.test(e.message); } A.ok(notPendingBlocked, 'protected objective outside approval-required state cannot be withdrawn');
   let evidenceRequired = false; const another = await store.create({ title: 'Write code', requiredCapabilities: ['code'] });
   try { await store.updateStatus(another.id, 'completed', []); } catch (e) { evidenceRequired = /evidence/.test(e.message); }
   A.ok(evidenceRequired, 'completion cannot be claimed without evidence references');
@@ -39,7 +47,7 @@ const store = makeObjectiveStore({ durable, registry: makeRoleRegistry(SEEDS), n
   await store.claimAway();
   const exhausted = await store.finishAway(another.id, { retry: true, reason: 'temporary runtime failure' });
   A.eq(exhausted.awayWork.state, 'blocked', 'Away work stops after three failed attempts');
-  let protectedAwayBlocked = false; try { await store.queueAway(protectedObjective.id); } catch (e) { protectedAwayBlocked = /requires approval/.test(e.message); }
+  let protectedAwayBlocked = false; try { await store.queueAway(notPending.id); } catch (e) { protectedAwayBlocked = /requires approval/.test(e.message); }
   A.ok(protectedAwayBlocked, 'protected objectives cannot enter unattended Away execution');
   const workspaces = fs.mkdtempSync(path.join(os.tmpdir(), 'pine-objectives-'));
   const deps = { fs, path, workspaces, registry: makeRoleRegistry(SEEDS), now: () => 500, newId: () => 'durable-id' };

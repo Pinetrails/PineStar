@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-038 — Protected publication request withdrawal
+
+- Added authenticated, idempotent withdrawal of a still-waiting protected publication approval request.
+- Withdrawal cancels the protected objective, records `approvalState: withdrawn` plus audit history, and restores the product to listing readiness.
+- Generic product updates cannot bypass the withdrawal workflow; no approval, publication, spending, or external authority was added.
+
 ### PS-2026-037 — Evidence-gated publication approval request
 
 - Added an authenticated, idempotent request package linking listing-ready product, complete QA coverage, target marketplaces, shared report, and protected objective.
