@@ -65,4 +65,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-041` prevents generic archival from abandoning a still-pending publication review. A product at `approval_required` must first withdraw the protected request through the authenticated audited lifecycle; once listing readiness is restored, ordinary archival rules apply. This is a refusal guard only and adds no approval or execution path.
 
+`PS-2026-042` adds a read-only review package to Reports using data already returned by authenticated product, objective, and shared-report reads. Each waiting protected request shows its stable identity, product listing title and description, tags, SEO keywords, marketplace targets, and available linked QA deliverable coverage. Missing report-window evidence is labeled unavailable. The package contains no approval, withdrawal, publication, navigation, or execution control.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.

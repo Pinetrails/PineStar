@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-041` — Pending Review Archival Guard — **COMPLETE**
+**Current change:** `PS-2026-042` — Read-only Publication Review Package — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -53,6 +53,7 @@
 | Terminal publication request identity | `PS-2026-039` complete; withdrawn stable request IDs cannot reactivate cancelled work, revised review requires a new stable ID, and the project publication projection returns to `not_published` |
 | Single pending publication review | `PS-2026-040` complete; a product cannot accumulate competing pending protected review requests, and withdrawal retains the approval boundary if legacy concurrent pending work remains |
 | Pending review archival guard | `PS-2026-041` complete; generic project archival cannot orphan a pending protected review, which must first use the authenticated audited withdrawal lifecycle |
+| Publication review inspection | `PS-2026-042` complete; Reports joins pending protected request identity, listing copy, target marketplaces, and linked QA coverage in an escaped read-only package with no decision or action controls |
 
 ## Known baseline issues
 

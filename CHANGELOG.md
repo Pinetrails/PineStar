@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-042 — Read-only publication review package
+
+- Added a Reports section that joins each pending protected request with its product listing copy, marketplace targets, and linked QA coverage.
+- Escapes all rendered values and states when linked QA coverage falls outside the current shared-report window.
+- Exposes no approval, withdrawal, publication, navigation, execution, credential, or spending control.
+
 ### PS-2026-041 — Pending review archival guard
 
 - Prevented generic project archival from orphaning a still-pending protected publication review.
