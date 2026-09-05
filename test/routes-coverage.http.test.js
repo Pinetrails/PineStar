@@ -16,6 +16,7 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const crypto = require('crypto');
 const { bootToken } = require('./_httpToken.js');
 
 const HOST = '127.0.0.1';
@@ -59,8 +60,11 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
 
 (async () => {
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-routes-'));
+  const productImportRoot = path.join(ws, 'owner-products'); fs.mkdirSync(productImportRoot);
+  const localArtifactSource = path.join(productImportRoot, 'verified-product.zip'); fs.writeFileSync(localArtifactSource, 'verified local product bytes');
+  const localArtifactHash = crypto.createHash('sha256').update(fs.readFileSync(localArtifactSource)).digest('hex');
   fs.writeFileSync(path.join(ws, 'deliverables.library.json'), JSON.stringify({ v: 2, appliedSeq: 0, rows: [{ id: 'http-product-artifact', agentId: 'fixture', runId: 'fixture-run', title: 'Verified product artifact', source: 'test-fixture', status: 'kept', kind: 'files', summary: 'Existing artifact evidence for the isolated HTTP fixture.', files: [{ path: 'trail-kit.pdf', bytes: 128 }], createdAt: 1, updatedAt: 1 }], undo: [] }));
-  const booted = await boot(8890 + (process.pid % 40), ws, 20);
+  const booted = await boot(8890 + (process.pid % 40), ws, 20, { STARNET_PRODUCT_IMPORT_ROOTS: productImportRoot });
   const { child, port } = booted;
   const B = 'http://' + HOST + ':' + port;
   let apiToken = '';
@@ -142,6 +146,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects/pine-trail-printables', {})).status, 403, 'Pine Trail printable intake remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-printables/production-plan', {})).status, 403, 'Pine Trail production planning remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-existing-product', {})).status, 403, 'existing Pine Trail product intake remains behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/local-artifacts', {})).status, 403, 'local product artifact admission remains behind the API token gate');
     A.eq((await raw('GET', '/api/business/commerce-records')).status, 403, 'commerce records remain behind the API token gate');
     A.eq((await raw('POST', '/api/business/commerce-records', {})).status, 403, 'commerce record writes remain behind the API token gate');
     A.eq((await raw('GET', '/api/business/ledger')).status, 403, 'business ledger remains behind the API token gate');
@@ -349,6 +354,15 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(existingProduct.body.externalAction, false, 'existing product intake performs no external action');
     A.eq(existingProduct.body.spendingAuthorityUsd, 0, 'existing product intake grants zero spend');
     A.eq((await j('POST', '/api/product-projects/pine-trail-existing-product', existingProductSpec)).status, 200, 'existing product evidence retry is idempotent');
+    const admittedArtifact = await j('POST', '/api/product-projects/local-artifacts', { artifactId: 'http-existing-local-archive', projectId: existingProduct.body.project.id, sourcePath: localArtifactSource, sha256: localArtifactHash, title: 'Verified local archive' });
+    A.eq(admittedArtifact.status, 201, 'authenticated local product artifact admission copies verified bytes');
+    A.eq(admittedArtifact.body.artifact.status, 'verified', 'local artifact records verified provenance in the deliverable system');
+    A.eq(admittedArtifact.body.sha256, localArtifactHash, 'local artifact route reports the verified SHA-256');
+    A.eq(fs.readFileSync(admittedArtifact.body.canonicalPath, 'utf8'), 'verified local product bytes', 'canonical Pine Star storage contains the verified bytes');
+    A.eq(fs.readFileSync(localArtifactSource, 'utf8'), 'verified local product bytes', 'local artifact admission leaves the source unchanged');
+    A.eq((await j('POST', '/api/product-projects/local-artifacts', { artifactId: 'http-existing-local-archive', projectId: existingProduct.body.project.id, sourcePath: localArtifactSource, sha256: localArtifactHash })).status, 200, 'matching local artifact retry is idempotent');
+    A.eq((await j('POST', '/api/product-projects/local-artifacts', { artifactId: 'http-existing-bad-hash', projectId: existingProduct.body.project.id, sourcePath: localArtifactSource, sha256: '0'.repeat(64) })).status, 400, 'local artifact route rejects a hash mismatch');
+    A.eq((await j('POST', '/api/product-projects/local-artifacts', { artifactId: 'http-existing-outside', projectId: existingProduct.body.project.id, sourcePath: path.join(ws, 'deliverables.library.json'), sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(ws, 'deliverables.library.json'))).digest('hex') })).status, 400, 'local artifact route rejects sources outside configured roots');
     const recurringSpec = { scheduleId: 'http-daily-scout', roleId: 'operations.open_source_scout', recurrence: '0 9 * * *', timezone: 'America/New_York', enabled: false,
       template: { workflow: 'open-source-scout', scout: { topic: 'Windows developer utilities', recommendationLimit: 3, compatibilityTarget: 'Windows 11' } } };
     const recurringCreate = await j('POST', '/api/objectives/recurring', recurringSpec);

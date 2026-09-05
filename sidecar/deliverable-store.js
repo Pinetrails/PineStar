@@ -15,7 +15,7 @@ const { writeFileDurable } = require('./durable-write.js');
 // was copied out of the jail, so it is deliberately not 'kept' (which asserts files landed in a folder).
 // NOTE: an unrecognised status is coerced to 'failed' below — a new status MUST be added here or the library
 // will quietly report success as failure.
-const STATUS = new Set(['kept', 'implemented', 'discarded', 'failed']);
+const STATUS = new Set(['kept', 'implemented', 'verified', 'discarded', 'failed']);
 const SOURCE_MAX = 40, TEXT_MAX = 260, UNDO_CAP = 20, FILE_CAP = 50;
 const COMPACT_BYTES = 8 * 1024 * 1024;
 

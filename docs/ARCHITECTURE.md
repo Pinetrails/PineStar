@@ -30,6 +30,7 @@ For stock detail, see [../CODE_MAP.md](../CODE_MAP.md), [BRAIN.md](BRAIN.md), an
 - Make roles/departments extensible rather than hard-coded to a seed roster.
 - Keep private operational memory distinct from shared human-readable history.
 - `PS-2026-004` implements that distinction as separate crash-safe station stores with a bounded authenticated shared-report API; it reuses the existing durable-store primitive.
+- `PS-2026-045` admits owner-supplied product files only through authenticated, configured-root and SHA-256 verification, then copies them into Pine Star-controlled storage before the existing deliverable/QA system may trust them.
 - Treat the future world UI as a projection of real state, not a replacement for technical controls.
 - Review upstream changes selectively.
 - Establish Pine Star's own release/signing process; never seek StarNet private signing material.

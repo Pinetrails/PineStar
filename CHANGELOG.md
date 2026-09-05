@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-045 — Verified local product artifact admission
+
+- Added an authenticated, configured-root-only path that verifies a declared SHA-256 before copying a local owner-supplied product artifact into canonical Pine Star storage.
+- Records hash-bearing provenance as a `verified` deliverable eligible for the existing complete-coverage QA gate, with stable-ID and destination conflict detection.
+- Rejects unconfigured/out-of-root sources and hash mismatches, preserves source files, performs no external action, and grants $0 spending authority.
+
 ### PS-2026-044 — The Big Bite 200-image reconciliation
 
 - Reconciled the advertised product scope to exactly 200 images while retaining files 201-213 as unadvertised read-only extras.

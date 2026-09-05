@@ -241,6 +241,7 @@ const { makeBusinessRecordStore } = require('./business-record-store.js');
 const { planGrowthExperiment, finalizeGrowthExperiment } = require('./growth-experiment.js');
 const { intakePineTrailPrintable, planPineTrailProduction } = require('./pine-trail-printables.js');
 const { intakeExistingPineTrailProduct } = require('./pine-trail-existing-product.js');
+const { admitLocalProductArtifact } = require('./local-product-artifact.js');
 const { summarizeProductPortfolio } = require('./product-portfolio.js');
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
 const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
@@ -415,6 +416,7 @@ function defaultWorkspaces() {
   return neu;
 }
 const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : defaultWorkspaces();
+const PRODUCT_IMPORT_ROOTS = String(process.env.STARNET_PRODUCT_IMPORT_ROOTS || '').split(path.delimiter).map(x => x.trim()).filter(Boolean).map(x => path.resolve(x));
 const outputArtifacts = makeOutputArtifacts({ fsp, fs, pathMod: path, root: WORKSPACES, crypto });
 
 const RECOVERY_CANDIDATE_ROOTS = workspaceCandidates({
@@ -8762,6 +8764,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/product-projects/pine-trail-printables', h: handlePineTrailPrintableIntake },
   { m: 'POST', exact: '/api/product-projects/pine-trail-printables/production-plan', h: handlePineTrailProductionPlan },
   { m: 'POST', exact: '/api/product-projects/pine-trail-existing-product', h: handlePineTrailExistingProduct },
+  { m: 'POST', exact: '/api/product-projects/local-artifacts', h: handleLocalProductArtifact },
   { m: ['GET', 'POST'], qsplit: '/api/product-projects', h: handleProductProjects },
   { m: ['GET', 'POST'], qsplit: '/api/business/commerce-records', h: handleCommerceRecords },
   { m: ['GET', 'POST'], qsplit: '/api/business/ledger', h: handleBusinessLedger },
@@ -18504,7 +18507,7 @@ async function handleProductQa(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
   try {
     const reports = () => listSharedReports(notebookStore, 100), result = await finalizeQa({ projects: productProjectStore, objectives: objectiveStore,
-      artifactExists: id => deliverableStore.list().find(x => x && x.id === id && ['kept', 'implemented'].includes(x.status)) || null,
+      artifactExists: id => deliverableStore.list().find(x => x && x.id === id && ['kept', 'implemented', 'verified'].includes(x.status)) || null,
       reportExists: id => reports().find(x => x && x.id === id) || null, getReport: id => reports().find(x => x && x.id === id) || null,
       appendReport: report => appendSharedReport(notebookStore, report), now: Date.now }, body);
     return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
@@ -18534,6 +18537,17 @@ async function handlePineTrailExistingProduct(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
   try { const result = await intakeExistingPineTrailProduct({ projects: productProjectStore, objectives: objectiveStore, appendReport: report => appendSharedReport(notebookStore, report), now: Date.now }, body); return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result)); }
   catch (e) { const message = (e && e.message) || 'invalid existing Pine Trail product'; return respondJson(res, /already belongs|already decomposed/.test(message) ? 409 : 400, { error: message }); }
+}
+async function handleLocalProductArtifact(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const result = await admitLocalProductArtifact({ fs, path, crypto, workspaces: WORKSPACES, allowedRoots: PRODUCT_IMPORT_ROOTS,
+      projectExists: id => productProjectStore.get(id), deliverables: deliverableStore, now: Date.now }, body);
+    return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
+  } catch (e) {
+    const message = (e && e.message) || 'invalid local product artifact';
+    return respondJson(res, /conflict/.test(message) ? 409 : (message === 'product project not found' ? 404 : 400), { error: message });
+  }
 }
 async function handleCommerceRecords(req, res) {
   if (req.method === 'GET') { const u = new URL(req.url, 'http://127.0.0.1'); return respondJson(res, 200, { schema: 'pine-star.commerce-records.v1', records: businessRecordStore.listCommerce(u.searchParams.get('limit'), u.searchParams.get('projectId') || '') }); }

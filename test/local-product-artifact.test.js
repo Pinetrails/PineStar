@@ -1,0 +1,18 @@
+'use strict';
+const A = require('assert'); const fs = require('fs'); const path = require('path'); const os = require('os'); const crypto = require('crypto');
+const { admitLocalProductArtifact } = require('../sidecar/local-product-artifact.js');
+(async () => { const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ps-local-artifact-')), sourceRoot = path.join(root, 'allowed'), workspaces = path.join(root, 'ws'); fs.mkdirSync(sourceRoot); const source = path.join(sourceRoot, 'item.zip'); fs.writeFileSync(source, 'verified bytes'); const hash = crypto.createHash('sha256').update('verified bytes').digest('hex'); let recorded, rows = [];
+  const deps = { fs, path, crypto, workspaces, allowedRoots: [sourceRoot], projectExists: id => id === 'product', deliverables: { list: () => rows, record: async row => { recorded = row; rows = [row]; return row; } }, now: () => 42 };
+  const result = await admitLocalProductArtifact(deps, { artifactId: 'artifact:one', projectId: 'product', sourcePath: source, sha256: hash, title: 'Verified archive' });
+  A.equal(recorded.status, 'verified'); A.equal(recorded.source, 'verified-local-import'); A.ok(recorded.summary.includes(hash)); A.equal(fs.readFileSync(result.canonicalPath, 'utf8'), 'verified bytes'); A.equal(fs.readFileSync(source, 'utf8'), 'verified bytes'); A.equal(result.sha256, hash); A.equal(result.externalAction, false); A.equal(result.spendingAuthorityUsd, 0);
+  A.equal((await admitLocalProductArtifact(deps, { artifactId: 'artifact:one', projectId: 'product', sourcePath: source, sha256: hash })).idempotent, true);
+  A.throws(() => admitLocalProductArtifact(Object.assign({}, deps, { allowedRoots: [] }), { artifactId: 'x', projectId: 'product', sourcePath: source, sha256: hash }), /outside configured/);
+  const escapedFs = Object.create(fs); escapedFs.realpathSync = value => value === source ? path.join(root, 'outside', 'item.zip') : fs.realpathSync(value);
+  A.throws(() => admitLocalProductArtifact(Object.assign({}, deps, { fs: escapedFs }), { artifactId: 'escape', projectId: 'product', sourcePath: source, sha256: hash }), /outside configured/);
+  A.throws(() => admitLocalProductArtifact(deps, { artifactId: 'x', projectId: 'product', sourcePath: source, sha256: '0'.repeat(64) }), /mismatch/);
+  const conflictSource = path.join(sourceRoot, 'conflict.zip'); fs.writeFileSync(conflictSource, 'expected'); const conflictHash = crypto.createHash('sha256').update('expected').digest('hex'); const conflictDest = path.join(workspaces, 'product-artifacts', 'product', 'conflict', 'conflict.zip'); fs.mkdirSync(path.dirname(conflictDest), { recursive: true }); fs.writeFileSync(conflictDest, 'different');
+  A.throws(() => admitLocalProductArtifact(deps, { artifactId: 'conflict', projectId: 'product', sourcePath: conflictSource, sha256: conflictHash }), /destination conflict/);
+  rows = [{ id: 'identity', status: 'kept', source: 'workshop', summary: '', files: [] }];
+  A.throws(() => admitLocalProductArtifact(deps, { artifactId: 'identity', projectId: 'product', sourcePath: source, sha256: hash }), /identity conflict/);
+  console.log('local-product-artifact tests: PASS (13 assertions)'); fs.rmSync(root, { recursive: true, force: true });
+})().catch(e => { console.error(e); process.exit(1); });

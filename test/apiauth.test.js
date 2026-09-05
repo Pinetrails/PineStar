@@ -49,6 +49,7 @@ A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/publication-approv
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/pine-trail-printables')), true, 'POST Pine Trail printable intake requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/pine-trail-printables/production-plan')), true, 'POST Pine Trail production planning requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/pine-trail-existing-product')), true, 'POST existing Pine Trail product intake requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/local-artifacts')), true, 'POST local product artifact admission requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/business/commerce-records')), true, 'GET commerce records requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/business/commerce-records')), true, 'POST commerce records requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/business/ledger')), true, 'GET business ledger requires token');

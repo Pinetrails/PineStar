@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-044` — The Big Bite 200-image Reconciliation — **COMPLETE**
+**Current change:** `PS-2026-045` — Verified Local Product Artifact Admission — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -56,6 +56,7 @@
 | Publication review inspection | `PS-2026-042` complete; Reports joins pending protected request identity, listing copy, target marketplaces, and linked QA coverage in an escaped read-only package with no decision or action controls |
 | Existing Pine Trail product intake | `PS-2026-043` complete; authenticated evidence intake records an already-built read-only package at production, creates Coordinator/Product Designer/Quality Reviewer work, preserves verified facts and unknowns, and grants no QA, publication, upload, account, or spending authority |
 | The Big Bite reconciliation | `PS-2026-044` complete; advertised scope is exactly 200 images, files 201-213 remain unadvertised read-only extras, 21 metadata-only corrected copies and a verified 200-image internal archive have hash provenance, and listing copy contains no extra/bonus count |
+| Verified local product artifacts | `PS-2026-045` complete; an authenticated route admits only files under explicitly configured local roots, verifies the declared SHA-256, copies matching bytes into canonical Pine Star storage, and records QA-eligible provenance without modifying sources or granting external/spending authority |
 
 ## Known baseline issues
 
@@ -70,4 +71,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-The Big Bite is durably recorded as `pine-trail-the-big-bite` in production. Reconciliation and technical review are complete: the internal deliverable contains exactly 200 images, uses 21 metadata-only corrected copies, and excludes 201-213 from advertised counts without deleting them. Formal QA still requires a trusted provenance path for locally verified owner-supplied artifacts. Publication approval and execution remain unavailable.
+The Big Bite is durably recorded as `pine-trail-the-big-bite` in production. Reconciliation and technical review are complete: the internal deliverable contains exactly 200 images, uses 21 metadata-only corrected copies, and excludes 201-213 from advertised counts without deleting them. The trusted local provenance path is now available; the next step is to admit the verified archive from an explicitly configured root and complete formal QA. Publication approval and execution remain unavailable.
