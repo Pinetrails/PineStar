@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-043 — Existing Pine Trail product evidence intake
+
+- Added authenticated, idempotent intake for already-built Pine Trail digital products without forcing the printable Letter/A4 preset onto clipart collections.
+- Records bounded deliverables, verified source facts, evidence references, and unknowns, then routes reconciliation through Coordinator/Product Designer and dependent independent QA through Quality Reviewer.
+- Imports at `production` with `qaState: not_started`, zero spending authority, and no modification, publication, upload, account, purchase, or external-action capability.
+
 ### PS-2026-042 — Read-only publication review package
 
 - Added a Reports section that joins each pending protected request with its product listing copy, marketplace targets, and linked QA coverage.

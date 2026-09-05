@@ -141,6 +141,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects/publication-approval-withdrawal', {})).status, 403, 'publication approval withdrawals remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-printables', {})).status, 403, 'Pine Trail printable intake remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-printables/production-plan', {})).status, 403, 'Pine Trail production planning remains behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/pine-trail-existing-product', {})).status, 403, 'existing Pine Trail product intake remains behind the API token gate');
     A.eq((await raw('GET', '/api/business/commerce-records')).status, 403, 'commerce records remain behind the API token gate');
     A.eq((await raw('POST', '/api/business/commerce-records', {})).status, 403, 'commerce record writes remain behind the API token gate');
     A.eq((await raw('GET', '/api/business/ledger')).status, 403, 'business ledger remains behind the API token gate');
@@ -338,6 +339,16 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.ok(growthBrief.body.report.sourceRefs.includes('report:growth-experiment-result:http-idea-lab:title-clarity'), 'Business Morning Brief links the growth result report');
     A.ok(growthBrief.body.report.decisions.some(x => /^Product pipeline:/.test(x) && /listing-ready/.test(x)), 'Business Morning Brief includes current product pipeline counts');
     A.ok(growthBrief.body.report.sourceRefs.includes('product-project:http-idea-lab'), 'Business Morning Brief retains product-project provenance');
+    const existingProductSpec = { productId: 'http-existing-collection', title: 'HTTP Existing Collection', productType: 'clipart-collection', deliverables: ['ZIP archive', 'PNG collection'], evidenceRefs: ['sha256:fixture'], verifiedFacts: ['Fixture archive passed integrity checks'], unknowns: ['Exhaustive visual review is incomplete'] };
+    const existingProduct = await j('POST', '/api/product-projects/pine-trail-existing-product', existingProductSpec);
+    A.eq(existingProduct.status, 201, 'existing Pine Trail product evidence creates a durable project');
+    A.eq(existingProduct.body.project.status, 'production', 'existing product enters reconciliation without claiming passed QA');
+    A.eq(existingProduct.body.project.qaState, 'not_started', 'existing product retains an explicit QA gate');
+    A.eq(existingProduct.body.children.map(x => x.assignedRoleId), ['business.product_designer', 'operations.quality_reviewer'], 'existing product routes reconciliation and independent QA to the lowest capable specialists');
+    A.eq(existingProduct.body.children[1].dependsOnObjectiveIds, [existingProduct.body.children[0].id], 'independent QA depends on package reconciliation');
+    A.eq(existingProduct.body.externalAction, false, 'existing product intake performs no external action');
+    A.eq(existingProduct.body.spendingAuthorityUsd, 0, 'existing product intake grants zero spend');
+    A.eq((await j('POST', '/api/product-projects/pine-trail-existing-product', existingProductSpec)).status, 200, 'existing product evidence retry is idempotent');
     const recurringSpec = { scheduleId: 'http-daily-scout', roleId: 'operations.open_source_scout', recurrence: '0 9 * * *', timezone: 'America/New_York', enabled: false,
       template: { workflow: 'open-source-scout', scout: { topic: 'Windows developer utilities', recommendationLimit: 3, compatibilityTarget: 'Windows 11' } } };
     const recurringCreate = await j('POST', '/api/objectives/recurring', recurringSpec);

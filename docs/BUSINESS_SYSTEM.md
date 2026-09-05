@@ -67,4 +67,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-042` adds a read-only review package to Reports using data already returned by authenticated product, objective, and shared-report reads. Each waiting protected request shows its stable identity, product listing title and description, tags, SEO keywords, marketplace targets, and available linked QA deliverable coverage. Missing report-window evidence is labeled unavailable. The package contains no approval, withdrawal, publication, navigation, or execution control.
 
+`PS-2026-043` adds a separate evidence intake for already-built Pine Trail products whose format does not match the printable-family preset. It records bounded source facts and unknowns, creates Coordinator-owned Product Designer reconciliation followed by independent Quality Reviewer work, and starts at `production` with QA explicitly not started. The intake never reads arbitrary paths itself, copies source assets, passes QA, prepares publication, or grants external or spending authority.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.
