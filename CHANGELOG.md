@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-046 — The Big Bite formal QA
+
+- Admitted the verified 200-image archive, deliverable manifest, and DPI-correction manifest into canonical Pine Star storage with matching SHA-256 provenance.
+- Completed exact expected-deliverable coverage and formal QA while preserving explicit authorship-evidence and stratified subjective-review caveats.
+- Advanced The Big Bite to `listing_ready`; publication remains `not_published`, no external action occurred, and spending authority remains $0.
+
 ### PS-2026-045 — Verified local product artifact admission
 
 - Added an authenticated, configured-root-only path that verifies a declared SHA-256 before copying a local owner-supplied product artifact into canonical Pine Star storage.
