@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-046` — The Big Bite Formal QA — **COMPLETE**
+**Current change:** `PS-2026-047` — The Big Bite Protected Review Request — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -58,6 +58,7 @@
 | The Big Bite reconciliation | `PS-2026-044` complete; advertised scope is exactly 200 images, files 201-213 remain unadvertised read-only extras, 21 metadata-only corrected copies and a verified 200-image internal archive have hash provenance, and listing copy contains no extra/bonus count |
 | Verified local product artifacts | `PS-2026-045` complete; an authenticated route admits only files under explicitly configured local roots, verifies the declared SHA-256, copies matching bytes into canonical Pine Star storage, and records QA-eligible provenance without modifying sources or granting external/spending authority |
 | The Big Bite formal QA | `PS-2026-046` complete; the 200-image archive and both provenance manifests are canonical verified artifacts with complete expected-deliverable coverage, QA is passed with explicit authorship/subjective-review caveats, and the product is listing-ready but not published |
+| The Big Bite protected review | `PS-2026-047` complete; the evidence-backed Etsy listing package is queued as protected approval-required work for Commander review, with no publication, upload, account, credential, external action, or spending authority |
 
 ## Known baseline issues
 
@@ -72,4 +73,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-The Big Bite is durably recorded as `pine-trail-the-big-bite`, `listing_ready`, and `qaState: passed`. Three canonical artifacts cover its expected archive and provenance manifests, while the QA report preserves the limits of authorship evidence and stratified subjective review. Publication remains `not_published`; the next step requires review of the listing-ready package before creating a protected, stopped publication-review request.
+The Big Bite is durably QA-passed with three canonical verified artifacts and complete expected-deliverable coverage. Request `the-big-bite-listing-review-v1` is now protected, stopped, and `approval_required` for Commander review. No publication has occurred and no execution path was added; autonomous work is blocked at the existing approval boundary.

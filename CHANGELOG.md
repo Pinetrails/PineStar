@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-047 — The Big Bite protected review request
+
+- Reviewed the listing-ready evidence package for consistency with the verified 200-image scope, license boundary, and QA caveats.
+- Created protected request `the-big-bite-listing-review-v1` for Commander review of the Etsy listing package.
+- The request remains stopped and approval-required; no publication, upload, account, credential, external action, or spending authority was granted.
+
 ### PS-2026-046 — The Big Bite formal QA
 
 - Admitted the verified 200-image archive, deliverable manifest, and DPI-correction manifest into canonical Pine Star storage with matching SHA-256 provenance.
