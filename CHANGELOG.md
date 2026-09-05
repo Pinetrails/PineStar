@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-044 — The Big Bite 200-image reconciliation
+
+- Reconciled the advertised product scope to exactly 200 images while retaining files 201-213 as unadvertised read-only extras.
+- Created 21 metadata-only 300-DPI corrected copies with byte-identical IDAT data and matching decoded pixels, plus an internal archive containing exactly images 001-200.
+- Added hash manifests, exhaustive technical QA evidence, and 200-image-only listing copy; formal QA and publication remain unapproved.
+
 ### PS-2026-043 — Existing Pine Trail product evidence intake
 
 - Added authenticated, idempotent intake for already-built Pine Trail digital products without forcing the printable Letter/A4 preset onto clipart collections.

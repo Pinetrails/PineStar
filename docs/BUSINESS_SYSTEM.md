@@ -69,4 +69,6 @@ The deterministic workflow is `idea → research → planned → production → 
 
 `PS-2026-043` adds a separate evidence intake for already-built Pine Trail products whose format does not match the printable-family preset. It records bounded source facts and unknowns, creates Coordinator-owned Product Designer reconciliation followed by independent Quality Reviewer work, and starts at `production` with QA explicitly not started. The intake never reads arbitrary paths itself, copies source assets, passes QA, prepares publication, or grants external or spending authority.
 
+`PS-2026-044` applies the real The Big Bite source decisions. Its public-facing scope is exactly 200 images; 201-213 remain unadvertised read-only extras. Twenty-one metadata-only corrected copies preserve pixel and IDAT hashes, and a hash-manifested internal QA archive contains exactly 001-200. Technical review and listing drafting do not bypass the existing trusted-artifact or protected-publication gates.
+
 External spending authority defaults to `$0`. No real-money trading, purchase, subscription, or financial commitment may be implemented or executed without explicit approval. Future paper trading must be clearly labeled and isolated from real money.
