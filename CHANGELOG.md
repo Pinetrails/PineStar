@@ -4,6 +4,11 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-058 — Morning Brief experiment-planning projection
+
+- Morning Brief now carries a bounded structured projection of in-period experiment-planning advisories, including their questions, design requirements, and evaluation-report provenance.
+- The projection is read-only and does not enter or displace existing decisions, actions, or completion signals.
+
 ### PS-2026-057 — Evaluation-informed experiment-planning advisory
 
 - Added authenticated immutable planning advisories that project retained evaluation lessons into bounded design requirements.

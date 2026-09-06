@@ -24,7 +24,12 @@ function composeMorningBrief(input) {
   const productReports = reports.filter(x => x.type === 'product-research-decision' && Number(x.createdAt) > start && Number(x.createdAt) <= end);
   const growthReports = reports.filter(x => x.type === 'growth-experiment-result' && Number(x.createdAt) > start && Number(x.createdAt) <= end);
   const evaluationReports = reports.filter(x => x.type === 'champion-challenger-evaluation' && Number(x.createdAt) > start && Number(x.createdAt) <= end);
+  const planningReports = reports.filter(x => x.type === 'experiment-planning-advisory' && Number(x.createdAt) > start && Number(x.createdAt) <= end);
   const evaluationLessons = evaluationReports.flatMap(x => Array.isArray(x.evaluationLessons) ? x.evaluationLessons : []).slice(0, 20);
+  const experimentAdvisories = planningReports.slice(0, 10).map(x => ({ id: x.id,
+    question: text(String(x.headline || '').replace(/^Advisory experiment design:\s*/, ''), 240),
+    designRequirements: (Array.isArray(x.completed) ? x.completed : []).slice(0, 10),
+    sourceRefs: (Array.isArray(x.sourceRefs) ? x.sourceRefs : []).slice(0, 12) })).filter(x => x.question && x.designRequirements.length);
   const auditorRows = objectives.filter(x => x.assignedRoleId === 'operations.auditor' && FINAL.has(x.status) && inPeriod(x, start, end));
   const discoveries = scoutReports.flatMap(x => Array.isArray(x.discoveries) ? x.discoveries : []).slice(0, 5);
   const measuredRuns = runs.filter(x => typeof x.usd === 'number' && Number.isFinite(x.usd));
@@ -54,8 +59,8 @@ function composeMorningBrief(input) {
   ], 10);
   const headline = completedRows.length + ' completed · ' + active.length + ' active · ' + exceptions.length + ' attention item' + (exceptions.length === 1 ? '' : 's');
   return { schema: 'pine-star.shared-report.v1', id: text(o.id, 120) || ('morning-brief:' + new Date(end).toISOString().slice(0, 10)), type: 'morning-brief',
-    createdAt: end, periodStart: start, periodEnd: end, headline, completed, exceptions, decisions, nextActions, discoveries, evaluationLessons,
-    sourceRefs: unique([...completedRows, ...failures, ...active, ...approvals, ...auditorRows].map(x => 'objective:' + x.id).concat(scoutReports.concat(productReports, growthReports, evaluationReports).map(x => 'report:' + x.id), candidates.flatMap(x => ['configuration-candidate:' + x.candidateId, 'report:' + x.evaluationReportId]), measuredRuns.map(x => 'run:' + x.runId), business && Array.isArray(business.sourceRefs) ? business.sourceRefs : [], products && Array.isArray(products.sourceRefs) ? products.sourceRefs : []), 30) };
+    createdAt: end, periodStart: start, periodEnd: end, headline, completed, exceptions, decisions, nextActions, discoveries, evaluationLessons, experimentAdvisories,
+    sourceRefs: unique([...completedRows, ...failures, ...active, ...approvals, ...auditorRows].map(x => 'objective:' + x.id).concat(scoutReports.concat(productReports, growthReports, evaluationReports, planningReports).map(x => 'report:' + x.id), planningReports.flatMap(x => Array.isArray(x.sourceRefs) ? x.sourceRefs : []), candidates.flatMap(x => ['configuration-candidate:' + x.candidateId, 'report:' + x.evaluationReportId]), measuredRuns.map(x => 'run:' + x.runId), business && Array.isArray(business.sourceRefs) ? business.sourceRefs : [], products && Array.isArray(products.sourceRefs) ? products.sourceRefs : []), 30) };
 }
 
 module.exports = { composeMorningBrief };

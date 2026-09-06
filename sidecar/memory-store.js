@@ -193,11 +193,15 @@ function normalizeSharedReport(input) {
     proxyDimension: boundedText(item && item.proxyDimension, 80), observed: boundedText(item && item.observed, 240),
     futureDesign: boundedText(item && item.futureDesign, 240)
   })).filter(item => item.kind && item.configurationId && item.observed && item.futureDesign);
+  const experimentAdvisories = (Array.isArray(row.experimentAdvisories) ? row.experimentAdvisories : []).slice(0, 10).map(item => ({
+    id: boundedText(item && item.id, 120), question: boundedText(item && item.question, 240),
+    designRequirements: safeStringList(item && item.designRequirements, 10, 240), sourceRefs: safeStringList(item && item.sourceRefs, 12, 500)
+  })).filter(item => item.id && item.question && item.designRequirements.length);
   return {
     schema: 'pine-star.shared-report.v1', id, type,
     createdAt: Math.max(0, Number(row.createdAt) || 0), periodStart: Math.max(0, Number(row.periodStart) || 0), periodEnd: Math.max(0, Number(row.periodEnd) || 0),
     headline, completed: safeStringList(row.completed, 10, 240), exceptions: safeStringList(row.exceptions, 10, 240),
-    decisions: safeStringList(row.decisions, 10, 240), nextActions: safeStringList(row.nextActions, 10, 240), sourceRefs: safeStringList(row.sourceRefs, 12, 500), discoveries, deliverableEvidence, evaluationLessons
+    decisions: safeStringList(row.decisions, 10, 240), nextActions: safeStringList(row.nextActions, 10, 240), sourceRefs: safeStringList(row.sourceRefs, 12, 500), discoveries, deliverableEvidence, evaluationLessons, experimentAdvisories
   };
 }
 async function appendSharedReport(store, input) {
