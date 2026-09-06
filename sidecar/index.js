@@ -18460,7 +18460,7 @@ async function handleMorningBrief(req, res) {
     const existing = listSharedReports(notebookStore, 100).find(x => x && x.id === id);
     if (existing) return respondJson(res, 200, { ok: true, added: false, report: existing });
     const businessSummary = businessRecordStore.summary(periodStart, periodEnd);
-    const report = composeMorningBrief({ id, periodStart, periodEnd, objectives: objectiveStore.list(1000), reports: listSharedReports(notebookStore, 100), runs: runStore.list(null, { limit: 1000, since: periodStart, through: periodEnd }), businessSummary, productSummary: summarizeProductPortfolio({ projects: productProjectStore.list(250), commerce: businessRecordStore.listCommerce(250), financials: businessSummary }) });
+    const report = composeMorningBrief({ id, periodStart, periodEnd, objectives: objectiveStore.list(1000), reports: listSharedReports(notebookStore, 100), configurationCandidates: configurationCandidateStore.list(200), runs: runStore.list(null, { limit: 1000, since: periodStart, through: periodEnd }), businessSummary, productSummary: summarizeProductPortfolio({ projects: productProjectStore.list(250), commerce: businessRecordStore.listCommerce(250), financials: businessSummary }) });
     const saved = await appendSharedReport(notebookStore, report);
     return respondJson(res, 201, { ok: true, added: saved.added, report: saved.report });
   } catch (e) { return respondJson(res, 400, { error: (e && e.message) || 'invalid Morning Brief request' }); }

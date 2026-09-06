@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-052` — Review-Only Configuration Candidates — **COMPLETE**
+**Current change:** `PS-2026-053` — Configuration Candidate Reporting — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -64,6 +64,7 @@
 | Advisory champion/challenger evaluation | `PS-2026-050` complete; authenticated immutable evaluations compare disjoint settled same-role objective cohorts using completion, failure, cancellation, measured-cost, uncertain-mutation, and wasted-work proxies while remaining advisory-only and incapable of configuration changes or activation |
 | Evaluation reporting projection | `PS-2026-051` complete; Morning Brief and the existing generic Reports surface expose immutable evaluation decisions, Commander-review next actions, evidence limitations, and provenance without configuration or activation controls |
 | Review-only configuration candidates | `PS-2026-052` complete; authenticated immutable candidate records require an existing challenger-recommendation report, retain risks/rollback/evidence for inspection, and remain `review_required` with no decision, admission, activation, configuration-mutation, spending, or external-action path |
+| Configuration candidate reporting | `PS-2026-053` complete; Morning Brief exposes in-period review-only candidates, risks, evaluation/candidate provenance, Commander-review action, and the retained champion as rollback evidence without adding decision or activation controls |
 
 ## Known baseline issues
 
@@ -78,4 +79,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Continue Phase 7 with read-only Auditor and Morning Brief visibility for configuration candidates and their retained losing-configuration lessons. Do not add candidate decision, admission, or activation controls. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.
+Continue Phase 7 with evidence-quality checks that distinguish complete measured comparisons from incomplete or weak cohorts before a recommendation can become a review-only candidate. Do not add candidate decision, admission, or activation controls. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.

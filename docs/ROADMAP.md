@@ -84,6 +84,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Immutable advisory champion/challenger evaluation now compares explicit disjoint cohorts of settled same-role objectives with recorded outcome, cost, safety, and wasted-work proxies (`PS-2026-050`). It cannot mutate routing, roles, models, permissions, or active configuration.
 - Morning Brief and the existing generic Reports view now project immutable evaluation decisions, review actions, evidence limitations, and report provenance without adding configuration controls (`PS-2026-051`).
 - Immutable review-only configuration candidates retain evaluation provenance, intended changes, risks, and rollback plans while exposing no decision, admission, activation, or configuration-mutation mechanism (`PS-2026-052`).
+- Morning Brief now surfaces candidate risks, Commander review actions, provenance, and retained-champion rollback lessons for operator and Auditor visibility (`PS-2026-053`).
 
 ## Phase 8 — Pine Star World
 

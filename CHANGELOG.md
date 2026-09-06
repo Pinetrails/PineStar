@@ -4,6 +4,11 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-053 — Configuration candidate reporting
+
+- Added in-period review-only configuration candidates, risks, rollback lessons, and provenance to Morning Brief.
+- Candidate-specific Commander review guidance replaces redundant generic evaluation guidance without creating a decision or activation control.
+
 ### PS-2026-052 — Review-only configuration candidates
 
 - Added authenticated durable configuration-candidate records backed by challenger-recommendation evidence.
