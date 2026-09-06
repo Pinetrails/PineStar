@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-053` — Configuration Candidate Reporting — **COMPLETE**
+**Current change:** `PS-2026-054` — Evaluation Evidence-Quality Gate — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -65,6 +65,7 @@
 | Evaluation reporting projection | `PS-2026-051` complete; Morning Brief and the existing generic Reports surface expose immutable evaluation decisions, Commander-review next actions, evidence limitations, and provenance without configuration or activation controls |
 | Review-only configuration candidates | `PS-2026-052` complete; authenticated immutable candidate records require an existing challenger-recommendation report, retain risks/rollback/evidence for inspection, and remain `review_required` with no decision, admission, activation, configuration-mutation, spending, or external-action path |
 | Configuration candidate reporting | `PS-2026-053` complete; Morning Brief exposes in-period review-only candidates, risks, evaluation/candidate provenance, Commander-review action, and the retained champion as rollback evidence without adding decision or activation controls |
+| Evaluation evidence-quality gate | `PS-2026-054` complete; challenger recommendations require two-or-more settled objectives per arm, matched measured runs, and evidence for every completion, while incomplete/weak comparisons remain inconclusive and cannot back new candidates |
 
 ## Known baseline issues
 
@@ -79,4 +80,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Continue Phase 7 with evidence-quality checks that distinguish complete measured comparisons from incomplete or weak cohorts before a recommendation can become a review-only candidate. Do not add candidate decision, admission, or activation controls. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.
+Continue Phase 7 by retaining structured lessons from inconclusive and losing evaluations so future experiment design can avoid repeated evidence gaps without changing active configuration. Do not add candidate decision, admission, or activation controls. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.

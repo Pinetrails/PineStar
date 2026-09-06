@@ -4,6 +4,11 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-054 — Evaluation evidence-quality gate
+
+- Challenger recommendations now require at least two settled objectives per cohort, matched measured runs, and evidence for every completion.
+- Only reports carrying the complete-evidence marker can back a new review-only configuration candidate; incomplete and legacy reports remain advisory history.
+
 ### PS-2026-053 — Configuration candidate reporting
 
 - Added in-period review-only configuration candidates, risks, rollback lessons, and provenance to Morning Brief.

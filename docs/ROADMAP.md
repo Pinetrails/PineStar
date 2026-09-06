@@ -85,6 +85,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Morning Brief and the existing generic Reports view now project immutable evaluation decisions, review actions, evidence limitations, and report provenance without adding configuration controls (`PS-2026-051`).
 - Immutable review-only configuration candidates retain evaluation provenance, intended changes, risks, and rollback plans while exposing no decision, admission, activation, or configuration-mutation mechanism (`PS-2026-052`).
 - Morning Brief now surfaces candidate risks, Commander review actions, provenance, and retained-champion rollback lessons for operator and Auditor visibility (`PS-2026-053`).
+- Recommendations now require adequate cohorts, matched measured runs, and evidenced completions; incomplete or legacy evidence cannot back a new configuration candidate (`PS-2026-054`).
 
 ## Phase 8 — Pine Star World
 

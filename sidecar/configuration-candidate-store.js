@@ -18,6 +18,7 @@ function makeConfigurationCandidateStore(deps) {
     if (configurationId === replacesConfigurationId) throw new Error('candidate configuration must differ from the champion');
     if (!report || report.type !== 'champion-challenger-evaluation') throw new Error('configuration candidate requires an existing champion/challenger evaluation report');
     if (!(Array.isArray(report.decisions) && report.decisions.some(v => /^challenger_recommended:/.test(String(v))))) throw new Error('configuration candidate requires a challenger recommendation');
+    if (!(Array.isArray(report.sourceRefs) && report.sourceRefs.includes('evaluation-evidence:complete-v1'))) throw new Error('configuration candidate requires a complete measured evaluation');
     const stamp = Math.max(0, Number(now()) || 0), evidenceRefs = strings(['report:' + evaluationReportId].concat(Array.isArray(x.evidenceRefs) ? x.evidenceRefs : []), 24, 500);
     return { schema: 'pine-star.configuration-candidate.v1', id: 'configuration-candidate:' + candidateId, candidateId, configurationId, replacesConfigurationId, roleId, evaluationReportId,
       summary: text(x.summary, 500), intendedChanges: strings(x.intendedChanges, 20, 240), risks: strings(x.risks, 20, 240), rollbackPlan: text(x.rollbackPlan, 500), evidenceRefs,
