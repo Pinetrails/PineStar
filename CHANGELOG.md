@@ -4,6 +4,11 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-057 — Evaluation-informed experiment-planning advisory
+
+- Added authenticated immutable planning advisories that project retained evaluation lessons into bounded design requirements.
+- Advisories explicitly reject configuration, candidate, cohort, schedule, and rerun inputs and cannot create objectives, change configuration, spend, or act externally.
+
 ### PS-2026-056 — Morning Brief evaluation-lessons projection
 
 - Morning Brief now includes a bounded read-only projection of structured lessons from in-period champion/challenger reports.

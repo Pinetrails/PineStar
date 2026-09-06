@@ -241,6 +241,7 @@ const { completePublicationReadinessReview } = require('./product-publication-re
 const { makeBusinessRecordStore } = require('./business-record-store.js');
 const { planGrowthExperiment, finalizeGrowthExperiment } = require('./growth-experiment.js');
 const { evaluateConfigurations } = require('./champion-challenger.js');
+const { createExperimentPlanningAdvisory } = require('./experiment-planning-advisory.js');
 const { makeConfigurationCandidateStore } = require('./configuration-candidate-store.js');
 const { intakePineTrailPrintable, planPineTrailProduction } = require('./pine-trail-printables.js');
 const { intakeExistingPineTrailProduct } = require('./pine-trail-existing-product.js');
@@ -8781,6 +8782,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/business/growth-experiments', h: handleGrowthExperimentPlan },
   { m: 'POST', exact: '/api/business/growth-experiments/result', h: handleGrowthExperimentResult },
   { m: 'POST', exact: '/api/evolution/champion-challenger', h: handleChampionChallengerEvaluation },
+  { m: 'POST', exact: '/api/evolution/experiment-planning-advisories', h: handleExperimentPlanningAdvisory },
   { m: ['GET', 'POST'], qsplit: '/api/evolution/configuration-candidates', h: handleConfigurationCandidates },
   { m: 'POST', exact: '/api/objectives/intake', h: handlePineStarObjectiveIntake },
   { m: 'POST', exact: '/api/objectives/decompose', h: handlePineStarObjectiveDecompose },
@@ -18599,6 +18601,14 @@ async function handleChampionChallengerEvaluation(req, res) {
       appendReport: report => appendSharedReport(notebookStore, report), getReport: id => listSharedReports(notebookStore, 100).find(x => x.id === id) || null, now: Date.now }, body);
     return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
   } catch (e) { const message = (e && e.message) || 'invalid configuration evaluation'; return respondJson(res, /already recorded differently/.test(message) ? 409 : 400, { error: message }); }
+}
+async function handleExperimentPlanningAdvisory(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const result = await createExperimentPlanningAdvisory({ appendReport: report => appendSharedReport(notebookStore, report),
+      getReport: id => listSharedReports(notebookStore, 100).find(x => x.id === id) || null, now: Date.now }, body);
+    return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
+  } catch (e) { const message = (e && e.message) || 'invalid experiment-planning advisory'; return respondJson(res, /already recorded differently/.test(message) ? 409 : 400, { error: message }); }
 }
 async function handleConfigurationCandidates(req, res) {
   if (req.method === 'GET') {

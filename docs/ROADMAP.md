@@ -86,6 +86,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Immutable review-only configuration candidates retain evaluation provenance, intended changes, risks, and rollback plans while exposing no decision, admission, activation, or configuration-mutation mechanism (`PS-2026-052`).
 - Morning Brief now surfaces candidate risks, Commander review actions, provenance, and retained-champion rollback lessons for operator and Auditor visibility (`PS-2026-053`).
 - Recommendations now require adequate cohorts, matched measured runs, and evidenced completions; incomplete or legacy evidence cannot back a new configuration candidate (`PS-2026-054`).
+- Retained evaluation lessons can now seed immutable authenticated experiment-planning advisories with bounded design requirements; the advisory rejects configuration, cohort, schedule, and rerun controls and creates no objective (`PS-2026-057`).
 
 ## Phase 8 — Pine Star World
 
