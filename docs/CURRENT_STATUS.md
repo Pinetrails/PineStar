@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-049` — Revision QA Cycles and Big Bite Candidate QA — **COMPLETE**
+**Current change:** `PS-2026-050` — Advisory Champion/Challenger Evaluation — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -61,6 +61,7 @@
 | The Big Bite protected review | `PS-2026-047` complete; the evidence-backed Etsy listing package is queued as protected approval-required work for Commander review, with no publication, upload, account, credential, external action, or spending authority |
 | The Big Bite internal readiness revision | `PS-2026-048` complete; the protected review was resolved only for internal readiness, the prior incompatible escalation remains in audit history, corrected Product Designer/Balanced preparation and dependent Quality Reviewer QA are separate, and a hash-manifested 200-PNG/four-PDF internal candidate exists without publication or external delivery |
 | Revision QA cycles and Big Bite candidate QA | `PS-2026-049` complete; optional stable QA-cycle IDs preserve prior immutable QA reports, direct child status completion reconciles coordinator state, and The Big Bite candidate archive/manifest are canonically hash-verified with independent QA passed while publication remains `not_published` |
+| Advisory champion/challenger evaluation | `PS-2026-050` complete; authenticated immutable evaluations compare disjoint settled same-role objective cohorts using completion, failure, cancellation, measured-cost, uncertain-mutation, and wasted-work proxies while remaining advisory-only and incapable of configuration changes or activation |
 
 ## Known baseline issues
 
@@ -75,4 +76,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-The Big Bite internal customer-package candidate is durably QA-passed under report `product-qa:pine-trail-the-big-bite:customer-candidate-v1`. Its archive and manifest are canonical verified artifacts; the Product Designer, Quality Reviewer, and coordinator objectives are complete. The project is `listing_ready`, QA is `passed`, and publication is `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.
+Continue Phase 7 with a read-only operator projection of immutable champion/challenger reports and explicit evidence limitations. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.

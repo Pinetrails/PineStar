@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-050 — Advisory champion/challenger evaluation
+
+- Added authenticated, immutable comparison of disjoint settled same-role objective cohorts using outcome, evidence, measured-cost, uncertain-mutation, and wasted-work proxies.
+- Recommendations remain conservative and advisory; incomplete run-cost evidence is explicit.
+- Evaluation cannot change, admit, activate, or retire configurations and grants no external action or spending authority.
+
 ### PS-2026-049 — Revision QA cycles and Big Bite candidate QA
 
 - Added optional normalized QA-cycle IDs so revised products can create distinct immutable QA reports without changing legacy report identities.
