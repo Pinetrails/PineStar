@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-064` — Auditor Runtime Champion Baseline — **COMPLETE**
+**Current change:** `PS-2026-065` — Sealed Auditor Matched-Measurement Runner — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -76,6 +76,7 @@
 | Authoritative matched measurement evidence | `PS-2026-062` complete; an internal host-authorized durable contract records configuration/task-condition/outcome/runtime/cost/usage/retry/safety/uncertainty provenance, and evaluation now fails closed unless every objective has an authoritative same-task/same-conditions record in both arms |
 | Runtime champion configuration identity | `PS-2026-063` complete; the existing roster-to-objective-to-run path carries a stable configuration ID and observed provider, roster snapshots retain bounded non-secret audit provenance, and routing rejects unidentified configurations |
 | Auditor runtime champion baseline | `PS-2026-064` complete; the canonical roster actively binds `operations.auditor` to the installed local Ollama `llama3.2:3b` configuration with `$0` external cost, ask-mode approval, trusted-project scope, and durable non-secret audit provenance |
+| Sealed Auditor matched-measurement runner | `PS-2026-065` complete; a private digest-bound one-shot path runs only the authorized six local Ollama comparisons through normal objectives, `runOnce`, cancellation, run history, mechanical verification, and authoritative measurement settlement without roster mutation or rerun authority |
 
 ## Known baseline issues
 

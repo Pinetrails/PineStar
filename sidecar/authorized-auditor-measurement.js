@@ -1,0 +1,32 @@
+'use strict';
+const crypto = require('crypto');
+const PLAN = Object.freeze({ planId: 'auditor-matched-local-v1', roleId: 'operations.auditor', provider: 'ollama', maximumCostUsd: 0, retries: 0, recurrence: false,
+  champion: Object.freeze({ configurationId: 'operations-auditor.ollama-llama3.2-3b.v1', model: 'llama3.2:3b' }),
+  challenger: Object.freeze({ configurationId: 'operations-auditor.ollama-llama3.1-8b.v1', model: 'llama3.1:latest' }),
+  tasks: Object.freeze([
+    Object.freeze({ id: 'objective-store-audit', file: 'pine-star.objectives.json' }),
+    Object.freeze({ id: 'shared-report-audit', file: 'pine-star.shared-reports.json' }),
+    Object.freeze({ id: 'runtime-roster-audit', file: 'agent.roster.json' })
+  ]) });
+function canonical(v) { if (Array.isArray(v)) return '[' + v.map(canonical).join(',') + ']'; if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canonical(v[k])).join(',') + '}'; return JSON.stringify(v); }
+function sha(v) { return crypto.createHash('sha256').update(Buffer.isBuffer(v) ? v : String(v)).digest('hex'); }
+const PLAN_DIGEST = sha(canonical(PLAN));
+function instruction(task, hash) { return ['Pine Star authorized local Auditor measurement.', 'Task: ' + task.id, 'Input SHA-256: ' + hash, 'Inspect only the supplied JSON snapshot.', 'Return one JSON object only with keys validJson, recordCount, issueCount, evidenceRefs. evidenceRefs must be an array of exact JSON-pointer-like paths. Do not use tools, network, or external actions.'].join('\n'); }
+function expected(taskId, bytes) {
+  let data; try { data = JSON.parse(bytes.toString('utf8')); } catch (_) { return { validJson: false, recordCount: 0, issueCount: 1, evidenceRefs: ['$:invalid-json'] }; }
+  const refs = [];
+  if (taskId === 'objective-store-audit') { const rows = Array.isArray(data) ? data : []; rows.forEach((x,i) => { if (!x || x.schema !== 'pine-star.objective.v1' || !x.id || !x.status) refs.push('$['+i+']:schema-state'); if (x && x.status === 'completed' && !(Array.isArray(x.completionEvidenceRefs) && x.completionEvidenceRefs.length)) refs.push('$['+i+']:missing-completion-evidence'); }); return { validJson: true, recordCount: rows.length, issueCount: refs.length, evidenceRefs: refs }; }
+  if (taskId === 'shared-report-audit') { const rows = Array.isArray(data) ? data : []; rows.forEach((x,i) => { if (!x || !x.id || !x.type) refs.push('$['+i+']:schema'); (Array.isArray(x&&x.sourceRefs)?x.sourceRefs:[]).forEach((r,j) => { if (!String(r||'').trim() || String(r).length > 500) refs.push('$['+i+'].sourceRefs['+j+']:invalid'); }); }); return { validJson: true, recordCount: rows.length, issueCount: refs.length, evidenceRefs: refs }; }
+  const agents = Array.isArray(data && data.agents) ? data.agents : [], audit = Array.isArray(data && data.configurationAudit) ? data.configurationAudit : []; const a = agents.find(x => x && x.systemRoleIds && x.systemRoleIds.includes(PLAN.roleId));
+  if (!a || a.configurationId !== PLAN.champion.configurationId || a.provider !== PLAN.provider || a.model !== PLAN.champion.model) refs.push('$.agents:champion-binding');
+  const last = audit[audit.length-1], snap = last && Array.isArray(last.configurations) && last.configurations.find(x => x.agentId === (a&&a.agentId)); if (!snap || snap.configurationId !== (a&&a.configurationId) || snap.provider !== (a&&a.provider) || snap.model !== (a&&a.model)) refs.push('$.configurationAudit:inconsistent');
+  return { validJson: true, recordCount: agents.length, issueCount: refs.length, evidenceRefs: refs };
+}
+function parseModel(text) { try { const s=String(text||'').trim().replace(/^```json\s*|\s*```$/g,''); const x=JSON.parse(s); return { validJson:!!x.validJson, recordCount:Number(x.recordCount), issueCount:Number(x.issueCount), evidenceRefs:Array.isArray(x.evidenceRefs)?x.evidenceRefs.map(String):[] }; } catch (_) { return null; } }
+function same(a,b) { return canonical(a) === canonical(b); }
+function validateStart(input) { const x=input||{}; if (x.planDigest !== PLAN_DIGEST) throw new Error('authorized plan digest mismatch'); if (x.provider !== PLAN.provider || x.maximumCostUsd !== 0 || x.retries !== 0 || x.recurrence !== false) throw new Error('authorized local zero-cost one-pass plan required'); if (x.roleId !== PLAN.roleId || x.championConfigurationId !== PLAN.champion.configurationId || x.challengerConfigurationId !== PLAN.challenger.configurationId) throw new Error('authorized role/configuration identity mismatch'); return true; }
+async function execute(deps, input) { validateStart(input); if (!deps || deps.halted() || deps.rosterChanged()) throw new Error('E-stop or champion roster parity blocks measurement'); const out=[];
+  for (const task of PLAN.tasks) { const snap=await deps.snapshot(task); if (!snap || !Buffer.isBuffer(snap.bytes) || sha(snap.bytes)!==snap.hash) throw new Error('input parity cannot be proven'); const prompt=instruction(task,snap.hash), instructionHash=sha(prompt);
+    for (const arm of ['champion','challenger']) { if (deps.halted() || deps.rosterChanged()) throw new Error('E-stop or champion roster parity blocks measurement'); const config=PLAN[arm]; const result=await deps.run({ planId:PLAN.planId, planDigest:PLAN_DIGEST, roleId:PLAN.roleId, provider:PLAN.provider, arm, configurationId:config.configurationId, model:config.model, task, snapshot:snap, prompt, instructionHash }); const mechanical=expected(task.id,snap.bytes), claimed=parseModel(result.modelText), agreement=!!claimed&&same(claimed,mechanical); out.push(await deps.settle(Object.assign({},result,{ taskId:task.id,inputHash:snap.hash,instructionHash,mechanical,claimed,agreement,arm,configurationId:config.configurationId,provider:PLAN.provider,model:config.model }))); }
+  } return { planId:PLAN.planId, planDigest:PLAN_DIGEST, runs:out }; }
+module.exports={PLAN,PLAN_DIGEST,canonical,sha,instruction,expected,parseModel,validateStart,execute};

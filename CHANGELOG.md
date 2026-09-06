@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-065 — Sealed Auditor matched-measurement runner
+
+- Added a host-only one-shot runner compiled to the authorized six-run Auditor plan and SHA-256 digest, with no HTTP or generic configuration-execution surface.
+- The runner snapshots each input once, proves paired input/instruction parity, reuses normal objective lifecycle, `runOnce`, active-run cancellation, run history, cost telemetry, and private PS-2026-062 settlement authority.
+- Independent deterministic verification retains model claims, mechanical results, agreement, hashes, evidence references, and truthful failure outcomes; a durable receipt refuses reruns.
+
 ### PS-2026-064 — Auditor runtime champion baseline
 
 - Established the canonical station roster's active `operations.auditor` runtime as configuration `operations-auditor.ollama-llama3.2-3b.v1` using the existing local Ollama provider and installed `llama3.2:3b` model.
