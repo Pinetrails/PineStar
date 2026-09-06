@@ -4,6 +4,11 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-056 — Morning Brief evaluation-lessons projection
+
+- Morning Brief now includes a bounded read-only projection of structured lessons from in-period champion/challenger reports.
+- Existing report provenance remains attached; the projection cannot schedule experiments or change configuration.
+
 ### PS-2026-055 — Structured evaluation design lessons
 
 - Inconclusive evaluations now retain bounded structured lessons for small cohorts, missing run measurements, missing completion evidence, and uncertain mutations.

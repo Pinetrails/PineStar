@@ -67,6 +67,7 @@
 | Configuration candidate reporting | `PS-2026-053` complete; Morning Brief exposes in-period review-only candidates, risks, evaluation/candidate provenance, Commander-review action, and the retained champion as rollback evidence without adding decision or activation controls |
 | Evaluation evidence-quality gate | `PS-2026-054` complete; challenger recommendations require two-or-more settled objectives per arm, matched measured runs, and evidence for every completion, while incomplete/weak comparisons remain inconclusive and cannot back new candidates |
 | Evaluation design lessons | `PS-2026-055` complete; immutable advisory reports retain structured small-cohort, missing-run, missing-completion-evidence, uncertain-mutation, and losing-proxy lessons for future experiment design without changing configuration |
+| Evaluation-lessons reporting projection | `PS-2026-056` complete; Morning Brief carries a bounded read-only projection of in-period structured evaluation lessons with existing report provenance and no experiment-rerun or configuration-control path |
 
 ## Known baseline issues
 
@@ -81,4 +82,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Continue Phase 7 by exposing the new structured evaluation lessons through a bounded read-only planning projection so future experiment design can inspect relevant prior failures without gaining a configuration control path. Do not add candidate decision, admission, or activation controls. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.
+Continue Phase 7 only with a dependency-ready, explicitly advisory experiment-planning step that consumes retained lessons without automatically selecting configurations, scheduling/rerunning experiments, or changing active configuration. Do not add candidate decision, admission, or activation controls. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.

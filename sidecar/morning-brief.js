@@ -24,6 +24,7 @@ function composeMorningBrief(input) {
   const productReports = reports.filter(x => x.type === 'product-research-decision' && Number(x.createdAt) > start && Number(x.createdAt) <= end);
   const growthReports = reports.filter(x => x.type === 'growth-experiment-result' && Number(x.createdAt) > start && Number(x.createdAt) <= end);
   const evaluationReports = reports.filter(x => x.type === 'champion-challenger-evaluation' && Number(x.createdAt) > start && Number(x.createdAt) <= end);
+  const evaluationLessons = evaluationReports.flatMap(x => Array.isArray(x.evaluationLessons) ? x.evaluationLessons : []).slice(0, 20);
   const auditorRows = objectives.filter(x => x.assignedRoleId === 'operations.auditor' && FINAL.has(x.status) && inPeriod(x, start, end));
   const discoveries = scoutReports.flatMap(x => Array.isArray(x.discoveries) ? x.discoveries : []).slice(0, 5);
   const measuredRuns = runs.filter(x => typeof x.usd === 'number' && Number.isFinite(x.usd));
@@ -53,7 +54,7 @@ function composeMorningBrief(input) {
   ], 10);
   const headline = completedRows.length + ' completed · ' + active.length + ' active · ' + exceptions.length + ' attention item' + (exceptions.length === 1 ? '' : 's');
   return { schema: 'pine-star.shared-report.v1', id: text(o.id, 120) || ('morning-brief:' + new Date(end).toISOString().slice(0, 10)), type: 'morning-brief',
-    createdAt: end, periodStart: start, periodEnd: end, headline, completed, exceptions, decisions, nextActions, discoveries,
+    createdAt: end, periodStart: start, periodEnd: end, headline, completed, exceptions, decisions, nextActions, discoveries, evaluationLessons,
     sourceRefs: unique([...completedRows, ...failures, ...active, ...approvals, ...auditorRows].map(x => 'objective:' + x.id).concat(scoutReports.concat(productReports, growthReports, evaluationReports).map(x => 'report:' + x.id), candidates.flatMap(x => ['configuration-candidate:' + x.candidateId, 'report:' + x.evaluationReportId]), measuredRuns.map(x => 'run:' + x.runId), business && Array.isArray(business.sourceRefs) ? business.sourceRefs : [], products && Array.isArray(products.sourceRefs) ? products.sourceRefs : []), 30) };
 }
 
