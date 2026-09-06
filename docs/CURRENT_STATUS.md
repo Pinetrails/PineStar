@@ -1,10 +1,10 @@
 # Current status
 
-**As of:** 2026-09-04
+**As of:** 2026-09-06
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-047` — The Big Bite Protected Review Request — **COMPLETE**
+**Current change:** `PS-2026-048` — The Big Bite Internal Readiness Revision — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -59,6 +59,7 @@
 | Verified local product artifacts | `PS-2026-045` complete; an authenticated route admits only files under explicitly configured local roots, verifies the declared SHA-256, copies matching bytes into canonical Pine Star storage, and records QA-eligible provenance without modifying sources or granting external/spending authority |
 | The Big Bite formal QA | `PS-2026-046` complete; the 200-image archive and both provenance manifests are canonical verified artifacts with complete expected-deliverable coverage, QA is passed with explicit authorship/subjective-review caveats, and the product is listing-ready but not published |
 | The Big Bite protected review | `PS-2026-047` complete; the evidence-backed Etsy listing package is queued as protected approval-required work for Commander review, with no publication, upload, account, credential, external action, or spending authority |
+| The Big Bite internal readiness revision | `PS-2026-048` complete; the protected review was resolved only for internal readiness, the prior incompatible escalation remains in audit history, corrected Product Designer/Balanced preparation and dependent Quality Reviewer QA are separate, and a hash-manifested 200-PNG/four-PDF internal candidate exists without publication or external delivery |
 
 ## Known baseline issues
 
@@ -73,4 +74,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-The Big Bite is durably QA-passed with three canonical verified artifacts and complete expected-deliverable coverage. Request `the-big-bite-listing-review-v1` is now protected, stopped, and `approval_required` for Commander review. No publication has occurred and no execution path was added; autonomous work is blocked at the existing approval boundary.
+The Big Bite protected review is durably completed at the narrow internal-readiness scope; it did not authorize publication. The internal candidate contains exactly 200 byte-identical PNG copies, four rendered/verified customer-facing PDFs, and SHA-256 provenance. Product Designer preparation is complete; dependent independent Quality Reviewer objective `objective:8435b295-708d-43ef-8e87-af44eec1f76f` remains assigned. External hosting/delivery selection, account access, upload, and publication remain unauthorized.

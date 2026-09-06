@@ -237,6 +237,7 @@ const { finalizeProductResearch } = require('./product-research.js');
 const { createProductionPlan } = require('./product-production.js');
 const { finalizeQa } = require('./product-qa.js');
 const { requestPublicationApproval, withdrawPublicationApproval } = require('./product-publication-request.js');
+const { completePublicationReadinessReview } = require('./product-publication-readiness-review.js');
 const { makeBusinessRecordStore } = require('./business-record-store.js');
 const { planGrowthExperiment, finalizeGrowthExperiment } = require('./growth-experiment.js');
 const { intakePineTrailPrintable, planPineTrailProduction } = require('./pine-trail-printables.js');
@@ -8761,6 +8762,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/product-projects/qa', h: handleProductQa },
   { m: 'POST', exact: '/api/product-projects/publication-approval-request', h: handleProductPublicationApprovalRequest },
   { m: 'POST', exact: '/api/product-projects/publication-approval-withdrawal', h: handleProductPublicationApprovalWithdrawal },
+  { m: 'POST', exact: '/api/product-projects/publication-readiness-review', h: handleProductPublicationReadinessReview },
   { m: 'POST', exact: '/api/product-projects/pine-trail-printables', h: handlePineTrailPrintableIntake },
   { m: 'POST', exact: '/api/product-projects/pine-trail-printables/production-plan', h: handlePineTrailProductionPlan },
   { m: 'POST', exact: '/api/product-projects/pine-trail-existing-product', h: handlePineTrailExistingProduct },
@@ -18522,6 +18524,15 @@ async function handleProductPublicationApprovalWithdrawal(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
   try { const result = await withdrawPublicationApproval({ projects: productProjectStore, objectives: objectiveStore, getReport: id => listSharedReports(notebookStore, 100).find(x => x.id === id) || null, appendReport: report => appendSharedReport(notebookStore, report), now: Date.now }, body); return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result)); }
   catch (e) { const message = (e && e.message) || 'invalid publication approval withdrawal'; return respondJson(res, message === 'product project not found' || /request not found/.test(message) ? 404 : 400, { error: message }); }
+}
+async function handleProductPublicationReadinessReview(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try {
+    const result = await completePublicationReadinessReview({ projects: productProjectStore, objectives: objectiveStore,
+      getReport: id => listSharedReports(notebookStore, 100).find(x => x.id === id) || null, appendReport: report => appendSharedReport(notebookStore, report),
+      artifactExists: id => deliverableStore.list().find(x => x && x.id === id && ['kept', 'implemented', 'verified'].includes(x.status)) || null, now: Date.now }, body);
+    return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
+  } catch (e) { const message = (e && e.message) || 'invalid publication readiness review'; return respondJson(res, /identity mismatch|already recorded differently/.test(message) ? 409 : (message === 'product project not found' ? 404 : 400), { error: message }); }
 }
 async function handlePineTrailPrintableIntake(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }

@@ -143,6 +143,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/product-projects/qa', {})).status, 403, 'product QA finalization remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/publication-approval-request', {})).status, 403, 'publication approval requests remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/publication-approval-withdrawal', {})).status, 403, 'publication approval withdrawals remain behind the API token gate');
+    A.eq((await raw('POST', '/api/product-projects/publication-readiness-review', {})).status, 403, 'internal publication readiness reviews remain behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-printables', {})).status, 403, 'Pine Trail printable intake remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-printables/production-plan', {})).status, 403, 'Pine Trail production planning remains behind the API token gate');
     A.eq((await raw('POST', '/api/product-projects/pine-trail-existing-product', {})).status, 403, 'existing Pine Trail product intake remains behind the API token gate');
@@ -303,6 +304,14 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(revisedWithdrawal.status, 201, 'last pending revised review can be withdrawn');
     A.eq(revisedWithdrawal.body.remainingPendingObjectiveId, null, 'withdrawal confirms no concurrent review remains');
     A.eq(revisedWithdrawal.body.project.status, 'listing_ready', 'last pending review withdrawal restores listing readiness');
+    const internalRequest = await j('POST', '/api/product-projects/publication-approval-request', Object.assign({}, publicationRequestSpec, { requestId: 'marketplace-a-internal-v1', rationale: 'Internal readiness review only.' }));
+    const readiness = await j('POST', '/api/product-projects/publication-readiness-review', { projectId: 'http-idea-lab', requestId: 'marketplace-a-internal-v1', objectiveId: internalRequest.body.objective.id, qaReportId: qaFinal.body.report.id, scope: 'internal-readiness-only', findings: ['Listing matches verified fixture evidence'], blockers: [] });
+    A.eq(readiness.status, 201, 'Commander-scoped internal readiness review completes through authenticated HTTP');
+    A.eq(readiness.body.objective.approvalState, 'internal_review_approved', 'internal review approval remains distinct from publication authorization');
+    A.eq(readiness.body.project.status, 'listing_ready', 'completed internal review returns to listing-ready state');
+    A.eq(readiness.body.project.publicationState, 'not_published', 'internal review does not claim publication');
+    A.eq(readiness.body.publicationAuthorized, false, 'internal review grants no external publication authority');
+    A.eq(readiness.body.spendingAuthorityUsd, 0, 'internal review grants zero spending authority');
     const commerceSpec = { recordId: 'http-marketplace-draft', projectId: 'http-idea-lab', marketplace: 'Marketplace A', state: 'draft', externalListingId: 'draft-42' };
     const commerceWrite = await j('POST', '/api/business/commerce-records', commerceSpec);
     A.eq(commerceWrite.status, 201, 'commerce reference is durably recorded');

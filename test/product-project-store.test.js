@@ -28,6 +28,10 @@ const store = makeProductProjectStore({ durable, now: () => stamp++, newId: () =
   let withdrawalBypass = false; try { await store.update('trail-planner', { status: 'listing_ready' }); } catch (e) { withdrawalBypass = /protected workflow/.test(e.message); } A.ok(withdrawalBypass, 'generic update cannot bypass protected approval withdrawal');
   const restored = await store.update('trail-planner', { status: 'listing_ready' }, { publicationApprovalWithdrawn: true }); A.eq(restored.status, 'listing_ready', 'internal withdrawal seam can truthfully restore listing readiness');
   A.eq(restored.publicationState, 'not_published', 'withdrawal clears the stale waiting-publication projection');
+  await store.update('trail-planner', { status: 'approval_required' }, { publicationApprovalRequested: true });
+  const internallyReviewed = await store.update('trail-planner', { status: 'listing_ready' }, { internalReadinessReviewCompleted: true });
+  A.eq(internallyReviewed.status, 'listing_ready', 'internal readiness review returns to listing-ready without publishing');
+  A.eq(internallyReviewed.publicationState, 'not_published', 'internal readiness approval never becomes publication approval');
   const linked = await store.link('trail-planner', { objectiveIds: ['objective:research'], reportIds: ['report:research'] });
   A.eq(linked.linkedObjectiveIds, ['objective:research'], 'durable objective link is stored');
   A.eq(linked.linkedReportIds, ['report:research'], 'durable report link is stored');

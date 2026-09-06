@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-048 — The Big Bite internal readiness revision
+
+- Added authenticated, evidence-gated completion of a protected publication request at internal-readiness scope only; the product returns to `not_published` and no publication capability or authority is created.
+- Preserved the earlier incompatible escalated revision objective and created a new Product Designer/Balanced preparation objective with dependent, separately routed Quality Reviewer QA.
+- Built a Pine Star-controlled internal candidate containing exactly 200 byte-identical PNG copies, four rendered/verified customer PDFs, and SHA-256 manifest/archive provenance; no upload, account access, external message, spending, or publication occurred.
+
 ### PS-2026-047 — The Big Bite protected review request
 
 - Reviewed the listing-ready evidence package for consistency with the verified 200-image scope, license boundary, and QA caveats.

@@ -59,6 +59,15 @@ function makeObjectiveStore(deps) {
       updated = Object.assign({}, current, { status: 'cancelled', approvalState: 'withdrawn', settlementReason: text(reason, 300) || 'Protected approval request withdrawn by user', updatedAt: stamp, completedAt: stamp, workflowAudit: audit }); list[index] = updated; return list;
     }); return updated;
   }
+  async function completeInternalReview(id, evidenceRefs) {
+    let updated = null; await durable.update('station', stored => { const list = Array.isArray(stored) ? stored.slice() : [], index = list.findIndex(x => x && x.id === String(id || '')); if (index < 0) throw new Error('objective not found'); const current = list[index];
+      if (current.status === 'completed' && current.approvalState === 'internal_review_approved') { updated = current; return undefined; }
+      if (current.status !== 'approval_required' || current.approvalState !== 'required' || !current.protectedAction || !current.classification || current.classification.workflow !== 'product-publication-approval') throw new Error('objective is not a pending protected publication review');
+      const refs = strings(evidenceRefs, 24, 240); if (!refs.length) throw new Error('internal review completion requires evidence references');
+      const stamp = Math.max(Number(current.updatedAt) || 0, Number(now()) || 0), audit = (Array.isArray(current.workflowAudit) ? current.workflowAudit : []).slice(-19); audit.push({ event: 'internal_review_approved', at: stamp, scope: 'readiness_only_no_publication' });
+      updated = Object.assign({}, current, { status: 'completed', approvalState: 'internal_review_approved', settlementReason: 'Commander approved internal publication-readiness review only; publication remains unauthorized.', resultSummary: 'Internal listing and evidence review completed; no external action or publication authority granted.', completionEvidenceRefs: refs, updatedAt: stamp, completedAt: stamp, workflowAudit: audit }); list[index] = updated; return list;
+    }); return updated;
+  }
   async function decompose(parentId, input) {
     const body = input && typeof input === 'object' ? input : {}, decompositionId = text(body.decompositionId, 120);
     const specs = Array.isArray(body.children) ? body.children : [];
@@ -296,6 +305,6 @@ function makeObjectiveStore(deps) {
     });
     return updated;
   }
-  return { create, withdrawApproval, decompose, reconcileParent, createAudit, createScout, recordScoutReport, createRecurringOccurrence, list, get, find, listAway, hasAwayReady, queueAway, claimAway, finishAway, cancelAway, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
+  return { create, withdrawApproval, completeInternalReview, decompose, reconcileParent, createAudit, createScout, recordScoutReport, createRecurringOccurrence, list, get, find, listAway, hasAwayReady, queueAway, claimAway, finishAway, cancelAway, recordAdmission, recordLifecycle, updateStatus, readStatus: () => durable.readKey('station'), _durable: durable };
 }
 module.exports = { makeObjectiveStore, publicRole, CAP };

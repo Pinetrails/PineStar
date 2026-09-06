@@ -46,6 +46,7 @@ A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/production-plan'))
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/qa')), true, 'POST product QA requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/publication-approval-request')), true, 'POST publication approval requests require token');
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/publication-approval-withdrawal')), true, 'POST publication approval withdrawals require token');
+A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/publication-readiness-review')), true, 'POST internal publication readiness review requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/pine-trail-printables')), true, 'POST Pine Trail printable intake requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/pine-trail-printables/production-plan')), true, 'POST Pine Trail production planning requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/product-projects/pine-trail-existing-product')), true, 'POST existing Pine Trail product intake requires token');

@@ -44,7 +44,7 @@ function makeProductProjectStore(deps) {
       if (nextStatus !== cur.status && !NEXT[cur.status].includes(nextStatus)) throw new Error('invalid product project status transition');
       if (nextStatus === 'listing_ready' && (p.qaState || cur.qaState) !== 'passed') throw new Error('listing readiness requires passed QA');
       if (nextStatus === 'approval_required' && nextStatus !== cur.status && !(options && options.publicationApprovalRequested === true)) throw new Error('approval request requires protected workflow');
-      if (cur.status === 'approval_required' && nextStatus === 'listing_ready' && !(options && options.publicationApprovalWithdrawn === true)) throw new Error('approval withdrawal requires protected workflow');
+      if (cur.status === 'approval_required' && nextStatus === 'listing_ready' && !(options && (options.publicationApprovalWithdrawn === true || options.internalReadinessReviewCompleted === true))) throw new Error('approval resolution requires protected workflow');
       if (cur.status === 'approval_required' && nextStatus === 'archived') throw new Error('pending publication approval must be withdrawn before archival');
       if (nextStatus === 'published' && !(options && options.publicationApproved === true)) throw new Error('publication requires protected approval');
       const stamp = Math.max(Number(cur.updatedAt) || 0, Number(now()) || 0), qa = ['not_started', 'in_progress', 'passed', 'failed'].includes(p.qaState) ? p.qaState : cur.qaState;
@@ -53,7 +53,7 @@ function makeProductProjectStore(deps) {
         targetMarketplaces: p.targetMarketplaces == null ? cur.targetMarketplaces : strings(p.targetMarketplaces, 8, 100), targetCustomer: p.targetCustomer == null ? cur.targetCustomer : text(p.targetCustomer, 500),
         assetRequirements: p.assetRequirements == null ? cur.assetRequirements : strings(p.assetRequirements, 20, 240), deliverables: p.deliverables == null ? cur.deliverables : strings(p.deliverables, 20, 240), evidenceRefs: p.evidenceRefs == null ? cur.evidenceRefs : strings(p.evidenceRefs, 24, 300), blockers: p.blockers == null ? cur.blockers : strings(p.blockers, 12, 240),
         qaState: qa, listingState: nextStatus === 'listing_ready' || nextStatus === 'approval_required' || nextStatus === 'published' ? 'ready' : cur.listingState,
-        publicationState: nextStatus === 'published' ? 'published' : (nextStatus === 'approval_required' ? 'approval_required' : (options && options.publicationApprovalWithdrawn === true ? 'not_published' : cur.publicationState)),
+        publicationState: nextStatus === 'published' ? 'published' : (nextStatus === 'approval_required' ? 'approval_required' : (options && (options.publicationApprovalWithdrawn === true || options.internalReadinessReviewCompleted === true) ? 'not_published' : cur.publicationState)),
         estimatedCostUsd: p.estimatedCostUsd === undefined ? cur.estimatedCostUsd : money(p.estimatedCostUsd), actualCostUsd: p.actualCostUsd === undefined ? cur.actualCostUsd : money(p.actualCostUsd), revenueUsd: p.revenueUsd === undefined ? cur.revenueUsd : money(p.revenueUsd),
         listingDraft: p.listingDraft === undefined ? cur.listingDraft : listingDraft(p.listingDraft), notes: p.notes == null ? cur.notes : text(p.notes, 1200), nextAction: p.nextAction == null ? cur.nextAction : text(p.nextAction, 300), updatedAt: stamp, revision: cur.revision + 1 });
       rows[i] = updated; return rows; }); return updated;

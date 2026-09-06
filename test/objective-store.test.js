@@ -29,6 +29,18 @@ const store = makeObjectiveStore({ durable, registry: makeRoleRegistry(SEEDS), n
   A.eq(withdrawn.approvalState, 'withdrawn', 'withdrawal state is explicit and truthful');
   A.eq(withdrawn.workflowAudit.slice(-1)[0].event, 'approval_withdrawn', 'withdrawal appends durable workflow audit history');
   A.eq((await store.withdrawApproval(protectedObjective.id, 'repeat')).workflowAudit.length, withdrawn.workflowAudit.length, 'repeated withdrawal is idempotent and does not duplicate audit history');
+  const reviewObjective = await store.create({ title: 'Review publication readiness', requiredCapabilities: ['publish'], protectedAction: true, classification: { workflow: 'product-publication-approval' } });
+  const reviewed = await store.completeInternalReview(reviewObjective.id, ['report:internal-review']);
+  A.eq(reviewed.status, 'completed', 'Commander-approved internal review completes the decision-only protected objective');
+  A.eq(reviewed.approvalState, 'internal_review_approved', 'internal review approval is distinct from publication authorization');
+  A.eq(reviewed.workflowAudit.at(-1).scope, 'readiness_only_no_publication', 'audit records the narrow approval scope');
+  const designerRevision = await store.create({ title: 'Prepare revised internal package', requiredCapabilities: ['prepare_product'], maxModelTier: 'balanced', targetRoleId: 'business.product_designer' });
+  A.eq(designerRevision.assignedRoleId, 'business.product_designer', 'revision preparation routes directly to Product Designer');
+  A.eq(designerRevision.assignedModelTier, 'balanced', 'Product Designer revision uses the role-compatible Balanced tier');
+  const independentQa = await store.create({ title: 'Independently review revised package', requiredCapabilities: ['quality_review', 'verify'], maxModelTier: 'economy', targetRoleId: 'operations.quality_reviewer' });
+  A.eq(independentQa.assignedRoleId, 'operations.quality_reviewer', 'independent revision QA remains a separate Quality Reviewer responsibility');
+  const incompatibleHistory = await store.create({ title: 'Historical incompatible revision', requiredCapabilities: ['prepare_product', 'verify'], maxModelTier: 'economy', targetRoleId: 'business.product_designer' });
+  A.eq(incompatibleHistory.status, 'escalate', 'historical incompatible preparation-plus-verification contract remains truthfully escalated');
   const notPending = await store.create({ title: 'Another protected request', requiredCapabilities: ['publish'], protectedAction: true }); rows = rows.map(x => x.id === notPending.id ? Object.assign({}, x, { status: 'completed' }) : x); let notPendingBlocked = false; try { await store.withdrawApproval(notPending.id, 'too late'); } catch (e) { notPendingBlocked = /not a pending protected approval/.test(e.message); } A.ok(notPendingBlocked, 'protected objective outside approval-required state cannot be withdrawn');
   let evidenceRequired = false; const another = await store.create({ title: 'Write code', requiredCapabilities: ['code'] });
   try { await store.updateStatus(another.id, 'completed', []); } catch (e) { evidenceRequired = /evidence/.test(e.message); }
