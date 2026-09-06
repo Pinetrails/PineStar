@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-055 — Structured evaluation design lessons
+
+- Inconclusive evaluations now retain bounded structured lessons for small cohorts, missing run measurements, missing completion evidence, and uncertain mutations.
+- Retain-champion evaluations identify the challenger proxy dimensions that lost, without re-running or changing either configuration.
+- Lessons remain immutable advisory report evidence and add no decision, admission, activation, retirement, mutation, spending, publication, or external-action path.
+
 ### PS-2026-054 — Evaluation evidence-quality gate
 
 - Challenger recommendations now require at least two settled objectives per cohort, matched measured runs, and evidence for every completion.
