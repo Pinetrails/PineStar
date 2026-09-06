@@ -88,6 +88,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Recommendations now require adequate cohorts, matched measured runs, and evidenced completions; incomplete or legacy evidence cannot back a new configuration candidate (`PS-2026-054`).
 - Retained evaluation lessons can now seed immutable authenticated experiment-planning advisories with bounded design requirements; the advisory rejects configuration, cohort, schedule, and rerun controls and creates no objective (`PS-2026-057`).
 - Morning Brief carries a dedicated bounded read-only projection of experiment-planning advisory questions, design requirements, and evaluation provenance without displacing established decisions or actions (`PS-2026-058`).
+- The generic Reports view renders that projection with escaping and an explicit inspection-only boundary, completing the safe advisory reporting chain (`PS-2026-059`).
 
 ## Phase 8 — Pine Star World
 

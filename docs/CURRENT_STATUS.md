@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-058` — Morning Brief Experiment-Planning Projection — **COMPLETE**
+**Current change:** `PS-2026-059` — Reports Experiment-Planning Presentation — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -70,6 +70,7 @@
 | Evaluation-lessons reporting projection | `PS-2026-056` complete; Morning Brief carries a bounded read-only projection of in-period structured evaluation lessons with existing report provenance and no experiment-rerun or configuration-control path |
 | Evaluation-informed experiment planning | `PS-2026-057` complete; authenticated immutable advisories turn retained evaluation lessons into bounded design requirements while refusing configuration/candidate/cohort/schedule/rerun inputs and creating no objective or control path |
 | Experiment-planning reporting projection | `PS-2026-058` complete; Morning Brief preserves bounded advisory questions, design requirements, and evaluation provenance in a dedicated read-only field without displacing decisions/actions or adding controls |
+| Experiment-planning Reports presentation | `PS-2026-059` complete; the existing generic Reports view renders escaped advisory questions, requirements, provenance, and an inspection-only boundary without navigation or action controls |
 
 ## Known baseline issues
 
@@ -84,4 +85,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Continue Phase 7 only with a dependency-ready read-only presentation of experiment-planning advisories in the existing generic Reports view. It may render advisory questions, design requirements, and provenance, but must not add creation/editing controls, configuration/cohort selection, scheduling/reruns, objective creation, or candidate decision/admission/activation controls. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.
+The safe advisory evaluation, evidence-gating, candidate, lesson-retention, experiment-planning, Morning Brief, and Reports presentation chain is complete. Stop at this reporting boundary and request product direction before adding any configuration-candidate decision, admission, activation, retirement, routing/mutation, experiment scheduling/rerun, or objective-creation path. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.

@@ -4,6 +4,11 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-059 — Reports experiment-planning presentation
+
+- The existing generic Reports view now renders escaped advisory questions, design requirements, and evidence references from Morning Brief.
+- The presentation explicitly remains inspection-only and exposes no navigation, creation, configuration, cohort, schedule, rerun, or objective control.
+
 ### PS-2026-058 — Morning Brief experiment-planning projection
 
 - Morning Brief now carries a bounded structured projection of in-period experiment-planning advisories, including their questions, design requirements, and evaluation-report provenance.

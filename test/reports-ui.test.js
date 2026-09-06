@@ -10,6 +10,9 @@ A.ok(!sparse.includes('NEXT ACTIONS') && sparse.includes('quiet day'), 'empty se
 const qaCoverage = Reports.reportHtml({ type: 'product-qa', headline: 'Passed QA', deliverableEvidence: [{ deliverable: 'US Letter <PDF>', artifactId: 'artifact:&one' }] });
 A.ok(qaCoverage.includes('VERIFIED DELIVERABLE COVERAGE') && qaCoverage.includes('US Letter &lt;PDF&gt;') && qaCoverage.includes('artifact:&amp;one'), 'QA reports show escaped deliverable-to-artifact coverage');
 A.ok(!/<button|onclick=|<form|href=/i.test(qaCoverage), 'QA coverage projection exposes no action or navigation control');
+const advisory = Reports.reportHtml({ type: 'morning-brief', headline: 'Brief', experimentAdvisories: [{ id: 'experiment-planning-advisory:x', question: 'Compare <safely>?', designRequirements: ['Measure & verify'], sourceRefs: ['report:champion&challenger'] }] });
+A.ok(advisory.includes('EXPERIMENT-PLANNING ADVISORIES') && advisory.includes('Compare &lt;safely&gt;?') && advisory.includes('Measure &amp; verify') && advisory.includes('report:champion&amp;challenger'), 'planning advisories render question, requirements, and provenance with escaping');
+A.ok(!/<button|onclick=|<form|href=/i.test(advisory) && advisory.includes('Inspection only'), 'planning advisory projection exposes no action or navigation control');
 const bundle = Reports.exportBundle([{ id: 'r1', headline: 'done' }], 123);
 A.eq(bundle.schema, 'pine-star.shared-report-export.v1', 'local export has a versioned adapter contract');
 A.eq(bundle.destination, null, 'export selects no external destination');
