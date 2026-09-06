@@ -4,6 +4,11 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-060 — Bounded experiment proposals
+
+- Added authenticated durable experiment proposals backed by evidenced planning advisories and complete predefined pairings, metrics, thresholds, limits, evidence, rollback, scope, and independent-role assignments.
+- Proposals remain immutable `review_required` protected records with $0 spend, local-only scope, no objective/schedule/execution authority, and no configuration activation authority.
+
 ### PS-2026-059 — Reports experiment-planning presentation
 
 - The existing generic Reports view now renders escaped advisory questions, design requirements, and evidence references from Morning Brief.

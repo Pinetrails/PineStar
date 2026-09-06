@@ -10,6 +10,8 @@ many of these — they win on any wording conflict.
 
 ## Product
 
+- **Bounded Commander-controlled self-improvement experiments are authorized** (2026-09-06, Commander). Experiment run approval is distinct from configuration activation: proposals must predeclare evidence, pairing, metrics, thresholds, limits, local reversible scope, rollback, and independent evaluation; execution remains protected, bounded, $0-spend, non-external, and non-recurring. A winning challenger may only become a review-required candidate and still needs a separate Commander activation decision.
+
 - **StarNet is for beginners and power users.** It is easier for beginners to use, never
   beginner-limited: sandbox freedom, full power from minute one, and no grind/unlock/usage
   walls. User-work quotas default off; users or deployers may opt into limits. Restricted

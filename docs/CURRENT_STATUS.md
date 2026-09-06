@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-059` — Reports Experiment-Planning Presentation — **COMPLETE**
+**Current change:** `PS-2026-060` — Bounded Experiment Proposals — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -71,6 +71,7 @@
 | Evaluation-informed experiment planning | `PS-2026-057` complete; authenticated immutable advisories turn retained evaluation lessons into bounded design requirements while refusing configuration/candidate/cohort/schedule/rerun inputs and creating no objective or control path |
 | Experiment-planning reporting projection | `PS-2026-058` complete; Morning Brief preserves bounded advisory questions, design requirements, and evaluation provenance in a dedicated read-only field without displacing decisions/actions or adding controls |
 | Experiment-planning Reports presentation | `PS-2026-059` complete; the existing generic Reports view renders escaped advisory questions, requirements, provenance, and an inspection-only boundary without navigation or action controls |
+| Bounded experiment proposals | `PS-2026-060` complete; authenticated immutable proposals require evidenced advisories plus predefined pairing, metrics, thresholds, evidence, run/time limits, local scope, rollback, and independent roles while remaining protected `review_required` records with no execution or activation authority |
 
 ## Known baseline issues
 
@@ -85,4 +86,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-The safe advisory evaluation, evidence-gating, candidate, lesson-retention, experiment-planning, Morning Brief, and Reports presentation chain is complete. Stop at this reporting boundary and request product direction before adding any configuration-candidate decision, admission, activation, retirement, routing/mutation, experiment scheduling/rerun, or objective-creation path. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.
+Continue Phase 7 with a narrow Commander experiment-review lifecycle for immutable `review_required` proposals. Approval may authorize only the named bounded local experiment and protected preparation/evaluation work; it must not execute immediately, schedule retries/reruns, authorize external effects or spend, or grant configuration activation. The Big Bite remains internally complete and must not be reopened.

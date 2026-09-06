@@ -156,6 +156,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq((await raw('POST', '/api/business/growth-experiments/result', {})).status, 403, 'growth experiment results remain behind the API token gate');
     A.eq((await raw('POST', '/api/evolution/champion-challenger', {})).status, 403, 'champion/challenger evaluation remains behind the API token gate');
     A.eq((await raw('POST', '/api/evolution/experiment-planning-advisories', {})).status, 403, 'experiment-planning advisories remain behind the API token gate');
+    A.eq((await raw('GET', '/api/evolution/experiment-proposals')).status, 403, 'experiment proposals remain behind the API token gate');
+    A.eq((await raw('POST', '/api/evolution/experiment-proposals', {})).status, 403, 'experiment proposal creation remains behind the API token gate');
     A.eq((await raw('GET', '/api/evolution/configuration-candidates')).status, 403, 'configuration candidate inspection remains behind the API token gate');
     A.eq((await raw('POST', '/api/evolution/configuration-candidates', {})).status, 403, 'configuration candidate creation remains behind the API token gate');
     const roles = await j('GET', '/api/roles');
