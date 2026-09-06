@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-064 — Auditor runtime champion baseline
+
+- Established the canonical station roster's active `operations.auditor` runtime as configuration `operations-auditor.ollama-llama3.2-3b.v1` using the existing local Ollama provider and installed `llama3.2:3b` model.
+- Retained the exact non-secret configuration in the roster audit with ask-before-mutation and trusted-project scope; the pre-change rollback state is no roster file.
+- Verified the local provider catalog, role binding, and model tool capability without invoking either model.
+
 ### PS-2026-063 — Runtime champion configuration identity
 
 - Extended the existing roster, objective admission, and run-history path with a required stable runtime configuration ID plus observed provider identity.
