@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-062 — Authoritative matched measurement evidence
+
+- Added an internal host-authorized durable measurement contract for stable cohort, arm, role, configuration, task-condition, outcome, evidence, runtime, cost, usage, retry, safety, uncertainty, and provenance facts.
+- Strengthened champion/challenger evaluation so caller-supplied configuration labels or unrelated historical objectives cannot earn the complete-evidence marker; every objective must have an authoritative same-task/same-conditions measurement in both arms.
+- Added no public measurement write API, execution path, configuration activation, routing mutation, external action, or spending authority.
+
 ### PS-2026-061 — Commander experiment review
 
 - Added an authenticated, digest-bound approve/reject decision lifecycle for immutable bounded experiment terms, with durable rationale and audit evidence.

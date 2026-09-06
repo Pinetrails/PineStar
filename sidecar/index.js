@@ -241,6 +241,7 @@ const { completePublicationReadinessReview } = require('./product-publication-re
 const { makeBusinessRecordStore } = require('./business-record-store.js');
 const { planGrowthExperiment, finalizeGrowthExperiment } = require('./growth-experiment.js');
 const { evaluateConfigurations } = require('./champion-challenger.js');
+const { makeMatchedMeasurementStore } = require('./matched-measurement-store.js');
 const { createExperimentPlanningAdvisory } = require('./experiment-planning-advisory.js');
 const { makeExperimentProposalStore } = require('./experiment-proposal-store.js');
 const { makeConfigurationCandidateStore } = require('./configuration-candidate-store.js');
@@ -1665,6 +1666,12 @@ const experimentProposalStore = makeExperimentProposalStore({
   getReport: id => listSharedReports(notebookStore, 100).find(x => x.id === String(id || '')) || null, getRole: id => pineStarRoleRegistry.get(id),
   onRecover: (key, file) => console.warn('[experiment-proposals] recovered ' + file + ' from .bak last-known-good.'),
   onCorrupt: (key, file) => quarantineCorrupt(file, 'experiment-proposals')
+});
+const matchedMeasurementAuthority = Symbol('host matched measurement observation');
+const matchedMeasurementStore = makeMatchedMeasurementStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable, now: () => Date.now(), authority: matchedMeasurementAuthority,
+  onRecover: (key, file) => console.warn('[matched-measurements] recovered ' + file + ' from .bak last-known-good.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'matched-measurements')
 });
 const objectiveDispatch = makeObjectiveDispatch({
   objectives: objectiveStore, roles: pineStarRoleRegistry, roster: () => agentRoster,
@@ -18606,7 +18613,7 @@ async function handleGrowthExperimentResult(req, res) {
 async function handleChampionChallengerEvaluation(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
   try {
-    const result = await evaluateConfigurations({ objectives: objectiveStore.list(1000), runs: runStore.list(null, { limit: 1000 }),
+    const result = await evaluateConfigurations({ objectives: objectiveStore.list(1000), runs: runStore.list(null, { limit: 1000 }), measurements: matchedMeasurementStore.list(1000),
       appendReport: report => appendSharedReport(notebookStore, report), getReport: id => listSharedReports(notebookStore, 100).find(x => x.id === id) || null, now: Date.now }, body);
     return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
   } catch (e) { const message = (e && e.message) || 'invalid configuration evaluation'; return respondJson(res, /already recorded differently/.test(message) ? 409 : 400, { error: message }); }

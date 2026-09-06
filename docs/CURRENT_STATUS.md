@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-061` — Commander Experiment Review — **COMPLETE**
+**Current change:** `PS-2026-062` — Authoritative Matched Measurement Evidence — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -73,6 +73,7 @@
 | Experiment-planning Reports presentation | `PS-2026-059` complete; the existing generic Reports view renders escaped advisory questions, requirements, provenance, and an inspection-only boundary without navigation or action controls |
 | Bounded experiment proposals | `PS-2026-060` complete; authenticated immutable proposals require evidenced advisories plus predefined pairing, metrics, thresholds, evidence, run/time limits, local scope, rollback, and independent roles while remaining protected `review_required` records with no execution or activation authority |
 | Commander experiment review | `PS-2026-061` complete; authenticated digest-bound approve/reject decisions durably record Commander rationale and may authorize only later execution of the exact bounded local proposal, without executing, creating work, scheduling reruns, spending, acting externally, changing configuration, or authorizing activation |
+| Authoritative matched measurement evidence | `PS-2026-062` complete; an internal host-authorized durable contract records configuration/task-condition/outcome/runtime/cost/usage/retry/safety/uncertainty provenance, and evaluation now fails closed unless every objective has an authoritative same-task/same-conditions record in both arms |
 
 ## Known baseline issues
 
@@ -87,4 +88,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Prepare the first real evidence-backed bounded local experiment proposal for Commander review. Stop at the protected execution decision and present the exact champion, challenger, metrics, limits, cost, reversibility, evidence provenance, and authority requested. Do not approve, execute, create work, schedule retries/reruns, spend, act externally, change configuration, or authorize activation without the explicit protected decision. The Big Bite remains internally complete and must not be reopened.
+Implement the smallest bounded isolated evaluation-run mechanism that can write PS-2026-062 measurements from observed Pine Star objective/run facts while leaving the active champion and production routing unchanged. Then prepare the safest real matched plan and stop at any protected execution, credential, provider, activation, external-action, or spending decision. The Big Bite remains internally complete and must not be reopened.

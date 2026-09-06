@@ -28,6 +28,11 @@ function summarizeArm(arm, objectiveMap, runMap) {
     completionRate: round(completed / objectives.length), evidencedCompletionCount: objectives.filter(x => x.status === 'completed' && Array.isArray(x.completionEvidenceRefs) && x.completionEvidenceRefs.length).length,
     runCount: runs.length, costUsd, costPerCompletionUsd: completed ? round(costUsd / completed) : null, wastedCostUsd, uncertainMutationCount };
 }
+function authoritativeMeasurements(arm, roleId, measurements) {
+  const rows = (Array.isArray(measurements) ? measurements : []).filter(x => x && x.schema === 'pine-star.matched-measurement.v1' && x.arm === arm.label && x.configurationId === arm.configurationId && arm.objectiveIds.includes(x.objectiveId));
+  if (rows.length !== arm.objectiveIds.length || new Set(rows.map(x => x.objectiveId)).size !== arm.objectiveIds.length || rows.some(x => x.roleId !== roleId || !x.runId || !x.taskId || !/^[a-f0-9]{64}$/.test(String(x.conditionsDigest || '')) || !Array.isArray(x.sourceRefs) || !x.sourceRefs.includes('objective:' + x.objectiveId) || !x.sourceRefs.includes('run:' + x.runId))) return [];
+  return rows;
+}
 function verdict(champion, challenger) {
   if (champion.uncertainMutationCount || challenger.uncertainMutationCount) return 'inconclusive';
   if (champion.objectiveCount < 2 || challenger.objectiveCount < 2) return 'inconclusive';
@@ -61,26 +66,31 @@ async function evaluateConfigurations(deps, input) {
   const d = deps || {}, x = input && typeof input === 'object' ? input : {}, evaluationId = text(x.evaluationId, 100).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
   if (!evaluationId) throw new Error('evaluation requires a stable ID');
   if (!d.objectives || !Array.isArray(d.runs) || typeof d.appendReport !== 'function' || typeof d.getReport !== 'function') throw new Error('evaluation requires objective, run, and report sources');
-  const championArm = normalizeArm(x.champion, 'champion'), challengerArm = normalizeArm(x.challenger, 'challenger');
+  const championArm = Object.assign({ label: 'champion' }, normalizeArm(x.champion, 'champion')), challengerArm = Object.assign({ label: 'challenger' }, normalizeArm(x.challenger, 'challenger'));
   if (championArm.configurationId === challengerArm.configurationId) throw new Error('champion and challenger configurations must differ');
   if (championArm.objectiveIds.some(id => challengerArm.objectiveIds.includes(id))) throw new Error('evaluation arms cannot share objectives');
   const objectiveMap = new Map(d.objectives.map(row => [row && row.id, row])), runMap = new Map(d.runs.map(row => [row && row.runId, row]));
   const champion = summarizeArm(championArm, objectiveMap, runMap), challenger = summarizeArm(challengerArm, objectiveMap, runMap);
   if (champion.roleId !== challenger.roleId) throw new Error('champion and challenger must evaluate the same system role');
-  const decision = verdict(champion, challenger), id = 'champion-challenger:' + evaluationId;
+  const championMeasurements = authoritativeMeasurements(championArm, champion.roleId, d.measurements), challengerMeasurements = authoritativeMeasurements(challengerArm, challenger.roleId, d.measurements);
+  const championPairs = new Map(championMeasurements.map(row => [row.taskId, row.conditionsDigest])), challengerPairs = new Map(challengerMeasurements.map(row => [row.taskId, row.conditionsDigest]));
+  const matched = championMeasurements.length === champion.objectiveCount && challengerMeasurements.length === challenger.objectiveCount && championPairs.size === champion.objectiveCount && challengerPairs.size === challenger.objectiveCount
+    && [...championPairs].every(([taskId, digest]) => challengerPairs.get(taskId) === digest);
+  let decision = verdict(champion, challenger); const id = 'champion-challenger:' + evaluationId;
   const evidenceComplete = champion.objectiveCount >= 2 && challenger.objectiveCount >= 2 && champion.runCount === champion.objectiveCount && challenger.runCount === challenger.objectiveCount
-    && champion.evidencedCompletionCount === champion.completed && challenger.evidencedCompletionCount === challenger.completed;
+    && champion.evidencedCompletionCount === champion.completed && challenger.evidencedCompletionCount === challenger.completed && matched;
+  if (!matched) decision = 'inconclusive';
   const lessons = evaluationLessons(decision, champion, challenger);
   const line = a => a.configurationId + ': ' + a.completed + '/' + a.objectiveCount + ' completed; ' + a.failed + ' failed; ' + a.cancelled + ' cancelled; $' + a.costUsd.toFixed(4) + ' measured cost; $' + a.wastedCostUsd.toFixed(4) + ' wasted-work cost.';
   const report = normalizeSharedReport({ id, type: 'champion-challenger-evaluation', createdAt: typeof d.now === 'function' ? d.now() : Date.now(),
     headline: 'Advisory configuration evaluation: ' + decision.replace(/_/g, ' '), completed: [line(champion), line(challenger)],
-    exceptions: [].concat(champion.objectiveCount < 2 || challenger.objectiveCount < 2 ? ['Each cohort needs at least two settled objectives before a recommendation.'] : [], champion.runCount + challenger.runCount < champion.objectiveCount + challenger.objectiveCount ? ['Some settled objectives have no matched measured run; cost comparisons are incomplete.'] : [], champion.evidencedCompletionCount < champion.completed || challenger.evidencedCompletionCount < challenger.completed ? ['Some completed objectives lack completion evidence; quality comparisons are incomplete.'] : []),
+    exceptions: [].concat(champion.objectiveCount < 2 || challenger.objectiveCount < 2 ? ['Each cohort needs at least two settled objectives before a recommendation.'] : [], champion.runCount + challenger.runCount < champion.objectiveCount + challenger.objectiveCount ? ['Some settled objectives have no matched measured run; cost comparisons are incomplete.'] : [], champion.evidencedCompletionCount < champion.completed || challenger.evidencedCompletionCount < challenger.completed ? ['Some completed objectives lack completion evidence; quality comparisons are incomplete.'] : [], !matched ? ['Authoritative matched measurement evidence is incomplete or task conditions differ between arms.'] : []),
     decisions: [decision + ': observed completion, failure, cancellation, measured cost, uncertain mutation, and wasted-work proxies only.'],
     nextActions: ['Commander review is required before any configuration admission, activation, retirement, or routing change.'], evaluationLessons: lessons,
-    sourceRefs: championArm.objectiveIds.concat(challengerArm.objectiveIds).map(id => 'objective:' + id).concat([...runMap.values()].filter(r => championArm.objectiveIds.concat(challengerArm.objectiveIds).some(id => text((objectiveMap.get(id) || {}).admittedRunId, 120) === r.runId)).map(r => 'run:' + r.runId), evidenceComplete ? ['evaluation-evidence:complete-v1'] : []) });
+    sourceRefs: (evidenceComplete ? ['evaluation-evidence:complete-v1'] : []).concat(championMeasurements.concat(challengerMeasurements).map(r => 'measurement:' + r.measurementId), [...runMap.values()].filter(r => championArm.objectiveIds.concat(challengerArm.objectiveIds).some(id => text((objectiveMap.get(id) || {}).admittedRunId, 120) === r.runId)).map(r => 'run:' + r.runId)) });
   const prior = d.getReport(id); if (prior && !sameReport(prior, report)) throw new Error('configuration evaluation already recorded differently');
   const saved = prior ? { added: false, report: prior } : await d.appendReport(report);
   return { schema: 'pine-star.champion-challenger-evaluation.v1', idempotent: !saved.added, verdict: decision, champion, challenger, report: saved.report,
     evidenceComplete, advisoryOnly: true, configurationChanged: false, activationPerformed: false, spendingAuthorityUsd: 0, externalAction: false };
 }
-module.exports = { normalizeArm, summarizeArm, verdict, evaluationLessons, evaluateConfigurations };
+module.exports = { normalizeArm, summarizeArm, authoritativeMeasurements, verdict, evaluationLessons, evaluateConfigurations };
