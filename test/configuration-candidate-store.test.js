@@ -1,0 +1,14 @@
+'use strict';
+const A = require('./_assert.js'); const { makeConfigurationCandidateStore } = require('../sidecar/configuration-candidate-store.js');
+let rows; const durable = { get: () => rows, update: async (k, fn) => { const next = await fn(rows); if (next !== undefined) rows = next; return next; }, readKey: () => ({ ok: true }) };
+const reports = [{ id: 'champion-challenger:research-v2', type: 'champion-challenger-evaluation', decisions: ['challenger_recommended: observed proxies only.'] }, { id: 'champion-challenger:retain', type: 'champion-challenger-evaluation', decisions: ['retain_champion: observed proxies only.'] }];
+const store = makeConfigurationCandidateStore({ durable, now: () => 700, getReport: id => reports.find(x => x.id === id) || null });
+(async () => {
+  const input = { candidateId: 'research-v2', configurationId: 'research-v2', replacesConfigurationId: 'research-v1', roleId: 'research.general_researcher', evaluationReportId: 'champion-challenger:research-v2', summary: 'Measured challenger for review.', intendedChanges: ['Use the reviewed research-v2 configuration.'], risks: ['Evidence is limited to recorded cohorts.'], rollbackPlan: 'Restore research-v1 after Commander-approved activation.', evidenceRefs: ['objective:n1'] };
+  const first = await store.create(input); A.eq(first.idempotent, false, 'first candidate write is durable'); A.eq(first.candidate.status, 'review_required', 'candidate remains pending Commander review');
+  A.eq(first.candidate.activated, false, 'candidate creation cannot activate configuration'); A.eq(first.candidate.configurationChanged, false, 'candidate creation cannot change configuration'); A.eq(first.candidate.spendingAuthorityUsd, 0, 'candidate grants no spending authority');
+  A.ok(first.candidate.evidenceRefs.includes('report:champion-challenger:research-v2'), 'candidate retains evaluation provenance'); A.eq((await store.create(input)).idempotent, true, 'exact retry is idempotent');
+  let conflict = false; try { await store.create(Object.assign({}, input, { summary: 'Changed facts.' })); } catch (e) { conflict = /differently/.test(e.message); } A.ok(conflict, 'stable identity rejects changed facts');
+  let retained = false; try { await store.create(Object.assign({}, input, { candidateId: 'retain', evaluationReportId: 'champion-challenger:retain' })); } catch (e) { retained = /challenger recommendation/.test(e.message); } A.ok(retained, 'a non-recommended challenger cannot become a candidate');
+  A.eq(store.list(10).length, 1, 'candidate can be inspected without a decision or activation API'); A.report('configuration-candidate-store.test');
+})().catch(e => { console.error(e); process.exitCode = 1; });

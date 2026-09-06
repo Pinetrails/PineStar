@@ -4,6 +4,11 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-052 — Review-only configuration candidates
+
+- Added authenticated durable configuration-candidate records backed by challenger-recommendation evidence.
+- Candidates are immutable, inspectable, and fixed in `review_required`; creation cannot admit, activate, mutate configuration, spend, or act externally.
+
 ### PS-2026-051 — Evaluation reporting projection
 
 - Added immutable champion/challenger decisions, Commander-review next actions, and report provenance to Morning Brief aggregation.

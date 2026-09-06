@@ -241,6 +241,7 @@ const { completePublicationReadinessReview } = require('./product-publication-re
 const { makeBusinessRecordStore } = require('./business-record-store.js');
 const { planGrowthExperiment, finalizeGrowthExperiment } = require('./growth-experiment.js');
 const { evaluateConfigurations } = require('./champion-challenger.js');
+const { makeConfigurationCandidateStore } = require('./configuration-candidate-store.js');
 const { intakePineTrailPrintable, planPineTrailProduction } = require('./pine-trail-printables.js');
 const { intakeExistingPineTrailProduct } = require('./pine-trail-existing-product.js');
 const { admitLocalProductArtifact } = require('./local-product-artifact.js');
@@ -1650,6 +1651,12 @@ const businessRecordStore = makeBusinessRecordStore({
   projectExists: id => productProjectStore.get(id),
   onRecover: (key, file) => console.warn('[business-records] recovered ' + file + ' from .bak last-known-good.'),
   onCorrupt: (key, file) => quarantineCorrupt(file, 'business-records')
+});
+const configurationCandidateStore = makeConfigurationCandidateStore({
+  fs: fs, path: path, workspaces: WORKSPACES, writeDurable: writeFileDurable, now: () => Date.now(),
+  getReport: id => listSharedReports(notebookStore, 100).find(x => x.id === String(id || '')) || null,
+  onRecover: (key, file) => console.warn('[configuration-candidates] recovered ' + file + ' from .bak last-known-good.'),
+  onCorrupt: (key, file) => quarantineCorrupt(file, 'configuration-candidates')
 });
 const objectiveDispatch = makeObjectiveDispatch({
   objectives: objectiveStore, roles: pineStarRoleRegistry, roster: () => agentRoster,
@@ -8774,6 +8781,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/business/growth-experiments', h: handleGrowthExperimentPlan },
   { m: 'POST', exact: '/api/business/growth-experiments/result', h: handleGrowthExperimentResult },
   { m: 'POST', exact: '/api/evolution/champion-challenger', h: handleChampionChallengerEvaluation },
+  { m: ['GET', 'POST'], qsplit: '/api/evolution/configuration-candidates', h: handleConfigurationCandidates },
   { m: 'POST', exact: '/api/objectives/intake', h: handlePineStarObjectiveIntake },
   { m: 'POST', exact: '/api/objectives/decompose', h: handlePineStarObjectiveDecompose },
   { m: 'POST', exact: '/api/objectives/audit', h: handlePineStarObjectiveAudit },
@@ -18591,6 +18599,15 @@ async function handleChampionChallengerEvaluation(req, res) {
       appendReport: report => appendSharedReport(notebookStore, report), getReport: id => listSharedReports(notebookStore, 100).find(x => x.id === id) || null, now: Date.now }, body);
     return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result));
   } catch (e) { const message = (e && e.message) || 'invalid configuration evaluation'; return respondJson(res, /already recorded differently/.test(message) ? 409 : 400, { error: message }); }
+}
+async function handleConfigurationCandidates(req, res) {
+  if (req.method === 'GET') {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    return respondJson(res, 200, { schema: 'pine-star.configuration-candidates.v1', candidates: configurationCandidateStore.list(u.searchParams.get('limit')) });
+  }
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try { const result = await configurationCandidateStore.create(body); return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result)); }
+  catch (e) { const message = (e && e.message) || 'invalid configuration candidate'; return respondJson(res, /already recorded differently/.test(message) ? 409 : 400, { error: message }); }
 }
 function handlePineStarRoles(req, res) {
   return respondJson(res, 200, { schema: 'pine-star.roles.v1', roles: pineStarRoleRegistry.list().map(publicPineStarRole) });
