@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-050` — Advisory Champion/Challenger Evaluation — **COMPLETE**
+**Current change:** `PS-2026-051` — Evaluation Reporting Projection — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -62,6 +62,7 @@
 | The Big Bite internal readiness revision | `PS-2026-048` complete; the protected review was resolved only for internal readiness, the prior incompatible escalation remains in audit history, corrected Product Designer/Balanced preparation and dependent Quality Reviewer QA are separate, and a hash-manifested 200-PNG/four-PDF internal candidate exists without publication or external delivery |
 | Revision QA cycles and Big Bite candidate QA | `PS-2026-049` complete; optional stable QA-cycle IDs preserve prior immutable QA reports, direct child status completion reconciles coordinator state, and The Big Bite candidate archive/manifest are canonically hash-verified with independent QA passed while publication remains `not_published` |
 | Advisory champion/challenger evaluation | `PS-2026-050` complete; authenticated immutable evaluations compare disjoint settled same-role objective cohorts using completion, failure, cancellation, measured-cost, uncertain-mutation, and wasted-work proxies while remaining advisory-only and incapable of configuration changes or activation |
+| Evaluation reporting projection | `PS-2026-051` complete; Morning Brief and the existing generic Reports surface expose immutable evaluation decisions, Commander-review next actions, evidence limitations, and provenance without configuration or activation controls |
 
 ## Known baseline issues
 
@@ -76,4 +77,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Continue Phase 7 with a read-only operator projection of immutable champion/challenger reports and explicit evidence limitations. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.
+Continue Phase 7 by defining a durable, review-only configuration-candidate record before considering any admission design. The Big Bite is internally complete: `listing_ready`, QA `passed`, and publication `not_published`. Selecting or using live hosting/delivery, accessing an account, uploading, and publishing remain unauthorized protected work.

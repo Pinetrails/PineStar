@@ -22,6 +22,7 @@ function composeMorningBrief(input) {
   const scoutReports = reports.filter(x => x.type === 'open-source-scout' && Number(x.createdAt) > start && Number(x.createdAt) <= end);
   const productReports = reports.filter(x => x.type === 'product-research-decision' && Number(x.createdAt) > start && Number(x.createdAt) <= end);
   const growthReports = reports.filter(x => x.type === 'growth-experiment-result' && Number(x.createdAt) > start && Number(x.createdAt) <= end);
+  const evaluationReports = reports.filter(x => x.type === 'champion-challenger-evaluation' && Number(x.createdAt) > start && Number(x.createdAt) <= end);
   const auditorRows = objectives.filter(x => x.assignedRoleId === 'operations.auditor' && FINAL.has(x.status) && inPeriod(x, start, end));
   const discoveries = scoutReports.flatMap(x => Array.isArray(x.discoveries) ? x.discoveries : []).slice(0, 5);
   const measuredRuns = runs.filter(x => typeof x.usd === 'number' && Number.isFinite(x.usd));
@@ -36,20 +37,21 @@ function composeMorningBrief(input) {
     ...(products && Array.isArray(products.exceptions) ? products.exceptions : [])
   ], 10);
   const decisions = unique((measuredRuns.length ? ['Measured runtime cost for this period: $' + totalUsd.toFixed(4) + ' across ' + measuredRuns.length + ' recorded run' + (measuredRuns.length === 1 ? '' : 's') + '.'] : [])
-    .concat(business && business.entryCount ? ['Recorded business activity: $' + Number(business.revenueUsd || 0).toFixed(2) + ' revenue, $' + Number(business.expenseUsd || 0).toFixed(2) + ' expenses, $' + Number(business.refundUsd || 0).toFixed(2) + ' refunds; net $' + Number(business.netUsd || 0).toFixed(2) + '.'] : [], products && Array.isArray(products.decisions) ? products.decisions : [], productReports.concat(growthReports).flatMap(x => Array.isArray(x.decisions) ? x.decisions : [])), 10);
+    .concat(business && business.entryCount ? ['Recorded business activity: $' + Number(business.revenueUsd || 0).toFixed(2) + ' revenue, $' + Number(business.expenseUsd || 0).toFixed(2) + ' expenses, $' + Number(business.refundUsd || 0).toFixed(2) + ' refunds; net $' + Number(business.netUsd || 0).toFixed(2) + '.'] : [], products && Array.isArray(products.decisions) ? products.decisions : [], productReports.concat(growthReports, evaluationReports).flatMap(x => Array.isArray(x.decisions) ? x.decisions : [])), 10);
   const nextActions = unique([
     ...approvals.map(x => 'Review approval: ' + label(x)),
     ...failures.map(x => 'Review ' + x.status + ' objective: ' + label(x)),
     ...active.map(x => 'Continue monitoring: ' + label(x)),
     ...discoveries.filter(x => ['TEST', 'ADD'].includes(x.recommendation)).map(x => x.recommendation + ': ' + text(x.name, 140) + ' → ' + text(x.recommendedOwnerRoleId || 'appropriate specialist', 100)),
     ...productReports.concat(growthReports).flatMap(x => Array.isArray(x.nextActions) ? x.nextActions : []),
+    ...evaluationReports.flatMap(x => Array.isArray(x.nextActions) ? x.nextActions : []),
     ...(business && Number(business.unallocatedEntryCount) > 0 ? ['Review unallocated business ledger evidence; do not infer a product link.'] : []),
     ...(products && Array.isArray(products.nextActions) ? products.nextActions : [])
   ], 10);
   const headline = completedRows.length + ' completed · ' + active.length + ' active · ' + exceptions.length + ' attention item' + (exceptions.length === 1 ? '' : 's');
   return { schema: 'pine-star.shared-report.v1', id: text(o.id, 120) || ('morning-brief:' + new Date(end).toISOString().slice(0, 10)), type: 'morning-brief',
     createdAt: end, periodStart: start, periodEnd: end, headline, completed, exceptions, decisions, nextActions, discoveries,
-    sourceRefs: unique([...completedRows, ...failures, ...active, ...approvals, ...auditorRows].map(x => 'objective:' + x.id).concat(scoutReports.concat(productReports, growthReports).map(x => 'report:' + x.id), measuredRuns.map(x => 'run:' + x.runId), business && Array.isArray(business.sourceRefs) ? business.sourceRefs : [], products && Array.isArray(products.sourceRefs) ? products.sourceRefs : []), 30) };
+    sourceRefs: unique([...completedRows, ...failures, ...active, ...approvals, ...auditorRows].map(x => 'objective:' + x.id).concat(scoutReports.concat(productReports, growthReports, evaluationReports).map(x => 'report:' + x.id), measuredRuns.map(x => 'run:' + x.runId), business && Array.isArray(business.sourceRefs) ? business.sourceRefs : [], products && Array.isArray(products.sourceRefs) ? products.sourceRefs : []), 30) };
 }
 
 module.exports = { composeMorningBrief };

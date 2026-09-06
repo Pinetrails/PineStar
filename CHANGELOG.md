@@ -4,6 +4,11 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-051 — Evaluation reporting projection
+
+- Added immutable champion/challenger decisions, Commander-review next actions, and report provenance to Morning Brief aggregation.
+- Reused the existing generic read-only Reports renderer; no evaluation decision, activation, or configuration control was added.
+
 ### PS-2026-050 — Advisory champion/challenger evaluation
 
 - Added authenticated, immutable comparison of disjoint settled same-role objective cohorts using outcome, evidence, measured-cost, uncertain-mutation, and wasted-work proxies.
