@@ -247,7 +247,8 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     A.eq(pineTrailProduction.body.spendingAuthorityUsd, 0, 'Pine Trail production planning grants zero spend');
     A.eq((await j('POST', '/api/product-projects/pine-trail-printables/production-plan', pineTrailProductionSpec)).status, 200, 'Pine Trail production retry is idempotent');
     await j('POST', '/api/objectives/status', { id: ideaIntake.body.children[0].id, status: 'completed', completionEvidenceRefs: ['report:http-market'] });
-    await j('POST', '/api/objectives/status', { id: ideaIntake.body.children[1].id, status: 'completed', completionEvidenceRefs: ['report:http-concept'] });
+    const conceptCompletion = await j('POST', '/api/objectives/status', { id: ideaIntake.body.children[1].id, status: 'completed', completionEvidenceRefs: ['report:http-concept'] });
+    A.eq(conceptCompletion.body.parentObjective.status, 'completed', 'direct child completion reconciles its coordinator parent');
     const researchDecisionSpec = { projectId: 'http-idea-lab', researchObjectiveId: ideaIntake.body.children[0].id, conceptObjectiveId: ideaIntake.body.children[1].id, decision: 'go', rationale: 'Fixture evidence supports bounded planning.', findings: ['Fixture customer need'], risks: ['Fixture evidence is limited'], evidenceRefs: ['fixture:market', 'fixture:concept'] };
     const researchDecision = await j('POST', '/api/product-projects/research-decision', researchDecisionSpec);
     A.eq(researchDecision.status, 201, 'completed specialist evidence creates a product research decision');

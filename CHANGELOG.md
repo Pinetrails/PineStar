@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-049 — Revision QA cycles and Big Bite candidate QA
+
+- Added optional normalized QA-cycle IDs so revised products can create distinct immutable QA reports without changing legacy report identities.
+- Reconciled coordinator parents when authenticated direct child-status updates settle, matching the existing activation lifecycle.
+- Canonically admitted The Big Bite candidate archive and manifest by SHA-256 and completed separate independent QA; the product is listing-ready and not published, with live delivery still blocked.
+
 ### PS-2026-048 — The Big Bite internal readiness revision
 
 - Added authenticated, evidence-gated completion of a protected publication request at internal-readiness scope only; the product returns to `not_published` and no publication capability or authority is created.

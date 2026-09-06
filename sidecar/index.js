@@ -18684,7 +18684,7 @@ async function handlePineStarRecurringObjectiveStatus(req, res) {
 }
 async function handlePineStarObjectiveStatus(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
-  try { return respondJson(res, 200, { ok: true, objective: await objectiveStore.updateStatus(body.id, body.status, body.completionEvidenceRefs) }); }
+  try { const objective = await objectiveStore.updateStatus(body.id, body.status, body.completionEvidenceRefs), parentObjective = objective.parentObjectiveId ? await objectiveStore.reconcileParent(objective.parentObjectiveId) : null; return respondJson(res, 200, { ok: true, objective, parentObjective }); }
   catch (e) { const message = (e && e.message) || 'invalid objective status'; return respondJson(res, message === 'objective not found' ? 404 : 400, { error: message }); }
 }
 async function handlePineStarObjectiveAdmission(req, res) {
