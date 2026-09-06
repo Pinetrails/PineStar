@@ -30,15 +30,15 @@ function makeObjectiveDispatch(deps) {
     const candidates = [...roster().entries()].filter(([, agent]) => Array.isArray(agent && agent.systemRoleIds) && agent.systemRoleIds.includes(role.id));
     if (candidates.length !== 1) return reject(objective, candidates.length ? 'ambiguous_runtime_identity' : 'runtime_identity_missing', candidates.length ? 'multiple runtime agents are bound to the role' : 'no approved runtime agent is bound to the role');
     const [agentId, agent] = candidates[0];
-    if (!/^[A-Za-z0-9_-]{1,40}$/.test(String(agentId)) || !agent || !agent.model || !agent.provider) return reject(objective, 'runtime_identity_invalid', 'bound runtime agent is incomplete', agentId);
+    if (!/^[A-Za-z0-9_-]{1,40}$/.test(String(agentId)) || !agent || !agent.model || !agent.provider || !agent.configurationId) return reject(objective, 'runtime_identity_invalid', 'bound runtime agent is incomplete', agentId);
     const runId = String(newId());
     let admission;
     try { admission = await admitRuntime({ objective, role, agentId, agent, runId }); }
     catch (e) { admission = { ok: false, code: 'runtime_admission_failed', reason: (e && e.message) || 'runtime admission failed' }; }
     if (!admission || admission.ok !== true) return reject(objective, (admission && admission.code) || 'runtime_admission_failed', (admission && admission.reason) || 'runtime admission failed', agentId);
-    const audit = { decision: 'admitted', code: 'admitted', reason: 'existing runtime admission accepted the dispatch ticket', agentId, runId, roleId: role.id, at: Number(now()) || 0 };
+    const audit = { decision: 'admitted', code: 'admitted', reason: 'existing runtime admission accepted the dispatch ticket', agentId, runId, roleId: role.id, configurationId: String(agent.configurationId), at: Number(now()) || 0 };
     const updated = await objectives.recordAdmission(objective.id, audit);
-    return { ok: true, code: 'admitted', runId, agentId, roleId: role.id, objective: updated, executionStarted: false };
+    return { ok: true, code: 'admitted', runId, agentId, roleId: role.id, configurationId: String(agent.configurationId), objective: updated, executionStarted: false };
   }
   async function settle(objective, event) {
     const updated = await objectives.recordLifecycle(objective.id, event);

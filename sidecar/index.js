@@ -1387,6 +1387,7 @@ const agentRosterRaw = new Map();
 // read by handleRoster's anti-clobber gate (mirrors savestore's updatedAt regression refusal). 0 until first
 // push/load — a legacy on-disk { version:1, agents } (no updatedAt) loads as 0, so any first write is accepted.
 let agentRosterUpdatedAt = 0;
+let agentRosterConfigurationAudit = [];
 const AGENT_ROSTER_FILE = path.join(WORKSPACES, 'agent.roster.json');
 function replaceAgentRoster(list) {
   agentRoster.clear();
@@ -1401,6 +1402,7 @@ function replaceAgentRoster(list) {
       name: String((a && a.name) || id).slice(0, 40),
       model: (a && a.model) ? String(a.model) : null,
       provider: normalizeProviderId((a && a.provider) || ''),
+      configurationId: String((a && a.configurationId) || '').trim().slice(0, 100),
       role: String((a && a.role) || '').slice(0, 120),
       systemRoleIds: Array.isArray(a && a.systemRoleIds) ? [...new Set(a.systemRoleIds.map(x => String(x || '').trim()).filter(x => /^[a-z][a-z0-9_.-]{2,79}$/.test(x)))].slice(0, 20) : [],
       approvalMode: approvalMode,   // per-agent consent posture: 'full' bypasses the gate (see runOnce)
@@ -1425,6 +1427,7 @@ function loadAgentRoster() {
     const raw = loadResilient(AGENT_ROSTER_FILE, 'roster');   // last-known-good recovery; never silent-wipe
     if (raw) {
       replaceAgentRoster(raw && raw.agents);
+      agentRosterConfigurationAudit = Array.isArray(raw && raw.configurationAudit) ? raw.configurationAudit.slice(-100) : [];
       // P1.1: adopt the stored envelope's updatedAt as the anti-clobber baseline. A LEGACY { version:1, agents }
       // file has no updatedAt → 0, so the first live push (whatever its stamp) is accepted (backward compatible).
       agentRosterUpdatedAt = Number(raw && raw.updatedAt) || 0;
@@ -1434,7 +1437,7 @@ function loadAgentRoster() {
 // P1.1: the fields saveAgentRoster() rebuilds from the live Map — the KNOWN shape. Preserved unknown fields (any
 // key a newer frontend added that this sidecar doesn't model) are spread UNDER these on save, so they survive a
 // re-save by older code rather than being dropped. agentId is always rebuilt (identity), never preserved raw.
-const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'systemRoleIds', 'approvalMode', 'executionProfile', 'skills', 'reasoningEffort', 'track'];
+const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'configurationId', 'role', 'systemRoleIds', 'approvalMode', 'executionProfile', 'skills', 'reasoningEffort', 'track'];
 // saveAgentRoster(updatedAt?) — persist the live roster. The optional updatedAt is the CLIENT's freshness stamp
 // (from POST /api/roster body.updatedAt); handleRoster passes it after its anti-clobber gate accepts a push, so the
 // stored envelope records the exact stamp we accepted (a later push older than it is refused). Server-internal
@@ -1444,7 +1447,7 @@ function saveAgentRoster(updatedAt) {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
     const agents = [...agentRoster].map(([agentId, a]) => {
-      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', systemRoleIds: Array.isArray(a.systemRoleIds) ? a.systemRoleIds : [], approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', executionProfile: executionProfiles.normalizeId(a.executionProfile, { approvalMode: a.approvalMode, backendId: executionEnvironment && executionEnvironment.backendId }), skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null, track: a.track || '' };   // S3: track = the earned track-record line (see replaceAgentRoster)   // Class Loadouts S1: per-agent package + execution envelope persist beside approval posture.
+      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, configurationId: a.configurationId || '', role: a.role || '', systemRoleIds: Array.isArray(a.systemRoleIds) ? a.systemRoleIds : [], approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', executionProfile: executionProfiles.normalizeId(a.executionProfile, { approvalMode: a.approvalMode, backendId: executionEnvironment && executionEnvironment.backendId }), skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null, track: a.track || '' };   // S3: track = the earned track-record line (see replaceAgentRoster)   // Class Loadouts S1: per-agent package + execution envelope persist beside approval posture.
       // P1.1: forward-compat field preservation — carry any UNKNOWN keys from the last-seen raw record under the
       // known ones, so a field a newer frontend added isn't silently eaten when older sidecar code re-saves.
       const rawRec = agentRosterRaw.get(agentId);
@@ -1460,7 +1463,10 @@ function saveAgentRoster(updatedAt) {
     // clock so the envelope only ever moves forward. Legacy readers ignore the extra key harmlessly.
     const stamp = Number(updatedAt);
     agentRosterUpdatedAt = (Number.isFinite(stamp) && stamp > 0) ? stamp : Math.max(agentRosterUpdatedAt + 1, Date.now());
-    saveResilient(AGENT_ROSTER_FILE, { version: 1, updatedAt: agentRosterUpdatedAt, agents });   // fsync-durable + .bak last-known-good
+    const snapshot = agents.filter(a => a.configurationId).map(a => ({ agentId: a.agentId, configurationId: a.configurationId, provider: a.provider, model: a.model, reasoningEffort: a.reasoningEffort, systemRoleIds: a.systemRoleIds })).sort((a, b) => a.agentId.localeCompare(b.agentId));
+    const prior = agentRosterConfigurationAudit.length ? agentRosterConfigurationAudit[agentRosterConfigurationAudit.length - 1] : null;
+    if (!prior || JSON.stringify(prior.configurations) !== JSON.stringify(snapshot)) agentRosterConfigurationAudit = agentRosterConfigurationAudit.concat({ at: agentRosterUpdatedAt, source: 'commander_roster_configuration', configurations: snapshot }).slice(-100);
+    saveResilient(AGENT_ROSTER_FILE, { version: 1, updatedAt: agentRosterUpdatedAt, agents, configurationAudit: agentRosterConfigurationAudit });   // fsync-durable + .bak last-known-good
     return true;
   } catch (e) { console.warn('[roster] persist failed:', (e && e.message) || e); return false; }
 }
@@ -1697,7 +1703,7 @@ const objectiveDispatch = makeObjectiveDispatch({
     const completion = (async () => {
       try {
         const result = await runOnce({ key, model, provider, system: agent.system || cronSystemFor(agentId), messages: [{ role: 'user', content: directive }],
-          agentId, isTask: true, emit, signal: ac.signal, runId, streamId: 'objective-' + runId,
+          agentId, configurationId: agent.configurationId, isTask: true, emit, signal: ac.signal, runId, streamId: 'objective-' + runId,
           surface: 'autonomous', trigger: 'directive', reflect: true, station: router.stationFor(agentId) || undefined });
         if (ac.signal.aborted) return Object.assign({}, result || {}, { reason: 'cancelled' });
         return result || { reason: endReason || 'error' };
@@ -16178,7 +16184,7 @@ async function runOnce(o) {
         }
       }
       const runEndedAt = Date.now();
-      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), failureStage: execution.failureStage(), failureCode: execution.failureCode(), uncertainMutations: execution.uncertainMutations(), completionEvidence: finalCompletionEvidence, recoveryAttempts: execution.recoveryAttempts(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
+      runStore.record({ runId, parentRunId: o.parentRunId || '', agentId, configurationId: o.configurationId || '', provider: providerId, reason: ((result && result.reason) || 'done'), clarifying: taskQuestionAsked, turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', sessionTitle: o.sessionTitle || '', deliveryPrompt: o.sessionPrompt || '', deliveryText, recipeId: o.recipeId || '', projectRoot: o.projectRoot || '', deliverable: deliverableNotes.take(runId), model: finalModel, reasoningEffort, unmetered: providerUnmetered, artifacts: execution.artifactList(), toolsOk: execution.toolsOk(), toolTrace: execution.toolTraceList(), failureStage: execution.failureStage(), failureCode: execution.failureCode(), uncertainMutations: execution.uncertainMutations(), completionEvidence: finalCompletionEvidence, recoveryAttempts: execution.recoveryAttempts(), startedAt: runStartedAt, endedAt: runEndedAt, durationMs: runEndedAt - runStartedAt, identityFallback, internal });   // execution terminal stays separate from the neutral Task Brief outcome used by progression
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new

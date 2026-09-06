@@ -105,8 +105,11 @@ const clock = { now: () => clk };
   const s = makeRunStore({ io: memIo(), clock });
   const e = s.record({ runId: 'm1', agentId: 'a', model: '  gpt-5.5  ', unmetered: true, usd: 0, tokens: 900000 });
   A.eq(e.model, 'gpt-5.5', 'model is trimmed and recorded');
+  const configured = s.record({ runId: 'm-config', agentId: 'a', configurationId: 'auditor-ollama-v1', provider: 'ollama', model: 'llama3.2:3b' });
+  A.eq(configured.configurationId, 'auditor-ollama-v1', 'actual configuration identity is durable');
+  A.eq(configured.provider, 'ollama', 'actual provider identity is durable');
   A.eq(e.unmetered, true, 'unmetered flag is recorded');
-  A.eq(s.list('a')[0].model, 'gpt-5.5', 'list surfaces model identity');
+  A.eq(s.list('a').find(x => x.runId === 'm1').model, 'gpt-5.5', 'list surfaces model identity');
   A.eq(s.record({ runId: 'm2', agentId: 'a', model: '' }).model, '(unknown)', 'empty model becomes explicit unknown');
 }
 

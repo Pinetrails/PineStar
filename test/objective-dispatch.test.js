@@ -13,7 +13,7 @@ function fixture(overrides) {
   };
   const role = Object.assign({ id: 'research.safe', availability: 'active' }, overrides && overrides.role);
   const roles = { get: id => id === role.id ? role : null };
-  const agents = new Map([['agent_a', Object.assign({ model: 'model-a', provider: 'provider-a', systemRoleIds: ['research.safe'] }, overrides && overrides.agent)] ]);
+  const agents = new Map([['agent_a', Object.assign({ model: 'model-a', provider: 'provider-a', configurationId: 'research-safe-v1', systemRoleIds: ['research.safe'] }, overrides && overrides.agent)] ]);
   const dispatcher = makeObjectiveDispatch({ objectives, roles, roster: () => agents, halted: () => !!(overrides && overrides.halted), newId: () => 'run-1', now: () => 123,
     admitRuntime: async plan => overrides && overrides.admission ? overrides.admission : { ok: true, plan } });
   return { dispatcher, objectives, rows, audits, agents };
@@ -24,6 +24,7 @@ function fixture(overrides) {
   A.eq(admitted.ok, true, 'approved safe objective is admitted');
   A.eq(admitted.executionStarted, false, 'admission does not pretend execution started');
   A.eq(admitted.agentId, 'agent_a', 'explicit system-role binding selects the runtime identity');
+  A.eq(admitted.configurationId, 'research-safe-v1', 'admission binds an explicit runtime configuration identity');
   A.eq(safe.rows.get('objective:1').status, 'admitted', 'objective state commits the admission');
   A.eq(safe.audits[0].runId, 'run-1', 'admission creates an auditable run id');
   const protectedFx = fixture({ objective: { status: 'approval_required', approvalState: 'required' } });
@@ -49,7 +50,7 @@ function fixture(overrides) {
 
   function activationFx(opts) {
     opts = opts || {}; let row = Object.assign({ id: 'objective:a', status: 'admitted', approvalState: 'not_required', assignedRoleId: 'research.safe', runtimeAgentId: 'agent_a', admittedRunId: 'run-a' }, opts.objective);
-    const lifecycle = [], agents = new Map([['agent_a', { model: 'm', provider: 'p', systemRoleIds: ['research.safe'] }]]);
+    const lifecycle = [], agents = new Map([['agent_a', { model: 'm', provider: 'p', configurationId: 'research-safe-v1', systemRoleIds: ['research.safe'] }]]);
     let resolveRun, rejectRun; const completion = new Promise((resolve, reject) => { resolveRun = resolve; rejectRun = reject; });
     let reconciled = 0;
     const objectives = { get: () => row, recordAdmission: async () => row, recordLifecycle: async (id, e) => { lifecycle.push(e); row = Object.assign({}, row, { status: e.state === 'running' ? 'in_progress' : e.state }); return row; }, reconcileParent: async () => { reconciled++; } };

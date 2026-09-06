@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-062` — Authoritative Matched Measurement Evidence — **COMPLETE**
+**Current change:** `PS-2026-063` — Runtime Champion Configuration Identity — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -74,6 +74,7 @@
 | Bounded experiment proposals | `PS-2026-060` complete; authenticated immutable proposals require evidenced advisories plus predefined pairing, metrics, thresholds, evidence, run/time limits, local scope, rollback, and independent roles while remaining protected `review_required` records with no execution or activation authority |
 | Commander experiment review | `PS-2026-061` complete; authenticated digest-bound approve/reject decisions durably record Commander rationale and may authorize only later execution of the exact bounded local proposal, without executing, creating work, scheduling reruns, spending, acting externally, changing configuration, or authorizing activation |
 | Authoritative matched measurement evidence | `PS-2026-062` complete; an internal host-authorized durable contract records configuration/task-condition/outcome/runtime/cost/usage/retry/safety/uncertainty provenance, and evaluation now fails closed unless every objective has an authoritative same-task/same-conditions record in both arms |
+| Runtime champion configuration identity | `PS-2026-063` complete; the existing roster-to-objective-to-run path carries a stable configuration ID and observed provider, roster snapshots retain bounded non-secret audit provenance, and routing rejects unidentified configurations |
 
 ## Known baseline issues
 

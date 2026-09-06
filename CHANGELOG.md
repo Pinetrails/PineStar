@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-063 — Runtime champion configuration identity
+
+- Extended the existing roster, objective admission, and run-history path with a required stable runtime configuration ID plus observed provider identity.
+- Existing roster persistence now retains a bounded append-only audit of non-secret configuration snapshots, so the champion configuration and later changes have durable provenance.
+- Objective routing fails closed when a bound runtime lacks configuration identity; no challenger activation or experiment execution was added.
+
 ### PS-2026-062 — Authoritative matched measurement evidence
 
 - Added an internal host-authorized durable measurement contract for stable cohort, arm, role, configuration, task-condition, outcome, evidence, runtime, cost, usage, retry, safety, uncertainty, and provenance facts.

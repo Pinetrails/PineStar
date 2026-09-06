@@ -253,7 +253,7 @@ function makeObjectiveStore(deps) {
       const current = list[index], audit = (Array.isArray(current.admissionAudit) ? current.admissionAudit : []).slice(-19);
       audit.push(Object.assign({}, admission));
       updated = Object.assign({}, current, { admissionAudit: audit, updatedAt: Math.max(Number(current.updatedAt) || 0, Number(admission && admission.at) || 0) });
-      if (admission && admission.decision === 'admitted') updated = Object.assign(updated, { status: 'admitted', admittedRunId: String(admission.runId || ''), runtimeAgentId: String(admission.agentId || '') });
+      if (admission && admission.decision === 'admitted') updated = Object.assign(updated, { status: 'admitted', admittedRunId: String(admission.runId || ''), runtimeAgentId: String(admission.agentId || ''), runtimeConfigurationId: String(admission.configurationId || '') });
       list[index] = updated; return list;
     });
     return updated;
