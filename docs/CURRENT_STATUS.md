@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-065` — Sealed Auditor Matched-Measurement Runner — **COMPLETE**
+**Current change:** `PS-2026-066` — Auditor Runner Fail-Closed Hardening — **COMPLETE; MEASUREMENT BLOCKED PENDING NEW COMMANDER DECISION**
 
 | Item | Status |
 | --- | --- |
@@ -77,6 +77,7 @@
 | Runtime champion configuration identity | `PS-2026-063` complete; the existing roster-to-objective-to-run path carries a stable configuration ID and observed provider, roster snapshots retain bounded non-secret audit provenance, and routing rejects unidentified configurations |
 | Auditor runtime champion baseline | `PS-2026-064` complete; the canonical roster actively binds `operations.auditor` to the installed local Ollama `llama3.2:3b` configuration with `$0` external cost, ask-mode approval, trusted-project scope, and durable non-secret audit provenance |
 | Sealed Auditor matched-measurement runner | `PS-2026-065` complete; a private digest-bound one-shot path runs only the authorized six local Ollama comparisons through normal objectives, `runOnce`, cancellation, run history, mechanical verification, and authoritative measurement settlement without roster mutation or rerun authority |
+| First authorized Auditor measurement attempt | `PS-2026-066` hardened the runner; the launch failed before inference on a missing event sink, produced zero runs/measurements/evaluation, and durably consumed the one-shot attempt. A new Commander decision is required before any new execution plan; the challenger remains inactive. |
 
 ## Known baseline issues
 

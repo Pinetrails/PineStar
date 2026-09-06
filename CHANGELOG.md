@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-066 — Auditor runner fail-closed hardening
+
+- Sealed the authorized measurement run against configured fallbacks, key rotation, tool exposure, auxiliary model work, model substitution, recovery attempts, and uncertain mutations.
+- Moved the durable one-shot claim before all measurement work and added failed-objective/failed-receipt settlement for runner exceptions.
+- The authorized launch stopped before inference because the committed runner omitted an event sink. No measurement or evaluation was produced, and the claimed attempt was not retried.
+
 ### PS-2026-065 — Sealed Auditor matched-measurement runner
 
 - Added a host-only one-shot runner compiled to the authorized six-run Auditor plan and SHA-256 digest, with no HTTP or generic configuration-execution surface.
