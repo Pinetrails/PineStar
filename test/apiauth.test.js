@@ -21,6 +21,7 @@ A.eq(auth.requiresApiToken(req('POST', '/api/reports/morning-brief')), true, 'PO
 A.eq(auth.requiresApiToken(req('POST', '/api/evolution/experiment-planning-advisories')), true, 'POST experiment-planning advisory requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/evolution/experiment-proposals')), true, 'GET experiment proposals requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/evolution/experiment-proposals')), true, 'POST experiment proposals requires token');
+A.eq(auth.requiresApiToken(req('POST', '/api/evolution/experiment-proposals/decision')), true, 'POST experiment proposal decisions requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/evolution/configuration-candidates')), true, 'GET configuration candidates requires token');
 A.eq(auth.requiresApiToken(req('POST', '/api/evolution/configuration-candidates')), true, 'POST configuration candidates requires token');
 A.eq(auth.requiresApiToken(req('GET', '/api/control/status')), true, 'GET Pine Star control status requires token');

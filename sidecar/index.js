@@ -8791,6 +8791,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/evolution/champion-challenger', h: handleChampionChallengerEvaluation },
   { m: 'POST', exact: '/api/evolution/experiment-planning-advisories', h: handleExperimentPlanningAdvisory },
   { m: ['GET', 'POST'], qsplit: '/api/evolution/experiment-proposals', h: handleExperimentProposals },
+  { m: 'POST', exact: '/api/evolution/experiment-proposals/decision', h: handleExperimentProposalDecision },
   { m: ['GET', 'POST'], qsplit: '/api/evolution/configuration-candidates', h: handleConfigurationCandidates },
   { m: 'POST', exact: '/api/objectives/intake', h: handlePineStarObjectiveIntake },
   { m: 'POST', exact: '/api/objectives/decompose', h: handlePineStarObjectiveDecompose },
@@ -18623,6 +18624,11 @@ async function handleExperimentProposals(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
   try { const result = await experimentProposalStore.create(body); return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result)); }
   catch (e) { const message = (e && e.message) || 'invalid experiment proposal'; return respondJson(res, /already recorded differently/.test(message) ? 409 : 400, { error: message }); }
+}
+async function handleExperimentProposalDecision(req, res) {
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return respondJson(res, 400, { error: 'bad json' }); }
+  try { const result = await experimentProposalStore.decide(body); return respondJson(res, result.idempotent ? 200 : 201, Object.assign({ ok: true }, result)); }
+  catch (e) { const message = (e && e.message) || 'invalid experiment proposal decision'; return respondJson(res, /not found/.test(message) ? 404 : (/changed|already has/.test(message) ? 409 : 400), { error: message }); }
 }
 async function handleConfigurationCandidates(req, res) {
   if (req.method === 'GET') {

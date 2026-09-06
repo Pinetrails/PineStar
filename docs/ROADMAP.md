@@ -90,6 +90,7 @@ Phases express dependencies and intent, not rigid architecture. Discoveries may 
 - Morning Brief carries a dedicated bounded read-only projection of experiment-planning advisory questions, design requirements, and evaluation provenance without displacing established decisions or actions (`PS-2026-058`).
 - The generic Reports view renders that projection with escaping and an explicit inspection-only boundary, completing the safe advisory reporting chain (`PS-2026-059`).
 - Commander-directed bounded self-improvement begins with immutable evidenced experiment proposals that predeclare local pairings, metrics, thresholds, evidence, run/time limits, rollback, and independent roles while retaining a protected review boundary and separate activation authority (`PS-2026-060`).
+- Commander review can now approve or reject the digest-bound terms of a proposal with durable rationale; approval authorizes only later bounded local execution and grants no immediate execution, objective creation, scheduling/rerun, spend, external action, configuration mutation, or activation authority (`PS-2026-061`).
 
 ## Phase 8 — Pine Star World
 

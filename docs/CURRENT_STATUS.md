@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-060` — Bounded Experiment Proposals — **COMPLETE**
+**Current change:** `PS-2026-061` — Commander Experiment Review — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
@@ -72,6 +72,7 @@
 | Experiment-planning reporting projection | `PS-2026-058` complete; Morning Brief preserves bounded advisory questions, design requirements, and evaluation provenance in a dedicated read-only field without displacing decisions/actions or adding controls |
 | Experiment-planning Reports presentation | `PS-2026-059` complete; the existing generic Reports view renders escaped advisory questions, requirements, provenance, and an inspection-only boundary without navigation or action controls |
 | Bounded experiment proposals | `PS-2026-060` complete; authenticated immutable proposals require evidenced advisories plus predefined pairing, metrics, thresholds, evidence, run/time limits, local scope, rollback, and independent roles while remaining protected `review_required` records with no execution or activation authority |
+| Commander experiment review | `PS-2026-061` complete; authenticated digest-bound approve/reject decisions durably record Commander rationale and may authorize only later execution of the exact bounded local proposal, without executing, creating work, scheduling reruns, spending, acting externally, changing configuration, or authorizing activation |
 
 ## Known baseline issues
 
@@ -86,4 +87,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Continue Phase 7 with a narrow Commander experiment-review lifecycle for immutable `review_required` proposals. Approval may authorize only the named bounded local experiment and protected preparation/evaluation work; it must not execute immediately, schedule retries/reruns, authorize external effects or spend, or grant configuration activation. The Big Bite remains internally complete and must not be reopened.
+Prepare the first real evidence-backed bounded local experiment proposal for Commander review. Stop at the protected execution decision and present the exact champion, challenger, metrics, limits, cost, reversibility, evidence provenance, and authority requested. Do not approve, execute, create work, schedule retries/reruns, spend, act externally, change configuration, or authorize activation without the explicit protected decision. The Big Bite remains internally complete and must not be reopened.

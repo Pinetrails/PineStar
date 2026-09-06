@@ -4,6 +4,11 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-061 — Commander experiment review
+
+- Added an authenticated, digest-bound approve/reject decision lifecycle for immutable bounded experiment terms, with durable rationale and audit evidence.
+- Approval authorizes only later execution of the named local experiment; it does not execute, create objectives, schedule or rerun work, spend, act externally, change configuration, or authorize configuration activation.
+
 ### PS-2026-060 — Bounded experiment proposals
 
 - Added authenticated durable experiment proposals backed by evidenced planning advisories and complete predefined pairings, metrics, thresholds, limits, evidence, rollback, scope, and independent-role assignments.

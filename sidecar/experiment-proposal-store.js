@@ -1,4 +1,5 @@
 'use strict';
+const crypto = require('crypto');
 const { makeDurableJsonStore } = require('./durable-store.js');
 const CAP = 200, MAX_RUNS = 20, MAX_DURATION_MS = 86400000;
 function text(v, n) { return String(v == null ? '' : v).trim().slice(0, n); }
@@ -6,6 +7,7 @@ function slug(v) { return text(v, 100).toLowerCase().replace(/[^a-z0-9._-]+/g, '
 function strings(v, cap, width) { return [...new Set((Array.isArray(v) ? v : []).map(x => text(x, width)).filter(Boolean))].slice(0, cap); }
 const SIGNATURE_FIELDS = ['experimentId', 'advisoryReportId', 'championConfigurationId', 'challengerConfigurationId', 'hypothesis', 'metrics', 'successThreshold', 'failureThreshold', 'evidenceRequirements', 'maximumRunCount', 'maximumDurationMs', 'permittedCostUsd', 'environment', 'scope', 'rollbackPlan', 'preparationRoleId', 'evaluatorRoleId', 'sourceRefs'];
 function same(a, b) { return !!a && SIGNATURE_FIELDS.every(k => JSON.stringify(a[k]) === JSON.stringify(b[k])); }
+function digest(row) { return crypto.createHash('sha256').update(JSON.stringify(SIGNATURE_FIELDS.reduce((out, key) => { out[key] = row[key]; return out; }, {}))).digest('hex'); }
 
 function makeExperimentProposalStore(deps) {
   const d = deps || {}, now = typeof d.now === 'function' ? d.now : Date.now, getReport = typeof d.getReport === 'function' ? d.getReport : () => null;
@@ -29,16 +31,25 @@ function makeExperimentProposalStore(deps) {
     if (!getRole(preparationRoleId) || !getRole(evaluatorRoleId)) throw new Error('experiment proposal requires known preparation and evaluator roles');
     if (preparationRoleId === evaluatorRoleId) throw new Error('experiment proposal evaluator must be independent from preparation');
     const sourceRefs = strings(['report:' + advisoryReportId].concat(advisory.sourceRefs, Array.isArray(x.sourceRefs) ? x.sourceRefs : []), 24, 500);
-    return { schema: 'pine-star.experiment-proposal.v1', id: 'experiment-proposal:' + experimentId, experimentId, advisoryReportId, championConfigurationId, challengerConfigurationId,
+    const proposal = { schema: 'pine-star.experiment-proposal.v1', id: 'experiment-proposal:' + experimentId, experimentId, advisoryReportId, championConfigurationId, challengerConfigurationId,
       hypothesis, metrics, successThreshold, failureThreshold, evidenceRequirements, maximumRunCount, maximumDurationMs, permittedCostUsd: 0, environment: 'local', scope, rollbackPlan,
       preparationRoleId, evaluatorRoleId, sourceRefs, protectedAction: true, status: 'review_required', approvalState: 'required', commanderDecision: null,
-      executionAuthorized: false, objectiveCreated: false, experimentScheduled: false, runCount: 0, externalSideEffects: false, configurationChanged: false, activationAuthorized: false, createdAt: Math.max(0, Number(now()) || 0) };
+      executionAuthorized: false, objectiveCreated: false, experimentScheduled: false, runCount: 0, externalSideEffects: false, configurationChanged: false, activationAuthorized: false, workflowAudit: [], createdAt: Math.max(0, Number(now()) || 0) };
+    proposal.proposalDigest = digest(proposal); return proposal;
   }
   async function create(input) { const proposal = build(input); let result; await durable.update('station', stored => { const rows = Array.isArray(stored) ? stored.slice() : [], prior = rows.find(x => x && x.id === proposal.id);
     if (prior) { if (!same(prior, proposal)) throw new Error('experiment proposal already recorded differently'); result = { proposal: prior, idempotent: true }; return undefined; }
     if (rows.length >= CAP) throw new Error('experiment proposal capacity exceeded'); rows.push(proposal); result = { proposal, idempotent: false }; return rows; }); return result; }
   function list(limit) { const rows = durable.get('station'), cap = Math.max(1, Math.min(CAP, Number(limit) || 50)); return (Array.isArray(rows) ? rows : []).filter(Boolean).slice(-cap).reverse(); }
   function get(id) { return list(CAP).find(x => x.id === String(id || '') || x.experimentId === String(id || '')) || null; }
-  return { create, list, get, readStatus: () => durable.readKey('station'), _durable: durable };
+  async function decide(input) { const x = input && typeof input === 'object' ? input : {}, experimentId = slug(x.experimentId), action = text(x.action, 20).toLowerCase(), rationale = text(x.rationale, 500), expectedDigest = text(x.proposalDigest, 64); let result;
+    if (!experimentId || !['approve', 'reject'].includes(action) || !rationale || !/^[a-f0-9]{64}$/.test(expectedDigest)) throw new Error('experiment decision requires experiment ID, approve/reject action, rationale, and proposal digest');
+    await durable.update('station', stored => { const rows = Array.isArray(stored) ? stored.slice() : [], index = rows.findIndex(row => row && (row.experimentId === experimentId || row.id === experimentId)); if (index < 0) throw new Error('experiment proposal not found'); const current = rows[index];
+      if (current.proposalDigest !== expectedDigest || digest(current) !== expectedDigest) throw new Error('experiment proposal changed or digest does not match');
+      const finalState = action === 'approve' ? 'approved' : 'rejected'; if (current.status !== 'review_required' || current.approvalState !== 'required') { if (current.status === finalState && current.commanderDecision && current.commanderDecision.rationale === rationale) { result = { proposal: current, idempotent: true }; return undefined; } throw new Error('experiment proposal already has a Commander decision'); }
+      const stamp = Math.max(Number(current.createdAt) || 0, Number(now()) || 0), event = { event: 'commander_' + finalState, at: stamp, proposalDigest: expectedDigest, rationale };
+      const updated = Object.assign({}, current, { status: finalState, approvalState: finalState, commanderDecision: { action, rationale, at: stamp, proposalDigest: expectedDigest }, executionAuthorized: action === 'approve', activationAuthorized: false, configurationChanged: false, workflowAudit: (Array.isArray(current.workflowAudit) ? current.workflowAudit : []).concat(event).slice(-20) }); rows[index] = updated; result = { proposal: updated, idempotent: false }; return rows; });
+    return Object.assign({ schema: 'pine-star.experiment-proposal-decision.v1', experimentExecuted: false, objectiveCreated: false, configurationChanged: false, activationAuthorized: false, spendingAuthorityUsd: 0, externalAction: false }, result); }
+  return { create, decide, list, get, readStatus: () => durable.readKey('station'), _durable: durable };
 }
-module.exports = { makeExperimentProposalStore, CAP, MAX_RUNS, MAX_DURATION_MS };
+module.exports = { makeExperimentProposalStore, digest, CAP, MAX_RUNS, MAX_DURATION_MS };
