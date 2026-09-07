@@ -4,11 +4,13 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
-### PS-2026-072 — Prepared repeated Auditor v2 experiment plan
+### PS-2026-072 — Executed repeated Auditor v2 experiment
 
 - Added immutable non-executable plan `auditor-matched-local-v2-repeated-v1`, binding three v2 tasks, three repetitions per arm/task, 18 deterministic slots, nine matched pairs, fixed input hashes, and reproducible v2 instruction hashes.
 - Recorded strict `$0` local-Ollama operational, provenance, raw-output, independent-truth, uncertainty, pairing, and 90-minute maximum wall boundaries under canonical digest `8fd60778992aa9c478284d8c6bf338266579eddb9759cfb60e49ad4bc34fecd3`.
-- Exposed no execution, receipt, trigger, route, scheduling, objective, model, or measurement path; all historical evidence and production configuration remain unchanged.
+- Added a sealed plan-specific durable worker with atomic per-slot claims, interruption reconciliation without relaunch, E-stop/cancellation, fixed loopback Ollama models, an 18-launch ceiling, and deterministic post-run evaluation.
+- Executed exactly 18 slots: champion 0/9 correct with 5/9 valid v2 format and one timeout; challenger 3/9 correct with 7/9 valid format and two timeouts. Only challenger roster audit reached two-of-three reliability (3/3).
+- Retained the champion and created no candidate because neither arm was reliable on objective-store or shared-report audits. External cost was `$0`; production routing and configuration were unchanged.
 
 ### PS-2026-071 — Auditor disagreement forensics and v2 contract
 
