@@ -491,6 +491,11 @@
       baseUrl: 'http://127.0.0.1:11434/v1',
       baseUrlEnv: ['OLLAMA_BASE_URL'],
       modelsPath: '/models',
+      // Pine Star local operational envelope: bounded first-response wait, with no repeat of the same
+      // deterministic CPU prompt evaluation. This is intentionally provider-scoped; shared external-provider
+      // defaults remain owned by providers/provider.js and the OpenAI-compatible adapter.
+      connectTimeoutMs: 240000,
+      preHeaderRetries: 0,
       defaultReasoningEffort: 'none',
       unmetered: true,
       credentialPool: false,

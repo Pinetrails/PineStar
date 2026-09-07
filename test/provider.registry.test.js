@@ -57,6 +57,68 @@ module.exports = (async () => {
 
   const p = factory.selectProvider({ provider: 'ollama', fetch: async () => new Response(JSON.stringify({ data: [] }), { status: 200 }) });
   A.ok(p && typeof p.stream === 'function' && typeof p.listModels === 'function', 'factory returns an adapter for OpenAI-compatible profiles');
+  const ollamaProfile = factory.getProviderProfile('ollama');
+  A.eq(ollamaProfile.connectTimeoutMs, 240000, 'Ollama profile declares the four-minute first-response ceiling');
+  A.eq(ollamaProfile.preHeaderRetries, 0, 'Ollama profile declares zero pre-header retries');
+
+  // Ollama alone may receive a distinct first-response envelope. Use immediate abort-aware fake fetches so
+  // the proof is bounded in milliseconds and exercises the real factory -> adapter -> connectGuard path.
+  {
+    function waitForAbort(signal) {
+      return new Promise((_resolve, reject) => {
+        if (signal.aborted) return reject(signal.reason);
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+      });
+    }
+    let ollamaCalls = 0;
+    const ollama = factory.selectProvider({ provider: 'ollama', connectTimeoutMs: 15, preHeaderRetries: 0, fetch: async (url, opts) => {
+      if (/\/models$/.test(url)) return new Response('{"data":[]}', { status: 200 });
+      ollamaCalls++; return waitForAbort(opts.signal);
+    } });
+    let ollamaError = null;
+    try { for await (const _ of ollama.stream({ model: 'm', messages: [] })) {} } catch (e) { ollamaError = e; }
+    A.eq(ollamaCalls, 1, 'Ollama-specific pre-header retry count reaches the adapter');
+    A.ok(ollamaError && /15ms/.test(ollamaError.message), 'Ollama-specific first-response deadline reaches the connect guard');
+
+    let boundedCalls = 0;
+    const bounded = factory.selectProvider({ provider: 'ollama', connectTimeoutMs: 999999, preHeaderRetries: 99, fetch: async (url, opts) => {
+      if (/\/models$/.test(url)) return new Response('{"data":[]}', { status: 200 });
+      boundedCalls++; return waitForAbort(opts.signal);
+    } });
+    const realSetTimeout = global.setTimeout;
+    let armedMs = null;
+    global.setTimeout = (fn, ms) => { armedMs = ms; queueMicrotask(fn); return { fake: true }; };
+    let boundedError = null;
+    try { for await (const _ of bounded.stream({ model: 'm', messages: [] })) {} } catch (e) { boundedError = e; }
+    finally { global.setTimeout = realSetTimeout; }
+    A.eq(armedMs, 240000, 'explicit Ollama timeout cannot exceed the operational ceiling');
+    A.eq(boundedCalls, 1, 'explicit Ollama retry request cannot override zero-retry policy');
+    A.ok(boundedError && /240000ms/.test(boundedError.message), 'bounded Ollama timeout remains truthfully classified at the configured ceiling');
+
+    const cancelController = new AbortController();
+    let cancelCalls = 0;
+    const cancellable = factory.selectProvider({ provider: 'ollama', connectTimeoutMs: 1000, fetch: async (url, opts) => {
+      if (/\/models$/.test(url)) return new Response('{"data":[]}', { status: 200 });
+      cancelCalls++; queueMicrotask(() => cancelController.abort()); return waitForAbort(opts.signal);
+    } });
+    const cancelStarted = Date.now(); let cancelError = null;
+    try { for await (const _ of cancellable.stream({ model: 'm', messages: [], signal: cancelController.signal })) {} } catch (e) { cancelError = e; }
+    A.eq(cancelCalls, 1, 'cancelled Ollama request is not retried');
+    A.ok(cancelError === null && cancelController.signal.aborted && Date.now() - cancelStarted < 250, 'Ollama cancellation remains prompt and ends cleanly rather than becoming a timeout');
+
+    const saved = process.env.SKYNET_PROVIDER_CONNECT_MS;
+    process.env.SKYNET_PROVIDER_CONNECT_MS = '20';
+    let externalCalls = 0;
+    const external = factory.selectProvider({ provider: 'openai', connectTimeoutMs: 5, preHeaderRetries: 0, fetch: async (url, opts) => {
+      if (/\/models$/.test(url)) return new Response('{"data":[]}', { status: 200 });
+      externalCalls++; return waitForAbort(opts.signal);
+    } });
+    let externalError = null;
+    try { for await (const _ of external.stream({ model: 'm', messages: [] })) {} } catch (e) { externalError = e; }
+    A.eq(externalCalls, 3, 'external provider ignores Ollama-only retry override');
+    A.ok(externalError && /20ms/.test(externalError.message), 'external provider retains the shared connect deadline');
+    if (saved == null) delete process.env.SKYNET_PROVIDER_CONNECT_MS; else process.env.SKYNET_PROVIDER_CONNECT_MS = saved;
+  }
   for (const id of ['xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras']) {
     const hosted = factory.selectProvider({ provider: id, fetch: async () => new Response(JSON.stringify({ data: [] }), { status: 200 }) });
     A.ok(hosted && typeof hosted.stream === 'function' && typeof hosted.listModels === 'function', 'factory returns OpenAI-compatible adapter for ' + id);

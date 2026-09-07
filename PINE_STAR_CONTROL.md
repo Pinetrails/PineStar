@@ -9,12 +9,12 @@ Pine Star is built on StarNet, its upstream technical foundation.
 | Previous phase | **Phase 1 — Stock StarNet Baseline — COMPLETE** |
 | Current phase | **Phase 6 — Business System foundation (earlier adapter work remains)** |
 | Last milestone | `PS-2026-001` documentation/governance foundation committed and pushed as `1c2ef0d4` |
-| Current change | `PS-2026-067` — Auditor Replacement Measurement — **COMPLETE; RETAIN CHAMPION** |
+| Current change | `PS-2026-068` — Local Ollama Operational Envelope — **COMPLETE; EXPERIMENT PREPARED, NOT AUTHORIZED** |
 | Application source modified yet | **Yes — presentation-only frontend identity in the first PS-2026-002 batch** |
 | Packaged desktop baseline | **PASS** |
 | Fresh onboarding baseline | **PASS** |
 | Documentation state | `PS-2026-001` **complete and approved**; `PS-2026-002` **complete for the presentation foundation** |
-| Next goal | Commander review of the all-timeout Auditor result; any further runtime/provider diagnosis or experiment requires a new decision |
+| Next goal | Separate Commander execution decision for prepared plan `auditor-matched-local-operational-envelope-v1`; do not execute before authorization |
 
 ## Known stock-baseline issues
 
@@ -27,4 +27,4 @@ These are baseline findings, not Pine Star regressions. See [docs/BASELINE.md](d
 
 ## Next references
 
-[Working rules](AGENTS.md) · [Detailed status](docs/CURRENT_STATUS.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Current change](docs/change-records/PS-2026-067.md) · [Docs index](docs/INDEX.md)
+[Working rules](AGENTS.md) · [Detailed status](docs/CURRENT_STATUS.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Current change](docs/change-records/PS-2026-068.md) · [Docs index](docs/INDEX.md)

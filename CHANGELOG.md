@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-068 — Local Ollama operational envelope
+
+- Set local Ollama's first-response/header ceiling to 240,000 ms with zero pre-header retries; shorter explicit deadlines remain allowed, but callers cannot widen the ceiling or re-enable retries.
+- Preserved the shared 30-second/two-retry external-provider envelope, 300-second stream-idle watchdog, cancellation, E-stop, fallback, cost, audit, and configuration controls.
+- Prepared distinct non-executable Auditor plan `auditor-matched-local-operational-envelope-v1` with per-arm non-evidence pre-warm and six matched measurement slots. Execution still requires separate Commander authorization.
+
 ### PS-2026-067 — Auditor replacement measurement
 
 - Reconciled both PS-2026-066 pre-inference objectives as failed without inventing run, usage, cost, or measurement records.

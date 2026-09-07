@@ -93,6 +93,12 @@
     const priceFamily = (typeof opts.priceFamily === 'string' && opts.priceFamily.trim()) ? opts.priceFamily.trim() : null;
     const listPrices = (prices && typeof prices.priceOf === 'function') ? prices : null;
     const defaultEffort = String(opts.reasoningEffort || '');
+    // The factory may supply a provider-scoped first-response envelope. Today it does so only for local
+    // Ollama; absent values preserve the shared 30s connect guard and two pre-header retries exactly.
+    const connectTimeoutMs = Number.isFinite(opts.connectTimeoutMs) && opts.connectTimeoutMs > 0
+      ? Math.floor(opts.connectTimeoutMs) : undefined;
+    const preHeaderRetries = Number.isInteger(opts.preHeaderRetries) && opts.preHeaderRetries >= 0
+      ? Math.min(opts.preHeaderRetries, RETRY_DELAYS.length) : RETRY_DELAYS.length;
     // Static catalog fallback for endpoints with no usable /models (e.g. Perplexity, whose
     // /v1/models lists Agent-API models, not its chat-completions roster). Used only when the
     // live endpoint yields nothing — a real catalog always wins.
@@ -245,7 +251,7 @@
         let res;
         // Fresh connect guard per attempt; disarmed the instant the fetch settles so the ceiling can't abort
         // the streaming body (a connect expiry rejects as a `timeout`, a user-cancel as AbortError).
-        const guard = timeouts.connectGuard(signal);
+        const guard = timeouts.connectGuard(signal, connectTimeoutMs);
         try {
           res = await doFetch(baseUrl + chatPath, {
             method: 'POST',
@@ -255,7 +261,7 @@
           });
         } catch (e) {
           if (isAbort(e, signal)) throw e;
-          if (attempt < RETRY_DELAYS.length) { await delay(RETRY_DELAYS[attempt], signal); continue; }
+          if (attempt < preHeaderRetries) { await delay(RETRY_DELAYS[Math.min(attempt, RETRY_DELAYS.length - 1)], signal); continue; }
           throw provider.runtime.markPreStreamRetriesExhausted(e);
         } finally {
           guard.disarm();
@@ -273,7 +279,7 @@
         err.headers = res.headers;
         const cls = classifyApiError(err, { model: body.model });
         err.transient = cls.retryable;
-        if (cls.retryable && attempt < RETRY_DELAYS.length) { await delay(Math.min(60000, Math.max(RETRY_DELAYS[attempt], cls.retryAfterMs || 0)), signal); continue; }
+        if (cls.retryable && attempt < preHeaderRetries) { await delay(Math.min(60000, Math.max(RETRY_DELAYS[Math.min(attempt, RETRY_DELAYS.length - 1)], cls.retryAfterMs || 0)), signal); continue; }
         throw cls.retryable ? provider.runtime.markPreStreamRetriesExhausted(err) : err;
       }
     }

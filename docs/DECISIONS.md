@@ -10,6 +10,8 @@ many of these — they win on any wording conflict.
 
 ## Product
 
+- **Local Ollama uses a 240-second first-response operational ceiling with zero pre-header retries** (2026-09-07, Commander). This ceiling defines acceptable Pine Star runtime behavior; it does not guarantee every local model/workload completes. A ceiling timeout is truthful configuration-performance evidence. Shared external-provider timeout/retry behavior and the 300-second stream-idle watchdog remain unchanged.
+
 - **Bounded Commander-controlled self-improvement experiments are authorized** (2026-09-06, Commander). Experiment run approval is distinct from configuration activation: proposals must predeclare evidence, pairing, metrics, thresholds, limits, local reversible scope, rollback, and independent evaluation; execution remains protected, bounded, $0-spend, non-external, and non-recurring. A winning challenger may only become a review-required candidate and still needs a separate Commander activation decision.
 
 - **StarNet is for beginners and power users.** It is easier for beginners to use, never

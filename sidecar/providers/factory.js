@@ -71,6 +71,20 @@
       const mergedHeaders = (profile.extraHeaders || opts.headers)
         ? Object.assign({}, profile.extraHeaders || {}, opts.headers || {})
         : undefined;
+      // First-response timing may be widened only for the explicit local Ollama profile. Caller-supplied
+      // values are ignored for every external/custom OpenAI-compatible provider, preserving their shared
+      // 30s/two-retry envelope and preventing a generic runtime option from weakening paid-provider guards.
+      const localOllama = profile.id === 'ollama';
+      const ollamaConnectCeiling = localOllama && Number.isFinite(profile.connectTimeoutMs)
+        ? Math.floor(profile.connectTimeoutMs) : undefined;
+      const requestedConnectMs = Number.isFinite(opts.connectTimeoutMs) && opts.connectTimeoutMs > 0
+        ? Math.floor(opts.connectTimeoutMs) : ollamaConnectCeiling;
+      const ollamaConnectMs = localOllama
+        ? Math.min(requestedConnectMs, ollamaConnectCeiling) : undefined;
+      const requestedPreHeaderRetries = Number.isInteger(opts.preHeaderRetries) && opts.preHeaderRetries >= 0
+        ? opts.preHeaderRetries : profile.preHeaderRetries;
+      const ollamaPreHeaderRetries = localOllama
+        ? Math.min(requestedPreHeaderRetries, profile.preHeaderRetries) : undefined;
       return openaiCompatible.makeOpenAICompatibleProvider({
         fetch: opts.fetch,
         clock: opts.clock,
@@ -83,6 +97,8 @@
         chatPath: profile.chatPath,
         modelsPath: profile.modelsPath,
         reasoningEffort: opts.reasoningEffort,
+        connectTimeoutMs: ollamaConnectMs,
+        preHeaderRetries: ollamaPreHeaderRetries,
         // profile wire hints: does this endpoint document `reasoning_effort`, and is tool support
         // asserted/denied at the provider level (fallback when the catalog carries no capability data)?
         sendReasoningEffort: profile.wireReasoningEffort === true,
