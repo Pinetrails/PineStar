@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-071` — Auditor disagreement forensics — **V2 CONTRACT READY; EXPERIMENT NOT AUTHORIZED**
+**Current change:** `PS-2026-072` — Prepared repeated Auditor v2 plan — **NON-EXECUTABLE; EXECUTION NOT AUTHORIZED**
 
 | Item | Status |
 | --- | --- |
@@ -83,6 +83,7 @@
 | Operational-envelope Auditor execution | `PS-2026-069` binds the exact accepted PS-2026-068 plan/digest to a distinct one-shot host gate and receipt. The runner snapshots inputs once, preserves pair parity, pre-warms/releases each arm outside evidence, executes exactly six normal measured runs without retry/fallback, settles mechanically, evaluates independently, and cannot activate a configuration. |
 | Operational Auditor interrupted-run recovery | `PS-2026-070` truthfully reconciles the claimed first challenger slot after host-session termination, without inventing its missing run/measurement/evidence. Four slots are consumed, two were never launched, and the receipt-global sequential executor cannot safely resume them without repeating consumed slots. The existing receipt is failed; no evaluation or activation occurred. |
 | Auditor disagreement forensics | `PS-2026-071` found both completed responses were prose-wrapped rather than JSON-only and also contained wrong record counts and extraneous references. The v1 verifier behaved as implemented, but its undisclosed count/issue/reference semantics made the task contract unsuitable for decision-quality comparison. A non-executable v2 contract now makes every predicate explicit; historical evidence is unchanged. |
+| Prepared repeated Auditor v2 plan | `PS-2026-072` defines immutable plan `auditor-matched-local-v2-repeated-v1` and digest `8fd60778992aa9c478284d8c6bf338266579eddb9759cfb60e49ad4bc34fecd3`: three explicit v2 tasks, three repetitions per task per arm, 18 deterministic slots/nine pairs, immutable input and instruction hashes, strict provenance/evidence requirements, `$0`, and the unchanged Ollama envelope. It intentionally exposes no execution or receipt path. |
 
 ## Known baseline issues
 
@@ -97,4 +98,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-PS-2026-069 is permanently closed. Retain `operations-auditor.ollama-llama3.2-3b.v1`; do not resume/retry slots, change routing/champion/timeouts/evidence gates, or activate the challenger. Commander may separately authorize creation of a new bounded matched-experiment plan using `auditor-json-audit-v2`; no receipt, executable plan, or run is authorized. The Big Bite remains internally complete and must not be reopened.
+PS-2026-069 remains permanently closed. Retain `operations-auditor.ollama-llama3.2-3b.v1`. Prepared v2 plan `auditor-matched-local-v2-repeated-v1` exists only as immutable non-executable data; a separate exact digest-bound Commander decision is required before adding any execution capability or receipt. Do not run/pre-warm, resume/retry old slots, change routing/champion/timeouts/evidence gates, or activate the challenger. The Big Bite remains internally complete and must not be reopened.

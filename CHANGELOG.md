@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-072 — Prepared repeated Auditor v2 experiment plan
+
+- Added immutable non-executable plan `auditor-matched-local-v2-repeated-v1`, binding three v2 tasks, three repetitions per arm/task, 18 deterministic slots, nine matched pairs, fixed input hashes, and reproducible v2 instruction hashes.
+- Recorded strict `$0` local-Ollama operational, provenance, raw-output, independent-truth, uncertainty, pairing, and 90-minute maximum wall boundaries under canonical digest `8fd60778992aa9c478284d8c6bf338266579eddb9759cfb60e49ad4bc34fecd3`.
+- Exposed no execution, receipt, trigger, route, scheduling, objective, model, or measurement path; all historical evidence and production configuration remain unchanged.
+
 ### PS-2026-071 — Auditor disagreement forensics and v2 contract
 
 - Found both completed champion responses were prose-wrapped instead of JSON-only, with wrong record counts and extraneous references.
