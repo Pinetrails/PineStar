@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-068` — Local Ollama Operational Envelope — **COMPLETE; EXPERIMENT PREPARED, NOT AUTHORIZED**
+**Current change:** `PS-2026-069` — Operational-Envelope Auditor Experiment — **AUTHORIZED; RUNNER READY, NOT YET EXECUTED**
 
 | Item | Status |
 | --- | --- |
@@ -79,7 +79,8 @@
 | Sealed Auditor matched-measurement runner | `PS-2026-065` complete; a private digest-bound one-shot path runs only the authorized six local Ollama comparisons through normal objectives, `runOnce`, cancellation, run history, mechanical verification, and authoritative measurement settlement without roster mutation or rerun authority |
 | First authorized Auditor measurement attempt | `PS-2026-066` hardened the runner; the launch failed before inference on a missing event sink, produced zero runs/measurements/evaluation, and durably consumed the one-shot attempt. A new Commander decision is required before any new execution plan; the challenger remains inactive. |
 | Auditor replacement measurement | `PS-2026-067` reconciled both stranded objectives and executed the distinct replacement plan once. Six matched local Ollama runs all failed with provider-stream timeout, zero recorded tokens, and `$0` cost; evidence pairing is complete, the advisory evaluation retains the champion, and no candidate or activation exists. |
-| Local Ollama operational envelope | `PS-2026-068` gives Ollama alone a bounded 240,000 ms first-response/header deadline and zero pre-header retries. External-provider defaults, stream-idle protection, cancellation, E-stop, fallback, cost, audit, and configuration controls remain unchanged. A distinct six-run Auditor plan is prepared with non-evidence per-arm pre-warm but has no execution path or authorization. |
+| Local Ollama operational envelope | `PS-2026-068` gives Ollama alone a bounded 240,000 ms first-response/header deadline and zero pre-header retries. External-provider defaults, stream-idle protection, cancellation, E-stop, fallback, cost, audit, and configuration controls remain unchanged. It prepared the distinct six-run plan later authorized and bound by PS-2026-069. |
+| Operational-envelope Auditor execution | `PS-2026-069` binds the exact accepted PS-2026-068 plan/digest to a distinct one-shot host gate and receipt. The runner snapshots inputs once, preserves pair parity, pre-warms/releases each arm outside evidence, executes exactly six normal measured runs without retry/fallback, settles mechanically, evaluates independently, and cannot activate a configuration. |
 
 ## Known baseline issues
 
@@ -94,4 +95,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Stop at Commander execution review. Prepared plan `auditor-matched-local-operational-envelope-v1` (digest `a536bf0b3d6a1506548e83eb57a78536776552dc96a9ef93dd3cea1680b1a832`) is distinct from both consumed plans and is not executable or authorized. If separately authorized, it must snapshot inputs once, use one non-evidence pre-warm per arm, run three one-attempt matched measurements under the real 240-second Ollama ceiling, and release each arm without evidence; a ceiling timeout is a truthful failed measurement, not infrastructure invalidity. The Big Bite remains internally complete and must not be reopened.
+Execute plan `auditor-matched-local-operational-envelope-v1` exactly once under digest `a536bf0b3d6a1506548e83eb57a78536776552dc96a9ef93dd3cea1680b1a832`, then evaluate and stop. A 240-second first-response timeout is a truthful failed measurement. Do not replace runs, reactivate either consumed plan, mutate the roster, activate a candidate, or push. The Big Bite remains internally complete and must not be reopened.

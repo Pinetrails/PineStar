@@ -44,9 +44,110 @@ function canonical(value) {
   return JSON.stringify(value);
 }
 const PLAN_DIGEST = crypto.createHash('sha256').update(canonical(PLAN)).digest('hex');
+function sha(value) { return crypto.createHash('sha256').update(Buffer.isBuffer(value) ? value : String(value)).digest('hex'); }
 
 function instruction(task, inputHash) {
   return ['Pine Star authorized local Auditor measurement.', 'Task: ' + task.id, 'Input SHA-256: ' + inputHash, 'Inspect only the supplied JSON snapshot.', 'Return one JSON object only with keys validJson, recordCount, issueCount, evidenceRefs. evidenceRefs must be an array of exact JSON-pointer-like paths. Do not use tools, network, or external actions.'].join('\n');
+}
+
+function expected(taskId, bytes) {
+  let data;
+  try { data = JSON.parse(bytes.toString('utf8')); }
+  catch (_) { return { validJson: false, recordCount: 0, issueCount: 1, evidenceRefs: ['$:invalid-json'] }; }
+  const refs = [];
+  if (taskId === 'objective-store-audit') {
+    const rows = Array.isArray(data) ? data : [];
+    rows.forEach((row, index) => {
+      if (!row || row.schema !== 'pine-star.objective.v1' || !row.id || !row.status) refs.push('$[' + index + ']:schema-state');
+      if (row && row.status === 'completed' && !(Array.isArray(row.completionEvidenceRefs) && row.completionEvidenceRefs.length)) refs.push('$[' + index + ']:missing-completion-evidence');
+    });
+    return { validJson: true, recordCount: rows.length, issueCount: refs.length, evidenceRefs: refs };
+  }
+  if (taskId === 'shared-report-audit') {
+    const rows = Array.isArray(data) ? data : [];
+    rows.forEach((row, index) => {
+      if (!row || !row.id || !row.type) refs.push('$[' + index + ']:schema');
+      (Array.isArray(row && row.sourceRefs) ? row.sourceRefs : []).forEach((ref, refIndex) => {
+        if (!String(ref || '').trim() || String(ref).length > 500) refs.push('$[' + index + '].sourceRefs[' + refIndex + ']:invalid');
+      });
+    });
+    return { validJson: true, recordCount: rows.length, issueCount: refs.length, evidenceRefs: refs };
+  }
+  const agents = Array.isArray(data && data.agents) ? data.agents : [];
+  const audit = Array.isArray(data && data.configurationAudit) ? data.configurationAudit : [];
+  const agent = agents.find((row) => row && Array.isArray(row.systemRoleIds) && row.systemRoleIds.includes(PLAN.roleId));
+  if (!agent || agent.configurationId !== PLAN.champion.configurationId || agent.provider !== PLAN.provider || agent.model !== PLAN.champion.model) refs.push('$.agents:champion-binding');
+  const last = audit[audit.length - 1];
+  const snap = last && Array.isArray(last.configurations) && last.configurations.find((row) => row.agentId === (agent && agent.agentId));
+  if (!snap || snap.configurationId !== (agent && agent.configurationId) || snap.provider !== (agent && agent.provider) || snap.model !== (agent && agent.model)) refs.push('$.configurationAudit:inconsistent');
+  return { validJson: true, recordCount: agents.length, issueCount: refs.length, evidenceRefs: refs };
+}
+
+function parseModel(text) {
+  try {
+    const value = JSON.parse(String(text || '').trim().replace(/^```json\s*|\s*```$/g, ''));
+    return { validJson: !!value.validJson, recordCount: Number(value.recordCount), issueCount: Number(value.issueCount), evidenceRefs: Array.isArray(value.evidenceRefs) ? value.evidenceRefs.map(String) : [] };
+  } catch (_) { return null; }
+}
+
+function sealedRunOptions(spec) {
+  return { key: '', model: spec.model, provider: PLAN.provider, configurationId: spec.configurationId, fallbackModels: [], fallbackProviders: [], keyPool: [], isTask: false, reflect: false, emit: function () {} };
+}
+
+function validateAuthorization(input) {
+  const value = input || {};
+  if (value.planDigest !== PLAN_DIGEST || value.planId !== PLAN.planId) throw new Error('authorized operational-envelope plan identity mismatch');
+  if (value.authorityChangeId !== 'PS-2026-069' || value.provider !== PLAN.provider || value.maximumCostUsd !== 0) throw new Error('exact Commander execution authority required');
+  if (value.connectTimeoutMs !== 240000 || value.preHeaderRetries !== 0 || value.retries !== 0 || value.recurrence !== false) throw new Error('authorized operational envelope mismatch');
+  if (value.roleId !== PLAN.roleId || value.championConfigurationId !== PLAN.champion.configurationId || value.challengerConfigurationId !== PLAN.challenger.configurationId) throw new Error('authorized role/configuration mismatch');
+  return true;
+}
+
+function claimAttempt(fs, receiptFile, body) {
+  const fd = fs.openSync(receiptFile, 'wx');
+  try { fs.writeFileSync(fd, JSON.stringify(body, null, 2)); fs.fsyncSync(fd); }
+  finally { fs.closeSync(fd); }
+}
+
+async function preflight(deps, input) {
+  validateAuthorization(input);
+  if (!deps || deps.halted() || deps.rosterChanged()) throw new Error('E-stop or champion roster parity blocks measurement');
+  const hashes = [];
+  for (const task of PLAN.tasks) {
+    const snap = await deps.snapshot(task);
+    if (!snap || !Buffer.isBuffer(snap.bytes) || sha(snap.bytes) !== snap.hash) throw new Error('input parity cannot be proven');
+    hashes.push({ taskId: task.id, inputHash: snap.hash, instructionHash: sha(instruction(task, snap.hash)) });
+  }
+  return { planId: PLAN.planId, planDigest: PLAN_DIGEST, tasks: hashes, modelRuns: 0, prewarms: 0, measurements: 0 };
+}
+
+async function execute(deps, input) {
+  validateAuthorization(input);
+  if (!deps || deps.halted() || deps.rosterChanged()) throw new Error('E-stop or champion roster parity blocks measurement');
+  const snapshots = new Map();
+  for (const task of PLAN.tasks) {
+    const snap = await deps.snapshot(task);
+    if (!snap || !Buffer.isBuffer(snap.bytes) || sha(snap.bytes) !== snap.hash) throw new Error('input parity cannot be proven');
+    snapshots.set(task.id, snap);
+  }
+  const runs = [], prewarms = [], releases = [];
+  for (const arm of ['champion', 'challenger']) {
+    if (deps.halted() || deps.rosterChanged()) throw new Error('E-stop or champion roster parity blocks measurement');
+    const config = PLAN[arm];
+    prewarms.push(await deps.prewarm({ arm, configurationId: config.configurationId, model: config.model, evidence: false }));
+    try {
+      for (const task of PLAN.tasks) {
+        if (deps.halted() || deps.rosterChanged()) throw new Error('E-stop or champion roster parity blocks measurement');
+        const snapshot = snapshots.get(task.id), prompt = instruction(task, snapshot.hash), instructionHash = sha(prompt);
+        const result = await deps.run({ planId: PLAN.planId, planDigest: PLAN_DIGEST, roleId: PLAN.roleId, provider: PLAN.provider, arm, configurationId: config.configurationId, model: config.model, task, snapshot, prompt, instructionHash });
+        const mechanical = expected(task.id, snapshot.bytes), claimed = parseModel(result.modelText), agreement = !!claimed && canonical(claimed) === canonical(mechanical);
+        runs.push(await deps.settle(Object.assign({}, result, { taskId: task.id, inputHash: snapshot.hash, instructionHash, mechanical, claimed, agreement, arm, configurationId: config.configurationId, provider: PLAN.provider, model: config.model })));
+      }
+    } finally {
+      releases.push(await deps.release({ arm, configurationId: config.configurationId, model: config.model, evidence: false }));
+    }
+  }
+  return { planId: PLAN.planId, planDigest: PLAN_DIGEST, prewarms, runs, releases };
 }
 
 function preparedSequence() {
@@ -72,4 +173,4 @@ function assertPreparedPlan() {
   return true;
 }
 
-module.exports = { PLAN, PLAN_DIGEST, canonical, instruction, preparedSequence, assertPreparedPlan };
+module.exports = { PLAN, PLAN_DIGEST, canonical, sha, instruction, expected, parseModel, sealedRunOptions, validateAuthorization, claimAttempt, preflight, execute, preparedSequence, assertPreparedPlan };
