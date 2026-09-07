@@ -159,3 +159,4 @@ The StarNet entries above are retained as upstream architectural history, not au
 | 2026-08-26 | Pursue the GBA-era top-down world after functional foundations stabilize. | Preserve experience direction without destabilizing core systems. |
 | 2026-08-26 | Keep code-level self-improvement controlled and reviewable. | Inspect, change, test, review, keep/revert, and log; initial merges stay user-controlled. |
 | 2026-08-26 | Track intentional changes with `PS-YYYY-###`. | Connect technical changes to rationale, evidence, and outcomes. |
+| 2026-09-06 | Reconcile the consumed pre-inference Auditor attempt and authorize one distinct six-run local replacement plan. | Preserve the original receipt, append truthful failed lifecycle outcomes, bind a new plan/digest/receipt, retain the active champion, keep the challenger inactive, and stop after evaluation. |

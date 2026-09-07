@@ -1,0 +1,10 @@
+'use strict';
+const fs=require('fs'), path=require('path'), A=require('./_assert.js'), {normalizeRunEmitter}=require('../sidecar/run-emitter.js');
+let seen=''; const supplied=(name)=>{seen=name;};
+A.eq(normalizeRunEmitter(supplied),supplied,'normal execution emitter identity is preserved');
+normalizeRunEmitter(null)('agent.run.start',{});
+normalizeRunEmitter(undefined)('agent.run.end',{});
+normalizeRunEmitter(supplied)('agent.run.start',{});
+A.eq(seen,'agent.run.start','normalized emitter is callable through the runOnce event contract');
+A.ok(fs.readFileSync(path.join(__dirname,'..','sidecar','index.js'),'utf8').includes('const rawEmit = normalizeRunEmitter(o.emit);'),'actual runOnce path normalizes its emitter before use');
+A.report('run-emitter.test');

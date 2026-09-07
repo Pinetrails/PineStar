@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-066` — Auditor Runner Fail-Closed Hardening — **COMPLETE; MEASUREMENT BLOCKED PENDING NEW COMMANDER DECISION**
+**Current change:** `PS-2026-067` — Auditor Replacement Measurement — **COMPLETE; RETAIN CHAMPION**
 
 | Item | Status |
 | --- | --- |
@@ -78,6 +78,7 @@
 | Auditor runtime champion baseline | `PS-2026-064` complete; the canonical roster actively binds `operations.auditor` to the installed local Ollama `llama3.2:3b` configuration with `$0` external cost, ask-mode approval, trusted-project scope, and durable non-secret audit provenance |
 | Sealed Auditor matched-measurement runner | `PS-2026-065` complete; a private digest-bound one-shot path runs only the authorized six local Ollama comparisons through normal objectives, `runOnce`, cancellation, run history, mechanical verification, and authoritative measurement settlement without roster mutation or rerun authority |
 | First authorized Auditor measurement attempt | `PS-2026-066` hardened the runner; the launch failed before inference on a missing event sink, produced zero runs/measurements/evaluation, and durably consumed the one-shot attempt. A new Commander decision is required before any new execution plan; the challenger remains inactive. |
+| Auditor replacement measurement | `PS-2026-067` reconciled both stranded objectives and executed the distinct replacement plan once. Six matched local Ollama runs all failed with provider-stream timeout, zero recorded tokens, and `$0` cost; evidence pairing is complete, the advisory evaluation retains the champion, and no candidate or activation exists. |
 
 ## Known baseline issues
 
@@ -92,4 +93,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Implement the smallest bounded isolated evaluation-run mechanism that can write PS-2026-062 measurements from observed Pine Star objective/run facts while leaving the active champion and production routing unchanged. Then prepare the safest real matched plan and stop at any protected execution, credential, provider, activation, external-action, or spending decision. The Big Bite remains internally complete and must not be reopened.
+Stop at Commander review. The first complete matched evidence set shows both Auditor configurations failing all three tasks by provider-stream timeout. Any timeout diagnosis, runtime-envelope change, or new experiment requires a separate bounded decision. The Big Bite remains internally complete and must not be reopened.

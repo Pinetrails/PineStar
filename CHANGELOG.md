@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-067 — Auditor replacement measurement
+
+- Reconciled both PS-2026-066 pre-inference objectives as failed without inventing run, usage, cost, or measurement records.
+- Normalized the documented optional `runOnce` emitter contract, added a no-inference preflight, and created a distinct digest-bound replacement plan and receipt linked to the consumed plan.
+- Executed six exact local Ollama runs once: all six timed out at the provider stream, produced no model result or token telemetry, cost `$0`, and failed mechanical agreement. Matched evidence was complete; evaluation retained the champion and created no candidate.
+
 ### PS-2026-066 — Auditor runner fail-closed hardening
 
 - Sealed the authorized measurement run against configured fallbacks, key rotation, tool exposure, auxiliary model work, model substitution, recovery attempts, and uncertain mutations.
