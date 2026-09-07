@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-070` — Operational Auditor recovery — **INTERRUPTED ATTEMPT RECONCILED; STOPPED**
+**Current change:** `PS-2026-071` — Auditor disagreement forensics — **V2 CONTRACT READY; EXPERIMENT NOT AUTHORIZED**
 
 | Item | Status |
 | --- | --- |
@@ -82,6 +82,7 @@
 | Local Ollama operational envelope | `PS-2026-068` gives Ollama alone a bounded 240,000 ms first-response/header deadline and zero pre-header retries. External-provider defaults, stream-idle protection, cancellation, E-stop, fallback, cost, audit, and configuration controls remain unchanged. It prepared the distinct six-run plan later authorized and bound by PS-2026-069. |
 | Operational-envelope Auditor execution | `PS-2026-069` binds the exact accepted PS-2026-068 plan/digest to a distinct one-shot host gate and receipt. The runner snapshots inputs once, preserves pair parity, pre-warms/releases each arm outside evidence, executes exactly six normal measured runs without retry/fallback, settles mechanically, evaluates independently, and cannot activate a configuration. |
 | Operational Auditor interrupted-run recovery | `PS-2026-070` truthfully reconciles the claimed first challenger slot after host-session termination, without inventing its missing run/measurement/evidence. Four slots are consumed, two were never launched, and the receipt-global sequential executor cannot safely resume them without repeating consumed slots. The existing receipt is failed; no evaluation or activation occurred. |
+| Auditor disagreement forensics | `PS-2026-071` found both completed responses were prose-wrapped rather than JSON-only and also contained wrong record counts and extraneous references. The v1 verifier behaved as implemented, but its undisclosed count/issue/reference semantics made the task contract unsuitable for decision-quality comparison. A non-executable v2 contract now makes every predicate explicit; historical evidence is unchanged. |
 
 ## Known baseline issues
 
@@ -96,4 +97,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-Execute plan `auditor-matched-local-operational-envelope-v1` exactly once under digest `a536bf0b3d6a1506548e83eb57a78536776552dc96a9ef93dd3cea1680b1a832`, then evaluate and stop. A 240-second first-response timeout is a truthful failed measurement. Do not replace runs, reactivate either consumed plan, mutate the roster, activate a candidate, or push. The Big Bite remains internally complete and must not be reopened.
+PS-2026-069 is permanently closed. Retain `operations-auditor.ollama-llama3.2-3b.v1`; do not resume/retry slots, change routing/champion/timeouts/evidence gates, or activate the challenger. Commander may separately authorize creation of a new bounded matched-experiment plan using `auditor-json-audit-v2`; no receipt, executable plan, or run is authorized. The Big Bite remains internally complete and must not be reopened.

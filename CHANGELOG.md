@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-071 — Auditor disagreement forensics and v2 contract
+
+- Found both completed champion responses were prose-wrapped instead of JSON-only, with wrong record counts and extraneous references.
+- Preserved all historical outcomes; recorded v1's hidden count/issue/reference semantics as a task-contract defect rather than weakening its verifier.
+- Added a non-executable v2 contract with distinct task identities, explicit predicates and output invariants, plus synthetic regression tests.
+
 ### PS-2026-070 — Operational Auditor interrupted-run recovery
 
 - Added exact fail-closed reconciliation for the stranded first challenger objective after independently verified process death and absent run/measurement/evidence provenance.

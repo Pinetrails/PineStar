@@ -1,0 +1,17 @@
+'use strict';
+const A = require('./_assert.js');
+const V2 = require('../sidecar/auditor-json-audit-v2.js');
+const champion = { configurationId: 'operations-auditor.ollama-llama3.2-3b.v1', provider: 'ollama', model: 'llama3.2:3b' };
+const reports = Buffer.from(JSON.stringify([{ id: 'r1', type: 'audit', sourceRefs: ['ok'] }, { id: 'r2', type: 'audit', sourceRefs: [''] }]));
+const truth = { validJson: true, recordCount: 2, issueCount: 1, evidenceRefs: ['$[1].sourceRefs[0]:invalid'] };
+A.eq(V2.expected('shared-report-audit-v2', reports, champion), truth, 'shared-report contract is deterministic');
+A.eq(V2.parseModel(JSON.stringify(truth)), truth, 'exact raw result parses');
+A.eq(V2.parseModel('Here is the result: ' + JSON.stringify(truth)), null, 'prose wrapper fails');
+A.eq(V2.parseModel('```json\n' + JSON.stringify(truth) + '\n```'), null, 'Markdown wrapper fails');
+A.eq(V2.parseModel('{"validJson":true,"recordCount":2,"issueCount":0,"evidenceRefs":["$[1]:bad"]}'), null, 'count/reference mismatch fails');
+A.eq(V2.parseModel('{"validJson":true,"recordCount":2,"issueCount":0,"evidenceRefs":[],"extra":1}'), null, 'extra keys fail');
+const roster = Buffer.from(JSON.stringify({ agents: [{ agentId: 'a', systemRoleIds: ['operations.auditor'], configurationId: champion.configurationId, provider: champion.provider, model: champion.model }], configurationAudit: [{ configurations: [{ agentId: 'a', configurationId: champion.configurationId, provider: champion.provider, model: champion.model }] }] }));
+A.eq(V2.expected('runtime-roster-audit-v2', roster, champion), { validJson: true, recordCount: 1, issueCount: 0, evidenceRefs: [] }, 'roster truth is explicit');
+A.ok(V2.instruction('runtime-roster-audit-v2', 'abc', champion).includes('recordCount means $.agents array length'), 'roster counting semantics are stated');
+A.ok(V2.instruction('shared-report-audit-v2', 'abc', champion).includes('$[i].sourceRefs[j]:invalid'), 'issue markers are stated');
+A.report('auditor-json-audit-v2.test');
