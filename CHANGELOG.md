@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-070 — Operational Auditor interrupted-run recovery
+
+- Added exact fail-closed reconciliation for the stranded first challenger objective after independently verified process death and absent run/measurement/evidence provenance.
+- Preserved the claimed slot as consumed, recorded inference and token usage as `UNKNOWN`, and closed the original receipt as failed without fabricating evidence.
+- Determined that the two never-launched slots cannot be resumed by the receipt-global sequential executor without repeating consumed work; no inference or evaluation was launched.
+
 ### PS-2026-069 — Operational-envelope Auditor experiment execution
 
 - Bound the exact prepared plan/digest to a distinct host-only one-shot execution gate and receipt without reopening either consumed predecessor.
