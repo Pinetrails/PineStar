@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-075 — Alpha 1 dev-origin CORS parity
+
+- Allowed the exact Tauri CLI development WebView origin `http://127.0.0.1:1430` only for sidecars launched by a debug desktop shell; packaged Tauri origins remain unchanged and release-shaped sidecars reject the dev origin.
+- Preserved exact-origin reflection, loopback Host validation, and per-launch `X-StarNet-Token` authentication; arbitrary loopback ports, the unowned `localhost:1430` variant, external origins, and wildcard CORS remain rejected.
+- Live `desktop:dev` verification returned 204 for the authenticated-header preflight and 200 for protected `/api/save` and `/api/loops` requests using the actual dev origin. No workspace or station data was created or reset.
+
 ### PS-2026-074 — Alpha 1 desktop sidecar authentication bridge fix
 
 - Fixed the Tauri initialization bridge to attach the current per-launch `X-StarNet-Token` only when centrally routing app-origin `/api` requests to the private loopback sidecar.

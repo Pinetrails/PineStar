@@ -9,22 +9,22 @@ Pine Star is built on StarNet, its upstream technical foundation.
 | Previous phase | **Phase 1 — Stock StarNet Baseline — COMPLETE** |
 | Current phase | **Phase 6 — Business System foundation (earlier adapter work remains)** |
 | Last milestone | `PS-2026-001` documentation/governance foundation committed and pushed as `1c2ef0d4` |
-| Current change | `PS-2026-074` — Alpha 1 desktop sidecar authentication bridge fix — **COMPLETE** |
+| Current change | `PS-2026-075` — Alpha 1 dev-origin CORS parity — **COMPLETE** |
 | Application source modified yet | **Yes — presentation-only frontend identity in the first PS-2026-002 batch** |
 | Packaged desktop baseline | **PASS** |
 | Fresh onboarding baseline | **PASS** |
 | Documentation state | `PS-2026-001` **complete and approved**; `PS-2026-002` **complete for the presentation foundation** |
-| Next goal | Confirm in Alpha that the authenticated desktop bridge clears STATION DATA UNREACHABLE and reaches the legitimate active station or first-run state |
+| Next goal | Complete the attended Alpha UI check that STATION DATA UNREACHABLE clears and the legitimate active station or first-run state renders |
 
 ## Known stock-baseline issues
 
 - `test:fast`: the checkpoint test's function-extraction regex did not match the baseline source even though `checkpointsEnabledFromEnv` is present; see the evidence-qualified detail in `docs/BASELINE.md`.
 - `desktop:dev`: voice-dependency staging omission.
-- `desktop:dev`: frontend-origin/sidecar API-auth mismatch fixed by `PS-2026-074`; live Alpha confirmation remains.
+- `desktop:dev`: missing API authentication was fixed by `PS-2026-074`; exact dev-WebView CORS parity was fixed and transport-verified by `PS-2026-075`.
 - Packaged build: StarNet updater private signing key unavailable to the fork.
 
 These are baseline findings, not Pine Star regressions. See [docs/BASELINE.md](docs/BASELINE.md).
 
 ## Next references
 
-[Working rules](AGENTS.md) · [Detailed status](docs/CURRENT_STATUS.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Current change](docs/change-records/PS-2026-074.md) · [Docs index](docs/INDEX.md)
+[Working rules](AGENTS.md) · [Detailed status](docs/CURRENT_STATUS.md) · [Roadmap](docs/ROADMAP.md) · [Decisions](docs/DECISIONS.md) · [Current change](docs/change-records/PS-2026-075.md) · [Docs index](docs/INDEX.md)

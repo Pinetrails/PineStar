@@ -1723,6 +1723,11 @@ fn sidecar_command(state: &AppState, entry: &Path, node: &Path) -> Command {
         )
         .env("STARNET_BUILD_DIRTY", env!("STARNET_BUILD_DIRTY"))
         .current_dir(&state.root);
+    // `tauri dev` serves this frontendDist-only app from its fixed loopback development origin.
+    // The marker is compile-time bounded: release/package builds never put it in the sidecar environment.
+    if cfg!(debug_assertions) {
+        set_sidecar_branded_env(&mut cmd, "STARNET_TAURI_DEV", "1");
+    }
     set_sidecar_branded_env(&mut cmd, "SKYNET_PORT", state.port.to_string());
     set_sidecar_branded_env(&mut cmd, "SKYNET_IPC_TOKEN", &state.ipc_token);
     set_sidecar_branded_env(&mut cmd, "SKYNET_API_TOKEN", &state.api_token);

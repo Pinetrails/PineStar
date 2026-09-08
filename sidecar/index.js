@@ -353,6 +353,9 @@ const DEV_MODE = /^(1|true|yes|on)$/i.test(String(ENV('DEV') || '').trim());
 // parent process), so only then do channel bot tokens live in the keychain instead of plaintext secrets.json.
 // The bare sidecar (npm start / tests / headless deploy) never sets this and HONESTLY keeps the plaintext path.
 const DESKTOP_SHELL = /^(1|true|yes|on)$/i.test(String(ENV('DESKTOP_SHELL') || '').trim());
+// The native host sets TAURI_DEV only from a Rust debug build. Requiring both signals keeps the fixed
+// Tauri CLI development origin out of packaged/release sidecars and ordinary manual sidecar launches.
+const TAURI_DEV = DESKTOP_SHELL && /^(1|true|yes|on)$/i.test(String(ENV('TAURI_DEV') || '').trim());
 // API auth/guard DECISIONS live in the unit-tested ./apiauth.js (full threat model documented there);
 // index.js keeps only the thin res-writing wrappers below. Hardened posture: EVERY /api/* route now requires
 // the per-launch token (GET data routes included) except a small header-less set. Native media/file loads
@@ -361,7 +364,7 @@ const apiauth = require('./apiauth.js');
 const { isAllowedApiOrigin, isAllowedHost, requiresApiToken, TAURI_ORIGINS } = apiauth;
 function applyApiCors(req, res) {
   const origin = String(req.headers.origin || '');
-  if (origin && isAllowedApiOrigin(origin, PORT)) {
+  if (origin && isAllowedApiOrigin(origin, PORT, TAURI_DEV)) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
   }
@@ -371,7 +374,7 @@ function applyApiCors(req, res) {
 }
 function rejectApi(req, res) {
   if (!isAllowedHost(req.headers.host)) { res.writeHead(403); res.end('forbidden host'); return true; }
-  if (!isAllowedApiOrigin(String(req.headers.origin || ''), PORT)) { res.writeHead(403); res.end('forbidden origin'); return true; }
+  if (!isAllowedApiOrigin(String(req.headers.origin || ''), PORT, TAURI_DEV)) { res.writeHead(403); res.end('forbidden origin'); return true; }
   return false;
 }
 function rejectBadApiToken(req, res) {

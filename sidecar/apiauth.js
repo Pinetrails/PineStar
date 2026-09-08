@@ -20,14 +20,18 @@ const nodeCrypto = require('node:crypto');
 
 // the desktop (Tauri) build serves the bundled UI from a custom-scheme origin, not the loopback http origin.
 const TAURI_ORIGINS = new Set(['tauri://localhost', 'http://tauri.localhost', 'https://tauri.localhost', 'app://localhost']);
+// `tauri dev` serves a frontendDist-only app from this fixed Tauri CLI origin. It is admitted only when
+// the desktop host's debug build marks the sidecar as its development child (see index.js/main.rs).
+const TAURI_DEV_ORIGIN = 'http://127.0.0.1:1430';
 function loopbackOrigins(port) { return new Set(['http://127.0.0.1:' + port, 'http://localhost:' + port]); }
 
 // Is this Origin one of ours? Absent Origin is allowed HERE because same-origin GETs and non-browser clients
 // omit it — but those callers are still gated by requiresApiToken (the token, not the origin, is their fence).
-function isAllowedApiOrigin(origin, port) {
+function isAllowedApiOrigin(origin, port, allowTauriDevOrigin) {
   if (!origin) return true;
   if (origin === 'null') return false;                 // file:/sandboxed origins are never the app
-  return loopbackOrigins(port).has(origin) || TAURI_ORIGINS.has(origin);
+  return loopbackOrigins(port).has(origin) || TAURI_ORIGINS.has(origin) ||
+    (allowTauriDevOrigin === true && origin === TAURI_DEV_ORIGIN);
 }
 // Host must be loopback — this is the DNS-rebinding defense (a rebinding attacker's forged Host fails here).
 function isAllowedHost(host) {
@@ -98,5 +102,5 @@ function queryTokenRoute(req) {
 
 module.exports = {
   isAllowedApiOrigin, isAllowedHost, requiresApiToken, apiTokenOk, queryTokenOk, queryTokenRoute,
-  headerToken, queryToken, constTimeEq, pathOf, loopbackOrigins, TAURI_ORIGINS, TOKEN_EXEMPT
+  headerToken, queryToken, constTimeEq, pathOf, loopbackOrigins, TAURI_ORIGINS, TAURI_DEV_ORIGIN, TOKEN_EXEMPT
 };

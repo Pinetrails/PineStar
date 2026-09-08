@@ -110,9 +110,13 @@ A.eq(auth.isAllowedApiOrigin('', PORT), true, 'absent origin allowed (token is t
 A.eq(auth.isAllowedApiOrigin('http://127.0.0.1:' + PORT, PORT), true, 'loopback origin allowed');
 A.eq(auth.isAllowedApiOrigin('http://localhost:' + PORT, PORT), true, 'localhost origin allowed');
 A.eq(auth.isAllowedApiOrigin('tauri://localhost', PORT), true, 'desktop (tauri) origin allowed');
+A.eq(auth.isAllowedApiOrigin(auth.TAURI_DEV_ORIGIN, PORT), false, 'Tauri dev origin is rejected without the development condition');
+A.eq(auth.isAllowedApiOrigin(auth.TAURI_DEV_ORIGIN, PORT, true), true, 'fixed Tauri dev origin is allowed under the development condition');
 A.eq(auth.isAllowedApiOrigin('https://evil.example', PORT), false, 'foreign web origin rejected');
 A.eq(auth.isAllowedApiOrigin('null', PORT), false, 'null/sandboxed origin rejected');
 A.eq(auth.isAllowedApiOrigin('http://127.0.0.1:1234', PORT), false, 'wrong-port loopback origin rejected');
+A.eq(auth.isAllowedApiOrigin('http://localhost:1430', PORT, true), false, 'unowned localhost variant is rejected in Tauri development');
+A.eq(auth.isAllowedApiOrigin('http://127.0.0.1:1431', PORT, true), false, 'arbitrary 127.0.0.1 dev port is rejected');
 
 // ---- isAllowedHost: DNS-rebinding defense ----
 A.eq(auth.isAllowedHost('127.0.0.1:' + PORT), true, 'loopback host allowed');

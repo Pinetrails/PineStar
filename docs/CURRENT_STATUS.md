@@ -4,11 +4,11 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-074` — Alpha 1 desktop sidecar authentication bridge fix — **COMPLETE; LIVE ALPHA CONFIRMATION PENDING**
+**Current change:** `PS-2026-075` — Alpha 1 dev-origin CORS parity — **COMPLETE; ATTENDED UI CONFIRMATION PENDING**
 
 | Item | Status |
 | --- | --- |
-| Alpha 1 desktop authentication | `PS-2026-074` fixes the Tauri fetch bridge that routed `/api/*` to a healthy private sidecar without attaching its per-launch token. Routed API calls now merge `X-StarNet-Token` into caller headers; external and non-API requests never receive it. Existing narrow CORS, 403 hard-failure, SAVE-UNKNOWN, and same-token restart contracts remain intact. |
+| Alpha 1 desktop transport | `PS-2026-074` repaired missing desktop API authentication. The resulting authenticated request exposed a second dev-only transport issue: the Tauri dev WebView origin was `http://127.0.0.1:1430` while sidecar CORS only recognized the packaged Tauri origin. `PS-2026-075` admits exactly that origin only for a debug desktop-shell child; packaged behavior, token enforcement, and SAVE-UNKNOWN remain intact. Live dev-sidecar preflight plus protected `/api/save` and `/api/loops` reads pass; the final attended UI-state observation remains. |
 | Last completed milestone | Clean stock StarNet baseline tagged `starnet-baseline-0.10.10` |
 | Application source modified yet | **Yes — presentation-only frontend identity in PS-2026-002 batch 1** |
 | Packaged desktop | **PASS** |
@@ -92,7 +92,7 @@
 
 1. `test:fast` reported `FAIL: index.js defines checkpointsEnabledFromEnv`. At baseline commit `56c3848e`, the function is present in `sidecar/index.js`. The test extracts it with a regex that expects an unindented closing brace, while the implementation's closing brace is indented. The inspected evidence therefore supports a test/source formatting mismatch, not an absent implementation symbol; no broader cause is asserted here.
 2. `desktop:dev` omits required voice-dependency staging; manual staging allowed launch.
-3. The dev frontend origin did not satisfy the private sidecar origin/token API path, despite direct sidecar HTTP 200.
+3. The stock dev frontend origin did not satisfy the private sidecar origin/token API path. `PS-2026-074` and `PS-2026-075` now repair authentication and exact dev-origin CORS compatibility respectively; attended UI confirmation remains.
 4. The fork lacks StarNet's private updater signing key; application/NSIS compilation succeeded but updater signing could not.
 
 These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](BASELINE.md).

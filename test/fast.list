@@ -132,6 +132,7 @@ test/cloudsavecore.test.js
 test/cloudsave-refusal.test.js
 test/cloudsave-unknown.test.js
 test/desktop-api-bridge.test.js
+test/sidecar-dev-cors.test.js
 test/freshstart.test.js
 test/desktop-fresh-start-contract.test.js
 test/cloudsave-unload.test.js
