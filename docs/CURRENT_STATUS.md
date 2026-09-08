@@ -4,7 +4,7 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-072` — Repeated Auditor v2 experiment — **COMPLETE; STOPPED BEFORE ACTIVATION**
+**Current change:** `PS-2026-073` — Auditor deterministic-fact boundary — **COMPLETE; READY FOR ALPHA 1 HANDS-ON TESTING**
 
 | Item | Status |
 | --- | --- |
@@ -85,6 +85,7 @@
 | Auditor disagreement forensics | `PS-2026-071` found both completed responses were prose-wrapped rather than JSON-only and also contained wrong record counts and extraneous references. The v1 verifier behaved as implemented, but its undisclosed count/issue/reference semantics made the task contract unsuitable for decision-quality comparison. A non-executable v2 contract now makes every predicate explicit; historical evidence is unchanged. |
 | Prepared repeated Auditor v2 plan | `PS-2026-072` defines immutable plan `auditor-matched-local-v2-repeated-v1` and digest `8fd60778992aa9c478284d8c6bf338266579eddb9759cfb60e49ad4bc34fecd3`: three explicit v2 tasks, three repetitions per task per arm, 18 deterministic slots/nine pairs, immutable input and instruction hashes, strict provenance/evidence requirements, `$0`, and the unchanged Ollama envelope. It intentionally exposes no execution or receipt path. |
 | Repeated Auditor v2 execution | Commander authorized the exact PS-2026-072 digest. A sealed durable worker executed exactly 18 local Ollama slots with complete nine-pair identity evidence: champion 0/9 correct, challenger 3/9 correct; formatting 5/9 versus 7/9; timeouts 1 versus 2. Challenger alone reached 3/3 on roster audit but both arms were 0/3 on the two larger tasks. Evidence is complete for the plan, the champion remains active, the challenger remains inactive, and no candidate was created. |
+| Auditor hybrid verification boundary | `PS-2026-073` records the accepted retain/no-candidate decision without claiming champion adequacy. Normal Auditor objective creation now deterministically verifies and persists exact target-record facts using the v2 verifier before model work; model output is restricted to separately labeled interpretation, uncertainty, and follow-up, and deterministic report composition refuses model-authored verified facts. |
 
 ## Known baseline issues
 
@@ -99,4 +100,4 @@ These are stock-baseline findings, not Pine Star regressions. See [BASELINE.md](
 
 ## Next development goal
 
-PS-2026-072 is complete and its receipt is closed after exactly 18 terminal slots. Retain `operations-auditor.ollama-llama3.2-3b.v1`; keep the challenger inactive and create no configuration candidate. Do not rerun or resume any PS-2026-072 slot. Any new experiment, candidate, routing change, or activation requires a new exact Commander decision. The Big Bite remains internally complete and must not be reopened.
+Begin Alpha 1 hands-on testing of the existing local/internal Auditor workflow and hybrid report presentation. Verify that real audit objectives preserve the authoritative verified-fact block while model interpretation remains clearly advisory. Retain `operations-auditor.ollama-llama3.2-3b.v1`, keep the challenger inactive, and do not create a candidate or rerun PS-2026-072. This is hands-on test readiness, not release/publication authority or a claim that champion quality is adequate.

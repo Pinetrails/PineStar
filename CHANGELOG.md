@@ -4,6 +4,13 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-073 — Auditor deterministic-fact boundary
+
+- Durably recorded the Commander acceptance of `retain_champion_no_candidate`: the current Auditor champion remains active, the challenger remains inactive, no candidate exists, and the closed PS-2026-072 evidence is unchanged.
+- Reused `auditor-json-audit-v2` during normal Auditor objective creation so exact target-record facts are computed and persisted before model work.
+- Added a hybrid report contract that carries authoritative verified facts unchanged and limits model output to separately labeled interpretation, uncertainty, and recommended follow-up.
+- Added focused tests proving the model cannot inject or override verified facts; no model comparison, provider/configuration change, activation, spend, or external action occurred.
+
 ### PS-2026-072 — Executed repeated Auditor v2 experiment
 
 - Added immutable non-executable plan `auditor-matched-local-v2-repeated-v1`, binding three v2 tasks, three repetitions per arm/task, 18 deterministic slots, nine matched pairs, fixed input hashes, and reproducible v2 instruction hashes.

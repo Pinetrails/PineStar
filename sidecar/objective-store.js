@@ -1,6 +1,7 @@
 'use strict';
 const { makeDurableJsonStore } = require('./durable-store.js');
 const { scoutDirective } = require('./open-source-scout.js');
+const HybridAuditor = require('./auditor-hybrid-verification.js');
 const CAP = 1000;
 const FINAL = new Set(['completed', 'failed', 'cancelled']);
 const MUTABLE = new Set(['assigned', 'in_progress', 'completed', 'failed', 'cancelled']);
@@ -32,7 +33,7 @@ function makeObjectiveStore(deps) {
     const stamp = Math.max(0, Number(now()) || 0);
     const rel = relation || {};
     return { schema: 'pine-star.objective.v1', id: rel.id || ('objective:' + text(newId(), 100)), title,
-      description: text(row.description, 2000), requiredCapabilities, protectedAction, maxModelTier,
+      description: text(row.description, Math.max(1, Math.min(10000, Number(rel.descriptionLimit) || 2000))), requiredCapabilities, protectedAction, maxModelTier,
       priority: ['low', 'normal', 'high', 'urgent'].includes(row.priority) ? row.priority : 'normal', targetRoleId: targetRoleId || null,
       routing: { status: routed.status, reason: text(routed.reason, 300) }, assignedRoleId: routed.role ? routed.role.id : null,
       assignedModelTier: routed.role ? routed.role.modelTier : null,
@@ -128,14 +129,16 @@ function makeObjectiveStore(deps) {
         result = { objective: existing, idempotent: true }; return undefined;
       }
       if (list.length >= CAP) throw new Error('objective store capacity exceeded');
+      const verifiedFacts = HybridAuditor.verifyObjective(target);
       const targetSnapshot = ['Target: ' + target.id, 'Title: ' + target.title, 'Status: ' + target.status,
         'Assigned role: ' + (target.assignedRoleId || 'unassigned'), 'Settlement: ' + (target.settlementReason || 'not recorded'),
         'Result summary: ' + (target.resultSummary || 'not recorded'), 'Evidence: ' + (strings(target.completionEvidenceRefs, 24, 240).join(', ') || 'none recorded')].join('\n');
+      const modelScope = text(body.description, 1200) || 'Interpret the verified findings and report significance or exceptions; do not repeat or expand the target action.';
       const objective = build({ title: text(body.title, 240) || ('Audit objective: ' + target.title),
-        description: text(body.description, 1200) || ('Independently verify this settled objective from its bounded record. Report findings and exceptions; do not repeat or expand the target action.\n\n' + targetSnapshot),
+        description: HybridAuditor.interpretationDirective(verifiedFacts) + '\n\nMODEL SCOPE:\n' + modelScope + '\n\nBOUNDED TARGET CONTEXT:\n' + targetSnapshot,
         requiredCapabilities: ['audit', 'verify'], maxModelTier: body.maxModelTier || 'economy', targetRoleId: 'operations.auditor', priority: body.priority || 'normal' },
       { auditTargetObjectiveId: target.id, auditRequest: { id: auditId, at: Math.max(0, Number(now()) || 0), targetStatus: target.status,
-        targetEvidenceRefs: strings(target.completionEvidenceRefs, 24, 240) } });
+        targetEvidenceRefs: strings(target.completionEvidenceRefs, 24, 240), verifiedFacts }, descriptionLimit: 10000 });
       list.push(objective); result = { objective, idempotent: false }; return list;
     });
     return result;
