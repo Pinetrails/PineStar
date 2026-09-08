@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-074 — Alpha 1 desktop sidecar authentication bridge fix
+
+- Fixed the Tauri initialization bridge to attach the current per-launch `X-StarNet-Token` only when centrally routing app-origin `/api` requests to the private loopback sidecar.
+- Preserved caller headers and fetch options for string and `Request` inputs; external, provider, user-supplied, and non-API destinations never receive the token.
+- Confirmed the existing trusted-Tauri-origin CORS path already permits the header. Sidecar authentication, 403 handling, SAVE-UNKNOWN safety, and the same-token sidecar restart contract remain unchanged.
+
 ### PS-2026-073 — Auditor deterministic-fact boundary
 
 - Durably recorded the Commander acceptance of `retain_champion_no_candidate`: the current Auditor champion remains active, the challenger remains inactive, no candidate exists, and the closed PS-2026-072 evidence is unchanged.

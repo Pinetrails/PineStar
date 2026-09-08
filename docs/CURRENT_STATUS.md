@@ -4,10 +4,11 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-073` — Auditor deterministic-fact boundary — **COMPLETE; READY FOR ALPHA 1 HANDS-ON TESTING**
+**Current change:** `PS-2026-074` — Alpha 1 desktop sidecar authentication bridge fix — **COMPLETE; LIVE ALPHA CONFIRMATION PENDING**
 
 | Item | Status |
 | --- | --- |
+| Alpha 1 desktop authentication | `PS-2026-074` fixes the Tauri fetch bridge that routed `/api/*` to a healthy private sidecar without attaching its per-launch token. Routed API calls now merge `X-StarNet-Token` into caller headers; external and non-API requests never receive it. Existing narrow CORS, 403 hard-failure, SAVE-UNKNOWN, and same-token restart contracts remain intact. |
 | Last completed milestone | Clean stock StarNet baseline tagged `starnet-baseline-0.10.10` |
 | Application source modified yet | **Yes — presentation-only frontend identity in PS-2026-002 batch 1** |
 | Packaged desktop | **PASS** |

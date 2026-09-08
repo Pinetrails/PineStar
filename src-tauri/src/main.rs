@@ -3746,7 +3746,10 @@ fn main() {
             // http origin — Tauri denies IPC (the keychain commands) to remote origins. This shim
             // rewrites the frontend's root-relative /api/* fetches to the sidecar's port.
             let init = format!(
-                "window.__STARNET_API__='http://127.0.0.1:{port}';window.__STARNET_API_TOKEN__='{api_token}';var _sf=window.fetch;window.fetch=function(u,o){{if(typeof u==='string'&&u.indexOf('/api/')===0)u=window.__STARNET_API__+u;return _sf(u,o)}};"
+                "window.__STARNET_API__={};window.__STARNET_API_TOKEN__={};{}",
+                serde_json::to_string(&format!("http://127.0.0.1:{port}"))?,
+                serde_json::to_string(&api_token)?,
+                include_str!("../desktop-api-bridge.js")
             );
             // Windows runs WITHOUT native decorations (see the window builder below): this flag
             // tells the frontend (app/titlebar.js) to render its own themed titlebar with
