@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-076 — Alpha 1 false-positive prior-station lineage detection
+
+- Classified exact valid zero-activity `loops.halt.json` and `nightshift.state.json` envelopes, plus their exact-name resilient backups, as pre-station safety scaffolding rather than prior-station evidence.
+- Kept malformed or activity-bearing control state, saves (including corrupt saves), station configuration/work artifacts, migration/recovery evidence, and unknown workspace files conservative so ambiguous data still blocks onboarding.
+- Made lineage inspection preserve the control files byte-for-byte; E-STOP, loop halt, Night Shift halt, recovery, SAVE-UNKNOWN, authentication, and dev-origin CORS behavior remain unchanged.
+
 ### PS-2026-075 — Alpha 1 dev-origin CORS parity
 
 - Allowed the exact Tauri CLI development WebView origin `http://127.0.0.1:1430` only for sidecars launched by a debug desktop shell; packaged Tauri origins remain unchanged and release-shaped sidecars reject the dev origin.

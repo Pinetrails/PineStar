@@ -5,19 +5,47 @@ const { note: failNote } = require('./failopen.js');
 // The desktop migration transaction seals even an empty first-run generation with a receipt. The receipt is
 // bookkeeping, not user state; any files it actually migrated are scanned independently below.
 const INFRA = /^(?:\.starnet-workspace-owner\.json|\.schema-version\.json(?:\.bak)?|\.migrated|\.migration-receipt\.json|cron\.lock|proc-ledger\.json|liveprices\.cache\.json)$/i;
-// Positive evidence only. The former "anything not on the infrastructure denylist" rule made every newly
-// introduced cache/receipt a fake prior station. This covers the harness-owned durable authorities without
-// treating an arbitrary future `*.cache.json` as proof that a Commander already created a station.
-const STATE_EVIDENCE = /^(?:agent\.save\.json(?:\.bak|\.corrupt-\d+)?|agent\.roster\.json(?:\.bak)?|(?:transcript|ledger|runs|growth-ratings|skills|skillprefs|autonomy\.ledger|deliverables\.library)\.jsonl|(?:budget|fallback|station\.widgets|memory\.config|study\.state|projects|personalization|recommendations|task-briefs|threads|execution-settings|terminal-sessions|subagents|routing\.plan|toolsets|usercommands)\.json(?:\.bak)?|(?:skills-allowed|skill-registries|skill-exchange-metrics|permissions\.(?:allow|bypass)|hooks(?:-allowed)?|plugins-allowed|cron\.(?:jobs|armed|halt)|loops(?:\.halt)?|nightshift\.(?:state|drafts|learn|acts)|nightfocus\.state|scout\.(?:interests|state))\.json(?:\.bak)?|_(?:station|commander)\.[a-z0-9._-]+\.json(?:\.bak)?|[a-z0-9_-]+\.(?:notebook|todo|declined|minted|pending|workshop|deliverables)\.json(?:\.bak)?|.*\.starnet-(?:backup|recovery)\.json)$/i;
+const BOOTSTRAP_CONTROL = /^(?:loops\.halt|nightshift\.state)\.json(?:\.bak)?$/i;
+
+function exactKeys(value, keys) {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+    && Object.keys(value).sort().join('\n') === keys.slice().sort().join('\n');
+}
+
+// E-STOP is available before a station exists. It durably stamps both subsystems even when there are no loops
+// and Night Shift has never fired; the resilient writer may also retain the same envelope in .bak. Those exact
+// zero-activity envelopes are safety scaffolding, not proof of user station data. Any malformed/extended value,
+// spent beat, or prior beat timestamp remains ambiguous and therefore remains evidence.
+function isBootstrapControlEntry(fs, file, name) {
+  if (!BOOTSTRAP_CONTROL.test(name)) return false;
+  try {
+    const value = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (/^loops\.halt\.json(?:\.bak)?$/i.test(name)) {
+      return exactKeys(value, ['halted']) && typeof value.halted === 'boolean';
+    }
+    return exactKeys(value, ['v', 'day', 'beatsUsedToday', 'lastBeatAt', 'haltedAt'])
+      && value.v === 1
+      && Number.isInteger(value.day) && value.day >= 0
+      && value.beatsUsedToday === 0
+      && value.lastBeatAt === 0
+      && Number.isInteger(value.haltedAt) && value.haltedAt >= 0;
+  } catch (_) { return false; }
+}
 
 function meaningfulEntries(fs, path, root) {
   try {
     if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) return [];
     return fs.readdirSync(root).filter(name => {
+      // Existing runtime services create top-level cache/journal directories before onboarding. Lineage has
+      // historically classified top-level authority files; do not promote directory creation itself to a new
+      // gate in this targeted fix. Known station evidence inside candidate roots is handled by recovery.
+      try { if (fs.statSync(path.join(root, name)).isDirectory()) return false; } catch (_) { return true; }
       if (INFRA.test(name)) return false;
+      if (name === '.fresh-start.json') return false;
       if (/\.tmp(?:\.|$)/i.test(name)) return false;
       if (name === '.browser-profile') return false;
-      return STATE_EVIDENCE.test(name);
+      if (isBootstrapControlEntry(fs, path.join(root, name), name)) return false;
+      return true;
     }).slice(0, 40).map(name => ({ name, path: path.join(root, name) }));
   } catch (_) { return []; }
 }
@@ -25,7 +53,7 @@ function meaningfulEntries(fs, path, root) {
 // START FRESH marker: the Commander explicitly chose a new station over external prior-install evidence
 // (legacy roots, update snapshots) that nothing could recover. It lists the acknowledged roots; evidence from
 // those roots no longer gates. It NEVER suppresses current-workspace evidence — real station files in the live
-// workspace are always honored. Not in STATE_EVIDENCE, so the marker itself is never "prior state".
+// workspace are always honored. The marker itself is explicit infrastructure, never "prior state".
 const FRESH_MARKER = '.fresh-start.json';
 const QUARANTINE_DIR = 'workspace-quarantine';
 
@@ -114,4 +142,4 @@ function startFresh(deps) {
   return { ok: true, quarantine: marker.quarantine, moved, acknowledgedRoots: marker.acknowledgedRoots };
 }
 
-module.exports = { inspectWorkspaceLineage: inspectWorkspaceLineage, startFresh: startFresh, FRESH_MARKER: FRESH_MARKER, _internals: { meaningfulEntries: meaningfulEntries, STATE_EVIDENCE: STATE_EVIDENCE } };
+module.exports = { inspectWorkspaceLineage: inspectWorkspaceLineage, startFresh: startFresh, FRESH_MARKER: FRESH_MARKER, _internals: { meaningfulEntries: meaningfulEntries, isBootstrapControlEntry: isBootstrapControlEntry } };

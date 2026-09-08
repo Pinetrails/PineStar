@@ -4,11 +4,11 @@
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-075` — Alpha 1 dev-origin CORS parity — **COMPLETE; ATTENDED UI CONFIRMATION PENDING**
+**Current change:** `PS-2026-076` — Alpha 1 false-positive prior-station lineage detection — **COMPLETE**
 
 | Item | Status |
 | --- | --- |
-| Alpha 1 desktop transport | `PS-2026-074` repaired missing desktop API authentication. The resulting authenticated request exposed a second dev-only transport issue: the Tauri dev WebView origin was `http://127.0.0.1:1430` while sidecar CORS only recognized the packaged Tauri origin. `PS-2026-075` admits exactly that origin only for a debug desktop-shell child; packaged behavior, token enforcement, and SAVE-UNKNOWN remain intact. Live dev-sidecar preflight plus protected `/api/save` and `/api/loops` reads pass; the final attended UI-state observation remains. |
+| Alpha 1 desktop boot | `PS-2026-074` repaired desktop API authentication and `PS-2026-075` admitted the exact debug WebView origin. `PS-2026-076` fixes the next blocker: the lineage gate treated pre-onboarding `loops.halt.json` / `nightshift.state.json` E-STOP scaffolding and their resilient backups as proof of a prior station. Only exact, valid zero-activity control envelopes are excluded; malformed, activity-bearing, station-specific, migration/recovery, and unknown workspace files still block onboarding. `desktop:dev` launched against the untouched Alpha workspace, the live classifier returned `priorInstallEvidence:false` / `onboardingAllowed:true`, `/api/save` remained reachable and protected, and all four control files retained their exact contents and hashes. No START FRESH or station manufacture occurred. |
 | Last completed milestone | Clean stock StarNet baseline tagged `starnet-baseline-0.10.10` |
 | Application source modified yet | **Yes — presentation-only frontend identity in PS-2026-002 batch 1** |
 | Packaged desktop | **PASS** |
