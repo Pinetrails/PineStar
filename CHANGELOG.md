@@ -4,6 +4,12 @@ Git is the exact technical history; these entries summarize intent and outcomes.
 
 ## Unreleased
 
+### PS-2026-077 — Gemini 3 thought-signature preservation
+
+- Preserved Gemini 3 function-call `thoughtSignature` values exactly as opaque call-local provider state and restored them only on the corresponding Gemini-native history parts across sequential tool steps.
+- Failed closed before tool dispatch when required Gemini 3 signature continuity is absent; kept approval, authorization, E-STOP, and retry/duplicate-action safeguards unchanged.
+- Targeted Gemini 3.6 Flash in fallback model choices with supported `MINIMAL` thinking, while suppressing the live-observed unsupported Gemini 3.8 Flash `MINIMAL` combination.
+
 ### PS-2026-076 — Alpha 1 false-positive prior-station lineage detection
 
 - Classified exact valid zero-activity `loops.halt.json` and `nightshift.state.json` envelopes, plus their exact-name resilient backups, as pre-station safety scaffolding rather than prior-station evidence.

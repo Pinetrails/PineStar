@@ -115,8 +115,10 @@
       if (!msg || typeof msg !== 'object') continue;
       if (msg.role === 'tool') {
         const callId = String(msg.tool_call_id || msg.call_id || '');
-        const name = callNames[callId] || msg.name || callId || 'tool';
-        appendContent(contents, 'user', [{ functionResponse: { name, response: responseObject(msg.content) } }]);
+        const prior = callNames[callId] || {};
+        const response = { name: prior.name || msg.name || callId || 'tool', response: responseObject(msg.content) };
+        if (prior.nativeId) response.id = prior.nativeId;
+        appendContent(contents, 'user', [{ functionResponse: response }]);
         continue;
       }
       if (msg.role === 'assistant') {
@@ -127,8 +129,18 @@
             const name = String(fn.name || '').trim();
             if (!name) continue;
             const callId = String((tc && tc.id) || fn.call_id || '');
-            if (callId) callNames[callId] = name;
-            parts.push({ functionCall: { name, args: safeJson(fn.arguments, {}) } });
+            const meta = tc && tc.provider_metadata;
+            const geminiMeta = meta && meta.provider === 'gemini' ? meta : null;
+            if (callId) callNames[callId] = { name, nativeId: geminiMeta && geminiMeta.functionCallId };
+            const nativeCall = { name, args: safeJson(fn.arguments, {}) };
+            if (geminiMeta && geminiMeta.functionCallId) nativeCall.id = geminiMeta.functionCallId;
+            const part = { functionCall: nativeCall };
+            // This value is encrypted provider state: never decode, transform, or surface it. It must remain on
+            // the exact native part on which Gemini returned it.
+            if (geminiMeta && typeof geminiMeta.thoughtSignature === 'string' && geminiMeta.thoughtSignature) {
+              part.thoughtSignature = geminiMeta.thoughtSignature;
+            }
+            parts.push(part);
           }
         }
         appendContent(contents, 'model', parts);
@@ -181,6 +193,9 @@
   /* The 2.5 family is the one that speaks `thinkingBudget`; everything newer speaks `thinkingLevel`. Matched
      on the version rather than a model allowlist so a new 2.5-series name still routes correctly. */
   const LEGACY_GEMINI_RE = /gemini[-_ ]?2\.?5/;
+  // Live API evidence: 3.8 Flash rejects MINIMAL. Keep the exception at the capability seam so both the dock
+  // and request builder agree; 3.6 Flash supports the complete modern set, including MINIMAL.
+  const NO_MINIMAL_GEMINI_RE = /gemini[-_ ]?3\.?8[-_ ]?flash/;
   // Every value sits under the smallest documented cap in the 2.5 family (flash / flash-lite cap at 24576),
   // so one table is safe across all of them rather than needing a per-model ceiling.
   const LEGACY_BUDGET = { none: 0, minimal: 512, low: 2048, medium: 8192, high: 16384, xhigh: 24576, max: 24576 };
@@ -198,6 +213,7 @@
     const model = String(id || '').toLowerCase();
     if (model.indexOf('gemini') < 0) return ['none'];
     if (LEGACY_GEMINI_RE.test(model)) return ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+    if (NO_MINIMAL_GEMINI_RE.test(model)) return ['low', 'medium', 'high'];
     return ['minimal', 'low', 'medium', 'high'];
   }
 
@@ -279,7 +295,10 @@
       } else {
         // No level means "off" on this contract — MINIMAL is the floor, and some Gemini 3 models refuse to
         // stop thinking at all, so asking for none honestly means asking for as little as the model allows.
-        cfg.thinkingLevel = MODERN_LEVEL[want] || 'MEDIUM';
+        const allowed = geminiEffortsFor(model);
+        const requested = want === 'none' ? 'minimal' : want;
+        const effort = allowed.indexOf(requested) >= 0 ? requested : (allowed.indexOf('low') >= 0 ? 'low' : 'medium');
+        cfg.thinkingLevel = MODERN_LEVEL[effort] || 'MEDIUM';
       }
       body.generationConfig = Object.assign({}, body.generationConfig, { thinkingConfig: cfg });
     }
@@ -308,6 +327,7 @@
       let dupToolSeq = 0;              // disambiguates a repeated ci:pi:name that is actually a NEW call
       let nextToolIndex = 0;
       let sawToolCall = false;
+      let sawFunctionCallInStep = false;
       let doneEmitted = false;
 
       function parseLine(line) {
@@ -339,6 +359,14 @@
             }
             if (typeof part.text === 'string' && part.text) yield { type: 'text', delta: part.text };
             if (part.functionCall) {
+              const firstInStep = !sawFunctionCallInStep;
+              sawFunctionCallInStep = true;
+              // Gemini 3 strictly validates the first function-call part in every model step. Fail at the
+              // response boundary instead of emitting an unreplayable call that could reach tool dispatch.
+              if (/gemini[-_ ]?3(?:\.|-|$)/i.test(String(req.model || ''))
+                  && firstInStep && !(typeof part.thoughtSignature === 'string' && part.thoughtSignature)) {
+                throw new Error('gemini function-call response is missing required thought-signature continuity metadata');
+              }
               // Gemini normally delivers each functionCall WHOLE (complete args) in a single part, so ci:pi:name
               // uniquely maps a call. But if the same ci:pi:name recurs in a LATER SSE frame carrying its OWN
               // nonempty args, that is a SECOND, distinct tool call — reusing the index would make the consumer
@@ -356,7 +384,12 @@
                 idx = nextToolIndex++;
                 toolIndexOf.set(keyOf, idx);
                 sawToolCall = true;
-                yield { type: 'tool_start', index: idx, id: part.functionCall.id || ('call_' + idx), name: part.functionCall.name || '' };
+                const providerMetadata = { provider: 'gemini' };
+                if (typeof part.thoughtSignature === 'string' && part.thoughtSignature) providerMetadata.thoughtSignature = part.thoughtSignature;
+                if (part.functionCall.id) providerMetadata.functionCallId = String(part.functionCall.id);
+                const start = { type: 'tool_start', index: idx, id: part.functionCall.id || ('call_' + idx), name: part.functionCall.name || '' };
+                if (providerMetadata.thoughtSignature || providerMetadata.functionCallId) start.providerMetadata = providerMetadata;
+                yield start;
               }
               if (part.functionCall.args != null) { yield { type: 'tool_args', index: idx, chunk: argsStr }; if (hasArgs) argsSentFor.add(idx); }
               yield { type: 'tool_done', index: idx };

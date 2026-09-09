@@ -1,14 +1,14 @@
 # Current status
 
-**As of:** 2026-09-07
+**As of:** 2026-09-08
 **Upstream technical foundation:** StarNet  
 **Previous phase:** Phase 1 — Stock StarNet Baseline — **COMPLETE**  
 **Current phase:** Phase 6 — Business System foundation (earlier adapter work remains)
-**Current change:** `PS-2026-076` — Alpha 1 false-positive prior-station lineage detection — **COMPLETE**
+**Current change:** `PS-2026-077` — Gemini 3 thought-signature preservation — **IN VERIFICATION**
 
 | Item | Status |
 | --- | --- |
-| Alpha 1 desktop boot | `PS-2026-074` repaired desktop API authentication and `PS-2026-075` admitted the exact debug WebView origin. `PS-2026-076` fixes the next blocker: the lineage gate treated pre-onboarding `loops.halt.json` / `nightshift.state.json` E-STOP scaffolding and their resilient backups as proof of a prior station. Only exact, valid zero-activity control envelopes are excluded; malformed, activity-bearing, station-specific, migration/recovery, and unknown workspace files still block onboarding. `desktop:dev` launched against the untouched Alpha workspace, the live classifier returned `priorInstallEvidence:false` / `onboardingAllowed:true`, `/api/save` remained reachable and protected, and all four control files retained their exact contents and hashes. No START FRESH or station manufacture occurred. |
+| Alpha 1 desktop boot | Alpha boots, persists, onboards, and reaches Pine's live station. `PS-2026-077` repairs the next blocker: Gemini 3.8 reached `brief_proceed` but failed because its `thoughtSignature` was dropped; Gemini 2.5 Flash is unavailable to this new API user; Gemini 3.6 Flash is the target. The narrow GenerateContent fix preserves signed provider state without changing Ask for Approval or tool authority. Live approval-boundary verification is pending. |
 | Last completed milestone | Clean stock StarNet baseline tagged `starnet-baseline-0.10.10` |
 | Application source modified yet | **Yes — presentation-only frontend identity in PS-2026-002 batch 1** |
 | Packaged desktop | **PASS** |

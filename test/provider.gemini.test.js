@@ -2,6 +2,7 @@
 'use strict';
 const A = require('./_assert.js');
 const { makeGeminiProvider, _internals } = require('../sidecar/providers/gemini.js');
+const loopInternals = require('../sidecar/loop.js')._internals;
 
 const line = obj => 'data: ' + JSON.stringify(obj);
 const sseFetch = (sseText, status) => async () => new Response(sseText, { status: status || 200, headers: { 'Content-Type': 'text/event-stream' } });
@@ -68,6 +69,32 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(evs.filter(e => e.type === 'tool_args').map(e => e.chunk).join(''), '{"id":1}', 'whole-call args intact');
   }
 
+  // B4. Gemini 3 function-call signatures stay opaque on the normalized call event; they are not text or
+  // reasoning, and an unsigned first call is rejected before a call can reach dispatch.
+  {
+    const sig = 'opaque-signed-state-A';
+    const sse = [line({ candidates: [{ content: { parts: [{
+      functionCall: { id: 'native-1', name: 'brief_proceed', args: { objective: 'x' } }, thoughtSignature: sig
+    }] }, finishReason: 'STOP' }] }), ''].join('\n');
+    const evs = await collect(makeGeminiProvider({ fetch: sseFetch(sse), key: 'k' }), {
+      model: 'gemini-3.6-flash', messages: [], tools: [{ type: 'function', function: { name: 'brief_proceed' } }]
+    });
+    const start = evs.find(e => e.type === 'tool_start');
+    A.eq(start.providerMetadata, { provider: 'gemini', thoughtSignature: sig, functionCallId: 'native-1' }, 'signature is opaque call-local replay metadata');
+    A.eq(evs.filter(e => e.type === 'text' || e.type === 'reasoning').length, 0, 'signature is never surfaced as answer or reasoning');
+    const normalized = loopInternals.parseCall({ id: start.id, name: start.name, args: '{"objective":"x"}', providerMetadata: start.providerMetadata }, 0);
+    const parked = loopInternals.assistantTurn('', [normalized], []);
+    A.eq(parked.tool_calls[0].provider_metadata, start.providerMetadata, 'provider-neutral loop parks call metadata without interpreting it');
+
+    let failed = false;
+    try {
+      await collect(makeGeminiProvider({ fetch: sseFetch([line({ candidates: [{ content: { parts: [{ functionCall: { name: 'brief_proceed', args: {} } }] }, finishReason: 'STOP' }] }), ''].join('\n')), key: 'k' }), {
+        model: 'gemini-3.6-flash', messages: [], tools: [{ type: 'function', function: { name: 'brief_proceed' } }]
+      });
+    } catch (e) { failed = /missing required thought-signature/.test(String(e && e.message)); }
+    A.ok(failed, 'Gemini 3 unsigned first function call fails before dispatch');
+  }
+
   // C. request conversion and URL shape.
   {
     let captured = null;
@@ -93,6 +120,25 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(captured.body.tools[0].functionDeclarations[0], { name: 'web', description: 'd' }, 'OpenAI tool -> Gemini functionDeclaration');
     A.eq(captured.body.contents[0].parts[1], { functionCall: { name: 'web', args: { q: 1 } } }, 'assistant tool_call -> functionCall part');
     A.eq(captured.body.contents[1].parts[0], { functionResponse: { name: 'web', response: { result: 'yes' } } }, 'tool result -> functionResponse part');
+  }
+
+  // C2. Exact signatures and native call IDs survive sequential tool steps in their original model parts.
+  {
+    const a = 'opaque-A', b = 'opaque-B';
+    const conv = _internals.messagesToGemini([
+      { role: 'user', content: 'do two steps' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'id-a', type: 'function', function: { name: 'first', arguments: '{"n":1}' }, provider_metadata: { provider: 'gemini', thoughtSignature: a, functionCallId: 'id-a' } }] },
+      { role: 'tool', tool_call_id: 'id-a', content: '{"ok":true}' },
+      { role: 'assistant', content: '', tool_calls: [{ id: 'id-b', type: 'function', function: { name: 'second', arguments: '{"n":2}' }, provider_metadata: { provider: 'gemini', thoughtSignature: b, functionCallId: 'id-b' } }] },
+      { role: 'tool', tool_call_id: 'id-b', content: '{"ok":true}' }
+    ]);
+    A.eq(conv.contents[1].parts[0], { functionCall: { name: 'first', args: { n: 1 }, id: 'id-a' }, thoughtSignature: a }, 'first sequential signature replayed exactly');
+    A.eq(conv.contents[2].parts[0].functionResponse.id, 'id-a', 'first result retains native call ID');
+    A.eq(conv.contents[3].parts[0], { functionCall: { name: 'second', args: { n: 2 }, id: 'id-b' }, thoughtSignature: b }, 'second sequential signature replayed exactly');
+    A.eq(conv.contents[4].parts[0].functionResponse.id, 'id-b', 'second result retains native call ID');
+
+    const foreign = _internals.messagesToGemini([{ role: 'assistant', content: '', tool_calls: [{ id: 'x', function: { name: 'plain', arguments: '{}' }, provider_metadata: { provider: 'other', thoughtSignature: 'never-send' } }] }]);
+    A.eq(foreign.contents[0].parts[0], { functionCall: { name: 'plain', args: {} } }, 'foreign provider metadata cannot leak onto Gemini wire');
   }
 
   // D. model catalog strips models/ for friendly stored IDs, but modelPath adds it back for calls.
@@ -162,6 +208,10 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(b.generationConfig.thinkingConfig.thinkingBudget, 0, "'none' disables thinking on 2.5");
     b = await ask('gemini-3-pro', { reasoningEffort: 'none' });
     A.eq(b.generationConfig.thinkingConfig.thinkingLevel, 'MINIMAL', "'none' on a modern model asks for the floor rather than an unsupported off");
+    b = await ask('gemini-3.6-flash', { reasoningEffort: 'minimal' });
+    A.eq(b.generationConfig.thinkingConfig.thinkingLevel, 'MINIMAL', 'gemini-3.6-flash accepts the supported MINIMAL mapping');
+    b = await ask('gemini-3.8-flash', { reasoningEffort: 'minimal' });
+    A.eq(b.generationConfig.thinkingConfig.thinkingLevel, 'LOW', 'known 3.8 Flash MINIMAL incompatibility clamps to LOW');
 
     // An UNKNOWN Gemini defaults to the MODERN contract — an allowlist of new versions goes stale silently.
     b = await ask('gemini-4-ultra-preview', { reasoningEffort: 'medium' });
@@ -176,6 +226,7 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     // The published capability must match what the wire accepts, or the dock offers a dead control.
     const p = makeGeminiProvider({ fetch: bodyFetch(), key: 'k' });
     A.eq(p.reasoningEfforts('gemini-3-pro').indexOf('none'), -1, 'a modern model does not advertise an off switch it lacks');
+    A.eq(p.reasoningEfforts('gemini-3.8-flash').indexOf('minimal'), -1, '3.8 Flash does not advertise its rejected MINIMAL level');
     A.ok(p.reasoningEfforts('gemini-2.5-flash').indexOf('none') >= 0, 'a 2.5 model does advertise one');
   }
 

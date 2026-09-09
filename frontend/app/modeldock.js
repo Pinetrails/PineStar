@@ -11,7 +11,7 @@ const ModelDock = (() => {
   // A missing fallback id is honest; an invented one is a lie. claude-3-5-haiku retired 2026-02-19,
   // so it's dropped here; opus-4-8 / sonnet-5 / haiku-4-5 are the current confirmed-real set.
   const ANTHROPIC_MODELS = ['claude-opus-4-8', 'claude-sonnet-5', 'claude-haiku-4-5'];
-  const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'];
+  const GEMINI_MODELS = ['gemini-3.6-flash'];
   const HOSTED_FALLBACKS = {
     xai: ['grok-4.3', 'grok-4-fast', 'grok-4'],
     groq: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct'],

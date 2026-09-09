@@ -1458,7 +1458,7 @@ const App = (() => {
     kimi: ['kimi-for-coding', 'kimi-for-coding-highspeed', 'k3'],
     openai: ['gpt-5.5', 'gpt-5.4', 'gpt-4.1'],
     anthropic: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-3-5-haiku-latest'],
-    gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+    gemini: ['gemini-3.6-flash'],
     xai: ['grok-4.3', 'grok-4-fast', 'grok-4'],
     groq: ['openai/gpt-oss-120b', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct'],
     mistral: ['mistral-large-latest', 'mistral-medium-latest', 'mistral-small-latest'],
@@ -1530,8 +1530,7 @@ const App = (() => {
       { label: 'Opus 4.1', id: 'claude-opus-4-1', tag: 'deepest' }
     ],
     gemini: [
-      { label: 'Gemini 2.5 Pro', id: 'gemini-2.5-pro', tag: 'deepest' },
-      { label: 'Gemini 2.5 Flash', id: 'gemini-2.5-flash', tag: 'fast' }
+      { label: 'Gemini 3.6 Flash', id: 'gemini-3.6-flash', tag: 'fast' }
     ],
     xai: [
       { label: 'Grok 4.3', id: 'grok-4.3', tag: '' },

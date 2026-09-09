@@ -5,7 +5,9 @@
        req = { model, messages, tools, signal, stream:true, ... }
        HarnessEvent =
          | { type:'text',       delta }
-         | { type:'tool_start', index, id, name }
+         | { type:'tool_start', index, id, name, providerMetadata? }
+         |     `providerMetadata` is OPTIONAL opaque adapter-owned replay state for this exact tool-call part.
+         |     The loop must not inspect it and only returns it on the normalized assistant tool call.
          | { type:'tool_args',  index, chunk }   // argument STRING fragment
          | { type:'tool_done',  index }
          | { type:'reasoning',  block }          // OPTIONAL, one per COMPLETED provider-native reasoning block.

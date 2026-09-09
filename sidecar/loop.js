@@ -44,7 +44,10 @@
   function parseCall(tc, index) {
     let args = {}, parseError = null;
     if (tc.args) { try { args = JSON.parse(tc.args); } catch (e) { parseError = 'invalid tool arguments JSON'; } }
-    return { id: tc.id || ('call_' + index), name: tc.name, args, argsRaw: tc.args || '', parseError };
+    return {
+      id: tc.id || ('call_' + index), name: tc.name, args, argsRaw: tc.args || '', parseError,
+      providerMetadata: tc.providerMetadata
+    };
   }
 
   // Recover mechanically-broken tool-call argument JSON BEFORE the call is discarded as a parseError. A genuine
@@ -103,7 +106,13 @@
   function assistantTurn(text, calls, reasoning) {
     const msg = { role: 'assistant', content: text || '' };
     if (calls.length) {
-      msg.tool_calls = calls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.argsRaw || '{}' } }));
+      msg.tool_calls = calls.map(c => {
+        const call = { id: c.id, type: 'function', function: { name: c.name, arguments: c.argsRaw || '{}' } };
+        // Adapter-owned continuity data (for example, a signed provider-native function-call part) is opaque
+        // here. Keep it attached to the exact call and let only that adapter interpret it on replay.
+        if (c.providerMetadata && typeof c.providerMetadata === 'object') call.provider_metadata = c.providerMetadata;
+        return call;
+      });
     }
     if (Array.isArray(reasoning) && reasoning.length) msg.reasoning = reasoning.slice();
     return msg;
@@ -1029,7 +1038,9 @@
               else streamedTextChunks.push(delta);
             }
             else if (ev.type === 'reasoning') { if (ev.block) acc.reasoning.push(ev.block); }
-            else if (ev.type === 'tool_start') { acc.toolCalls[ev.index] = { id: ev.id, name: ev.name, args: '' }; }
+            else if (ev.type === 'tool_start') {
+              acc.toolCalls[ev.index] = { id: ev.id, name: ev.name, args: '', providerMetadata: ev.providerMetadata };
+            }
             else if (ev.type === 'tool_args') { if (acc.toolCalls[ev.index]) acc.toolCalls[ev.index].args += (ev.chunk || ''); }
             else if (ev.type === 'usage') { usage = ev.usage; if (cost) emit('cost.estimate', Object.assign({ agentId, runId }, cost.estimate(usage, model))); }
             else if (ev.type === 'done') { lastFinishReason = ev.finishReason; sawTruncation = !!ev.truncated; }   // A3: remember WHY the turn stopped
@@ -1095,6 +1106,11 @@
             if (fb.provider !== provider || (fb.model && fb.model !== model)) {
               for (const m of messages) {
                 if (m && m.role === 'assistant' && m.reasoning != null) { delete m.reasoning; reasoningDropped++; }
+                // Call-local provider replay state is signed/defined by the producing adapter and model too.
+                // A fallback keeps the semantic tool call but must never forward foreign opaque metadata.
+                if (m && m.role === 'assistant' && Array.isArray(m.tool_calls)) {
+                  for (const tc of m.tool_calls) if (tc && tc.provider_metadata != null) delete tc.provider_metadata;
+                }
               }
             }
             const fbPayload = { agentId, runId, fromModel: model, toModel: (fb.model || model), reason: cls.reason, rotate: !!cls.shouldRotateCredential };
